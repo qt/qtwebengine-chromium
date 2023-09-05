@@ -57,7 +57,7 @@ class Sender;
 class StreamingVpxEncoder : public StreamingVideoEncoder {
  public:
   StreamingVpxEncoder(const Parameters& params,
-                      TaskRunner* task_runner,
+                      TaskRunner& task_runner,
                       std::unique_ptr<Sender> sender);
 
   ~StreamingVpxEncoder();

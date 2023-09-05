@@ -355,6 +355,8 @@ const char kSMSReceivedSignal[] = "SmsReceived";
 // ModemManager1 interfaces and signals
 // The canonical source for these constants is:
 //   /usr/include/ModemManager/ModemManager-names.h
+const char kModemManager13gppInterface[] =
+    "org.freedesktop.ModemManager1.Modem.Modem3gpp";
 const char kModemManager1ServiceName[] = "org.freedesktop.ModemManager1";
 const char kModemManager1ServicePath[] = "/org/freedesktop/ModemManager1";
 const char kModemManager1ModemInterface[] =
@@ -365,6 +367,7 @@ const char kModemManager1SmsInterface[] = "org.freedesktop.ModemManager1.Sms";
 const char kModemManager1SarInterface[] =
     "org.freedesktop.ModemManager1.Modem.Sar";
 
+const char kModem3gppSetCarrierLock[] = "SetCarrierLock";
 const char kSMSAddedSignal[] = "Added";
 const char kSarEnable[] = "Enable";
 const char kSarSetPowerLevel[] = "SetPowerLevel";

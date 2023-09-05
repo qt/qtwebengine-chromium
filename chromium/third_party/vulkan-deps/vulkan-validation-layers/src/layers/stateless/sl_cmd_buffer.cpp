@@ -227,9 +227,8 @@ bool StatelessValidation::ValidateCmdBindVertexBuffers2(VkCommandBuffer commandB
                     not_null_msg = "pSizes is not NULL";
                 else
                     not_null_msg = "pStrides is not NULL";
-                const char *vuid_breach_msg = "%s: %s, so bindingCount must be greater that 0.";
-                skip |= LogError(commandBuffer, "VUID-vkCmdBindVertexBuffers2-bindingCount-arraylength", vuid_breach_msg, api_call,
-                                 not_null_msg);
+                skip |= LogError(commandBuffer, "VUID-vkCmdBindVertexBuffers2-bindingCount-arraylength",
+                                 "%s: %s, so bindingCount must be greater than 0.", api_call, not_null_msg);
             }
         }
     }
@@ -595,10 +594,7 @@ bool StatelessValidation::ValidateCmdBeginRendering(VkCommandBuffer commandBuffe
                 }
             }
 
-            if (image_layout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL ||
-                image_layout == VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL ||
-                image_layout == VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL ||
-                image_layout == VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL) {
+            if (IsImageLayoutDepthOnly(image_layout) || IsImageLayoutStencilOnly(image_layout)) {
                 skip |= LogError(commandBuffer, "VUID-VkRenderingInfo-colorAttachmentCount-06100",
                                  "%s(): imageLayout must not be VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL"
                                  " or VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL"
@@ -625,7 +621,7 @@ bool StatelessValidation::ValidateCmdBeginRendering(VkCommandBuffer commandBuffe
             skip |=
                 LogError(commandBuffer, "VUID-VkRenderingInfo-pDepthAttachment-06092",
                          "%s(): pDepthAttachment->imageLayout is can't be VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL.", func_name);
-        } else if (layout == VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL || layout == VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL) {
+        } else if (IsImageLayoutStencilOnly(layout)) {
             skip |= LogError(commandBuffer, "VUID-VkRenderingInfo-pDepthAttachment-07732",
                              "%s(): pDepthAttachment->imageLayout is can't be VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL or "
                              "VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL.",
@@ -638,8 +634,7 @@ bool StatelessValidation::ValidateCmdBeginRendering(VkCommandBuffer commandBuffe
                 skip |= LogError(commandBuffer, "VUID-VkRenderingInfo-pDepthAttachment-06093",
                                  "%s(): pDepthAttachment->resolveImageLayout must not be VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL.",
                                  func_name);
-            } else if (resolve_layout == VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL ||
-                       resolve_layout == VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL) {
+            } else if (IsImageLayoutStencilOnly(resolve_layout)) {
                 skip |= LogError(commandBuffer, "VUID-VkRenderingInfo-pDepthAttachment-07733",
                                  "%s(): pDepthAttachment->resolveImageLayout must not be "
                                  "VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL or VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL.",
@@ -669,7 +664,7 @@ bool StatelessValidation::ValidateCmdBeginRendering(VkCommandBuffer commandBuffe
             skip |=
                 LogError(commandBuffer, "VUID-VkRenderingInfo-pStencilAttachment-06094",
                          "%s(): pStencilAttachment->imageLayout is can't be VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL.", func_name);
-        } else if (layout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL || layout == VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL) {
+        } else if (IsImageLayoutDepthOnly(layout)) {
             skip |= LogError(commandBuffer, "VUID-VkRenderingInfo-pStencilAttachment-07734",
                              "%s(): pStencilAttachment->imageLayout is can't be VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL or "
                              "VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL.",
@@ -683,8 +678,7 @@ bool StatelessValidation::ValidateCmdBeginRendering(VkCommandBuffer commandBuffe
                     LogError(commandBuffer, "VUID-VkRenderingInfo-pStencilAttachment-06095",
                              "%s(): pStencilAttachment->resolveImageLayout must not be VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL.",
                              func_name);
-            } else if (resolve_layout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL ||
-                       resolve_layout == VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL) {
+            } else if (IsImageLayoutDepthOnly(resolve_layout)) {
                 skip |=
                     LogError(commandBuffer, "VUID-VkRenderingInfo-pStencilAttachment-07735",
                              "%s(): pStencilAttachment->resolveImageLayout must not be VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL.",
@@ -1379,11 +1373,9 @@ bool StatelessValidation::manual_PreCallValidateViewport(const VkViewport &viewp
         }
     }
 
-    // The extension was not created with a feature bit whichs prevents displaying the 2 variations of the VUIDs
     if (!IsExtEnabled(device_extensions.vk_ext_depth_range_unrestricted)) {
         // minDepth
         if (!(viewport.minDepth >= 0.0) || !(viewport.minDepth <= 1.0)) {
-            // Also VUID-VkViewport-minDepth-02540
             skip |= LogError(object, "VUID-VkViewport-minDepth-01234",
                              "%s: VK_EXT_depth_range_unrestricted extension is not enabled and %s.minDepth (=%f) is not within the "
                              "[0.0, 1.0] range.",
@@ -1392,7 +1384,6 @@ bool StatelessValidation::manual_PreCallValidateViewport(const VkViewport &viewp
 
         // maxDepth
         if (!(viewport.maxDepth >= 0.0) || !(viewport.maxDepth <= 1.0)) {
-            // Also VUID-VkViewport-maxDepth-02541
             skip |= LogError(object, "VUID-VkViewport-maxDepth-01235",
                              "%s: VK_EXT_depth_range_unrestricted extension is not enabled and %s.maxDepth (=%f) is not within the "
                              "[0.0, 1.0] range.",
@@ -1412,7 +1403,7 @@ bool StatelessValidation::manual_PreCallValidateFreeCommandBuffers(VkDevice devi
     // This is an array of handles, where the elements are allowed to be VK_NULL_HANDLE, and does not require any validation beyond
     // ValidateArray()
     skip |= ValidateArray("vkFreeCommandBuffers", "commandBufferCount", "pCommandBuffers", commandBufferCount, &pCommandBuffers,
-                          true, true, kVUIDUndefined, kVUIDUndefined);
+                          true, true, kVUIDUndefined, "VUID-vkFreeCommandBuffers-pCommandBuffers-00048");
     return skip;
 }
 

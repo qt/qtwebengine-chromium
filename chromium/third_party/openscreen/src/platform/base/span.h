@@ -59,6 +59,12 @@ class Span {
 
   constexpr Span(T* data, size_t count) : data_(data), count_(count) {}
 
+  constexpr Span(T* first, T* end) {
+    assert(end >= first);
+    data_ = first;
+    count_ = static_cast<size_t>(end - first);
+  }
+
   template <typename U, typename = internal::EnableIfConvertible<U, T>>
   Span(std::vector<U>& v) : data_(v.data()), count_(v.size()) {}  // NOLINT
 

@@ -14,17 +14,15 @@
 #include <vector>
 
 #include "platform/base/error.h"
+#include "platform/base/span.h"
 
 namespace openscreen {
 namespace discovery {
 
 class DnsSdTxtRecord {
  public:
-  using ValueRef = std::reference_wrapper<const std::vector<uint8_t>>;
-
   // Returns whether the provided key value pair is valid for a TXT record.
-  static bool IsValidTxtValue(const std::string& key,
-                              const std::vector<uint8_t>& value);
+  static bool IsValidTxtValue(const std::string& key, ByteView value);
   static bool IsValidTxtValue(const std::string& key, const std::string& value);
   static bool IsValidTxtValue(const std::string& key, uint8_t value);
 
@@ -34,7 +32,7 @@ class DnsSdTxtRecord {
   // value or flag which was already set will overwrite the previous one, and
   // setting a value with a key which was previously associated with a flag
   // erases the flag's value and vice versa.
-  Error SetValue(const std::string& key, std::vector<uint8_t> value);
+  Error SetValue(const std::string& key, ByteView value);
   Error SetValue(const std::string& key, const std::string& value);
   Error SetFlag(const std::string& key, bool value);
 
@@ -44,7 +42,8 @@ class DnsSdTxtRecord {
   // NOTE: If GetValue is called on a key assigned to a flag, an ItemNotFound
   // error will be returned. If GetFlag is called on a key assigned to a value,
   // 'false' will be returned.
-  ErrorOr<ValueRef> GetValue(const std::string& key) const;
+  ErrorOr<ByteView> GetValue(const std::string& key) const;
+  ErrorOr<std::string> GetStringValue(const std::string& key) const;
   ErrorOr<bool> GetFlag(const std::string& key) const;
 
   // Clears an existing TxtRecord value associated with the given key. If the

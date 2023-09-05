@@ -12,8 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {ColumnType} from 'src/common/query_result';
-import {fromNs, toNs} from '../common/time';
+import {TPTime} from '../common/time';
+import {Brand} from './brand';
+
 import {globals} from './globals';
 
 // Type-safe aliases for various flavours of ints Trace Processor exposes
@@ -26,37 +27,19 @@ import {globals} from './globals';
 
 // Timestamp (in nanoseconds) in the same time domain as Trace Processor is
 // exposing.
-export type TPTimestamp = bigint&{
+export type TPTimestamp = TPTime&{
   __type: 'TPTimestamp'
 }
 
-// Create a timestamp from a bigint in nanos.
-// Use this when we know the type is a bigint.
-export function timestampFromNanos(nanos: bigint) {
-  return nanos as TPTimestamp;
-}
-
-// Create a timestamp from an arbitrary SQL value.
-// Throws if the value cannot be reasonably converted to a timestamp.
-// Assumes the input will be in units of nanoseconds.
-export function timestampFromSqlNanos(nanos: ColumnType): TPTimestamp {
-  if (typeof nanos === 'bigint') {
-    return nanos as TPTimestamp;
-  } else if (typeof nanos === 'number') {
-    // Note - this will throw if the number is something which cannot be
-    // represented by an integer - i.e. decimals, infinity, or NaN.
-    return BigInt(nanos) as TPTimestamp;
-  } else {
-    throw Error('Refusing to create TPTimestamp from unrelated type');
-  }
+export function asTPTimestamp(v: bigint): TPTimestamp;
+export function asTPTimestamp(v?: bigint): TPTimestamp|undefined;
+export function asTPTimestamp(v?: bigint): TPTimestamp|undefined {
+  return v as (TPTimestamp | undefined);
 }
 
 // TODO: unify this with common/time.ts.
-// TODO(stevegolton): Return a bigint, or a new TPDuration object rather than
-// convert to number which could lose precision.
-export function toTraceTime(ts: TPTimestamp): number {
-  const traceStartNs = toNs(globals.state.traceTime.startSec);
-  return fromNs(Number(ts - BigInt(traceStartNs)));
+export function toTraceTime(ts: TPTimestamp): TPTime {
+  return ts - globals.state.traceTime.start;
 }
 
 // Unique id for a process, id into |process| table.
@@ -81,12 +64,52 @@ export function asUtid(v?: number): Utid|undefined {
   return v as (Utid | undefined);
 }
 
+// Id into |slice| SQL table.
+export type SliceSqlId = number&{
+  __type: 'SliceSqlId'
+}
+
+export function asSliceSqlId(v: number): SliceSqlId;
+export function asSliceSqlId(v?: number): SliceSqlId|undefined;
+export function asSliceSqlId(v?: number): SliceSqlId|undefined {
+  return v as (SliceSqlId | undefined);
+}
+
 // Id into |sched| SQL table.
 export type SchedSqlId = number&{
   __type: 'SchedSqlId'
 }
 
+export function asSchedSqlId(v: number): SchedSqlId;
+export function asSchedSqlId(v?: number): SchedSqlId|undefined;
+export function asSchedSqlId(v?: number): SchedSqlId|undefined {
+  return v as (SchedSqlId | undefined);
+}
+
 // Id into |thread_state| SQL table.
 export type ThreadStateSqlId = number&{
   __type: 'ThreadStateSqlId'
+}
+
+export function asThreadStateSqlId(v: number): ThreadStateSqlId;
+export function asThreadStateSqlId(v?: number): ThreadStateSqlId|undefined;
+export function asThreadStateSqlId(v?: number): ThreadStateSqlId|undefined {
+  return v as (ThreadStateSqlId | undefined);
+}
+
+export type ArgSetId = Brand<number, 'ArgSetId'>;
+
+export function asArgSetId(v: number): ArgSetId;
+export function asArgSetId(v?: number): ArgSetId|undefined;
+export function asArgSetId(v?: number): ArgSetId|undefined {
+  return v as (ArgSetId | undefined);
+}
+
+// Id into |args| SQL table.
+export type ArgsId = Brand<number, 'ArgsId'>;
+
+export function asArgId(v: number): ArgsId;
+export function asArgId(v?: number): ArgsId|undefined;
+export function asArgId(v?: number): ArgsId|undefined {
+  return v as (ArgsId | undefined);
 }

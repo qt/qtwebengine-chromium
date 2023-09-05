@@ -28,7 +28,9 @@
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrRecordingContext.h"
 #include "include/gpu/GrTypes.h"
-#include "include/gpu/ganesh/GrTextureGenerator.h"
+#include "include/gpu/ganesh/GrExternalTextureGenerator.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
+#include "include/private/gpu/ganesh/GrTextureGenerator.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
 #include "src/gpu/ganesh/GrSamplerState.h"
@@ -41,6 +43,10 @@
 
 #include <memory>
 #include <utility>
+
+#if defined(SK_GRAPHITE)
+#include "include/gpu/graphite/Surface.h"
+#endif
 
 class GrRecordingContext;
 
@@ -177,12 +183,16 @@ public:
         sk_sp<SkSurface> surface;
 
         if (fRContext) {
-            surface = SkSurface::MakeRenderTarget(fRContext.get(), skgpu::Budgeted::kYes, info,
-                                                  0, kTopLeft_GrSurfaceOrigin, nullptr);
+            surface = SkSurfaces::RenderTarget(fRContext.get(),
+                                               skgpu::Budgeted::kYes,
+                                               info,
+                                               0,
+                                               kTopLeft_GrSurfaceOrigin,
+                                               nullptr);
         }
 #if defined(SK_GRAPHITE)
         if (skgpu::graphite::Recorder* recorder = canvas->recorder()) {
-            surface = SkSurface::MakeGraphite(recorder, info);
+            surface = SkSurfaces::RenderTarget(recorder, info);
         }
 #endif
 
@@ -223,14 +233,6 @@ protected:
                 budgeted,
                 /*label=*/"SurfaceProxyView_GenerateTexture");
     }
-
-#if defined(SK_GRAPHITE)
-    sk_sp<SkImage> onMakeTextureImage(skgpu::graphite::Recorder*,
-                                      const SkImageInfo&,
-                                      skgpu::Mipmapped) override {
-        return fImage;
-    }
-#endif
 
 private:
     sk_sp<GrRecordingContext> fRContext;
@@ -317,16 +319,16 @@ protected:
                     auto textureGen = std::unique_ptr<GrTextureGenerator>(
                         static_cast<GrTextureGenerator*>(gen.release()));
                     fImageSubset = SkImages::DeferredFromTextureGenerator(std::move(textureGen))
-                            ->makeSubset(subset, dContext);
+                            ->makeSubset(dContext, subset);
                 } else {
                     fImageSubset = SkImages::DeferredFromGenerator(std::move(gen))
-                            ->makeSubset(subset, dContext);
+                            ->makeSubset(dContext, subset);
                 }
             } else {
 #if defined(SK_GRAPHITE)
                 auto recorder = canvas->recorder();
                 fImageSubset = SkImages::DeferredFromGenerator(std::move(gen))
-                                       ->makeSubset(subset, recorder);
+                                       ->makeSubset(recorder, subset, {});
 #endif
             }
             if (!fImageSubset) {

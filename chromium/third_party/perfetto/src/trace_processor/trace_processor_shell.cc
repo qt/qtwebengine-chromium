@@ -709,12 +709,13 @@ struct CommandLineOptions {
   bool no_ftrace_raw = false;
   bool analyze_trace_proto_content = false;
   bool crop_track_events = false;
+  std::vector<std::string> dev_flags;
 };
 
 void PrintUsage(char** argv) {
   PERFETTO_ELOG(R"(
 Interactive trace processor shell.
-Usage: %s [OPTIONS] trace_file.pb
+Usage: %s [FLAGS] trace_file.pb
 
 Options:
  -h, --help                           Prints this guide.
@@ -739,12 +740,8 @@ Options:
  -e, --export FILE                    Export the contents of trace processor
                                       into an SQLite database after running any
                                       metrics or queries specified.
- -m, --metatrace FILE                 Enables metatracing of trace processor
-                                      writing the resulting trace into FILE.
- --metatrace-buffer-capacity N        Sets metatrace event buffer to capture
-                                      last N events.
- --metatrace-categories CATEGORIES    A comma-separated list of metatrace
-                                      categories to enable.
+
+Feature flags:
  --full-sort                          Forces the trace processor into performing
                                       a full sort ignoring any windowing
                                       logic.
@@ -762,8 +759,11 @@ Options:
                                       *should not* be enabled on production
                                       builds. The features behind this flag can
                                       break at any time without any warning.
+ --dev-flag KEY=VALUE                 Set a development flag to the given value.
+                                      Does not have any affect unless --dev is
+                                      specified.
 
-Standard library: 
+Standard library:
  --add-sql-module MODULE_PATH         Files from the directory will be treated
                                       as a new SQL module and can be used for
                                       IMPORT. The name of the directory is the
@@ -794,7 +794,15 @@ Metrics:
                                       Loads metric proto and sql files from
                                       DISK_PATH/protos and DISK_PATH/sql
                                       respectively, and mounts them onto
-                                      VIRTUAL_PATH.)",
+                                      VIRTUAL_PATH.
+
+Metatracing:
+ -m, --metatrace FILE                 Enables metatracing of trace processor
+                                      writing the resulting trace into FILE.
+ --metatrace-buffer-capacity N        Sets metatrace event buffer to capture
+                                      last N events.
+ --metatrace-categories CATEGORIES    A comma-separated list of metatrace
+                                      categories to enable.)",
                 argv[0]);
 }
 
@@ -816,6 +824,7 @@ CommandLineOptions ParseCommandLineOptions(int argc, char** argv) {
     OPT_METATRACE_CATEGORIES,
     OPT_ANALYZE_TRACE_PROTO_CONTENT,
     OPT_CROP_TRACK_EVENTS,
+    OPT_DEV_FLAG,
   };
 
   static const option long_options[] = {
@@ -848,6 +857,7 @@ CommandLineOptions ParseCommandLineOptions(int argc, char** argv) {
       {"pre-metrics", required_argument, nullptr, OPT_PRE_METRICS},
       {"metrics-output", required_argument, nullptr, OPT_METRICS_OUTPUT},
       {"metric-extension", required_argument, nullptr, OPT_METRIC_EXTENSION},
+      {"dev-flag", required_argument, nullptr, OPT_DEV_FLAG},
       {nullptr, 0, nullptr, 0}};
 
   bool explicit_interactive = false;
@@ -986,6 +996,11 @@ CommandLineOptions ParseCommandLineOptions(int argc, char** argv) {
       continue;
     }
 
+    if (option == OPT_DEV_FLAG) {
+      command_line_options.dev_flags.push_back(optarg);
+      continue;
+    }
+
     PrintUsage(argv);
     exit(option == 'h' ? 0 : 1);
   }
@@ -1016,10 +1031,11 @@ CommandLineOptions ParseCommandLineOptions(int argc, char** argv) {
   return command_line_options;
 }
 
-void ExtendPoolWithBinaryDescriptor(google::protobuf::DescriptorPool& pool,
-                                    const void* data,
-                                    int size,
-                                    std::vector<std::string>& skip_prefixes) {
+void ExtendPoolWithBinaryDescriptor(
+    google::protobuf::DescriptorPool& pool,
+    const void* data,
+    int size,
+    const std::vector<std::string>& skip_prefixes) {
   google::protobuf::FileDescriptorSet desc_set;
   PERFETTO_CHECK(desc_set.ParseFromArray(data, size));
   for (const auto& file_desc : desc_set.file()) {
@@ -1237,7 +1253,8 @@ base::Status LoadOverridenStdlib(std::string root) {
 }
 
 base::Status LoadMetricExtensionProtos(const std::string& proto_root,
-                                       const std::string& mount_path) {
+                                       const std::string& mount_path,
+                                       google::protobuf::DescriptorPool& pool) {
   if (!base::FileExists(proto_root)) {
     return base::ErrStatus(
         "Directory %s does not exist. Metric extension directory must contain "
@@ -1262,6 +1279,11 @@ base::Status LoadMetricExtensionProtos(const std::string& proto_root,
       serialized_filedescset.data(),
       static_cast<int>(serialized_filedescset.size()));
 
+  // Extend the pool for any subsequent reflection-based operations
+  // (e.g. output json)
+  ExtendPoolWithBinaryDescriptor(
+      pool, serialized_filedescset.data(),
+      static_cast<int>(serialized_filedescset.size()), {});
   RETURN_IF_ERROR(g_tp->ExtendMetricsProto(serialized_filedescset.data(),
                                            serialized_filedescset.size()));
 
@@ -1293,7 +1315,8 @@ base::Status LoadMetricExtensionSql(const std::string& sql_root,
   return base::OkStatus();
 }
 
-base::Status LoadMetricExtension(const MetricExtension& extension) {
+base::Status LoadMetricExtension(const MetricExtension& extension,
+                                 google::protobuf::DescriptorPool& pool) {
   const std::string& disk_path = extension.disk_path();
   const std::string& virtual_path = extension.virtual_path();
 
@@ -1305,8 +1328,8 @@ base::Status LoadMetricExtension(const MetricExtension& extension) {
   // Note: Proto files must be loaded first, because we determine whether an SQL
   // file is a metric or not by checking if the name matches a field of the root
   // TraceMetrics proto.
-  RETURN_IF_ERROR(LoadMetricExtensionProtos(disk_path + "protos/",
-                                            kMetricProtoRoot + virtual_path));
+  RETURN_IF_ERROR(LoadMetricExtensionProtos(
+      disk_path + "protos/", kMetricProtoRoot + virtual_path, pool));
   RETURN_IF_ERROR(LoadMetricExtensionSql(disk_path + "sql/", virtual_path));
 
   return base::OkStatus();
@@ -1565,6 +1588,14 @@ base::Status TraceProcessorMain(int argc, char** argv) {
 
   if (options.dev) {
     config.enable_dev_features = true;
+    for (const auto& flag_pair : options.dev_flags) {
+      auto kv = base::SplitString(flag_pair, "=");
+      if (kv.size() != 2) {
+        PERFETTO_ELOG("Ignoring unknown dev flag format %s", flag_pair.c_str());
+        continue;
+      }
+      config.dev_flags.emplace(kv[0], kv[1]);
+    }
   }
 
   std::unique_ptr<TraceProcessor> tp = TraceProcessor::CreateInstance(config);
@@ -1585,11 +1616,21 @@ base::Status TraceProcessorMain(int argc, char** argv) {
     tp->EnableMetatrace(metatrace_config);
   }
 
+  // Descriptor pool used for printing output as textproto. Building on top of
+  // generated pool so default protos in google.protobuf.descriptor.proto are
+  // available.
+  // For some insane reason, the descriptor pool is not movable so we need to
+  // create it here so we can create references and pass it everywhere.
+  google::protobuf::DescriptorPool pool(
+      google::protobuf::DescriptorPool::generated_pool());
+  RETURN_IF_ERROR(PopulateDescriptorPool(pool, metric_extensions));
+
   // We load all the metric extensions even when --run-metrics arg is not there,
   // because we want the metrics to be available in interactive mode or when
   // used in UI using httpd.
+  // Metric extensions are also used to populate the descriptor pool.
   for (const auto& extension : metric_extensions) {
-    RETURN_IF_ERROR(LoadMetricExtension(extension));
+    RETURN_IF_ERROR(LoadMetricExtension(extension, pool));
   }
 
   base::TimeNanos t_load{};
@@ -1615,15 +1656,6 @@ base::Status TraceProcessorMain(int argc, char** argv) {
   if (!options.pre_metrics_path.empty()) {
     RETURN_IF_ERROR(RunQueries(options.pre_metrics_path, false));
   }
-
-  // Descriptor pool used for printing output as textproto. Building on top of
-  // generated pool so default protos in google.protobuf.descriptor.proto are
-  // available.
-  // For some insane reason, the descriptor pool is not movable so we need to
-  // create it here so we can create references and pass it everywhere.
-  google::protobuf::DescriptorPool pool(
-      google::protobuf::DescriptorPool::generated_pool());
-  RETURN_IF_ERROR(PopulateDescriptorPool(pool, metric_extensions));
 
   std::vector<MetricNameAndPath> metrics;
   if (!options.metric_names.empty()) {

@@ -7,6 +7,7 @@
 #include <limits>
 #include <memory>
 
+
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "quiche/quic/core/http/quic_spdy_session.h"
@@ -30,7 +31,7 @@ namespace quic {
 
 namespace {
 class QUIC_NO_EXPORT NoopWebTransportVisitor : public WebTransportVisitor {
-  void OnSessionReady(const spdy::Http2HeaderBlock&) override {}
+  void OnSessionReady() override {}
   void OnSessionClosed(WebTransportSessionError /*error_code*/,
                        const std::string& /*error_message*/) override {}
   void OnIncomingBidirectionalStreamAvailable() override {}
@@ -179,33 +180,11 @@ void WebTransportHttp3::HeadersReceived(const spdy::Http2HeaderBlock& headers) {
       rejection_reason_ = WebTransportHttp3RejectionReason::kWrongStatusCode;
       return;
     }
-    bool should_validate_version =
-        session_->ShouldValidateWebTransportVersion();
-    if (should_validate_version) {
-      auto draft_version_it = headers.find("sec-webtransport-http3-draft");
-      if (draft_version_it == headers.end()) {
-        QUIC_DVLOG(1) << ENDPOINT
-                      << "Received WebTransport headers from server without "
-                         "a draft version, rejecting.";
-        rejection_reason_ =
-            WebTransportHttp3RejectionReason::kMissingDraftVersion;
-        return;
-      }
-      if (draft_version_it->second != "draft02") {
-        QUIC_DVLOG(1) << ENDPOINT
-                      << "Received WebTransport headers from server with "
-                         "an unknown draft version ("
-                      << draft_version_it->second << "), rejecting.";
-        rejection_reason_ =
-            WebTransportHttp3RejectionReason::kUnsupportedDraftVersion;
-        return;
-      }
-    }
   }
 
   QUIC_DVLOG(1) << ENDPOINT << "WebTransport session " << id_ << " ready.";
   ready_ = true;
-  visitor_->OnSessionReady(headers);
+  visitor_->OnSessionReady();
   session_->ProcessBufferedWebTransportStreamsForSession(this);
 }
 
@@ -298,6 +277,14 @@ void WebTransportHttp3::SetDatagramMaxTimeInQueue(
   connect_stream_->SetMaxDatagramTimeInQueue(QuicTimeDelta(max_time_in_queue));
 }
 
+void WebTransportHttp3::NotifySessionDraining() {
+  if (!drain_sent_) {
+    connect_stream_->WriteCapsule(
+        quiche::Capsule(quiche::DrainWebTransportSessionCapsule()));
+    drain_sent_ = true;
+  }
+}
+
 void WebTransportHttp3::OnHttp3Datagram(QuicStreamId stream_id,
                                         absl::string_view payload) {
   QUICHE_DCHECK_EQ(stream_id, connect_stream_->id());
@@ -311,6 +298,15 @@ void WebTransportHttp3::MaybeNotifyClose() {
   close_notified_ = true;
   visitor_->OnSessionClosed(error_code_, error_message_);
 }
+
+void WebTransportHttp3::OnGoAwayReceived() {
+  if (drain_callback_ != nullptr) {
+    std::move(drain_callback_)();
+    drain_callback_ = nullptr;
+  }
+}
+
+void WebTransportHttp3::OnDrainSessionReceived() { OnGoAwayReceived(); }
 
 WebTransportHttp3UnidirectionalStream::WebTransportHttp3UnidirectionalStream(
     PendingStream* pending, QuicSpdySession* session)
@@ -436,7 +432,7 @@ void WebTransportHttp3UnidirectionalStream::OnWriteSideInDataRecvdState() {
 
 namespace {
 constexpr uint64_t kWebTransportMappedErrorCodeFirst = 0x52e4a40fa8db;
-constexpr uint64_t kWebTransportMappedErrorCodeLast = 0x52e4a40fa9e2;
+constexpr uint64_t kWebTransportMappedErrorCodeLast = 0x52e5ac983162;
 constexpr WebTransportStreamError kDefaultWebTransportError = 0;
 }  // namespace
 
@@ -454,7 +450,8 @@ absl::optional<WebTransportStreamError> Http3ErrorToWebTransport(
 
   uint64_t shifted = http3_error_code - kWebTransportMappedErrorCodeFirst;
   uint64_t result = shifted - shifted / 0x1f;
-  QUICHE_DCHECK_LE(result, std::numeric_limits<uint8_t>::max());
+  QUICHE_DCHECK_LE(result,
+                   std::numeric_limits<webtransport::StreamErrorCode>::max());
   return static_cast<WebTransportStreamError>(result);
 }
 

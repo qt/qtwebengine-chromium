@@ -12,17 +12,19 @@
 #include "include/core/SkDrawable.h"
 #include "include/core/SkPicture.h"
 #include "include/core/SkScalar.h"
+#include "include/core/SkSerialProcs.h"
 #include "include/private/base/SkFloatingPoint.h"
+#include "include/private/base/SkSpan_impl.h"
 #include "include/private/base/SkTFitsIn.h"
 #include "include/private/base/SkTemplates.h"
 #include "include/private/base/SkTo.h"
 #include "src/base/SkArenaAlloc.h"
+#include "src/base/SkBezierCurves.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkScalerContext.h"
 #include "src/core/SkWriteBuffer.h"
 #include "src/pathops/SkPathOpsCubic.h"
 #include "src/pathops/SkPathOpsPoint.h"
-#include "src/pathops/SkPathOpsQuad.h"
 #include "src/text/StrikeForGPU.h"
 
 #include <cstring>
@@ -33,6 +35,63 @@
 using namespace skia_private;
 using namespace skglyph;
 using namespace sktext;
+
+// -- SkPictureBackedGlyphDrawable -----------------------------------------------------------------
+sk_sp<SkPictureBackedGlyphDrawable>
+SkPictureBackedGlyphDrawable::MakeFromBuffer(SkReadBuffer& buffer) {
+    SkASSERT(buffer.isValid());
+
+    sk_sp<SkData> pictureData = buffer.readByteArrayAsData();
+
+    // Return nullptr if invalid or there an empty drawable, which is represented by nullptr.
+    if (!buffer.isValid() || pictureData->size() == 0) {
+        return nullptr;
+    }
+
+    // Propagate the outer buffer's allow-SkSL setting to the picture decoder, using the flag on
+    // the deserial procs.
+    SkDeserialProcs procs;
+    procs.fAllowSkSL = buffer.allowSkSL();
+    sk_sp<SkPicture> picture = SkPicture::MakeFromData(pictureData.get(), &procs);
+    if (!buffer.validate(picture != nullptr)) {
+        return nullptr;
+    }
+
+    return sk_make_sp<SkPictureBackedGlyphDrawable>(std::move(picture));
+}
+
+void SkPictureBackedGlyphDrawable::FlattenDrawable(SkWriteBuffer& buffer, SkDrawable* drawable) {
+    if (drawable == nullptr) {
+        buffer.writeByteArray(nullptr, 0);
+        return;
+    }
+
+    sk_sp<SkPicture> picture = drawable->makePictureSnapshot();
+    sk_sp<SkData> data = picture->serialize();
+
+    // If the picture is too big, or there is no picture, then drop by sending an empty byte array.
+    if (!SkTFitsIn<uint32_t>(data->size()) || data->size() == 0) {
+        buffer.writeByteArray(nullptr, 0);
+        return;
+    }
+
+    buffer.writeByteArray(data->data(), data->size());
+}
+
+SkPictureBackedGlyphDrawable::SkPictureBackedGlyphDrawable(sk_sp<SkPicture> picture)
+        : fPicture(std::move(picture)) {}
+
+SkRect SkPictureBackedGlyphDrawable::onGetBounds() {
+    return fPicture->cullRect();
+}
+
+size_t SkPictureBackedGlyphDrawable::onApproximateBytesUsed() {
+    return sizeof(SkPictureBackedGlyphDrawable) + fPicture->approximateBytesUsed();
+}
+
+void SkPictureBackedGlyphDrawable::onDraw(SkCanvas* canvas) {
+    canvas->drawPicture(fPicture);
+}
 
 //-- SkGlyph ---------------------------------------------------------------------------------------
 std::optional<SkGlyph> SkGlyph::MakeFromBuffer(SkReadBuffer& buffer) {
@@ -362,60 +421,26 @@ void SkGlyph::flattenDrawable(SkWriteBuffer& buffer) const {
     SkASSERT(this->setDrawableHasBeenCalled());
 
     if (this->isEmpty() || this->drawable() == nullptr) {
-        buffer.writeByteArray(nullptr, 0);
+        SkPictureBackedGlyphDrawable::FlattenDrawable(buffer, nullptr);
         return;
     }
 
-    sk_sp<SkPicture> picture{this->drawable()->newPictureSnapshot()};
-    sk_sp<SkData> data = picture->serialize();
-
-    // If the picture is too big, or there is no picture, then drop by sending an empty byte array.
-    if (!SkTFitsIn<uint32_t>(data->size()) || data->size() == 0) {
-        buffer.writeByteArray(nullptr, 0);
-        return;
-    }
-
-    buffer.writeByteArray(data->data(), data->size());
+    SkPictureBackedGlyphDrawable::FlattenDrawable(buffer, this->drawable());
 }
 
 size_t SkGlyph::addDrawableFromBuffer(SkReadBuffer& buffer, SkArenaAlloc* alloc) {
     SkASSERT(buffer.isValid());
 
-    // Class to turn the drawable into a picture to serialize.
-    class PictureBackedGlyphDrawable final : public SkDrawable {
-    public:
-        PictureBackedGlyphDrawable(sk_sp<SkPicture> self) : fSelf(std::move(self)) {}
-    private:
-        sk_sp<SkPicture> fSelf;
-        SkRect onGetBounds() override { return fSelf->cullRect();  }
-        size_t onApproximateBytesUsed() override {
-            return sizeof(PictureBackedGlyphDrawable) + fSelf->approximateBytesUsed();
-        }
-        void onDraw(SkCanvas* canvas) override { canvas->drawPicture(fSelf); }
-    };
-
-    size_t memoryIncrease = 0;
-
-    sk_sp<SkData> pictureData = buffer.readByteArrayAsData();
+    sk_sp<SkDrawable> drawable = SkPictureBackedGlyphDrawable::MakeFromBuffer(buffer);
     if (!buffer.isValid()) {
         return 0;
     }
 
-    // If the picture is too big, or there is no picture is indicated by an empty byte array.
-    if (pictureData->size() > 0) {
-        sk_sp<SkPicture> picture = SkPicture::MakeFromData(pictureData.get());
-        if (!buffer.validate(picture != nullptr)) {
-            return 0;
-        }
-        sk_sp<SkDrawable> drawable = sk_make_sp<PictureBackedGlyphDrawable>(std::move(picture));
-        if (this->setDrawable(alloc, std::move(drawable))) {
-            memoryIncrease += this->drawable()->approximateBytesUsed();
-        }
-    } else {
-        this->setDrawable(alloc, sk_sp<SkDrawable>(nullptr));
+    if (this->setDrawable(alloc, std::move(drawable))) {
+        return this->drawable()->approximateBytesUsed();
     }
 
-    return memoryIncrease;
+    return 0;
 }
 
 static std::tuple<SkScalar, SkScalar> calculate_path_gap(
@@ -424,6 +449,7 @@ static std::tuple<SkScalar, SkScalar> calculate_path_gap(
     // Left and Right of an ever expanding gap around the path.
     SkScalar left  = SK_ScalarMax,
              right = SK_ScalarMin;
+
     auto expandGap = [&left, &right](SkScalar v) {
         left  = std::min(left, v);
         right = std::max(right, v);
@@ -431,24 +457,23 @@ static std::tuple<SkScalar, SkScalar> calculate_path_gap(
 
     // Handle all the different verbs for the path.
     SkPoint pts[4];
-    auto addLine = [&expandGap, &pts](SkScalar offset) {
+    auto addLine = [&](SkScalar offset) {
         SkScalar t = sk_ieee_float_divide(offset - pts[0].fY, pts[1].fY - pts[0].fY);
         if (0 <= t && t < 1) {   // this handles divide by zero above
             expandGap(pts[0].fX + t * (pts[1].fX - pts[0].fX));
         }
     };
 
-    auto addQuad = [&expandGap, &pts](SkScalar offset) {
-        SkDQuad quad;
-        quad.set(pts);
-        double roots[2];
-        int count = quad.horizontalIntersect(offset, roots);
-        while (--count >= 0) {
-            expandGap(quad.ptAtT(roots[count]).asSkPoint().fX);
+    auto addQuad = [&](SkScalar offset) {
+        SkScalar intersectionStorage[2];
+        auto intersections = SkBezierQuad::IntersectWithHorizontalLine(
+                SkSpan(pts, 3), offset, intersectionStorage);
+        for (SkScalar x : intersections) {
+            expandGap(x);
         }
     };
 
-    auto addCubic = [&expandGap, &pts](SkScalar offset) {
+    auto addCubic = [&](SkScalar offset) {
         SkDCubic cubic;
         cubic.set(pts);
         double roots[3];
@@ -541,11 +566,11 @@ void SkGlyph::ensureIntercepts(const SkScalar* bounds, SkScalar scale, SkScalar 
 
     const SkGlyph::Intercept* match =
             [this](const SkScalar bounds[2]) -> const SkGlyph::Intercept* {
-                if (!fPathData) {
+                if (fPathData == nullptr) {
                     return nullptr;
                 }
                 const SkGlyph::Intercept* intercept = fPathData->fIntercept;
-                while (intercept) {
+                while (intercept != nullptr) {
                     if (bounds[0] == intercept->fBounds[0] && bounds[1] == intercept->fBounds[1]) {
                         return intercept;
                     }
@@ -554,7 +579,7 @@ void SkGlyph::ensureIntercepts(const SkScalar* bounds, SkScalar scale, SkScalar 
                 return nullptr;
             }(bounds);
 
-    if (match) {
+    if (match != nullptr) {
         if (match->fInterval[0] < match->fInterval[1]) {
             offsetResults(match, array, count);
         }

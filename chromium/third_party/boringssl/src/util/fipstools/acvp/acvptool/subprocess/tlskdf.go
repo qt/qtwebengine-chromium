@@ -55,7 +55,7 @@ type tlsKDFTestResponse struct {
 
 type tlsKDF struct{}
 
-func (k *tlsKDF) Process(vectorSet []byte, m Transactable) (interface{}, error) {
+func (k *tlsKDF) Process(vectorSet []byte, m Transactable) (any, error) {
 	var parsed tlsKDFVectorSet
 	if err := json.Unmarshal(vectorSet, &parsed); err != nil {
 		return nil, err
@@ -118,19 +118,23 @@ func (k *tlsKDF) Process(vectorSet []byte, m Transactable) (interface{}, error) 
 			binary.LittleEndian.PutUint32(outLenBytes[:], uint32(group.KeyBlockBits/8))
 			// TLS 1.0, 1.1, and 1.2 use a different order for the client and server
 			// randoms when computing the key block.
-			result2, err := m.Transact(method, 1, outLenBytes[:], result[0], []byte(keyBlockLabel), serverRandom, clientRandom)
-			if err != nil {
-				return nil, err
-			}
-
-			response.Tests = append(response.Tests, tlsKDFTestResponse{
-				ID:              test.ID,
-				MasterSecretHex: hex.EncodeToString(result[0]),
-				KeyBlockHex:     hex.EncodeToString(result2[0]),
+			m.TransactAsync(method, 1, [][]byte{outLenBytes[:], result[0], []byte(keyBlockLabel), serverRandom, clientRandom}, func(result2 [][]byte) error {
+				response.Tests = append(response.Tests, tlsKDFTestResponse{
+					ID:              test.ID,
+					MasterSecretHex: hex.EncodeToString(result[0]),
+					KeyBlockHex:     hex.EncodeToString(result2[0]),
+				})
+				return nil
 			})
 		}
 
-		ret = append(ret, response)
+		m.Barrier(func() {
+			ret = append(ret, response)
+		})
+	}
+
+	if err := m.Flush(); err != nil {
+		return nil, err
 	}
 
 	return ret, nil

@@ -141,34 +141,37 @@ AVIF_API void avifFree(void * p);
 typedef enum avifResult
 {
     AVIF_RESULT_OK = 0,
-    AVIF_RESULT_UNKNOWN_ERROR,
-    AVIF_RESULT_INVALID_FTYP,
-    AVIF_RESULT_NO_CONTENT,
-    AVIF_RESULT_NO_YUV_FORMAT_SELECTED,
-    AVIF_RESULT_REFORMAT_FAILED,
-    AVIF_RESULT_UNSUPPORTED_DEPTH,
-    AVIF_RESULT_ENCODE_COLOR_FAILED,
-    AVIF_RESULT_ENCODE_ALPHA_FAILED,
-    AVIF_RESULT_BMFF_PARSE_FAILED,
-    AVIF_RESULT_NO_AV1_ITEMS_FOUND,
-    AVIF_RESULT_DECODE_COLOR_FAILED,
-    AVIF_RESULT_DECODE_ALPHA_FAILED,
-    AVIF_RESULT_COLOR_ALPHA_SIZE_MISMATCH,
-    AVIF_RESULT_ISPE_SIZE_MISMATCH,
-    AVIF_RESULT_NO_CODEC_AVAILABLE,
-    AVIF_RESULT_NO_IMAGES_REMAINING,
-    AVIF_RESULT_INVALID_EXIF_PAYLOAD,
-    AVIF_RESULT_INVALID_IMAGE_GRID,
-    AVIF_RESULT_INVALID_CODEC_SPECIFIC_OPTION,
-    AVIF_RESULT_TRUNCATED_DATA,
-    AVIF_RESULT_IO_NOT_SET, // the avifIO field of avifDecoder is not set
-    AVIF_RESULT_IO_ERROR,
-    AVIF_RESULT_WAITING_ON_IO, // similar to EAGAIN/EWOULDBLOCK, this means the avifIO doesn't have necessary data available yet
-    AVIF_RESULT_INVALID_ARGUMENT, // an argument passed into this function is invalid
-    AVIF_RESULT_NOT_IMPLEMENTED,  // a requested code path is not (yet) implemented
-    AVIF_RESULT_OUT_OF_MEMORY,
-    AVIF_RESULT_CANNOT_CHANGE_SETTING, // a setting that can't change is changed during encoding
-    AVIF_RESULT_INCOMPATIBLE_IMAGE     // the image is incompatible with already encoded images
+    AVIF_RESULT_UNKNOWN_ERROR = 1,
+    AVIF_RESULT_INVALID_FTYP = 2,
+    AVIF_RESULT_NO_CONTENT = 3,
+    AVIF_RESULT_NO_YUV_FORMAT_SELECTED = 4,
+    AVIF_RESULT_REFORMAT_FAILED = 5,
+    AVIF_RESULT_UNSUPPORTED_DEPTH = 6,
+    AVIF_RESULT_ENCODE_COLOR_FAILED = 7,
+    AVIF_RESULT_ENCODE_ALPHA_FAILED = 8,
+    AVIF_RESULT_BMFF_PARSE_FAILED = 9,
+    AVIF_RESULT_MISSING_IMAGE_ITEM = 10,
+    AVIF_RESULT_DECODE_COLOR_FAILED = 11,
+    AVIF_RESULT_DECODE_ALPHA_FAILED = 12,
+    AVIF_RESULT_COLOR_ALPHA_SIZE_MISMATCH = 13,
+    AVIF_RESULT_ISPE_SIZE_MISMATCH = 14,
+    AVIF_RESULT_NO_CODEC_AVAILABLE = 15,
+    AVIF_RESULT_NO_IMAGES_REMAINING = 16,
+    AVIF_RESULT_INVALID_EXIF_PAYLOAD = 17,
+    AVIF_RESULT_INVALID_IMAGE_GRID = 18,
+    AVIF_RESULT_INVALID_CODEC_SPECIFIC_OPTION = 19,
+    AVIF_RESULT_TRUNCATED_DATA = 20,
+    AVIF_RESULT_IO_NOT_SET = 21, // the avifIO field of avifDecoder is not set
+    AVIF_RESULT_IO_ERROR = 22,
+    AVIF_RESULT_WAITING_ON_IO = 23, // similar to EAGAIN/EWOULDBLOCK, this means the avifIO doesn't have necessary data available yet
+    AVIF_RESULT_INVALID_ARGUMENT = 24, // an argument passed into this function is invalid
+    AVIF_RESULT_NOT_IMPLEMENTED = 25,  // a requested code path is not (yet) implemented
+    AVIF_RESULT_OUT_OF_MEMORY = 26,
+    AVIF_RESULT_CANNOT_CHANGE_SETTING = 27, // a setting that can't change is changed during encoding
+    AVIF_RESULT_INCOMPATIBLE_IMAGE = 28,    // the image is incompatible with already encoded images
+
+    // Kept for backward compatibility; please use the symbols above instead.
+    AVIF_RESULT_NO_AV1_ITEMS_FOUND = AVIF_RESULT_MISSING_IMAGE_ITEM
 } avifResult;
 
 AVIF_API const char * avifResultToString(avifResult result);
@@ -331,7 +334,12 @@ enum
     AVIF_MATRIX_COEFFICIENTS_SMPTE2085 = 11,
     AVIF_MATRIX_COEFFICIENTS_CHROMA_DERIVED_NCL = 12,
     AVIF_MATRIX_COEFFICIENTS_CHROMA_DERIVED_CL = 13,
-    AVIF_MATRIX_COEFFICIENTS_ICTCP = 14
+    AVIF_MATRIX_COEFFICIENTS_ICTCP = 14,
+#if defined(AVIF_ENABLE_EXPERIMENTAL_YCGCO_R)
+    AVIF_MATRIX_COEFFICIENTS_YCGCO_RE = 15,
+    AVIF_MATRIX_COEFFICIENTS_YCGCO_RO = 16,
+#endif
+    AVIF_MATRIX_COEFFICIENTS_LAST
 };
 typedef uint16_t avifMatrixCoefficients; // AVIF_MATRIX_COEFFICIENTS_*
 
@@ -717,7 +725,8 @@ typedef enum avifCodecChoice
     AVIF_CODEC_CHOICE_DAV1D,   // Decode only
     AVIF_CODEC_CHOICE_LIBGAV1, // Decode only
     AVIF_CODEC_CHOICE_RAV1E,   // Encode only
-    AVIF_CODEC_CHOICE_SVT      // Encode only
+    AVIF_CODEC_CHOICE_SVT,     // Encode only
+    AVIF_CODEC_CHOICE_AVM      // Experimental (AV2)
 } avifCodecChoice;
 
 typedef enum avifCodecFlag
@@ -1129,7 +1138,8 @@ typedef struct avifEncoder
     // settings (see Notes above)
     int maxThreads;
     int speed;
-    int keyframeInterval;     // How many frames between automatic forced keyframes; 0 to disable (default).
+    int keyframeInterval;     // Any set of |keyframeInterval| consecutive frames will have at least one keyframe. When it is 0,
+                              // there is no such restriction.
     uint64_t timescale;       // timescale of the media (Hz)
     int repetitionCount;      // Number of times the image sequence should be repeated. This can also be set to
                               // AVIF_REPETITION_COUNT_INFINITE for infinite repetitions.  Only applicable for image sequences.

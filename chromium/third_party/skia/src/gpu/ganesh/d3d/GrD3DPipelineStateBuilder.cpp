@@ -13,6 +13,7 @@
 #include "include/gpu/d3d/GrD3DTypes.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkTraceEvent.h"
+#include "src/gpu/PipelineUtils.h"
 #include "src/gpu/ganesh/GrAutoLocaleSetter.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrPersistentCacheUtils.h"
@@ -73,10 +74,6 @@ void GrD3DPipelineStateBuilder::finalizeFragmentSecondaryColor(GrShaderVar& outp
     outputColor.addLayoutQualifier("location = 0, index = 1");
 }
 
-// Print the source code for all shaders generated.
-static const bool gPrintSKSL = false;
-static const bool gPrintHLSL = false;
-
 static gr_cp<ID3DBlob> GrCompileHLSLShader(GrD3DGpu* gpu,
                                            const std::string& hlsl,
                                            SkSL::ProgramKind kind) {
@@ -115,14 +112,14 @@ static gr_cp<ID3DBlob> GrCompileHLSLShader(GrD3DGpu* gpu,
 bool GrD3DPipelineStateBuilder::loadHLSLFromCache(SkReadBuffer* reader, gr_cp<ID3DBlob> shaders[]) {
 
     std::string hlsl[kGrShaderTypeCount];
-    SkSL::Program::Inputs inputs[kGrShaderTypeCount];
+    SkSL::Program::Interface intfs[kGrShaderTypeCount];
 
-    if (!GrPersistentCacheUtils::UnpackCachedShaders(reader, hlsl, inputs, kGrShaderTypeCount)) {
+    if (!GrPersistentCacheUtils::UnpackCachedShaders(reader, hlsl, intfs, kGrShaderTypeCount)) {
         return false;
     }
 
     auto compile = [&](SkSL::ProgramKind kind, GrShaderType shaderType) {
-        if (inputs[shaderType].fUseFlipRTUniform) {
+        if (intfs[shaderType].fUseFlipRTUniform) {
             this->addRTFlipUniform(SKSL_RTFLIP_NAME);
         }
         shaders[shaderType] = GrCompileHLSLShader(fGpu, hlsl[shaderType], kind);
@@ -133,12 +130,11 @@ bool GrD3DPipelineStateBuilder::loadHLSLFromCache(SkReadBuffer* reader, gr_cp<ID
            compile(SkSL::ProgramKind::kFragment, kFragment_GrShaderType);
 }
 
-gr_cp<ID3DBlob> GrD3DPipelineStateBuilder::compileD3DProgram(
-        SkSL::ProgramKind kind,
-        const std::string& sksl,
-        const SkSL::ProgramSettings& settings,
-        SkSL::Program::Inputs* outInputs,
-        std::string* outHLSL) {
+gr_cp<ID3DBlob> GrD3DPipelineStateBuilder::compileD3DProgram(SkSL::ProgramKind kind,
+                                                             const std::string& sksl,
+                                                             const SkSL::ProgramSettings& settings,
+                                                             SkSL::Program::Interface* outInterface,
+                                                             std::string* outHLSL) {
 #ifdef SK_DEBUG
     std::string src = SkShaderUtils::PrettyPrint(sksl);
 #else
@@ -153,21 +149,21 @@ gr_cp<ID3DBlob> GrD3DPipelineStateBuilder::compileD3DProgram(
                                    fGpu->shaderCompiler()->errorText().c_str());
         return gr_cp<ID3DBlob>();
     }
-    *outInputs = program->fInputs;
+    *outInterface = program->fInterface;
 
-    if (gPrintSKSL || gPrintHLSL) {
+    if (skgpu::gPrintSKSL || skgpu::gPrintBackendSL) {
         SkShaderUtils::PrintShaderBanner(kind);
-        if (gPrintSKSL) {
+        if (skgpu::gPrintSKSL) {
             SkDebugf("SKSL:\n");
             SkShaderUtils::PrintLineByLine(SkShaderUtils::PrettyPrint(sksl));
         }
-        if (gPrintHLSL) {
+        if (skgpu::gPrintBackendSL) {
             SkDebugf("HLSL:\n");
             SkShaderUtils::PrintLineByLine(SkShaderUtils::PrettyPrint(*outHLSL));
         }
     }
 
-    if (program->fInputs.fUseFlipRTUniform) {
+    if (program->fInterface.fUseFlipRTUniform) {
         this->addRTFlipUniform(SKSL_RTFLIP_NAME);
     }
 
@@ -583,7 +579,7 @@ std::unique_ptr<GrD3DPipelineState> GrD3DPipelineStateBuilder::finalize() {
     if (kHLSL_Tag == shaderType && this->loadHLSLFromCache(&reader, shaders)) {
         // We successfully loaded and compiled HLSL
     } else {
-        SkSL::Program::Inputs inputs[kGrShaderTypeCount];
+        SkSL::Program::Interface intfs[kGrShaderTypeCount];
         std::string* sksl[kGrShaderTypeCount] = {
             &fVS.fCompilerString,
             &fFS.fCompilerString,
@@ -592,7 +588,7 @@ std::unique_ptr<GrD3DPipelineState> GrD3DPipelineStateBuilder::finalize() {
         std::string hlsl[kGrShaderTypeCount];
 
         if (kSKSL_Tag == shaderType) {
-            if (GrPersistentCacheUtils::UnpackCachedShaders(&reader, cached_sksl, inputs,
+            if (GrPersistentCacheUtils::UnpackCachedShaders(&reader, cached_sksl, intfs,
                                                             kGrShaderTypeCount)) {
                 for (int i = 0; i < kGrShaderTypeCount; ++i) {
                     sksl[i] = &cached_sksl[i];
@@ -601,8 +597,8 @@ std::unique_ptr<GrD3DPipelineState> GrD3DPipelineStateBuilder::finalize() {
         }
 
         auto compile = [&](SkSL::ProgramKind kind, GrShaderType shaderType) {
-            shaders[shaderType] = this->compileD3DProgram(kind, *sksl[shaderType], settings,
-                                                          &inputs[shaderType], &hlsl[shaderType]);
+            shaders[shaderType] = this->compileD3DProgram(
+                    kind, *sksl[shaderType], settings, &intfs[shaderType], &hlsl[shaderType]);
             return shaders[shaderType].get();
         };
 
@@ -625,7 +621,7 @@ std::unique_ptr<GrD3DPipelineState> GrD3DPipelineStateBuilder::finalize() {
                     SkData::MakeWithoutCopy(this->desc().asKey(), this->desc().initialKeyLength());
             SkString description = GrProgramDesc::Describe(fProgramInfo, *this->caps());
             sk_sp<SkData> data = GrPersistentCacheUtils::PackCachedShaders(
-                    cacheSkSL ? kSKSL_Tag : kHLSL_Tag, hlsl, inputs, kGrShaderTypeCount);
+                    cacheSkSL ? kSKSL_Tag : kHLSL_Tag, hlsl, intfs, kGrShaderTypeCount);
             persistentCache->store(*key, *data, description);
         }
     }
@@ -642,6 +638,9 @@ std::unique_ptr<GrD3DPipelineState> GrD3DPipelineStateBuilder::finalize() {
             std::move(shaders[kFragment_GrShaderType]),
             rt->dxgiFormat(), rt->stencilDxgiFormat(), rt->sampleQualityPattern());
     sk_sp<GrD3DPipeline> pipeline = GrD3DPipeline::Make(std::move(pipelineState));
+    if (!pipeline) {
+        return nullptr;
+    }
 
     return std::unique_ptr<GrD3DPipelineState>(
             new GrD3DPipelineState(std::move(pipeline),

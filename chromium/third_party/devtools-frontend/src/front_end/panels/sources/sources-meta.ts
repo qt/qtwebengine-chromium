@@ -7,13 +7,14 @@ import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
-import * as Bindings from '../../models/bindings/bindings.js';
+import * as Breakpoints from '../../models/breakpoints/breakpoints.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import * as ObjectUI from '../../ui/legacy/components/object_ui/object_ui.js';
 import * as QuickOpen from '../../ui/legacy/components/quick_open/quick_open.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
 import type * as Sources from './sources.js';
+import type * as SourcesComponents from './components/components.js';
 
 const UIStrings = {
   /**
@@ -412,12 +413,20 @@ const UIStrings = {
 const str_ = i18n.i18n.registerUIStrings('panels/sources/sources-meta.ts', UIStrings);
 const i18nLazyString = i18n.i18n.getLazilyComputedLocalizedString.bind(undefined, str_);
 let loadedSourcesModule: (typeof Sources|undefined);
+let loadedSourcesComponentsModule: (typeof SourcesComponents|undefined);
 
 async function loadSourcesModule(): Promise<typeof Sources> {
   if (!loadedSourcesModule) {
     loadedSourcesModule = await import('./sources.js');
   }
   return loadedSourcesModule;
+}
+
+async function loadSourcesComponentsModule(): Promise<typeof SourcesComponents> {
+  if (!loadedSourcesComponentsModule) {
+    loadedSourcesComponentsModule = await import('./components/components.js');
+  }
+  return loadedSourcesComponentsModule;
 }
 
 function maybeRetrieveContextTypes<T = unknown>(getClassCallBack: (sourcesModule: typeof Sources) => T[]): T[] {
@@ -532,8 +541,8 @@ UI.ViewManager.registerViewExtension({
   title: i18nLazyString(UIStrings.breakpoints),
   persistence: UI.ViewManager.ViewPersistence.PERMANENT,
   async loadView() {
-    const Sources = await loadSourcesModule();
-    return Sources.BreakpointsSidebarPane.BreakpointsSidebarPane.instance();
+    const SourcesComponents = await loadSourcesComponentsModule();
+    return SourcesComponents.BreakpointsView.BreakpointsView.instance().wrapper as UI.Widget.Widget;
   },
 });
 
@@ -1833,7 +1842,7 @@ Common.Revealer.registerRevealer({
 Common.Revealer.registerRevealer({
   contextTypes() {
     return [
-      Bindings.BreakpointManager.BreakpointLocation,
+      Breakpoints.BreakpointManager.BreakpointLocation,
     ];
   },
   destination: Common.Revealer.RevealerDestination.SOURCES_PANEL,
@@ -1858,8 +1867,8 @@ UI.Context.registerListener({
     return [SDK.DebuggerModel.DebuggerPausedDetails];
   },
   async loadListener() {
-    const Sources = await loadSourcesModule();
-    return Sources.BreakpointsSidebarPane.BreakpointsSidebarController.instance();
+    const SourcesComponents = await loadSourcesComponentsModule();
+    return SourcesComponents.BreakpointsView.BreakpointsSidebarController.instance();
   },
 });
 

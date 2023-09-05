@@ -6,6 +6,12 @@
 
 // DevToolsAPI ----------------------------------------------------------------
 
+/**
+ * @typedef {{runtimeAllowedHosts: !Array<string>, runtimeBlockedHosts: !Array<string>}} ExtensionHostsPolicy
+ */
+/**
+ * @typedef {{startPage: string, name: string, exposeExperimentalAPIs: boolean, hostsPolicy?: ExtensionHostsPolicy}} ExtensionDescriptor
+ */
 const DevToolsAPIImpl = class {
   constructor() {
     /**
@@ -24,7 +30,7 @@ const DevToolsAPIImpl = class {
     this._pendingExtensionDescriptors = [];
 
     /**
-     * @type {?function(!ExtensionDescriptor)}
+     * @type {?function(!ExtensionDescriptor): void}
      */
     this._addExtensionCallback = null;
 
@@ -400,6 +406,7 @@ const EnumeratedHistogram = {
   CSSHintShown: 'DevTools.CSSHintShown',
   DeveloperResourceLoaded: 'DevTools.DeveloperResourceLoaded',
   DeveloperResourceScheme: 'DevTools.DeveloperResourceScheme',
+  ElementsSidebarTabShown: 'DevTools.Elements.SidebarTabShown',
   ExperimentDisabled: 'DevTools.ExperimentDisabled',
   ExperimentEnabled: 'DevTools.ExperimentEnabled',
   ExperimentEnabledAtLaunch: 'DevTools.ExperimentEnabledAtLaunch',
@@ -426,6 +433,8 @@ const EnumeratedHistogram = {
   RecordingReplayStarted: 'DevTools.RecordingReplayStarted',
   RecordingToggled: 'DevTools.RecordingToggled',
   SidebarPaneShown: 'DevTools.SidebarPaneShown',
+  SourcesSidebarTabShown: 'DevTools.Sources.SidebarTabShown',
+  SourcesPanelFileDebugged: 'DevTools.SourcesPanelFileDebugged',
   SourcesPanelFileOpened: 'DevTools.SourcesPanelFileOpened',
   NetworkPanelResponsePreviewOpened: 'DevTools.NetworkPanelResponsePreviewOpened',
   StyleTextCopied: 'DevTools.StyleTextCopied',
@@ -433,6 +442,11 @@ const EnumeratedHistogram = {
   ColorConvertedFrom: 'DevTools.ColorConvertedFrom',
   ColorPickerOpenedFrom: 'DevTools.ColorPickerOpenedFrom',
   CSSPropertyDocumentation: 'DevTools.CSSPropertyDocumentation',
+  InlineScriptParsed: 'DevTools.InlineScriptParsed',
+  VMInlineScriptTypeShown: 'DevTools.VMInlineScriptShown',
+  BreakpointsRestoredFromStorageCount: 'DevTools.BreakpointsRestoredFromStorageCount',
+  SwatchActivated: 'DevTools.SwatchActivated',
+  BadgeActivated: 'DevTools.BadgeActivated',
 };
 
 /**
@@ -689,6 +703,19 @@ const InspectorFrontendHostImpl = class {
    */
   sendMessageToBackend(message) {
     DevToolsAPI.sendMessageToEmbedder('dispatchProtocolMessage', [message], null);
+  }
+
+  /**
+   * @override
+   * @param {string} histogramName
+   * @param {number} sample
+   * @param {number} min
+   * @param {number} exclusiveMax
+   * @param {number} bucketSize
+   */
+  recordCountHistogram(histogramName, sample, min, exclusiveMax, bucketSize) {
+    DevToolsAPI.sendMessageToEmbedder(
+        'recordCountHistogram', [histogramName, sample, min, exclusiveMax, bucketSize], null);
   }
 
   /**

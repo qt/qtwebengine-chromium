@@ -72,24 +72,29 @@ bool StatelessValidation::manual_PreCallValidateCreateImage(VkDevice device, con
                              "pCreateInfo->extent.depth must be 1.");
         }
 
-        if (pCreateInfo->imageType == VK_IMAGE_TYPE_2D) {
-            if (image_flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT) {
-                if (pCreateInfo->extent.width != pCreateInfo->extent.height) {
-                    skip |= LogError(device, "VUID-VkImageCreateInfo-imageType-00954",
-                                     "vkCreateImage(): pCreateInfo->flags contains VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT, but "
-                                     "pCreateInfo->extent.width (=%" PRIu32 ") and pCreateInfo->extent.height (=%" PRIu32
-                                     ") are not equal.",
-                                     pCreateInfo->extent.width, pCreateInfo->extent.height);
-                }
-
-                if (pCreateInfo->arrayLayers < 6) {
-                    skip |= LogError(device, "VUID-VkImageCreateInfo-imageType-00954",
-                                     "vkCreateImage(): pCreateInfo->flags contains VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT, but "
-                                     "pCreateInfo->arrayLayers (=%" PRIu32 ") is not greater than or equal to 6.",
-                                     pCreateInfo->arrayLayers);
-                }
+        if (pCreateInfo->flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT) {
+            const VkImageType type = pCreateInfo->imageType;
+            const auto width = pCreateInfo->extent.width;
+            const auto height = pCreateInfo->extent.height;
+            if (type != VK_IMAGE_TYPE_2D) {
+                skip |= LogError(device, "VUID-VkImageCreateInfo-flags-00949",
+                                 "vkCreateImage(): Image type %s is incompatible with VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT.",
+                                 string_VkImageType(type));
             }
 
+            if (width != height) {
+                skip |= LogError(device, "VUID-VkImageCreateInfo-flags-08865",
+                                 "vkCreateImage(): extent.width (=%" PRIu32 ") not equal to extent.height (=%" PRIu32 ").",
+                                 pCreateInfo->extent.width, pCreateInfo->extent.height);
+            }
+
+            if (pCreateInfo->arrayLayers < 6) {
+                skip |= LogError(device, "VUID-VkImageCreateInfo-flags-08866",
+                                 "vkCreateImage(): arrayLayers (=%" PRIu32 ") is less than 6.", pCreateInfo->arrayLayers);
+            }
+        }
+
+        if (pCreateInfo->imageType == VK_IMAGE_TYPE_2D) {
             if (pCreateInfo->extent.depth != 1) {
                 skip |= LogError(
                     device, "VUID-VkImageCreateInfo-imageType-00957",
@@ -580,7 +585,7 @@ bool StatelessValidation::manual_PreCallValidateCreateImage(VkDevice device, con
                 (VK_IMAGE_COMPRESSION_DEFAULT_EXT | VK_IMAGE_COMPRESSION_FIXED_RATE_DEFAULT_EXT |
                  VK_IMAGE_COMPRESSION_FIXED_RATE_EXPLICIT_EXT | VK_IMAGE_COMPRESSION_DISABLED_EXT);
             skip |= ValidateFlags("vkCreateImage", "VkImageCompressionControlEXT::flags", "VkImageCompressionFlagsEXT",
-                                  AllVkImageCompressionFlagBitsEXT, image_compression_control->flags, kRequiredSingleBit,
+                                  AllVkImageCompressionFlagBitsEXT, image_compression_control->flags, kOptionalSingleBit,
                                   "VUID-VkImageCompressionControlEXT-flags-06747");
 
             if (image_compression_control->flags == VK_IMAGE_COMPRESSION_FIXED_RATE_EXPLICIT_EXT &&
@@ -669,7 +674,7 @@ bool StatelessValidation::manual_PreCallValidateCreateImageView(VkDevice device,
         }
 
         auto astc_decode_mode = LvlFindInChain<VkImageViewASTCDecodeModeEXT>(pCreateInfo->pNext);
-        if (IsExtEnabled(device_extensions.vk_ext_astc_decode_mode) && (astc_decode_mode != nullptr)) {
+        if (astc_decode_mode != nullptr) {
             if ((astc_decode_mode->decodeMode != VK_FORMAT_R16G16B16A16_SFLOAT) &&
                 (astc_decode_mode->decodeMode != VK_FORMAT_R8G8B8A8_UNORM) &&
                 (astc_decode_mode->decodeMode != VK_FORMAT_E5B9G9R9_UFLOAT_PACK32)) {

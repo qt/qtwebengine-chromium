@@ -50,7 +50,6 @@ typedef struct {
   MOTION_MODE best_motion_mode;
   WarpedMotionParams wm_params;
   int num_proj_ref;
-  uint8_t blk_skip[MAX_MIB_SIZE * MAX_MIB_SIZE];
   PALETTE_MODE_INFO pmi;
   int64_t best_sse;
 } BEST_PICKMODE;

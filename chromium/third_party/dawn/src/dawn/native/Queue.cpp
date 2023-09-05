@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "dawn/common/Constants.h"
+#include "dawn/common/ityp_span.h"
 #include "dawn/native/Buffer.h"
 #include "dawn/native/CommandBuffer.h"
 #include "dawn/native/CommandEncoder.h"
@@ -197,11 +198,16 @@ ObjectType QueueBase::GetType() const {
 }
 
 void QueueBase::APISubmit(uint32_t commandCount, CommandBufferBase* const* commands) {
-    SubmitInternal(commandCount, commands);
+    MaybeError result = SubmitInternal(commandCount, commands);
 
+    // Destroy the command buffers even if SubmitInternal failed. (crbug.com/dawn/1863)
     for (uint32_t i = 0; i < commandCount; ++i) {
         commands[i]->Destroy();
     }
+
+    DAWN_UNUSED(GetDevice()->ConsumedError(
+        std::move(result), "calling %s.Submit(%s)", this,
+        ityp::span<uint32_t, CommandBufferBase* const>(commands, commandCount)));
 }
 
 void QueueBase::APIOnSubmittedWorkDone(uint64_t signalValue,
@@ -286,7 +292,9 @@ void QueueBase::APIWriteBuffer(BufferBase* buffer,
                                uint64_t bufferOffset,
                                const void* data,
                                size_t size) {
-    DAWN_UNUSED(GetDevice()->ConsumedError(WriteBuffer(buffer, bufferOffset, data, size)));
+    DAWN_UNUSED(GetDevice()->ConsumedError(WriteBuffer(buffer, bufferOffset, data, size),
+                                           "calling %s.WriteBuffer(%s, %s, (%d bytes))", this,
+                                           buffer, bufferOffset, size));
 }
 
 MaybeError QueueBase::WriteBuffer(BufferBase* buffer,
@@ -328,7 +336,9 @@ void QueueBase::APIWriteTexture(const ImageCopyTexture* destination,
                                 const TextureDataLayout* dataLayout,
                                 const Extent3D* writeSize) {
     DAWN_UNUSED(GetDevice()->ConsumedError(
-        WriteTextureInternal(destination, data, dataSize, *dataLayout, writeSize)));
+        WriteTextureInternal(destination, data, dataSize, *dataLayout, writeSize),
+        "calling %s.WriteTexture(%s, (%s bytes), %s, %s)", destination, dataSize, dataLayout,
+        writeSize));
 }
 
 MaybeError QueueBase::WriteTextureInternal(const ImageCopyTexture* destination,
@@ -538,24 +548,24 @@ MaybeError QueueBase::ValidateWriteTexture(const ImageCopyTexture* destination,
     return {};
 }
 
-void QueueBase::SubmitInternal(uint32_t commandCount, CommandBufferBase* const* commands) {
+MaybeError QueueBase::SubmitInternal(uint32_t commandCount, CommandBufferBase* const* commands) {
     DeviceBase* device = GetDevice();
-    if (device->ConsumedError(device->ValidateIsAlive())) {
-        // If device is lost, don't let any commands be submitted
-        return;
-    }
+
+    // If device is lost, don't let any commands be submitted
+    DAWN_TRY(device->ValidateIsAlive());
 
     TRACE_EVENT0(device->GetPlatform(), General, "Queue::Submit");
     if (device->IsValidationEnabled()) {
-        if (device->ConsumedError(ValidateSubmit(commandCount, commands))) {
-            return;
-        }
+        DAWN_TRY(ValidateSubmit(commandCount, commands));
     }
     ASSERT(!IsError());
 
-    if (device->ConsumedError(SubmitImpl(commandCount, commands))) {
-        return;
-    }
+    DAWN_TRY(SubmitImpl(commandCount, commands));
+
+    // Call Tick() to flush pending work.
+    DAWN_TRY(device->Tick());
+
+    return {};
 }
 
 }  // namespace dawn::native

@@ -4,6 +4,7 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+#include "src/gpu/ganesh/Device.h"
 
 #include "include/core/SkAlphaType.h"
 #include "include/core/SkBitmap.h"
@@ -41,6 +42,7 @@
 #include "include/gpu/GrContextOptions.h"
 #include "include/gpu/GrRecordingContext.h"
 #include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/private/SkColorData.h"
 #include "include/private/base/SingleOwner.h"
 #include "include/private/base/SkAssert.h"
@@ -48,29 +50,29 @@
 #include "include/private/chromium/Slug.h"  // IWYU pragma: keep
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/base/SkTLazy.h"
-#include "src/core/SkBlendModePriv.h"
 #include "src/core/SkDevice.h"
 #include "src/core/SkDrawBase.h"
 #include "src/core/SkImageFilterCache.h"
+#include "src/core/SkImageFilterTypes.h"
 #include "src/core/SkImageInfoPriv.h"
 #include "src/core/SkLatticeIter.h"
-#include "src/core/SkMaskFilterBase.h"
 #include "src/core/SkMatrixProvider.h"
 #include "src/core/SkMeshPriv.h"
 #include "src/core/SkRasterClip.h"
 #include "src/core/SkSpecialImage.h"
+#include "src/core/SkStrikeCache.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/core/SkVerticesPriv.h"
 #include "src/gpu/SkBackingFit.h"
 #include "src/gpu/Swizzle.h"
 #include "src/gpu/ganesh/ClipStack.h"
-#include "src/gpu/ganesh/Device_v1.h"
 #include "src/gpu/ganesh/GrAuditTrail.h"
 #include "src/gpu/ganesh/GrBlurUtils.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrColorInfo.h"
 #include "src/gpu/ganesh/GrColorSpaceXform.h"
 #include "src/gpu/ganesh/GrFragmentProcessor.h"
+#include "src/gpu/ganesh/GrFragmentProcessors.h"
 #include "src/gpu/ganesh/GrImageInfo.h"
 #include "src/gpu/ganesh/GrPaint.h"
 #include "src/gpu/ganesh/GrProxyProvider.h"
@@ -83,6 +85,7 @@
 #include "src/gpu/ganesh/GrTextureProxy.h"
 #include "src/gpu/ganesh/GrTracing.h"
 #include "src/gpu/ganesh/GrUserStencilSettings.h"
+#include "src/gpu/ganesh/GrXferProcessor.h"
 #include "src/gpu/ganesh/SkGr.h"
 #include "src/gpu/ganesh/SurfaceContext.h"
 #include "src/gpu/ganesh/SurfaceDrawContext.h"
@@ -93,19 +96,20 @@
 #include "src/gpu/ganesh/geometry/GrStyledShape.h"
 #include "src/gpu/ganesh/image/GrImageUtils.h"
 #include "src/text/GlyphRun.h"
+#include "src/text/gpu/SlugImpl.h"
+#include "src/text/gpu/SubRunContainer.h"
 
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <tuple>
 #include <utility>
 
 class GrBackendSemaphore;
-enum class SkFilterMode;
 struct GrShaderCaps;
 struct SkDrawShadowRec;
-struct SkSamplingOptions;
 
 #define ASSERT_SINGLE_OWNER SKGPU_ASSERT_SINGLE_OWNER(fContext->priv().singleOwner())
 
@@ -579,7 +583,7 @@ void Device::drawEdgeAAQuad(const SkRect& rect,
     GrPaint grPaint;
     grPaint.setColor4f(dstColor);
     if (mode != SkBlendMode::kSrcOver) {
-        grPaint.setXPFactory(SkBlendMode_AsXPFactory(mode));
+        grPaint.setXPFactory(GrXPFactory::FromBlendMode(mode));
     }
 
     if (clip) {
@@ -606,9 +610,9 @@ void Device::drawRRect(const SkRRect& rrect, const SkPaint& paint) {
     ASSERT_SINGLE_OWNER
     GR_CREATE_TRACE_MARKER_CONTEXT("skgpu::ganesh::Device", "drawRRect", fContext.get());
 
-    SkMaskFilterBase* mf = as_MFB(paint.getMaskFilter());
+    auto mf = paint.getMaskFilter();
     if (mf) {
-        if (mf->hasFragmentProcessor()) {
+        if (GrFragmentProcessors::IsSupported(mf)) {
             mf = nullptr; // already handled in SkPaintToGrPaint
         }
     }
@@ -804,6 +808,10 @@ void Device::drawPath(const SkPath& origSrcPath, const SkPaint& paint, bool path
                                          paint, this->asMatrixProvider(), shape);
 }
 
+skif::Context Device::createContext(const skif::ContextInfo& ctxInfo) const {
+    return skif::Context::MakeGanesh(fContext.get(), fSurfaceDrawContext->origin(), ctxInfo);
+}
+
 sk_sp<SkSpecialImage> Device::makeSpecial(const SkBitmap& bitmap) {
     ASSERT_SINGLE_OWNER
 
@@ -946,8 +954,13 @@ void Device::drawImageRect(const SkImage* image,
                            SkCanvas::SrcRectConstraint constraint) {
     ASSERT_SINGLE_OWNER
     GrAA aa = fSurfaceDrawContext->chooseAA(paint);
-    GrQuadAAFlags aaFlags = (aa == GrAA::kYes) ? GrQuadAAFlags::kAll : GrQuadAAFlags::kNone;
-    this->drawImageQuad(image, src, &dst, nullptr, aaFlags, nullptr, sampling, paint, constraint);
+    SkCanvas::QuadAAFlags aaFlags = (aa == GrAA::kYes) ? SkCanvas::kAll_QuadAAFlags
+                                                       : SkCanvas::kNone_QuadAAFlags;
+    this->drawImageQuad(image,
+                        src ? *src
+                            : SkRect::MakeIWH(image->width(), image->height()),
+                        dst, /* dstClip= */ nullptr, aaFlags,
+                        /* preViewMatrix= */ nullptr, sampling, paint, constraint);
 }
 
 void Device::drawViewLattice(GrSurfaceProxyView view,
@@ -1341,9 +1354,12 @@ sk_sp<SkSurface> Device::makeSurface(const SkImageInfo& info, const SkSurfacePro
     ASSERT_SINGLE_OWNER
     // TODO: Change the signature of newSurface to take a budgeted parameter.
     static const skgpu::Budgeted kBudgeted = skgpu::Budgeted::kNo;
-    return SkSurface::MakeRenderTarget(fContext.get(), kBudgeted, info,
-                                       fSurfaceDrawContext->numSamples(),
-                                       fSurfaceDrawContext->origin(), &props);
+    return SkSurfaces::RenderTarget(fContext.get(),
+                                    kBudgeted,
+                                    info,
+                                    fSurfaceDrawContext->numSamples(),
+                                    fSurfaceDrawContext->origin(),
+                                    &props);
 }
 
 SkImageFilterCache* Device::getImageFilterCache() {
@@ -1383,6 +1399,51 @@ bool Device::android_utils_clipWithStencil() {
 
 SkStrikeDeviceInfo Device::strikeDeviceInfo() const {
     return {this->surfaceProps(), this->scalerContextFlags(), &fSDFTControl};
+}
+
+sk_sp<sktext::gpu::Slug>
+Device::convertGlyphRunListToSlug(const sktext::GlyphRunList& glyphRunList,
+                                  const SkPaint& initialPaint,
+                                  const SkPaint& drawingPaint) {
+    return sktext::gpu::SlugImpl::Make(this->asMatrixProvider(),
+                                       glyphRunList,
+                                       initialPaint,
+                                       drawingPaint,
+                                       this->strikeDeviceInfo(),
+                                       SkStrikeCache::GlobalStrikeCache());
+}
+
+void Device::drawSlug(SkCanvas* canvas, const sktext::gpu::Slug* slug,
+                      const SkPaint& drawingPaint) {
+    SkASSERT(canvas);
+    SkASSERT(slug);
+    const sktext::gpu::SlugImpl* slugImpl = static_cast<const sktext::gpu::SlugImpl*>(slug);
+    auto matrixProvider = this->asMatrixProvider();
+#if defined(SK_DEBUG)
+    if (!fContext->priv().options().fSupportBilerpFromGlyphAtlas) {
+        // We can draw a slug if the atlas has padding or if the creation matrix and the
+        // drawing matrix are the same. If they are the same, then the Slug will use the direct
+        // drawing code and not use bi-lerp.
+        SkMatrix slugMatrix = slugImpl->initialPositionMatrix();
+        SkMatrix positionMatrix = matrixProvider.localToDevice();
+        positionMatrix.preTranslate(slugImpl->origin().x(), slugImpl->origin().y());
+        SkASSERT(slugMatrix == positionMatrix);
+    }
+#endif
+    auto atlasDelegate = [&](const sktext::gpu::AtlasSubRun* subRun,
+                             SkPoint drawOrigin,
+                             const SkPaint& paint,
+                             sk_sp<SkRefCnt> subRunStorage) {
+        auto[drawingClip, op] = subRun->makeAtlasTextOp(
+                this->clip(), matrixProvider.localToDevice(), drawOrigin, paint,
+                std::move(subRunStorage), fSurfaceDrawContext.get());
+        if (op != nullptr) {
+            fSurfaceDrawContext->addDrawOp(drawingClip, std::move(op));
+        }
+    };
+
+    slugImpl->subRuns()->draw(canvas, slugImpl->origin(),
+                              drawingPaint, slugImpl, atlasDelegate);
 }
 
 }  // namespace skgpu::ganesh

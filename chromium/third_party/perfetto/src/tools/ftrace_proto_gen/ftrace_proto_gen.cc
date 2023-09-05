@@ -191,6 +191,11 @@ std::string SingleEventInfo(perfetto::Proto proto,
     // configurations)
     if (group == "ftrace" && proto.event_name == "print" && field->name == "ip")
       continue;
+    // Ignore the "nid" field. On new kernels, this field has a type that we
+    // don't know how to parse. See b/281660544
+    if (group == "f2fs" && proto.event_name == "f2fs_truncate_partial_nodes" &&
+        field->name == "nid")
+      continue;
     s += "{";
     s += "kUnsetOffset, ";
     s += "kUnsetSize, ";
@@ -218,8 +223,9 @@ void GenerateEventInfo(const std::vector<std::string>& events_info,
   s += std::string("// ") + __FILE__ + "\n";
   s += "// Do not edit.\n";
   s += R"(
-#include "perfetto/protozero/proto_utils.h"
 #include "src/traced/probes/ftrace/event_info.h"
+
+#include "perfetto/protozero/proto_utils.h"
 
 namespace perfetto {
 

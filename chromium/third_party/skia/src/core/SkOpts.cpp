@@ -11,11 +11,7 @@
 #include "src/core/SkOpts.h"
 
 #if defined(SK_ARM_HAS_NEON)
-    #if defined(SK_ARM_HAS_CRC32)
-        #define SK_OPTS_NS neon_and_crc32
-    #else
-        #define SK_OPTS_NS neon
-    #endif
+    #define SK_OPTS_NS neon
 #elif SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_SKX
     #define SK_OPTS_NS skx
 #elif SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_AVX2
@@ -41,7 +37,6 @@
 #include "src/opts/SkBitmapProcState_opts.h"
 #include "src/opts/SkBlitMask_opts.h"
 #include "src/opts/SkBlitRow_opts.h"
-#include "src/opts/SkChecksum_opts.h"
 #include "src/opts/SkRasterPipeline_opts.h"
 #include "src/opts/SkSwizzler_opts.h"
 #include "src/opts/SkUtils_opts.h"
@@ -77,10 +72,7 @@ namespace SkOpts {
     DEFINE_DEFAULT(rect_memset32);
     DEFINE_DEFAULT(rect_memset64);
 
-    DEFINE_DEFAULT(hash_fn);
-
     DEFINE_DEFAULT(S32_alpha_D32_filter_DX);
-    DEFINE_DEFAULT(S32_alpha_D32_filter_DXDY);
 
 #if defined(SK_ENABLE_SKVM)
     DEFINE_DEFAULT(interpret_skvm);
@@ -106,12 +98,10 @@ namespace SkOpts {
 
     // Each Init_foo() is defined in src/opts/SkOpts_foo.cpp.
     void Init_ssse3();
-    void Init_sse42();
     void Init_avx();
     void Init_hsw();
     void Init_skx();
     void Init_erms();
-    void Init_crc32();
 
     static void init() {
     #if defined(SK_ENABLE_OPTIMIZE_SIZE)
@@ -119,10 +109,6 @@ namespace SkOpts {
     #elif defined(SK_CPU_X86)
         #if SK_CPU_SSE_LEVEL < SK_CPU_SSE_LEVEL_SSSE3
             if (SkCpu::Supports(SkCpu::SSSE3)) { Init_ssse3(); }
-        #endif
-
-        #if SK_CPU_SSE_LEVEL < SK_CPU_SSE_LEVEL_SSE42
-            if (SkCpu::Supports(SkCpu::SSE42)) { Init_sse42(); }
         #endif
 
         #if SK_CPU_SSE_LEVEL < SK_CPU_SSE_LEVEL_AVX
@@ -135,10 +121,6 @@ namespace SkOpts {
         #endif
 
         if (SkCpu::Supports(SkCpu::ERMS)) { Init_erms(); }
-
-    #elif defined(SK_CPU_ARM64)
-        if (SkCpu::Supports(SkCpu::CRC32)) { Init_crc32(); }
-
     #endif
     }
 

@@ -20,7 +20,7 @@ class ServicePublisherFactory {
   static std::unique_ptr<ServicePublisher> Create(
       const ServicePublisher::Config& config,
       ServicePublisher::Observer* observer,
-      TaskRunner* task_runner);
+      TaskRunner& task_runner);
 };
 
 }  // namespace osp

@@ -637,6 +637,10 @@ export namespace ProtocolMapping {
      */
     'Preload.prerenderAttemptCompleted': [Protocol.Preload.PrerenderAttemptCompletedEvent];
     /**
+     * Fired when a preload enabled state is updated.
+     */
+    'Preload.preloadEnabledStateUpdated': [Protocol.Preload.PreloadEnabledStateUpdatedEvent];
+    /**
      * Fired when a prefetch attempt is updated.
      */
     'Preload.prefetchStatusUpdated': [Protocol.Preload.PrefetchStatusUpdatedEvent];
@@ -897,6 +901,29 @@ export namespace ProtocolMapping {
       returnType: void;
     };
     /**
+     * Runs the form issues check for the target page. Found issues are reported
+     * using Audits.issueAdded event.
+     */
+    'Audits.checkFormsIssues': {
+      paramsType: [];
+      returnType: Protocol.Audits.CheckFormsIssuesResponse;
+    };
+    /**
+     * Trigger autofill on a form identified by the fieldId.
+     * If the field and related form cannot be autofilled, returns an error.
+     */
+    'Autofill.trigger': {
+      paramsType: [Protocol.Autofill.TriggerRequest];
+      returnType: void;
+    };
+    /**
+     * Set addresses so that developers can verify their forms implementation.
+     */
+    'Autofill.setAddresses': {
+      paramsType: [Protocol.Autofill.SetAddressesRequest];
+      returnType: void;
+    };
+    /**
      * Enables event updates for the service.
      */
     'BackgroundService.startObserving': {
@@ -1042,6 +1069,14 @@ export namespace ProtocolMapping {
      */
     'Browser.executeBrowserCommand': {
       paramsType: [Protocol.Browser.ExecuteBrowserCommandRequest];
+      returnType: void;
+    };
+    /**
+     * Allows a site to use privacy sandbox features that require enrollment
+     * without the site actually being enrolled. Only supported on page targets.
+     */
+    'Browser.addPrivacySandboxEnrollmentOverride': {
+      paramsType: [Protocol.Browser.AddPrivacySandboxEnrollmentOverrideRequest];
       returnType: void;
     };
     /**
@@ -3328,6 +3363,19 @@ export namespace ProtocolMapping {
       returnType: void;
     };
     /**
+     * Enable/disable prerendering manually.
+     *
+     * This command is a short-term solution for https://crbug.com/1440085.
+     * See https://docs.google.com/document/d/12HVmFxYj5Jc-eJr5OmWsa2bqTJsbgGLKI6ZIyx0_wpA
+     * for more details.
+     *
+     * TODO(https://crbug.com/1440085): Remove this once Puppeteer supports tab targets.
+     */
+    'Page.setPrerenderingAllowed': {
+      paramsType: [Protocol.Page.SetPrerenderingAllowedRequest];
+      returnType: void;
+    };
+    /**
      * Disable collecting and reporting metrics.
      */
     'Performance.disable': {
@@ -3657,6 +3705,13 @@ export namespace ProtocolMapping {
     'Storage.deleteStorageBucket': {
       paramsType: [Protocol.Storage.DeleteStorageBucketRequest];
       returnType: void;
+    };
+    /**
+     * Deletes state for sites identified as potential bounce trackers, immediately.
+     */
+    'Storage.runBounceTrackingMitigations': {
+      paramsType: [];
+      returnType: Protocol.Storage.RunBounceTrackingMitigationsResponse;
     };
     /**
      * Returns information about the system.

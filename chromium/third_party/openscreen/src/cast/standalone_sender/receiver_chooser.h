@@ -30,7 +30,7 @@ class ReceiverChooser final : public discovery::ReportingClient {
   using ResultCallback = std::function<void(IPEndpoint)>;
 
   ReceiverChooser(const InterfaceInfo& interface,
-                  TaskRunner* task_runner,
+                  TaskRunner& task_runner,
                   ResultCallback result_callback);
 
   ~ReceiverChooser() final;

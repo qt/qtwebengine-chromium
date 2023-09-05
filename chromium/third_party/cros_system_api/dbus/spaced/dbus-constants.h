@@ -16,6 +16,9 @@ const char kGetFreeDiskSpaceMethod[] = "GetFreeDiskSpace";
 const char kGetTotalDiskSpaceMethod[] = "GetTotalDiskSpace";
 const char kGetRootDeviceSizeMethod[] = "GetRootDeviceSize";
 
+// Signals.
+const char kStatefulDiskSpaceUpdate[] = "StatefulDiskSpaceUpdate";
+
 }  // namespace spaced
 
 #endif  // SYSTEM_API_DBUS_SPACED_DBUS_CONSTANTS_H_

@@ -69,12 +69,10 @@ source_set("openscreen_unittests_all") {
     ]
   }
 
-  if (!is_mac) {
-    public_deps += [
-      "osp:unittests",
-      "osp/msgs:unittests",
-    ]
-  }
+  public_deps += [
+    "osp:unittests",
+    "osp/msgs:unittests",
+  ]
 }
 
 if (!build_with_chromium) {

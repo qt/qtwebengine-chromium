@@ -17,10 +17,10 @@ from python.generators.trace_processor_table.public import Column as C
 from python.generators.trace_processor_table.public import ColumnFlag
 from python.generators.trace_processor_table.public import CppInt64
 from python.generators.trace_processor_table.public import Table
-from python.generators.trace_processor_table.public import TableDoc
 from python.generators.trace_processor_table.public import CppUint32
 
 EVENT_TABLE = Table(
+    python_module=__file__,
     class_name="TestEventTable",
     sql_name="event",
     columns=[
@@ -29,12 +29,14 @@ EVENT_TABLE = Table(
     ])
 
 EVENT_CHILD_TABLE = Table(
+    python_module=__file__,
     class_name="TestEventChildTable",
     sql_name="event",
     parent=EVENT_TABLE,
     columns=[])
 
 SLICE_TABLE = Table(
+    python_module=__file__,
     class_name="TestSliceTable",
     sql_name="slice",
     parent=EVENT_TABLE,
@@ -43,12 +45,14 @@ SLICE_TABLE = Table(
     ])
 
 ARGS_TABLE = Table(
+    python_module=__file__,
     class_name="TestArgsTable",
     sql_name="args",
     columns=[
         C("arg_set_id",
           CppUint32(),
           flags=ColumnFlag.SET_ID | ColumnFlag.SORTED),
+        C("int_value", CppInt64()),
     ])
 
 # Keep this list sorted.

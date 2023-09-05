@@ -34,7 +34,7 @@ void BytecodeArray::PrintJson(std::ostream& os) {
 
     os << "{\"offset\":" << iterator.current_offset() << ", \"disassembly\":\"";
     interpreter::BytecodeDecoder::Decode(
-        os, reinterpret_cast<byte*>(current_address), false);
+        os, reinterpret_cast<uint8_t*>(current_address), false);
 
     if (interpreter::Bytecodes::IsJump(iterator.current_bytecode())) {
       os << " (" << iterator.GetJumpTargetOffset() << ")";
@@ -89,7 +89,6 @@ void BytecodeArray::Disassemble(Handle<BytecodeArray> handle,
   os << "Parameter count " << handle->parameter_count() << "\n";
   os << "Register count " << handle->register_count() << "\n";
   os << "Frame size " << handle->frame_size() << "\n";
-  os << "Bytecode age: " << handle->bytecode_age() << "\n";
 
   Address base_address = handle->GetFirstBytecodeAddress();
   SourcePositionTableIterator source_positions(handle->SourcePositionTable());
@@ -108,7 +107,7 @@ void BytecodeArray::Disassemble(Handle<BytecodeArray> handle,
     os << reinterpret_cast<const void*>(current_address) << " @ "
        << std::setw(4) << iterator.current_offset() << " : ";
     interpreter::BytecodeDecoder::Decode(
-        os, reinterpret_cast<byte*>(current_address));
+        os, reinterpret_cast<uint8_t*>(current_address));
     if (interpreter::Bytecodes::IsJump(iterator.current_bytecode())) {
       Address jump_target = base_address + iterator.GetJumpTargetOffset();
       os << " (" << reinterpret_cast<void*>(jump_target) << " @ "
@@ -160,28 +159,9 @@ void BytecodeArray::Disassemble(Handle<BytecodeArray> handle,
 void BytecodeArray::CopyBytecodesTo(BytecodeArray to) {
   BytecodeArray from = *this;
   DCHECK_EQ(from.length(), to.length());
-  CopyBytes(reinterpret_cast<byte*>(to.GetFirstBytecodeAddress()),
-            reinterpret_cast<byte*>(from.GetFirstBytecodeAddress()),
+  CopyBytes(reinterpret_cast<uint8_t*>(to.GetFirstBytecodeAddress()),
+            reinterpret_cast<uint8_t*>(from.GetFirstBytecodeAddress()),
             from.length());
-}
-
-void BytecodeArray::MakeOlder() {
-  // BytecodeArray is aged in concurrent marker.
-  // The word must be completely within the byte code array.
-  Address age_addr = address() + kBytecodeAgeOffset;
-  DCHECK_LE(RoundDown(age_addr, kTaggedSize) + kTaggedSize, address() + Size());
-  uint16_t age = bytecode_age();
-  if (age < v8_flags.bytecode_old_age) {
-    static_assert(kBytecodeAgeSize == kUInt16Size);
-    base::AsAtomic16::Relaxed_CompareAndSwap(
-        reinterpret_cast<base::Atomic16*>(age_addr), age, age + 1);
-  }
-
-  DCHECK_LE(bytecode_age(), v8_flags.bytecode_old_age);
-}
-
-bool BytecodeArray::IsOld() const {
-  return bytecode_age() >= v8_flags.bytecode_old_age;
 }
 
 }  // namespace internal

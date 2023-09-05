@@ -47,7 +47,7 @@ static INLINE int32x4_t half_btf_neon_m(const int32_t *w0, const int32x4_t *n0,
   return x;
 }
 
-#if defined(__aarch64__)
+#if AOM_ARCH_AARCH64
 #define TRANSPOSE_4X4(x0, x1, x2, x3, y0, y1, y2, y3)         \
   do {                                                        \
     int32x4x2_t swap_low = vtrnq_s32(x0, x1);                 \
@@ -79,7 +79,7 @@ static INLINE int32x4_t half_btf_neon_m(const int32_t *w0, const int32x4_t *n0,
     y3 = vextq_s32(swap_low.val[1],                                      \
                    vextq_s32(swap_high.val[1], swap_high.val[1], 2), 2); \
   } while (0)
-#endif  // (__aarch64__)
+#endif  // AOM_ARCH_AARCH64
 
 static INLINE void transpose_4x4(const int32x4_t *in, int32x4_t *out) {
   TRANSPOSE_4X4(in[0], in[1], in[2], in[3], out[0], out[1], out[2], out[3]);
@@ -3886,9 +3886,9 @@ typedef void (*TxfmFuncNEON)(int32x4_t *input, int32x4_t *output,
 
 static INLINE TxfmFuncNEON fwd_txfm_type_to_func(TXFM_TYPE txfm_type) {
   switch (txfm_type) {
-    case TXFM_TYPE_DCT32: return fdct32_new_neon; break;
-    case TXFM_TYPE_DCT64: return fdct64_new_neon; break;
-    case TXFM_TYPE_IDENTITY32: return idtx32x32_neon; break;
+    case TXFM_TYPE_DCT32: return fdct32_new_neon;
+    case TXFM_TYPE_DCT64: return fdct64_new_neon;
+    case TXFM_TYPE_IDENTITY32: return idtx32x32_neon;
     default: assert(0);
   }
   return NULL;

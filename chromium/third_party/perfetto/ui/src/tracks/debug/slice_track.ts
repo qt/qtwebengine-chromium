@@ -75,11 +75,11 @@ export class DebugTrackV2 extends NamedSliceTrack<DebugTrackV2Types> {
   }
 
   onSliceClick(args: OnSliceClickArgs<DebugTrackV2Types['slice']>) {
-    globals.dispatch(Actions.selectDebugSlice({
+    globals.makeSelection(Actions.selectDebugSlice({
       id: args.slice.id,
       sqlTableName: this.config.sqlTableName,
-      startS: args.slice.startS,
-      durationS: args.slice.durationS,
+      start: args.slice.start,
+      duration: args.slice.duration,
       trackId: this.trackId,
     }));
   }

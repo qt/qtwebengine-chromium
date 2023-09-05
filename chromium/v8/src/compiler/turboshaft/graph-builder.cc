@@ -34,6 +34,7 @@
 #include "src/compiler/turboshaft/deopt-data.h"
 #include "src/compiler/turboshaft/graph.h"
 #include "src/compiler/turboshaft/operations.h"
+#include "src/compiler/turboshaft/phase.h"
 #include "src/compiler/turboshaft/representations.h"
 #include "src/heap/factory-inl.h"
 #include "src/objects/map.h"
@@ -46,15 +47,19 @@ namespace v8::internal::compiler::turboshaft {
 namespace {
 
 struct GraphBuilder {
-  Isolate* isolate;
-  JSHeapBroker* broker;
-  Zone* graph_zone;
   Zone* phase_zone;
   Schedule& schedule;
-  Assembler<reducer_list<>> assembler;
   Linkage* linkage;
-  SourcePositionTable* source_positions;
-  NodeOriginTable* origins;
+
+  Isolate* isolate = PipelineData::Get().isolate();
+  JSHeapBroker* broker = PipelineData::Get().broker();
+  Zone* graph_zone = PipelineData::Get().graph_zone();
+  Assembler<reducer_list<>> assembler{PipelineData::Get().graph(),
+                                      PipelineData::Get().graph(), phase_zone,
+                                      nullptr};
+  SourcePositionTable* source_positions =
+      PipelineData::Get().source_positions();
+  NodeOriginTable* origins = PipelineData::Get().node_origins();
 
   struct BlockData {
     Block* block;
@@ -62,6 +67,7 @@ struct GraphBuilder {
   };
   NodeAuxData<OpIndex> op_mapping{phase_zone};
   ZoneVector<BlockData> block_mapping{schedule.RpoBlockCount(), phase_zone};
+  bool inside_region = false;
 
   base::Optional<BailoutReason> Run();
   Assembler<reducer_list<>>& Asm() { return assembler; }
@@ -678,15 +684,30 @@ OpIndex GraphBuilder::Process(
         case TruncateKind::kSetOverflowToMin:
           return __ TruncateFloat64ToInt64OverflowToMin(Map(node->InputAt(0)));
       }
-    case IrOpcode::kFloat64InsertLowWord32:
-      return __ Float64InsertWord32(Map(node->InputAt(0)),
-                                    Map(node->InputAt(1)),
-                                    Float64InsertWord32Op::Kind::kLowHalf);
-    case IrOpcode::kFloat64InsertHighWord32:
-      return __ Float64InsertWord32(Map(node->InputAt(0)),
-                                    Map(node->InputAt(1)),
-                                    Float64InsertWord32Op::Kind::kHighHalf);
-
+    case IrOpcode::kFloat64InsertLowWord32: {
+      OpIndex high;
+      OpIndex low = Map(node->InputAt(1));
+      if (node->InputAt(0)->opcode() == IrOpcode::kFloat64InsertHighWord32) {
+        // We can turn this into a single operation.
+        high = Map(node->InputAt(0)->InputAt(1));
+      } else {
+        // We need to extract the high word to combine it.
+        high = __ Float64ExtractHighWord32(Map(node->InputAt(0)));
+      }
+      return __ BitcastWord32PairToFloat64(high, low);
+    }
+    case IrOpcode::kFloat64InsertHighWord32: {
+      OpIndex high = Map(node->InputAt(1));
+      OpIndex low;
+      if (node->InputAt(0)->opcode() == IrOpcode::kFloat64InsertLowWord32) {
+        // We can turn this into a single operation.
+        low = Map(node->InputAt(0)->InputAt(1));
+      } else {
+        // We need to extract the low word to combine it.
+        low = __ Float64ExtractLowWord32(Map(node->InputAt(0)));
+      }
+      return __ BitcastWord32PairToFloat64(high, low);
+    }
     case IrOpcode::kBitcastTaggedToWord:
       return __ TaggedBitcast(Map(node->InputAt(0)),
                               RegisterRepresentation::Tagged(),
@@ -784,13 +805,15 @@ OpIndex GraphBuilder::Process(
     case IrOpcode::kPlainPrimitiveToNumber:
       return __ ConvertPlainPrimitiveToNumber(Map(node->InputAt(0)));
     case IrOpcode::kPlainPrimitiveToWord32:
-      return __ ConvertObjectToPrimitive(
-          Map(node->InputAt(0)), ConvertObjectToPrimitiveOp::Kind::kInt32,
-          ConvertObjectToPrimitiveOp::InputAssumptions::kPlainPrimitive);
+      return __ ConvertJSPrimitiveToUntagged(
+          Map(node->InputAt(0)),
+          ConvertJSPrimitiveToUntaggedOp::UntaggedKind::kInt32,
+          ConvertJSPrimitiveToUntaggedOp::InputAssumptions::kPlainPrimitive);
     case IrOpcode::kPlainPrimitiveToFloat64:
-      return __ ConvertObjectToPrimitive(
-          Map(node->InputAt(0)), ConvertObjectToPrimitiveOp::Kind::kFloat64,
-          ConvertObjectToPrimitiveOp::InputAssumptions::kPlainPrimitive);
+      return __ ConvertJSPrimitiveToUntagged(
+          Map(node->InputAt(0)),
+          ConvertJSPrimitiveToUntaggedOp::UntaggedKind::kFloat64,
+          ConvertJSPrimitiveToUntaggedOp::InputAssumptions::kPlainPrimitive);
 
     case IrOpcode::kConvertTaggedHoleToUndefined: {
       V<Object> input = Map(node->InputAt(0));
@@ -798,12 +821,13 @@ OpIndex GraphBuilder::Process(
           input, __ HeapConstant(isolate->factory()->the_hole_value()));
       return __ Conditional(
           is_the_hole, __ HeapConstant(isolate->factory()->undefined_value()),
-          input);
+          input, BranchHint::kFalse);
     }
 
     case IrOpcode::kConvertReceiver:
-      return __ ConvertReceiver(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                                ConvertReceiverModeOf(node->op()));
+      return __ ConvertJSPrimitiveToObject(Map(node->InputAt(0)),
+                                           Map(node->InputAt(1)),
+                                           ConvertReceiverModeOf(node->op()));
 
     case IrOpcode::kToBoolean:
       return __ ConvertToBoolean(Map(node->InputAt(0)));
@@ -816,27 +840,33 @@ OpIndex GraphBuilder::Process(
                         ConvertOp::Kind::kNumberOrOddball,
                         ConvertOp::Kind::kSmi);
 
-    case IrOpcode::kCheckedTaggedToTaggedSigned:
+    case IrOpcode::kCheckedTaggedToTaggedSigned: {
       DCHECK(dominating_frame_state.valid());
-      return __ ConvertOrDeopt(Map(node->InputAt(0)), dominating_frame_state,
-                               ConvertOrDeoptOp::Kind::kObject,
-                               ConvertOrDeoptOp::Kind::kSmi,
-                               CheckParametersOf(node->op()).feedback());
-    case IrOpcode::kCheckedTaggedToTaggedPointer:
-      DCHECK(dominating_frame_state.valid());
-      return __ ConvertOrDeopt(Map(node->InputAt(0)), dominating_frame_state,
-                               ConvertOrDeoptOp::Kind::kObject,
-                               ConvertOrDeoptOp::Kind::kHeapObject,
-                               CheckParametersOf(node->op()).feedback());
+      V<Object> input = Map(node->InputAt(0));
+      __ DeoptimizeIfNot(__ ObjectIsSmi(input), dominating_frame_state,
+                         DeoptimizeReason::kNotASmi,
+                         CheckParametersOf(node->op()).feedback());
+      return input;
+    }
 
-#define CONVERT_PRIMITIVE_TO_OBJECT_CASE(name, kind, input_type,          \
-                                         input_interpretation)            \
-  case IrOpcode::k##name:                                                 \
-    return __ ConvertPrimitiveToObject(                                   \
-        Map(node->InputAt(0)), ConvertPrimitiveToObjectOp::Kind::k##kind, \
-        V<input_type>::rep,                                               \
-        ConvertPrimitiveToObjectOp::InputInterpretation::                 \
-            k##input_interpretation,                                      \
+    case IrOpcode::kCheckedTaggedToTaggedPointer: {
+      DCHECK(dominating_frame_state.valid());
+      V<Object> input = Map(node->InputAt(0));
+      __ DeoptimizeIf(__ ObjectIsSmi(input), dominating_frame_state,
+                      DeoptimizeReason::kSmi,
+                      CheckParametersOf(node->op()).feedback());
+      return input;
+    }
+
+#define CONVERT_PRIMITIVE_TO_OBJECT_CASE(name, kind, input_type,  \
+                                         input_interpretation)    \
+  case IrOpcode::k##name:                                         \
+    return __ ConvertUntaggedToJSPrimitive(                       \
+        Map(node->InputAt(0)),                                    \
+        ConvertUntaggedToJSPrimitiveOp::JSPrimitiveKind::k##kind, \
+        V<input_type>::rep,                                       \
+        ConvertUntaggedToJSPrimitiveOp::InputInterpretation::     \
+            k##input_interpretation,                              \
         CheckForMinusZeroMode::kDontCheckForMinusZero);
       CONVERT_PRIMITIVE_TO_OBJECT_CASE(ChangeInt32ToTagged, Number, Word32,
                                        Signed)
@@ -862,24 +892,26 @@ OpIndex GraphBuilder::Process(
                                        Word32, CodePoint)
 
     case IrOpcode::kChangeFloat64ToTagged:
-      return __ ConvertPrimitiveToObject(
-          Map(node->InputAt(0)), ConvertPrimitiveToObjectOp::Kind::kNumber,
+      return __ ConvertUntaggedToJSPrimitive(
+          Map(node->InputAt(0)),
+          ConvertUntaggedToJSPrimitiveOp::JSPrimitiveKind::kNumber,
           RegisterRepresentation::Float64(),
-          ConvertPrimitiveToObjectOp::InputInterpretation::kSigned,
+          ConvertUntaggedToJSPrimitiveOp::InputInterpretation::kSigned,
           CheckMinusZeroModeOf(node->op()));
 #undef CONVERT_PRIMITIVE_TO_OBJECT_CASE
 
-#define CONVERT_PRIMITIVE_TO_OBJECT_OR_DEOPT_CASE(name, kind, input_type,     \
-                                                  input_interpretation)       \
-  case IrOpcode::k##name: {                                                   \
-    DCHECK(dominating_frame_state.valid());                                   \
-    const CheckParameters& params = CheckParametersOf(node->op());            \
-    return __ ConvertPrimitiveToObjectOrDeopt(                                \
-        Map(node->InputAt(0)), dominating_frame_state,                        \
-        ConvertPrimitiveToObjectOrDeoptOp::Kind::k##kind, V<input_type>::rep, \
-        ConvertPrimitiveToObjectOrDeoptOp::InputInterpretation::              \
-            k##input_interpretation,                                          \
-        params.feedback());                                                   \
+#define CONVERT_PRIMITIVE_TO_OBJECT_OR_DEOPT_CASE(name, kind, input_type, \
+                                                  input_interpretation)   \
+  case IrOpcode::k##name: {                                               \
+    DCHECK(dominating_frame_state.valid());                               \
+    const CheckParameters& params = CheckParametersOf(node->op());        \
+    return __ ConvertUntaggedToJSPrimitiveOrDeopt(                        \
+        Map(node->InputAt(0)), dominating_frame_state,                    \
+        ConvertUntaggedToJSPrimitiveOrDeoptOp::JSPrimitiveKind::k##kind,  \
+        V<input_type>::rep,                                               \
+        ConvertUntaggedToJSPrimitiveOrDeoptOp::InputInterpretation::      \
+            k##input_interpretation,                                      \
+        params.feedback());                                               \
   }
       CONVERT_PRIMITIVE_TO_OBJECT_OR_DEOPT_CASE(CheckedInt32ToTaggedSigned, Smi,
                                                 Word32, Signed)
@@ -891,14 +923,16 @@ OpIndex GraphBuilder::Process(
                                                 Smi, Word64, Unsigned)
 #undef CONVERT_PRIMITIVE_TO_OBJECT_OR_DEOPT_CASE
 
-#define CONVERT_OBJECT_TO_PRIMITIVE_CASE(name, kind, input_assumptions)   \
-  case IrOpcode::k##name:                                                 \
-    return __ ConvertObjectToPrimitive(                                   \
-        Map(node->InputAt(0)), ConvertObjectToPrimitiveOp::Kind::k##kind, \
-        ConvertObjectToPrimitiveOp::InputAssumptions::k##input_assumptions);
+#define CONVERT_OBJECT_TO_PRIMITIVE_CASE(name, kind, input_assumptions) \
+  case IrOpcode::k##name:                                               \
+    return __ ConvertJSPrimitiveToUntagged(                             \
+        Map(node->InputAt(0)),                                          \
+        ConvertJSPrimitiveToUntaggedOp::UntaggedKind::k##kind,          \
+        ConvertJSPrimitiveToUntaggedOp::InputAssumptions::              \
+            k##input_assumptions);
       CONVERT_OBJECT_TO_PRIMITIVE_CASE(ChangeTaggedSignedToInt32, Int32, Smi)
       CONVERT_OBJECT_TO_PRIMITIVE_CASE(ChangeTaggedSignedToInt64, Int64, Smi)
-      CONVERT_OBJECT_TO_PRIMITIVE_CASE(ChangeTaggedToBit, Bit, Object)
+      CONVERT_OBJECT_TO_PRIMITIVE_CASE(ChangeTaggedToBit, Bit, Boolean)
       CONVERT_OBJECT_TO_PRIMITIVE_CASE(ChangeTaggedToInt32, Int32,
                                        NumberOrOddball)
       CONVERT_OBJECT_TO_PRIMITIVE_CASE(ChangeTaggedToUint32, Uint32,
@@ -911,11 +945,13 @@ OpIndex GraphBuilder::Process(
                                        NumberOrOddball)
 #undef CONVERT_OBJECT_TO_PRIMITIVE_CASE
 
-#define TRUNCATE_OBJECT_TO_PRIMITIVE_CASE(name, kind, input_assumptions)   \
-  case IrOpcode::k##name:                                                  \
-    return __ TruncateObjectToPrimitive(                                   \
-        Map(node->InputAt(0)), TruncateObjectToPrimitiveOp::Kind::k##kind, \
-        TruncateObjectToPrimitiveOp::InputAssumptions::k##input_assumptions);
+#define TRUNCATE_OBJECT_TO_PRIMITIVE_CASE(name, kind, input_assumptions) \
+  case IrOpcode::k##name:                                                \
+    return __ TruncateJSPrimitiveToUntagged(                             \
+        Map(node->InputAt(0)),                                           \
+        TruncateJSPrimitiveToUntaggedOp::UntaggedKind::k##kind,          \
+        TruncateJSPrimitiveToUntaggedOp::InputAssumptions::              \
+            k##input_assumptions);
       TRUNCATE_OBJECT_TO_PRIMITIVE_CASE(TruncateTaggedToWord32, Int32,
                                         NumberOrOddball)
       TRUNCATE_OBJECT_TO_PRIMITIVE_CASE(TruncateBigIntToWord64, Int64, BigInt)
@@ -926,7 +962,7 @@ OpIndex GraphBuilder::Process(
 
     case IrOpcode::kCheckedTruncateTaggedToWord32:
       DCHECK(dominating_frame_state.valid());
-      using IR = TruncateObjectToPrimitiveOrDeoptOp::InputRequirement;
+      using IR = TruncateJSPrimitiveToUntaggedOrDeoptOp::InputRequirement;
       IR input_requirement;
       switch (CheckTaggedInputParametersOf(node->op()).mode()) {
         case CheckTaggedInputMode::kNumber:
@@ -939,9 +975,10 @@ OpIndex GraphBuilder::Process(
           input_requirement = IR::kNumberOrOddball;
           break;
       }
-      return __ TruncateObjectToPrimitiveOrDeopt(
+      return __ TruncateJSPrimitiveToUntaggedOrDeopt(
           Map(node->InputAt(0)), dominating_frame_state,
-          TruncateObjectToPrimitiveOrDeoptOp::Kind::kInt32, input_requirement,
+          TruncateJSPrimitiveToUntaggedOrDeoptOp::UntaggedKind::kInt32,
+          input_requirement,
           CheckTaggedInputParametersOf(node->op()).feedback());
 
 #define CHANGE_OR_DEOPT_INT_CASE(kind)                                     \
@@ -981,10 +1018,10 @@ OpIndex GraphBuilder::Process(
       DCHECK(dominating_frame_state.valid());
       const CheckMinusZeroParameters& params =
           CheckMinusZeroParametersOf(node->op());
-      return __ ConvertObjectToPrimitiveOrDeopt(
+      return __ ConvertJSPrimitiveToUntaggedOrDeopt(
           Map(node->InputAt(0)), dominating_frame_state,
-          ConvertObjectToPrimitiveOrDeoptOp::ObjectKind::kNumber,
-          ConvertObjectToPrimitiveOrDeoptOp::PrimitiveKind::kInt32,
+          ConvertJSPrimitiveToUntaggedOrDeoptOp::JSPrimitiveKind::kNumber,
+          ConvertJSPrimitiveToUntaggedOrDeoptOp::UntaggedKind::kInt32,
           params.mode(), params.feedback());
     }
 
@@ -992,10 +1029,10 @@ OpIndex GraphBuilder::Process(
       DCHECK(dominating_frame_state.valid());
       const CheckMinusZeroParameters& params =
           CheckMinusZeroParametersOf(node->op());
-      return __ ConvertObjectToPrimitiveOrDeopt(
+      return __ ConvertJSPrimitiveToUntaggedOrDeopt(
           Map(node->InputAt(0)), dominating_frame_state,
-          ConvertObjectToPrimitiveOrDeoptOp::ObjectKind::kNumber,
-          ConvertObjectToPrimitiveOrDeoptOp::PrimitiveKind::kInt64,
+          ConvertJSPrimitiveToUntaggedOrDeoptOp::JSPrimitiveKind::kNumber,
+          ConvertJSPrimitiveToUntaggedOrDeoptOp::UntaggedKind::kInt64,
           params.mode(), params.feedback());
     }
 
@@ -1003,40 +1040,42 @@ OpIndex GraphBuilder::Process(
       DCHECK(dominating_frame_state.valid());
       const CheckTaggedInputParameters& params =
           CheckTaggedInputParametersOf(node->op());
-      ConvertObjectToPrimitiveOrDeoptOp::ObjectKind from_kind;
+      ConvertJSPrimitiveToUntaggedOrDeoptOp::JSPrimitiveKind from_kind;
       switch (params.mode()) {
-#define CASE(mode)                                                      \
-  case CheckTaggedInputMode::k##mode:                                   \
-    from_kind = ConvertObjectToPrimitiveOrDeoptOp::ObjectKind::k##mode; \
+#define CASE(mode)                                                       \
+  case CheckTaggedInputMode::k##mode:                                    \
+    from_kind =                                                          \
+        ConvertJSPrimitiveToUntaggedOrDeoptOp::JSPrimitiveKind::k##mode; \
     break;
         CASE(Number)
         CASE(NumberOrBoolean)
         CASE(NumberOrOddball)
 #undef CASE
       }
-      return __ ConvertObjectToPrimitiveOrDeopt(
+      return __ ConvertJSPrimitiveToUntaggedOrDeopt(
           Map(node->InputAt(0)), dominating_frame_state, from_kind,
-          ConvertObjectToPrimitiveOrDeoptOp::PrimitiveKind::kFloat64,
+          ConvertJSPrimitiveToUntaggedOrDeoptOp::UntaggedKind::kFloat64,
           CheckForMinusZeroMode::kDontCheckForMinusZero, params.feedback());
     }
 
     case IrOpcode::kCheckedTaggedToArrayIndex: {
       DCHECK(dominating_frame_state.valid());
       const CheckParameters& params = CheckParametersOf(node->op());
-      return __ ConvertObjectToPrimitiveOrDeopt(
+      return __ ConvertJSPrimitiveToUntaggedOrDeopt(
           Map(node->InputAt(0)), dominating_frame_state,
-          ConvertObjectToPrimitiveOrDeoptOp::ObjectKind::kNumberOrString,
-          ConvertObjectToPrimitiveOrDeoptOp::PrimitiveKind::kArrayIndex,
+          ConvertJSPrimitiveToUntaggedOrDeoptOp::JSPrimitiveKind::
+              kNumberOrString,
+          ConvertJSPrimitiveToUntaggedOrDeoptOp::UntaggedKind::kArrayIndex,
           CheckForMinusZeroMode::kCheckForMinusZero, params.feedback());
     }
 
     case IrOpcode::kCheckedTaggedSignedToInt32: {
       DCHECK(dominating_frame_state.valid());
       const CheckParameters& params = CheckParametersOf(node->op());
-      return __ ConvertObjectToPrimitiveOrDeopt(
+      return __ ConvertJSPrimitiveToUntaggedOrDeopt(
           Map(node->InputAt(0)), dominating_frame_state,
-          ConvertObjectToPrimitiveOrDeoptOp::ObjectKind::kSmi,
-          ConvertObjectToPrimitiveOrDeoptOp::PrimitiveKind::kInt32,
+          ConvertJSPrimitiveToUntaggedOrDeoptOp::JSPrimitiveKind::kSmi,
+          ConvertJSPrimitiveToUntaggedOrDeoptOp::UntaggedKind::kInt32,
           CheckForMinusZeroMode::kDontCheckForMinusZero, params.feedback());
     }
 
@@ -1263,10 +1302,17 @@ OpIndex GraphBuilder::Process(
       return OpIndex::Invalid();
 
     case IrOpcode::kTrapIf:
-      __ TrapIf(Map(node->InputAt(0)), TrapIdOf(op));
+      // For wasm the dominating_frame_state is invalid and will not be used.
+      // For traps inlined into JS the dominating_frame_state is valid and is
+      // needed for the trap.
+      __ TrapIf(Map(node->InputAt(0)), dominating_frame_state, TrapIdOf(op));
       return OpIndex::Invalid();
+
     case IrOpcode::kTrapUnless:
-      __ TrapIfNot(Map(node->InputAt(0)), TrapIdOf(op));
+      // For wasm the dominating_frame_state is invalid and will not be used.
+      // For traps inlined into JS the dominating_frame_state is valid and is
+      // needed for the trap.
+      __ TrapIfNot(Map(node->InputAt(0)), dominating_frame_state, TrapIdOf(op));
       return OpIndex::Invalid();
 
     case IrOpcode::kDeoptimize: {
@@ -1320,15 +1366,15 @@ OpIndex GraphBuilder::Process(
 
     case IrOpcode::kAllocate: {
       AllocationType allocation = AllocationTypeOf(node->op());
-      return __ Allocate(Map(node->InputAt(0)), allocation,
-                         AllowLargeObjects::kFalse);
+      return __ FinishInitialization(__ Allocate(
+          Map(node->InputAt(0)), allocation, AllowLargeObjects::kFalse));
     }
     // TODO(nicohartmann@): We might not see AllocateRaw here anymore.
     case IrOpcode::kAllocateRaw: {
       Node* size = node->InputAt(0);
       const AllocateParameters& params = AllocateParametersOf(node->op());
-      return __ Allocate(Map(size), params.allocation_type(),
-                         params.allow_large_objects());
+      return __ FinishInitialization(__ Allocate(
+          Map(size), params.allocation_type(), params.allow_large_objects()));
     }
     case IrOpcode::kStoreToObject: {
       Node* object = node->InputAt(0);
@@ -1380,10 +1426,19 @@ OpIndex GraphBuilder::Process(
         UNIMPLEMENTED();
 #endif
       }
+
+      bool initializing_transitioning =
+          access.maybe_initializing_or_transitioning_store;
+      if (!inside_region) {
+        // Mark stores outside a region as non-initializing and
+        // non-transitioning.
+        initializing_transitioning = false;
+      }
+
       MemoryRepresentation rep =
           MemoryRepresentation::FromMachineType(machine_type);
       __ Store(object, value, kind, rep, access.write_barrier_kind,
-               access.offset);
+               access.offset, initializing_transitioning);
       return OpIndex::Invalid();
     }
     case IrOpcode::kLoadFromObject:
@@ -1972,11 +2027,13 @@ OpIndex GraphBuilder::Process(
     case IrOpcode::kCheckFloat64Hole: {
       DCHECK(dominating_frame_state.valid());
       V<Float64> value = Map(node->InputAt(0));
-      __ DeoptimizeIf(__ FloatIs(value, NumericKind::kFloat64Hole,
-                                 FloatRepresentation::Float64()),
-                      dominating_frame_state, DeoptimizeReason::kHole,
-                      CheckFloat64HoleParametersOf(node->op()).feedback());
-      return value;
+      // TODO(tebbi): If we did partial block cloning, we could emit a
+      // `DeoptimizeIf` operation here. Alternatively, we could use a branch and
+      // a separate block with an unconditional `Deoptimize`.
+      return __ ChangeOrDeopt(
+          value, dominating_frame_state, ChangeOrDeoptOp::Kind::kFloat64NotHole,
+          CheckForMinusZeroMode::kDontCheckForMinusZero,
+          CheckFloat64HoleParametersOf(node->op()).feedback());
     }
 
     case IrOpcode::kCheckNotTaggedHole: {
@@ -2117,7 +2174,7 @@ OpIndex GraphBuilder::Process(
       }
       __ CallBuiltin_CheckTurbofanType(isolate, __ NoContextConstant(),
                                        Map(node->InputAt(0)), allocated_type,
-                                       __ SmiTag(node->id()));
+                                       __ TagSmi(node->id()));
       return OpIndex::Invalid();
     }
 
@@ -2132,8 +2189,10 @@ OpIndex GraphBuilder::Process(
                                                    Map(node->InputAt(1)));
 
     case IrOpcode::kBeginRegion:
+      inside_region = true;
       return OpIndex::Invalid();
     case IrOpcode::kFinishRegion:
+      inside_region = false;
       return Map(node->InputAt(0));
 
     case IrOpcode::kTypeGuard:
@@ -2148,23 +2207,9 @@ OpIndex GraphBuilder::Process(
 
 }  // namespace
 
-base::Optional<BailoutReason> BuildGraph(JSHeapBroker* broker,
-                                         Schedule* schedule, Isolate* isolate,
-                                         Zone* graph_zone, Zone* phase_zone,
-                                         Graph* graph, Linkage* linkage,
-                                         SourcePositionTable* source_positions,
-                                         NodeOriginTable* origins) {
-  GraphBuilder builder{isolate,
-                       broker,
-                       graph_zone,
-                       phase_zone,
-                       *schedule,
-                       Assembler<reducer_list<>>(*graph, *graph, phase_zone,
-                                                 nullptr, std::tuple<>{}),
-                       linkage,
-                       source_positions,
-                       origins};
-  return builder.Run();
+base::Optional<BailoutReason> BuildGraph(Schedule* schedule, Zone* phase_zone,
+                                         Linkage* linkage) {
+  return GraphBuilder{phase_zone, *schedule, linkage}.Run();
 }
 
 #include "src/compiler/turboshaft/undef-assembler-macros.inc"

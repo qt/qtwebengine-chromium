@@ -14,6 +14,7 @@
 #include "include/gpu/graphite/GraphiteTypes.h"
 #include "include/gpu/graphite/Recorder.h"
 #include "include/gpu/graphite/Recording.h"
+#include "include/gpu/graphite/Surface.h"
 #include "include/gpu/graphite/dawn/DawnBackendContext.h"
 #include "include/gpu/graphite/dawn/DawnUtils.h"
 #include "tools/ToolUtils.h"
@@ -85,12 +86,11 @@ sk_sp<SkSurface> GraphiteDawnWindowContext::getBackbufferSurface() {
                                                info,
                                                textureView.Get());
     SkASSERT(this->graphiteRecorder());
-    auto surface = SkSurface::MakeGraphiteFromBackendTexture(
-        this->graphiteRecorder(),
-        backendTex,
-        kBGRA_8888_SkColorType,
-        fDisplayParams.fColorSpace,
-        &fDisplayParams.fSurfaceProps);
+    auto surface = SkSurfaces::WrapBackendTexture(this->graphiteRecorder(),
+                                                  backendTex,
+                                                  kBGRA_8888_SkColorType,
+                                                  fDisplayParams.fColorSpace,
+                                                  &fDisplayParams.fSurfaceProps);
     SkASSERT(surface);
     return surface;
 }
@@ -104,7 +104,7 @@ void GraphiteDawnWindowContext::setDisplayParams(const DisplayParams& params) {
 }
 
 wgpu::Device GraphiteDawnWindowContext::createDevice(wgpu::BackendType type) {
-    fInstance->DiscoverDefaultAdapters();
+    fInstance->DiscoverDefaultPhysicalDevices();
     DawnProcTable backendProcs = dawn::native::GetProcs();
     dawnProcSetProcs(&backendProcs);
 

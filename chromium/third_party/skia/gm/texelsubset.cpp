@@ -18,6 +18,7 @@
 #include "include/core/SkString.h"
 #include "include/private/base/SkTArray.h"
 #include "src/core/SkCanvasPriv.h"
+#include "src/gpu/ganesh/GrCanvas.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrProxyProvider.h"
@@ -81,14 +82,14 @@ protected:
     }
 
     void onOnceBeforeDraw() override {
-        GetResourceAsBitmap("images/mandrill_128.png", &fBitmap);
+        SkAssertResult(GetResourceAsBitmap("images/mandrill_128.png", &fBitmap));
         // Make the bitmap non-square to detect any width/height confusion.
         fBitmap.extractSubset(&fBitmap, SkIRect::MakeSize(fBitmap.dimensions()).makeInset(0, 20));
         SkASSERT(fBitmap.dimensions() == kImageSize);
     }
 
     DrawResult onDraw(GrRecordingContext* rContext, SkCanvas* canvas, SkString* errorMsg) override {
-        auto sdc = SkCanvasPriv::TopDeviceSurfaceDrawContext(canvas);
+        auto sdc = skgpu::ganesh::TopDeviceSurfaceDrawContext(canvas);
         if (!sdc) {
             *errorMsg = kErrorMsg_DrawSkippedGpuOnly;
             return DrawResult::kSkip;

@@ -743,7 +743,7 @@ class TensorExecutor<Expression, Eigen::SyclDevice, Vectorizable, Tiling> {
           evaluator,
           cl::sycl::nd_range<1>(cl::sycl::range<1>(GRange),
                                 cl::sycl::range<1>(tileSize)),
-          Index(1), range);
+          Index(1), range).wait();
     }
     evaluator.cleanup();
   }

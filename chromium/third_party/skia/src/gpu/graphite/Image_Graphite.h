@@ -10,6 +10,7 @@
 
 #include "src/gpu/graphite/Image_Base_Graphite.h"
 
+#include "include/gpu/graphite/Image.h"
 #include "src/gpu/graphite/TextureProxyView.h"
 
 namespace skgpu {
@@ -24,14 +25,11 @@ class Recorder;
 class Image final : public Image_Base {
 public:
     Image(uint32_t uniqueID, TextureProxyView, const SkColorInfo&);
-    Image(TextureProxyView, const SkColorInfo&);
     ~Image() override;
 
     bool onHasMipmaps() const override {
         return fTextureProxyView.proxy()->mipmapped() == skgpu::Mipmapped::kYes;
     }
-
-    using Image_Base::onMakeSubset;
 
     SkImage_Base::Type type() const override { return SkImage_Base::Type::kGraphite; }
 
@@ -39,22 +37,24 @@ public:
 
     TextureProxyView textureProxyView() const { return fTextureProxyView; }
 
-    static sk_sp<TextureProxy> MakePromiseImageLazyProxy(SkISize dimensions,
-                                                         TextureInfo,
-                                                         Volatile,
-                                                         GraphitePromiseImageFulfillProc,
-                                                         sk_sp<RefCntedCallback>,
-                                                         GraphitePromiseTextureReleaseProc);
+    static sk_sp<TextureProxy> MakePromiseImageLazyProxy(
+            SkISize dimensions,
+            TextureInfo,
+            Volatile,
+            SkImages::GraphitePromiseImageFulfillProc,
+            sk_sp<RefCntedCallback>,
+            SkImages::GraphitePromiseTextureReleaseProc);
+    sk_sp<SkImage> makeTextureImage(Recorder*, RequiredProperties) const override;
 
 private:
-    sk_sp<SkImage> onMakeTextureImage(Recorder*, RequiredImageProperties) const override;
-    sk_sp<SkImage> copyImage(const SkIRect& subset, Recorder*, RequiredImageProperties) const;
-    sk_sp<SkImage> onMakeSubset(const SkIRect&, Recorder*, RequiredImageProperties) const override;
+    sk_sp<SkImage> copyImage(const SkIRect& subset, Recorder*, RequiredProperties) const;
+    using Image_Base::onMakeSubset;
+    sk_sp<SkImage> onMakeSubset(Recorder*, const SkIRect&, RequiredProperties) const override;
     using Image_Base::onMakeColorTypeAndColorSpace;
-    sk_sp<SkImage> onMakeColorTypeAndColorSpace(SkColorType targetCT,
-                                                sk_sp<SkColorSpace> targetCS,
-                                                Recorder*,
-                                                RequiredImageProperties) const override;
+    sk_sp<SkImage> makeColorTypeAndColorSpace(Recorder*,
+                                              SkColorType targetCT,
+                                              sk_sp<SkColorSpace> targetCS,
+                                              RequiredProperties) const override;
 
     TextureProxyView fTextureProxyView;
 };

@@ -76,7 +76,7 @@ class LoopingFileCastAgent final
 
   // |shutdown_callback| is invoked after normal shutdown, whether initiated
   // sender- or receiver-side; or, for any fatal error.
-  LoopingFileCastAgent(TaskRunner* task_runner,
+  LoopingFileCastAgent(TaskRunner& task_runner,
                        std::unique_ptr<TrustStore> cast_trust_store,
                        ShutdownCallback shutdown_callback);
   ~LoopingFileCastAgent();
@@ -152,7 +152,7 @@ class LoopingFileCastAgent final
   void Shutdown();
 
   // Member variables set as part of construction.
-  TaskRunner* const task_runner_;
+  TaskRunner& task_runner_;
   ShutdownCallback shutdown_callback_;
   VirtualConnectionRouter router_;
   ConnectionNamespaceHandler connection_handler_;

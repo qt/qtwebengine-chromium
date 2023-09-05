@@ -16,11 +16,9 @@
 # ~~~
 cmake_minimum_required(VERSION 3.17.2)
 
-project(VULKAN_LOADER VERSION 1.3.247)
+project(VULKAN_LOADER VERSION 1.3.254)
 
 add_subdirectory(scripts)
-
-find_package(PythonInterp 3 QUIET)
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
@@ -148,8 +146,13 @@ target_compile_definitions(loader_common_options INTERFACE VK_ENABLE_BETA_EXTENS
 
 target_compile_features(loader_common_options INTERFACE c_std_99)
 target_compile_features(loader_common_options INTERFACE cxx_std_11)
-set(LOADER_STANDARD_C_PROPERTIES PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED YES C_EXTENSIONS OFF)
-set(LOADER_STANDARD_CXX_PROPERTIES PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS OFF)
+set(LOADER_STANDARD_C_PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED YES C_EXTENSIONS OFF)
+set(LOADER_STANDARD_CXX_PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS OFF)
+
+set(TESTS_STANDARD_CXX_PROPERTIES ${LOADER_STANDARD_CXX_PROPERTIES} MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+
+# Force the use of the multithreaded, static version of the C runtime.
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 option(ENABLE_WERROR "Enable warnings as errors" ON)
 
@@ -170,7 +173,7 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "C
 endif()
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    target_compile_options(loader_common_options INTERFACE -Wno-unused-parameter -Wno-unused-function -Wno-missing-field-initializers)
+    target_compile_options(loader_common_options INTERFACE -Wno-missing-field-initializers)
 
     # need to prepend /clang: to compiler arguments when using clang-cl
     if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND "${CMAKE_CXX_SIMULATE_ID}" MATCHES "MSVC")
@@ -196,10 +199,9 @@ endif()
 if(CMAKE_CXX_COMPILER_ID MATCHES "MSVC" OR (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND "${CMAKE_CXX_SIMULATE_ID}" MATCHES "MSVC"))
     # /GR-: Disable RTTI
     # /guard:cf: Enable control flow guard
-    # /wd4100: Disable warning on unreferenced formal parameter
     # /wd4152: Disable warning on conversion of a function pointer to a data pointer
     # /wd4201: Disable warning on anonymous struct/unions
-    target_compile_options(loader_common_options INTERFACE /GR- /guard:cf /wd4100 /wd4152 /wd4201)
+    target_compile_options(loader_common_options INTERFACE /GR- /guard:cf /wd4152 /wd4201)
 
     # Enable control flow guard
     target_link_options(loader_common_options INTERFACE "LINKER:/guard:cf")
@@ -229,15 +231,13 @@ if(NOT MSVC AND NOT (HAVE_SECURE_GETENV OR HAVE___SECURE_GETENV))
     message(WARNING "Using non-secure environmental lookups. This loader will not properly disable environent variables when run with elevated permissions.")
 endif()
 
-# Optional codegen target
-if(PYTHONINTERP_FOUND)
-    add_custom_target(VulkanLoader_generated_source
-                      COMMAND ${PYTHON_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/generate_source.py
-                              ${VULKAN_HEADERS_REGISTRY_DIRECTORY}
-                              --generated-version ${VulkanHeaders_VERSION}
-                              --incremental)
-else()
-    message(WARNING "VulkanLoader_generated_source target requires python 3")
+option(LOADER_CODEGEN "Enable vulkan loader code generation")
+if(LOADER_CODEGEN)
+    find_package(Python3 REQUIRED)
+    add_custom_target(loader_codegen
+        COMMAND Python3::Interpreter ${PROJECT_SOURCE_DIR}/scripts/generate_source.py ${VULKAN_HEADERS_REGISTRY_DIRECTORY}
+                --generated-version ${VulkanHeaders_VERSION} --incremental
+    )
 endif()
 
 if(UNIX)
@@ -270,6 +270,7 @@ if(BUILD_TESTS)
         set(BUILD_GMOCK OFF CACHE BOOL "Builds the googlemock subproject")
         set(gtest_force_shared_crt ON CACHE BOOL "Link gtest runtimes dynamically" FORCE)
         set(BUILD_SHARED_LIBS ON CACHE BOOL "Build shared libraries")
+        set(INSTALL_GTEST OFF CACHE BOOL "Don't install gtest")
         # The googletest directory exists, so enable it as a target.
         message(STATUS "Vulkan-Loader/external: " "googletest found - configuring it for tests")
         add_subdirectory("${GOOGLETEST_INSTALL_DIR}")
@@ -277,6 +278,11 @@ if(BUILD_TESTS)
         message(SEND_ERROR "Could not find googletest directory. Be sure to run update_deps.py with the --tests option to download the appropriate version of googletest")
         set(BUILD_TESTS OFF)
     endif()
+
+    # make sure gtest uses the dynamic runtime instead
+    set_target_properties(gtest PROPERTIES ${TESTS_STANDARD_CXX_PROPERTIES})
+    set_target_properties(gtest_main PROPERTIES ${TESTS_STANDARD_CXX_PROPERTIES})
+
     if (WIN32)
         if(TARGET detours)
             # Already enabled as a target (perhaps by a project enclosing this one)
@@ -349,7 +355,7 @@ if(BUILD_TESTS)
 
             if(MSVC)
                 target_compile_definitions(detours PUBLIC  "_CRT_SECURE_NO_WARNINGS=1")
-                set_target_properties(detours PROPERTIES COMPILE_FLAGS /EHsc)
+                set_target_properties(detours PROPERTIES COMPILE_FLAGS /EHsc ${TESTS_STANDARD_CXX_PROPERTIES})
             endif()
 
             # Silence errors found in clang-cl

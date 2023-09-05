@@ -20,7 +20,7 @@ class ProtocolConnectionClientFactory {
   static std::unique_ptr<ProtocolConnectionClient> Create(
       MessageDemuxer* demuxer,
       ProtocolConnectionServiceObserver* observer,
-      TaskRunner* task_runner);
+      TaskRunner& task_runner);
 };
 
 }  // namespace osp

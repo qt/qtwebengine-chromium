@@ -266,10 +266,23 @@ angle::Result VertexArrayMtl::syncState(const gl::Context *context,
     const std::vector<gl::VertexAttribute> &attribs = mState.getVertexAttributes();
     const std::vector<gl::VertexBinding> &bindings  = mState.getVertexBindings();
 
-    for (size_t dirtyBit : dirtyBits)
+    for (auto iter = dirtyBits.begin(), endIter = dirtyBits.end(); iter != endIter; ++iter)
     {
+        size_t dirtyBit = *iter;
         switch (dirtyBit)
         {
+            case gl::VertexArray::DIRTY_BIT_LOST_OBSERVATION:
+            {
+                // If vertex array was not observing while unbound, we need to check buffer's
+                // internal storage and take action if buffer has changed while not observing.
+                // For now we just simply assume buffer storage has changed and always dirty all
+                // binding points.
+                iter.setLaterBits(
+                    gl::VertexArray::DirtyBits(mState.getBufferBindingMask().to_ulong()
+                                               << gl::VertexArray::DIRTY_BIT_BINDING_0));
+                break;
+            }
+
             case gl::VertexArray::DIRTY_BIT_ELEMENT_ARRAY_BUFFER:
             case gl::VertexArray::DIRTY_BIT_ELEMENT_ARRAY_BUFFER_DATA:
             {
@@ -627,6 +640,12 @@ angle::Result VertexArrayMtl::updateClientAttribs(const gl::Context *context,
                                            streamFormat.vertexLoadFunction,
                                            &mConvertedArrayBufferHolders[attribIndex],
                                            &mCurrentArrayBufferOffsets[attribIndex]));
+                if (contextMtl->getDisplay()->getFeatures().flushAfterStreamVertexData.enabled)
+                {
+                    // WaitUntilScheduled is needed for this workaround. NoWait does not have the
+                    // needed effect.
+                    contextMtl->flushCommandBuffer(mtl::WaitUntilScheduled);
+                }
 
                 mCurrentArrayBuffers[attribIndex] = &mConvertedArrayBufferHolders[attribIndex];
             }
@@ -881,7 +900,7 @@ angle::Result VertexArrayMtl::convertIndexBuffer(const gl::Context *glContext,
     {
         // We shouldn't use GPU to convert when we are in a middle of a render pass.
         ANGLE_TRY(StreamIndexData(contextMtl, &conversion->data,
-                                  idxBuffer->getClientShadowCopyData(contextMtl) + offsetModulo,
+                                  idxBuffer->getBufferDataReadOnly(contextMtl) + offsetModulo,
                                   indexType, indexCount, glState.isPrimitiveRestartEnabled(),
                                   &conversion->convertedBuffer, &conversion->convertedOffset));
     }
@@ -1061,7 +1080,7 @@ angle::Result VertexArrayMtl::convertVertexBufferCPU(ContextMtl *contextMtl,
                                                      ConversionBufferMtl *conversion)
 {
 
-    const uint8_t *srcBytes = srcBuffer->getClientShadowCopyData(contextMtl);
+    const uint8_t *srcBytes = srcBuffer->getBufferDataReadOnly(contextMtl);
     ANGLE_CHECK_GL_ALLOC(contextMtl, srcBytes);
     VertexConversionBufferMtl *vertexConverison =
         static_cast<VertexConversionBufferMtl *>(conversion);

@@ -85,6 +85,7 @@ const void* SkReadBuffer::skip(size_t count, size_t size) {
 
 void SkReadBuffer::setDeserialProcs(const SkDeserialProcs& procs) {
     fProcs = procs;
+    this->setAllowSkSL(procs.fAllowSkSL);
 }
 
 bool SkReadBuffer::readBool() {
@@ -412,7 +413,7 @@ sk_sp<SkImage> SkReadBuffer::readImage() {
         SkIRect subset;
         this->readIRect(&subset);
         if (image) {
-            image = image->makeSubset(subset);
+            image = image->makeSubset(nullptr, subset);
         }
     }
 

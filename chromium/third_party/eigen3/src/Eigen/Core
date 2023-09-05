@@ -95,6 +95,7 @@
 #include <algorithm>
 
 #include <array>
+#include <vector>
 
 // for std::is_nothrow_move_assignable
 #include <type_traits>
@@ -174,6 +175,8 @@ using std::ptrdiff_t;
 #include "src/Core/util/IntegralConstant.h"
 #include "src/Core/util/Serializer.h"
 #include "src/Core/util/SymbolicIndex.h"
+#include "src/Core/util/EmulateArray.h"
+#include "src/Core/util/MoreMeta.h"
 
 #include "src/Core/NumTraits.h"
 #include "src/Core/MathFunctions.h"
@@ -220,6 +223,7 @@ using std::ptrdiff_t;
   #include "src/Core/arch/SSE/Complex.h"
 #elif defined(EIGEN_VECTORIZE_ALTIVEC) || defined(EIGEN_VECTORIZE_VSX)
   #include "src/Core/arch/AltiVec/PacketMath.h"
+  #include "src/Core/arch/AltiVec/TypeCasting.h"
   #include "src/Core/arch/AltiVec/MathFunctions.h"
   #include "src/Core/arch/AltiVec/Complex.h"
 #elif defined EIGEN_VECTORIZE_NEON
@@ -248,7 +252,6 @@ using std::ptrdiff_t;
 #endif
 
 #if defined(EIGEN_USE_SYCL)
-  #include "src/Core/arch/SYCL/SyclMemoryModel.h"
   #include "src/Core/arch/SYCL/InteropHeaders.h"
 #if !defined(EIGEN_DONT_VECTORIZE_SYCL)
   #include "src/Core/arch/SYCL/PacketMath.h"

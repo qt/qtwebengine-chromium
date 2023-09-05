@@ -53,7 +53,7 @@ void InterleaveAudioSamples(const uint8_t* const planes[],
 }  // namespace
 
 SDLAudioPlayer::SDLAudioPlayer(ClockNowFunctionPtr now_function,
-                               TaskRunner* task_runner,
+                               TaskRunner& task_runner,
                                Receiver* receiver,
                                AudioCodec codec,
                                std::function<void()> error_callback)

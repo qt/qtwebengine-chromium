@@ -7,6 +7,7 @@
 
 #include "tools/viewer/Viewer.h"
 
+#include "bench/GpuTools.h"
 #include "gm/gm.h"
 #include "include/core/SkAlphaType.h"
 #include "include/core/SkBlendMode.h"
@@ -1627,8 +1628,8 @@ void Viewer::drawSlide(SkSurface* surface) {
 
         SkImageInfo info = SkImageInfo::Make(w, h, colorType, kPremul_SkAlphaType, colorSpace);
         return Window::kRaster_BackendType == this->fBackendType
-                ? SkSurface::MakeRaster(info, &props)
-                : slideCanvas->makeSurface(info, &props);
+                       ? SkSurfaces::Raster(info, &props)
+                       : slideCanvas->makeSurface(info, &props);
     };
 
     // We need to render offscreen if we're...
@@ -1708,7 +1709,7 @@ void Viewer::drawSlide(SkSurface* surface) {
 
     // Force a flush so we can time that, too
     fStatsLayer.beginTiming(fFlushTimer);
-    slideSurface->flushAndSubmit();
+    skgpu::FlushAndSubmit(slideSurface);
     fStatsLayer.endTiming(fFlushTimer);
 
     // If we rendered offscreen, snap an image and push the results to the window's canvas
@@ -2585,7 +2586,7 @@ void Viewer::drawImGui() {
                         SkReadBuffer reader(data->data(), data->size());
                         entry.fShaderType = GrPersistentCacheUtils::GetType(&reader);
                         GrPersistentCacheUtils::UnpackCachedShaders(&reader, entry.fShader,
-                                                                    entry.fInputs,
+                                                                    entry.fInterfaces,
                                                                     kGrShaderTypeCount);
                     };
                     fCachedShaders.clear();
@@ -2734,7 +2735,7 @@ void Viewer::drawImGui() {
 
                         auto data = GrPersistentCacheUtils::PackCachedShaders(entry.fShaderType,
                                                                               entry.fShader,
-                                                                              entry.fInputs,
+                                                                              entry.fInterfaces,
                                                                               kGrShaderTypeCount);
                         fPersistentCache.store(*entry.fKey, *data, entry.fKeyDescription);
 

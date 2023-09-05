@@ -17,6 +17,7 @@
 #include "core/fpdfapi/parser/cpdf_document.h"
 #include "core/fpdfapi/parser/cpdf_reference.h"
 #include "core/fpdfapi/parser/cpdf_stream.h"
+#include "core/fxcrt/unowned_ptr.h"
 #include "third_party/base/check.h"
 #include "third_party/base/containers/contains.h"
 
@@ -80,7 +81,6 @@ class ObjectTreeTraverser {
           const CPDF_Reference* ref_object = current_object->AsReference();
           const uint32_t ref_object_number = GetObjectNumber(ref_object);
           const uint32_t referenced_object_number = ref_object->GetRefObjNum();
-          CHECK(referenced_object_number);
 
           RetainPtr<const CPDF_Object> referenced_object;
           if (ref_object->HasIndirectObjectHolder()) {
@@ -93,6 +93,7 @@ class ObjectTreeTraverser {
           }
           // Unlike the other object types, CPDF_Reference can point at nullptr.
           if (referenced_object) {
+            CHECK(referenced_object_number);
             reference_entries.push_back(
                 {ref_object_number, referenced_object_number});
             PushNewObject(ref_object, referenced_object);
@@ -169,7 +170,7 @@ class ObjectTreeTraverser {
     return it != object_number_map_.end() ? it->second : 0;
   }
 
-  const CPDF_Document* const document_;
+  UnownedPtr<const CPDF_Document> const document_;
 
   // Queue of objects to traverse.
   // - Pointers in the queue are non-null.

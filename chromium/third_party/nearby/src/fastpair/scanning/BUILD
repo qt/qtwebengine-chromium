@@ -29,15 +29,13 @@ cc_library(
     ],
     deps = [
         "//fastpair/common",
-        "//fastpair/internal/ble",
+        "//fastpair/internal/mediums",
+        "//fastpair/repository:device_repository",
         "//fastpair/scanning/fastpair:scanning",
         "//internal/base",
-        "//internal/platform:base",
-        "//internal/platform:comm",
         "//internal/platform:logging",
         "//internal/platform:types",
         "@com_google_absl//absl/functional:bind_front",
-        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -68,7 +66,7 @@ cc_test(
     deps = [
         ":scanner",
         "//fastpair/common",
-        "//fastpair/internal/ble",
+        "//fastpair/internal/mediums",
         "//fastpair/proto:fastpair_cc_proto",
         "//fastpair/server_access:test_support",
         "//internal/platform:base",

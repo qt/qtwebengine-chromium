@@ -13,8 +13,8 @@
 #include "absl/types/optional.h"
 #include "discovery/dnssd/impl/constants.h"
 #include "discovery/dnssd/public/dns_sd_instance_endpoint.h"
-#include "discovery/mdns/mdns_record_changed_callback.h"
-#include "discovery/mdns/mdns_records.h"
+#include "discovery/mdns/public/mdns_record_changed_callback.h"
+#include "discovery/mdns/public/mdns_records.h"
 
 namespace openscreen {
 namespace discovery {

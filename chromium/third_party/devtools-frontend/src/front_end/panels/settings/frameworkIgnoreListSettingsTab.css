@@ -26,6 +26,10 @@
   min-height: 30px;
 }
 
+.ignore-list-option devtools-icon {
+  margin-bottom: -1px;
+}
+
 .ignore-list-option-group {
   margin-top: 16px;
   margin-bottom: 3px;
@@ -109,4 +113,8 @@
 
 .ignore-list.list-editing ~ .add-button {
   display: none;
+}
+
+.devtools-link:has(devtools-icon) {
+  margin-left: 6px;
 }

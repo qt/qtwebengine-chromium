@@ -28,6 +28,7 @@
 #include "dawn/native/d3d/D3DError.h"
 #include "dawn/native/d3d/UtilsD3D.h"
 #include "dawn/native/d3d11/DeviceD3D11.h"
+#include "dawn/native/d3d11/FenceD3D11.h"
 #include "dawn/native/d3d11/Forward.h"
 #include "dawn/native/d3d11/UtilsD3D11.h"
 
@@ -49,7 +50,71 @@ UINT D3D11TextureBindFlags(wgpu::TextureUsage usage, const Format& format) {
     return bindFlags;
 }
 
+Aspect D3D11Aspect(Aspect aspect) {
+    // https://learn.microsoft.com/en-us/windows/win32/direct3d12/subresources
+    // Planar formats existed in Direct3D 11, but individual planes could not be addressed
+    // individually.
+    if (IsSubset(aspect, Aspect::Depth | Aspect::Stencil)) {
+        return Aspect::CombinedDepthStencil;
+    }
+
+    ASSERT(HasOneBit(aspect));
+    return aspect;
+}
+
 }  // namespace
+
+MaybeError ValidateTextureCanBeWrapped(ID3D11Resource* d3d11Resource,
+                                       const TextureDescriptor* dawnDescriptor) {
+    ComPtr<ID3D11Texture2D> d3d11Texture;
+    DAWN_TRY(
+        CheckHRESULT(d3d11Resource->QueryInterface(IID_PPV_ARGS(&d3d11Texture)), "QueryInterface"));
+
+    D3D11_TEXTURE2D_DESC d3dDescriptor;
+    d3d11Texture->GetDesc(&d3dDescriptor);
+
+    DAWN_INVALID_IF(
+        (dawnDescriptor->size.width != d3dDescriptor.Width) ||
+            (dawnDescriptor->size.height != d3dDescriptor.Height) ||
+            (dawnDescriptor->size.depthOrArrayLayers != 1),
+        "D3D11 texture size (Width: %u, Height: %u, DepthOrArraySize: 1) doesn't match Dawn "
+        "descriptor size (width: %u, height: %u, depthOrArrayLayers: %u).",
+        d3dDescriptor.Width, d3dDescriptor.Height, dawnDescriptor->size.width,
+        dawnDescriptor->size.height, dawnDescriptor->size.depthOrArrayLayers);
+
+    const DXGI_FORMAT dxgiFormatFromDescriptor = d3d::DXGITextureFormat(dawnDescriptor->format);
+    DAWN_INVALID_IF(dxgiFormatFromDescriptor != d3dDescriptor.Format,
+                    "D3D11 texture format (%x) is not compatible with Dawn descriptor format (%s).",
+                    d3dDescriptor.Format, dawnDescriptor->format);
+
+    DAWN_INVALID_IF(d3dDescriptor.ArraySize != 1, "D3D12 texture array size (%u) is not 1.",
+                    d3dDescriptor.ArraySize);
+
+    DAWN_INVALID_IF(d3dDescriptor.MipLevels != 1,
+                    "D3D11 texture number of miplevels (%u) is not 1.", d3dDescriptor.MipLevels);
+
+    // Shared textures cannot be multi-sample so no need to check those.
+    ASSERT(d3dDescriptor.SampleDesc.Count == 1);
+    ASSERT(d3dDescriptor.SampleDesc.Quality == 0);
+
+    return {};
+}
+
+MaybeError ValidateVideoTextureCanBeShared(Device* device, DXGI_FORMAT textureFormat) {
+    const bool supportsSharedResourceCapabilityTier2 =
+        device->GetDeviceInfo().supportsSharedResourceCapabilityTier2;
+    switch (textureFormat) {
+        case DXGI_FORMAT_NV12:
+            if (supportsSharedResourceCapabilityTier2) {
+                return {};
+            }
+            break;
+        default:
+            break;
+    }
+
+    return DAWN_VALIDATION_ERROR("DXGI format does not support cross-API sharing.");
+}
 
 // static
 ResultOrError<Ref<Texture>> Texture::Create(Device* device, const TextureDescriptor* descriptor) {
@@ -75,6 +140,31 @@ ResultOrError<Ref<Texture>> Texture::CreateStaging(Device* device,
         new Texture(device, descriptor, TextureState::OwnedInternal, /*isStaging=*/true));
     DAWN_TRY(texture->InitializeAsInternalTexture());
     return std::move(texture);
+}
+
+// static
+ResultOrError<Ref<Texture>> Texture::CreateExternalImage(Device* device,
+                                                         const TextureDescriptor* descriptor,
+                                                         ComPtr<IUnknown> d3dTexture,
+                                                         std::vector<Ref<d3d::Fence>> waitFences,
+                                                         bool isSwapChainTexture,
+                                                         bool isInitialized) {
+    Ref<Texture> dawnTexture = AcquireRef(
+        new Texture(device, descriptor, TextureState::OwnedExternal, /*isStaging=*/false));
+
+    DAWN_TRY(dawnTexture->InitializeAsExternalTexture(std::move(d3dTexture), std::move(waitFences),
+                                                      isSwapChainTexture));
+
+    // Importing a multi-planar format must be initialized. This is required because
+    // a shared multi-planar format cannot be initialized by Dawn.
+    DAWN_INVALID_IF(
+        !isInitialized && dawnTexture->GetFormat().IsMultiPlanar(),
+        "Cannot create a texture with a multi-planar format (%s) with uninitialized data.",
+        dawnTexture->GetFormat().format);
+
+    dawnTexture->SetIsSubresourceContentInitialized(isInitialized,
+                                                    dawnTexture->GetAllSubresources());
+    return std::move(dawnTexture);
 }
 
 template <typename T>
@@ -104,9 +194,15 @@ T Texture::GetD3D11TextureDesc() const {
     }
 
     desc.MipLevels = static_cast<UINT16>(GetNumMipLevels());
-    desc.Format = d3d::DXGITextureFormat(GetFormat().format);
+    // To sample from a depth or stencil texture, we need to create a typeless texture.
+    bool needsTypelessFormat =
+        GetFormat().HasDepthOrStencil() && (GetUsage() & wgpu::TextureUsage::TextureBinding);
+    // We need to use the typeless format if view format reinterpretation is required.
+    needsTypelessFormat |= GetViewFormats().any();
+    desc.Format = needsTypelessFormat ? d3d::DXGITypelessTextureFormat(GetFormat().format)
+                                      : d3d::DXGITextureFormat(GetFormat().format);
     desc.Usage = mIsStaging ? D3D11_USAGE_STAGING : D3D11_USAGE_DEFAULT;
-    desc.BindFlags = D3D11TextureBindFlags(GetUsage(), GetFormat());
+    desc.BindFlags = D3D11TextureBindFlags(GetInternalUsage(), GetFormat());
     constexpr UINT kCPUReadWriteFlags = D3D11_CPU_ACCESS_READ | D3D11_CPU_ACCESS_WRITE;
     desc.CPUAccessFlags = mIsStaging ? kCPUReadWriteFlags : 0;
 
@@ -115,6 +211,12 @@ T Texture::GetD3D11TextureDesc() const {
 
 MaybeError Texture::InitializeAsInternalTexture() {
     Device* device = ToBackend(GetDevice());
+
+    if (GetFormat().isRenderable && !mIsStaging) {
+        // If the texture format is renderable, we need to add the render attachment usage
+        // internally, so the texture can be cleared with GPU.
+        AddInternalUsage(wgpu::TextureUsage::RenderAttachment);
+    }
 
     switch (GetDimension()) {
         case wgpu::TextureDimension::e1D: {
@@ -146,7 +248,8 @@ MaybeError Texture::InitializeAsInternalTexture() {
         }
     }
 
-    if (device->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting)) {
+    // Staging texture is used internally, so we don't need to clear it.
+    if (device->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting) && !mIsStaging) {
         CommandRecordingContext* commandContext = device->GetPendingCommandContext();
         DAWN_TRY(Clear(commandContext, GetAllSubresources(), TextureBase::ClearValue::NonZero));
     }
@@ -163,11 +266,30 @@ MaybeError Texture::InitializeAsSwapChainTexture(ComPtr<ID3D11Resource> d3d11Tex
     return {};
 }
 
+MaybeError Texture::InitializeAsExternalTexture(ComPtr<IUnknown> d3dTexture,
+                                                std::vector<Ref<d3d::Fence>> waitFences,
+                                                bool isSwapChainTexture) {
+    ComPtr<ID3D11Resource> d3d11Texture;
+    DAWN_TRY(CheckHRESULT(d3dTexture.As(&d3d11Texture), "Query ID3D11Resource from IUnknown"));
+
+    CommandRecordingContext* commandContext = ToBackend(GetDevice())->GetPendingCommandContext();
+    ID3D11DeviceContext4* d3d11DeviceContext4 = commandContext->GetD3D11DeviceContext4();
+    for (Ref<d3d::Fence>& fence : waitFences) {
+        DAWN_TRY(CheckHRESULT(
+            d3d11DeviceContext4->Wait(static_cast<Fence*>(fence.Get())->GetD3D11Fence(),
+                                      fence->GetFenceValue()),
+            "ID3D11DeviceContext4::Wait"));
+    }
+    mD3d11Resource = std::move(d3d11Texture);
+    SetLabelHelper("Dawn_ExternalTexture");
+    return {};
+}
+
 Texture::Texture(Device* device,
                  const TextureDescriptor* descriptor,
                  TextureState state,
                  bool isStaging)
-    : TextureBase(device, descriptor, state), mIsStaging(isStaging) {}
+    : Base(device, descriptor, state), mIsStaging(isStaging) {}
 
 Texture::~Texture() = default;
 
@@ -176,46 +298,22 @@ void Texture::DestroyImpl() {
     mD3d11Resource = nullptr;
 }
 
-DXGI_FORMAT Texture::GetD3D11Format() const {
-    return d3d::DXGITextureFormat(GetFormat().format);
-}
-
 ID3D11Resource* Texture::GetD3D11Resource() const {
     return mD3d11Resource.Get();
 }
 
-DXGI_FORMAT Texture::GetD3D11CopyableSubresourceFormat(Aspect aspect) const {
-    // TODO(dawn:1705): share the code with D3D12
-    ASSERT(GetFormat().aspects & aspect);
-
-    switch (GetFormat().format) {
-        case wgpu::TextureFormat::Depth24PlusStencil8:
-        case wgpu::TextureFormat::Depth32FloatStencil8:
-        case wgpu::TextureFormat::Stencil8:
-            switch (aspect) {
-                case Aspect::Depth:
-                    return DXGI_FORMAT_R32_FLOAT;
-                case Aspect::Stencil:
-                    return DXGI_FORMAT_R8_UINT;
-                default:
-                    UNREACHABLE();
-            }
-        default:
-            ASSERT(HasOneBit(GetFormat().aspects));
-            return GetD3D11Format();
-    }
-}
-
-D3D11_RENDER_TARGET_VIEW_DESC Texture::GetRTVDescriptor(const Format& format,
-                                                        const SubresourceRange& range) const {
+D3D11_RENDER_TARGET_VIEW_DESC Texture::GetRTVDescriptor(
+    const Format& format,
+    const SubresourceRange& singleLevelRange) const {
+    ASSERT(singleLevelRange.levelCount == 1);
     D3D11_RENDER_TARGET_VIEW_DESC rtvDesc;
     rtvDesc.Format = d3d::DXGITextureFormat(format.format);
     if (IsMultisampledTexture()) {
         ASSERT(GetDimension() == wgpu::TextureDimension::e2D);
         ASSERT(GetNumMipLevels() == 1);
-        ASSERT(range.baseMipLevel == 0);
-        ASSERT(range.baseArrayLayer == 0);
-        ASSERT(range.layerCount == 1);
+        ASSERT(singleLevelRange.baseMipLevel == 0);
+        ASSERT(singleLevelRange.baseArrayLayer == 0);
+        ASSERT(singleLevelRange.layerCount == 1);
         rtvDesc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2DMS;
         return rtvDesc;
     }
@@ -228,15 +326,15 @@ D3D11_RENDER_TARGET_VIEW_DESC Texture::GetRTVDescriptor(const Format& format,
             // https://docs.microsoft.com/en-us/windows/desktop/api/d3d11/ns-d3d11-d3d11_tex2d_array
             // _rtv
             rtvDesc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2DARRAY;
-            rtvDesc.Texture2DArray.MipSlice = range.baseMipLevel;
-            rtvDesc.Texture2DArray.FirstArraySlice = range.baseArrayLayer;
-            rtvDesc.Texture2DArray.ArraySize = range.layerCount;
+            rtvDesc.Texture2DArray.MipSlice = singleLevelRange.baseMipLevel;
+            rtvDesc.Texture2DArray.FirstArraySlice = singleLevelRange.baseArrayLayer;
+            rtvDesc.Texture2DArray.ArraySize = singleLevelRange.layerCount;
             break;
         case wgpu::TextureDimension::e3D:
             rtvDesc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE3D;
-            rtvDesc.Texture3D.MipSlice = range.baseMipLevel;
-            rtvDesc.Texture3D.FirstWSlice = range.baseArrayLayer;
-            rtvDesc.Texture3D.WSize = range.layerCount;
+            rtvDesc.Texture3D.MipSlice = singleLevelRange.baseMipLevel;
+            rtvDesc.Texture3D.FirstWSlice = singleLevelRange.baseArrayLayer;
+            rtvDesc.Texture3D.WSize = singleLevelRange.layerCount;
             break;
         case wgpu::TextureDimension::e1D:
             UNREACHABLE();
@@ -245,31 +343,31 @@ D3D11_RENDER_TARGET_VIEW_DESC Texture::GetRTVDescriptor(const Format& format,
     return rtvDesc;
 }
 
-D3D11_DEPTH_STENCIL_VIEW_DESC Texture::GetDSVDescriptor(const SubresourceRange& range,
+D3D11_DEPTH_STENCIL_VIEW_DESC Texture::GetDSVDescriptor(const SubresourceRange& singleLevelRange,
                                                         bool depthReadOnly,
                                                         bool stencilReadOnly) const {
     D3D11_DEPTH_STENCIL_VIEW_DESC dsvDesc;
-
-    dsvDesc.Format = GetD3D11Format();
+    ASSERT(singleLevelRange.levelCount == 1);
+    dsvDesc.Format = d3d::DXGITextureFormat(GetFormat().format);
     dsvDesc.Flags = 0;
-    if (depthReadOnly && range.aspects & Aspect::Depth) {
+    if (depthReadOnly && singleLevelRange.aspects & Aspect::Depth) {
         dsvDesc.Flags |= D3D11_DSV_READ_ONLY_DEPTH;
     }
-    if (stencilReadOnly && range.aspects & Aspect::Stencil) {
+    if (stencilReadOnly && singleLevelRange.aspects & Aspect::Stencil) {
         dsvDesc.Flags |= D3D11_DSV_READ_ONLY_STENCIL;
     }
 
     if (IsMultisampledTexture()) {
         ASSERT(GetNumMipLevels() == 1);
-        ASSERT(range.baseMipLevel == 0);
-        ASSERT(range.baseArrayLayer == 0);
-        ASSERT(range.layerCount == 1);
+        ASSERT(singleLevelRange.baseMipLevel == 0);
+        ASSERT(singleLevelRange.baseArrayLayer == 0);
+        ASSERT(singleLevelRange.layerCount == 1);
         dsvDesc.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2DMS;
     } else {
         dsvDesc.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2DARRAY;
-        dsvDesc.Texture2DArray.MipSlice = range.baseMipLevel;
-        dsvDesc.Texture2DArray.FirstArraySlice = range.baseArrayLayer;
-        dsvDesc.Texture2DArray.ArraySize = range.layerCount;
+        dsvDesc.Texture2DArray.MipSlice = singleLevelRange.baseMipLevel;
+        dsvDesc.Texture2DArray.FirstArraySlice = singleLevelRange.baseArrayLayer;
+        dsvDesc.Texture2DArray.ArraySize = singleLevelRange.layerCount;
     }
 
     return dsvDesc;
@@ -278,12 +376,17 @@ D3D11_DEPTH_STENCIL_VIEW_DESC Texture::GetDSVDescriptor(const SubresourceRange& 
 MaybeError Texture::Clear(CommandRecordingContext* commandContext,
                           const SubresourceRange& range,
                           TextureBase::ClearValue clearValue) {
-    // TODO(dawn:1740): Clear non-renderable texture.
-    if ((GetUsage() & wgpu::TextureUsage::RenderAttachment) == 0) {
-        return DAWN_UNIMPLEMENTED_ERROR("Clearing non-renderable textures is not implemented");
+    bool isRenderable = GetInternalUsage() & wgpu::TextureUsage::RenderAttachment;
+
+    if (!isRenderable) {
+        // TODO(dawn:1802): Support clearing non-renderable textures.
+        return DAWN_UNIMPLEMENTED_ERROR("Clearing non-renderable textures");
     }
 
-    TextureViewDescriptor desc;
+    ID3D11DeviceContext* d3d11DeviceContext = commandContext->GetD3D11DeviceContext();
+
+    TextureViewDescriptor desc = {};
+    desc.label = "ClearTextureView";
     desc.format = GetFormat().format;
     switch (GetDimension()) {
         case wgpu::TextureDimension::e1D:
@@ -296,11 +399,6 @@ MaybeError Texture::Clear(CommandRecordingContext* commandContext,
             desc.dimension = wgpu::TextureViewDimension::e3D;
             break;
     }
-    // TODO(dawn:1740): support clearing multiple layers.
-    if (range.levelCount != 1 || range.layerCount != 1) {
-        return DAWN_UNIMPLEMENTED_ERROR("Clearing multiple layers is not implemented");
-    }
-
     desc.baseMipLevel = range.baseMipLevel;
     desc.mipLevelCount = range.levelCount;
     desc.baseArrayLayer = range.baseArrayLayer;
@@ -308,14 +406,46 @@ MaybeError Texture::Clear(CommandRecordingContext* commandContext,
     desc.aspect = wgpu::TextureAspect::All;
 
     Ref<TextureView> view = TextureView::Create(this, &desc);
-    ComPtr<ID3D11RenderTargetView> d3d11RTV;
-    DAWN_TRY_ASSIGN(d3d11RTV, view->CreateD3D11RenderTargetView());
 
-    static constexpr std::array<float, 4> zero = {0.0f, 0.0f, 0.0f, 0.0f};
-    static constexpr std::array<float, 4> nonZero = {1.0f, 1.0f, 1.0f, 1.0f};
+    if (GetFormat().HasDepthOrStencil()) {
+        for (uint32_t mipLevel = view->GetBaseMipLevel();
+             mipLevel < view->GetBaseMipLevel() + view->GetLevelCount(); ++mipLevel) {
+            ComPtr<ID3D11DepthStencilView> d3d11DSV;
+            DAWN_TRY_ASSIGN(d3d11DSV,
+                            view->CreateD3D11DepthStencilView(/*depthReadOnly=*/false,
+                                                              /*stencilReadOnly=*/false, mipLevel));
+            UINT clearFlags = 0;
+            if (GetFormat().HasDepth() && range.aspects & Aspect::Depth) {
+                clearFlags |= D3D11_CLEAR_DEPTH;
+            }
+            if (GetFormat().HasStencil() && range.aspects & Aspect::Stencil) {
+                clearFlags |= D3D11_CLEAR_STENCIL;
+            }
+            // Clear all layers for each 'mipLevel'.
+            d3d11DeviceContext->ClearDepthStencilView(
+                d3d11DSV.Get(), clearFlags,
+                clearValue == TextureBase::ClearValue::Zero ? 0.0f : 1.0f,
+                clearValue == TextureBase::ClearValue::Zero ? 0u : 1u);
+        }
+    } else {
+        static constexpr std::array<float, 4> kZero = {0.0f, 0.0f, 0.0f, 0.0f};
+        static constexpr std::array<float, 4> kNonZero = {1.0f, 1.0f, 1.0f, 1.0f};
 
-    commandContext->GetD3D11DeviceContext()->ClearRenderTargetView(
-        d3d11RTV.Get(), clearValue == TextureBase::ClearValue::Zero ? zero.data() : nonZero.data());
+        for (uint32_t mipLevel = view->GetBaseMipLevel();
+             mipLevel < view->GetBaseMipLevel() + view->GetLevelCount(); ++mipLevel) {
+            ComPtr<ID3D11RenderTargetView> d3d11RTV;
+            DAWN_TRY_ASSIGN(d3d11RTV, view->CreateD3D11RenderTargetView(mipLevel));
+            // Clear all layers for each 'mipLevel'.
+            d3d11DeviceContext->ClearRenderTargetView(
+                d3d11RTV.Get(),
+                clearValue == TextureBase::ClearValue::Zero ? kZero.data() : kNonZero.data());
+        }
+    }
+
+    if (clearValue == TextureBase::ClearValue::Zero) {
+        SetIsSubresourceContentInitialized(true, range);
+        GetDevice()->IncrementLazyClearCountForTesting();
+    }
 
     return {};
 }
@@ -348,11 +478,19 @@ MaybeError Texture::Write(CommandRecordingContext* commandContext,
                           const uint8_t* data,
                           uint32_t bytesPerRow,
                           uint32_t rowsPerImage) {
-    DAWN_ASSERT(size.width != 0 && size.height != 0 && size.depthOrArrayLayers != 0);
+    ASSERT(size.width != 0 && size.height != 0 && size.depthOrArrayLayers != 0);
+
+    if (d3d::IsDepthStencil(d3d::DXGITextureFormat(GetFormat().format))) {
+        // TODO(dawn:1848): support depth-stencil texture write
+        return DAWN_UNIMPLEMENTED_ERROR("Write combined depth/stencil textures");
+    }
 
     if (IsCompleteSubresourceCopiedTo(this, size, subresources.baseMipLevel)) {
         SetIsSubresourceContentInitialized(true, subresources);
     } else {
+        // Dawn validation should have ensured that full subresources write for depth/stencil
+        // textures.
+        ASSERT(!GetFormat().HasDepthOrStencil());
         DAWN_TRY(EnsureSubresourceContentInitialized(commandContext, subresources));
     }
 
@@ -366,22 +504,176 @@ MaybeError Texture::Write(CommandRecordingContext* commandContext,
         dstBox.front = origin.z;
         dstBox.back = origin.z + size.depthOrArrayLayers;
         uint32_t subresource =
-            GetSubresourceIndex(subresources.baseMipLevel, origin.z, subresources.aspects);
+            GetSubresourceIndex(subresources.baseMipLevel, 0, D3D11Aspect(subresources.aspects));
         commandContext->GetD3D11DeviceContext1()->UpdateSubresource(GetD3D11Resource(), subresource,
-                                                                    &dstBox, data, bytesPerRow, 0);
+                                                                    &dstBox, data, bytesPerRow,
+                                                                    bytesPerRow * rowsPerImage);
     } else {
         dstBox.front = 0;
         dstBox.back = 1;
-        for (uint32_t z = origin.z; z < size.depthOrArrayLayers; ++z) {
+        for (uint32_t layer = 0; layer < subresources.layerCount; ++layer) {
             uint32_t subresource =
-                GetSubresourceIndex(subresources.baseMipLevel, z, subresources.aspects);
+                GetSubresourceIndex(subresources.baseMipLevel, subresources.baseArrayLayer + layer,
+                                    D3D11Aspect(subresources.aspects));
+            D3D11_BOX* pDstBox = GetFormat().HasDepthOrStencil() ? nullptr : &dstBox;
             commandContext->GetD3D11DeviceContext1()->UpdateSubresource(
-                GetD3D11Resource(), subresource, &dstBox, data, bytesPerRow, 0);
+                GetD3D11Resource(), subresource, pDstBox, data, bytesPerRow, 0);
             data += rowsPerImage * bytesPerRow;
         }
     }
 
     return {};
+}
+
+MaybeError Texture::ReadStaging(CommandRecordingContext* commandContext,
+                                const SubresourceRange& subresources,
+                                const Origin3D& origin,
+                                Extent3D size,
+                                uint32_t dstBytesPerRow,
+                                uint32_t dstRowsPerImage,
+                                Texture::ReadCallback callback) {
+    ASSERT(size.width != 0 && size.height != 0 && size.depthOrArrayLayers != 0);
+    ASSERT(mIsStaging);
+    ASSERT(subresources.baseArrayLayer == 0);
+    ASSERT(origin.z == 0);
+
+    ID3D11DeviceContext1* d3d11DeviceContext1 = commandContext->GetD3D11DeviceContext1();
+    const TexelBlockInfo& blockInfo = GetFormat().GetAspectInfo(subresources.aspects).block;
+    const bool hasStencil = GetFormat().HasStencil();
+    const uint32_t bytesPerRow = blockInfo.byteSize * size.width;
+
+    if (GetDimension() == wgpu::TextureDimension::e2D) {
+        for (uint32_t layer = 0; layer < subresources.layerCount; ++layer) {
+            // Copy the staging texture to the buffer.
+            // The Map() will block until the GPU is done with the texture.
+            // TODO(dawn:1705): avoid blocking the CPU.
+            D3D11_MAPPED_SUBRESOURCE mappedResource;
+            DAWN_TRY(CheckHRESULT(d3d11DeviceContext1->Map(GetD3D11Resource(), layer,
+                                                           D3D11_MAP_READ, 0, &mappedResource),
+                                  "D3D11 map staging texture"));
+
+            uint8_t* pSrcData = static_cast<uint8_t*>(mappedResource.pData);
+            uint64_t dstOffset = dstBytesPerRow * dstRowsPerImage * layer;
+            if (dstBytesPerRow == bytesPerRow && mappedResource.RowPitch == bytesPerRow) {
+                // If there is no padding in the rows, we can upload the whole image
+                // in one read.
+                DAWN_TRY(callback(pSrcData, dstOffset, dstBytesPerRow * size.height));
+            } else if (hasStencil) {
+                // We need to read texel by texel for depth-stencil formats.
+                std::vector<uint8_t> depthOrStencilData(size.width * blockInfo.byteSize);
+                // Element size of a depth/stencil DXGI format in bytes.
+                uint32_t depthOrStencilStride = 0u;
+                // Depth/Stencil component offset inside the element in bytes.
+                uint32_t depthOrStencilOffset = 0u;
+                switch (d3d::DXGITextureFormat(GetFormat().format)) {
+                    case DXGI_FORMAT_D24_UNORM_S8_UINT:
+                        depthOrStencilOffset = subresources.aspects == Aspect::Stencil ? 3u : 0u;
+                        depthOrStencilStride = 4u;
+                        break;
+                    case DXGI_FORMAT_D32_FLOAT_S8X24_UINT:
+                        depthOrStencilOffset = subresources.aspects == Aspect::Stencil ? 4u : 0u;
+                        depthOrStencilStride = 8u;
+                        break;
+                    default:
+                        UNREACHABLE();
+                }
+                for (uint32_t y = 0; y < size.height; ++y) {
+                    // Filter the depth/stencil data out.
+                    uint8_t* src = pSrcData;
+                    uint8_t* dst = depthOrStencilData.data();
+                    src += depthOrStencilOffset;
+                    for (uint32_t x = 0; x < size.width; ++x) {
+                        std::memcpy(dst, src, blockInfo.byteSize);
+                        src += depthOrStencilStride;
+                        dst += blockInfo.byteSize;
+                    }
+                    DAWN_TRY(callback(depthOrStencilData.data(), dstOffset, bytesPerRow));
+                    dstOffset += dstBytesPerRow;
+                    pSrcData += mappedResource.RowPitch;
+                }
+            } else {
+                // Otherwise, we need to read each row separately.
+                for (uint32_t y = 0; y < size.height; ++y) {
+                    DAWN_TRY(callback(pSrcData, dstOffset, bytesPerRow));
+                    dstOffset += dstBytesPerRow;
+                    pSrcData += mappedResource.RowPitch;
+                }
+            }
+            d3d11DeviceContext1->Unmap(GetD3D11Resource(), layer);
+        }
+        return {};
+    }
+
+    // 3D textures are copied one slice at a time.
+    // Copy the staging texture to the buffer.
+    // The Map() will block until the GPU is done with the texture.
+    // TODO(dawn:1705): avoid blocking the CPU.
+    D3D11_MAPPED_SUBRESOURCE mappedResource;
+    DAWN_TRY(CheckHRESULT(
+        d3d11DeviceContext1->Map(GetD3D11Resource(), 0, D3D11_MAP_READ, 0, &mappedResource),
+        "D3D11 map staging texture"));
+
+    for (uint32_t z = 0; z < size.depthOrArrayLayers; ++z) {
+        uint64_t dstOffset = dstBytesPerRow * dstRowsPerImage * z;
+        uint8_t* pSrcData =
+            static_cast<uint8_t*>(mappedResource.pData) + z * mappedResource.DepthPitch;
+        if (dstBytesPerRow == bytesPerRow && mappedResource.RowPitch == bytesPerRow) {
+            // If there is no padding in the rows, we can upload the whole image
+            // in one read.
+            DAWN_TRY(callback(pSrcData, dstOffset, bytesPerRow * size.height));
+        } else {
+            // Otherwise, we need to read each row separately.
+            for (uint32_t y = 0; y < size.height; ++y) {
+                DAWN_TRY(callback(pSrcData, dstOffset, bytesPerRow));
+                dstOffset += dstBytesPerRow;
+                pSrcData += mappedResource.RowPitch;
+            }
+        }
+    }
+    d3d11DeviceContext1->Unmap(GetD3D11Resource(), 0);
+
+    return {};
+}
+
+MaybeError Texture::Read(CommandRecordingContext* commandContext,
+                         const SubresourceRange& subresources,
+                         const Origin3D& origin,
+                         Extent3D size,
+                         uint32_t dstBytesPerRow,
+                         uint32_t dstRowsPerImage,
+                         Texture::ReadCallback callback) {
+    ASSERT(size.width != 0 && size.height != 0 && size.depthOrArrayLayers != 0);
+    ASSERT(!mIsStaging);
+
+    DAWN_TRY(EnsureSubresourceContentInitialized(commandContext, subresources));
+    TextureDescriptor desc = {};
+    desc.label = "CopyTextureToBufferStaging";
+    desc.dimension = GetDimension();
+    desc.size = size;
+    desc.format = GetFormat().format;
+    desc.mipLevelCount = subresources.levelCount;
+    desc.sampleCount = GetSampleCount();
+
+    Ref<Texture> stagingTexture;
+    DAWN_TRY_ASSIGN(stagingTexture, CreateStaging(ToBackend(GetDevice()), &desc));
+
+    CopyTextureToTextureCmd copyCmd;
+    copyCmd.source.texture = this;
+    copyCmd.source.origin = origin;
+    copyCmd.source.mipLevel = subresources.baseMipLevel;
+    copyCmd.source.aspect = subresources.aspects;
+    copyCmd.destination.texture = stagingTexture.Get();
+    copyCmd.destination.origin = {0, 0, 0};
+    copyCmd.destination.mipLevel = 0;
+    copyCmd.destination.aspect = subresources.aspects;
+    copyCmd.copySize = size;
+
+    DAWN_TRY(Texture::Copy(commandContext, &copyCmd));
+    SubresourceRange stagingSubresources = SubresourceRange::MakeFull(
+        subresources.aspects, subresources.layerCount, subresources.levelCount);
+
+    return stagingTexture->ReadStaging(commandContext, stagingSubresources, {0, 0, 0}, size,
+                                       dstBytesPerRow, dstRowsPerImage, callback);
 }
 
 // static
@@ -392,41 +684,70 @@ MaybeError Texture::Copy(CommandRecordingContext* commandContext, CopyTextureToT
     auto& src = copy->source;
     auto& dst = copy->destination;
 
-    SubresourceRange subresources = GetSubresourcesAffectedByCopy(src, copy->copySize);
-    DAWN_TRY(
-        ToBackend(src.texture)->EnsureSubresourceContentInitialized(commandContext, subresources));
+    ASSERT(src.aspect == dst.aspect);
 
-    subresources = GetSubresourcesAffectedByCopy(dst, copy->copySize);
-    if (IsCompleteSubresourceCopiedTo(dst.texture.Get(), copy->copySize, dst.mipLevel)) {
-        dst.texture->SetIsSubresourceContentInitialized(true, subresources);
-    } else {
-        // Partial update subresource of a depth/stencil texture is not allowed.
-        DAWN_ASSERT(!dst.texture->GetFormat().HasDepthOrStencil());
-        DAWN_TRY(ToBackend(dst.texture)
-                     ->EnsureSubresourceContentInitialized(commandContext, subresources));
+    // TODO(dawn:1705): support copy between textures with different dimensions.
+    if (src.texture->GetDimension() != dst.texture->GetDimension()) {
+        return DAWN_UNIMPLEMENTED_ERROR("Copy between textures with different dimensions");
     }
 
-    bool isWholeTextureCopy =
-        src.texture->GetSize() == copy->copySize && dst.texture->GetSize() == copy->copySize;
-    // Partial update subresource of a depth/stencil texture is not allowed.
-    DAWN_ASSERT(isWholeTextureCopy || !dst.texture->GetFormat().HasDepthOrStencil());
+    SubresourceRange srcSubresources = GetSubresourcesAffectedByCopy(src, copy->copySize);
+    DAWN_TRY(ToBackend(src.texture)
+                 ->EnsureSubresourceContentInitialized(commandContext, srcSubresources));
+
+    SubresourceRange dstSubresources = GetSubresourcesAffectedByCopy(dst, copy->copySize);
+    if (IsCompleteSubresourceCopiedTo(dst.texture.Get(), copy->copySize, dst.mipLevel)) {
+        dst.texture->SetIsSubresourceContentInitialized(true, dstSubresources);
+    } else {
+        // Partial update subresource of a depth/stencil texture is not allowed.
+        ASSERT(!dst.texture->GetFormat().HasDepthOrStencil());
+        DAWN_TRY(ToBackend(dst.texture)
+                     ->EnsureSubresourceContentInitialized(commandContext, dstSubresources));
+    }
 
     D3D11_BOX srcBox;
     srcBox.left = src.origin.x;
     srcBox.right = src.origin.x + copy->copySize.width;
     srcBox.top = src.origin.y;
     srcBox.bottom = src.origin.y + copy->copySize.height;
-    srcBox.front = 0;
-    srcBox.back = 1;
+    switch (src.texture->GetDimension()) {
+        case wgpu::TextureDimension::e2D:
+            srcBox.front = 0;
+            srcBox.back = 1;
+            break;
+        case wgpu::TextureDimension::e3D:
+            srcBox.front = src.origin.z;
+            srcBox.back = src.origin.z + copy->copySize.depthOrArrayLayers;
+            break;
+        default:
+            // TODO(dawn:1705): support 1d texture.
+            UNREACHABLE();
+    }
 
-    uint32_t subresource = src.texture->GetSubresourceIndex(src.mipLevel, src.origin.z, src.aspect);
+    bool isWholeSubresource = src.texture->CoverFullSubresource(src.mipLevel, copy->copySize) &&
+                              dst.texture->CoverFullSubresource(dst.mipLevel, copy->copySize);
+    // Partial update subresource of a depth/stencil texture is not allowed.
+    ASSERT(isWholeSubresource || !src.texture->GetFormat().HasDepthOrStencil());
 
-    commandContext->GetD3D11DeviceContext1()->CopySubresourceRegion(
-        ToBackend(dst.texture)->GetD3D11Resource(), dst.mipLevel, dst.origin.x, dst.origin.y,
-        dst.origin.z, ToBackend(src.texture)->GetD3D11Resource(), subresource,
-        isWholeTextureCopy ? nullptr : &srcBox);
+    for (uint32_t layer = 0; layer < srcSubresources.layerCount; ++layer) {
+        uint32_t srcSubresource =
+            src.texture->GetSubresourceIndex(src.mipLevel, srcSubresources.baseArrayLayer + layer,
+                                             D3D11Aspect(srcSubresources.aspects));
+        uint32_t dstSubresource =
+            dst.texture->GetSubresourceIndex(dst.mipLevel, dstSubresources.baseArrayLayer + layer,
+                                             D3D11Aspect(dstSubresources.aspects));
+        commandContext->GetD3D11DeviceContext1()->CopySubresourceRegion(
+            ToBackend(dst.texture)->GetD3D11Resource(), dstSubresource, dst.origin.x, dst.origin.y,
+            0, ToBackend(src.texture)->GetD3D11Resource(), srcSubresource,
+            isWholeSubresource ? nullptr : &srcBox);
+    }
 
     return {};
+}
+
+ResultOrError<ExecutionSerial> Texture::EndAccess() {
+    // TODO(dawn:1705): submit pending commands if deferred context is used.
+    return GetDevice()->GetLastSubmittedCommandSerial();
 }
 
 // static
@@ -436,10 +757,6 @@ Ref<TextureView> TextureView::Create(TextureBase* texture,
 }
 
 TextureView::~TextureView() = default;
-
-DXGI_FORMAT TextureView::GetD3D11Format() const {
-    return d3d::DXGITextureFormat(GetFormat().format);
-}
 
 ResultOrError<ComPtr<ID3D11ShaderResourceView>> TextureView::CreateD3D11ShaderResourceView() const {
     Device* device = ToBackend(GetDevice());
@@ -474,7 +791,8 @@ ResultOrError<ComPtr<ID3D11ShaderResourceView>> TextureView::CreateD3D11ShaderRe
                         break;
                     case Aspect::Stencil:
                         srvDesc.Format = DXGI_FORMAT_X24_TYPELESS_G8_UINT;
-                        break;
+                        // TODO(dawn:1827) Support sampling the stencil component.
+                        return DAWN_UNIMPLEMENTED_ERROR("Sampling the stencil component.");
                     default:
                         UNREACHABLE();
                         break;
@@ -497,7 +815,8 @@ ResultOrError<ComPtr<ID3D11ShaderResourceView>> TextureView::CreateD3D11ShaderRe
                         break;
                     case Aspect::Stencil:
                         srvDesc.Format = DXGI_FORMAT_X32_TYPELESS_G8X24_UINT;
-                        break;
+                        // TODO(dawn:1827) Support sampling the stencil component.
+                        return DAWN_UNIMPLEMENTED_ERROR("Sampling the stencil component.");
                     default:
                         UNREACHABLE();
                         break;
@@ -576,9 +895,14 @@ ResultOrError<ComPtr<ID3D11ShaderResourceView>> TextureView::CreateD3D11ShaderRe
     return srv;
 }
 
-ResultOrError<ComPtr<ID3D11RenderTargetView>> TextureView::CreateD3D11RenderTargetView() const {
+ResultOrError<ComPtr<ID3D11RenderTargetView>> TextureView::CreateD3D11RenderTargetView(
+    uint32_t mipLevel) const {
+    auto range = GetSubresourceRange();
+    ASSERT(mipLevel >= range.baseMipLevel && mipLevel < range.baseMipLevel + range.levelCount);
+    range.baseMipLevel = mipLevel;
+    range.levelCount = 1u;
     D3D11_RENDER_TARGET_VIEW_DESC rtvDesc =
-        ToBackend(GetTexture())->GetRTVDescriptor(GetFormat(), GetSubresourceRange());
+        ToBackend(GetTexture())->GetRTVDescriptor(GetFormat(), range);
     ComPtr<ID3D11RenderTargetView> rtv;
     DAWN_TRY(CheckHRESULT(
         ToBackend(GetDevice())
@@ -590,11 +914,15 @@ ResultOrError<ComPtr<ID3D11RenderTargetView>> TextureView::CreateD3D11RenderTarg
 
 ResultOrError<ComPtr<ID3D11DepthStencilView>> TextureView::CreateD3D11DepthStencilView(
     bool depthReadOnly,
-    bool stencilReadOnly) const {
+    bool stencilReadOnly,
+    uint32_t mipLevel) const {
+    auto range = GetSubresourceRange();
+    ASSERT(mipLevel >= range.baseMipLevel && mipLevel < range.baseMipLevel + range.levelCount);
+    range.baseMipLevel = mipLevel;
+    range.levelCount = 1u;
     ComPtr<ID3D11DepthStencilView> dsv;
     D3D11_DEPTH_STENCIL_VIEW_DESC dsvDesc =
-        ToBackend(GetTexture())
-            ->GetDSVDescriptor(GetSubresourceRange(), depthReadOnly, stencilReadOnly);
+        ToBackend(GetTexture())->GetDSVDescriptor(range, depthReadOnly, stencilReadOnly);
     DAWN_TRY(CheckHRESULT(
         ToBackend(GetDevice())
             ->GetD3D11Device()
@@ -606,7 +934,7 @@ ResultOrError<ComPtr<ID3D11DepthStencilView>> TextureView::CreateD3D11DepthStenc
 ResultOrError<ComPtr<ID3D11UnorderedAccessView>> TextureView::CreateD3D11UnorderedAccessView()
     const {
     D3D11_UNORDERED_ACCESS_VIEW_DESC uavDesc;
-    uavDesc.Format = GetD3D11Format();
+    uavDesc.Format = d3d::DXGITextureFormat(GetFormat().format);
 
     ASSERT(!GetTexture()->IsMultisampledTexture());
     switch (GetDimension()) {
@@ -615,6 +943,9 @@ ResultOrError<ComPtr<ID3D11UnorderedAccessView>> TextureView::CreateD3D11Unorder
             uavDesc.Texture1D.MipSlice = GetBaseMipLevel();
             break;
         case wgpu::TextureViewDimension::e2D:
+            uavDesc.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D;
+            uavDesc.Texture2D.MipSlice = GetBaseMipLevel();
+            break;
         case wgpu::TextureViewDimension::e2DArray:
             uavDesc.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2DARRAY;
             uavDesc.Texture2DArray.FirstArraySlice = GetBaseArrayLayer();

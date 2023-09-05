@@ -133,7 +133,7 @@ class DiscoveryE2ETest : public testing::Test {
     std::this_thread::sleep_for(milliseconds(500));
 
     PlatformClientPosix::Create(milliseconds(50));
-    task_runner_ = PlatformClientPosix::GetInstance()->GetTaskRunner();
+    task_runner_ = &PlatformClientPosix::GetInstance()->GetTaskRunner();
   }
 
   ~DiscoveryE2ETest() {
@@ -157,7 +157,7 @@ class DiscoveryE2ETest : public testing::Test {
     std::atomic_bool done{false};
     task_runner_->PostTask([this, &config, &done]() {
       dnssd_service_ = discovery::CreateDnsSdService(
-          task_runner_, &reporting_client_, config);
+          *task_runner_, &reporting_client_, config);
       receiver_ = std::make_unique<ServiceReceiver>(dnssd_service_.get());
       publisher_ = std::make_unique<Publisher>(dnssd_service_.get());
       done = true;
@@ -316,9 +316,9 @@ class DiscoveryE2ETest : public testing::Test {
 // functioning as intended.
 //
 // Known issues:
-// - The ipv6 socket in discovery/mdns/service_impl.cc fails to bind to an ipv6
-//   address on the loopback interface. Investigating this issue is pending
-//   resolution of bug
+// - The ipv6 socket in discovery/mdns/impl/mdns_service_impl.cc fails to bind
+//   to an ipv6 address on the loopback interface. Investigating this issue is
+//   pending resolution of bug
 //   https://bugs.chromium.org/p/openscreen/issues/detail?id=105.
 //
 // In this test, the following operations are performed:

@@ -95,6 +95,7 @@ bool StatelessValidation::manual_PreCallValidateCreatePipelineLayout(VkDevice de
                 skip |=
                     LogError(device, "VUID-VkPipelineLayoutCreateInfo-pPushConstantRanges-00292",
                              "vkCreatePipelineLayout() Duplicate stage flags found in ranges %" PRIu32 " and %" PRIu32 ".", i, j);
+                break;  // Only need to report the first range mismatch
             }
         }
     }
@@ -284,7 +285,8 @@ bool StatelessValidation::ValidatePipelineMultisampleStateCreateInfo(const VkPip
         ValidateArray("vkCreateGraphicsPipelines",
                       ParameterName("pCreateInfos[%i].pMultisampleState->rasterizationSamples", ParameterName::IndexVector{index}),
                       ParameterName("pCreateInfos[%i].pMultisampleState->pSampleMask", ParameterName::IndexVector{index}),
-                      info.rasterizationSamples, &info.pSampleMask, true, false, kVUIDUndefined, kVUIDUndefined);
+                      info.rasterizationSamples, &info.pSampleMask, true, false, kVUIDUndefined,
+                      "VUID-VkPipelineMultisampleStateCreateInfo-pSampleMask-parameter");
 
     skip |=
         ValidateFlags("vkCreateGraphicsPipelines",
@@ -748,6 +750,7 @@ bool StatelessValidation::manual_PreCallValidateCreateGraphicsPipelines(VkDevice
             const bool has_dynamic_exclusive_scissor_nv = vvl::Contains(dynamic_state_map, VK_DYNAMIC_STATE_EXCLUSIVE_SCISSOR_NV);
             const bool has_dynamic_viewport_with_count = vvl::Contains(dynamic_state_map, VK_DYNAMIC_STATE_VIEWPORT_WITH_COUNT);
             const bool has_dynamic_scissor_with_count = vvl::Contains(dynamic_state_map, VK_DYNAMIC_STATE_SCISSOR_WITH_COUNT);
+            const bool has_dynamic_vertex_input = vvl::Contains(dynamic_state_map, VK_DYNAMIC_STATE_VERTEX_INPUT_EXT);
 
             // Validation for parameters excluded from the generated validation code due to a 'noautovalidity' tag in vk.xml
 
@@ -806,7 +809,8 @@ bool StatelessValidation::manual_PreCallValidateCreateGraphicsPipelines(VkDevice
                 skip |= ValidatePipelineInputAssemblyStateCreateInfo(*create_info.pInputAssemblyState, i);
             }
 
-            if (!(active_shaders & VK_SHADER_STAGE_MESH_BIT_EXT) && (create_info.pVertexInputState != nullptr)) {
+            if (!has_dynamic_vertex_input && !(active_shaders & VK_SHADER_STAGE_MESH_BIT_EXT) &&
+                (create_info.pVertexInputState != nullptr)) {
                 auto const &vertex_input_state = create_info.pVertexInputState;
 
                 skip |= ValidatePipelineVertexInputStateCreateInfo(*vertex_input_state, i);

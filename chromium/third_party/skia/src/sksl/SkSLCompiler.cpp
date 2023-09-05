@@ -13,19 +13,20 @@
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLContext.h"
 #include "src/sksl/SkSLInliner.h"
+#include "src/sksl/SkSLModifiersPool.h"  // IWYU pragma: keep
 #include "src/sksl/SkSLModuleLoader.h"
 #include "src/sksl/SkSLOutputStream.h"
 #include "src/sksl/SkSLParser.h"
+#include "src/sksl/SkSLPool.h"
 #include "src/sksl/SkSLProgramKind.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLStringStream.h"
+#include "src/sksl/SkSLThreadContext.h"
 #include "src/sksl/analysis/SkSLProgramUsage.h"
-#include "src/sksl/dsl/DSLCore.h"
-#include "src/sksl/dsl/DSLModifiers.h"
 #include "src/sksl/dsl/DSLType.h"
 #include "src/sksl/ir/SkSLExpression.h"
-#include "src/sksl/ir/SkSLField.h"
 #include "src/sksl/ir/SkSLFieldAccess.h"
+#include "src/sksl/ir/SkSLFieldSymbol.h"
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLFunctionReference.h"
 #include "src/sksl/ir/SkSLIRNode.h"
@@ -63,8 +64,6 @@
 #endif
 
 namespace SkSL {
-
-class ModifiersPool;
 
 // These flags allow tools like Viewer or Nanobench to override the compiler's ProgramSettings.
 Compiler::OverrideFlag Compiler::sOptimizer = OverrideFlag::kDefault;
@@ -246,8 +245,30 @@ std::unique_ptr<Program> Compiler::convertProgram(ProgramKind kind,
     return Parser(this, settings, kind, std::move(text)).program();
 }
 
+std::unique_ptr<SkSL::Program> Compiler::releaseProgram(std::unique_ptr<std::string> source) {
+    ThreadContext& instance = ThreadContext::Instance();
+    Pool* pool = instance.fPool.get();
+    auto result = std::make_unique<SkSL::Program>(std::move(source),
+                                                  std::move(instance.fConfig),
+                                                  fContext,
+                                                  std::move(instance.fProgramElements),
+                                                  std::move(instance.fSharedElements),
+                                                  std::move(instance.fModifiersPool),
+                                                  std::move(fContext->fSymbolTable),
+                                                  std::move(instance.fPool),
+                                                  instance.fInterface);
+    bool success = this->finalize(*result) &&
+                   this->optimize(*result);
+    if (pool) {
+        pool->detachFromThread();
+    }
+    SkASSERT(instance.fProgramElements.empty());
+    SkASSERT(!fContext->fSymbolTable);
+    return success ? std::move(result) : nullptr;
+}
+
 std::unique_ptr<Expression> Compiler::convertIdentifier(Position pos, std::string_view name) {
-    const Symbol* result = fSymbolTable->find(name);
+    const Symbol* result = this->symbolTable()->find(name);
     if (!result) {
         this->errorReporter().error(pos, "unknown identifier '" + std::string(name) + "'");
         return nullptr;
@@ -263,7 +284,7 @@ std::unique_ptr<Expression> Compiler::convertIdentifier(Position pos, std::strin
             return VariableReference::Make(pos, var, VariableReference::RefKind::kRead);
         }
         case Symbol::Kind::kField: {
-            const Field* field = &result->as<Field>();
+            const FieldSymbol* field = &result->as<FieldSymbol>();
             auto base = VariableReference::Make(pos, &field->owner(),
                                                 VariableReference::RefKind::kRead);
             return FieldAccess::Make(*fContext, pos, std::move(base), field->fieldIndex(),
@@ -271,8 +292,7 @@ std::unique_ptr<Expression> Compiler::convertIdentifier(Position pos, std::strin
         }
         case Symbol::Kind::kType: {
             // go through DSLType so we report errors on private types
-            dsl::DSLModifiers modifiers;
-            dsl::DSLType dslType(result->name(), &modifiers, pos);
+            dsl::DSLType dslType(result->name(), pos);
             return TypeReference::Convert(*fContext, pos, &dslType.skslType());
         }
         default:
@@ -403,7 +423,7 @@ bool Compiler::runInliner(Inliner* inliner,
 #ifdef SK_ENABLE_OPTIMIZE_SIZE
     return true;
 #else
-    // The program's SymbolTable was taken out of fSymbolTable when the program was bundled, but
+    // The program's SymbolTable was taken out of the context when the program was bundled, but
     // the inliner relies (indirectly) on having a valid SymbolTable.
     // In particular, inlining can turn a non-optimizable expression like `normalize(myVec)` into
     // `normalize(vec2(7))`, which is now optimizable. The optimizer can use DSL to simplify this
@@ -411,12 +431,12 @@ bool Compiler::runInliner(Inliner* inliner,
     // convertIdentifier() to look up `length`. convertIdentifier() needs a valid symbol table to
     // find the declaration of `length`. To allow this chain of events to succeed, we re-insert the
     // program's symbol table temporarily.
-    SkASSERT(!fSymbolTable);
-    fSymbolTable = symbols;
+    SkASSERT(!fContext->fSymbolTable);
+    fContext->fSymbolTable = symbols;
 
     bool result = inliner->analyze(elements, symbols, usage);
 
-    fSymbolTable = nullptr;
+    fContext->fSymbolTable = nullptr;
     return result;
 #endif
 }
@@ -495,9 +515,9 @@ bool Compiler::toSPIRV(Program& program, OutputStream& out) {
     AutoShaderCaps autoCaps(fContext, fCaps);
     ProgramSettings settings;
     settings.fUseMemoryPool = false;
-    dsl::Start(this, program.fConfig->fKind, settings);
-    dsl::SetErrorReporter(&fErrorReporter);
-    fSymbolTable = program.fSymbols;
+    ThreadContext::Start(this, program.fConfig->fKind, settings);
+    ThreadContext::SetErrorReporter(&fErrorReporter);
+    fContext->fSymbolTable = program.fSymbols;
 #ifdef SK_ENABLE_SPIRV_VALIDATION
     StringStream buffer;
     SPIRVCodeGenerator cg(fContext.get(), &program, &buffer);
@@ -512,7 +532,7 @@ bool Compiler::toSPIRV(Program& program, OutputStream& out) {
     SPIRVCodeGenerator cg(fContext.get(), &program, &out);
     bool result = cg.generateCode();
 #endif
-    dsl::End();
+    ThreadContext::End();
     return result;
 }
 
@@ -586,18 +606,30 @@ bool Compiler::toMetal(Program& program, std::string* out) {
 }
 
 #if defined(SK_ENABLE_WGSL_VALIDATION)
-static bool validate_wgsl(ErrorReporter& reporter, const std::string& wgsl) {
+static bool validate_wgsl(ErrorReporter& reporter, const std::string& wgsl, std::string* warnings) {
+    // Verify that the WGSL we produced is valid.
     tint::Source::File srcFile("", wgsl);
     tint::Program program(tint::reader::wgsl::Parse(&srcFile));
-    if (program.Diagnostics().count() > 0) {
+
+    if (program.Diagnostics().contains_errors()) {
+        // The program isn't valid WGSL. In debug, report the error via SkDEBUGFAIL. We also append
+        // the generated program for ease of debugging.
         tint::diag::Formatter diagFormatter;
         std::string diagOutput = diagFormatter.format(program.Diagnostics());
+        diagOutput += "\n";
+        diagOutput += wgsl;
 #if defined(SKSL_STANDALONE)
         reporter.error(Position(), diagOutput);
 #else
         SkDEBUGFAILF("%s", diagOutput.c_str());
 #endif
         return false;
+    }
+
+    if (!program.Diagnostics().empty()) {
+        // The program contains warnings. Report them as-is.
+        tint::diag::Formatter diagFormatter;
+        *warnings = diagFormatter.format(program.Diagnostics());
     }
     return true;
 }
@@ -606,13 +638,20 @@ static bool validate_wgsl(ErrorReporter& reporter, const std::string& wgsl) {
 bool Compiler::toWGSL(Program& program, OutputStream& out) {
     TRACE_EVENT0("skia.shaders", "SkSL::Compiler::toWGSL");
     AutoSource as(this, *program.fSource);
+    AutoShaderCaps autoCaps(fContext, fCaps);
 #ifdef SK_ENABLE_WGSL_VALIDATION
     StringStream wgsl;
     WGSLCodeGenerator cg(fContext.get(), &program, &wgsl);
     bool result = cg.generateCode();
     if (result) {
         std::string wgslString = wgsl.str();
-        result = validate_wgsl(this->errorReporter(), wgslString);
+        std::string warnings;
+        result = validate_wgsl(this->errorReporter(), wgslString, &warnings);
+        if (!warnings.empty()) {
+            out.writeText("/*\n\n");
+            out.writeString(warnings);
+            out.writeText("*/\n\n");
+        }
         out.writeString(wgslString);
     }
 #else

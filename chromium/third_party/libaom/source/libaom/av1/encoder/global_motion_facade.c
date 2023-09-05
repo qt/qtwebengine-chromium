@@ -283,6 +283,7 @@ static int do_gm_search_logic(SPEED_FEATURES *const sf, int frame) {
     case GM_REDUCED_REF_SEARCH_SKIP_L2_L3_ARF2:
       return !(frame == LAST2_FRAME || frame == LAST3_FRAME ||
                (frame == ALTREF2_FRAME));
+    case GM_SEARCH_CLOSEST_REFS_ONLY: return 1;
     case GM_DISABLE_SEARCH: return 0;
     default: assert(0);
   }
@@ -302,6 +303,7 @@ static AOM_INLINE void update_valid_ref_frames_for_gm(
   int ref_pruning_enabled = is_frame_eligible_for_ref_pruning(
       gf_group, cpi->sf.inter_sf.selective_ref_frame, 1, cpi->gf_frame_index);
   int cur_frame_gm_disabled = 0;
+  int pyr_lvl = cm->cur_frame->pyramid_level;
 
   if (cpi->sf.gm_sf.disable_gm_search_based_on_stats) {
     cur_frame_gm_disabled = disable_gm_search_based_on_stats(cpi);
@@ -326,11 +328,12 @@ static AOM_INLINE void update_valid_ref_frames_for_gm(
         ref_pruning_enabled &&
         prune_ref_by_selective_ref_frame(cpi, NULL, ref_frame,
                                          cm->cur_frame->ref_display_order_hint);
+    int ref_pyr_lvl = buf->pyramid_level;
 
     if (ref_buf[frame]->y_crop_width == cpi->source->y_crop_width &&
         ref_buf[frame]->y_crop_height == cpi->source->y_crop_height &&
         do_gm_search_logic(&cpi->sf, frame) && !prune_ref_frames &&
-        !cur_frame_gm_disabled) {
+        ref_pyr_lvl <= pyr_lvl && !cur_frame_gm_disabled) {
       assert(ref_buf[frame] != NULL);
       const int relative_frame_dist = av1_encoder_get_relative_dist(
           buf->display_order_hint, cm->cur_frame->display_order_hint);
@@ -419,6 +422,18 @@ static AOM_INLINE void setup_global_motion_info_params(AV1_COMP *cpi) {
         sizeof(gm_info->reference_frames[0][0]), compare_distance);
   qsort(gm_info->reference_frames[1], gm_info->num_ref_frames[1],
         sizeof(gm_info->reference_frames[1][0]), compare_distance);
+
+  if (cpi->sf.gm_sf.gm_search_type == GM_SEARCH_CLOSEST_REFS_ONLY) {
+    // Filter down to the nearest two ref frames.
+    // Prefer one past and one future ref over two past refs, even if
+    // the second past ref is closer
+    if (gm_info->num_ref_frames[1] > 0) {
+      gm_info->num_ref_frames[0] = AOMMIN(gm_info->num_ref_frames[0], 1);
+      gm_info->num_ref_frames[1] = AOMMIN(gm_info->num_ref_frames[1], 1);
+    } else {
+      gm_info->num_ref_frames[0] = AOMMIN(gm_info->num_ref_frames[0], 2);
+    }
+  }
 }
 
 // Computes global motion w.r.t. valid reference frames.

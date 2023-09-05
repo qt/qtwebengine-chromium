@@ -247,7 +247,7 @@ public:
                 VariableReference& varRef = expr.as<VariableReference>();
                 const Variable* var = varRef.variable();
                 auto fieldName = [&] {
-                    return fieldAccess ? fieldAccess->description(OperatorPrecedence::kTopLevel)
+                    return fieldAccess ? fieldAccess->description(OperatorPrecedence::kExpression)
                                        : std::string(var->name());
                 };
                 if (var->modifiers().fFlags & (Modifiers::kConst_Flag | Modifiers::kUniform_Flag)) {
@@ -378,6 +378,27 @@ bool Analysis::ContainsRTAdjust(const Expression& expr) {
     };
 
     ContainsRTAdjustVisitor visitor;
+    return visitor.visitExpression(expr);
+}
+
+bool Analysis::ContainsVariable(const Expression& expr, const Variable& var) {
+    class ContainsVariableVisitor : public ProgramVisitor {
+    public:
+        ContainsVariableVisitor(const Variable* v) : fVariable(v) {}
+
+        bool visitExpression(const Expression& expr) override {
+            if (expr.is<VariableReference>() &&
+                expr.as<VariableReference>().variable() == fVariable) {
+                return true;
+            }
+            return INHERITED::visitExpression(expr);
+        }
+
+        using INHERITED = ProgramVisitor;
+        const Variable* fVariable;
+    };
+
+    ContainsVariableVisitor visitor{&var};
     return visitor.visitExpression(expr);
 }
 

@@ -38,6 +38,7 @@ enum class BuiltInCodeSnippetID : int32_t {
 
     kLocalMatrixShader,
     kImageShader,
+    kYUVImageShader,
     kCoordClampShader,
     kDitherShader,
     kPerlinNoiseShader,
@@ -57,7 +58,12 @@ enum class BuiltInCodeSnippetID : int32_t {
     kCoeffBlender,
 
     // Special dst values to use as blender children
+    kDstColor,        // Emits special variable holding the color of the draw target
     kPrimitiveColor,  // Emits special variable holding the primitiveColor emitted by a RenderStep
+
+    // One of these must be included at the beginning of a shader if DstColor block is used
+    kDstReadSample,
+    kDstReadFetch,
 
     // Fixed-function blend modes are used for the final blend with the dst buffer's color when the
     // SkPaint is using a coefficient-based SkBlendMode. The actual coefficients are extracted into

@@ -339,8 +339,7 @@ void av1_update_state(const AV1_COMP *const cpi, ThreadData *td,
   }
 
   // Count zero motion vector.
-  if (!dry_run && cpi->oxcf.q_cfg.aq_mode == CYCLIC_REFRESH_AQ &&
-      !frame_is_intra_only(cm)) {
+  if (!dry_run && !frame_is_intra_only(cm)) {
     const MV mv = mi->mv[0].as_mv;
     if (is_inter_block(mi) && mi->ref_frame[0] == LAST_FRAME &&
         abs(mv.row) < 8 && abs(mv.col) < 8) {

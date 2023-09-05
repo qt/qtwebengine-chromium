@@ -73,6 +73,7 @@ default_targets = [
     '//test/cts:perfetto_cts_deps',
     '//test/cts:perfetto_cts_jni_deps',
     '//test:perfetto_gtest_logcat_printer',
+    '//test:perfetto_end_to_end_integrationtests',
     '//test/vts:perfetto_vts_deps',
 ]
 
@@ -103,6 +104,8 @@ target_host_supported = [
     '//protos/perfetto/trace:perfetto_trace_protos',
     '//src/trace_processor:demangle',
     '//src/trace_processor:trace_processor_shell',
+    '//src/traced/probes:traced_probes',
+    '//src/traced/service:traced',
 ]
 
 target_vendor_available = [
@@ -819,10 +822,9 @@ def create_tp_tables_module(blueprint: Blueprint, gn: GnParser,
   module.cmd = ' '.join([
       f'$(location {bp_binary_module_name})',
       '--gen-dir=$(genDir)',
+      '--relative-input-dir=external/perfetto',
       '--inputs',
       '$(in)',
-      '--outputs',
-      '$(out)',
   ])
   module.out.update(target.outputs)
   module.genrule_headers.add(module.name)

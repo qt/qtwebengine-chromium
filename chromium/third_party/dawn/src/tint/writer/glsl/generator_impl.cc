@@ -26,7 +26,33 @@
 #include "src/tint/ast/id_attribute.h"
 #include "src/tint/ast/internal_attribute.h"
 #include "src/tint/ast/interpolate_attribute.h"
+#include "src/tint/ast/transform/add_block_attribute.h"
+#include "src/tint/ast/transform/add_empty_entry_point.h"
+#include "src/tint/ast/transform/binding_remapper.h"
+#include "src/tint/ast/transform/builtin_polyfill.h"
+#include "src/tint/ast/transform/canonicalize_entry_point_io.h"
+#include "src/tint/ast/transform/combine_samplers.h"
+#include "src/tint/ast/transform/decompose_memory_access.h"
+#include "src/tint/ast/transform/demote_to_helper.h"
+#include "src/tint/ast/transform/direct_variable_access.h"
+#include "src/tint/ast/transform/disable_uniformity_analysis.h"
+#include "src/tint/ast/transform/expand_compound_assignment.h"
+#include "src/tint/ast/transform/multiplanar_external_texture.h"
+#include "src/tint/ast/transform/pad_structs.h"
+#include "src/tint/ast/transform/preserve_padding.h"
+#include "src/tint/ast/transform/promote_initializers_to_let.h"
+#include "src/tint/ast/transform/promote_side_effects_to_decl.h"
+#include "src/tint/ast/transform/remove_phonies.h"
+#include "src/tint/ast/transform/renamer.h"
+#include "src/tint/ast/transform/robustness.h"
+#include "src/tint/ast/transform/simplify_pointers.h"
+#include "src/tint/ast/transform/single_entry_point.h"
+#include "src/tint/ast/transform/std140.h"
+#include "src/tint/ast/transform/texture_1d_to_2d.h"
+#include "src/tint/ast/transform/unshadow.h"
+#include "src/tint/ast/transform/zero_init_workgroup_memory.h"
 #include "src/tint/ast/variable_decl_statement.h"
+#include "src/tint/constant/splat.h"
 #include "src/tint/constant/value.h"
 #include "src/tint/debug.h"
 #include "src/tint/sem/block_statement.h"
@@ -41,32 +67,7 @@
 #include "src/tint/sem/value_conversion.h"
 #include "src/tint/sem/variable.h"
 #include "src/tint/switch.h"
-#include "src/tint/transform/add_block_attribute.h"
-#include "src/tint/transform/add_empty_entry_point.h"
-#include "src/tint/transform/binding_remapper.h"
-#include "src/tint/transform/builtin_polyfill.h"
-#include "src/tint/transform/canonicalize_entry_point_io.h"
-#include "src/tint/transform/combine_samplers.h"
-#include "src/tint/transform/decompose_memory_access.h"
-#include "src/tint/transform/demote_to_helper.h"
-#include "src/tint/transform/direct_variable_access.h"
-#include "src/tint/transform/disable_uniformity_analysis.h"
-#include "src/tint/transform/expand_compound_assignment.h"
 #include "src/tint/transform/manager.h"
-#include "src/tint/transform/multiplanar_external_texture.h"
-#include "src/tint/transform/pad_structs.h"
-#include "src/tint/transform/preserve_padding.h"
-#include "src/tint/transform/promote_initializers_to_let.h"
-#include "src/tint/transform/promote_side_effects_to_decl.h"
-#include "src/tint/transform/remove_phonies.h"
-#include "src/tint/transform/renamer.h"
-#include "src/tint/transform/robustness.h"
-#include "src/tint/transform/simplify_pointers.h"
-#include "src/tint/transform/single_entry_point.h"
-#include "src/tint/transform/std140.h"
-#include "src/tint/transform/texture_1d_to_2d.h"
-#include "src/tint/transform/unshadow.h"
-#include "src/tint/transform/zero_init_workgroup_memory.h"
 #include "src/tint/type/array.h"
 #include "src/tint/type/atomic.h"
 #include "src/tint/type/depth_multisampled_texture.h"
@@ -154,101 +155,101 @@ SanitizedResult Sanitize(const Program* in,
     transform::Manager manager;
     transform::DataMap data;
 
-    manager.Add<transform::DisableUniformityAnalysis>();
+    manager.Add<ast::transform::DisableUniformityAnalysis>();
 
     // ExpandCompoundAssignment must come before BuiltinPolyfill
-    manager.Add<transform::ExpandCompoundAssignment>();
+    manager.Add<ast::transform::ExpandCompoundAssignment>();
 
     if (!entry_point.empty()) {
-        manager.Add<transform::SingleEntryPoint>();
-        data.Add<transform::SingleEntryPoint::Config>(entry_point);
+        manager.Add<ast::transform::SingleEntryPoint>();
+        data.Add<ast::transform::SingleEntryPoint::Config>(entry_point);
     }
-    manager.Add<transform::Renamer>();
-    data.Add<transform::Renamer::Config>(transform::Renamer::Target::kGlslKeywords,
-                                         /* preserve_unicode */ false);
+    manager.Add<ast::transform::Renamer>();
+    data.Add<ast::transform::Renamer::Config>(ast::transform::Renamer::Target::kGlslKeywords,
+                                              /* preserve_unicode */ false);
 
-    manager.Add<transform::PreservePadding>();  // Must come before DirectVariableAccess
+    manager.Add<ast::transform::PreservePadding>();  // Must come before DirectVariableAccess
 
-    manager.Add<transform::Unshadow>();  // Must come before DirectVariableAccess
-    manager.Add<transform::DirectVariableAccess>();
+    manager.Add<ast::transform::Unshadow>();  // Must come before DirectVariableAccess
 
-    manager.Add<transform::PromoteSideEffectsToDecl>();
+    manager.Add<ast::transform::PromoteSideEffectsToDecl>();
 
     if (!options.disable_robustness) {
         // Robustness must come after PromoteSideEffectsToDecl
         // Robustness must come before BuiltinPolyfill and CanonicalizeEntryPointIO
-        manager.Add<transform::Robustness>();
+        manager.Add<ast::transform::Robustness>();
     }
 
     // Note: it is more efficient for MultiplanarExternalTexture to come after Robustness
-    data.Add<transform::MultiplanarExternalTexture::NewBindingPoints>(
+    data.Add<ast::transform::MultiplanarExternalTexture::NewBindingPoints>(
         options.external_texture_options.bindings_map);
-    manager.Add<transform::MultiplanarExternalTexture>();
+    manager.Add<ast::transform::MultiplanarExternalTexture>();
 
     {  // Builtin polyfills
-        transform::BuiltinPolyfill::Builtins polyfills;
-        polyfills.acosh = transform::BuiltinPolyfill::Level::kRangeCheck;
-        polyfills.atanh = transform::BuiltinPolyfill::Level::kRangeCheck;
+        ast::transform::BuiltinPolyfill::Builtins polyfills;
+        polyfills.acosh = ast::transform::BuiltinPolyfill::Level::kRangeCheck;
+        polyfills.atanh = ast::transform::BuiltinPolyfill::Level::kRangeCheck;
         polyfills.bgra8unorm = true;
         polyfills.bitshift_modulo = true;
         polyfills.conv_f32_to_iu32 = true;
         polyfills.count_leading_zeros = true;
         polyfills.count_trailing_zeros = true;
-        polyfills.extract_bits = transform::BuiltinPolyfill::Level::kClampParameters;
+        polyfills.extract_bits = ast::transform::BuiltinPolyfill::Level::kClampParameters;
         polyfills.first_leading_bit = true;
         polyfills.first_trailing_bit = true;
-        polyfills.insert_bits = transform::BuiltinPolyfill::Level::kClampParameters;
+        polyfills.insert_bits = ast::transform::BuiltinPolyfill::Level::kClampParameters;
         polyfills.int_div_mod = true;
         polyfills.saturate = true;
         polyfills.texture_sample_base_clamp_to_edge_2d_f32 = true;
         polyfills.workgroup_uniform_load = true;
-        data.Add<transform::BuiltinPolyfill::Config>(polyfills);
-        manager.Add<transform::BuiltinPolyfill>();
+        data.Add<ast::transform::BuiltinPolyfill::Config>(polyfills);
+        manager.Add<ast::transform::BuiltinPolyfill>();  // Must come before DirectVariableAccess
     }
+
+    manager.Add<ast::transform::DirectVariableAccess>();
 
     if (!options.disable_workgroup_init) {
         // ZeroInitWorkgroupMemory must come before CanonicalizeEntryPointIO as
         // ZeroInitWorkgroupMemory may inject new builtin parameters.
-        manager.Add<transform::ZeroInitWorkgroupMemory>();
+        manager.Add<ast::transform::ZeroInitWorkgroupMemory>();
     }
 
     // CanonicalizeEntryPointIO must come after Robustness
-    manager.Add<transform::CanonicalizeEntryPointIO>();
+    manager.Add<ast::transform::CanonicalizeEntryPointIO>();
 
     // PadStructs must come after CanonicalizeEntryPointIO
-    manager.Add<transform::PadStructs>();
+    manager.Add<ast::transform::PadStructs>();
 
     // DemoteToHelper must come after PromoteSideEffectsToDecl and ExpandCompoundAssignment.
-    manager.Add<transform::DemoteToHelper>();
+    manager.Add<ast::transform::DemoteToHelper>();
 
-    manager.Add<transform::RemovePhonies>();
+    manager.Add<ast::transform::RemovePhonies>();
 
-    data.Add<transform::CombineSamplers::BindingInfo>(options.binding_map,
-                                                      options.placeholder_binding_point);
-    manager.Add<transform::CombineSamplers>();
+    data.Add<ast::transform::CombineSamplers::BindingInfo>(options.binding_map,
+                                                           options.placeholder_binding_point);
+    manager.Add<ast::transform::CombineSamplers>();
 
-    data.Add<transform::BindingRemapper::Remappings>(
+    data.Add<ast::transform::BindingRemapper::Remappings>(
         options.binding_points, options.access_controls, options.allow_collisions);
-    manager.Add<transform::BindingRemapper>();
+    manager.Add<ast::transform::BindingRemapper>();
 
-    manager.Add<transform::PromoteInitializersToLet>();
-    manager.Add<transform::AddEmptyEntryPoint>();
-    manager.Add<transform::AddBlockAttribute>();
+    manager.Add<ast::transform::PromoteInitializersToLet>();
+    manager.Add<ast::transform::AddEmptyEntryPoint>();
+    manager.Add<ast::transform::AddBlockAttribute>();
 
     // Std140 must come after PromoteSideEffectsToDecl and before SimplifyPointers.
-    manager.Add<transform::Std140>();
+    manager.Add<ast::transform::Std140>();
 
-    manager.Add<transform::Texture1DTo2D>();
+    manager.Add<ast::transform::Texture1DTo2D>();
 
-    manager.Add<transform::SimplifyPointers>();
+    manager.Add<ast::transform::SimplifyPointers>();
 
-    data.Add<transform::CanonicalizeEntryPointIO::Config>(
-        transform::CanonicalizeEntryPointIO::ShaderStyle::kGlsl);
-
-    auto out = manager.Run(in, data);
+    data.Add<ast::transform::CanonicalizeEntryPointIO::Config>(
+        ast::transform::CanonicalizeEntryPointIO::ShaderStyle::kGlsl);
 
     SanitizedResult result;
-    result.program = std::move(out.program);
+    transform::DataMap outputs;
+    result.program = manager.Run(in, data, outputs);
     return result;
 }
 
@@ -285,8 +286,9 @@ void GeneratorImpl::Generate() {
                 if (auto* arr = sem->Members().Back()->Type()->As<type::Array>()) {
                     has_rt_arr = arr->Count()->Is<type::RuntimeArrayCount>();
                 }
-                bool is_block = ast::HasAttribute<transform::AddBlockAttribute::BlockAttribute>(
-                    str->attributes);
+                bool is_block =
+                    ast::HasAttribute<ast::transform::AddBlockAttribute::BlockAttribute>(
+                        str->attributes);
                 if (!has_rt_arr && !is_block) {
                     EmitStructType(current_buffer_, sem);
                 }
@@ -503,7 +505,7 @@ void GeneratorImpl::EmitFloatModulo(utils::StringStream& out, const ast::BinaryE
 }
 
 void GeneratorImpl::EmitBinary(utils::StringStream& out, const ast::BinaryExpression* expr) {
-    if (IsRelational(expr->op) && !TypeOf(expr->lhs)->UnwrapRef()->is_scalar()) {
+    if (IsRelational(expr->op) && !TypeOf(expr->lhs)->UnwrapRef()->Is<type::Scalar>()) {
         EmitVectorRelational(out, expr);
         return;
     }
@@ -717,7 +719,7 @@ void GeneratorImpl::EmitBuiltinCall(utils::StringStream& out,
         EmitExpression(out, expr->args[0]);
     } else if ((builtin->Type() == builtin::Function::kAny ||
                 builtin->Type() == builtin::Function::kAll) &&
-               TypeOf(expr->args[0])->UnwrapRef()->is_scalar()) {
+               TypeOf(expr->args[0])->UnwrapRef()->Is<type::Scalar>()) {
         // GLSL does not support any() or all() on scalar arguments. It's a no-op.
         EmitExpression(out, expr->args[0]);
     } else if (builtin->IsBarrier()) {
@@ -814,7 +816,7 @@ void GeneratorImpl::EmitWorkgroupAtomicCall(utils::StringStream& out,
             return;
         }
         case builtin::Function::kAtomicCompareExchangeWeak: {
-            EmitStructType(&helpers_, builtin->ReturnType()->As<sem::Struct>());
+            EmitStructType(&helpers_, builtin->ReturnType()->As<type::Struct>());
 
             auto* dest = expr->args[0];
             auto* compare_value = expr->args[1];
@@ -1043,7 +1045,7 @@ void GeneratorImpl::EmitModfCall(utils::StringStream& out,
                       [&](TextBuffer* b, const std::vector<std::string>& params) {
                           // Emit the builtin return type unique to this overload. This does not
                           // exist in the AST, so it will not be generated in Generate().
-                          EmitStructType(&helpers_, builtin->ReturnType()->As<sem::Struct>());
+                          EmitStructType(&helpers_, builtin->ReturnType()->As<type::Struct>());
 
                           {
                               auto l = line(b);
@@ -1064,7 +1066,7 @@ void GeneratorImpl::EmitFrexpCall(utils::StringStream& out,
                       [&](TextBuffer* b, const std::vector<std::string>& params) {
                           // Emit the builtin return type unique to this overload. This does not
                           // exist in the AST, so it will not be generated in Generate().
-                          EmitStructType(&helpers_, builtin->ReturnType()->As<sem::Struct>());
+                          EmitStructType(&helpers_, builtin->ReturnType()->As<type::Struct>());
 
                           {
                               auto l = line(b);
@@ -1080,7 +1082,7 @@ void GeneratorImpl::EmitFrexpCall(utils::StringStream& out,
 void GeneratorImpl::EmitDegreesCall(utils::StringStream& out,
                                     const ast::CallExpression* expr,
                                     const sem::Builtin* builtin) {
-    auto* return_elem_type = type::Type::DeepestElementOf(builtin->ReturnType());
+    auto* return_elem_type = builtin->ReturnType()->DeepestElement();
     const std::string suffix = Is<type::F16>(return_elem_type) ? "hf" : "f";
     CallBuiltinHelper(out, expr, builtin,
                       [&](TextBuffer* b, const std::vector<std::string>& params) {
@@ -1092,7 +1094,7 @@ void GeneratorImpl::EmitDegreesCall(utils::StringStream& out,
 void GeneratorImpl::EmitRadiansCall(utils::StringStream& out,
                                     const ast::CallExpression* expr,
                                     const sem::Builtin* builtin) {
-    auto* return_elem_type = type::Type::DeepestElementOf(builtin->ReturnType());
+    auto* return_elem_type = builtin->ReturnType()->DeepestElement();
     const std::string suffix = Is<type::F16>(return_elem_type) ? "hf" : "f";
     CallBuiltinHelper(out, expr, builtin,
                       [&](TextBuffer* b, const std::vector<std::string>& params) {
@@ -1179,8 +1181,7 @@ void GeneratorImpl::EmitTextureCall(utils::StringStream& out,
     auto* texture_type = TypeOf(texture)->UnwrapRef()->As<type::Texture>();
 
     auto emit_signed_int_type = [&](const type::Type* ty) {
-        uint32_t width = 0;
-        type::Type::ElementOf(ty, &width);
+        uint32_t width = ty->Elements().count;
         if (width > 1) {
             out << "ivec" << width;
         } else {
@@ -1189,8 +1190,7 @@ void GeneratorImpl::EmitTextureCall(utils::StringStream& out,
     };
 
     auto emit_unsigned_int_type = [&](const type::Type* ty) {
-        uint32_t width = 0;
-        type::Type::ElementOf(ty, &width);
+        uint32_t width = ty->Elements().count;
         if (width > 1) {
             out << "uvec" << width;
         } else {
@@ -1769,7 +1769,7 @@ void GeneratorImpl::EmitGlobalVariable(const ast::Variable* global) {
 
 void GeneratorImpl::EmitUniformVariable(const ast::Var* var, const sem::Variable* sem) {
     auto* type = sem->Type()->UnwrapRef();
-    auto* str = type->As<sem::Struct>();
+    auto* str = type->As<type::Struct>();
     if (TINT_UNLIKELY(!str)) {
         TINT_ICE(Writer, builder_.Diagnostics()) << "storage variable must be of struct type";
         return;
@@ -1788,7 +1788,7 @@ void GeneratorImpl::EmitUniformVariable(const ast::Var* var, const sem::Variable
 
 void GeneratorImpl::EmitStorageVariable(const ast::Var* var, const sem::Variable* sem) {
     auto* type = sem->Type()->UnwrapRef();
-    auto* str = type->As<sem::Struct>();
+    auto* str = type->As<type::Struct>();
     if (TINT_UNLIKELY(!str)) {
         TINT_ICE(Writer, builder_.Diagnostics()) << "storage variable must be of struct type";
         return;
@@ -2040,7 +2040,7 @@ void GeneratorImpl::EmitEntryPointFunction(const ast::Function* func) {
         for (auto* var : func->params) {
             auto* sem = builder_.Sem().Get(var);
             auto* type = sem->Type();
-            if (TINT_UNLIKELY(!type->Is<sem::Struct>())) {
+            if (TINT_UNLIKELY(!type->Is<type::Struct>())) {
                 // ICE likely indicates that the CanonicalizeEntryPointIO transform was
                 // not run, or a builtin parameter was added after it was run.
                 TINT_ICE(Writer, diagnostics_) << "Unsupported non-struct entry point parameter";
@@ -2132,7 +2132,7 @@ void GeneratorImpl::EmitConstant(utils::StringStream& out, const constant::Value
                 EmitConstant(out, constant->Index(i));
             }
         },
-        [&](const sem::Struct* s) {
+        [&](const type::Struct* s) {
             EmitStructType(&helpers_, s);
 
             out << StructName(s);
@@ -2147,9 +2147,8 @@ void GeneratorImpl::EmitConstant(utils::StringStream& out, const constant::Value
             }
         },
         [&](Default) {
-            diagnostics_.add_error(
-                diag::System::Writer,
-                "unhandled constant type: " + builder_.FriendlyName(constant->Type()));
+            diagnostics_.add_error(diag::System::Writer,
+                                   "unhandled constant type: " + constant->Type()->FriendlyName());
         });
 }
 
@@ -2210,7 +2209,7 @@ void GeneratorImpl::EmitZeroValue(utils::StringStream& out, const type::Type* ty
             }
             EmitZeroValue(out, mat->type());
         }
-    } else if (auto* str = type->As<sem::Struct>()) {
+    } else if (auto* str = type->As<type::Struct>()) {
         EmitType(out, type, builtin::AddressSpace::kUndefined, builtin::Access::kUndefined, "");
         bool first = true;
         ScopedParen sp(out);
@@ -2338,7 +2337,7 @@ void GeneratorImpl::EmitForLoop(const ast::ForLoopStatement* stmt) {
                 out << cond_buf.str() << "; ";
 
                 if (!cont_buf.lines.empty()) {
-                    out << TrimSuffix(cont_buf.lines[0].content, ";");
+                    out << utils::TrimSuffix(cont_buf.lines[0].content, ";");
                 }
             }
             out << " {";
@@ -2568,7 +2567,7 @@ void GeneratorImpl::EmitType(utils::StringStream& out,
         TINT_ICE(Writer, diagnostics_) << "Attempting to emit pointer type. These should have been "
                                           "removed with the SimplifyPointers transform";
     } else if (type->Is<type::Sampler>()) {
-    } else if (auto* str = type->As<sem::Struct>()) {
+    } else if (auto* str = type->As<type::Struct>()) {
         out << StructName(str);
     } else if (auto* tex = type->As<type::Texture>()) {
         if (TINT_UNLIKELY(tex->Is<type::ExternalTexture>())) {
@@ -2669,7 +2668,7 @@ void GeneratorImpl::EmitTypeAndName(utils::StringStream& out,
     }
 }
 
-void GeneratorImpl::EmitStructType(TextBuffer* b, const sem::Struct* str) {
+void GeneratorImpl::EmitStructType(TextBuffer* b, const type::Struct* str) {
     auto it = emitted_structs_.emplace(str);
     if (!it.second) {
         return;
@@ -2682,7 +2681,7 @@ void GeneratorImpl::EmitStructType(TextBuffer* b, const sem::Struct* str) {
     line(b);
 }
 
-void GeneratorImpl::EmitStructMembers(TextBuffer* b, const sem::Struct* str) {
+void GeneratorImpl::EmitStructMembers(TextBuffer* b, const type::Struct* str) {
     ScopedIndent si(b);
     for (auto* mem : str->Members()) {
         auto name = mem->Name().Name();
@@ -2705,7 +2704,7 @@ void GeneratorImpl::EmitUnaryOp(utils::StringStream& out, const ast::UnaryOpExpr
             out << "~";
             break;
         case ast::UnaryOp::kNot:
-            if (TypeOf(expr)->UnwrapRef()->is_scalar()) {
+            if (TypeOf(expr)->UnwrapRef()->Is<type::Scalar>()) {
                 out << "!";
             } else {
                 out << "not";

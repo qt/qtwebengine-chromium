@@ -19,6 +19,8 @@
  */
 #pragma once
 
+#include <utility>
+
 #include "state_tracker/device_memory_state.h"
 #include "state_tracker/image_layout_map.h"
 #include "generated/vk_format_utils.h"
@@ -105,7 +107,7 @@ class IMAGE_STATE : public BINDABLE {
     using MemoryReqs = std::array<VkMemoryRequirements, MAX_PLANES>;
     const MemoryReqs requirements;
     const VkMemoryRequirements *const memory_requirements_pointer = &requirements[0];
-    std::array<bool, MAX_PLANES> memory_requirements_checked;
+    std::array<bool, MAX_PLANES> memory_requirements_checked = {};
 
     const bool sparse_residency;
     using SparseReqs = std::vector<VkSparseImageMemoryRequirements>;
@@ -139,10 +141,11 @@ class IMAGE_STATE : public BINDABLE {
     VkImage image() const { return handle_.Cast<VkImage>(); }
 
     bool HasAHBFormat() const { return ahb_format != 0; }
-    bool IsCompatibleAliasing(IMAGE_STATE *other_image_state) const;
+    bool IsCompatibleAliasing(const IMAGE_STATE *other_image_state) const;
 
     // returns true if this image could be using the same memory as another image
-    bool CanAlias() const { return ((createInfo.flags & VK_IMAGE_CREATE_ALIAS_BIT) != 0) || bind_swapchain; }
+    bool HasAliasFlag() const { return 0 != (createInfo.flags & VK_IMAGE_CREATE_ALIAS_BIT); }
+    bool CanAlias() const { return HasAliasFlag() || bind_swapchain; }
 
     bool IsCreateInfoEqual(const VkImageCreateInfo &other_createInfo) const;
     bool IsCreateInfoDedicatedAllocationImageAliasingCompatible(const VkImageCreateInfo &other_createInfo) const;
@@ -194,8 +197,6 @@ class IMAGE_STATE : public BINDABLE {
 
     void SetSwapchain(std::shared_ptr<SWAPCHAIN_NODE> &swapchain, uint32_t swapchain_index);
 
-    VkDeviceSize GetFakeBaseAddress() const override;
-
     void Destroy() override;
 
     // Returns the effective extent of the provided subresource, adjusted for mip level and array depth.
@@ -221,14 +222,45 @@ class IMAGE_STATE : public BINDABLE {
 
   protected:
     void NotifyInvalidate(const BASE_NODE::NodeList &invalid_nodes, bool unlink) override;
+
+    template <typename UnaryPredicate>
+    bool AnyAliasBindingOf(const BASE_NODE::NodeMap &bindings, const UnaryPredicate &pred) const {
+        for (auto &entry : bindings) {
+            if (entry.first.type == kVulkanObjectTypeImage) {
+                auto base_node = entry.second.lock();
+                if (base_node) {
+                    auto other_image = static_cast<IMAGE_STATE *>(base_node.get());
+                    if ((other_image != this) && other_image->IsCompatibleAliasing(this)) {
+                        if (pred(*other_image)) return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    template <typename UnaryPredicate>
+    bool AnyImageAliasOf(const UnaryPredicate &pred) const {
+        // Look for another aliasing image and
+        // ObjectBindings() is thread safe since returns by value, and once
+        // the weak_ptr is successfully locked, the other image state won't
+        // be freed out from under us.
+        for (auto const &memory_state : GetBoundMemoryStates()) {
+            if (AnyAliasBindingOf(memory_state->ObjectBindings(), pred)) return true;
+        }
+        return false;
+    }
 };
 
-using IMAGE_STATE_NO_BINDING = MEMORY_TRACKED_RESOURCE_STATE<IMAGE_STATE, BindableNoMemoryTracker>;
-using IMAGE_STATE_LINEAR = MEMORY_TRACKED_RESOURCE_STATE<IMAGE_STATE, BindableLinearMemoryTracker>;
-template <bool IS_RESIDENT>
-using IMAGE_STATE_SPARSE = MEMORY_TRACKED_RESOURCE_STATE<IMAGE_STATE, BindableSparseMemoryTracker<IS_RESIDENT>>;
-template <unsigned PLANE_COUNT>
-using IMAGE_STATE_MULTIPLANAR = MEMORY_TRACKED_RESOURCE_STATE<IMAGE_STATE, BindableMultiplanarMemoryTracker<PLANE_COUNT>>;
+template <typename ImageState>
+struct ImageStateBindingTraits {
+    using NoBinding = MEMORY_TRACKED_RESOURCE_STATE<ImageState, BindableNoMemoryTracker>;
+    using Linear = MEMORY_TRACKED_RESOURCE_STATE<ImageState, BindableLinearMemoryTracker>;
+    template <bool IS_RESIDENT>
+    using Sparse = MEMORY_TRACKED_RESOURCE_STATE<ImageState, BindableSparseMemoryTracker<IS_RESIDENT>>;
+    template <unsigned PLANE_COUNT>
+    using Multiplanar = MEMORY_TRACKED_RESOURCE_STATE<ImageState, BindableMultiplanarMemoryTracker<PLANE_COUNT>>;
+};
 
 // State for VkImageView objects.
 // Parent -> child relationships in the object usage tree:
@@ -282,7 +314,6 @@ class IMAGE_VIEW_STATE : public BASE_NODE {
 
 struct SWAPCHAIN_IMAGE {
     IMAGE_STATE *image_state = nullptr;
-    VkDeviceSize fake_base_address = 0;
     bool acquired = false;
 };
 

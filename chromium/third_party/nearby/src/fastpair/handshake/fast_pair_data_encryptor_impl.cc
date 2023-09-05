@@ -26,6 +26,8 @@
 #include <utility>
 #include <vector>
 
+#include "absl/strings/string_view.h"
+#include "fastpair/common/account_key.h"
 #include "fastpair/common/constant.h"
 #include "fastpair/common/protocol.h"
 #include "fastpair/crypto/decrypted_passkey.h"
@@ -74,8 +76,11 @@ void FastPairDataEncryptorImpl::Factory::CreateAsync(
     return;
   }
 
-  if (device.GetProtocol() == Protocol::kFastPairInitialPairing) {
+  if (device.GetProtocol() == Protocol::kFastPairInitialPairing ||
+      device.GetProtocol() == Protocol::kFastPairRetroactivePairing) {
     CreateAsyncWithKeyExchange(device, std::move(on_get_instance_callback));
+  } else {
+    CreateAsyncWithAccountKey(device, std::move(on_get_instance_callback));
   }
 }
 
@@ -99,19 +104,36 @@ void FastPairDataEncryptorImpl::Factory::DeviceMetadataRetrieved(
     absl::AnyInvocable<void(std::unique_ptr<FastPairDataEncryptor>)>
         on_get_instance_callback,
     DeviceMetadata& device_metadata) {
+  NEARBY_LOGS(INFO) << __func__;
   DCHECK(&device_metadata);
   std::optional<KeyPair> key_pair =
       FastPairEncryption::GenerateKeysWithEcdhKeyAgreement(
           device_metadata.GetDetails().anti_spoofing_key_pair().public_key());
   if (!key_pair.has_value()) {
     NEARBY_LOGS(INFO) << "Fail to generate key pair";
-    on_get_instance_callback(nullptr);
+    std::move(on_get_instance_callback)(nullptr);
     return;
   }
 
-  std::unique_ptr<FastPairDataEncryptor> data_encryptor =
+  auto data_encryptor =
       std::make_unique<FastPairDataEncryptorImpl>(key_pair.value());
-  on_get_instance_callback(std::move(data_encryptor));
+  std::move(on_get_instance_callback)(std::move(data_encryptor));
+}
+
+void FastPairDataEncryptorImpl::Factory::CreateAsyncWithAccountKey(
+    const FastPairDevice& device,
+    absl::AnyInvocable<void(std::unique_ptr<FastPairDataEncryptor>)>
+        on_get_instance_callback) {
+  NEARBY_LOGS(INFO) << __func__;
+  absl::string_view account_key = device.GetAccountKey().GetAsBytes();
+  CHECK_EQ(account_key.size(), static_cast<size_t>(kSharedSecretKeyByteSize));
+  std::array<uint8_t, kSharedSecretKeyByteSize> shared_secret_key;
+  std::copy_n(account_key.begin(), kSharedSecretKeyByteSize,
+              shared_secret_key.begin());
+
+  std::move(on_get_instance_callback)(
+      std::make_unique<FastPairDataEncryptorImpl>(
+          std::move(shared_secret_key)));
 }
 
 // FastPairDataEncryptorImpl
@@ -146,10 +168,7 @@ void FastPairDataEncryptorImpl::ParseDecryptResponse(
   FastPairDataParser::ParseDecryptedResponse(
       std::vector<uint8_t>(shared_secret_key_.begin(),
                            shared_secret_key_.end()),
-      encrypted_response_bytes,
-      {
-          .on_decrypted_cb = std::move(callback),
-      });
+      encrypted_response_bytes, std::move(callback));
 }
 
 void FastPairDataEncryptorImpl::ParseDecryptPasskey(
@@ -162,10 +181,7 @@ void FastPairDataEncryptorImpl::ParseDecryptPasskey(
   FastPairDataParser::ParseDecryptedPasskey(
       std::vector<uint8_t>(shared_secret_key_.begin(),
                            shared_secret_key_.end()),
-      encrypted_passkey_bytes,
-      {
-          .on_decrypted_cb = std::move(callback),
-      });
+      encrypted_passkey_bytes, std::move(callback));
 }
 }  // namespace fastpair
 }  // namespace nearby

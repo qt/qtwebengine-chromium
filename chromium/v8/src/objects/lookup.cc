@@ -168,8 +168,7 @@ Handle<Map> LookupIterator::GetReceiverMap() const {
 bool LookupIterator::HasAccess() const {
   // TRANSITION is true when being called from DefineNamedOwnIC.
   DCHECK(state_ == ACCESS_CHECK || state_ == TRANSITION);
-  return isolate_->MayAccess(handle(isolate_->context(), isolate_),
-                             GetHolder<JSObject>());
+  return isolate_->MayAccess(isolate_->native_context(), GetHolder<JSObject>());
 }
 
 template <bool is_element>
@@ -325,17 +324,18 @@ void LookupIterator::InternalUpdateProtector(Isolate* isolate,
         receiver->IsJSPromisePrototype()) {
       Protectors::InvalidatePromiseThenLookupChain(isolate);
     }
-  } else if (*name == roots.replace_symbol()) {
-    if (!Protectors::IsNumberStringPrototypeNoReplaceIntact(isolate)) return;
+  } else if (*name == roots.match_all_symbol() ||
+             *name == roots.replace_symbol() || *name == roots.split_symbol()) {
+    if (!Protectors::IsNumberStringNotRegexpLikeIntact(isolate)) return;
     // We need to protect the prototype chains of `Number.prototype` and
-    // `String.prototype`: that `Symbol.replace` is not added as a property on
-    // any object on these prototype chains.
-    // We detect `Number.prototype` and `String.prototype` by checking for a
-    // prototype that is a JSPrimitiveWrapper. This is a safe approximation.
-    // Using JSPrimitiveWrapper as prototype should be sufficiently rare.
+    // `String.prototype`: that `Symbol.{matchAll|replace|split}` is not added
+    // as a property on any object on these prototype chains. We detect
+    // `Number.prototype` and `String.prototype` by checking for a prototype
+    // that is a JSPrimitiveWrapper. This is a safe approximation. Using
+    // JSPrimitiveWrapper as prototype should be sufficiently rare.
     if (receiver->map().is_prototype_map() &&
         (receiver->IsJSPrimitiveWrapper() || receiver->IsJSObjectPrototype())) {
-      Protectors::InvalidateNumberStringPrototypeNoReplace(isolate);
+      Protectors::InvalidateNumberStringNotRegexpLike(isolate);
     }
   }
 }
@@ -700,8 +700,8 @@ void LookupIterator::ApplyTransitionToDataProperty(
                               property_details_, &number_);
       receiver->SetProperties(*dictionary);
       // TODO(pthier): Add flags to swiss dictionaries.
-      if (name()->IsInterestingSymbol()) {
-        dictionary->set_may_have_interesting_symbols(true);
+      if (name()->IsInteresting(isolate())) {
+        dictionary->set_may_have_interesting_properties(true);
       }
       // Reload details containing proper enumeration index value.
       property_details_ = dictionary->DetailsAt(number_);

@@ -134,13 +134,13 @@ bool CoreChecks::PreCallValidateBeginCommandBuffer(VkCommandBuffer commandBuffer
                     auto render_pass = Get<RENDER_PASS_STATE>(info->renderPass);
                     if (!render_pass) {
                         skip |= LogError(commandBuffer, "VUID-VkCommandBufferBeginInfo-flags-06000",
-                                         "vkBeginCommandBuffer(): Renderpass must be a valid VkRenderPass");
+                                         "vkBeginCommandBuffer(): Render pass must be a valid VkRenderPass.");
                     } else {
                         if (info->subpass >= render_pass->createInfo.subpassCount) {
                             skip |= LogError(commandBuffer, "VUID-VkCommandBufferBeginInfo-flags-06001",
                                              "vkBeginCommandBuffer(): Subpass member of pInheritanceInfo (%" PRIu32
                                              ") must be a valid subpass "
-                                             "index within pInheritanceInfo->renderPass",
+                                             "index within pInheritanceInfo->renderPass.",
                                              info->subpass);
                         }
                     }
@@ -148,7 +148,7 @@ bool CoreChecks::PreCallValidateBeginCommandBuffer(VkCommandBuffer commandBuffer
                     if (!p_inherited_rendering_info) {
                         skip |= LogError(commandBuffer, "VUID-VkCommandBufferBeginInfo-flags-06002",
                                          "vkBeginCommandBuffer():The pNext chain of pInheritanceInfo must include a "
-                                         "VkCommandBufferInheritanceRenderingInfoKHR structure");
+                                         "VkCommandBufferInheritanceRenderingInfoKHR structure.");
                     }
                 }
             }
@@ -158,27 +158,25 @@ bool CoreChecks::PreCallValidateBeginCommandBuffer(VkCommandBuffer commandBuffer
                 if (p_attachment_sample_count_info_amd &&
                     p_attachment_sample_count_info_amd->colorAttachmentCount != p_inherited_rendering_info->colorAttachmentCount) {
                     skip |= LogError(commandBuffer, "VUID-VkCommandBufferBeginInfo-flags-06003",
-                                     "vkBeginCommandBuffer(): VkAttachmentSampleCountInfo{AMD,NV}->colorAttachmentCount[%u] must "
-                                     "equal VkCommandBufferInheritanceRenderingInfoKHR->colorAttachmentCount[%u]",
+                                     "vkBeginCommandBuffer(): VkAttachmentSampleCountInfoAMD::colorAttachmentCount (%" PRIu32
+                                     ") must equal VkCommandBufferInheritanceRenderingInfo::colorAttachmentCount (%" PRIu32 ").",
                                      p_attachment_sample_count_info_amd->colorAttachmentCount,
                                      p_inherited_rendering_info->colorAttachmentCount);
                 }
 
                 if ((p_inherited_rendering_info->colorAttachmentCount != 0) &&
                     (p_inherited_rendering_info->rasterizationSamples & AllVkSampleCountFlagBits) == 0) {
-                    skip |=
-                        LogError(commandBuffer, "VUID-VkCommandBufferInheritanceRenderingInfo-colorAttachmentCount-06004",
-                                 "vkBeginCommandBuffer(): VkCommandBufferInheritanceRenderingInfo->colorAttachmentCount (%" PRIu32
-                                 ") is not 0, rasterizationSamples (%s) must be valid VkSampleCountFlagBits value",
-                                 p_inherited_rendering_info->colorAttachmentCount,
-                                 string_VkSampleCountFlagBits(p_inherited_rendering_info->rasterizationSamples));
+                    skip |= LogError(commandBuffer, "VUID-VkCommandBufferInheritanceRenderingInfo-colorAttachmentCount-06004",
+                                     "vkBeginCommandBuffer(): colorAttachmentCount (%" PRIu32
+                                     ") is not 0, so rasterizationSamples (%s) must be a valid VkSampleCountFlagBits value.",
+                                     p_inherited_rendering_info->colorAttachmentCount,
+                                     string_VkSampleCountFlagBits(p_inherited_rendering_info->rasterizationSamples));
                 }
 
                 if ((enabled_features.core.variableMultisampleRate == false) &&
                     (p_inherited_rendering_info->rasterizationSamples & AllVkSampleCountFlagBits) == 0) {
                     skip |= LogError(commandBuffer, "VUID-VkCommandBufferInheritanceRenderingInfo-variableMultisampleRate-06005",
-                                     "vkBeginCommandBuffer(): If the variableMultisampleRate feature is not enabled, "
-                                     "rasterizationSamples (%s) must be a valid VkSampleCountFlagBits",
+                                     "vkBeginCommandBuffer(): rasterizationSamples is %s.",
                                      string_VkSampleCountFlagBits(p_inherited_rendering_info->rasterizationSamples));
                 }
 
@@ -190,21 +188,18 @@ bool CoreChecks::PreCallValidateBeginCommandBuffer(VkCommandBuffer commandBuffer
                                 GetPotentialFormatFeatures(attachment_format);
                             if ((potential_format_features & VK_FORMAT_FEATURE_2_COLOR_ATTACHMENT_BIT_KHR) == 0) {
                                 if (!enabled_features.linear_color_attachment_features.linearColorAttachment) {
-                                    skip |= LogError(
-                                        commandBuffer, "VUID-VkCommandBufferInheritanceRenderingInfo-pColorAttachmentFormats-06006",
-                                        "vkBeginCommandBuffer(): "
-                                        "VkCommandBufferInheritanceRenderingInfo->pColorAttachmentFormats[%u] (%s) must be a "
-                                        "format with potential format features that include VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT",
-                                        i, string_VkFormat(attachment_format));
+                                    skip |= LogError(commandBuffer,
+                                                     "VUID-VkCommandBufferInheritanceRenderingInfo-pColorAttachmentFormats-06006",
+                                                     "vkBeginCommandBuffer(): "
+                                                     "pColorAttachmentFormats[%" PRIu32 "] is %s.",
+                                                     i, string_VkFormat(attachment_format));
                                 } else if ((potential_format_features & VK_FORMAT_FEATURE_2_LINEAR_COLOR_ATTACHMENT_BIT_NV) == 0) {
-                                    skip |= LogError(
-                                        commandBuffer,
-                                        "VUID-VkCommandBufferInheritanceRenderingInfoKHR-pColorAttachmentFormats-06492",
-                                        "vkBeginCommandBuffer(): "
-                                        "VkCommandBufferInheritanceRenderingInfo->pColorAttachmentFormats[%u] (%s) must be a "
-                                        "format with potential format features that include VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT "
-                                        "or VK_FORMAT_FEATURE_2_LINEAR_COLOR_ATTACHMENT_BIT_NV",
-                                        i, string_VkFormat(attachment_format));
+                                    skip |=
+                                        LogError(commandBuffer,
+                                                 "VUID-VkCommandBufferInheritanceRenderingInfoKHR-pColorAttachmentFormats-06492",
+                                                 "vkBeginCommandBuffer(): "
+                                                 "pColorAttachmentFormats[%" PRIu32 "] is %s.",
+                                                 i, string_VkFormat(attachment_format));
                                 }
                             }
                         }
@@ -216,18 +211,12 @@ bool CoreChecks::PreCallValidateBeginCommandBuffer(VkCommandBuffer commandBuffer
                 if (depth_format != VK_FORMAT_UNDEFINED) {
                     const VkFormatFeatureFlags2KHR potential_format_features = GetPotentialFormatFeatures(depth_format);
                     if ((potential_format_features & valid_depth_stencil_format) == 0) {
-                        skip |= LogError(
-                            commandBuffer, "VUID-VkCommandBufferInheritanceRenderingInfo-depthAttachmentFormat-06007",
-                            "vkBeginCommandBuffer(): VkCommandBufferInheritanceRenderingInfo->depthAttachmentFormat (%s) must be a "
-                            "format with potential format features that include VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT",
-                            string_VkFormat(depth_format));
+                        skip |= LogError(commandBuffer, "VUID-VkCommandBufferInheritanceRenderingInfo-depthAttachmentFormat-06007",
+                                         "vkBeginCommandBuffer(): depthAttachmentFormat is %s.", string_VkFormat(depth_format));
                     }
                     if (!FormatHasDepth(depth_format)) {
-                        skip |= LogError(
-                            commandBuffer, "VUID-VkCommandBufferInheritanceRenderingInfo-depthAttachmentFormat-06540",
-                            "vkBeginCommandBuffer(): VkCommandBufferInheritanceRenderingInfo->depthAttachmentFormat (%s) must be a "
-                            "format with a depth aspect.",
-                            string_VkFormat(depth_format));
+                        skip |= LogError(commandBuffer, "VUID-VkCommandBufferInheritanceRenderingInfo-depthAttachmentFormat-06540",
+                                         "vkBeginCommandBuffer(): depthAttachmentFormat is %s.", string_VkFormat(depth_format));
                     }
                 }
 
@@ -235,42 +224,39 @@ bool CoreChecks::PreCallValidateBeginCommandBuffer(VkCommandBuffer commandBuffer
                 if (stencil_format != VK_FORMAT_UNDEFINED) {
                     const VkFormatFeatureFlags2KHR potential_format_features = GetPotentialFormatFeatures(stencil_format);
                     if ((potential_format_features & valid_depth_stencil_format) == 0) {
-                        skip |= LogError(
-                            commandBuffer, "VUID-VkCommandBufferInheritanceRenderingInfo-stencilAttachmentFormat-06199",
-                            "vkBeginCommandBuffer(): VkCommandBufferInheritanceRenderingInfo->stencilAttachmentFormat (%s) must be "
-                            "a format with potential format features that include VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT",
-                            string_VkFormat(stencil_format));
+                        skip |=
+                            LogError(commandBuffer, "VUID-VkCommandBufferInheritanceRenderingInfo-stencilAttachmentFormat-06199",
+                                     "vkBeginCommandBuffer(): stencilAttachmentFormat is %s.", string_VkFormat(stencil_format));
                     }
                     if (!FormatHasStencil(stencil_format)) {
                         skip |=
                             LogError(commandBuffer, "VUID-VkCommandBufferInheritanceRenderingInfo-stencilAttachmentFormat-06541",
-                                     "vkBeginCommandBuffer(): VkCommandBufferInheritanceRenderingInfo->stencilAttachmentFormat "
-                                     "(%s) must include stencil aspect.",
-                                     string_VkFormat(stencil_format));
+                                     "vkBeginCommandBuffer(): stencilAttachmentFormat is %s.", string_VkFormat(stencil_format));
                     }
                 }
 
                 if ((depth_format != VK_FORMAT_UNDEFINED && stencil_format != VK_FORMAT_UNDEFINED) &&
                     (depth_format != stencil_format)) {
                     skip |= LogError(commandBuffer, "VUID-VkCommandBufferInheritanceRenderingInfo-depthAttachmentFormat-06200",
-                                     "vkBeginCommandBuffer(): VkCommandBufferInheritanceRenderingInfoKHR->depthAttachmentFormat "
-                                     "(%s) must equal VkCommandBufferInheritanceRenderingInfoKHR->stencilAttachmentFormat (%s)",
+                                     "vkBeginCommandBuffer(): depthAttachmentFormat "
+                                     "(%s) is not the same as stencilAttachmentFormat (%s).",
                                      string_VkFormat(depth_format), string_VkFormat(stencil_format));
                 }
 
                 if ((enabled_features.core11.multiview == VK_FALSE) && (p_inherited_rendering_info->viewMask != 0)) {
                     skip |= LogError(commandBuffer, "VUID-VkCommandBufferInheritanceRenderingInfo-multiview-06008",
-                                     "vkBeginCommandBuffer(): If the multiview feature is not enabled, viewMask must be 0 (%u)",
+                                     "vkBeginCommandBuffer(): Multiview feature is not enabled, but viewMask is (%" PRIu32 ").",
                                      p_inherited_rendering_info->viewMask);
                 }
 
                 if (MostSignificantBit(p_inherited_rendering_info->viewMask) >=
                     static_cast<int32_t>(phys_dev_props_core11.maxMultiviewViewCount)) {
-                    skip |=
-                        LogError(commandBuffer, "VUID-VkCommandBufferInheritanceRenderingInfo-viewMask-06009",
-                                 "vkBeginCommandBuffer(): Most significant bit "
-                                 "VkCommandBufferInheritanceRenderingInfoKHR->viewMask(%u) must be less maxMultiviewViewCount(%u)",
-                                 p_inherited_rendering_info->viewMask, phys_dev_props_core11.maxMultiviewViewCount);
+                    skip |= LogError(commandBuffer, "VUID-VkCommandBufferInheritanceRenderingInfo-viewMask-06009",
+                                     "vkBeginCommandBuffer(): The index of the most significant bit in "
+                                     "viewMask (%" PRIu32
+                                     ") is superior or equal to VkPhysicalDeviceVulkan11Properties::maxMultiviewViewCount (%" PRIu32
+                                     ").",
+                                     p_inherited_rendering_info->viewMask, phys_dev_props_core11.maxMultiviewViewCount);
                 }
             }
         }
@@ -298,7 +284,7 @@ bool CoreChecks::PreCallValidateBeginCommandBuffer(VkCommandBuffer commandBuffer
                 if (p_inherited_viewport_scissor_info->viewportDepthCount == 0) {
                     skip |= LogError(commandBuffer, "VUID-VkCommandBufferInheritanceViewportScissorInfoNV-viewportScissor2D-04784",
                                      "vkBeginCommandBuffer(): "
-                                     "If viewportScissor2D is VK_TRUE, then viewportDepthCount must be greater than 0.");
+                                     "viewportScissor2D is VK_TRUE, but viewportDepthCount is 0.");
                 }
             }
 
@@ -310,16 +296,17 @@ bool CoreChecks::PreCallValidateBeginCommandBuffer(VkCommandBuffer commandBuffer
                         if (render_pass) {
                             if (info->subpass >= render_pass->createInfo.subpassCount) {
                                 skip |= LogError(commandBuffer, "VUID-VkCommandBufferBeginInfo-flags-00054",
-                                                 "vkBeginCommandBuffer(): Secondary %s must have a subpass index (%d) that is "
-                                                 "less than the number of subpasses (%d).",
+                                                 "vkBeginCommandBuffer(): Secondary %s has a subpass index (%" PRIu32
+                                                 ") that is "
+                                                 "superior or equal to the number of subpasses (%" PRIu32 ").",
                                                  report_data->FormatHandle(commandBuffer).c_str(), info->subpass,
                                                  render_pass->createInfo.subpassCount);
                             }
                         }
                     } else {
                         skip |= LogError(commandBuffer, "VUID-VkCommandBufferBeginInfo-flags-00053",
-                                         "vkBeginCommandBuffer(): Flags contains VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT, "
-                                         "the renderpass member of pInheritanceInfo must be a valid VkRenderPass.");
+                                         "vkBeginCommandBuffer(): Flags contains VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT "
+                                         "but the renderpass member of pInheritanceInfo is VK_NULL_HANDLE.");
                     }
                 }
             }
@@ -375,10 +362,10 @@ bool CoreChecks::PreCallValidateEndCommandBuffer(VkCommandBuffer commandBuffer) 
             report_data->FormatHandle(commandBuffer).c_str());
     }
 
-    for (const auto &query : cb_state.activeQueries) {
+    for (const auto &query_obj : cb_state.activeQueries) {
         skip |= LogError(commandBuffer, "VUID-vkEndCommandBuffer-commandBuffer-00061",
                          "vkEndCommandBuffer(): Ending command buffer with in progress query: %s, query %d.",
-                         report_data->FormatHandle(query.pool).c_str(), query.query);
+                         report_data->FormatHandle(query_obj.pool).c_str(), query_obj.slot);
     }
     if (cb_state.conditional_rendering_active) {
         skip |= LogError(commandBuffer, "VUID-vkEndCommandBuffer-None-01978",
@@ -596,12 +583,12 @@ class CoreChecks::ViewportScissorInheritanceTracker {
             viewport_trashed_by_[n] = primary_state->trashedViewportMask & bit ? kTrashedByPrimary : kNotTrashed;
             scissor_trashed_by_[n] = primary_state->trashedScissorMask & bit ? kTrashedByPrimary : kNotTrashed;
             if (viewport_mask_ & bit) {
-                viewports_to_inherit_[n] = primary_state->dynamicViewports[n];
+                viewports_to_inherit_[n] = primary_state->dynamic_state_value.viewports[n];
             }
         }
 
-        viewport_count_to_inherit_ = primary_state->viewportWithCountCount;
-        scissor_count_to_inherit_ = primary_state->scissorWithCountCount;
+        viewport_count_to_inherit_ = primary_state->dynamic_state_value.viewport_count;
+        scissor_count_to_inherit_ = primary_state->dynamic_state_value.scissor_count;
         viewport_count_trashed_by_ = primary_state->trashedViewportCount ? kTrashedByPrimary : kNotTrashed;
         scissor_count_trashed_by_ = primary_state->trashedScissorCount ? kTrashedByPrimary : kNotTrashed;
         return false;
@@ -635,18 +622,18 @@ class CoreChecks::ViewportScissorInheritanceTracker {
         for (uint32_t n = 0; n < kMaxViewports; ++n) {
             uint32_t bit = uint32_t(1) << n;
             if ((secondary_state->viewportMask | secondary_state->viewportWithCountMask) & bit) {
-                viewports_to_inherit_[n] = secondary_state->dynamicViewports[n];
+                viewports_to_inherit_[n] = secondary_state->dynamic_state_value.viewports[n];
                 viewport_trashed_by_[n] = kNotTrashed;
             }
             if ((secondary_state->scissorMask | secondary_state->scissorWithCountMask) & bit) {
                 scissor_trashed_by_[n] = kNotTrashed;
             }
-            if (secondary_state->viewportWithCountCount != 0) {
-                viewport_count_to_inherit_ = secondary_state->viewportWithCountCount;
+            if (secondary_state->dynamic_state_value.viewport_count != 0) {
+                viewport_count_to_inherit_ = secondary_state->dynamic_state_value.viewport_count;
                 viewport_count_trashed_by_ = kNotTrashed;
             }
-            if (secondary_state->scissorWithCountCount != 0) {
-                scissor_count_to_inherit_ = secondary_state->scissorWithCountCount;
+            if (secondary_state->dynamic_state_value.scissor_count != 0) {
+                scissor_count_to_inherit_ = secondary_state->dynamic_state_value.scissor_count;
                 scissor_count_trashed_by_ = kNotTrashed;
             }
             // Order of above vs below matters here.
@@ -679,9 +666,11 @@ class CoreChecks::ViewportScissorInheritanceTracker {
                     inherited_viewport->maxDepth != expected_viewport_depth->maxDepth) {
                     return validation_.LogError(
                         primary_state_->commandBuffer(), "VUID-vkCmdDraw-None-07850",
-                        "vkCmdExecuteCommands(): Draw commands in pCommandBuffers[%u] (%s) consume inherited viewport %u %s"
+                        "vkCmdExecuteCommands(): Draw commands in pCommandBuffers[%" PRIu32
+                        "] (%s) consume inherited viewport %" PRIu32
+                        " %s"
                         "but this state was not inherited as its depth range [%f, %f] does not match "
-                        "pViewportDepths[%u] = [%f, %f]",
+                        "pViewportDepths[%" PRIu32 "] = [%f, %f]",
                         unsigned(cmd_buffer_idx), validation_.report_data->FormatHandle(secondary_state->commandBuffer()).c_str(),
                         unsigned(index), index >= static_use_count ? "(with count) " : "", inherited_viewport->minDepth,
                         inherited_viewport->maxDepth, unsigned(cmd_buffer_idx), expected_viewport_depth->minDepth,
@@ -770,8 +759,9 @@ class CoreChecks::ViewportScissorInheritanceTracker {
             skip |= validation_.LogError(
                 primary_state_->commandBuffer(), "VUID-vkCmdDraw-None-07850",
                 "vkCmdExecuteCommands(): "
-                "Draw commands in pCommandBuffers[%u] (%s) consume inherited dynamic viewport with count state "
-                "but the dynamic viewport count (%u) exceeds the inheritance limit (viewportDepthCount=%u).",
+                "Draw commands in pCommandBuffers[%" PRIu32
+                "] (%s) consume inherited dynamic viewport with count state "
+                "but the dynamic viewport count (%" PRIu32 ") exceeds the inheritance limit (viewportDepthCount=%" PRIu32 ").",
                 unsigned(cmd_buffer_idx), validation_.report_data->FormatHandle(secondary_state->commandBuffer()).c_str(),
                 unsigned(viewport_count_to_inherit_), unsigned(secondary_state->inheritedViewportDepths.size()));
         }
@@ -899,8 +889,9 @@ bool CoreChecks::PreCallValidateCmdExecuteCommands(VkCommandBuffer commandBuffer
                                      "vkCmdExecuteCommands(): pCommandBuffers[%" PRIu32
                                      "] %s is executed within a %s "
                                      "instance scope begun by vkCmdBeginRenderPass(), but "
-                                     "VkCommandBufferInheritanceInfo::subpass (%u) does not "
-                                     "match the current subpass (%u).",
+                                     "VkCommandBufferInheritanceInfo::subpass (%" PRIu32
+                                     ") does not "
+                                     "match the current subpass (%" PRIu32 ").",
                                      i, report_data->FormatHandle(pCommandBuffers[i]).c_str(),
                                      report_data->FormatHandle(cb_state->activeRenderPass->renderPass()).c_str(),
                                      inheritance_subpass, cb_state->GetActiveSubpass());
@@ -925,8 +916,10 @@ bool CoreChecks::PreCallValidateCmdExecuteCommands(VkCommandBuffer commandBuffer
                             skip |= LogError(objlist, "VUID-vkCmdExecuteCommands-flags-06026",
                                              "vkCmdExecuteCommands(): pCommandBuffers[%" PRIu32
                                              "] %s is executed within a dynamic renderpass instance scope begun "
-                                             "by %s(), but VkCommandBufferInheritanceRenderingInfo::flags (%u) does "
-                                             "not match VkRenderingInfo::flags (%u), excluding "
+                                             "by %s(), but VkCommandBufferInheritanceRenderingInfo::flags (%" PRIu32
+                                             ") does "
+                                             "not match VkRenderingInfo::flags (%" PRIu32
+                                             "), excluding "
                                              "VK_RENDERING_CONTENTS_SECONDARY_COMMAND_BUFFERS_BIT_KHR.",
                                              i, report_data->FormatHandle(pCommandBuffers[i]).c_str(),
                                              cb_state->begin_rendering_func_name.c_str(), inheritance_rendering_info.flags,
@@ -939,31 +932,51 @@ bool CoreChecks::PreCallValidateCmdExecuteCommands(VkCommandBuffer commandBuffer
                                              "vkCmdExecuteCommands(): pCommandBuffers[%" PRIu32
                                              "] %s is executed within a dynamic renderpass instance scope begun "
                                              "by %s(), but "
-                                             "VkCommandBufferInheritanceRenderingInfo::colorAttachmentCount (%u) does "
-                                             "not match VkRenderingInfo::colorAttachmentCount (%u).",
+                                             "VkCommandBufferInheritanceRenderingInfo::colorAttachmentCount (%" PRIu32
+                                             ") does "
+                                             "not match VkRenderingInfo::colorAttachmentCount (%" PRIu32 ").",
                                              i, report_data->FormatHandle(pCommandBuffers[i]).c_str(),
                                              cb_state->begin_rendering_func_name.c_str(),
                                              inheritance_rendering_info.colorAttachmentCount, rendering_info.colorAttachmentCount);
                         }
 
-                        for (uint32_t index = 0; index < rendering_info.colorAttachmentCount; index++) {
-                            if (rendering_info.pColorAttachments[index].imageView == VK_NULL_HANDLE) {
-                                continue;
-                            }
-                            auto image_view_state = Get<IMAGE_VIEW_STATE>(rendering_info.pColorAttachments[index].imageView);
+                        for (uint32_t color_i = 0, count = std::min(inheritance_rendering_info.colorAttachmentCount,
+                                                                    rendering_info.colorAttachmentCount);
+                             color_i < count; color_i++) {
+                            if (rendering_info.pColorAttachments[color_i].imageView == VK_NULL_HANDLE) {
+                                if (inheritance_rendering_info.pColorAttachmentFormats[color_i] != VK_FORMAT_UNDEFINED) {
+                                    const LogObjectList objlist(commandBuffer, pCommandBuffers[i]);
+                                    skip |= LogError(objlist, "VUID-vkCmdExecuteCommands-imageView-07606",
+                                                     "vkCmdExecuteCommands(): pCommandBuffers[%" PRIu32
+                                                     "] %s is executed within a dynamic render pass instance "
+                                                     "scope begun "
+                                                     "by %s(), VkRenderingInfo::pColorAttachments[%" PRIu32
+                                                     "].imageView is VK_NULL_HANDLE but "
+                                                     "VkCommandBufferInheritanceRenderingInfo::pColorAttachmentFormats[%" PRIu32
+                                                     "] is %s.",
+                                                     i, report_data->FormatHandle(pCommandBuffers[i]).c_str(),
+                                                     cb_state->begin_rendering_func_name.c_str(), color_i, color_i,
+                                                     string_VkFormat(inheritance_rendering_info.pColorAttachmentFormats[color_i]));
+                                }
+                            } else {
+                                auto image_view_state = Get<IMAGE_VIEW_STATE>(rendering_info.pColorAttachments[color_i].imageView);
 
-                            if (image_view_state->create_info.format != inheritance_rendering_info.pColorAttachmentFormats[index]) {
-                                const LogObjectList objlist(commandBuffer, pCommandBuffers[i]);
-                                skip |=
-                                    LogError(objlist, "VUID-vkCmdExecuteCommands-imageView-06028",
-                                             "vkCmdExecuteCommands(): pCommandBuffers[%" PRIu32
-                                             "] %s is executed within a dynamic renderpass instance "
-                                             "scope begun "
-                                             "by %s(), but "
-                                             "VkCommandBufferInheritanceRenderingInfo::pColorAttachmentFormats at index (%u) does "
-                                             "not match the format of the imageView in VkRenderingInfo::pColorAttachments.",
-                                             i, report_data->FormatHandle(pCommandBuffers[i]).c_str(),
-                                             cb_state->begin_rendering_func_name.c_str(), index);
+                                if (image_view_state->create_info.format !=
+                                    inheritance_rendering_info.pColorAttachmentFormats[color_i]) {
+                                    const LogObjectList objlist(commandBuffer, pCommandBuffers[i]);
+                                    skip |= LogError(objlist, "VUID-vkCmdExecuteCommands-imageView-06028",
+                                                     "vkCmdExecuteCommands(): pCommandBuffers[%" PRIu32
+                                                     "] %s is executed within a dynamic render pass instance "
+                                                     "scope begun "
+                                                     "by %s(), VkRenderingInfo::pColorAttachments[%" PRIu32
+                                                     "].imageView format is %s but "
+                                                     "VkCommandBufferInheritanceRenderingInfo::pColorAttachmentFormats[%" PRIu32
+                                                     "] is %s.",
+                                                     i, report_data->FormatHandle(pCommandBuffers[i]).c_str(),
+                                                     cb_state->begin_rendering_func_name.c_str(), color_i,
+                                                     string_VkFormat(image_view_state->create_info.format), color_i,
+                                                     string_VkFormat(inheritance_rendering_info.pColorAttachmentFormats[color_i]));
+                                }
                             }
                         }
 
@@ -1043,8 +1056,9 @@ bool CoreChecks::PreCallValidateCmdExecuteCommands(VkCommandBuffer commandBuffer
                                              "vkCmdExecuteCommands(): pCommandBuffers[%" PRIu32
                                              "] %s is executed within a dynamic renderpass instance scope begun "
                                              "by %s(), but "
-                                             "VkCommandBufferInheritanceRenderingInfo::viewMask (%u) does "
-                                             "not match VkRenderingInfo::viewMask (%u).",
+                                             "VkCommandBufferInheritanceRenderingInfo::viewMask (%" PRIu32
+                                             ") does "
+                                             "not match VkRenderingInfo::viewMask (%" PRIu32 ").",
                                              i, report_data->FormatHandle(pCommandBuffers[i]).c_str(),
                                              cb_state->begin_rendering_func_name.c_str(), inheritance_rendering_info.viewMask,
                                              rendering_info.viewMask);
@@ -1069,7 +1083,8 @@ bool CoreChecks::PreCallValidateCmdExecuteCommands(VkCommandBuffer commandBuffer
                                         "] %s is executed within a dynamic renderpass instance "
                                         "scope begun "
                                         "by vkCmdBeginRenderingKHR(), but "
-                                        "VkAttachmentSampleCountInfo(AMD/NV)::pColorAttachmentSamples at index (%u) "
+                                        "VkAttachmentSampleCountInfo(AMD/NV)::pColorAttachmentSamples at index (%" PRIu32
+                                        ") "
                                         "does "
                                         "not match the sample count of the imageView in VkRenderingInfoKHR::pColorAttachments.",
                                         i, report_data->FormatHandle(pCommandBuffers[i]).c_str(), index);
@@ -1125,7 +1140,8 @@ bool CoreChecks::PreCallValidateCmdExecuteCommands(VkCommandBuffer commandBuffer
                                         "vkCmdExecuteCommands(): pCommandBuffers[%" PRIu32
                                         "] %s is executed within a dynamic renderpass instance "
                                         "scope begun "
-                                        "by vkCmdBeginRenderingKHR(), but the sample count of the image view at index (%u) of "
+                                        "by vkCmdBeginRenderingKHR(), but the sample count of the image view at index (%" PRIu32
+                                        ") of "
                                         "VkRenderingInfoKHR::pColorAttachments does not match "
                                         "VkCommandBufferInheritanceRenderingInfoKHR::rasterizationSamples.",
                                         i, report_data->FormatHandle(pCommandBuffers[i]).c_str(), index);
@@ -1266,13 +1282,14 @@ bool CoreChecks::PreCallValidateCmdExecuteCommands(VkCommandBuffer commandBuffer
                     // We can report all the errors for the intersected range directly
                     for (auto index = iter->range.begin; index < iter->range.end; index++) {
                         const auto subresource = image_state->subresource_encoder.Decode(index);
-                        skip |=
-                            LogError(pCommandBuffers[i], "UNASSIGNED-vkCmdExecuteCommands-commandBuffer-00001",
-                                     "%s: Executed secondary command buffer using %s (subresource: aspectMask 0x%x array layer %u, "
-                                     "mip level %u) which expects layout %s--instead, image %s layout is %s.",
-                                     "vkCmdExecuteCommands():", report_data->FormatHandle(image).c_str(), subresource.aspectMask,
-                                     subresource.arrayLayer, subresource.mipLevel, string_VkImageLayout(sub_layout), layout_type,
-                                     string_VkImageLayout(cb_layout));
+                        skip |= LogError(
+                            pCommandBuffers[i], "UNASSIGNED-vkCmdExecuteCommands-commandBuffer-00001",
+                            "%s: Executed secondary command buffer using %s (subresource: aspectMask 0x%x array layer %" PRIu32
+                            ", "
+                            "mip level %" PRIu32 ") which expects layout %s--instead, image %s layout is %s.",
+                            "vkCmdExecuteCommands():", report_data->FormatHandle(image).c_str(), subresource.aspectMask,
+                            subresource.arrayLayer, subresource.mipLevel, string_VkImageLayout(sub_layout), layout_type,
+                            string_VkImageLayout(cb_layout));
                     }
                 }
             }
@@ -1726,10 +1743,13 @@ bool CoreChecks::PreCallValidateCmdEndDebugUtilsLabelEXT(VkCommandBuffer command
     auto cb_state = GetRead<CMD_BUFFER_STATE>(commandBuffer);
     assert(cb_state);
     bool skip = false;
+
+    if (cb_state->IsPrimary()) {
+        return skip;
+    }
+
     if (cb_state->LabelStackDepth() < 1) {
-        const auto vuid = cb_state->IsPrimary() ? "VUID-vkCmdEndDebugUtilsLabelEXT-commandBuffer-01912"
-                                                : "VUID-vkCmdEndDebugUtilsLabelEXT-commandBuffer-01913";
-        skip |= LogError(commandBuffer, vuid,
+        skip |= LogError(commandBuffer, "VUID-vkCmdEndDebugUtilsLabelEXT-commandBuffer-01913",
                          "vkCmdEndDebugUtilsLabelEXT() called without a corresponding vkCmdBeginDebugUtilsLabelEXT first");
     }
     return skip;

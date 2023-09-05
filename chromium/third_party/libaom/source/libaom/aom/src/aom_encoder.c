@@ -121,7 +121,7 @@ aom_codec_err_t aom_codec_enc_config_default(aom_codec_iface_t *iface,
   return res;
 }
 
-#if ARCH_X86 || ARCH_X86_64
+#if AOM_ARCH_X86 || AOM_ARCH_X86_64
 /* On X86, disable the x87 unit's internal 80 bit precision for better
  * consistency with the SSE unit's 64 bit precision.
  */
@@ -132,7 +132,7 @@ aom_codec_err_t aom_codec_enc_config_default(aom_codec_iface_t *iface,
 #else
 #define FLOATING_POINT_SET_PRECISION
 #define FLOATING_POINT_RESTORE_PRECISION
-#endif  // ARCH_X86 || ARCH_X86_64
+#endif  // AOM_ARCH_X86 || AOM_ARCH_X86_64
 
 #if HAVE_FEXCEPT && CONFIG_DEBUG
 #define FLOATING_POINT_SET_EXCEPTIONS \

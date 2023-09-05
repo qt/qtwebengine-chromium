@@ -74,53 +74,72 @@
 
 
 int rsa_check_public_key(const RSA *rsa) {
-  if (rsa->n == NULL || rsa->e == NULL) {
+  if (rsa->n == NULL) {
     OPENSSL_PUT_ERROR(RSA, RSA_R_VALUE_MISSING);
     return 0;
   }
 
+  // TODO(davidben): 16384-bit RSA is huge. Can we bring this down to a limit of
+  // 8192-bit?
   unsigned n_bits = BN_num_bits(rsa->n);
   if (n_bits > 16 * 1024) {
     OPENSSL_PUT_ERROR(RSA, RSA_R_MODULUS_TOO_LARGE);
     return 0;
   }
 
-  // RSA moduli must be odd. In addition to being necessary for RSA in general,
-  // we cannot setup Montgomery reduction with even moduli.
-  if (!BN_is_odd(rsa->n)) {
+  // TODO(crbug.com/boringssl/607): Raise this limit. 512-bit RSA was factored
+  // in 1999.
+  if (n_bits < 512) {
+    OPENSSL_PUT_ERROR(RSA, RSA_R_KEY_SIZE_TOO_SMALL);
+    return 0;
+  }
+
+  // RSA moduli must be positive and odd. In addition to being necessary for RSA
+  // in general, we cannot setup Montgomery reduction with even moduli.
+  if (!BN_is_odd(rsa->n) || BN_is_negative(rsa->n)) {
     OPENSSL_PUT_ERROR(RSA, RSA_R_BAD_RSA_PARAMETERS);
     return 0;
   }
 
-  // Mitigate DoS attacks by limiting the exponent size. 33 bits was chosen as
-  // the limit based on the recommendations in [1] and [2]. Windows CryptoAPI
-  // doesn't support values larger than 32 bits [3], so it is unlikely that
-  // exponents larger than 32 bits are being used for anything Windows commonly
-  // does.
-  //
-  // [1] https://www.imperialviolet.org/2012/03/16/rsae.html
-  // [2] https://www.imperialviolet.org/2012/03/17/rsados.html
-  // [3] https://msdn.microsoft.com/en-us/library/aa387685(VS.85).aspx
   static const unsigned kMaxExponentBits = 33;
-  unsigned e_bits = BN_num_bits(rsa->e);
-  if (e_bits > kMaxExponentBits ||
-      // Additionally reject e = 1 or even e. e must be odd to be relatively
-      // prime with phi(n).
-      e_bits < 2 ||
-      !BN_is_odd(rsa->e)) {
-    OPENSSL_PUT_ERROR(RSA, RSA_R_BAD_E_VALUE);
-    return 0;
-  }
+  if (rsa->e != NULL) {
+    // Reject e = 1, negative e, and even e. e must be odd to be relatively
+    // prime with phi(n).
+    unsigned e_bits = BN_num_bits(rsa->e);
+    if (e_bits < 2 || BN_is_negative(rsa->e) || !BN_is_odd(rsa->e)) {
+      OPENSSL_PUT_ERROR(RSA, RSA_R_BAD_E_VALUE);
+      return 0;
+    }
+    if (rsa->flags & RSA_FLAG_LARGE_PUBLIC_EXPONENT) {
+      // The caller has requested disabling DoS protections. Still, e must be
+      // less than n.
+      if (BN_ucmp(rsa->n, rsa->e) <= 0) {
+        OPENSSL_PUT_ERROR(RSA, RSA_R_BAD_E_VALUE);
+        return 0;
+      }
+    } else {
+      // Mitigate DoS attacks by limiting the exponent size. 33 bits was chosen
+      // as the limit based on the recommendations in [1] and [2]. Windows
+      // CryptoAPI doesn't support values larger than 32 bits [3], so it is
+      // unlikely that exponents larger than 32 bits are being used for anything
+      // Windows commonly does.
+      //
+      // [1] https://www.imperialviolet.org/2012/03/16/rsae.html
+      // [2] https://www.imperialviolet.org/2012/03/17/rsados.html
+      // [3] https://msdn.microsoft.com/en-us/library/aa387685(VS.85).aspx
+      if (e_bits > kMaxExponentBits) {
+        OPENSSL_PUT_ERROR(RSA, RSA_R_BAD_E_VALUE);
+        return 0;
+      }
 
-  // Verify |n > e|. Comparing |n_bits| to |kMaxExponentBits| is a small
-  // shortcut to comparing |n| and |e| directly. In reality, |kMaxExponentBits|
-  // is much smaller than the minimum RSA key size that any application should
-  // accept.
-  if (n_bits <= kMaxExponentBits) {
-    OPENSSL_PUT_ERROR(RSA, RSA_R_KEY_SIZE_TOO_SMALL);
+      // The upper bound on |e_bits| and lower bound on |n_bits| imply e is
+      // bounded by n.
+      assert(BN_ucmp(rsa->n, rsa->e) > 0);
+    }
+  } else if (!(rsa->flags & RSA_FLAG_NO_PUBLIC_EXPONENT)) {
+    OPENSSL_PUT_ERROR(RSA, RSA_R_VALUE_MISSING);
     return 0;
   }
-  assert(BN_ucmp(rsa->n, rsa->e) > 0);
 
   return 1;
 }
@@ -160,6 +179,11 @@ static int freeze_private_key(RSA *rsa, BN_CTX *ctx) {
     goto err;
   }
 
+  // Check the public components are within DoS bounds.
+  if (!rsa_check_public_key(rsa)) {
+    goto err;
+  }
+
   // Pre-compute various intermediate values, as well as copies of private
   // exponents with correct widths. Note that other threads may concurrently
   // read from |rsa->n|, |rsa->e|, etc., so any fixes must be in separate
@@ -183,7 +207,7 @@ static int freeze_private_key(RSA *rsa, BN_CTX *ctx) {
     goto err;
   }
 
-  if (rsa->p != NULL && rsa->q != NULL) {
+  if (rsa->e != NULL && rsa->p != NULL && rsa->q != NULL) {
     // TODO: p and q are also CONSTTIME_SECRET but not yet marked as such
     // because the Montgomery code does things like test whether or not values
     // are zero. So the secret marking probably needs to happen inside that
@@ -260,6 +284,36 @@ static int freeze_private_key(RSA *rsa, BN_CTX *ctx) {
 err:
   CRYPTO_MUTEX_unlock_write(&rsa->lock);
   return ret;
+}
+
+void rsa_invalidate_key(RSA *rsa) {
+  rsa->private_key_frozen = 0;
+
+  BN_MONT_CTX_free(rsa->mont_n);
+  rsa->mont_n = NULL;
+  BN_MONT_CTX_free(rsa->mont_p);
+  rsa->mont_p = NULL;
+  BN_MONT_CTX_free(rsa->mont_q);
+  rsa->mont_q = NULL;
+
+  BN_free(rsa->d_fixed);
+  rsa->d_fixed = NULL;
+  BN_free(rsa->dmp1_fixed);
+  rsa->dmp1_fixed = NULL;
+  BN_free(rsa->dmq1_fixed);
+  rsa->dmq1_fixed = NULL;
+  BN_free(rsa->inv_small_mod_large_mont);
+  rsa->inv_small_mod_large_mont = NULL;
+
+  for (size_t i = 0; i < rsa->num_blindings; i++) {
+    BN_BLINDING_free(rsa->blindings[i]);
+  }
+  OPENSSL_free(rsa->blindings);
+  rsa->blindings = NULL;
+  rsa->num_blindings = 0;
+  OPENSSL_free(rsa->blindings_inuse);
+  rsa->blindings_inuse = NULL;
+  rsa->blinding_fork_generation = 0;
 }
 
 size_t rsa_default_size(const RSA *rsa) {
@@ -448,6 +502,11 @@ static int mod_exp(BIGNUM *r0, const BIGNUM *I, RSA *rsa, BN_CTX *ctx);
 int rsa_verify_raw_no_self_test(RSA *rsa, size_t *out_len, uint8_t *out,
                                 size_t max_out, const uint8_t *in,
                                 size_t in_len, int padding) {
+  if (rsa->n == NULL || rsa->e == NULL) {
+    OPENSSL_PUT_ERROR(RSA, RSA_R_VALUE_MISSING);
+    return 0;
+  }
+
   if (!rsa_check_public_key(rsa)) {
     return 0;
   }
@@ -587,13 +646,18 @@ int rsa_default_private_transform(RSA *rsa, uint8_t *out, const uint8_t *in,
     goto err;
   }
 
-  const int do_blinding = (rsa->flags & RSA_FLAG_NO_BLINDING) == 0;
+  const int do_blinding =
+      (rsa->flags & (RSA_FLAG_NO_BLINDING | RSA_FLAG_NO_PUBLIC_EXPONENT)) == 0;
 
   if (rsa->e == NULL && do_blinding) {
     // We cannot do blinding or verification without |e|, and continuing without
     // those countermeasures is dangerous. However, the Java/Android RSA API
     // requires support for keys where only |d| and |n| (and not |e|) are known.
-    // The callers that require that bad behavior set |RSA_FLAG_NO_BLINDING|.
+    // The callers that require that bad behavior must set
+    // |RSA_FLAG_NO_BLINDING| or use |RSA_new_private_key_no_e|.
+    //
+    // TODO(davidben): Update this comment when Conscrypt is updated to use
+    // |RSA_new_private_key_no_e|.
     OPENSSL_PUT_ERROR(RSA, RSA_R_NO_PUBLIC_EXPONENT);
     goto err;
   }
@@ -1229,6 +1293,7 @@ static int RSA_generate_key_ex_maybe_fips(RSA *rsa, int bits,
     goto out;
   }
 
+  rsa_invalidate_key(rsa);
   replace_bignum(&rsa->n, &tmp->n);
   replace_bignum(&rsa->e, &tmp->e);
   replace_bignum(&rsa->d, &tmp->d);

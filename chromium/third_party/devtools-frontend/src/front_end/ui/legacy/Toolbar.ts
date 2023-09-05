@@ -471,7 +471,7 @@ export class ToolbarItem<T = any> extends Common.ObjectWrapper.ObjectWrapper<T> 
       return;
     }
     this.title = title;
-    ARIAUtils.setAccessibleName(this.element, title);
+    ARIAUtils.setLabel(this.element, title);
     if (actionId === undefined) {
       Tooltip.install(this.element, title);
     } else {
@@ -681,7 +681,7 @@ export class ToolbarInput extends ToolbarItem<ToolbarInput.EventTypes> {
     super(element);
 
     const internalPromptElement = this.element.createChild('div', 'toolbar-input-prompt');
-    ARIAUtils.setAccessibleName(internalPromptElement, placeholder);
+    ARIAUtils.setLabel(internalPromptElement, placeholder);
     internalPromptElement.addEventListener('focus', () => this.element.classList.add('focused'));
     internalPromptElement.addEventListener('blur', () => this.element.classList.remove('focused'));
 
@@ -733,6 +733,9 @@ export class ToolbarInput extends ToolbarItem<ToolbarInput.EventTypes> {
     return this.prompt.textWithCurrentSuggestion();
   }
 
+  valueWithoutSuggestion(): string {
+    return this.prompt.text();
+  }
   private onKeydownCallback(event: KeyboardEvent): void {
     if (event.key === 'Enter' && this.prompt.text()) {
       this.dispatchEventToListeners(ToolbarInput.Event.EnterPressed, this.prompt.text());
@@ -924,7 +927,7 @@ export class ToolbarComboBox extends ToolbarItem<void> {
     if (changeHandler) {
       this.selectElementInternal.addEventListener('change', changeHandler, false);
     }
-    ARIAUtils.setAccessibleName(this.selectElementInternal, title);
+    ARIAUtils.setLabel(this.selectElementInternal, title);
     super.setTitle(title);
     if (className) {
       this.selectElementInternal.classList.add(className);

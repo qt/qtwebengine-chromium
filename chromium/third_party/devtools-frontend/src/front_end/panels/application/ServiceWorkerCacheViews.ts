@@ -9,6 +9,7 @@ import * as SDK from '../../core/sdk/sdk.js';
 import * as DataGrid from '../../ui/legacy/components/data_grid/data_grid.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
+import * as ApplicationComponents from './components/components.js';
 import serviceWorkerCacheViewsStyles from './serviceWorkerCacheViews.css.js';
 
 import type * as Protocol from '../../generated/protocol.js';
@@ -90,6 +91,8 @@ export class ServiceWorkerCacheView extends UI.View.SimpleView {
     entries: Array<Protocol.CacheStorage.DataEntry>,
     returnCount: number,
   }>|null;
+  private readonly metadataView = new ApplicationComponents.StorageMetadataView.StorageMetadataView();
+
   constructor(model: SDK.ServiceWorkerCacheModel.ServiceWorkerCacheModel, cache: SDK.ServiceWorkerCacheModel.Cache) {
     super(i18nString(UIStrings.cache));
 
@@ -100,6 +103,7 @@ export class ServiceWorkerCacheView extends UI.View.SimpleView {
     this.element.classList.add('storage-view');
 
     const editorToolbar = new UI.Toolbar.Toolbar('data-view-toolbar', this.element);
+    this.element.appendChild(this.metadataView);
     this.splitWidget = new UI.SplitWidget.SplitWidget(false, false);
     this.splitWidget.show(this.element);
 
@@ -111,6 +115,14 @@ export class ServiceWorkerCacheView extends UI.View.SimpleView {
     this.preview = null;
 
     this.cache = cache;
+    const bucketInfo = this.model.target()
+                           .model(SDK.StorageBucketsModel.StorageBucketsModel)
+                           ?.getBucketByName(cache.storageBucket.storageKey, cache.storageBucket.name);
+    if (bucketInfo) {
+      this.metadataView.setStorageBucket(bucketInfo);
+    } else if (cache.storageKey) {
+      this.metadataView.setStorageKey(cache.storageKey);
+    }
     this.dataGrid = null;
     this.refreshThrottler = new Common.Throttler.Throttler(300);
     this.refreshButton = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.refresh), 'refresh');
@@ -359,8 +371,8 @@ export class ServiceWorkerCacheView extends UI.View.SimpleView {
 
   private cacheContentUpdated(
       event: Common.EventTarget.EventTargetEvent<SDK.ServiceWorkerCacheModel.CacheStorageContentUpdatedEvent>): void {
-    const {cacheName, storageKey} = event.data;
-    if ((this.cache.storageKey !== storageKey || this.cache.cacheName !== cacheName)) {
+    const {cacheName, storageBucket} = event.data;
+    if ((!this.cache.inBucket(storageBucket) || this.cache.cacheName !== cacheName)) {
       return;
     }
     void this.refreshThrottler.schedule(() => Promise.resolve(this.updateData(true)), true);

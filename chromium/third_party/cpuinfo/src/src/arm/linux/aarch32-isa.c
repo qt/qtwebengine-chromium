@@ -74,6 +74,7 @@ void cpuinfo_arm_linux_decode_isa_from_proc_cpuinfo(
 			switch (midr & (CPUINFO_ARM_MIDR_IMPLEMENTER_MASK | CPUINFO_ARM_MIDR_PART_MASK)) {
 				case UINT32_C(0x4100D050): /* Cortex-A55 */
 				case UINT32_C(0x4100D060): /* Cortex-A65 */
+				case UINT32_C(0x4100D0A0): /* Cortex-A75 */
 				case UINT32_C(0x4100D0B0): /* Cortex-A76 */
 				case UINT32_C(0x4100D0D0): /* Cortex-A77 */
 				case UINT32_C(0x4100D0E0): /* Cortex-A76AE */
@@ -174,19 +175,24 @@ void cpuinfo_arm_linux_decode_isa_from_proc_cpuinfo(
 		}
 
 		if (features & CPUINFO_ARM_LINUX_FEATURE_IWMMXT) {
-			const uint32_t wcid = read_wcid();
-			cpuinfo_log_debug("WCID = 0x%08"PRIx32, wcid);
-			const uint32_t coprocessor_type = (wcid >> 8) & UINT32_C(0xFF);
-			if (coprocessor_type >= 0x10) {
-				isa->wmmx = true;
-				if (coprocessor_type >= 0x20) {
-					isa->wmmx2 = true;
+			#if !defined(__ARM_ARCH_8A__) && !(defined(__ARM_ARCH) && (__ARM_ARCH >= 8))
+				const uint32_t wcid = read_wcid();
+				cpuinfo_log_debug("WCID = 0x%08"PRIx32, wcid);
+				const uint32_t coprocessor_type = (wcid >> 8) & UINT32_C(0xFF);
+				if (coprocessor_type >= 0x10) {
+					isa->wmmx = true;
+					if (coprocessor_type >= 0x20) {
+						isa->wmmx2 = true;
+					}
+				} else {
+					cpuinfo_log_warning("WMMX ISA disabled: OS reported iwmmxt feature, "
+						"but WCID coprocessor type 0x%"PRIx32" indicates no WMMX support",
+						coprocessor_type);
 				}
-			} else {
+			#else
 				cpuinfo_log_warning("WMMX ISA disabled: OS reported iwmmxt feature, "
-					"but WCID coprocessor type 0x%"PRIx32" indicates no WMMX support",
-					coprocessor_type);
-			}
+					"but there is no iWMMXt coprocessor");
+			#endif
 		}
 
 		if ((features & CPUINFO_ARM_LINUX_FEATURE_THUMB) || (architecture_flags & CPUINFO_ARM_LINUX_ARCH_T)) {

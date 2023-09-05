@@ -7,6 +7,7 @@
 
 #include <memory>
 
+#include "discovery/common/reporting_client.h"
 #include "osp/impl/with_destruction_callback.h"
 #include "osp/public/service_publisher.h"
 #include "platform/base/macros.h"
@@ -14,8 +15,10 @@
 namespace openscreen {
 namespace osp {
 
-class ServicePublisherImpl final : public ServicePublisher,
-                                   public WithDestructionCallback {
+class ServicePublisherImpl final
+    : public ServicePublisher,
+      public openscreen::discovery::ReportingClient,
+      public WithDestructionCallback {
  public:
   class Delegate {
    public:
@@ -51,6 +54,10 @@ class ServicePublisherImpl final : public ServicePublisher,
   bool Resume() override;
 
  private:
+  // openscreen::discovery::ReportingClient overrides.
+  void OnFatalError(Error) override;
+  void OnRecoverableError(Error) override;
+
   // Called by |delegate_| to transition the state machine (except kStarting and
   // kStopping which are done automatically).
   void SetState(State state);

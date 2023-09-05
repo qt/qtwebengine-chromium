@@ -221,7 +221,6 @@ static aom_variance_fn_t highbd_get_block_variance_fn(BLOCK_SIZE bsize,
         case BLOCK_8X16: return aom_highbd_8_mse8x16;
         default: return aom_highbd_8_mse16x16;
       }
-      break;
     case 10:
       switch (bsize) {
         case BLOCK_8X8: return aom_highbd_10_mse8x8;
@@ -229,7 +228,6 @@ static aom_variance_fn_t highbd_get_block_variance_fn(BLOCK_SIZE bsize,
         case BLOCK_8X16: return aom_highbd_10_mse8x16;
         default: return aom_highbd_10_mse16x16;
       }
-      break;
     case 12:
       switch (bsize) {
         case BLOCK_8X8: return aom_highbd_12_mse8x8;
@@ -237,7 +235,6 @@ static aom_variance_fn_t highbd_get_block_variance_fn(BLOCK_SIZE bsize,
         case BLOCK_8X16: return aom_highbd_12_mse8x16;
         default: return aom_highbd_12_mse16x16;
       }
-      break;
   }
 }
 
@@ -280,13 +277,14 @@ static AOM_INLINE void first_pass_motion_search(AV1_COMP *cpi, MACROBLOCK *x,
       cpi->is_screen_content_type && cpi->common.features.allow_intrabc;
   FULLPEL_MOTION_SEARCH_PARAMS ms_params;
   av1_make_default_fullpel_ms_params(&ms_params, cpi, x, bsize, ref_mv,
-                                     first_pass_search_sites,
+                                     start_mv, first_pass_search_sites,
                                      fine_search_interval);
   av1_set_mv_search_method(&ms_params, first_pass_search_sites, NSTEP);
 
   FULLPEL_MV this_best_mv;
+  FULLPEL_MV_STATS best_mv_stats;
   tmp_err = av1_full_pixel_search(start_mv, &ms_params, step_param, NULL,
-                                  &this_best_mv, NULL);
+                                  &this_best_mv, &best_mv_stats, NULL);
 
   if (tmp_err < INT_MAX) {
     aom_variance_fn_ptr_t v_fn_ptr = cpi->ppi->fn_ptr[bsize];

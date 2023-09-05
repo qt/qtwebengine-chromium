@@ -49,7 +49,7 @@ int vp9_diamond_search_sad_neon(const MACROBLOCK *x,
                                 const search_site_config *cfg, MV *ref_mv,
                                 uint32_t start_mv_sad, MV *best_mv,
                                 int search_param, int sad_per_bit, int *num00,
-                                const vp9_variance_fn_ptr_t *fn_ptr,
+                                const vp9_sad_fn_ptr_t *sad_fn_ptr,
                                 const MV *center_mv) {
   static const uint32_t data[4] = { 0, 1, 2, 3 };
   const uint32x4_t v_idx_d = vld1q_u32((const uint32_t *)data);
@@ -94,7 +94,7 @@ int vp9_diamond_search_sad_neon(const MACROBLOCK *x,
   // Work out the start point for the search
   const uint8_t *best_address = in_what;
   const uint8_t *new_best_address = best_address;
-#if defined(__aarch64__)
+#if VPX_ARCH_AARCH64
   int64x2_t v_ba_q = vdupq_n_s64((intptr_t)best_address);
 #else
   int32x4_t v_ba_d = vdupq_n_s32((intptr_t)best_address);
@@ -117,7 +117,7 @@ int vp9_diamond_search_sad_neon(const MACROBLOCK *x,
       int8x16_t v_inside_d;
       uint32x4_t v_outside_d;
       int32x4_t v_cost_d, v_sad_d;
-#if defined(__aarch64__)
+#if VPX_ARCH_AARCH64
       int64x2_t v_blocka[2];
 #else
       int32x4_t v_blocka[1];
@@ -138,7 +138,7 @@ int vp9_diamond_search_sad_neon(const MACROBLOCK *x,
                     vreinterpretq_s32_s16(v_these_mv_w)));
 
       // If none of them are inside, then move on
-#if defined(__aarch64__)
+#if VPX_ARCH_AARCH64
       horiz_max = vmaxvq_u32(vreinterpretq_u32_s8(v_inside_d));
 #else
       horiz_max_0 = vmax_u32(vget_low_u32(vreinterpretq_u32_s8(v_inside_d)),
@@ -167,7 +167,7 @@ int vp9_diamond_search_sad_neon(const MACROBLOCK *x,
 
       // Compute the SIMD pointer offsets.
       {
-#if defined(__aarch64__)  //  sizeof(intptr_t) == 8
+#if VPX_ARCH_AARCH64  //  sizeof(intptr_t) == 8
         // Load the offsets
         int64x2_t v_bo10_q = vld1q_s64((const int64_t *)&ss_os[i + 0]);
         int64x2_t v_bo32_q = vld1q_s64((const int64_t *)&ss_os[i + 2]);
@@ -188,8 +188,8 @@ int vp9_diamond_search_sad_neon(const MACROBLOCK *x,
 #endif
       }
 
-      fn_ptr->sdx4df(what, what_stride, (const uint8_t **)&v_blocka[0],
-                     in_what_stride, (uint32_t *)&v_sad_d);
+      sad_fn_ptr->sdx4df(what, what_stride, (const uint8_t **)&v_blocka[0],
+                         in_what_stride, (uint32_t *)&v_sad_d);
 
       // Look up the component cost of the residual motion vector
       {
@@ -234,7 +234,7 @@ int vp9_diamond_search_sad_neon(const MACROBLOCK *x,
       // Find the minimum value and index horizontally in v_sad_d
       {
         uint32_t local_best_sad;
-#if defined(__aarch64__)
+#if VPX_ARCH_AARCH64
         local_best_sad = vminvq_u32(vreinterpretq_u32_s32(v_sad_d));
 #else
         uint32x2_t horiz_min_0 =
@@ -256,7 +256,7 @@ int vp9_diamond_search_sad_neon(const MACROBLOCK *x,
           uint32x4_t v_mask_d = vandq_u32(v_sel_d, v_idx_d);
           v_mask_d = vbslq_u32(v_sel_d, v_mask_d, vdupq_n_u32(0xffffffff));
 
-#if defined(__aarch64__)
+#if VPX_ARCH_AARCH64
           local_best_idx = vminvq_u32(v_mask_d);
 #else
           horiz_min_0 =
@@ -280,7 +280,7 @@ int vp9_diamond_search_sad_neon(const MACROBLOCK *x,
     best_address = new_best_address;
 
     v_bmv_w = vreinterpretq_s16_s32(vdupq_n_s32(bmv.as_int));
-#if defined(__aarch64__)
+#if VPX_ARCH_AARCH64
     v_ba_q = vdupq_n_s64((intptr_t)best_address);
 #else
     v_ba_d = vdupq_n_s32((intptr_t)best_address);

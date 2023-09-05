@@ -704,7 +704,8 @@ static INLINE void compute_stats_win5_opt_sse4_1(
   }
 }
 void av1_compute_stats_sse4_1(int wiener_win, const uint8_t *dgd,
-                              const uint8_t *src, int h_start, int h_end,
+                              const uint8_t *src, int16_t *dgd_avg,
+                              int16_t *src_avg, int h_start, int h_end,
                               int v_start, int v_end, int dgd_stride,
                               int src_stride, int64_t *M, int64_t *H,
                               int use_downsampled_wiener_stats) {
@@ -717,8 +718,8 @@ void av1_compute_stats_sse4_1(int wiener_win, const uint8_t *dgd,
                                   dgd_stride, src_stride, M, H,
                                   use_downsampled_wiener_stats);
   } else {
-    av1_compute_stats_c(wiener_win, dgd, src, h_start, h_end, v_start, v_end,
-                        dgd_stride, src_stride, M, H,
+    av1_compute_stats_c(wiener_win, dgd, src, dgd_avg, src_avg, h_start, h_end,
+                        v_start, v_end, dgd_stride, src_stride, M, H,
                         use_downsampled_wiener_stats);
   }
 }

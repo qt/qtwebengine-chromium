@@ -575,6 +575,18 @@ bool ShaderConstants11::onClipDistancesEnabledChange(const uint32_t value)
     return clipDistancesEnabledDirty;
 }
 
+bool ShaderConstants11::onMultisamplingChange(bool multisampling)
+{
+    const bool multisamplingDirty =
+        ((mPixel.misc & kPixelMiscMultisamplingMask) != 0) != multisampling;
+    if (multisamplingDirty)
+    {
+        mPixel.misc ^= kPixelMiscMultisamplingMask;
+        mShaderConstantsDirty.set(gl::ShaderType::Fragment);
+    }
+    return multisamplingDirty;
+}
+
 angle::Result ShaderConstants11::updateBuffer(const gl::Context *context,
                                               Renderer11 *renderer,
                                               gl::ShaderType shaderType,
@@ -710,6 +722,9 @@ StateManager11::StateManager11(Renderer11 *renderer)
     mCurRasterState.cullFace            = false;
     mCurRasterState.cullMode            = gl::CullFaceMode::Back;
     mCurRasterState.frontFace           = GL_CCW;
+    mCurRasterState.polygonMode         = gl::PolygonMode::Fill;
+    mCurRasterState.polygonOffsetPoint  = false;
+    mCurRasterState.polygonOffsetLine   = false;
     mCurRasterState.polygonOffsetFill   = false;
     mCurRasterState.polygonOffsetFactor = 0.0f;
     mCurRasterState.polygonOffsetUnits  = 0.0f;
@@ -1118,6 +1133,11 @@ void StateManager11::syncState(const gl::Context *context,
                     handleMultiviewDrawFramebufferChange(context);
                 }
                 mFramebuffer11 = GetImplAs<Framebuffer11>(state.getDrawFramebuffer());
+                if (mShaderConstants.onMultisamplingChange(
+                        state.getDrawFramebuffer()->getSamples(context) != 0))
+                {
+                    invalidateDriverUniforms();
+                }
                 break;
             case gl::State::DIRTY_BIT_VERTEX_ARRAY_BINDING:
                 invalidateVertexBuffer();
@@ -1211,6 +1231,20 @@ void StateManager11::syncState(const gl::Context *context,
                             break;
                         case gl::State::EXTENDED_DIRTY_BIT_DEPTH_CLAMP_ENABLED:
                             if (state.getRasterizerState().depthClamp != mCurRasterState.depthClamp)
+                            {
+                                mInternalDirtyBits.set(DIRTY_BIT_RASTERIZER_STATE);
+                            }
+                            break;
+                        case gl::State::EXTENDED_DIRTY_BIT_POLYGON_MODE:
+                            if (state.getRasterizerState().polygonMode !=
+                                mCurRasterState.polygonMode)
+                            {
+                                mInternalDirtyBits.set(DIRTY_BIT_RASTERIZER_STATE);
+                            }
+                            break;
+                        case gl::State::EXTENDED_DIRTY_BIT_POLYGON_OFFSET_LINE_ENABLED:
+                            if (state.getRasterizerState().polygonOffsetLine !=
+                                mCurRasterState.polygonOffsetLine)
                             {
                                 mInternalDirtyBits.set(DIRTY_BIT_RASTERIZER_STATE);
                             }
@@ -1723,6 +1757,8 @@ void StateManager11::setRenderTarget(ID3D11RenderTargetView *rtv, ID3D11DepthSte
     mRenderer->getDeviceContext()->OMSetRenderTargets(1, &rtv, dsv);
     mCurRTVs.clear();
     mCurRTVs.update(0, rtv);
+    mCurrentDSV.clear();
+    mCurrentDSV.update(0, dsv);
     mInternalDirtyBits.set(DIRTY_BIT_RENDER_TARGET);
 }
 
@@ -1746,6 +1782,8 @@ void StateManager11::setRenderTargets(ID3D11RenderTargetView **rtvs,
     {
         mCurRTVs.update(i, rtvs[i]);
     }
+    mCurrentDSV.clear();
+    mCurrentDSV.update(0, dsv);
     mInternalDirtyBits.set(DIRTY_BIT_RENDER_TARGET);
 }
 
@@ -1873,22 +1911,31 @@ void StateManager11::unsetConflictingUAVs(gl::PipelineType pipeline,
     }
 }
 
-void StateManager11::unsetConflictingRTVs(uintptr_t resource)
+template <typename CacheType>
+void StateManager11::unsetConflictingRTVs(uintptr_t resource, CacheType &viewCache)
 {
     ID3D11DeviceContext *deviceContext = mRenderer->getDeviceContext();
-    size_t count                       = std::min(mCurRTVs.size(), mCurRTVs.highestUsed());
+
+    size_t count = std::min(viewCache.size(), viewCache.highestUsed());
     for (size_t resourceIndex = 0; resourceIndex < count; ++resourceIndex)
     {
-        auto &record = mCurRTVs[resourceIndex];
+        auto &record = viewCache[resourceIndex];
 
         if (record.view && record.resource == resource)
         {
             deviceContext->OMSetRenderTargets(0, nullptr, nullptr);
             mCurRTVs.clear();
+            mCurrentDSV.clear();
             mInternalDirtyBits.set(DIRTY_BIT_RENDER_TARGET);
             return;
         }
     }
+}
+
+void StateManager11::unsetConflictingRTVs(uintptr_t resource)
+{
+    unsetConflictingRTVs(resource, mCurRTVs);
+    unsetConflictingRTVs(resource, mCurrentDSV);
 }
 
 void StateManager11::unsetConflictingAttachmentResources(
@@ -1942,6 +1989,7 @@ angle::Result StateManager11::ensureInitialized(const gl::Context *context)
         mCurShaderSamplerStates[shaderType].resize(maxShaderTextureImageUnits);
     }
     mCurRTVs.initialize(caps.maxColorAttachments);
+    mCurrentDSV.initialize(1);
     mCurComputeUAVs.initialize(caps.maxImageUnits);
 
     // Initialize cached NULL SRV block
@@ -2064,6 +2112,8 @@ angle::Result StateManager11::syncFramebuffer(const gl::Context *context)
     {
         mCurRTVs.update(i, framebufferRTVs[i]);
     }
+    mCurrentDSV.clear();
+    mCurrentDSV.update(0, framebufferDSV);
     return angle::Result::Continue;
 }
 
@@ -2236,8 +2286,9 @@ angle::Result StateManager11::updateState(const gl::Context *context,
     // TODO(jiawei.shao@intel.com): This can be recomputed only on framebuffer or multisample mask
     // state changes.
     RenderTarget11 *firstRT = mFramebuffer11->getFirstRenderTarget();
-    int samples             = (firstRT ? firstRT->getSamples() : 0);
-    unsigned int sampleMask = GetBlendSampleMask(glState, samples);
+    const int samples       = (firstRT ? firstRT->getSamples() : 0);
+    // Single-sampled rendering requires ignoring sample coverage and sample mask states.
+    unsigned int sampleMask = (samples != 0) ? GetBlendSampleMask(glState, samples) : 0xFFFFFFFF;
     if (sampleMask != mCurSampleMask)
     {
         mInternalDirtyBits.set(DIRTY_BIT_BLEND_STATE);
@@ -2314,9 +2365,11 @@ angle::Result StateManager11::updateState(const gl::Context *context,
                 ANGLE_TRY(syncRasterizerState(context, mode));
                 break;
             case DIRTY_BIT_BLEND_STATE:
-                ANGLE_TRY(syncBlendState(
-                    context, glState.getBlendStateExt(), glState.getBlendColor(), sampleMask,
-                    glState.isSampleAlphaToCoverageEnabled(), glState.hasConstantAlphaBlendFunc()));
+                // Single-sampled rendering requires ignoring alpha-to-coverage state.
+                ANGLE_TRY(syncBlendState(context, glState.getBlendStateExt(),
+                                         glState.getBlendColor(), sampleMask,
+                                         glState.isSampleAlphaToCoverageEnabled() && (samples != 0),
+                                         glState.hasConstantAlphaBlendFunc()));
                 break;
             case DIRTY_BIT_DEPTH_STENCIL_STATE:
                 ANGLE_TRY(syncDepthStencilState(context));

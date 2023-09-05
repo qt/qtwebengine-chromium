@@ -6,10 +6,18 @@ import * as i18n from '../../../../core/i18n/i18n.js';
 import * as SDK from '../../../../core/sdk/sdk.js';
 import * as Protocol from '../../../../generated/protocol.js';
 import * as ComponentHelpers from '../../../../ui/components/helpers/helpers.js';
+import * as LegacyWrapper from '../../../../ui/components/legacy_wrapper/legacy_wrapper.js';
 import * as Coordinator from '../../../../ui/components/render_coordinator/render_coordinator.js';
+import * as ReportView from '../../../../ui/components/report_view/report_view.js';
 import * as LitHtml from '../../../../ui/lit-html/lit-html.js';
 
+import type * as UI from '../../../../ui/legacy/legacy.js';
+
 const UIStrings = {
+  /**
+   *@description Title for the panel
+   */
+  preloadingUsedForThisPage: 'Preloading used for this page',
   /**
    *@description Message that reports counts of prefetch that used for this page.
    *@example {1} PH1
@@ -27,7 +35,7 @@ const coordinator = Coordinator.RenderCoordinator.RenderCoordinator.instance();
 
 type UsedPreloadingViewData = SDK.PreloadingModel.PreloadingAttempt[];
 
-export class UsedPreloadingView extends HTMLElement {
+export class UsedPreloadingView extends LegacyWrapper.LegacyWrapper.WrappableComponent<UI.Widget.VBox> {
   static readonly litTagName = LitHtml.literal`devtools-resources-used-preloading-view`;
 
   readonly #shadow = this.attachShadow({mode: 'open'});
@@ -49,13 +57,14 @@ export class UsedPreloadingView extends HTMLElement {
           used.filter(attempt => attempt.key.action === Protocol.Preload.SpeculationAction.Prefetch).length;
       const prerenderCount = used.length - prefetchCount;
 
-      if (used.length === 0) {
-        LitHtml.render(LitHtml.nothing, this.#shadow, {host: this});
-        return;
-      }
-
       let message = '';
-      if (prerenderCount > 0) {
+
+      if (used.length === 0) {
+        // TODO(https://crbug.com/1410709): Remake entire this view.
+        //
+        // For a while, we fill temporary string.
+        message = i18n.i18n.lockedString('No preloading was used for this page.');
+      } else if (prerenderCount > 0) {
         message = i18nString(UIStrings.prerenderUsed);
       } else if (prefetchCount > 0) {
         message = i18nString(UIStrings.prefetchUsed, {PH1: prefetchCount});
@@ -64,9 +73,13 @@ export class UsedPreloadingView extends HTMLElement {
       // Disabled until https://crbug.com/1079231 is fixed.
       // clang-format off
       LitHtml.render(LitHtml.html`
-          <div>
-            <p>${message}</p>
-          </div>
+        <${ReportView.ReportView.Report.litTagName} .data=${
+            {reportTitle: i18nString(UIStrings.preloadingUsedForThisPage)} as ReportView.ReportView.ReportData
+        }>
+            <${ReportView.ReportView.ReportSection.litTagName}>
+                ${message}
+            </${ReportView.ReportView.ReportSection.litTagName}>
+        </${ReportView.ReportView.Report.litTagName}>
       `, this.#shadow, {host: this});
       // clang-format on
     });

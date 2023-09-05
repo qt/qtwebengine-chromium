@@ -333,6 +333,8 @@ State::State(const State *shareContextState,
              egl::ShareGroup *shareGroup,
              TextureManager *shareTextures,
              SemaphoreManager *shareSemaphores,
+             egl::ContextMutex *sharedContextMutex,
+             egl::SingleContextMutex *singleContextMutex,
              const OverlayType *overlay,
              const EGLenum clientType,
              const Version &clientVersion,
@@ -354,6 +356,10 @@ State::State(const State *shareContextState,
       mIsDebugContext(debug),
       mClientVersion(clientVersion),
       mShareGroup(shareGroup),
+      mSharedContextMutex(sharedContextMutex),
+      mSingleContextMutex(singleContextMutex),
+      mContextMutex(singleContextMutex == nullptr ? sharedContextMutex : singleContextMutex),
+      mIsSharedContextMutexActive(singleContextMutex == nullptr),
       mBufferManager(AllocateOrGetSharedResourceManager(shareContextState, &State::mBufferManager)),
       mShaderProgramManager(
           AllocateOrGetSharedResourceManager(shareContextState, &State::mShaderProgramManager)),
@@ -1134,6 +1140,36 @@ void State::setStencilBackOperations(GLenum stencilBackFail,
     }
 }
 
+void State::setPolygonMode(PolygonMode mode)
+{
+    if (mRasterizer.polygonMode != mode)
+    {
+        mRasterizer.polygonMode = mode;
+        mDirtyBits.set(DIRTY_BIT_EXTENDED);
+        mExtendedDirtyBits.set(EXTENDED_DIRTY_BIT_POLYGON_MODE);
+    }
+}
+
+void State::setPolygonOffsetPoint(bool enabled)
+{
+    if (mRasterizer.polygonOffsetPoint != enabled)
+    {
+        mRasterizer.polygonOffsetPoint = enabled;
+        mDirtyBits.set(DIRTY_BIT_EXTENDED);
+        mExtendedDirtyBits.set(EXTENDED_DIRTY_BIT_POLYGON_OFFSET_POINT_ENABLED);
+    }
+}
+
+void State::setPolygonOffsetLine(bool enabled)
+{
+    if (mRasterizer.polygonOffsetLine != enabled)
+    {
+        mRasterizer.polygonOffsetLine = enabled;
+        mDirtyBits.set(DIRTY_BIT_EXTENDED);
+        mExtendedDirtyBits.set(EXTENDED_DIRTY_BIT_POLYGON_OFFSET_LINE_ENABLED);
+    }
+}
+
 void State::setPolygonOffsetFill(bool enabled)
 {
     if (mRasterizer.polygonOffsetFill != enabled)
@@ -1300,6 +1336,12 @@ void State::setEnableFeature(GLenum feature, bool enabled)
             return;
         case GL_CULL_FACE:
             setCullFace(enabled);
+            return;
+        case GL_POLYGON_OFFSET_POINT_NV:
+            setPolygonOffsetPoint(enabled);
+            return;
+        case GL_POLYGON_OFFSET_LINE_NV:
+            setPolygonOffsetLine(enabled);
             return;
         case GL_POLYGON_OFFSET_FILL:
             setPolygonOffsetFill(enabled);
@@ -1473,6 +1515,10 @@ bool State::getEnableFeature(GLenum feature) const
             return isSampleAlphaToOneEnabled();
         case GL_CULL_FACE:
             return isCullFaceEnabled();
+        case GL_POLYGON_OFFSET_POINT_NV:
+            return isPolygonOffsetPointEnabled();
+        case GL_POLYGON_OFFSET_LINE_NV:
+            return isPolygonOffsetLineEnabled();
         case GL_POLYGON_OFFSET_FILL:
             return isPolygonOffsetFillEnabled();
         case GL_DEPTH_CLAMP_EXT:
@@ -1705,7 +1751,7 @@ TextureID State::getSamplerTextureId(unsigned int sampler, TextureType type) con
     return mSamplerTextures[type][sampler].id();
 }
 
-void State::detachTexture(const Context *context, const TextureMap &zeroTextures, TextureID texture)
+void State::detachTexture(Context *context, const TextureMap &zeroTextures, TextureID texture)
 {
     // Textures have a detach method on State rather than a simple
     // removeBinding, because the zero/null texture objects are managed
@@ -1817,7 +1863,7 @@ void State::setRenderbufferBinding(const Context *context, Renderbuffer *renderb
     mDirtyBits.set(DIRTY_BIT_RENDERBUFFER_BINDING);
 }
 
-void State::detachRenderbuffer(const Context *context, RenderbufferID renderbuffer)
+void State::detachRenderbuffer(Context *context, RenderbufferID renderbuffer)
 {
     // [OpenGL ES 2.0.24] section 4.4 page 109:
     // If a renderbuffer that is currently bound to RENDERBUFFER is deleted, it is as though
@@ -2189,6 +2235,7 @@ angle::Result State::setIndexedBufferBinding(const Context *context,
             mBoundUniformBuffersMask.set(index, buffer != nullptr);
             UpdateIndexedBufferBinding(context, &mUniformBuffers[index], buffer, target, offset,
                                        size);
+            onUniformBufferStateChange(index);
             break;
         case BufferBinding::AtomicCounter:
             mBoundAtomicCounterBuffersMask.set(index, buffer != nullptr);
@@ -2467,6 +2514,12 @@ void State::getBooleanv(GLenum pname, GLboolean *params) const
         case GL_CULL_FACE:
             *params = mRasterizer.cullFace;
             break;
+        case GL_POLYGON_OFFSET_POINT_NV:
+            *params = mRasterizer.polygonOffsetPoint;
+            break;
+        case GL_POLYGON_OFFSET_LINE_NV:
+            *params = mRasterizer.polygonOffsetLine;
+            break;
         case GL_POLYGON_OFFSET_FILL:
             *params = mRasterizer.polygonOffsetFill;
             break;
@@ -2638,7 +2691,7 @@ void State::getFloatv(GLenum pname, GLfloat *params) const
             params[0] = static_cast<GLfloat>(mCoverageModulation);
             break;
         case GL_ALPHA_TEST_REF:
-            *params = mGLES1State.mAlphaTestRef;
+            *params = mGLES1State.mAlphaTestParameters.ref;
             break;
         case GL_CURRENT_COLOR:
         {
@@ -2927,6 +2980,9 @@ angle::Result State::getIntegerv(const Context *context, GLenum pname, GLint *pa
             params[2] = mScissor.width;
             params[3] = mScissor.height;
             break;
+        case GL_POLYGON_MODE_NV:
+            *params = ToGLenum(mRasterizer.polygonMode);
+            break;
         case GL_CULL_FACE_MODE:
             *params = ToGLenum(mRasterizer.cullMode);
             break;
@@ -3118,7 +3174,7 @@ angle::Result State::getIntegerv(const Context *context, GLenum pname, GLint *pa
             *params = mBoundBuffers[BufferBinding::DispatchIndirect].id().value;
             break;
         case GL_ALPHA_TEST_FUNC:
-            *params = ToGLenum(mGLES1State.mAlphaTestFunc);
+            *params = ToGLenum(mGLES1State.mAlphaTestParameters.func);
             break;
         case GL_CLIENT_ACTIVE_TEXTURE:
             *params = mGLES1State.mClientActiveTexture + GL_TEXTURE0;
@@ -3568,6 +3624,10 @@ angle::Result State::syncProgram(const Context *context, Command command)
     {
         return mProgram->syncState(context);
     }
+    else if (mProgramPipeline.get())
+    {
+        return mProgramPipeline->syncState(context);
+    }
     return angle::Result::Continue;
 }
 
@@ -3769,13 +3829,6 @@ void State::setImageUnit(const Context *context,
     if (texture)
     {
         texture->onBindAsImageTexture();
-
-        // Using individual layers of a 3d image as 2d may require that the image be respecified in
-        // a compatible layout
-        if (!layered && texture->getType() == TextureType::_3D)
-        {
-            texture->onBind3DTextureAs2DImage();
-        }
     }
     imageUnit.texture.set(context, texture);
     imageUnit.level   = level;
@@ -3842,6 +3895,16 @@ void State::onImageStateChange(const Context *context, size_t unit)
 
 void State::onUniformBufferStateChange(size_t uniformBufferIndex)
 {
+    if (mProgram)
+    {
+        mProgram->onUniformBufferStateChange(uniformBufferIndex);
+    }
+    else if (mProgramPipeline.get())
+    {
+        mProgramPipeline->onUniformBufferStateChange(uniformBufferIndex);
+    }
+    // So that program object syncState will get triggered and process the program's dirty bits
+    setObjectDirty(GL_PROGRAM);
     // This could be represented by a different dirty bit. Using the same one keeps it simple.
     mDirtyBits.set(DIRTY_BIT_UNIFORM_BUFFER_BINDINGS);
 }

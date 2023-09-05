@@ -48,10 +48,6 @@ const UIStrings = {
    */
   threadS: 'Thread {PH1}',
   /**
-   *@description Text shown when rendering the User Interactions track in the Performance panel
-   */
-  userInteractions: 'User Interactions',
-  /**
    *@description Title of a worker in the timeline flame chart of the Performance panel
    *@example {https://google.com} PH1
    */
@@ -191,37 +187,50 @@ export class TimelineModelImpl {
    * 7. Start D
    * 8. End D
    * 9. End A
+   *
+   * By default, async events are filtered. This behaviour can be
+   * overriden making use of the filterAsyncEvents parameter.
    */
   static forEachEvent(
-      events: SDK.TracingModel.Event[], onStartEvent: (arg0: SDK.TracingModel.Event) => void,
-      onEndEvent: (arg0: SDK.TracingModel.Event) => void,
-      onInstantEvent?: ((arg0: SDK.TracingModel.Event, arg1: SDK.TracingModel.Event|null) => void), startTime?: number,
-      endTime?: number, filter?: ((arg0: SDK.TracingModel.Event) => boolean)): void {
+      events: SDK.TracingModel.CompatibleTraceEvent[],
+      onStartEvent: (arg0: SDK.TracingModel.CompatibleTraceEvent) => void,
+      onEndEvent: (arg0: SDK.TracingModel.CompatibleTraceEvent) => void,
+      onInstantEvent?:
+          ((arg0: SDK.TracingModel.CompatibleTraceEvent, arg1: SDK.TracingModel.CompatibleTraceEvent|null) => void),
+      startTime?: number, endTime?: number, filter?: ((arg0: SDK.TracingModel.CompatibleTraceEvent) => boolean),
+      ignoreAsyncEvents = true): void {
     startTime = startTime || 0;
     endTime = endTime || Infinity;
-    const stack: SDK.TracingModel.Event[] = [];
+    const stack: SDK.TracingModel.CompatibleTraceEvent[] = [];
     const startEvent = TimelineModelImpl.topLevelEventEndingAfter(events, startTime);
     for (let i = startEvent; i < events.length; ++i) {
       const e = events[i];
-      if ((e.endTime || e.startTime) < startTime) {
+      const {endTime: eventEndTime, startTime: eventStartTime, duration: eventDuration} =
+          SDK.TracingModel.timesForEventInMilliseconds(e);
+      const eventPhase = SDK.TracingModel.phaseForEvent(e);
+      if ((eventEndTime || eventStartTime) < startTime) {
         continue;
       }
-      if (e.startTime >= endTime) {
+      if (eventStartTime >= endTime) {
         break;
       }
-      if (TraceEngine.Types.TraceEvents.isAsyncPhase(e.phase) || TraceEngine.Types.TraceEvents.isFlowPhase(e.phase)) {
+      const canIgnoreAsyncEvent = ignoreAsyncEvents && TraceEngine.Types.TraceEvents.isAsyncPhase(eventPhase);
+      if (canIgnoreAsyncEvent || TraceEngine.Types.TraceEvents.isFlowPhase(eventPhase)) {
         continue;
       }
-      let last: SDK.TracingModel.Event = stack[stack.length - 1];
-      while (last && last.endTime !== undefined && last.endTime <= e.startTime) {
+      let last = stack[stack.length - 1];
+      let lastEventEndTime = last && SDK.TracingModel.timesForEventInMilliseconds(last).endTime;
+      while (last && lastEventEndTime !== undefined && lastEventEndTime <= eventStartTime) {
         stack.pop();
         onEndEvent(last);
         last = stack[stack.length - 1];
+        lastEventEndTime = last && SDK.TracingModel.timesForEventInMilliseconds(last).endTime;
       }
+
       if (filter && !filter(e)) {
         continue;
       }
-      if (e.duration) {
+      if (eventDuration) {
         onStartEvent(e);
         stack.push(e);
       } else {
@@ -236,8 +245,11 @@ export class TimelineModelImpl {
     }
   }
 
-  private static topLevelEventEndingAfter(events: SDK.TracingModel.Event[], time: number): number {
-    let index = Platform.ArrayUtilities.upperBound(events, time, (time, event) => time - event.startTime) - 1;
+  private static topLevelEventEndingAfter(events: SDK.TracingModel.CompatibleTraceEvent[], time: number): number {
+    let index =
+        Platform.ArrayUtilities.upperBound(
+            events, time, (time, event) => time - SDK.TracingModel.timesForEventInMilliseconds(event).startTime) -
+        1;
     while (index > 0 && !SDK.TracingModel.TracingModel.isTopLevelEvent(events[index])) {
       index--;
     }
@@ -255,7 +267,7 @@ export class TimelineModelImpl {
    * every LCP Candidate event as a potential marker event. The logic to pick the
    * right candidate to use is implemeneted in the TimelineFlameChartDataProvider.
    **/
-  isMarkerEvent(event: SDK.TracingModel.Event|TraceEngine.Types.TraceEvents.TraceEventData): boolean {
+  isMarkerEvent(event: SDK.TracingModel.CompatibleTraceEvent): boolean {
     switch (event.name) {
       case RecordType.TimeStamp:
         return true;
@@ -280,41 +292,11 @@ export class TimelineModelImpl {
     return event.name === RecordType.LayoutShift;
   }
 
-  isUserTimingEvent(event: SDK.TracingModel.Event): boolean {
-    return event.categoriesString === TimelineModelImpl.Category.UserTiming;
-  }
-
-  isConsoleTimestampEvent(event: SDK.TracingModel.Event): boolean {
-    return event.name === RecordType.TimeStamp;
-  }
-
-  isEventTimingInteractionEvent(event: SDK.TracingModel.Event): boolean {
-    if (event.name !== RecordType.EventTiming) {
-      return false;
-    }
-    type InteractionEventData = {
-      duration?: number, interactionId: number,
-    };
-    const data = event.args.data as InteractionEventData;
-    // Filter out:
-    // 1. events without a duration, or a duration of 0
-    // 2. events without an interactionId, or with an interactionId of 0,
-    //    which indicates that it's not a "top level" interaction event and
-    //    we can therefore ignore it. This can happen with "mousedown" for
-    //    example; an interaction ID is assigned to the "pointerdown" event
-    //    as it's the "first" event to be triggered when the user clicks,
-    //    but the browser doesn't attempt to assign IDs to all subsequent
-    //    events, as that's a hard heuristic to get right.
-    const duration = data.duration || 0;
-    const interactionId = data.interactionId || 0;
-    return (duration > 0 && interactionId > 0);
-  }
-
   isParseHTMLEvent(event: SDK.TracingModel.Event): boolean {
     return event.name === RecordType.ParseHTML;
   }
 
-  static isJsFrameEvent(event: SDK.TracingModel.Event|TraceEngine.Types.TraceEvents.TraceEventData): boolean {
+  static isJsFrameEvent(event: SDK.TracingModel.CompatibleTraceEvent): boolean {
     return event.name === RecordType.JSFrame || event.name === RecordType.JSIdleFrame ||
         event.name === RecordType.JSSystemFrame;
   }
@@ -348,7 +330,7 @@ export class TimelineModelImpl {
     return {time: this.totalBlockingTimeInternal, estimated: false};
   }
 
-  targetByEvent(event: SDK.TracingModel.Event|TraceEngine.Types.TraceEvents.TraceEventData): SDK.Target.Target|null {
+  targetByEvent(event: SDK.TracingModel.CompatibleTraceEvent): SDK.Target.Target|null {
     let thread;
     if (event instanceof SDK.TracingModel.Event) {
       thread = event.thread;
@@ -416,120 +398,7 @@ export class TimelineModelImpl {
     }
     this.inspectedTargetEventsInternal.sort(SDK.TracingModel.Event.compareStartTime);
     this.processAsyncBrowserEvents(tracingModel);
-    this.buildGPUEvents(tracingModel);
-    this.buildTimings();
-    this.buildLoadingEvents(tracingModel, layoutShiftEvents);
-    this.collectInteractionEvents(tracingModel);
     this.resetProcessingState();
-  }
-
-  /**
-   * This function pushes a copy of each performance.mark() and console.timeStamp() event from the
-   * Main track into Timings so they can be appended to the performance UI.
-   * Performance.mark() are a part of the "blink.user_timing" category alongside
-   * Navigation and Resource Timing events, so we must filter them out before pushing.
-   *
-   * Note: Although this looks like a duplicate of the timings appending at the
-   * TimingsTrackAppender, this is still necessary for compatibility with features
-   * outside the flame chart that rely on the definition and construction of the legacy
-   * TimelineModel.Track version of the timings track (f.e. the details pane).
-   */
-  private buildTimings(): void {
-    const timingsTrack = this.tracksInternal.find(track => track.type === TrackType.Timings);
-    if (!timingsTrack) {
-      return;
-    }
-    const ResourceTimingNames = [
-      'workerStart',
-      'redirectStart',
-      'redirectEnd',
-      'fetchStart',
-      'domainLookupStart',
-      'domainLookupEnd',
-      'connectStart',
-      'connectEnd',
-      'secureConnectionStart',
-      'requestStart',
-      'responseStart',
-      'responseEnd',
-    ];
-    const NavTimingNames = [
-      'navigationStart',
-      'commitNavigationEnd',
-      'unloadEventStart',
-      'unloadEventEnd',
-      'redirectStart',
-      'redirectEnd',
-      'fetchStart',
-      'domainLookupStart',
-      'domainLookupEnd',
-      'connectStart',
-      'connectEnd',
-      'secureConnectionStart',
-      'requestStart',
-      'responseStart',
-      'responseEnd',
-      'domLoading',
-      'domInteractive',
-      'domContentLoadedEventStart',
-      'domContentLoadedEventEnd',
-      'domComplete',
-      'loadEventStart',
-      'loadEventEnd',
-    ];
-    const IgnoreNames = [...ResourceTimingNames, ...NavTimingNames];
-    for (const track of this.tracks()) {
-      if (track.type === TrackType.MainThread) {
-        for (const event of track.events) {
-          if (this.isUserTimingEvent(event) || this.isConsoleTimestampEvent(event)) {
-            if (IgnoreNames.includes(event.name)) {
-              continue;
-            }
-            if (TraceEngine.Types.TraceEvents.isAsyncPhase(event.phase)) {
-              continue;
-            }
-            if (event.endTime === undefined) {
-              event.setEndTime(event.startTime);
-            }
-            timingsTrack.events.push(event);
-          }
-        }
-      }
-    }
-  }
-  private collectInteractionEvents(tracingModel: SDK.TracingModel.TracingModel): void {
-    const interactionEvents: SDK.TracingModel.AsyncEvent[] = [];
-    for (const process of tracingModel.sortedProcesses()) {
-      // Interactions will only appear on the Renderer processes.
-      if (process.name() !== 'Renderer') {
-        continue;
-      }
-
-      // And also only on CrRendererMain threads.
-      const rendererThread = process.threadByName('CrRendererMain');
-      if (!rendererThread) {
-        continue;
-      }
-
-      // EventTiming events are async, so we only have to check asyncEvents,
-      // and not worry about sync events.
-      for (const event of rendererThread.asyncEvents()) {
-        if (!this.isEventTimingInteractionEvent(event)) {
-          continue;
-        }
-        interactionEvents.push(event);
-      }
-    }
-    if (interactionEvents.length === 0) {
-      // No events found, so bail early and don't bother creating the track
-      // because it will be empty.
-      return;
-    }
-
-    const track = this.ensureNamedTrack(TrackType.UserInteractions);
-    track.name = UIStrings.userInteractions;
-    track.forMainFrame = true;
-    track.asyncEvents = interactionEvents;
   }
 
   private processGenericTrace(tracingModel: SDK.TracingModel.TracingModel): void {
@@ -792,37 +661,11 @@ export class TimelineModelImpl {
     }
   }
 
-  private buildLoadingEvents(tracingModel: SDK.TracingModel.TracingModel, layoutShiftEvents: SDK.TracingModel.Event[]):
-      void {
-    const thread = tracingModel.getThreadByName('Renderer', 'CrRendererMain');
-    if (!thread) {
-      return;
-    }
-    const track = this.ensureNamedTrack(TrackType.Experience);
-    track.thread = thread;
-    track.events = layoutShiftEvents;
-  }
-
   private processAsyncBrowserEvents(tracingModel: SDK.TracingModel.TracingModel): void {
     const browserMain = SDK.TracingModel.TracingModel.browserMainThread(tracingModel);
     if (browserMain) {
       this.processAsyncEvents(browserMain);
     }
-  }
-
-  private buildGPUEvents(tracingModel: SDK.TracingModel.TracingModel): void {
-    const thread =
-        tracingModel.getThreadByName('Gpu', 'CrGpuMain') || tracingModel.getThreadByName('GPU Process', 'CrGpuMain');
-    if (!thread) {
-      return;
-    }
-
-    const gpuEventName = RecordType.GPUTask;
-    const track = this.ensureNamedTrack(TrackType.GPU);
-    track.thread = thread;
-    track.events = Root.Runtime.experiments.isEnabled('timelineShowAllEvents') ?
-        thread.events() :
-        thread.events().filter(event => event.name === gpuEventName);
   }
 
   private resetProcessingState(): void {
@@ -848,7 +691,7 @@ export class TimelineModelImpl {
 
     // Check for legacy CpuProfile event format first.
     // 'CpuProfile' is currently used by https://webpack.js.org/plugins/profiling-plugin/ and our createFakeTraceFromCpuProfile
-    let cpuProfileEvent: (SDK.TracingModel.Event|undefined)|SDK.TracingModel.Event = events[events.length - 1];
+    let cpuProfileEvent = events.at(-1);
     if (cpuProfileEvent && cpuProfileEvent.name === RecordType.CpuProfile) {
       const eventData = cpuProfileEvent.args['data'];
       cpuProfile = (eventData && eventData['cpuProfile'] as Protocol.Profiler.Profile | null);
@@ -861,6 +704,13 @@ export class TimelineModelImpl {
         return null;
       }
       target = this.targetByEvent(cpuProfileEvent);
+      // Profile groups are created right after a trace is loaded (in
+      // tracing model).
+      // They are created using events with the "P" phase (samples),
+      // which includes ProfileChunks with the samples themselves but
+      // also "Profile" events with metadata of the profile.
+      // A group is created for each unique profile in each unique
+      // thread.
       const profileGroup = tracingModel.profileGroup(cpuProfileEvent);
       if (!profileGroup) {
         Common.Console.Console.instance().error('Invalid CPU profile format.');
@@ -1087,16 +937,6 @@ export class TimelineModelImpl {
     for (let i = 0; i < asyncEvents.length; ++i) {
       const asyncEvent = asyncEvents[i];
 
-      if (asyncEvent.hasCategory(TimelineModelImpl.Category.Console)) {
-        group(TrackType.Timings).push(asyncEvent);
-        continue;
-      }
-
-      if (asyncEvent.hasCategory(TimelineModelImpl.Category.UserTiming)) {
-        group(TrackType.Timings).push(asyncEvent);
-        continue;
-      }
-
       if (asyncEvent.name === RecordType.Animation) {
         group(TrackType.Animation).push(asyncEvent);
         continue;
@@ -1163,10 +1003,6 @@ export class TimelineModelImpl {
     }
     timelineData.frameId = pageFrameId || (this.mainFrame && this.mainFrame.frameId) || '';
     this.asyncEventTracker.processEvent(event);
-
-    if (this.isMarkerEvent(event)) {
-      this.ensureNamedTrack(TrackType.Timings);
-    }
 
     switch (event.name) {
       case RecordType.ResourceSendRequest:
@@ -1325,6 +1161,10 @@ export class TimelineModelImpl {
 
       case RecordType.DisplayItemListSnapshot:
       case RecordType.PictureSnapshot: {
+        // If we get a snapshot, we try to find the last Paint event for the
+        // current layer, and store the snapshot as the relevant picture for
+        // that event, thus creating a relationship between the snapshot and
+        // the last Paint event for the current timestamp.
         const layerUpdateEvent = this.findAncestorEvent(RecordType.UpdateLayer);
         if (!layerUpdateEvent || layerUpdateEvent.args['layerTreeId'] !== this.mainFrameLayerTreeId) {
           break;
@@ -1789,6 +1629,8 @@ export enum RecordType {
   StreamingCompileScript = 'v8.parseOnBackground',
   StreamingCompileScriptWaiting = 'v8.parseOnBackgroundWaiting',
   StreamingCompileScriptParsing = 'v8.parseOnBackgroundParsing',
+  BackgroundDeserialize = 'v8.deserializeOnBackground',
+  FinalizeDeserialization = 'V8.FinalizeDeserialization',
   V8Execute = 'V8.Execute',
 
   UpdateCounters = 'UpdateCounters',
@@ -2010,13 +1852,9 @@ export enum TrackType {
   MainThread = 'MainThread',
   Worker = 'Worker',
   Animation = 'Animation',
-  Timings = 'Timings',
-  Console = 'Console',
   Raster = 'Raster',
-  GPU = 'GPU',
   Experience = 'Experience',
   Other = 'Other',
-  UserInteractions = 'UserInteractions',
 }
 
 const enum WorkletType {
@@ -2669,7 +2507,7 @@ export class EventOnTimelineData {
         (this.initiatorInternal && EventOnTimelineData.forEvent(this.initiatorInternal).stackTrace);
   }
 
-  static forEvent(event: SDK.TracingModel.Event|TraceEngine.Types.TraceEvents.TraceEventData): EventOnTimelineData {
+  static forEvent(event: SDK.TracingModel.CompatibleTraceEvent): EventOnTimelineData {
     if (event instanceof SDK.TracingModel.PayloadEvent) {
       return EventOnTimelineData.forTraceEventData(event.rawPayload());
     }

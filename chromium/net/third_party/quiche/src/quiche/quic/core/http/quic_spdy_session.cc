@@ -11,6 +11,7 @@
 #include <string>
 #include <utility>
 
+
 #include "absl/base/attributes.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
@@ -19,6 +20,7 @@
 #include "quiche/quic/core/http/http_decoder.h"
 #include "quiche/quic/core/http/http_frames.h"
 #include "quiche/quic/core/http/quic_headers_stream.h"
+#include "quiche/quic/core/http/quic_spdy_stream.h"
 #include "quiche/quic/core/http/web_transport_http3.h"
 #include "quiche/quic/core/quic_error_codes.h"
 #include "quiche/quic/core/quic_types.h"
@@ -464,7 +466,6 @@ QuicSpdySession::QuicSpdySession(
       debug_visitor_(nullptr),
       destruction_indicator_(123456789),
       allow_extended_connect_(
-          GetQuicReloadableFlag(quic_verify_request_headers_2) &&
           perspective() == Perspective::IS_SERVER &&
           VersionUsesHttp3(transport_version())) {
   h2_deframer_.set_visitor(spdy_framer_visitor_.get());
@@ -540,7 +541,6 @@ void QuicSpdySession::FillSettingsFrame() {
     settings_.values[SETTINGS_WEBTRANS_DRAFT00] = 1;
   }
   if (allow_extended_connect()) {
-    QUIC_RELOADABLE_FLAG_COUNT_N(quic_verify_request_headers_2, 1, 3);
     settings_.values[SETTINGS_ENABLE_CONNECT_PROTOCOL] = 1;
   }
 }
@@ -744,6 +744,24 @@ void QuicSpdySession::OnHttp3GoAway(uint64_t id) {
     return;
   }
 
+  if (SupportsWebTransport()) {
+    PerformActionOnActiveStreams([](QuicStream* stream) {
+      if (!QuicUtils::IsBidirectionalStreamId(stream->id(),
+                                              stream->version()) ||
+          !QuicUtils::IsClientInitiatedStreamId(
+              stream->version().transport_version, stream->id())) {
+        return true;
+      }
+      QuicSpdyStream* spdy_stream = static_cast<QuicSpdyStream*>(stream);
+      WebTransportHttp3* web_transport = spdy_stream->web_transport();
+      if (web_transport == nullptr) {
+        return true;
+      }
+      web_transport->OnGoAwayReceived();
+      return true;
+    });
+  }
+
   // TODO(b/161252736): Cancel client requests with ID larger than |id|.
   // If |id| is larger than numeric_limits<QuicStreamId>::max(), then use
   // max() instead of downcast value.
@@ -873,8 +891,6 @@ void QuicSpdySession::OnNewEncryptionKeyAvailable(
 }
 
 bool QuicSpdySession::ShouldNegotiateWebTransport() { return false; }
-
-bool QuicSpdySession::ShouldValidateWebTransportVersion() const { return true; }
 
 bool QuicSpdySession::WillNegotiateWebTransport() {
   return LocalHttpDatagramSupport() != HttpDatagramSupport::kNone &&
@@ -1678,9 +1694,7 @@ void QuicSpdySession::OnMessageReceived(absl::string_view message) {
 
 bool QuicSpdySession::SupportsWebTransport() {
   return WillNegotiateWebTransport() && SupportsH3Datagram() &&
-         peer_supports_webtransport_ &&
-         (!GetQuicReloadableFlag(quic_verify_request_headers_2) ||
-          allow_extended_connect_);
+         peer_supports_webtransport_ && allow_extended_connect_;
 }
 
 bool QuicSpdySession::SupportsH3Datagram() const {
@@ -1841,12 +1855,10 @@ std::ostream& operator<<(std::ostream& os,
 // Must not be called after Initialize().
 void QuicSpdySession::set_allow_extended_connect(bool allow_extended_connect) {
   QUIC_BUG_IF(extended connect wrong version,
-              !GetQuicReloadableFlag(quic_verify_request_headers_2) ||
-                  !VersionUsesHttp3(transport_version()))
+              !VersionUsesHttp3(transport_version()))
       << "Try to enable/disable extended CONNECT in Google QUIC";
   QUIC_BUG_IF(extended connect on client,
-              !GetQuicReloadableFlag(quic_verify_request_headers_2) ||
-                  perspective() == Perspective::IS_CLIENT)
+              perspective() == Perspective::IS_CLIENT)
       << "Enabling/disabling extended CONNECT on the client side has no effect";
   if (ShouldNegotiateWebTransport()) {
     QUIC_BUG_IF(disable extended connect, !allow_extended_connect)

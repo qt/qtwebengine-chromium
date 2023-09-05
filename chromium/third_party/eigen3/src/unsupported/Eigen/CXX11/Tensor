@@ -18,8 +18,8 @@
 #include "../../../Eigen/src/Core/util/DisableStupidWarnings.h"
 
 // IWYU pragma: begin_exports
-#include "src/util/CXX11Meta.h"
-#include "src/util/MaxSizeVector.h"
+#include "../../../Eigen/src/Core/util/Meta.h"
+#include "../../../Eigen/src/Core/util/MaxSizeVector.h"
 // IWYU pragma: end_exports
 
 /** \defgroup CXX11_Tensor_Module Tensor Module

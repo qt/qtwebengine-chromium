@@ -8,8 +8,8 @@
 #include <string>
 #include <utility>
 
-#include "discovery/mdns/mdns_records.h"
 #include "discovery/mdns/public/mdns_constants.h"
+#include "discovery/mdns/public/mdns_records.h"
 
 namespace openscreen {
 namespace discovery {

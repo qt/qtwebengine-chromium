@@ -16,15 +16,7 @@
 
 namespace {
 
-constexpr partition_alloc::PartitionOptions kOptions = {
-    partition_alloc::PartitionOptions::AlignedAlloc::kDisallowed,
-    partition_alloc::PartitionOptions::ThreadCache::kDisabled,
-    partition_alloc::PartitionOptions::Quarantine::kDisallowed,
-    partition_alloc::PartitionOptions::Cookie::kAllowed,
-    partition_alloc::PartitionOptions::BackupRefPtr::kDisabled,
-    partition_alloc::PartitionOptions::BackupRefPtrZapping::kDisabled,
-    partition_alloc::PartitionOptions::UseConfigurablePool::kNo,
-};
+constexpr partition_alloc::PartitionOptions kOptions = {};
 
 #ifndef V8_ENABLE_SANDBOX
 partition_alloc::PartitionAllocator& GetArrayBufferPartitionAllocator() {

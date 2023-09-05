@@ -33,7 +33,6 @@ struct packet_traits<half> : default_packet_traits {
     Vectorizable = 1,
     AlignedOnScalar = 1,
     size = 32,
-    HasHalfPacket = 1,
 
     HasCmp = 1,
     HasAdd = 1,

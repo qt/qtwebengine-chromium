@@ -40,6 +40,7 @@ import * as ProtocolClient from '../../core/protocol_client/protocol_client.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Bindings from '../../models/bindings/bindings.js';
+import * as Breakpoints from '../../models/breakpoints/breakpoints.js';
 import * as Extensions from '../../models/extensions/extensions.js';
 import * as IssuesManager from '../../models/issues_manager/issues_manager.js';
 import * as Logs from '../../models/logs/logs.js';
@@ -323,9 +324,9 @@ export class MainImpl {
         'wasmDWARFDebugging', 'WebAssembly Debugging: Enable DWARF support', undefined,
         'https://developer.chrome.com/blog/wasm-debugging-2020/');
     Root.Runtime.experiments.register(
-        'evaluateExpressionsWithSourceMaps', 'Console: Resolve variable names in expressions using source maps',
-        undefined);
+        'evaluateExpressionsWithSourceMaps', 'Resolve variable names in expressions using source maps', undefined);
     Root.Runtime.experiments.register('instrumentationBreakpoints', 'Enable instrumentation breakpoints', true);
+    Root.Runtime.experiments.register('setAllBreakpointsEagerly', 'Set all breakpoints eagerly at startup', true);
 
     // Dual-screen
     Root.Runtime.experiments.register(
@@ -553,7 +554,7 @@ export class MainImpl {
       SDK.TargetManager.TargetManager.instance().setScopeTarget(outermostTarget);
     });
     // @ts-ignore layout test global
-    self.Bindings.breakpointManager = Bindings.BreakpointManager.BreakpointManager.instance({
+    self.Bindings.breakpointManager = Breakpoints.BreakpointManager.BreakpointManager.instance({
       forceNew: true,
       workspace: Workspace.Workspace.WorkspaceImpl.instance(),
       targetManager: SDK.TargetManager.TargetManager.instance(),
@@ -573,7 +574,7 @@ export class MainImpl {
     self.Persistence.persistence = Persistence.Persistence.PersistenceImpl.instance({
       forceNew: true,
       workspace: Workspace.Workspace.WorkspaceImpl.instance(),
-      breakpointManager: Bindings.BreakpointManager.BreakpointManager.instance(),
+      breakpointManager: Breakpoints.BreakpointManager.BreakpointManager.instance(),
     });
     // @ts-ignore layout test global
     self.Persistence.networkPersistenceManager =
@@ -882,7 +883,7 @@ export class MainMenuItem implements UI.Toolbar.Provider {
       dockItemElement.classList.add('flex-auto');
       dockItemElement.classList.add('location-menu');
       dockItemElement.tabIndex = -1;
-      UI.ARIAUtils.setAccessibleName(dockItemElement, UIStrings.dockSide + UIStrings.dockSideNaviation);
+      UI.ARIAUtils.setLabel(dockItemElement, UIStrings.dockSide + UIStrings.dockSideNaviation);
       const titleElement = dockItemElement.createChild('span', 'dockside-title');
       titleElement.textContent = i18nString(UIStrings.dockSide);
       const toggleDockSideShorcuts =

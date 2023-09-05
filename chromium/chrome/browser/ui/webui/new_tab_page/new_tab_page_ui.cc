@@ -64,6 +64,7 @@
 #include "components/feed/feed_feature_list.h"
 #include "components/google/core/common/google_util.h"
 #include "components/grit/components_scaled_resources.h"
+#include "components/history_clusters/core/features.h"
 #include "components/page_image_service/image_service.h"
 #include "components/page_image_service/image_service_handler.h"
 #include "components/prefs/pref_registry_simple.h"
@@ -73,7 +74,7 @@
 #include "components/signin/public/identity_manager/accounts_in_cookie_jar_info.h"
 #include "components/signin/public/identity_manager/identity_manager.h"
 #include "components/strings/grit/components_strings.h"
-#include "components/sync/driver/sync_service.h"
+#include "components/sync/service/sync_service.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_ui_data_source.h"
@@ -226,6 +227,9 @@ content::WebUIDataSource* CreateAndAddNewTabPageUiHtmlSource(Profile* profile) {
                                                ntp_features::kNtpModulesLoad));
   source->AddInteger("modulesLoadTimeout",
                      ntp_features::GetModulesLoadTimeout().InMilliseconds());
+  source->AddBoolean("mostVisitedReflowOnOverflowEnabled",
+                     base::FeatureList::IsEnabled(
+                         ntp_features::kNtpMostVisitedReflowOnOverflow));
   source->AddBoolean(
       "historyClustersModuleEnabled",
       base::FeatureList::IsEnabled(ntp_features::kNtpHistoryClustersModule));
@@ -482,7 +486,10 @@ content::WebUIDataSource* CreateAndAddNewTabPageUiHtmlSource(Profile* profile) {
       {"modulesJourneysResumeJourney", IDS_NTP_MODULES_RESUME_YOUR_JOURNEY},
       {"modulesJourneysShowAll", IDS_NTP_MODULES_SHOW_ALL},
       {"modulesJourneysInfo", IDS_NTP_MODULES_HISTORY_CLUSTERS_INFO},
-      {"modulesJourneysSentence2", IDS_NTP_MODULES_HISTORY_CLUSTERS_SENTENCE2},
+      {"disableQuestsModuleToastName",
+       IDS_NTP_MODULES_HISTORY_CLUSTERS_SENTENCE2},
+      {"disableQuestsModuleToastMessage",
+       IDS_NTP_MODULES_DISABLE_TOAST_MESSAGE},
       {"modulesJourneyDisable", IDS_NTP_MODULES_HISTORY_CLUSTERS_DISABLE_TEXT},
       {"modulesJourneysShowAllAcc", IDS_ACCNAME_SHOW_ALL},
       {"modulesJourneysSearchSuggAcc", IDS_ACCNAME_SEARCH_SUGG},
@@ -506,6 +513,23 @@ content::WebUIDataSource* CreateAndAddNewTabPageUiHtmlSource(Profile* profile) {
   source->AddBoolean("wideModulesEnabled", base::FeatureList::IsEnabled(
                                                ntp_features::kNtpWideModules));
 
+  if (base::FeatureList::IsEnabled(history_clusters::kRenameJourneys)) {
+    source->AddLocalizedString(
+        "modulesJourneysResumeJourney",
+        IDS_NTP_MODULES_HISTORY_CLUSTERS_RESUME_BROWSING);
+    source->AddLocalizedString("modulesJourneysInfo",
+                               IDS_NTP_MODULES_HISTORY_CLUSTERS_INFO2);
+    source->AddLocalizedString(
+        "disableQuestsModuleToastName",
+        IDS_NTP_MODULES_HISTORY_CLUSTERS_DISABLE_TOAST_NAME);
+    source->AddLocalizedString(
+        "disableQuestsModuleToastMessage",
+        IDS_NTP_MODULES_HISTORY_CLUSTERS_DISABLE_TOAST_MESSAGE);
+    source->AddLocalizedString(
+        "modulesJourneyDisable",
+        IDS_NTP_MODULES_HISTORY_CLUSTERS_DISABLE_DROPDOWN_TEXT);
+  }
+
   source->AddBoolean(
       "modulesHeaderIconEnabled",
       base::FeatureList::IsEnabled(ntp_features::kNtpModulesHeaderIcon));
@@ -520,6 +544,10 @@ content::WebUIDataSource* CreateAndAddNewTabPageUiHtmlSource(Profile* profile) {
     source->AddLocalizedString("modulesCartDiscountConsentContent",
                                IDS_NTP_MODULES_CART_DISCOUNT_CONSENT_CONTENT);
   }
+
+  source->AddBoolean(
+      "modulesOverflowScrollbarEnabled",
+      base::FeatureList::IsEnabled(ntp_features::kNtpModulesOverflowScrollbar));
 
   source->AddString("photosModuleCustomArtWork",
                     base::GetFieldTrialParamValueByFeature(
@@ -537,9 +565,6 @@ content::WebUIDataSource* CreateAndAddNewTabPageUiHtmlSource(Profile* profile) {
   source->AddBoolean(
       "modulesRedesignedEnabled",
       base::FeatureList::IsEnabled(ntp_features::kNtpModulesRedesigned));
-  source->AddBoolean(
-      "modulesRedesignedLayoutEnabled",
-      base::FeatureList::IsEnabled(ntp_features::kNtpModulesRedesignedLayout));
 
   std::vector<std::string> splitExperimentGroup = base::SplitString(
       base::GetFieldTrialParamValueByFeature(
@@ -734,7 +759,7 @@ void NewTabPageUI::BindInterface(
     mojo::PendingReceiver<omnibox::mojom::PageHandler> pending_page_handler) {
   realbox_handler_ = std::make_unique<RealboxHandler>(
       std::move(pending_page_handler), profile_, web_contents(),
-      &metrics_reporter_);
+      &metrics_reporter_, /*is_omnibox_popup_handler=*/false);
 }
 
 void NewTabPageUI::BindInterface(

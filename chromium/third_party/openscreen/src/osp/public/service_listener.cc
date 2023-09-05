@@ -7,22 +7,22 @@
 namespace openscreen {
 namespace osp {
 
-ServiceListenerError::ServiceListenerError() = default;
-ServiceListenerError::ServiceListenerError(Code error,
-                                           const std::string& message)
-    : error(error), message(message) {}
-ServiceListenerError::ServiceListenerError(const ServiceListenerError& other) =
-    default;
-ServiceListenerError::~ServiceListenerError() = default;
-
-ServiceListenerError& ServiceListenerError::operator=(
-    const ServiceListenerError& other) = default;
-
 ServiceListener::Metrics::Metrics() = default;
 ServiceListener::Metrics::~Metrics() = default;
 
+ServiceListener::Config::Config() = default;
+ServiceListener::Config::~Config() = default;
+
+bool ServiceListener::Config::IsValid() const {
+  return !network_interfaces.empty();
+}
+
 ServiceListener::ServiceListener() : state_(State::kStopped) {}
 ServiceListener::~ServiceListener() = default;
+
+void ServiceListener::SetConfig(const Config& config) {
+  config_ = config;
+}
 
 }  // namespace osp
 }  // namespace openscreen

@@ -63,7 +63,8 @@ MinidumpProcessor::MinidumpProcessor(SymbolSupplier* supplier,
     : frame_symbolizer_(new StackFrameSymbolizer(supplier, resolver)),
       own_frame_symbolizer_(true),
       enable_exploitability_(false),
-      enable_objdump_(false) {
+      enable_objdump_(false),
+      enable_objdump_for_exploitability_(false) {
 }
 
 MinidumpProcessor::MinidumpProcessor(SymbolSupplier* supplier,
@@ -72,7 +73,8 @@ MinidumpProcessor::MinidumpProcessor(SymbolSupplier* supplier,
     : frame_symbolizer_(new StackFrameSymbolizer(supplier, resolver)),
       own_frame_symbolizer_(true),
       enable_exploitability_(enable_exploitability),
-      enable_objdump_(false) {
+      enable_objdump_(false),
+      enable_objdump_for_exploitability_(false) {
 }
 
 MinidumpProcessor::MinidumpProcessor(StackFrameSymbolizer* frame_symbolizer,
@@ -80,7 +82,8 @@ MinidumpProcessor::MinidumpProcessor(StackFrameSymbolizer* frame_symbolizer,
     : frame_symbolizer_(frame_symbolizer),
       own_frame_symbolizer_(false),
       enable_exploitability_(enable_exploitability),
-      enable_objdump_(false) {
+      enable_objdump_(false),
+      enable_objdump_for_exploitability_(false) {
   assert(frame_symbolizer_);
 }
 
@@ -375,9 +378,8 @@ ProcessResult MinidumpProcessor::Process(
   // rating.
   if (enable_exploitability_) {
     scoped_ptr<Exploitability> exploitability(
-        Exploitability::ExploitabilityForPlatform(dump,
-                                                  process_state,
-                                                  enable_objdump_));
+        Exploitability::ExploitabilityForPlatform(
+          dump, process_state, enable_objdump_for_exploitability_));
     // The engine will be null if the platform is not supported
     if (exploitability != NULL) {
       process_state->exploitability_ = exploitability->CheckExploitability();

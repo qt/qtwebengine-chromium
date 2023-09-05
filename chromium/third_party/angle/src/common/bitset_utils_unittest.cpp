@@ -208,6 +208,41 @@ TYPED_TEST(BitSetTest, Mask)
     }
 }
 
+// Tests removing bits from the iterator during iteration.
+TYPED_TEST(BitSetTest, ResetLaterBits)
+{
+    TypeParam bits;
+    std::set<size_t> expectedValues;
+    for (size_t i = 1; i < TypeParam::size(); i += 2)
+    {
+        expectedValues.insert(i);
+    }
+
+    for (size_t i = 1; i < TypeParam::size(); ++i)
+        bits.set(i);
+
+    // Remove the even bits
+    TypeParam resetBits;
+    for (size_t i = 2; i < TypeParam::size(); i += 2)
+    {
+        resetBits.set(i);
+    }
+
+    std::set<size_t> actualValues;
+
+    for (auto iter = bits.begin(), end = bits.end(); iter != end; ++iter)
+    {
+        if (*iter == 1)
+        {
+            iter.resetLaterBits(resetBits);
+        }
+
+        actualValues.insert(*iter);
+    }
+
+    EXPECT_EQ(expectedValues, actualValues);
+}
+
 template <typename T>
 class BitSetIteratorTest : public testing::Test
 {
@@ -364,7 +399,7 @@ TYPED_TEST(BitSetIteratorTest, SetLaterBit)
     EXPECT_EQ(expectedValues, actualValues);
 }
 
-// Tests removing bits from the iterator during iteration.
+// Tests removing bit from the iterator during iteration.
 TYPED_TEST(BitSetIteratorTest, ResetLaterBit)
 {
     TypeParam mStateBits            = this->mStateBits;
@@ -633,6 +668,24 @@ TEST(BitSetArrayTest, InitializerList)
         else
         {
             EXPECT_FALSE(bits[i]) << i;
+        }
+    }
+}
+
+// Test that BitSetArray's constructor with uint64_t.
+TYPED_TEST(BitSetArrayTest, ConstructorWithUInt64)
+{
+    uint64_t value = 0x5555555555555555;
+    TypeParam testBitSet(value);
+    for (size_t i = 0; i < testBitSet.size(); ++i)
+    {
+        if (i < sizeof(uint64_t) * 8 && (value & (0x1ull << i)))
+        {
+            EXPECT_TRUE(testBitSet.test(i));
+        }
+        else
+        {
+            EXPECT_FALSE(testBitSet.test(i));
         }
     }
 }

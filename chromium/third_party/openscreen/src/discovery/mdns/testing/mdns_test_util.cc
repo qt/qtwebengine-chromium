@@ -12,11 +12,16 @@ namespace openscreen {
 namespace discovery {
 
 TxtRecordRdata MakeTxtRecord(std::initializer_list<absl::string_view> strings) {
+  return TxtRecordRdata(MakeTxtEntries(strings));
+}
+
+std::vector<TxtRecordRdata::Entry> MakeTxtEntries(
+    std::initializer_list<absl::string_view> strings) {
   std::vector<TxtRecordRdata::Entry> texts;
   for (const auto& string : strings) {
     texts.push_back(TxtRecordRdata::Entry(string.begin(), string.end()));
   }
-  return TxtRecordRdata(std::move(texts));
+  return texts;
 }
 
 MdnsRecord GetFakePtrRecord(const DomainName& target,

@@ -303,14 +303,6 @@ export async function loadLegacyModule(module) {
 }
 
 /**
- * @param {string} module
- * @return {!Promise<void>}
- */
-export async function loadTestModule(module) {
-  await import(`../${module}/${module}.js`);
-}
-
-/**
  * @param {string} panel
  * @return {!Promise.<?UI.Panel.Panel>}
  */
@@ -1368,7 +1360,8 @@ export function waitForUISourceCodeRemoved(callback) {
  * @return {string}
  */
 export function url(url = '') {
-  const testScriptURL = /** @type {string} */ (Root.Runtime.Runtime.queryParam('test'));
+  const testScriptURL = /** @type {string} */ (
+      Root.Runtime.Runtime.queryParam('inspected_test') || Root.Runtime.Runtime.queryParam('test'));
 
   // This handles relative (e.g. "../file"), root (e.g. "/resource"),
   // absolute (e.g. "http://", "data:") and empty (e.g. "") paths
@@ -1520,7 +1513,6 @@ TestRunner.waitForUISourceCodeRemoved = waitForUISourceCodeRemoved;
 TestRunner.url = url;
 TestRunner.dumpSyntaxHighlight = dumpSyntaxHighlight;
 TestRunner.loadLegacyModule = loadLegacyModule;
-TestRunner.loadTestModule = loadTestModule;
 TestRunner.evaluateInPageRemoteObject = evaluateInPageRemoteObject;
 TestRunner.evaluateInPage = evaluateInPage;
 TestRunner.evaluateInPageAnonymously = evaluateInPageAnonymously;

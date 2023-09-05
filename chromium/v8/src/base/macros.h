@@ -174,14 +174,18 @@ V8_INLINE Dest bit_cast(Source const& source) {
 #define DISABLE_CFI_PERF V8_CLANG_NO_SANITIZE("cfi")
 
 // DISABLE_CFI_ICALL -- Disable Control Flow Integrity indirect call checks,
-// useful because calls into JITed code can not be CFI verified.
+// useful because calls into JITed code can not be CFI verified. Same for
+// UBSan's function pointer type checks.
 #ifdef V8_OS_WIN
 // On Windows, also needs __declspec(guard(nocf)) for CFG.
 #define DISABLE_CFI_ICALL           \
   V8_CLANG_NO_SANITIZE("cfi-icall") \
+  V8_CLANG_NO_SANITIZE("function")  \
   __declspec(guard(nocf))
 #else
-#define DISABLE_CFI_ICALL V8_CLANG_NO_SANITIZE("cfi-icall")
+#define DISABLE_CFI_ICALL           \
+  V8_CLANG_NO_SANITIZE("cfi-icall") \
+  V8_CLANG_NO_SANITIZE("function")
 #endif
 
 namespace v8 {
@@ -234,7 +238,7 @@ struct is_trivially_copyable {
 // The arguments are guaranteed to be evaluated from left to right.
 struct Use {
   template <typename T>
-  Use(T&&) {}  // NOLINT(runtime/explicit)
+  constexpr Use(T&&) {}  // NOLINT(runtime/explicit)
 };
 #define USE(...)                                                   \
   do {                                                             \

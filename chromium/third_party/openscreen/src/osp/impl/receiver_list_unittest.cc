@@ -66,13 +66,13 @@ TEST(ReceiverListTest, RemoveReceivers) {
       "id1", "name1", 1, {{192, 168, 1, 10}, 12345}, {}};
   const ServiceInfo receiver2{
       "id2", "name2", 1, {{192, 168, 1, 11}, 12345}, {}};
-  EXPECT_FALSE(list.OnReceiverRemoved(receiver1).ok());
+  EXPECT_TRUE(list.OnReceiverRemoved(receiver1).is_error());
   list.OnReceiverAdded(receiver1);
-  EXPECT_FALSE(list.OnReceiverRemoved(receiver2).ok());
+  EXPECT_TRUE(list.OnReceiverRemoved(receiver2).is_error());
   list.OnReceiverAdded(receiver2);
   list.OnReceiverAdded(receiver1);
 
-  EXPECT_TRUE(list.OnReceiverRemoved(receiver1).ok());
+  EXPECT_TRUE(list.OnReceiverRemoved(receiver1).is_value());
 
   ASSERT_EQ(1u, list.receivers().size());
   EXPECT_EQ(receiver2, list.receivers()[0]);

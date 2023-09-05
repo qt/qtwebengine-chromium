@@ -146,10 +146,6 @@ class Module {
 
     // The inlined function's name.
     StringView name;
-
-    File* file;
-
-    int getFileID() const { return file ? file->source_id : -1; }
   };
 
   // A inlined call site.
@@ -228,7 +224,7 @@ class Module {
     map<uint64_t, uint64_t> references_;
   };
 
-  InlineOriginMap inline_origin_map;
+  map<std::string, InlineOriginMap> inline_origin_maps;
 
   // A source line.
   struct Line {
@@ -407,7 +403,7 @@ class Module {
   // Set the source id numbers for all other files --- unused by the
   // source line data --- to -1.  We do this before writing out the
   // symbol file, at which point we omit any unused files.
-  void AssignSourceIds(set<InlineOrigin*, InlineOriginCompare>& inline_origins);
+  void AssignSourceIds();
 
   // This function should be called before AssignSourceIds() to get the set of
   // valid InlineOrigins*.

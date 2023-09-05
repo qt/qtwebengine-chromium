@@ -276,11 +276,6 @@ class TestStream : public QuicSpdyStream {
 
   size_t headers_payload_length() const { return headers_payload_length_; }
 
-  bool AreHeadersValid(const QuicHeaderList& header_list) const override {
-    return !GetQuicReloadableFlag(quic_verify_request_headers_2) ||
-           QuicSpdyStream::AreHeadersValid(header_list);
-  }
-
  private:
   bool should_process_data_;
   spdy::Http2HeaderBlock saved_headers_;
@@ -3100,7 +3095,6 @@ TEST_P(QuicSpdyStreamTest, ProcessIncomingWebTransportHeaders) {
 
   headers_[":method"] = "CONNECT";
   headers_[":protocol"] = "webtransport";
-  headers_["sec-webtransport-http3-draft02"] = "1";
 
   stream_->OnStreamHeadersPriority(
       spdy::SpdyStreamPrecedence(kV3HighestPriority));

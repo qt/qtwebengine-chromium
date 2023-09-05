@@ -23,14 +23,13 @@ static constexpr std::chrono::seconds kRequestTimeout = std::chrono::seconds(5);
 
 CastPlatformClient::CastPlatformClient(VirtualConnectionRouter* router,
                                        ClockNowFunctionPtr clock,
-                                       TaskRunner* task_runner)
+                                       TaskRunner& task_runner)
     : sender_id_(MakeUniqueSessionId("sender")),
       virtual_conn_router_(router),
       clock_(clock),
       task_runner_(task_runner) {
   OSP_DCHECK(virtual_conn_router_);
   OSP_DCHECK(clock_);
-  OSP_DCHECK(task_runner_);
   virtual_conn_router_->AddHandlerForLocalId(sender_id_, this);
 }
 

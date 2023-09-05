@@ -13,6 +13,8 @@
 #include <assert.h>
 #include <math.h>
 
+#include "config/aom_config.h"
+
 #include "aom_dsp/arm/mem_neon.h"
 #include "av1/common/txb_common.h"
 #include "av1/encoder/encodetxb.h"
@@ -37,7 +39,7 @@ void av1_txb_init_levels_neon(const tran_low_t *const coeff, const int width,
           vcombine_s16(vqmovn_s32(coeffA), vqmovn_s32(coeffB));
       const int16x8_t absAB = vqabsq_s16(coeffAB);
       const int8x8_t absABs = vqmovn_s16(absAB);
-#if defined(__aarch64__)
+#if AOM_ARCH_AARCH64
       const int8x16_t absAB8 =
           vcombine_s8(absABs, vreinterpret_s8_s32(vget_low_s32(zeros)));
       const uint8x16_t lsAB =
@@ -188,7 +190,7 @@ static const DECLARE_ALIGNED(16, uint8_t, c_16_po_ver[16]) = {
 
 static INLINE uint8x16_t load_8bit_4x4_to_1_reg(const uint8_t *const src,
                                                 const int byte_stride) {
-#ifdef __aarch64__
+#if AOM_ARCH_AARCH64
   uint32x4_t v_data = vld1q_u32((uint32_t *)src);
   v_data = vld1q_lane_u32((uint32_t *)(src + 1 * byte_stride), v_data, 1);
   v_data = vld1q_lane_u32((uint32_t *)(src + 2 * byte_stride), v_data, 2);
@@ -202,7 +204,7 @@ static INLINE uint8x16_t load_8bit_4x4_to_1_reg(const uint8_t *const src,
 
 static INLINE uint8x16_t load_8bit_8x2_to_1_reg(const uint8_t *const src,
                                                 const int byte_stride) {
-#ifdef __aarch64__
+#if AOM_ARCH_AARCH64
   uint64x2_t v_data = vld1q_u64((uint64_t *)src);
   v_data = vld1q_lane_u64((uint64_t *)(src + 1 * byte_stride), v_data, 1);
 

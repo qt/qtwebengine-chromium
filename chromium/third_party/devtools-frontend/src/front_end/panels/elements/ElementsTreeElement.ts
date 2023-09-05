@@ -46,7 +46,9 @@ import * as TextEditor from '../../ui/components/text_editor/text_editor.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as Emulation from '../emulation/emulation.js';
+
 import type * as IssuesManager from '../../models/issues_manager/issues_manager.js';
+
 import * as ElementsComponents from './components/components.js';
 import {canGetJSPath, cssPath, jsPath, xPath} from './DOMPath.js';
 import {ElementsPanel} from './ElementsPanel.js';
@@ -244,6 +246,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
   private hintElement?: HTMLElement;
   private contentElement: HTMLElement;
   #elementIssues: Map<string, IssuesManager.GenericIssue.GenericIssue> = new Map();
+  #nodeElementToIssue: Map<Element, IssuesManager.GenericIssue.GenericIssue> = new Map();
 
   readonly tagTypeContext: TagTypeContext;
 
@@ -440,24 +443,32 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     const issueDetails = issue.details();
 
     if (issueDetails.violatingNodeAttribute) {
-      this.#highlightViolatingAttr(issueDetails.violatingNodeAttribute);
+      this.#highlightViolatingAttr(issueDetails.violatingNodeAttribute, issue);
     } else {
-      this.#highlightTagAsViolating();
+      this.#highlightTagAsViolating(issue);
     }
   }
 
-  #highlightTagAsViolating(): void {
-    this.listItemElement.getElementsByClassName('webkit-html-tag-name')[0].classList.add('violating-element');
+  get issuesByNodeElement(): Map<Element, IssuesManager.GenericIssue.GenericIssue> {
+    return this.#nodeElementToIssue;
   }
 
-  #highlightViolatingAttr(name: string): void {
+  #highlightViolatingAttr(name: string, issue: IssuesManager.GenericIssue.GenericIssue): void {
     const tag = this.listItemElement.getElementsByClassName('webkit-html-tag')[0];
     const attributes = tag.getElementsByClassName('webkit-html-attribute');
     for (const attribute of attributes) {
       if (attribute.getElementsByClassName('webkit-html-attribute-name')[0].textContent === name) {
-        attribute.getElementsByClassName('webkit-html-attribute-name')[0].classList.add('violating-element');
+        const attributeElement = attribute.getElementsByClassName('webkit-html-attribute-name')[0];
+        attributeElement.classList.add('violating-element');
+        this.#nodeElementToIssue.set(attributeElement, issue);
       }
     }
+  }
+
+  #highlightTagAsViolating(issue: IssuesManager.GenericIssue.GenericIssue): void {
+    const tagElement = this.listItemElement.getElementsByClassName('webkit-html-tag-name')[0];
+    tagElement.classList.add('violating-element');
+    this.#nodeElementToIssue.set(tagElement, issue);
   }
 
   expandedChildrenLimit(): number {
@@ -478,6 +489,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
       this.tagTypeContext.slot = this.adornSlot(config, this.tagTypeContext);
       const deferredNode = nodeShortcut.deferredNode;
       this.tagTypeContext.slot.addEventListener('click', () => {
+        Host.userMetrics.badgeActivated(Host.UserMetrics.BadgeType.SLOT);
         deferredNode.resolve(node => {
           void Common.Revealer.reveal(node);
         });
@@ -909,8 +921,9 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
       }
     }
 
-    const attributeValue =
-        attributeName && attributeValueElement ? this.nodeInternal.getAttribute(attributeName) : undefined;
+    const attributeValue = attributeName && attributeValueElement ?
+        this.nodeInternal.getAttribute(attributeName)?.replaceAll('"', '&quot;') :
+        undefined;
     if (attributeValue !== undefined) {
       attributeValueElement.setTextContentTruncatedIfNeeded(
           attributeValue, i18nString(UIStrings.valueIsTooLargeToEdit));
@@ -1465,7 +1478,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
       this.decorationsElement.classList.add('hidden');
       this.gutterContainer.classList.toggle(
           'has-decorations', Boolean(decorations.length || descendantDecorations.length));
-      UI.ARIAUtils.setAccessibleName(this.decorationsElement, '');
+      UI.ARIAUtils.setLabel(this.decorationsElement, '');
 
       if (!decorations.length && !descendantDecorations.length) {
         return;
@@ -1501,7 +1514,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
         processColors.call(this, descendantColors, 'elements-gutter-decoration elements-has-decorated-children');
       }
       UI.Tooltip.Tooltip.install(this.decorationsElement, titles.textContent);
-      UI.ARIAUtils.setAccessibleName(this.decorationsElement, titles.textContent || '');
+      UI.ARIAUtils.setLabel(this.decorationsElement, titles.textContent || '');
 
       function processColors(this: ElementsTreeElement, colors: Set<string>, className: string): void {
         for (const color of colors) {
@@ -1529,14 +1542,19 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     function setValueWithEntities(this: ElementsTreeElement, element: Element, value: string): void {
       const result = this.convertWhitespaceToEntities(value);
       highlightCount = result.entityRanges.length;
-      value = result.text.replace(closingPunctuationRegex, (match, replaceOffset) => {
-        while (highlightIndex < highlightCount && result.entityRanges[highlightIndex].offset < replaceOffset) {
-          result.entityRanges[highlightIndex].offset += additionalHighlightOffset;
-          ++highlightIndex;
-        }
-        additionalHighlightOffset += 1;
-        return match + '\u200B';
-      });
+      value = result.text
+                  .replace(
+                      closingPunctuationRegex,
+                      (match, replaceOffset) => {
+                        while (highlightIndex < highlightCount &&
+                               result.entityRanges[highlightIndex].offset < replaceOffset) {
+                          result.entityRanges[highlightIndex].offset += additionalHighlightOffset;
+                          ++highlightIndex;
+                        }
+                        additionalHighlightOffset += 1;
+                        return match + '\u200B';
+                      })
+                  .replaceAll('"', '&quot;');
 
       while (highlightIndex < highlightCount) {
         result.entityRanges[highlightIndex].offset += additionalHighlightOffset;
@@ -1693,7 +1711,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     UI.UIUtils.createTextChild(tagElement, '>');
     UI.UIUtils.createTextChild(parentElement, '\u200B');
     if (tagElement.textContent) {
-      UI.ARIAUtils.setAccessibleName(tagElement, tagElement.textContent);
+      UI.ARIAUtils.setLabel(tagElement, tagElement.textContent);
     }
   }
 
@@ -2116,6 +2134,10 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     const display = styles.get('display');
     const isGrid = display === 'grid' || display === 'inline-grid';
     const isFlex = display === 'flex' || display === 'inline-flex';
+    const isSubgrid = (isGrid &&
+                       (styles.get('grid-template-columns')?.startsWith('subgrid') ||
+                        styles.get('grid-template-rows')?.startsWith('subgrid'))) ??
+        false;
 
     const containerType = styles.get('container-type');
     const contain = styles.get('contain');
@@ -2123,7 +2145,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
         SDK.CSSContainerQuery.getQueryAxis(`${containerType} ${contain}`) !== SDK.CSSContainerQuery.QueryAxis.None;
 
     if (isGrid) {
-      this.pushGridAdorner(this.tagTypeContext);
+      this.pushGridAdorner(this.tagTypeContext, isSubgrid);
     }
     if (isFlex) {
       this.pushFlexAdorner(this.tagTypeContext);
@@ -2136,7 +2158,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     }
   }
 
-  pushGridAdorner(context: OpeningTagContext): void {
+  pushGridAdorner(context: OpeningTagContext, isSubgrid: boolean): void {
     const node = this.node();
     const nodeId = node.id;
     if (!nodeId) {
@@ -2144,13 +2166,16 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     }
 
     const config = ElementsComponents.AdornerManager.getRegisteredAdorner(
-        ElementsComponents.AdornerManager.RegisteredAdorners.GRID);
+        isSubgrid ? ElementsComponents.AdornerManager.RegisteredAdorners.SUBGRID :
+                    ElementsComponents.AdornerManager.RegisteredAdorners.GRID);
     const adorner = this.adorn(config);
     adorner.classList.add('grid');
 
     const onClick = (((): void => {
                        if (adorner.isActive()) {
                          node.domModel().overlayModel().highlightGridInPersistentOverlay(nodeId);
+                         Host.userMetrics.badgeActivated(
+                             isSubgrid ? Host.UserMetrics.BadgeType.SUBGRID : Host.UserMetrics.BadgeType.GRID);
                        } else {
                          node.domModel().overlayModel().hideGridInPersistentOverlay(nodeId);
                        }
@@ -2189,6 +2214,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
                        const model = node.domModel().overlayModel();
                        if (adorner.isActive()) {
                          model.highlightScrollSnapInPersistentOverlay(nodeId);
+                         Host.userMetrics.badgeActivated(Host.UserMetrics.BadgeType.SCROLL_SNAP);
                        } else {
                          model.hideScrollSnapInPersistentOverlay(nodeId);
                        }
@@ -2228,6 +2254,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
                        const model = node.domModel().overlayModel();
                        if (adorner.isActive()) {
                          model.highlightFlexContainerInPersistentOverlay(nodeId);
+                         Host.userMetrics.badgeActivated(Host.UserMetrics.BadgeType.FLEX);
                        } else {
                          model.hideFlexContainerInPersistentOverlay(nodeId);
                        }
@@ -2267,6 +2294,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
                        const model = node.domModel().overlayModel();
                        if (adorner.isActive()) {
                          model.highlightContainerQueryInPersistentOverlay(nodeId);
+                         Host.userMetrics.badgeActivated(Host.UserMetrics.BadgeType.CONTAINER);
                        } else {
                          model.hideContainerQueryInPersistentOverlay(nodeId);
                        }

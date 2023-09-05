@@ -21,6 +21,7 @@
 #include "cast/streaming/sender_packet_router.h"
 #include "cast/streaming/session_config.h"
 #include "cast/streaming/session_messenger.h"
+#include "cast/streaming/statistics.h"
 #include "json/value.h"
 #include "util/json/json_serialization.h"
 
@@ -162,6 +163,10 @@ class SenderSession final {
   // feedback. Consumers may use this information to throttle capture devices.
   int GetEstimatedNetworkBandwidth() const;
 
+  // Set the client for handling statistics events. Statistics will not be
+  // recorded unless this field is set.
+  void SetStatsClient(SenderStatsClient* client);
+
   // The RPC messenger for this session. NOTE: RPC messages may come at
   // any time from the receiver, so subscriptions to RPC remoting messages
   // should be done before calling |NegotiateRemoting|.
@@ -273,6 +278,10 @@ class SenderSession final {
   // limited. |kStreaming| or |kRemoting| means that we are either starting
   // a negotiation or actively sending to a receiver.
   State state_ = State::kIdle;
+
+  // The statistics client for this session. Must be set in order for statistics
+  // to be calculated.
+  SenderStatsClient* stats_client_ = nullptr;
 };  // namespace cast
 
 }  // namespace cast

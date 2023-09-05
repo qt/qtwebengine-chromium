@@ -47,6 +47,7 @@ struct visitor_impl<Visitor, Derived, UnrollCount, Vectorize, false, ShortCircui
 
   static constexpr bool CanVectorize(int K) {
     constexpr int InnerSizeAtCompileTime = RowMajor ? ColsAtCompileTime : RowsAtCompileTime;
+    if(InnerSizeAtCompileTime < PacketSize) return false;
     return Vectorize && (InnerSizeAtCompileTime - (K % InnerSizeAtCompileTime) >= PacketSize);
   }
 

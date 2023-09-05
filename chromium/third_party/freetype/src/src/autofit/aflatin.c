@@ -1065,8 +1065,8 @@
   af_latin_metrics_check_digits( AF_LatinMetrics  metrics,
                                  FT_Face          face )
   {
-    FT_Bool   started = 0, same_width = 1;
-    FT_Fixed  advance = 0, old_advance = 0;
+    FT_Bool  started = 0, same_width = 1;
+    FT_Long  advance = 0, old_advance = 0;
 
     /* If HarfBuzz is not available, we need a pointer to a single */
     /* unsigned long value.                                        */
@@ -1131,9 +1131,11 @@
   /* Initialize global metrics. */
 
   FT_LOCAL_DEF( FT_Error )
-  af_latin_metrics_init( AF_LatinMetrics  metrics,
+  af_latin_metrics_init( AF_StyleMetrics  metrics_,   /* AF_LatinMetrics */
                          FT_Face          face )
   {
+    AF_LatinMetrics  metrics = (AF_LatinMetrics)metrics_;
+
     FT_Error  error = FT_Err_Ok;
 
     FT_CharMap  oldmap = face->charmap;
@@ -1486,9 +1488,12 @@
   /* Scale global values in both directions. */
 
   FT_LOCAL_DEF( void )
-  af_latin_metrics_scale( AF_LatinMetrics  metrics,
+  af_latin_metrics_scale( AF_StyleMetrics  metrics_,   /* AF_LatinMetrics */
                           AF_Scaler        scaler )
   {
+    AF_LatinMetrics  metrics = (AF_LatinMetrics)metrics_;
+
+
     metrics->root.scaler.render_mode = scaler->render_mode;
     metrics->root.scaler.face        = scaler->face;
     metrics->root.scaler.flags       = scaler->flags;
@@ -1501,11 +1506,14 @@
   /* Extract standard_width from writing system/script specific */
   /* metrics class.                                             */
 
-  FT_LOCAL_DEF( void )
-  af_latin_get_standard_widths( AF_LatinMetrics  metrics,
+  FT_CALLBACK_DEF( void )
+  af_latin_get_standard_widths( AF_StyleMetrics  metrics_, /* AF_LatinMetrics */
                                 FT_Pos*          stdHW,
                                 FT_Pos*          stdVW )
   {
+    AF_LatinMetrics  metrics = (AF_LatinMetrics)metrics_;
+
+
     if ( stdHW )
       *stdHW = metrics->axis[AF_DIMENSION_VERT].standard_width;
 
@@ -2038,7 +2046,7 @@
             max = seg2->max_coord;
 
           /* compute maximum coordinate difference of the two segments */
-          /* (this is, how much they overlap)                          */
+          /* (that is, how much they overlap)                          */
           len = max - min;
           if ( len >= len_threshold )
           {
@@ -2607,8 +2615,10 @@
 
   static FT_Error
   af_latin_hints_init( AF_GlyphHints    hints,
-                       AF_LatinMetrics  metrics )
+                       AF_StyleMetrics  metrics_ )   /* AF_LatinMetrics */
   {
+    AF_LatinMetrics  metrics = (AF_LatinMetrics)metrics_;
+
     FT_Render_Mode  mode;
     FT_UInt32       scaler_flags, other_flags;
     FT_Face         face = metrics->root.scaler.face;
@@ -3544,8 +3554,10 @@
   af_latin_hints_apply( FT_UInt          glyph_index,
                         AF_GlyphHints    hints,
                         FT_Outline*      outline,
-                        AF_LatinMetrics  metrics )
+                        AF_StyleMetrics  metrics_ )    /* AF_LatinMetrics */
   {
+    AF_LatinMetrics  metrics = (AF_LatinMetrics)metrics_;
+
     FT_Error  error;
     int       dim;
 

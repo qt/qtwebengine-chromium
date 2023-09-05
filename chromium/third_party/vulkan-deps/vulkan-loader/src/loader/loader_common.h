@@ -39,6 +39,8 @@
 #include "vk_layer_dispatch_table.h"
 #include "vk_loader_extensions.h"
 
+#include "settings.h"
+
 typedef enum VkStringErrorFlagBits {
     VK_STRING_ERROR_NONE = 0x00000000,
     VK_STRING_ERROR_LENGTH = 0x00000001,
@@ -65,6 +67,12 @@ struct loader_generic_list {
     void *list;
 };
 
+struct loader_string_list {
+    uint32_t allocated_count;
+    uint32_t count;
+    char **list;
+};
+
 struct loader_extension_list {
     size_t capacity;
     uint32_t count;
@@ -73,8 +81,7 @@ struct loader_extension_list {
 
 struct loader_dev_ext_props {
     VkExtensionProperties props;
-    uint32_t entrypoint_count;
-    char **entrypoints;
+    struct loader_string_list entrypoints;
 };
 
 struct loader_device_extension_list {
@@ -84,14 +91,14 @@ struct loader_device_extension_list {
 };
 
 struct loader_name_value {
-    char name[MAX_STRING_SIZE];
-    char value[MAX_STRING_SIZE];
+    char *name;
+    char *value;
 };
 
 struct loader_layer_functions {
-    char str_gipa[MAX_STRING_SIZE];
-    char str_gdpa[MAX_STRING_SIZE];
-    char str_negotiate_interface[MAX_STRING_SIZE];
+    char *str_gipa;
+    char *str_gdpa;
+    char *str_negotiate_interface;
     PFN_vkNegotiateLoaderLayerInterfaceVersion negotiate_layer_interface;
     PFN_vkGetInstanceProcAddr get_instance_proc_addr;
     PFN_vkGetDeviceProcAddr get_device_proc_addr;
@@ -125,9 +132,11 @@ enum layer_type_flags {
 struct loader_layer_properties {
     VkLayerProperties info;
     enum layer_type_flags type_flags;
+    enum loader_settings_layer_control settings_control_value;
+
     uint32_t interface_version;  // PFN_vkNegotiateLoaderLayerInterfaceVersion
-    char manifest_file_name[MAX_STRING_SIZE];
-    char lib_name[MAX_STRING_SIZE];
+    char *manifest_file_name;
+    char *lib_name;
     enum loader_layer_library_status lib_status;
     loader_platform_dl_handle lib_handle;
     struct loader_layer_functions functions;
@@ -135,27 +144,32 @@ struct loader_layer_properties {
     struct loader_device_extension_list device_extension_list;
     struct loader_name_value disable_env_var;
     struct loader_name_value enable_env_var;
-    uint32_t num_component_layers;
-    char (*component_layer_names)[MAX_STRING_SIZE];
+    struct loader_string_list component_layer_names;
     struct {
-        char enumerate_instance_extension_properties[MAX_STRING_SIZE];
-        char enumerate_instance_layer_properties[MAX_STRING_SIZE];
-        char enumerate_instance_version[MAX_STRING_SIZE];
+        char *enumerate_instance_extension_properties;
+        char *enumerate_instance_layer_properties;
+        char *enumerate_instance_version;
     } pre_instance_functions;
-    uint32_t num_override_paths;
-    char (*override_paths)[MAX_STRING_SIZE];
+    struct loader_string_list override_paths;
     bool is_override;
     bool keep;
-    uint32_t num_blacklist_layers;
-    char (*blacklist_layer_names)[MAX_STRING_SIZE];
-    uint32_t num_app_key_paths;
-    char (*app_key_paths)[MAX_STRING_SIZE];
+    struct loader_string_list blacklist_layer_names;
+    struct loader_string_list app_key_paths;
 };
 
+// Stores a list of loader_layer_properties
 struct loader_layer_list {
     size_t capacity;
     uint32_t count;
     struct loader_layer_properties *list;
+};
+
+// Stores a list of pointers to loader_layer_properties
+// Used for app_activated_layer_list and expanded_activated_layer_list
+struct loader_pointer_layer_list {
+    size_t capacity;
+    uint32_t count;
+    struct loader_layer_properties **list;
 };
 
 typedef VkResult(VKAPI_PTR *PFN_vkDevExt)(VkDevice device);
@@ -172,14 +186,6 @@ struct loader_device {
     VkDevice chain_device;  // device object from the dispatch chain
     VkDevice icd_device;    // device object from the icd
     struct loader_physical_device_term *phys_dev_term;
-
-    // List of activated layers.
-    //  app_      is the version based on exactly what the application asked for.
-    //            This is what must be returned to the application on Enumerate calls.
-    //  expanded_ is the version based on expanding meta-layers into their
-    //            individual component layers.  This is what is used internally.
-    struct loader_layer_list app_activated_layer_list;
-    struct loader_layer_list expanded_activated_layer_list;
 
     VkAllocationCallbacks alloc_callbacks;
 
@@ -235,6 +241,9 @@ struct loader_instance {
     struct loader_instance_dispatch_table *disp;  // must be first entry in structure
     uint64_t magic;                               // Should be LOADER_MAGIC_NUMBER
 
+    // Store all the terminators for instance functions in case a layer queries one *after* vkCreateInstance
+    VkLayerInstanceDispatchTable terminator_dispatch;
+
     // Vulkan API version the app is intending to use.
     loader_api_version app_api_version;
 
@@ -259,6 +268,8 @@ struct loader_instance {
     struct loader_icd_term *icd_terms;
     struct loader_icd_tramp_list icd_tramp_list;
 
+    // Must store the strings inside loader_instance directly - since the asm code will offset into
+    // loader_instance to get the function name
     uint32_t dev_ext_disp_function_count;
     char *dev_ext_disp_functions[MAX_NUM_UNKNOWN_EXTS];
     uint32_t phys_dev_ext_disp_function_count;
@@ -266,8 +277,7 @@ struct loader_instance {
 
     struct loader_msg_callback_map_entry *icd_msg_callback_map;
 
-    uint32_t enabled_layer_count;
-    char **enabled_layer_names;
+    struct loader_string_list enabled_layer_names;
 
     struct loader_layer_list instance_layer_list;
     bool override_layer_present;
@@ -277,8 +287,8 @@ struct loader_instance {
     //            This is what must be returned to the application on Enumerate calls.
     //  expanded_ is the version based on expanding meta-layers into their
     //            individual component layers.  This is what is used internally.
-    struct loader_layer_list app_activated_layer_list;
-    struct loader_layer_list expanded_activated_layer_list;
+    struct loader_pointer_layer_list app_activated_layer_list;
+    struct loader_pointer_layer_list expanded_activated_layer_list;
 
     VkInstance instance;  // layers/ICD instance returned to trampoline
 
@@ -294,6 +304,11 @@ struct loader_instance {
     VkLayerDbgFunctionNode *InstanceCreationDeletionDebugFunctionHead;
 
     VkAllocationCallbacks alloc_callbacks;
+
+    // Set to true after vkCreateInstance has returned - necessary for loader_gpa_instance_terminator()
+    bool instance_finished_creation;
+
+    loader_settings settings;
 
     bool portability_enumeration_enabled;
 
@@ -437,12 +452,6 @@ enum loader_data_files_type {
     LOADER_DATA_FILE_MANIFEST_EXPLICIT_LAYER,
     LOADER_DATA_FILE_MANIFEST_IMPLICIT_LAYER,
     LOADER_DATA_FILE_NUM_TYPES  // Not a real field, used for possible loop terminator
-};
-
-struct loader_data_files {
-    uint32_t count;
-    uint32_t alloc_count;
-    char **filename_list;
 };
 
 struct loader_phys_dev_per_icd {

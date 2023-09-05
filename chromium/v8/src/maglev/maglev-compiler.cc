@@ -132,10 +132,21 @@ class MaxCallDepthProcessor {
             deopt_frame->as_interpreted().unit().register_count());
         return info.frame_size_in_bytes();
       }
+      case DeoptFrame::FrameType::kConstructStubFrame: {
+        int arg_count = deopt_frame->as_construct_stub()
+                            .arguments_without_receiver()
+                            .length() +
+                        1;
+        auto info = ConstructStubFrameInfo::Conservative(arg_count);
+        return info.frame_size_in_bytes();
+      }
       case DeoptFrame::FrameType::kInlinedArgumentsFrame: {
-        return static_cast<int>(
-            deopt_frame->as_inlined_arguments().arguments().size() -
-            deopt_frame->as_inlined_arguments().unit().parameter_count());
+        return std::max(
+            0,
+            static_cast<int>(
+                deopt_frame->as_inlined_arguments().arguments().size() -
+                deopt_frame->as_inlined_arguments().unit().parameter_count()) *
+                kSystemPointerSize);
       }
       case DeoptFrame::FrameType::kBuiltinContinuationFrame: {
         // PC + FP + Closure + Params + Context
@@ -363,20 +374,23 @@ class UseMarkingProcessor {
 bool MaglevCompiler::Compile(LocalIsolate* local_isolate,
                              MaglevCompilationInfo* compilation_info) {
   compiler::CurrentHeapBrokerScope current_broker(compilation_info->broker());
-  Graph* graph = Graph::New(compilation_info->zone());
+  Graph* graph =
+      Graph::New(compilation_info->zone(),
+                 compilation_info->toplevel_compilation_unit()->is_osr());
 
   // Build graph.
   if (v8_flags.print_maglev_code || v8_flags.code_comments ||
-      v8_flags.print_maglev_graph || v8_flags.trace_maglev_graph_building ||
+      v8_flags.print_maglev_graph || v8_flags.print_maglev_graphs ||
+      v8_flags.trace_maglev_graph_building ||
       v8_flags.trace_maglev_phi_untagging || v8_flags.trace_maglev_regalloc) {
     compilation_info->set_graph_labeller(new MaglevGraphLabeller());
   }
 
   {
-    UnparkedScope unparked_scope(local_isolate->heap());
+    UnparkedScopeIfOnBackground unparked_scope(local_isolate->heap());
 
     if (v8_flags.print_maglev_code || v8_flags.print_maglev_graph ||
-        v8_flags.trace_maglev_graph_building ||
+        v8_flags.print_maglev_graphs || v8_flags.trace_maglev_graph_building ||
         v8_flags.trace_maglev_phi_untagging || v8_flags.trace_maglev_regalloc) {
       MaglevCompilationUnit* top_level_unit =
           compilation_info->toplevel_compilation_unit();
@@ -384,7 +398,9 @@ bool MaglevCompiler::Compile(LocalIsolate* local_isolate,
                 << " with Maglev\n";
       BytecodeArray::Disassemble(top_level_unit->bytecode().object(),
                                  std::cout);
-      top_level_unit->feedback().object()->Print(std::cout);
+      if (v8_flags.maglev_print_feedback) {
+        top_level_unit->feedback().object()->Print(std::cout);
+      }
     }
 
     MaglevGraphBuilder graph_builder(
@@ -392,7 +408,7 @@ bool MaglevCompiler::Compile(LocalIsolate* local_isolate,
 
     graph_builder.Build();
 
-    if (v8_flags.print_maglev_graph) {
+    if (v8_flags.print_maglev_graphs) {
       std::cout << "\nAfter graph buiding" << std::endl;
       PrintGraph(std::cout, compilation_info, graph);
     }
@@ -402,7 +418,7 @@ bool MaglevCompiler::Compile(LocalIsolate* local_isolate,
           &graph_builder);
       representation_selector.ProcessGraph(graph);
 
-      if (v8_flags.print_maglev_graph) {
+      if (v8_flags.print_maglev_graphs) {
         std::cout << "\nAfter Phi untagging" << std::endl;
         PrintGraph(std::cout, compilation_info, graph);
       }
@@ -427,26 +443,32 @@ bool MaglevCompiler::Compile(LocalIsolate* local_isolate,
     processor.ProcessGraph(graph);
   }
 
-  if (v8_flags.print_maglev_graph) {
-    UnparkedScope unparked_scope(local_isolate->heap());
+  if (v8_flags.print_maglev_graphs) {
+    UnparkedScopeIfOnBackground unparked_scope(local_isolate->heap());
     std::cout << "After register allocation pre-processing" << std::endl;
     PrintGraph(std::cout, compilation_info, graph);
   }
 
   StraightForwardRegisterAllocator allocator(compilation_info, graph);
 
-  if (v8_flags.print_maglev_graph) {
-    UnparkedScope unparked_scope(local_isolate->heap());
+  if (v8_flags.print_maglev_graph || v8_flags.print_maglev_graphs) {
+    UnparkedScopeIfOnBackground unparked_scope(local_isolate->heap());
     std::cout << "After register allocation" << std::endl;
     PrintGraph(std::cout, compilation_info, graph);
   }
 
   {
-    UnparkedScope unparked_scope(local_isolate->heap());
+    UnparkedScopeIfOnBackground unparked_scope(local_isolate->heap());
     std::unique_ptr<MaglevCodeGenerator> code_generator =
         std::make_unique<MaglevCodeGenerator>(local_isolate, compilation_info,
                                               graph);
     code_generator->Assemble();
+
+#ifdef V8_TARGET_ARCH_ARM
+    if (code_generator->AssembleHasFailed()) {
+      return false;
+    }
+#endif
 
     // Stash the compiled code_generator on the compilation info.
     compilation_info->set_code_generator(std::move(code_generator));

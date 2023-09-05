@@ -242,7 +242,7 @@ export class AnimationTimeline extends UI.Widget.VBox implements SDK.TargetManag
     const playbackRateControl = toolbarContainer.createChild('div', 'animation-playback-rate-control');
     playbackRateControl.addEventListener('keydown', this.handlePlaybackRateControlKeyDown.bind(this));
     UI.ARIAUtils.markAsListBox(playbackRateControl);
-    UI.ARIAUtils.setAccessibleName(playbackRateControl, i18nString(UIStrings.playbackRates));
+    UI.ARIAUtils.setLabel(playbackRateControl, i18nString(UIStrings.playbackRates));
 
     this.#playbackRateButtons = [];
     for (const playbackRate of GlobalPlaybackRates) {
@@ -259,7 +259,7 @@ export class AnimationTimeline extends UI.Widget.VBox implements SDK.TargetManag
     this.updatePlaybackControls();
     this.#previewContainer = (this.contentElement.createChild('div', 'animation-timeline-buffer') as HTMLElement);
     UI.ARIAUtils.markAsListBox(this.#previewContainer);
-    UI.ARIAUtils.setAccessibleName(this.#previewContainer, i18nString(UIStrings.animationPreviews));
+    UI.ARIAUtils.setLabel(this.#previewContainer, i18nString(UIStrings.animationPreviews));
     this.#popoverHelper = new UI.PopoverHelper.PopoverHelper(this.#previewContainer, this.getPopoverRequest.bind(this));
     this.#popoverHelper.setDisableOnClick(true);
     this.#popoverHelper.setTimeout(0);
@@ -420,7 +420,7 @@ export class AnimationTimeline extends UI.Widget.VBox implements SDK.TargetManag
       this.#controlButton.setGlyph('play');
     } else if (
         !this.#scrubberPlayer || !this.#scrubberPlayer.currentTime ||
-        this.#scrubberPlayer.currentTime >= this.duration()) {
+        typeof this.#scrubberPlayer.currentTime !== 'number' || this.#scrubberPlayer.currentTime >= this.duration()) {
       this.#controlState = ControlState.Replay;
       this.#controlButton.setToggled(true);
       this.#controlButton.setTitle(i18nString(UIStrings.replayTimeline));
@@ -549,7 +549,7 @@ export class AnimationTimeline extends UI.Widget.VBox implements SDK.TargetManag
     preview.removeButton().addEventListener('click', this.removeAnimationGroup.bind(this, group));
     preview.element.addEventListener('click', this.selectAnimationGroup.bind(this, group));
     preview.element.addEventListener('keydown', this.handleAnimationGroupKeyDown.bind(this, group));
-    UI.ARIAUtils.setAccessibleName(
+    UI.ARIAUtils.setLabel(
         preview.element, i18nString(UIStrings.animationPreviewS, {PH1: this.#groupBuffer.indexOf(group) + 1}));
     UI.ARIAUtils.markAsOption(preview.element);
 
@@ -800,7 +800,7 @@ export class AnimationTimeline extends UI.Widget.VBox implements SDK.TargetManag
     if (!this.#scrubberPlayer) {
       return;
     }
-    this.#currentTime.textContent = i18n.TimeUtilities.millisToString(this.#scrubberPlayer.currentTime || 0);
+    this.#currentTime.textContent = i18n.TimeUtilities.millisToString(this.#scrubberCurrentTime());
     if (this.#scrubberPlayer.playState.toString() === 'pending' || this.#scrubberPlayer.playState === 'running') {
       this.element.window().requestAnimationFrame(this.updateScrubber.bind(this));
     } else if (this.#scrubberPlayer.playState === 'finished') {
@@ -835,7 +835,8 @@ export class AnimationTimeline extends UI.Widget.VBox implements SDK.TargetManag
       return false;
     }
 
-    this.#originalScrubberTime = this.#scrubberPlayer.currentTime;
+    this.#originalScrubberTime =
+        typeof this.#scrubberPlayer.currentTime === 'number' ? this.#scrubberPlayer.currentTime : null;
     this.#timelineScrubber.classList.remove('animation-timeline-end');
     this.#scrubberPlayer.pause();
 
@@ -861,9 +862,13 @@ export class AnimationTimeline extends UI.Widget.VBox implements SDK.TargetManag
     }
   }
 
+  #scrubberCurrentTime(): number {
+    return typeof this.#scrubberPlayer?.currentTime === 'number' ? this.#scrubberPlayer.currentTime : 0;
+  }
+
   private scrubberDragEnd(_event: Event): void {
     if (this.#scrubberPlayer) {
-      const currentTime = Math.max(0, this.#scrubberPlayer.currentTime || 0);
+      const currentTime = Math.max(0, this.#scrubberCurrentTime());
       this.#scrubberPlayer.play();
       this.#scrubberPlayer.currentTime = currentTime;
     }

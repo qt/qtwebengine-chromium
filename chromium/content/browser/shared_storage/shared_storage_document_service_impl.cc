@@ -21,6 +21,7 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/common/content_client.h"
 #include "services/network/public/cpp/is_potentially_trustworthy.h"
+#include "storage/browser/blob/blob_url_loader_factory.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/shared_storage/shared_storage_utils.h"
@@ -30,6 +31,8 @@ namespace content {
 
 namespace {
 
+// Note that this function would also return false if the context origin is
+// opaque. This is stricter than the web platform's notion of "secure context".
 // TODO(yaoxia): This should be function in FrameTreeNode.
 bool IsSecureFrame(RenderFrameHost* frame) {
   while (frame) {
@@ -88,6 +91,13 @@ void SharedStorageDocumentServiceImpl::Bind(
   CHECK(!receiver_)
       << "Multiple attempts to bind the SharedStorageDocumentService receiver";
 
+  if (render_frame_host().GetLastCommittedOrigin().opaque()) {
+    mojo::ReportBadMessage(
+        "Attempted to request SharedStorageDocumentService from an opaque "
+        "origin context");
+    return;
+  }
+
   if (!IsSecureFrame(&render_frame_host())) {
     // This could indicate a compromised renderer, so let's terminate it.
     mojo::ReportBadMessage(
@@ -135,8 +145,18 @@ void SharedStorageDocumentServiceImpl::AddModuleOnWorklet(
   // keep-alive phase and won't have access to the `RenderFrameHost`.
   mojo::PendingRemote<network::mojom::URLLoaderFactory>
       frame_url_loader_factory;
-  render_frame_host().CreateNetworkServiceDefaultFactory(
-      frame_url_loader_factory.InitWithNewPipeAndPassReceiver());
+  if (script_source_url.SchemeIsBlob()) {
+    storage::BlobURLLoaderFactory::Create(
+        static_cast<StoragePartitionImpl*>(
+            render_frame_host().GetProcess()->GetStoragePartition())
+            ->GetBlobUrlRegistry()
+            ->GetBlobFromUrl(script_source_url),
+        script_source_url,
+        frame_url_loader_factory.InitWithNewPipeAndPassReceiver());
+  } else {
+    render_frame_host().CreateNetworkServiceDefaultFactory(
+        frame_url_loader_factory.InitWithNewPipeAndPassReceiver());
+  }
 
   GetSharedStorageWorkletHost()->AddModuleOnWorklet(
       std::move(frame_url_loader_factory),
@@ -146,7 +166,7 @@ void SharedStorageDocumentServiceImpl::AddModuleOnWorklet(
 
 void SharedStorageDocumentServiceImpl::RunOperationOnWorklet(
     const std::string& name,
-    const std::vector<uint8_t>& serialized_data,
+    blink::CloneableMessage serialized_data,
     bool keep_alive_after_operation,
     const absl::optional<std::string>& context_id,
     RunOperationOnWorkletCallback callback) {
@@ -178,7 +198,7 @@ void SharedStorageDocumentServiceImpl::RunOperationOnWorklet(
       SharedStorageEventParams::CreateForRun(name, serialized_data));
 
   GetSharedStorageWorkletHost()->RunOperationOnWorklet(
-      name, serialized_data, keep_alive_after_operation, context_id);
+      name, std::move(serialized_data), keep_alive_after_operation, context_id);
   std::move(callback).Run(/*success=*/true, /*error_message=*/{});
 }
 
@@ -186,7 +206,7 @@ void SharedStorageDocumentServiceImpl::RunURLSelectionOperationOnWorklet(
     const std::string& name,
     std::vector<blink::mojom::SharedStorageUrlWithMetadataPtr>
         urls_with_metadata,
-    const std::vector<uint8_t>& serialized_data,
+    blink::CloneableMessage serialized_data,
     bool keep_alive_after_operation,
     const absl::optional<std::string>& context_id,
     RunURLSelectionOperationOnWorkletCallback callback) {
@@ -287,18 +307,6 @@ void SharedStorageDocumentServiceImpl::RunURLSelectionOperationOnWorklet(
     return;
   }
 
-  // TODO(crbug.com/1347953): Remove this check once we put permissions inside
-  // FencedFrameConfig.
-  if (shared_storage_fenced_frame_root_count < fenced_frame_depth) {
-    std::move(callback).Run(
-        /*success=*/false,
-        /*error_message=*/
-        "selectURL() is not allowed in a fenced frame that did not originate "
-        "from shared storage.",
-        /*result_config=*/absl::nullopt);
-    return;
-  }
-
   GetSharedStorageWorkletHostManager()->NotifySharedStorageAccessed(
       AccessType::kDocumentSelectURL, main_frame_id(),
       SerializeLastCommittedOrigin(),
@@ -306,7 +314,7 @@ void SharedStorageDocumentServiceImpl::RunURLSelectionOperationOnWorklet(
                                                    std::move(converted_urls)));
 
   GetSharedStorageWorkletHost()->RunURLSelectionOperationOnWorklet(
-      name, std::move(urls_with_metadata), serialized_data,
+      name, std::move(urls_with_metadata), std::move(serialized_data),
       keep_alive_after_operation, context_id, std::move(callback));
 }
 

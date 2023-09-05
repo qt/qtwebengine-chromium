@@ -2,6 +2,144 @@ Skia Graphics Release Notes
 
 This file includes a list of high level updates for each milestone release.
 
+Milestone 116
+-------------
+  * `SkPromiseImageTexture` has been removed from the public API, as well as
+    `SkImages::PromiseTextureFrom` and `SkImages::PromiseTextureFromYUVA`, public consumers of that
+    data type.
+  * `SkDeferredDisplayList`, `SkDeferredDisplayListRecorder`, and `SkSurfaceCharacterization` have
+    been removed from the public API.
+  * The intermediate color computed by `SkBlenders::Arithmetic` is now always clamped to between 0 and 1 (inclusive), and then `enforcePremul` is applied when that parameter is true.
+  * Added a new public type, `SkColorTable`, to own the lookup tables passed into `SkColorFilters::Table`, which allows clients and the returned `SkColorFilter` to share the table memory instead of having to duplicate it in any wrapper types that lazily create Skia representations.
+  * The deprecated `SkImageFilters::Magnifier` factory that did *not* take a lens bounds parameter has been removed.
+  * `SkImageFilters::RuntimeShader` has variations that take a maximum sample radius, which is used to provide padded input images to the runtime effect so that boundary conditions are avoided.
+  * `SkImageFilters::AlphaThreshold` has been removed. Its only use was in ChromeOS and that usage has been replaced with a `Blend(kSrcIn, input, Picture(region))` filter graph to achieve the same effect.
+  * The single-argument `SkImageFilters::Image(sk_sp<SkImage>)` factory is removed. The `SkSamplingOptions` to use when rendering the image during filtering must be provided. `SkFilterMode::kLinear` is recommended over the previous bicubic default.
+  * `GrTextureGenerator` now has a subclass `GrExternalTextureGenerator` which can be subclassed by
+    clients and used with `SkImages::DeferredFromTextureGenerator` in order to create images from
+    textures that were created outside of skia. `GrTextureGenerator` has been removed from the public
+    API in favor of `GrExternalTextureGenerator`.
+  * SkPoint now uses float for its coordinates. This starts the process of removing SkScalar from Skia.
+    SkScalar was a typedef for float, so this has no practical impact on code that uses Skia.
+  * `SkSamplingOptions(SkFilterMode)` and `SkSamplingOptions(SkCubicResampler)` are no longer marked `explicit` so that samplings can be created inline more succinctly.
+  * `SkShaders` is now a namespace (was previously a non-constructable class with only static
+    functions). `SkPerlinNoiseShader::MakeFractalNoise` and `SkPerlinNoiseShader::MakeTurbulence` have
+    been moved to the `SkShaders` namespace and `SkPerlinNoiseShader` (the public non-constructable
+    class) has been slated for moving into private internals of Skia.
+    There are no functional differences in the moved functions, however the change of some #includes
+    in `include/core/SkShader.h`, `include/effects/SkGradientShader.h`, and
+    `include/effects/SkPerlinNoiseShader.h` may cause clients who were depending on the transitive
+    dependencies to now fail to compile.
+  * The following methods have been removed from SkSurface and relocated to other methods/functions:
+      - `SkSurface::asImage` -> `SkSurfaces::AsImage` (include/gpu/graphite/Surface.h)
+      - `SkSurface::flushAndSubmit` -> `GrDirectContext::flushAndSubmit`
+      - `SkSurface::flush` -> `GrDirectContext::flush`
+      - `SkSurface::makeImageCopy` -> `SkSurfaces::AsImageCopy` (include/gpu/graphite/Surface.h)
+      - `SkSurface::resolveMSAA` -> `SkSurfaces::ResolveMSAA()` (include/gpu/ganesh/SkSurfaceGanesh.h)
+
+    Additionally, `SkSurface::BackendSurfaceAccess` is now in the `SkSurfaces` namespace.
+  * The deprecated `SkTableColorFilter` class and its methods have been removed. Clients should use
+    `SkColorFilters::Table` and `SkColorFilters::TableARGB` (defined in include/core/SkColorFilter.h).
+  * The `SkYUVAPixmapInfo::SupportedDataTypes(const GrImageContext&)` constructor has been removed from
+    the public API.
+
+* * *
+
+Milestone 115
+-------------
+  * Clients now need to register codecs which Skia should use to decode raw bytes. For example:
+    `SkCodecs::Register(SkJpegDecoder::Decoder());`. Skia still provides many supported formats
+    (see `include/codec/*Decoder.h`). Clients are free to specify their own, either supplementing
+    the existing set or using a custom version instead of the one previously provided by default
+    by Skia. See `SkCodecs::Decoder` for the necessary data to provide when using a custom decoder
+    (in `include/codec/SkCodec.h`).
+
+    To ease the transition, Skia will continue (for a short while) to register codecs unless
+    `SK_DISABLE_LEGACY_INIT_DECODERS` is defined.
+  * `SkDrawable::newPictureSnapshot` is removed. Instead, call `SkDrawable::makePictureSnapshot`.
+    The old method returned a bare (but ref-counted) pointer, which was easy for clients to get wrong.
+    The new method returns an `sk_sp<SkPicture>`, which is easier to handle, and consistent with the
+    rest of skia.
+  * `SkGraphics::PurgePinnedFontCache()` has been added to allow clients to
+    explicitly trigger `SkStrikeCache` purge checks for `SkStrikes` with
+    pinners. Defining `SK_STRIKE_CACHE_DOESNT_AUTO_CHECK_PINNERS` in the
+    user configuration now disables automatic purge checking of strikes with
+    pinners.
+  * The following SkImage factories have been moved to `include/gpu/graphite/Image.h`:
+     - `SkImage::MakeGraphiteFromBackendTexture -> SkImages::AdoptTextureFrom`
+     - `SkImage::MakeGraphiteFromYUVABackendTextures -> SkImages::TextureFromYUVATextures`
+     - `SkImage::MakeGraphiteFromYUVAPixmaps -> SkImages::TextureFromYUVAPixmaps`
+     - `SkImage::MakeGraphitePromiseTexture -> SkImages::PromiseTextureFrom`
+
+    The SkImage method `makeTextureImage` has been moved to `SkImages::TextureFromImage`.
+
+    `SkImage::RequiredImageProperties` has been renamed to `SkImage::RequiredProperties`,
+    with fMipmapped turned into a boolean instead of the GPU enum.
+  * `SkImage::makeColorSpace` and `SkImage::makeColorTypeAndColorSpace` now take a `GrDirectContext`
+    as the first parameter. This should be supplied when dealing with texture-backed images and can
+    be `nullptr` otherwise.
+  * `SkImage::subset` now takes a `GrDirectContext*` as its first parameter (this can be `nullptr` for
+    non-gpu backed images. Images which are backed by a codec or picture will not be turned into a GPU
+    texture before being read. This should only impact picture-backed images, which may not be read
+    correctly if the picture contain nested texture-backed images itself. To force a conversion to
+    a texture, clients should call `SkImages::TextureFromImage`, passing in the image, and then call
+    subset on the result. Documentation has been clarified that `SkImage::subset` will return a raster-
+    backed image if the source is not backed by a texture, and texture-otherwise.
+
+    `SkImages::SubsetTextureFrom` has been added to subset an image and explicitly return a texture-
+    backed image. This allows some optimizations, especially for large images that exceed a maximum
+    texture size of a GPU.
+
+    `SkImage::makeRasterImage` and `SkImage::makeNonTextureImage` now take a `GrDirectContext*` which
+    clients should supply for reading-back pixels from texture-backed images.
+  * `SkImageFilters::Image` now returns a non-null image filter if the input `sk_sp<SkImage>` is
+    null or the src rectangle is empty or does not overlap the image. The returned filter evaluates to
+    transparent black, which is equivalent to a null or empty image. Previously, returning a null image
+    filter would mean that the dynamic source image could be surprisingly injected into the filter
+    evaluation where it might not have been intended.
+  * `SkImageFilters::Magnifier(srcRect, inset)` is deprecated. These parameters do not provide enough
+    information for the implementation to correctly respond to canvas transform or participate accurately
+    in layer bounds planning.
+
+    A new `SkImageFilters::Magnifier` function is added that takes additional parameters: the outer
+    lens bounds and the actual zoom amount (instead of inconsistently reconstructing the target zoom
+    amount, which was the prior behavior). Additionally, the new factory accepts an SkSamplingOptions
+    to control the sampling quality.
+  * `SkImageFilters::Picture` now returns a non-null image filter if the input `sk_sp<SkPicture>` is
+    null. The returned filter evaluates to transparent black, which is equivalent to a null or empty
+    picture. Previously, returning a null image filter would mean that the dynamic source image could
+    be surprisingly injected into the filter evaluation where it might not have been intended.
+  * `SkImageFilters::Shader` now returns a non-null image filter if the input `sk_sp<SkShader>` is
+    null. The returned filter evaluates to transparent black, which is equivalent to a null or empty
+    shader. Previously, returning a null image filter would mean that the dynamic source image could
+    be surprisingly injected into the filter evaluation where it might not have been intended.
+  * `SkImageGenerator::MakeFromEncoded` has been removed from the public API.
+    `SkImage::DeferredFromEncoded` or `SkCodec::MakeFromData` should be used instead.
+  * `SkSurface::getBackendTexture` and `SkSurface::getBackendRenderTarget` have been deprecated and
+    replaced with `SkSurfaces::GetBackendTexture` and `SkSurfaces::GetBackendRenderTarget` respectively.
+    These are found in `include/gpu/ganesh/SkSurfaceGanesh.h`. The supporting enum `BackendHandleAccess`
+    has also been moved to `SkSurfaces::BackendHandleAccess` as an enum class, with shorter member
+    names.
+  * SkSurface factory methods have been moved to the SkSurfaces namespace. Many have been renamed to
+    be more succinct or self-consistent. Factory methods specific to the Ganesh GPU backend are
+    defined publicly in include/gpu/ganesh/SkSurfaceGanesh.h. The Metal Ganesh backend has some
+    specific factories in include/gpu/ganesh/mtl/SkSurfaceMetal.h.
+      * SkSurface::MakeFromAHardwareBuffer -> SkSurfaces::WrapAndroidHardwareBuffer
+      * SkSurface::MakeFromBackendRenderTarget -> SkSurfaces::WrapBackendRenderTarget
+      * SkSurface::MakeFromBackendTexture -> SkSurfaces::WrapBackendTexture
+      * SkSurface::MakeFromCAMetalLayer -> SkSurfaces::WrapCAMetalLayer
+      * SkSurface::MakeFromMTKView -> SkSurfaces::WrapMTKView
+      * SkSurface::MakeGraphite -> SkSurfaces::RenderTarget
+      * SkSurface::MakeGraphiteFromBackendTexture -> SkSurfaces::WrapBackendTexture
+      * SkSurface::MakeNull -> SkSurfaces::Null
+      * SkSurface::MakeRaster -> SkSurfaces::Raster
+      * SkSurface::MakeRasterDirect -> SkSurfaces::WrapPixels
+      * SkSurface::MakeRasterDirectReleaseProc -> SkSurfaces::WrapPixels
+      * SkSurface::MakeRasterN32Premul -> SkSurfaces::Raster (clients should make SkImageInfo)
+      * SkSurface::MakeRenderTarget -> SkSurfaces::RenderTarget
+
+* * *
+
 Milestone 114
 -------------
   * The CPU backend for Runtime Effects has been rewritten. This may cause slight differences in

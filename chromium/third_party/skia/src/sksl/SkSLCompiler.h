@@ -45,10 +45,6 @@
 
 namespace SkSL {
 
-namespace dsl {
-    class DSLCore;
-}
-
 class Expression;
 class Inliner;
 class ModifiersPool;
@@ -173,7 +169,7 @@ public:
     }
 
     std::shared_ptr<SymbolTable>& symbolTable() {
-        return fSymbolTable;
+        return fContext->fSymbolTable;
     }
 
     std::unique_ptr<Module> compileModule(ProgramKind kind,
@@ -205,6 +201,12 @@ private:
     /** Updates ProgramSettings to eliminate contradictions and to honor the ProgramKind. */
     static void FinalizeSettings(ProgramSettings* settings, ProgramKind kind);
 
+    /**
+     * Returns all global elements (functions and global variables) as a self-contained Program. The
+     * optional source string is retained as the program's source.
+     */
+    std::unique_ptr<SkSL::Program> releaseProgram(std::unique_ptr<std::string> source);
+
     /** Optimize every function in the program. */
     bool optimize(Program& program);
 
@@ -224,17 +226,13 @@ private:
     std::shared_ptr<Context> fContext;
     const ShaderCaps* fCaps;
 
-    // This is the current symbol table of the code we are processing, and therefore changes during
-    // compilation
-    std::shared_ptr<SymbolTable> fSymbolTable;
-
     std::string fErrorText;
 
     static OverrideFlag sOptimizer;
     static OverrideFlag sInliner;
 
+    friend class Parser;
     friend class ThreadContext;
-    friend class dsl::DSLCore;
 };
 
 }  // namespace SkSL

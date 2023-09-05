@@ -45,7 +45,7 @@ constexpr int kLowestEncodingSpeed = 6;
 }  // namespace
 
 StreamingVpxEncoder::StreamingVpxEncoder(const Parameters& params,
-                                         TaskRunner* task_runner,
+                                         TaskRunner& task_runner,
                                          std::unique_ptr<Sender> sender)
     : StreamingVideoEncoder(params, task_runner, std::move(sender)) {
   ideal_speed_setting_ = kHighestEncodingSpeed;
@@ -231,7 +231,7 @@ void StreamingVpxEncoder::ProcessWorkUnitsUntilTimeToQuit() {
                             work_unit);
     UpdateSpeedSettingForNextFrame(work_unit.stats);
 
-    main_task_runner_->PostTask(
+    main_task_runner_.PostTask(
         [this, results = std::move(work_unit)]() mutable {
           SendEncodedFrame(std::move(results));
         });
@@ -390,7 +390,7 @@ void StreamingVpxEncoder::ComputeFrameEncodeStats(
 }
 
 void StreamingVpxEncoder::SendEncodedFrame(WorkUnitWithResults results) {
-  OSP_DCHECK(main_task_runner_->IsRunningOnTaskRunner());
+  OSP_DCHECK(main_task_runner_.IsRunningOnTaskRunner());
 
   EncodedFrame frame;
   frame.frame_id = sender_->GetNextFrameId();

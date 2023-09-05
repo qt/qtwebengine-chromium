@@ -152,6 +152,17 @@ export class HeaderSectionRow extends HTMLElement {
       'header-deleted': Boolean(this.#header.isDeleted),
     });
 
+    const headerNameClasses = LitHtml.Directives.classMap({
+      'header-name': true,
+      'pseudo-header': this.#header.name.startsWith(':'),
+    });
+
+    const headerValueClasses = LitHtml.Directives.classMap({
+      'header-value': true,
+      'header-warning': Boolean(this.#header.headerValueIncorrect),
+      'flex-columns': this.#header.name === 'x-client-data' && !this.#header.isResponseHeader,
+    });
+
     // The header name is only editable when the header value is editable as well.
     // This ensures the header name's editability reacts correctly to enabling or
     // disabling local overrides.
@@ -168,7 +179,7 @@ export class HeaderSectionRow extends HTMLElement {
     // clang-format off
     render(html`
       <div class=${rowClasses}>
-        <div class="header-name">
+        <div class=${headerNameClasses}>
           ${this.#header.headerNotSet ?
             html`<div class="header-badge header-badge-text">${i18n.i18n.lockedString('not-set')}</div> ` :
             LitHtml.nothing
@@ -193,7 +204,7 @@ export class HeaderSectionRow extends HTMLElement {
             this.#header.name}:
         </div>
         <div
-          class="header-value ${this.#header.headerValueIncorrect ? 'header-warning' : ''}"
+          class=${headerValueClasses}
           @copy=${():void => Host.userMetrics.actionTaken(Host.UserMetrics.Action.NetworkPanelCopyValue)}
         >
           ${this.#renderHeaderValue()}
@@ -217,6 +228,10 @@ export class HeaderSectionRow extends HTMLElement {
     if (!this.#header) {
       return LitHtml.nothing;
     }
+    if (this.#header.name === 'x-client-data' && !this.#header.isResponseHeader) {
+      return this.#renderXClientDataHeader(this.#header);
+    }
+
     if (this.#header.isDeleted || !this.#header.valueEditable) {
       // clang-format off
       return html`
@@ -261,6 +276,20 @@ export class HeaderSectionRow extends HTMLElement {
     // clang-format on
   }
 
+  #renderXClientDataHeader(header: HeaderDescriptor): LitHtml.LitTemplate {
+    const data = ClientVariations.parseClientVariations(header.value || '');
+    const output = ClientVariations.formatClientVariations(
+        data, i18nString(UIStrings.activeClientExperimentVariation),
+        i18nString(UIStrings.activeClientExperimentVariationIds));
+    // clang-format off
+    return html`
+      <div>${header.value || ''}</div>
+      <div>${i18nString(UIStrings.decoded)}</div>
+      <code>${output}</code>
+    `;
+    // clang-format on
+  }
+
   override focus(): void {
     requestAnimationFrame(() => {
       const editableName = this.#shadow.querySelector<HTMLElement>('.header-name devtools-editable-span');
@@ -285,18 +314,6 @@ export class HeaderSectionRow extends HTMLElement {
       `;
       // clang-format on
     }
-
-    if (header.name === 'x-client-data') {
-      const data = ClientVariations.parseClientVariations(header.value || '');
-      const output = ClientVariations.formatClientVariations(
-          data, i18nString(UIStrings.activeClientExperimentVariation),
-          i18nString(UIStrings.activeClientExperimentVariationIds));
-      return html`
-        <div>${i18nString(UIStrings.decoded)}</div>
-        <code>${output}</code>
-      `;
-    }
-
     return LitHtml.nothing;
   }
 
@@ -334,8 +351,8 @@ export class HeaderSectionRow extends HTMLElement {
           <${IconButton.Icon.Icon.litTagName} class="inline-icon" .data=${{
             iconName: 'issue-exclamation-filled',
             color: 'var(--icon-warning)',
-            width: '20px',
-            height: '20px',
+            width: '16px',
+            height: '16px',
           } as IconButton.Icon.IconData}>
           </${IconButton.Icon.Icon.litTagName}
           >${i18nString(UIStrings.learnMoreInTheIssuesTab)}

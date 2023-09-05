@@ -169,19 +169,23 @@ bool DwarfCUToModule::FileContext::IsUnhandledInterCUReference(
 // parsing. This is for data shared across the CU's entire DIE tree,
 // and parameters from the code invoking the CU parser.
 struct DwarfCUToModule::CUContext {
-  CUContext(FileContext* file_context_arg, WarningReporter* reporter_arg,
-            RangesHandler* ranges_handler_arg)
+  CUContext(FileContext* file_context_arg,
+            WarningReporter* reporter_arg,
+            RangesHandler* ranges_handler_arg,
+            uint64_t low_pc,
+            uint64_t addr_base)
       : version(0),
         file_context(file_context_arg),
         reporter(reporter_arg),
         ranges_handler(ranges_handler_arg),
         language(Language::CPlusPlus),
-        low_pc(0),
+        low_pc(low_pc),
         high_pc(0),
         ranges_form(DW_FORM_sec_offset),
         ranges_data(0),
         ranges_base(0),
-        str_offsets_base(0) { }
+        addr_base(addr_base),
+        str_offsets_base(0) {}
 
   ~CUContext() {
     for (vector<Module::Function*>::iterator it = functions.begin();
@@ -575,6 +579,7 @@ class DwarfCUToModule::InlineHandler : public GenericDIEHandler {
         ranges_data_(0),
         call_site_line_(0),
         inline_nest_level_(inline_nest_level),
+        has_range_data_(false),
         inlines_(inlines) {}
 
   void ProcessAttributeUnsigned(enum DwarfAttribute attr,
@@ -596,6 +601,7 @@ class DwarfCUToModule::InlineHandler : public GenericDIEHandler {
   int call_site_line_;         // DW_AT_call_line
   int call_site_file_id_;      // DW_AT_call_file
   int inline_nest_level_;
+  bool has_range_data_;
   // A vector of inlines in the same nest level. It's owned by its parent
   // function/inline. At Finish(), add this inline into the vector.
   vector<unique_ptr<Module::Inline>>& inlines_;
@@ -616,6 +622,7 @@ void DwarfCUToModule::InlineHandler::ProcessAttributeUnsigned(
       high_pc_ = data;
       break;
     case DW_AT_ranges:
+      has_range_data_ = true;
       ranges_data_ = data;
       ranges_form_ = form;
       break;
@@ -659,7 +666,7 @@ bool DwarfCUToModule::InlineHandler::EndAttributes() {
 void DwarfCUToModule::InlineHandler::Finish() {
   vector<Module::Range> ranges;
 
-  if (low_pc_ && high_pc_) {
+  if (!has_range_data_) {
     if (high_pc_form_ != DW_FORM_addr &&
         high_pc_form_ != DW_FORM_GNU_addr_index &&
         high_pc_form_ != DW_FORM_addrx &&
@@ -696,11 +703,12 @@ void DwarfCUToModule::InlineHandler::Finish() {
   // Every DW_TAG_inlined_subroutine should have a DW_AT_abstract_origin.
   assert(specification_offset_ != 0);
 
-  cu_context_->file_context->module_->inline_origin_map.SetReference(
-      specification_offset_, specification_offset_);
+  Module::InlineOriginMap& inline_origin_map =
+      cu_context_->file_context->module_
+          ->inline_origin_maps[cu_context_->file_context->filename_];
+  inline_origin_map.SetReference(specification_offset_, specification_offset_);
   Module::InlineOrigin* origin =
-      cu_context_->file_context->module_->inline_origin_map
-          .GetOrCreateInlineOrigin(specification_offset_, name_);
+      inline_origin_map.GetOrCreateInlineOrigin(specification_offset_, name_);
   unique_ptr<Module::Inline> in(
       new Module::Inline(origin, ranges, call_site_line_, call_site_file_id_,
                          inline_nest_level_, std::move(child_inlines_)));
@@ -740,7 +748,8 @@ class DwarfCUToModule::FuncHandler: public GenericDIEHandler {
         ranges_data_(0),
         inline_(false),
         handle_inline_(handle_inline),
-        has_qualified_name_(false) {}
+        has_qualified_name_(false),
+        has_range_data_(false) {}
 
   void ProcessAttributeUnsigned(enum DwarfAttribute attr,
                                 enum DwarfForm form,
@@ -764,6 +773,7 @@ class DwarfCUToModule::FuncHandler: public GenericDIEHandler {
   vector<unique_ptr<Module::Inline>> child_inlines_;
   bool handle_inline_;
   bool has_qualified_name_;
+  bool has_range_data_;
   DIEContext child_context_; // A context for our children.
 };
 
@@ -783,6 +793,7 @@ void DwarfCUToModule::FuncHandler::ProcessAttributeUnsigned(
       high_pc_ = data;
       break;
     case DW_AT_ranges:
+      has_range_data_ = true;
       ranges_data_ = data;
       ranges_form_ = form;
       break;
@@ -853,7 +864,7 @@ void DwarfCUToModule::FuncHandler::Finish() {
       iter->second->name = name_;
   }
 
-  if (!ranges_data_) {
+  if (!has_range_data_) {
     // Make high_pc_ an address, if it isn't already.
     if (high_pc_form_ != DW_FORM_addr &&
         high_pc_form_ != DW_FORM_GNU_addr_index &&
@@ -929,10 +940,11 @@ void DwarfCUToModule::FuncHandler::Finish() {
     StringView name = name_.empty() ? name_omitted : name_;
     uint64_t offset =
         specification_offset_ != 0 ? specification_offset_ : offset_;
-    cu_context_->file_context->module_->inline_origin_map.SetReference(offset_,
-                                                                       offset);
-    cu_context_->file_context->module_->inline_origin_map
-        .GetOrCreateInlineOrigin(offset_, name);
+    Module::InlineOriginMap& inline_origin_map =
+        cu_context_->file_context->module_
+            ->inline_origin_maps[cu_context_->file_context->filename_];
+    inline_origin_map.SetReference(offset_, offset);
+    inline_origin_map.GetOrCreateInlineOrigin(offset_, name);
   }
 }
 
@@ -1067,12 +1079,21 @@ DwarfCUToModule::DwarfCUToModule(FileContext* file_context,
                                  LineToModuleHandler* line_reader,
                                  RangesHandler* ranges_handler,
                                  WarningReporter* reporter,
-                                 bool handle_inline)
+                                 bool handle_inline,
+                                 uint64_t low_pc,
+                                 uint64_t addr_base,
+                                 bool has_source_line_info,
+                                 uint64_t source_line_offset)
     : RootDIEHandler(handle_inline),
       line_reader_(line_reader),
-      cu_context_(new CUContext(file_context, reporter, ranges_handler)),
+      cu_context_(new CUContext(file_context,
+                                reporter,
+                                ranges_handler,
+                                low_pc,
+                                addr_base)),
       child_context_(new DIEContext()),
-      has_source_line_info_(false) {}
+      has_source_line_info_(has_source_line_info),
+      source_line_offset_(source_line_offset) {}
 
 DwarfCUToModule::~DwarfCUToModule() {
 }

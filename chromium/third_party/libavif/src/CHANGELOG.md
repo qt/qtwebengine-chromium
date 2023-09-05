@@ -17,6 +17,10 @@ List of incompatible ABI changes in this release:
 * Check the return value of avifEncoderSetCodecSpecificOption().
 * The maxThreads member was added to the avifRGBImage struct.
 * Check the return value of avifRGBImageAllocatePixels().
+* The meaning of the keyframeInterval member of avifEncoder struct has changed
+  slightly. When set to a value of "n",
+    * Before: It forces a keyframe on every nth frame.
+    * After: Any set of "n" consecutive frame will have atleast one keyframe (every nth frame may or may not be a keyframe).
 
 ### Added
 * Add STATIC library target avif_internal to allow tests to access functions
@@ -34,6 +38,8 @@ List of incompatible ABI changes in this release:
 * Add the public API function avifImageIsOpaque() in avif.h.
 * Add experimental API for progressive AVIF encoding.
 * Add API for multi-threaded YUV to RGB color conversion.
+* Add experimental support for AV2 behind the compilation flag AVIF_CODEC_AVM.
+  AVIF_CODEC_CHOICE_AVM is now part of avifCodecChoice.
 
 ### Changed
 * Exif and XMP metadata is exported to PNG and JPEG files by default,
@@ -41,7 +47,6 @@ List of incompatible ABI changes in this release:
 * The --grid flag in avifenc can be used for images that are not evenly divided
   into cells.
 * Apps must be built with libpng version 1.6.32 or above.
-* Update svt.cmd/svt.sh: v1.4.1
 * avifImageCopy() no longer accepts source U and V channels to be NULL for
   non-4:0:0 input if Y is not NULL and if AVIF_PLANES_YUV is specified.
 * The default values of the maxQuantizer and maxQuantizerAlpha members of
@@ -53,9 +58,11 @@ List of incompatible ABI changes in this release:
 * avifImageRGBToYUV() and avifImageYUVToRGB() handle avifImage bit depths 8, 10,
   12 and now also 16. Files read by apps/shared/ can output 16-bit avifImage
   instances.
-* Update aom.cmd: v3.6.0
-* Update dav1d.cmd: 1.1.0
-* Update rav1e.cmd: v0.6.3
+* Update aom.cmd: v3.6.1
+* Update dav1d.cmd: 1.2.0
+* Update rav1e.cmd: v0.6.6
+* Update svt.cmd/svt.sh: v1.5.0
+* Update zlibpng.cmd: zlib 1.2.13 and libpng 1.6.39
 * avifImageCreate(), avifImageCreateEmpty(), avifEncoderCreate() and other
   internal functions now return NULL if a memory allocation failed.
 * avifEncoderSetCodecSpecificOption() now returns avifResult instead of void to
@@ -63,6 +70,8 @@ List of incompatible ABI changes in this release:
 * At decoding, avifIOStats now returns the same values as at encoding.
 * avifRGBImageAllocatePixels() now returns avifResult instead of void to report
   memory allocation failures.
+* avifReadImage(), avifJPEGRead() and avifPNGRead() now remove the trailing zero
+  byte from read XMP chunks, if any. See avifImageFixXMP().
 
 ## [0.11.1] - 2022-10-19
 

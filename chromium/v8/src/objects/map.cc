@@ -44,7 +44,7 @@ Map Map::GetPrototypeChainRootMap(Isolate* isolate) const {
         JSFunction::cast(native_context.get(constructor_function_index));
     return constructor_function.initial_map();
   }
-  return ReadOnlyRoots(isolate).null_value().map();
+  return ReadOnlyRoots(isolate).null_value()->map();
 }
 
 // static
@@ -156,6 +156,9 @@ VisitorId Map::GetVisitorId(Map map) {
 
     case ODDBALL_TYPE:
       return kVisitOddball;
+
+    case HOLE_TYPE:
+      return kVisitHole;
 
     case MAP_TYPE:
       return kVisitMap;
@@ -1157,7 +1160,7 @@ Handle<Map> Map::RawCopy(Isolate* isolate, Handle<Map> src_handle,
     DisallowGarbageCollection no_gc;
     Map src = *src_handle;
     Map raw = *result;
-    raw.set_constructor_or_back_pointer(src.GetConstructor());
+    raw.set_constructor_or_back_pointer(src.GetConstructorRaw());
     raw.set_bit_field(src.bit_field());
     raw.set_bit_field2(src.bit_field2());
     int new_bit_field3 = src.bit_field3();
@@ -1277,7 +1280,7 @@ Handle<Map> Map::CopyNormalized(Isolate* isolate, Handle<Map> map,
     raw.SetInObjectUnusedPropertyFields(0);
     raw.set_is_dictionary_map(true);
     raw.set_is_migration_target(false);
-    raw.set_may_have_interesting_symbols(true);
+    raw.set_may_have_interesting_properties(true);
     raw.set_construction_counter(kNoSlackTracking);
   }
 
@@ -1307,15 +1310,17 @@ void EnsureInitialMap(Isolate* isolate, Handle<Map> map) {
   DCHECK((maybe_constructor.IsJSFunction() &&
           *map == JSFunction::cast(maybe_constructor).initial_map()) ||
          // Below are the exceptions to the check above.
-         // Strict function maps have Function as a constructor but the
-         // Function's initial map is a sloppy function map.
+         // |Function|'s initial map is a |sloppy_function_map| but
+         // other function map variants such as sloppy with name or readonly
+         // prototype or various strict function maps variants, etc. also
+         // have Function as a constructor.
          *map == *isolate->strict_function_map() ||
          *map == *isolate->strict_function_with_name_map() ||
-         // Same holds for GeneratorFunction and its initial map.
-         *map == *isolate->generator_function_map() ||
+         // Same applies to |GeneratorFunction|'s initial map and generator
+         // function map variants.
          *map == *isolate->generator_function_with_name_map() ||
-         // AsyncFunction has Null as a constructor.
-         *map == *isolate->async_function_map() ||
+         // Same applies to |AsyncFunction|'s initial map and other async
+         // function map variants.
          *map == *isolate->async_function_with_name_map());
 #endif
   // Initial maps must not contain descriptors in the descriptors array
@@ -1384,8 +1389,8 @@ Handle<Map> Map::ShareDescriptor(Isolate* isolate, Handle<Map> map,
   Handle<Name> name = descriptor->GetKey();
 
   // Properly mark the {result} if the {name} is an "interesting symbol".
-  if (name->IsInterestingSymbol()) {
-    result->set_may_have_interesting_symbols(true);
+  if (name->IsInteresting(isolate)) {
+    result->set_may_have_interesting_properties(true);
   }
 
   // Ensure there's space for the new descriptor in the shared descriptor array.
@@ -1415,10 +1420,10 @@ Handle<Map> Map::ShareDescriptor(Isolate* isolate, Handle<Map> map,
 void Map::ConnectTransition(Isolate* isolate, Handle<Map> parent,
                             Handle<Map> child, Handle<Name> name,
                             SimpleTransitionFlag flag) {
-  DCHECK_IMPLIES(name->IsInterestingSymbol(),
-                 child->may_have_interesting_symbols());
-  DCHECK_IMPLIES(parent->may_have_interesting_symbols(),
-                 child->may_have_interesting_symbols());
+  DCHECK_IMPLIES(name->IsInteresting(isolate),
+                 child->may_have_interesting_properties());
+  DCHECK_IMPLIES(parent->may_have_interesting_properties(),
+                 child->may_have_interesting_properties());
   if (!parent->GetBackPointer().IsUndefined(isolate)) {
     parent->set_owns_descriptors(false);
   } else if (!parent->IsDetached(isolate)) {
@@ -1453,8 +1458,8 @@ Handle<Map> Map::CopyReplaceDescriptors(Isolate* isolate, Handle<Map> map,
 
   // Properly mark the {result} if the {name} is an "interesting symbol".
   Handle<Name> name;
-  if (maybe_name.ToHandle(&name) && name->IsInterestingSymbol()) {
-    result->set_may_have_interesting_symbols(true);
+  if (maybe_name.ToHandle(&name) && name->IsInteresting(isolate)) {
+    result->set_may_have_interesting_properties(true);
   }
 
   if (map->is_prototype_map()) {
@@ -1504,7 +1509,7 @@ Handle<Map> Map::AddMissingTransitions(Isolate* isolate, Handle<Map> split_map,
   Handle<Map> last_map = CopyDropDescriptors(isolate, split_map);
   last_map->InitializeDescriptors(isolate, *descriptors);
   last_map->SetInObjectUnusedPropertyFields(0);
-  last_map->set_may_have_interesting_symbols(true);
+  last_map->set_may_have_interesting_properties(true);
 
   // During creation of intermediate maps we violate descriptors sharing
   // invariant since the last map is not yet connected to the transition tree
@@ -1519,7 +1524,7 @@ Handle<Map> Map::AddMissingTransitions(Isolate* isolate, Handle<Map> split_map,
     map = new_map;
   }
   map->NotifyLeafMapLayoutChange(isolate);
-  last_map->set_may_have_interesting_symbols(false);
+  last_map->set_may_have_interesting_properties(false);
   InstallDescriptors(isolate, map, last_map, InternalIndex(nof_descriptors - 1),
                      descriptors);
   return last_map;
@@ -1541,8 +1546,9 @@ void Map::InstallDescriptors(Isolate* isolate, Handle<Map> parent,
   }
 
   Handle<Name> name = handle(descriptors->GetKey(new_descriptor), isolate);
-  if (parent->may_have_interesting_symbols() || name->IsInterestingSymbol()) {
-    child->set_may_have_interesting_symbols(true);
+  if (parent->may_have_interesting_properties() ||
+      name->IsInteresting(isolate)) {
+    child->set_may_have_interesting_properties(true);
   }
   ConnectTransition(isolate, parent, child, name, SIMPLE_PROPERTY_TRANSITION);
 }
@@ -2109,7 +2115,7 @@ int Map::Hash() {
 namespace {
 
 bool CheckEquivalent(const Map first, const Map second) {
-  return first.GetConstructor() == second.GetConstructor() &&
+  return first.GetConstructorRaw() == second.GetConstructorRaw() &&
          first.prototype() == second.prototype() &&
          first.instance_type() == second.instance_type() &&
          first.bit_field() == second.bit_field() &&

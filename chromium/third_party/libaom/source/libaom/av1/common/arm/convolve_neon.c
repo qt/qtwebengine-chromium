@@ -13,6 +13,7 @@
 #include <assert.h>
 #include <arm_neon.h>
 
+#include "config/aom_config.h"
 #include "config/av1_rtcd.h"
 
 #include "aom_dsp/aom_dsp_common.h"
@@ -44,7 +45,7 @@ static INLINE int16x4_t convolve8_4x4(const int16x4_t s0, const int16x4_t s1,
   return sum;
 }
 
-#if !defined(__aarch64__)
+#if !AOM_ARCH_AARCH64
 static INLINE uint8x8_t convolve8_x_4x1(const int16x4_t s0, const int16x4_t s1,
                                         const int16x4_t s2, const int16x4_t s3,
                                         const int16x4_t s4, const int16x4_t s5,
@@ -67,9 +68,9 @@ static INLINE uint8x8_t convolve8_x_4x1(const int16x4_t s0, const int16x4_t s1,
   // We halved the convolution filter values so - 1 from the right shift.
   return vqrshrun_n_s16(vcombine_s16(sum, vdup_n_s16(0)), FILTER_BITS - 1);
 }
-#endif  // !defined(__arch64__)
+#endif  // !AOM_ARCH_AARCH64
 
-#if defined(__aarch64__) && defined(__ARM_FEATURE_MATMUL_INT8)
+#if AOM_ARCH_AARCH64 && defined(__ARM_FEATURE_MATMUL_INT8)
 
 static INLINE int32x4_t convolve12_4_usdot(uint8x16_t samples,
                                            const int8x16_t filters,
@@ -126,7 +127,7 @@ static INLINE int16x8_t convolve12_8_usdot(uint8x16_t samples0,
                       vqrshrn_n_s32(sum[1], FILTER_BITS));
 }
 
-#elif defined(__aarch64__) && defined(__ARM_FEATURE_DOTPROD)
+#elif AOM_ARCH_AARCH64 && defined(__ARM_FEATURE_DOTPROD)
 
 static INLINE int16x4_t convolve12_horiz_4_sdot(
     uint8x16_t samples, const int8x16_t filters, const int32x4_t correction,
@@ -257,7 +258,7 @@ static INLINE int16x8_t convolve12_8_sdot(uint8x16_t samples0,
                       vqrshrn_n_s32(sum[1], FILTER_BITS));
 }
 
-#endif  // defined(__aarch64__) && defined(__ARM_FEATURE_MATMUL_INT8)
+#endif  // AOM_ARCH_AARCH64 && defined(__ARM_FEATURE_MATMUL_INT8)
 
 static INLINE uint8x8_t convolve8_vert_8x4(
     const int16x8_t s0, const int16x8_t s1, const int16x8_t s2,
@@ -334,7 +335,7 @@ convolve8_vert_8_s32(const int16x8_t s0, const int16x8_t s1, const int16x8_t s2,
   return vqmovun_s16(res);
 }
 
-#if defined(__aarch64__) && defined(__ARM_FEATURE_MATMUL_INT8)
+#if AOM_ARCH_AARCH64 && defined(__ARM_FEATURE_MATMUL_INT8)
 
 void convolve_x_sr_12tap_neon(const uint8_t *src, int src_stride, uint8_t *dst,
                               int dst_stride, int w, int h,
@@ -572,7 +573,7 @@ void av1_convolve_x_sr_neon(const uint8_t *src, int src_stride, uint8_t *dst,
   }
 }
 
-#elif defined(__aarch64__) && defined(__ARM_FEATURE_DOTPROD)
+#elif AOM_ARCH_AARCH64 && defined(__ARM_FEATURE_DOTPROD)
 
 void convolve_x_sr_12tap_neon(const uint8_t *src, int src_stride, uint8_t *dst,
                               int dst_stride, int w, int h,
@@ -830,7 +831,7 @@ void av1_convolve_x_sr_neon(const uint8_t *src, int src_stride, uint8_t *dst,
   }
 }
 
-#else  // !(defined(__aarch64__) && defined(__ARM_FEATURE_DOTPROD))
+#else  // !(AOM_ARCH_AARCH64 && defined(__ARM_FEATURE_DOTPROD))
 
 static INLINE uint8x8_t
 convolve8_horiz_8x8(const int16x8_t s0, const int16x8_t s1, const int16x8_t s2,
@@ -951,7 +952,7 @@ static INLINE void convolve_x_sr_12tap_neon(const uint8_t *src_ptr,
   const int16x8_t x_filter_0_7 = vld1q_s16(x_filter_ptr);
   const int16x4_t x_filter_8_11 = vld1_s16(x_filter_ptr + 8);
 
-#if defined(__aarch64__)
+#if AOM_ARCH_AARCH64
   // This shim of 1 << (ROUND0_BITS - 1) enables us to use a single
   // rounding right shift by FILTER_BITS - instead of a first rounding right
   // shift by ROUND0_BITS, followed by second rounding right shift by
@@ -1058,10 +1059,10 @@ static INLINE void convolve_x_sr_12tap_neon(const uint8_t *src_ptr,
     x_filter_12tap_w4_single_row(src_ptr, src_stride, dst_ptr, dst_stride, w, h,
                                  x_filter_0_7, x_filter_8_11);
   }
-#else   // !defined(__aarch64__)
+#else   // !AOM_ARCH_AARCH64
   x_filter_12tap_w4_single_row(src_ptr, src_stride, dst_ptr, dst_stride, w, h,
                                x_filter_0_7, x_filter_8_11);
-#endif  // defined(__aarch64__)
+#endif  // AOM_ARCH_AARCH64
 }
 
 void av1_convolve_x_sr_neon(const uint8_t *src, int src_stride, uint8_t *dst,
@@ -1083,7 +1084,7 @@ void av1_convolve_x_sr_neon(const uint8_t *src, int src_stride, uint8_t *dst,
   }
 
   uint8x8_t t0;
-#if defined(__aarch64__)
+#if AOM_ARCH_AARCH64
   uint8x8_t t1, t2, t3;
   // This shim of 1 << ((ROUND0_BITS - 1) - 1) enables us to use a single
   // rounding right shift by FILTER_BITS - instead of a first rounding right
@@ -1091,11 +1092,11 @@ void av1_convolve_x_sr_neon(const uint8_t *src, int src_stride, uint8_t *dst,
   // FILTER_BITS - ROUND0_BITS.
   // The outermost -1 is needed because we halved the filter values.
   const int16x8_t horiz_const = vdupq_n_s16(1 << ((ROUND0_BITS - 1) - 1));
-#endif
+#endif  // AOM_ARCH_AARCH64
   // Filter values are even so downshift by 1 to reduce precision requirements.
   const int16x8_t x_filter = vshrq_n_s16(vld1q_s16(x_filter_ptr), 1);
 
-#if defined(__aarch64__)
+#if AOM_ARCH_AARCH64
   if (h == 4) {
     uint8x8_t d01, d23;
     int16x4_t s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, d0, d1, d2, d3;
@@ -1172,18 +1173,18 @@ void av1_convolve_x_sr_neon(const uint8_t *src, int src_stride, uint8_t *dst,
       w -= 4;
     } while (w > 0);
   } else {
-#endif
+#endif  // AOM_ARCH_AARCH64
     int width;
     const uint8_t *s;
     int16x8_t s0, s1, s2, s3, s4, s5, s6, s7;
 
-#if defined(__aarch64__)
+#if AOM_ARCH_AARCH64
     int16x8_t s8, s9, s10;
     uint8x8_t t4, t5, t6, t7;
-#endif
+#endif  // AOM_ARCH_AARCH64
 
     if (w <= 4) {
-#if defined(__aarch64__)
+#if AOM_ARCH_AARCH64
       do {
         load_u8_8x8(src, src_stride, &t0, &t1, &t2, &t3, &t4, &t5, &t6, &t7);
         transpose_u8_8x8(&t0, &t1, &t2, &t3, &t4, &t5, &t6, &t7);
@@ -1260,7 +1261,7 @@ void av1_convolve_x_sr_neon(const uint8_t *src, int src_stride, uint8_t *dst,
         dst += 8 * dst_stride;
         h -= 8;
       } while (h > 0);
-#else
+#else   // !AOM_ARCH_AARCH64
     // This shim of 1 << ((ROUND0_BITS - 1) - 1) enables us to use a single
     // rounding right shift by FILTER_BITS - instead of a first rounding right
     // shift by ROUND0_BITS, followed by second rounding right shift by
@@ -1301,11 +1302,11 @@ void av1_convolve_x_sr_neon(const uint8_t *src, int src_stride, uint8_t *dst,
       }
       h -= 1;
     } while (h > 0);
-#endif
+#endif  // AOM_ARCH_AARCH64
     } else {
       uint8_t *d;
       int16x8_t s11;
-#if defined(__aarch64__)
+#if AOM_ARCH_AARCH64
       int16x8_t s12, s13, s14;
       do {
         __builtin_prefetch(src + 0 * src_stride);
@@ -1390,7 +1391,7 @@ void av1_convolve_x_sr_neon(const uint8_t *src, int src_stride, uint8_t *dst,
         dst += 8 * dst_stride;
         h -= 8;
       } while (h > 0);
-#else
+#else   // !AOM_ARCH_AARCH64
     // This shim of 1 << ((ROUND0_BITS - 1) - 1) enables us to use a single
     // rounding right shift by FILTER_BITS - instead of a first rounding right
     // shift by ROUND0_BITS, followed by second rounding right shift by
@@ -1434,14 +1435,14 @@ void av1_convolve_x_sr_neon(const uint8_t *src, int src_stride, uint8_t *dst,
       dst += dst_stride;
       h -= 1;
     } while (h > 0);
-#endif
+#endif  // AOM_ARCH_AARCH64
     }
-#if defined(__aarch64__)
+#if AOM_ARCH_AARCH64
   }
-#endif
+#endif  // AOM_ARCH_AARCH64
 }
 
-#endif  // defined(__aarch64__) && defined(__ARM_FEATURE_MATMUL_INT8)
+#endif  // AOM_ARCH_AARCH64 && defined(__ARM_FEATURE_MATMUL_INT8)
 
 static INLINE void convolve_y_sr_6tap_neon(const uint8_t *src_ptr,
                                            int src_stride, uint8_t *dst_ptr,
@@ -1452,11 +1453,11 @@ static INLINE void convolve_y_sr_6tap_neon(const uint8_t *src_ptr,
     int16x4_t s0, s1, s2, s3, s4, s5, d0;
     uint8x8_t d01;
 
-#if defined(__aarch64__)
+#if AOM_ARCH_AARCH64
     uint8x8_t t6, t7, t8;
     int16x4_t s6, s7, s8, d1, d2, d3;
     uint8x8_t d23;
-#endif  // defined(__aarch64__)
+#endif  // AOM_ARCH_AARCH64
 
     const uint8_t *s = src_ptr + src_stride;
     uint8_t *d = dst_ptr;
@@ -1470,7 +1471,7 @@ static INLINE void convolve_y_sr_6tap_neon(const uint8_t *src_ptr,
     s += 5 * src_stride;
 
     do {
-#if defined(__aarch64__)
+#if AOM_ARCH_AARCH64
       load_u8_8x4(s, src_stride, &t5, &t6, &t7, &t8);
       s5 = vget_low_s16(vreinterpretq_s16_u16(vmovl_u8(t5)));
       s6 = vget_low_s16(vreinterpretq_s16_u16(vmovl_u8(t6)));
@@ -1509,7 +1510,7 @@ static INLINE void convolve_y_sr_6tap_neon(const uint8_t *src_ptr,
       s += 4 * src_stride;
       d += 4 * dst_stride;
       h -= 4;
-#else   // !defined(__aarch64__)
+#else   // !AOM_ARCH_AARCH64
       t5 = vld1_u8(s);
       s5 = vget_low_s16(vreinterpretq_s16_u16(vmovl_u8(t5)));
 
@@ -1530,18 +1531,18 @@ static INLINE void convolve_y_sr_6tap_neon(const uint8_t *src_ptr,
       s += src_stride;
       d += dst_stride;
       h--;
-#endif  // defined(__aarch64__)
+#endif  // AOM_ARCH_AARCH64
     } while (h > 0);
   } else {
     // if width is a multiple of 8 & height is a multiple of 4
     uint8x8_t t0, t1, t2, t3, t4, t5;
     int16x8_t s0, s1, s2, s3, s4, s5, dd0;
     uint8x8_t d0;
-#if defined(__aarch64__)
+#if AOM_ARCH_AARCH64
     uint8x8_t t6, t7, t8;
     int16x8_t s6, s7, s8, dd1, dd2, dd3;
     uint8x8_t d1, d2, d3;
-#endif  // defined(__aarch64__)
+#endif  // AOM_ARCH_AARCH64
 
     do {
       int height = h;
@@ -1557,7 +1558,7 @@ static INLINE void convolve_y_sr_6tap_neon(const uint8_t *src_ptr,
       s += 5 * src_stride;
 
       do {
-#if defined(__aarch64__)
+#if AOM_ARCH_AARCH64
         load_u8_8x4(s, src_stride, &t5, &t6, &t7, &t8);
         s5 = vreinterpretq_s16_u16(vmovl_u8(t5));
         s6 = vreinterpretq_s16_u16(vmovl_u8(t6));
@@ -1588,7 +1589,7 @@ static INLINE void convolve_y_sr_6tap_neon(const uint8_t *src_ptr,
         s += 4 * src_stride;
         d += 4 * dst_stride;
         height -= 4;
-#else   // !defined(__aarch64__)
+#else   // !AOM_ARCH_AARCH64
         t5 = vld1_u8(s);
         s5 = vreinterpretq_s16_u16(vmovl_u8(t5));
 
@@ -1605,7 +1606,7 @@ static INLINE void convolve_y_sr_6tap_neon(const uint8_t *src_ptr,
         s += src_stride;
         d += dst_stride;
         height--;
-#endif  // defined(__aarch64__)
+#endif  // AOM_ARCH_AARCH64
       } while (height > 0);
 
       src_ptr += 8;
@@ -1891,10 +1892,10 @@ void av1_convolve_y_sr_neon(const uint8_t *src, int src_stride, uint8_t *dst,
   if (w <= 4) {
     uint8x8_t d01;
     int16x4_t s0, s1, s2, s3, s4, s5, s6, s7, d0;
-#if defined(__aarch64__)
+#if AOM_ARCH_AARCH64
     uint8x8_t d23;
     int16x4_t s8, s9, s10, d1, d2, d3;
-#endif
+#endif  // AOM_ARCH_AARCH64
     s0 = vreinterpret_s16_u16(vget_low_u16(vmovl_u8(vld1_u8(src))));
     src += src_stride;
     s1 = vreinterpret_s16_u16(vget_low_u16(vmovl_u8(vld1_u8(src))));
@@ -1913,7 +1914,7 @@ void av1_convolve_y_sr_neon(const uint8_t *src, int src_stride, uint8_t *dst,
     do {
       s7 = vreinterpret_s16_u16(vget_low_u16(vmovl_u8(vld1_u8(src))));
       src += src_stride;
-#if defined(__aarch64__)
+#if AOM_ARCH_AARCH64
       s8 = vreinterpret_s16_u16(vget_low_u16(vmovl_u8(vld1_u8(src))));
       src += src_stride;
       s9 = vreinterpret_s16_u16(vget_low_u16(vmovl_u8(vld1_u8(src))));
@@ -1962,7 +1963,7 @@ void av1_convolve_y_sr_neon(const uint8_t *src, int src_stride, uint8_t *dst,
       s6 = s10;
       dst += 4 * dst_stride;
       h -= 4;
-#else
+#else   // !AOM_ARCH_AARCH64
       __builtin_prefetch(dst + 0 * dst_stride);
       __builtin_prefetch(src + 0 * src_stride);
 
@@ -1984,7 +1985,7 @@ void av1_convolve_y_sr_neon(const uint8_t *src, int src_stride, uint8_t *dst,
       s6 = s7;
       dst += dst_stride;
       h -= 1;
-#endif
+#endif  // AOM_ARCH_AARCH64
     } while (h > 0);
   } else {
     int height;
@@ -1992,10 +1993,10 @@ void av1_convolve_y_sr_neon(const uint8_t *src, int src_stride, uint8_t *dst,
     uint8_t *d;
     uint8x8_t t0;
     int16x8_t s0, s1, s2, s3, s4, s5, s6, s7;
-#if defined(__aarch64__)
+#if AOM_ARCH_AARCH64
     uint8x8_t t1, t2, t3;
     int16x8_t s8, s9, s10;
-#endif
+#endif  // AOM_ARCH_AARCH64
     do {
       __builtin_prefetch(src + 0 * src_stride);
       __builtin_prefetch(src + 1 * src_stride);
@@ -2025,7 +2026,7 @@ void av1_convolve_y_sr_neon(const uint8_t *src, int src_stride, uint8_t *dst,
       do {
         s7 = vreinterpretq_s16_u16(vmovl_u8(vld1_u8(s)));
         s += src_stride;
-#if defined(__aarch64__)
+#if AOM_ARCH_AARCH64
         s8 = vreinterpretq_s16_u16(vmovl_u8(vld1_u8(s)));
         s += src_stride;
         s9 = vreinterpretq_s16_u16(vmovl_u8(vld1_u8(s)));
@@ -2060,7 +2061,7 @@ void av1_convolve_y_sr_neon(const uint8_t *src, int src_stride, uint8_t *dst,
         s6 = s10;
         d += 4 * dst_stride;
         height -= 4;
-#else
+#else   // !AOM_ARCH_AARCH64
         __builtin_prefetch(d);
         __builtin_prefetch(s);
 
@@ -2077,7 +2078,7 @@ void av1_convolve_y_sr_neon(const uint8_t *src, int src_stride, uint8_t *dst,
         s5 = s6;
         s6 = s7;
         height -= 1;
-#endif
+#endif  // AOM_ARCH_AARCH64
       } while (height > 0);
       src += 8;
       dst += 8;
@@ -2086,7 +2087,7 @@ void av1_convolve_y_sr_neon(const uint8_t *src, int src_stride, uint8_t *dst,
   }
 }
 
-#if defined(__aarch64__) && defined(__ARM_FEATURE_MATMUL_INT8)
+#if AOM_ARCH_AARCH64 && defined(__ARM_FEATURE_MATMUL_INT8)
 
 static INLINE int16x4_t convolve12_horiz_4_usdot(uint8x16_t samples,
                                                  const int8x16_t filters,
@@ -2312,7 +2313,7 @@ static INLINE void convolve_2d_sr_horiz_12tap_neon(
   }
 }
 
-#elif defined(__aarch64__) && defined(__ARM_FEATURE_DOTPROD)
+#elif AOM_ARCH_AARCH64 && defined(__ARM_FEATURE_DOTPROD)
 
 static INLINE void convolve_2d_sr_horiz_12tap_neon(
     const uint8_t *src_ptr, int src_stride, int16_t *dst_ptr,
@@ -2495,7 +2496,7 @@ static INLINE void convolve_2d_sr_horiz_12tap_neon(
   }
 }
 
-#else  // !(defined(__aarch64__) && defined(__ARM_FEATURE_DOTPROD))
+#else  // !(AOM_ARCH_AARCH64 && defined(__ARM_FEATURE_DOTPROD))
 
 static INLINE int16x4_t convolve12_horiz_4x4_s16(
     const int16x4_t s0, const int16x4_t s1, const int16x4_t s2,
@@ -2591,7 +2592,7 @@ static INLINE void convolve_2d_sr_horiz_12tap_neon(
   const int32x4_t horiz_const =
       vdupq_n_s32((1 << (bd + FILTER_BITS - 1)) + (1 << (ROUND0_BITS - 1)));
 
-#if defined(__aarch64__)
+#if AOM_ARCH_AARCH64
   do {
     int16x4_t s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10;
     uint8x8_t t0, t1, t2, t3;
@@ -2683,15 +2684,15 @@ static INLINE void convolve_2d_sr_horiz_12tap_neon(
                                      w, h, x_filter_0_7, x_filter_8_11,
                                      horiz_const);
   }
-#else   // !defined(__aarch64__)
+#else   // !AOM_ARCH_AARCH64
   horiz_filter_12tap_w4_single_row(src_ptr, src_stride, dst_ptr, dst_stride, w,
                                    h, x_filter_0_7, x_filter_8_11, horiz_const);
-#endif  // defined(__aarch64__)
+#endif  // AOM_ARCH_AARCH64
 }
 
-#endif  // defined(__aarch64__) && defined(__ARM_FEATURE_DOTPROD)
+#endif  // AOM_ARCH_AARCH64 && defined(__ARM_FEATURE_DOTPROD)
 
-#if defined(__aarch64__) && defined(__ARM_FEATURE_MATMUL_INT8)
+#if AOM_ARCH_AARCH64 && defined(__ARM_FEATURE_MATMUL_INT8)
 
 static INLINE void convolve_2d_sr_horiz_8tap_neon(
     const uint8_t *src, int src_stride, int16_t *im_block, int im_stride, int w,
@@ -2827,7 +2828,7 @@ static INLINE void convolve_2d_sr_horiz_8tap_neon(
   }
 }
 
-#elif defined(__aarch64__) && defined(__ARM_FEATURE_DOTPROD)
+#elif AOM_ARCH_AARCH64 && defined(__ARM_FEATURE_DOTPROD)
 
 static INLINE void convolve_2d_sr_horiz_8tap_neon(
     const uint8_t *src, int src_stride, int16_t *im_block, int im_stride, int w,
@@ -2934,12 +2935,6 @@ static INLINE void convolve_2d_sr_horiz_8tap_neon(
         d3 = convolve8_horiz_8_sdot(s3, x_filter, correction, range_limit,
                                     permute_tbl);
 
-        // We halved the convolution filter values so -1 from the right shift.
-        d0 = vshrq_n_s16(d0, ROUND0_BITS - 1);
-        d1 = vshrq_n_s16(d1, ROUND0_BITS - 1);
-        d2 = vshrq_n_s16(d2, ROUND0_BITS - 1);
-        d3 = vshrq_n_s16(d3, ROUND0_BITS - 1);
-
         store_s16_8x4(d, dst_stride, d0, d1, d2, d3);
 
         s += 8;
@@ -2981,7 +2976,7 @@ static INLINE void convolve_2d_sr_horiz_8tap_neon(
   }
 }
 
-#else  // !(defined(__aarch64__) && defined(__ARM_FEATURE_DOTPROD))
+#else  // !(AOM_ARCH_AARCH64 && defined(__ARM_FEATURE_DOTPROD))
 
 // Horizontal filtering for convolve_2d_sr for width multiple of 8
 // Processes one row at a time
@@ -3100,7 +3095,7 @@ static INLINE void convolve_2d_sr_horiz_8tap_neon(
     const int16x4_t horiz_const = vdup_n_s16((1 << (bd + FILTER_BITS - 2)) +
                                              (1 << ((ROUND0_BITS - 1) - 1)));
 
-#if defined(__aarch64__)
+#if AOM_ARCH_AARCH64
     do {
       int16x4_t s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, d0, d1, d2, d3;
       uint8x8_t t0, t1, t2, t3;
@@ -3160,10 +3155,10 @@ static INLINE void convolve_2d_sr_horiz_8tap_neon(
                                  height, x_filter, horiz_const);
     }
 
-#else   // !defined(__aarch64__)
+#else   // !AOM_ARCH_AARCH64
     horiz_filter_w4_single_row(src_ptr, src_stride, dst_ptr, dst_stride, w,
                                height, x_filter, horiz_const);
-#endif  // defined(__aarch64__)
+#endif  // AOM_ARCH_AARCH64
 
   } else {
     // This shim of  1 << ((ROUND0_BITS - 1) - 1) enables us to use non-rounding
@@ -3172,7 +3167,7 @@ static INLINE void convolve_2d_sr_horiz_8tap_neon(
     const int16x8_t horiz_const = vdupq_n_s16((1 << (bd + FILTER_BITS - 2)) +
                                               (1 << ((ROUND0_BITS - 1) - 1)));
 
-#if defined(__aarch64__)
+#if AOM_ARCH_AARCH64
 
     for (; height >= 8; height -= 8) {
       int16x8_t s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14,
@@ -3331,14 +3326,14 @@ static INLINE void convolve_2d_sr_horiz_8tap_neon(
                                  height, x_filter, horiz_const);
     }
 
-#else   // !defined(__aarch64__)
+#else   // !AOM_ARCH_AARCH64
     horiz_filter_w8_single_row(src_ptr, src_stride, dst_ptr, dst_stride, w,
                                height, x_filter, horiz_const);
-#endif  // defined(__aarch64__)
+#endif  // AOM_ARCH_AARCH64
   }
 }
 
-#endif  // defined(__aarch64__) && defined(__ARM_FEATURE_DOTPROD)
+#endif  // AOM_ARCH_AARCH64 && defined(__ARM_FEATURE_DOTPROD)
 
 static INLINE int32x4_t convolve12_vert_4_s32(
     const int16x4_t s0, const int16x4_t s1, const int16x4_t s2,
@@ -3551,10 +3546,10 @@ static INLINE void convolve_2d_sr_vert_8tap_neon(int16_t *src_ptr,
     int16x4_t s0, s1, s2, s3, s4, s5, s6, s7, d0;
     uint8x8_t d01;
 
-#if defined(__aarch64__)
+#if AOM_ARCH_AARCH64
     int16x4_t s8, s9, s10, d1, d2, d3;
     uint8x8_t d23;
-#endif  // defined(__aarch64__)
+#endif  // AOM_ARCH_AARCH64
 
     int16_t *s = src_ptr;
     uint8_t *d = dst_ptr;
@@ -3563,7 +3558,7 @@ static INLINE void convolve_2d_sr_vert_8tap_neon(int16_t *src_ptr,
     s += 7 * src_stride;
 
     do {
-#if defined(__aarch64__)
+#if AOM_ARCH_AARCH64
       load_s16_4x4(s, src_stride, &s7, &s8, &s9, &s10);
 
       d0 = convolve8_vert_4_s32(s0, s1, s2, s3, s4, s5, s6, s7, y_filter);
@@ -3600,7 +3595,7 @@ static INLINE void convolve_2d_sr_vert_8tap_neon(int16_t *src_ptr,
       s += 4 * src_stride;
       d += 4 * dst_stride;
       h -= 4;
-#else   // !defined(__aarch64__)
+#else   // !AOM_ARCH_AARCH64
       s7 = vld1_s16(s);
       s += src_stride;
 
@@ -3623,16 +3618,16 @@ static INLINE void convolve_2d_sr_vert_8tap_neon(int16_t *src_ptr,
       s6 = s7;
       d += dst_stride;
       h--;
-#endif  // defined(__aarch64__)
+#endif  // AOM_ARCH_AARCH64
     } while (h > 0);
   } else {
     // if width is a multiple of 8 & height is a multiple of 4
     int16x8_t s0, s1, s2, s3, s4, s5, s6, s7;
     uint8x8_t d0;
-#if defined(__aarch64__)
+#if AOM_ARCH_AARCH64
     int16x8_t s8, s9, s10;
     uint8x8_t d1, d2, d3;
-#endif  // defined(__aarch64__)
+#endif  // AOM_ARCH_AARCH64
 
     do {
       int height = h;
@@ -3643,7 +3638,7 @@ static INLINE void convolve_2d_sr_vert_8tap_neon(int16_t *src_ptr,
       s += 7 * src_stride;
 
       do {
-#if defined(__aarch64__)
+#if AOM_ARCH_AARCH64
         load_s16_8x4(s, src_stride, &s7, &s8, &s9, &s10);
 
         d0 = convolve8_vert_8_s32(s0, s1, s2, s3, s4, s5, s6, s7, y_filter,
@@ -3671,7 +3666,7 @@ static INLINE void convolve_2d_sr_vert_8tap_neon(int16_t *src_ptr,
         s += 4 * src_stride;
         d += 4 * dst_stride;
         height -= 4;
-#else   // !defined(__aarch64__)
+#else   // !AOM_ARCH_AARCH64
         s7 = vld1q_s16(s);
 
         d0 = convolve8_vert_8_s32(s0, s1, s2, s3, s4, s5, s6, s7, y_filter,
@@ -3689,7 +3684,7 @@ static INLINE void convolve_2d_sr_vert_8tap_neon(int16_t *src_ptr,
         s += src_stride;
         d += dst_stride;
         height--;
-#endif  // defined(__aarch64__)
+#endif  // AOM_ARCH_AARCH64
       } while (height > 0);
 
       src_ptr += 8;
@@ -3759,10 +3754,10 @@ static INLINE void convolve_2d_sr_vert_6tap_neon(int16_t *src_ptr,
     int16x4_t s0, s1, s2, s3, s4, s5, d0;
     uint8x8_t d01;
 
-#if defined(__aarch64__)
+#if AOM_ARCH_AARCH64
     int16x4_t s6, s7, s8, d1, d2, d3;
     uint8x8_t d23;
-#endif  // defined(__aarch64__)
+#endif  // AOM_ARCH_AARCH64
 
     int16_t *s = src_ptr;
     uint8_t *d = dst_ptr;
@@ -3771,7 +3766,7 @@ static INLINE void convolve_2d_sr_vert_6tap_neon(int16_t *src_ptr,
     s += 5 * src_stride;
 
     do {
-#if defined(__aarch64__)
+#if AOM_ARCH_AARCH64
       load_s16_4x4(s, src_stride, &s5, &s6, &s7, &s8);
 
       d0 = convolve6_vert_4_s32(s0, s1, s2, s3, s4, s5, y_filter);
@@ -3806,7 +3801,7 @@ static INLINE void convolve_2d_sr_vert_6tap_neon(int16_t *src_ptr,
       s += 4 * src_stride;
       d += 4 * dst_stride;
       h -= 4;
-#else   // !defined(__aarch64__)
+#else   // !AOM_ARCH_AARCH64
       s5 = vld1_s16(s);
 
       d0 = convolve6_vert_4_s32(s0, s1, s2, s3, s4, s5, y_filter);
@@ -3826,16 +3821,16 @@ static INLINE void convolve_2d_sr_vert_6tap_neon(int16_t *src_ptr,
       s += src_stride;
       d += dst_stride;
       h--;
-#endif  // defined(__aarch64__)
+#endif  // AOM_ARCH_AARCH64
     } while (h > 0);
   } else {
     // if width is a multiple of 8 & height is a multiple of 4
     int16x8_t s0, s1, s2, s3, s4, s5;
     uint8x8_t d0;
-#if defined(__aarch64__)
+#if AOM_ARCH_AARCH64
     int16x8_t s6, s7, s8;
     uint8x8_t d1, d2, d3;
-#endif  // defined(__aarch64__)
+#endif  // AOM_ARCH_AARCH64
 
     do {
       int height = h;
@@ -3846,7 +3841,7 @@ static INLINE void convolve_2d_sr_vert_6tap_neon(int16_t *src_ptr,
       s += 5 * src_stride;
 
       do {
-#if defined(__aarch64__)
+#if AOM_ARCH_AARCH64
         load_s16_8x4(s, src_stride, &s5, &s6, &s7, &s8);
 
         d0 = convolve6_vert_8_s32(s0, s1, s2, s3, s4, s5, y_filter, sub_const);
@@ -3868,7 +3863,7 @@ static INLINE void convolve_2d_sr_vert_6tap_neon(int16_t *src_ptr,
         s += 4 * src_stride;
         d += 4 * dst_stride;
         height -= 4;
-#else   // !defined(__aarch64__)
+#else   // !AOM_ARCH_AARCH64
         s5 = vld1q_s16(s);
 
         d0 = convolve6_vert_8_s32(s0, s1, s2, s3, s4, s5, y_filter, sub_const);
@@ -3883,7 +3878,7 @@ static INLINE void convolve_2d_sr_vert_6tap_neon(int16_t *src_ptr,
         s += src_stride;
         d += dst_stride;
         height--;
-#endif  // defined(__aarch64__)
+#endif  // AOM_ARCH_AARCH64
       } while (height > 0);
 
       src_ptr += 8;

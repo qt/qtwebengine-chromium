@@ -19,19 +19,34 @@
 
 #include "absl/functional/bind_front.h"
 #include "fastpair/common/fast_pair_device.h"
-#include "fastpair/scanning/fastpair/fast_pair_discoverable_scanner.h"
 #include "fastpair/scanning/fastpair/fast_pair_discoverable_scanner_impl.h"
 #include "fastpair/scanning/fastpair/fast_pair_scanner_impl.h"
-#include "internal/platform/bluetooth_adapter.h"
 #include "internal/platform/logging.h"
-#include "internal/platform/task_runner_impl.h"
 
 namespace nearby {
 namespace fastpair {
-ScannerBrokerImpl::ScannerBrokerImpl() {
-  adapter_ = std::make_shared<BluetoothAdapter>();
-  task_runner_ = std::make_unique<TaskRunnerImpl>(1);
-}
+
+namespace {
+
+class ScanningSessionImpl : public ScannerBroker::ScanningSession {
+ public:
+  ScanningSessionImpl(ScannerBrokerImpl* scanner, Protocol protocol)
+      : scanner_(scanner), protocol_(protocol) {}
+  ~ScanningSessionImpl() override { scanner_->StopScanning(protocol_); }
+
+ private:
+  ScannerBrokerImpl* scanner_;
+  Protocol protocol_;
+};
+
+}  // namespace
+
+ScannerBrokerImpl::ScannerBrokerImpl(
+    Mediums& mediums, SingleThreadExecutor* executor,
+    FastPairDeviceRepository* device_repository)
+    : mediums_(mediums),
+      executor_(executor),
+      device_repository_(device_repository) {}
 
 void ScannerBrokerImpl::AddObserver(Observer* observer) {
   observers_.AddObserver(observer);
@@ -41,35 +56,44 @@ void ScannerBrokerImpl::RemoveObserver(Observer* observer) {
   observers_.RemoveObserver(observer);
 }
 
-void ScannerBrokerImpl::StartScanning(Protocol protocol) {
+std::unique_ptr<ScannerBroker::ScanningSession>
+ScannerBrokerImpl::StartScanning(Protocol protocol) {
   NEARBY_LOGS(VERBOSE) << __func__ << ": protocol=" << protocol;
-  task_runner_->PostTask([this]() { StartFastPairScanning(); });
+  executor_->Execute("start-scan",
+                     [this]() ABSL_EXCLUSIVE_LOCKS_REQUIRED(*executor_) {
+                       StartFastPairScanning();
+                     });
+  return std::make_unique<ScanningSessionImpl>(this, protocol);
 }
 
 void ScannerBrokerImpl::StopScanning(Protocol protocol) {
   NEARBY_LOGS(VERBOSE) << __func__ << ": protocol=" << protocol;
-  task_runner_->PostTask([this]() { StopFastPairScanning(); });
+  executor_->Execute("stop-scan", [this]() ABSL_EXCLUSIVE_LOCKS_REQUIRED(
+                                      *executor_) { StopFastPairScanning(); });
 }
+
 void ScannerBrokerImpl::StartFastPairScanning() {
   DCHECK(!fast_pair_discoverable_scanner_);
-  DCHECK(adapter_);
   NEARBY_LOGS(VERBOSE) << "Starting Fast Pair Scanning.";
-  scanner_ = std::make_shared<FastPairScannerImpl>();
+  scanner_ = std::make_unique<FastPairScannerImpl>(mediums_, executor_);
   fast_pair_discoverable_scanner_ =
       FastPairDiscoverableScannerImpl::Factory::Create(
-          scanner_, adapter_,
+          *scanner_,
           absl::bind_front(&ScannerBrokerImpl::NotifyDeviceFound, this),
-          absl::bind_front(&ScannerBrokerImpl::NotifyDeviceLost, this));
+          absl::bind_front(&ScannerBrokerImpl::NotifyDeviceLost, this),
+          executor_, device_repository_);
+  scanning_session_ = scanner_->StartScanning();
 }
 
 void ScannerBrokerImpl::StopFastPairScanning() {
-  fast_pair_discoverable_scanner_.reset();
-  scanner_.reset();
-  observers_.Clear();
   NEARBY_LOGS(VERBOSE) << __func__ << "Stopping Fast Pair Scanning.";
+  scanning_session_.reset();
+  observers_.Clear();
+  DestroyOnExecutor(std::move(fast_pair_discoverable_scanner_), executor_);
+  DestroyOnExecutor(std::move(scanner_), executor_);
 }
 
-void ScannerBrokerImpl::NotifyDeviceFound(const FastPairDevice& device) {
+void ScannerBrokerImpl::NotifyDeviceFound(FastPairDevice& device) {
   NEARBY_LOGS(INFO) << __func__ << ": Notifying device found, model id = "
                     << device.GetModelId();
   for (auto& observer : observers_.GetObservers()) {
@@ -77,7 +101,7 @@ void ScannerBrokerImpl::NotifyDeviceFound(const FastPairDevice& device) {
   }
 }
 
-void ScannerBrokerImpl::NotifyDeviceLost(const FastPairDevice& device) {
+void ScannerBrokerImpl::NotifyDeviceLost(FastPairDevice& device) {
   NEARBY_LOGS(INFO) << __func__ << ": Notifying device lost, model id = "
                     << device.GetModelId();
   for (auto& observer : observers_.GetObservers()) {

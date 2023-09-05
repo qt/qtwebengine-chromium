@@ -158,12 +158,14 @@ static constexpr std::array<DeviceExtInfo, kDeviceExtCount> sDeviceExtInfos{{
     {DeviceExt::ShaderIntegerDotProduct, "VK_KHR_shader_integer_dot_product", VulkanVersion_1_3},
     {DeviceExt::ZeroInitializeWorkgroupMemory, "VK_KHR_zero_initialize_workgroup_memory",
      VulkanVersion_1_3},
+    {DeviceExt::Maintenance4, "VK_KHR_maintenance4", VulkanVersion_1_3},
 
     {DeviceExt::DepthClipEnable, "VK_EXT_depth_clip_enable", NeverPromoted},
     {DeviceExt::ImageDrmFormatModifier, "VK_EXT_image_drm_format_modifier", NeverPromoted},
     {DeviceExt::Swapchain, "VK_KHR_swapchain", NeverPromoted},
     {DeviceExt::SubgroupSizeControl, "VK_EXT_subgroup_size_control", NeverPromoted},
     {DeviceExt::QueueFamilyForeign, "VK_EXT_queue_family_foreign", NeverPromoted},
+    {DeviceExt::Robustness2, "VK_EXT_robustness2", NeverPromoted},
 
     {DeviceExt::ExternalMemoryAndroidHardwareBuffer,
      "VK_ANDROID_external_memory_android_hardware_buffer", NeverPromoted},
@@ -307,6 +309,8 @@ DeviceExtSet EnsureDependencies(const DeviceExtSet& advertisedExts,
             case DeviceExt::DepthClipEnable:
             case DeviceExt::ShaderIntegerDotProduct:
             case DeviceExt::ZeroInitializeWorkgroupMemory:
+            case DeviceExt::Maintenance4:
+            case DeviceExt::Robustness2:
                 hasDependencies = HasDep(DeviceExt::GetPhysicalDeviceProperties2);
                 break;
 

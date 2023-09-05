@@ -28,7 +28,6 @@ const char kSessionManagerStopSessionWithReason[] = "StopSessionWithReason";
 const char kSessionManagerLoadShillProfile[] = "LoadShillProfile";
 const char kSessionManagerRestartJob[] = "RestartJob";
 const char kSessionManagerStorePolicyEx[] = "StorePolicyEx";
-const char kSessionManagerStoreUnsignedPolicyEx[] = "StoreUnsignedPolicyEx";
 const char kSessionManagerRetrievePolicyEx[] = "RetrievePolicyEx";
 const char kSessionManagerListStoredComponentPolicies[] =
     "ListStoredComponentPolicies";

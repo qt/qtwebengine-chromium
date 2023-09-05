@@ -319,13 +319,9 @@ ErrorOr<size_t> Receiver::OnStreamMessage(uint64_t endpoint_id,
   }
 }
 
-// TODO(crbug.com/openscreen/31): Remove singletons in the embedder API and
-// protocol implementation layers and in presentation_connection, as well as
-// unit tests. static
-Receiver* Receiver::Get() {
-  static Receiver& receiver = *new Receiver();
-  return &receiver;
-}
+Receiver::Receiver() = default;
+
+Receiver::~Receiver() = default;
 
 void Receiver::Init() {
   if (!connection_manager_) {
@@ -521,10 +517,6 @@ void Receiver::OnConnectionDestroyed(Connection* connection) {
 
   connection_manager_->RemoveConnection(connection);
 }
-
-Receiver::Receiver() = default;
-
-Receiver::~Receiver() = default;
 
 void Receiver::DeleteQueuedResponse(const std::string& presentation_id,
                                     Receiver::QueuedResponseIterator response) {

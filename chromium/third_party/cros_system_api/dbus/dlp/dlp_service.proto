@@ -43,6 +43,9 @@ enum DlpComponent {
 
   // Google drive for file storage.
   GOOGLE_DRIVE = 6;
+
+  // Microsoft OneDrive for file storage.
+  MICROSOFT_ONEDRIVE = 7;
 }
 
 // A representation of possible file actions.
@@ -127,15 +130,24 @@ message AddFileRequest {
   optional string referrer_url = 3;
 }
 
+message AddFilesRequest {
+  // List of AddFileRequest messages corresponding to files to add to the
+  // daemon.
+  repeated AddFileRequest add_file_requests = 1;
+}
+
 message AddFileResponse {
   // Error message, empty if no error occurred.
   optional string error_message = 1;
 }
 
-message RequestFileAccessRequest {
-  // TODO(crbug.com/1352431): Remove when it's not used in Chrome.
-  repeated uint64 inodes = 1;
+message AddFilesResponse {
+  // Error message, empty if no error occurred.
+  optional string error_message = 1;
+}
 
+message RequestFileAccessRequest {
+  reserved 1;
   // Process id for which an access is requested.
   optional int32 process_id = 2;
 
@@ -175,8 +187,7 @@ message FileRestriction {
 }
 
 message IsDlpPolicyMatchedRequest {
-  // TODO(crbug.com/1352431): Remove when it's not used in Chrome.
-  optional string source_url = 1;
+  reserved 1;
   // File metadata.
   optional FileMetadata file_metadata = 2;
 }
@@ -207,6 +218,9 @@ message CheckFilesTransferRequest {
   optional DlpComponent destination_component = 3;
   // Requested file action.
   optional FileAction file_action = 4;
+  // I/O Task Id. Optional field needed to properly show warnings within the
+  // Files app.
+  optional uint64 io_task_id = 5;
 }
 
 message CheckFilesTransferResponse {
@@ -217,8 +231,7 @@ message CheckFilesTransferResponse {
 }
 
 message IsFilesTransferRestrictedRequest {
-  // TODO(crbug.com/1352431): Remove when it's not used in Chrome.
-  repeated string files_sources = 1;
+  reserved 1;
   // Destination url where the file will be transferred.
   optional string destination_url = 2;
   // Files to be transferred.
@@ -227,16 +240,16 @@ message IsFilesTransferRestrictedRequest {
   optional DlpComponent destination_component = 4;
   // Requested file action.
   optional FileAction file_action = 5;
+  // I/O Task Id. Optional field needed to properly show warnings within the
+  // Files app.
+  optional uint64 io_task_id = 6;
 }
 
 message IsFilesTransferRestrictedResponse {
+  reserved 2, 3;
   // Error message, empty if no error occurred.
   optional string error_message = 1;
-  // TODO(crbug.com/1352431): Remove when it's not used in Chrome.
-  repeated string files_sources = 2;
   // Files restricted to be transferred.
-  // TODO(b/259182892): Remove when it's not used in Chrome.
-  repeated FileMetadata restricted_files = 3;
   // Check results for the files to be transferred.
   repeated FileRestriction files_restrictions = 4;
 }

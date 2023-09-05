@@ -27,7 +27,7 @@ constexpr EnumNameTable<VideoCodec, 6> kFfmpegCodecDescriptors{
      {"libaom-av1", VideoCodec::kAv1}}};
 
 SDLVideoPlayer::SDLVideoPlayer(ClockNowFunctionPtr now_function,
-                               TaskRunner* task_runner,
+                               TaskRunner& task_runner,
                                Receiver* receiver,
                                VideoCodec codec,
                                SDL_Renderer* renderer,

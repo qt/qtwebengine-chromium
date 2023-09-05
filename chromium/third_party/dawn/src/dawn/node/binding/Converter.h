@@ -87,7 +87,7 @@ class Converter {
     // The pointer assigned to 'out_els' is valid until the Converter is destructed.
     template <typename OUT, typename IN>
     [[nodiscard]] inline bool operator()(OUT*& out_els,
-                                         uint32_t& out_count,
+                                         size_t& out_count,
                                          const std::vector<IN>& in) {
         return Convert(out_els, out_count, in);
     }
@@ -198,21 +198,9 @@ class Converter {
     [[nodiscard]] bool Convert(wgpu::RenderPassDepthStencilAttachment& out,
                                const interop::GPURenderPassDepthStencilAttachment& in);
 
-    [[nodiscard]] bool Convert(wgpu::RenderPassTimestampWrite& out,
-                               const interop::GPURenderPassTimestampWrite& in);
-
-    [[nodiscard]] bool Convert(wgpu::RenderPassTimestampLocation& out,
-                               const interop::GPURenderPassTimestampLocation& in);
-
     [[nodiscard]] bool Convert(wgpu::LoadOp& out, const interop::GPULoadOp& in);
 
     [[nodiscard]] bool Convert(wgpu::StoreOp& out, const interop::GPUStoreOp& in);
-
-    [[nodiscard]] bool Convert(wgpu::ComputePassTimestampWrite& out,
-                               const interop::GPUComputePassTimestampWrite& in);
-
-    [[nodiscard]] bool Convert(wgpu::ComputePassTimestampLocation& out,
-                               const interop::GPUComputePassTimestampLocation& in);
 
     [[nodiscard]] bool Convert(wgpu::BindGroupEntry& out, const interop::GPUBindGroupEntry& in);
 
@@ -249,7 +237,7 @@ class Converter {
 
     [[nodiscard]] bool Convert(wgpu::FilterMode& out, const interop::GPUFilterMode& in);
 
-    [[nodiscard]] bool Convert(wgpu::FilterMode& out, const interop::GPUMipmapFilterMode& in);
+    [[nodiscard]] bool Convert(wgpu::MipmapFilterMode& out, const interop::GPUMipmapFilterMode& in);
 
     [[nodiscard]] bool Convert(wgpu::ComputePipelineDescriptor& out,
                                const interop::GPUComputePipelineDescriptor& in);
@@ -369,7 +357,7 @@ class Converter {
 
     // vector -> raw pointer + count
     template <typename OUT, typename IN>
-    inline bool Convert(OUT*& out_els, uint32_t& out_count, const std::vector<IN>& in) {
+    inline bool Convert(OUT*& out_els, size_t& out_count, const std::vector<IN>& in) {
         if (in.size() == 0) {
             out_els = nullptr;
             out_count = 0;
@@ -388,7 +376,7 @@ class Converter {
     // unordered_map -> raw pointer + count
     template <typename OUT, typename IN_KEY, typename IN_VALUE>
     inline bool Convert(OUT*& out_els,
-                        uint32_t& out_count,
+                        size_t& out_count,
                         const std::unordered_map<IN_KEY, IN_VALUE>& in) {
         if (in.size() == 0) {
             out_els = nullptr;
@@ -408,7 +396,7 @@ class Converter {
 
     // std::optional<T> -> raw pointer + count
     template <typename OUT, typename IN>
-    inline bool Convert(OUT*& out_els, uint32_t& out_count, const std::optional<IN>& in) {
+    inline bool Convert(OUT*& out_els, size_t& out_count, const std::optional<IN>& in) {
         if (!in.has_value()) {
             out_els = nullptr;
             out_count = 0;

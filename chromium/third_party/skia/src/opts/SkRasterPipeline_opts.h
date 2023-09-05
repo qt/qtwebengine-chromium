@@ -52,8 +52,6 @@ using NoCtx = const void*;
     #define JUMPER_IS_SCALAR
 #elif defined(SK_ARM_HAS_NEON)
     #define JUMPER_IS_NEON
-#elif SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_SKX
-    #define JUMPER_IS_SKX
 #elif SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_AVX2
     #define JUMPER_IS_HSW
 #elif SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_AVX
@@ -121,7 +119,8 @@ namespace SK_OPTS_NS {
     SI F   sqrt_ (F v)          { return sqrtf(v); }
     SI F   rcp_precise (F v)    { return 1.0f / v; }
 
-    SI U32 round (F v, F scale) { return (uint32_t)(v*scale + 0.5f); }
+    SI U32 round(F v)           { return (uint32_t)(v + 0.5f); }
+    SI U32 round(F v, F scale)  { return (uint32_t)(v*scale + 0.5f); }
     SI U16 pack(U32 v)          { return (U16)v; }
     SI U8  pack(U16 v)          { return  (U8)v; }
 
@@ -221,6 +220,7 @@ namespace SK_OPTS_NS {
         SI F  floor_(F v) { return vrndmq_f32(v); }
         SI F   ceil_(F v) { return vrndpq_f32(v); }
         SI F   sqrt_(F v) { return vsqrtq_f32(v); }
+        SI U32 round(F v) { return vcvtnq_u32_f32(v); }
         SI U32 round(F v, F scale) { return vcvtnq_u32_f32(v*scale); }
     #else
         SI bool any(I32 c) { return c[0] | c[1] | c[2] | c[3]; }
@@ -242,6 +242,10 @@ namespace SK_OPTS_NS {
             e *= vrsqrtsq_f32(v,e*e);
             e *= vrsqrtsq_f32(v,e*e);
             return v*e;                // sqrt(v) == v*rsqrt(v).
+        }
+
+        SI U32 round(F v) {
+            return vcvtq_u32_f32(v + 0.5f);
         }
 
         SI U32 round(F v, F scale) {
@@ -365,7 +369,7 @@ namespace SK_OPTS_NS {
         }
     }
 
-#elif defined(JUMPER_IS_HSW) || defined(JUMPER_IS_SKX)
+#elif defined(JUMPER_IS_HSW)
     // These are __m256 and __m256i, but friendlier and strongly-typed.
     template <typename T> using V = T __attribute__((ext_vector_type(8)));
     using F   = V<float   >;
@@ -396,7 +400,8 @@ namespace SK_OPTS_NS {
         return _mm256_fnmadd_ps(v, e, _mm256_set1_ps(2.0f)) * e;
     }
 
-    SI U32 round (F v, F scale) { return _mm256_cvtps_epi32(v*scale); }
+    SI U32 round(F v)          { return _mm256_cvtps_epi32(v); }
+    SI U32 round(F v, F scale) { return _mm256_cvtps_epi32(v*scale); }
     SI U16 pack(U32 v) {
         return _mm_packus_epi32(_mm256_extractf128_si256(v, 0),
                                 _mm256_extractf128_si256(v, 1));
@@ -770,6 +775,7 @@ template <typename T> using V = T __attribute__((ext_vector_type(4)));
     SI F   rsqrt (F v)         { return _mm_rsqrt_ps(v);    }
     SI F    sqrt_(F v)         { return _mm_sqrt_ps (v);    }
 
+    SI U32 round(F v)          { return _mm_cvtps_epi32(v); }
     SI U32 round(F v, F scale) { return _mm_cvtps_epi32(v*scale); }
 
     SI U16 pack(U32 v) {
@@ -1058,11 +1064,16 @@ SI F approx_log(F x) {
 }
 
 SI F approx_pow2(F x) {
+    constexpr float kInfinityBits = 0x7f800000;
+
     F f = fract(x);
-    return sk_bit_cast<F>(round(1.0f * (1<<23),
-                                x + 121.274057500f
-                                  -   1.490129070f * f
-                                  +  27.728023300f / (4.84252568f - f)));
+    F approx = x + 121.274057500f;
+      approx -= f * 1.490129070f;
+      approx += 27.728023300f / (4.84252568f - f);
+      approx *= 1.0f * (1<<23);
+      approx  = min(max(approx, F(0)), kInfinityBits);  // guard against underflow/overflow
+
+    return sk_bit_cast<F>(round(approx));
 }
 
 SI F approx_exp(F x) {
@@ -1080,7 +1091,7 @@ SI F from_half(U16 h) {
     && !defined(SK_BUILD_FOR_GOOGLE3)  // Temporary workaround for some Google3 builds.
     return vcvt_f32_f16(h);
 
-#elif defined(JUMPER_IS_HSW) || defined(JUMPER_IS_SKX)
+#elif defined(JUMPER_IS_HSW)
     return _mm256_cvtph_ps(h);
 
 #else
@@ -1101,7 +1112,7 @@ SI U16 to_half(F f) {
     && !defined(SK_BUILD_FOR_GOOGLE3)  // Temporary workaround for some Google3 builds.
     return vcvt_f16_f32(f);
 
-#elif defined(JUMPER_IS_HSW) || defined(JUMPER_IS_SKX)
+#elif defined(JUMPER_IS_HSW)
     return _mm256_cvtps_ph(f, _MM_FROUND_CUR_DIRECTION);
 
 #else
@@ -1476,27 +1487,31 @@ SI F clamp_ex(F v, F limit) {
     return min(max(inclusiveZ, v), inclusiveL);
 }
 
-// Bhaskara I's sine approximation
-// 16x(pi - x) / (5*pi^2 - 4x(pi - x)
-// ... divide by 4
-// 4x(pi - x) / 5*pi^2/4 - x(pi - x)
-//
-// This is a good approximation only for 0 <= x <= pi, so we use symmetries to get
-// radians into that range first.
-SI F sin_(F v) {
-    constexpr float Pi = SK_ScalarPI;
-    F x = fract(v * (0.5f/Pi)) * (2*Pi);
-    I32 neg = x > Pi;
-    x = if_then_else(neg, x - Pi, x);
-
-    F pair = x * (Pi - x);
-    x = 4.0f * pair / ((5*Pi*Pi/4) - pair);
-    x = if_then_else(neg, -x, x);
-    return x;
+// Polynomial approximation of degree 5 for sin(x * 2 * pi) in the range [-1/4, 1/4]
+// Adapted from https://github.com/google/swiftshader/blob/master/docs/Sin-Cos-Optimization.pdf
+SI F sin5q_(F x) {
+    // A * x + B * x^3 + C * x^5
+    // Exact at x = 0, 1/12, 1/6, 1/4, and their negatives,
+    // which correspond to x * 2 * pi = 0, pi/6, pi/3, pi/2
+    constexpr float A = 6.28230858f;
+    constexpr float B = -41.1693687f;
+    constexpr float C = 74.4388885f;
+    F x2 = x * x;
+    return x * mad(mad(x2, C, B), x2, A);
 }
 
-SI F cos_(F v) {
-    return sin_(v + (SK_ScalarPI/2));
+SI F sin_(F x) {
+    constexpr float one_over_pi2 = 1 / (2 * SK_FloatPI);
+    x = mad(x, -one_over_pi2, 0.25f);
+    x = 0.25f - abs_(x - floor_(x + 0.5f));
+    return sin5q_(x);
+}
+
+SI F cos_(F x) {
+    constexpr float one_over_pi2 = 1 / (2 * SK_FloatPI);
+    x *= one_over_pi2;
+    x = 0.25f - abs_(x - floor_(x + 0.5f));
+    return sin5q_(x);
 }
 
 /*  "GENERATING ACCURATE VALUES FOR THE TANGENT FUNCTION"
@@ -1521,7 +1536,7 @@ SI F cos_(F v) {
                 1 - tan(x')
  */
 SI F tan_(F x) {
-    constexpr float Pi = SK_ScalarPI;
+    constexpr float Pi = SK_FloatPI;
     // periodic between -pi/2 ... pi/2
     // shift to 0...Pi, scale 1/Pi to get into 0...1, then fract, scale-up, shift-back
     x = fract((1/Pi)*x + 0.5f) * Pi - (Pi/2);
@@ -1571,7 +1586,7 @@ SI F atan_(F x) {
     I32 flip = (x > 1.0f);
     x = if_then_else(flip, 1/x, x);
     x = approx_atan_unit(x);
-    x = if_then_else(flip, SK_ScalarPI/2 - x, x);
+    x = if_then_else(flip, SK_FloatPI/2 - x, x);
     x = if_then_else(neg, -x, x);
     return x;
 }
@@ -1587,13 +1602,13 @@ SI F asin_(F x) {
     const float c1 = -0.2121144f;
     const float c0 = 1.5707288f;
     F poly = mad(x, mad(x, mad(x, c3, c2), c1), c0);
-    x = SK_ScalarPI/2 - sqrt_(1 - x) * poly;
+    x = SK_FloatPI/2 - sqrt_(1 - x) * poly;
     x = if_then_else(neg, -x, x);
     return x;
 }
 
 SI F acos_(F x) {
-    return SK_ScalarPI/2 - asin_(x);
+    return SK_FloatPI/2 - asin_(x);
 }
 
 /*  Use identity atan(x) = pi/2 - atan(1/x) for x > 1
@@ -1610,12 +1625,12 @@ SI F atan2_(F y0, F x0) {
     arg = if_then_else(neg, -arg, arg);
 
     F r = approx_atan_unit(arg);
-    r = if_then_else(flip, SK_ScalarPI/2 - r, r);
+    r = if_then_else(flip, SK_FloatPI/2 - r, r);
     r = if_then_else(neg, -r, r);
 
     // handle quadrant distinctions
-    r = if_then_else((y0 >= 0) & (x0  < 0), r + SK_ScalarPI, r);
-    r = if_then_else((y0  < 0) & (x0 <= 0), r - SK_ScalarPI, r);
+    r = if_then_else((y0 >= 0) & (x0  < 0), r + SK_FloatPI, r);
+    r = if_then_else((y0  < 0) & (x0 <= 0), r - SK_FloatPI, r);
     // Note: we don't try to handle 0,0 or infinities
     return r;
 }
@@ -2170,7 +2185,7 @@ STAGE(css_oklab_to_linear_srgb, NoCtx) {
 
 // Skia stores all polar colors with hue in the first component, so this "LCH -> Lab" transform
 // actually takes "HCL". This is also used to do the same polar transform for OkHCL to OkLAB.
-// See similar comments & logic in SkGradientShaderBase.cpp.
+// See similar comments & logic in SkGradientBaseShader.cpp.
 STAGE(css_hcl_to_lab, NoCtx) {
     F H = r,
       C = g,
@@ -2651,6 +2666,11 @@ STAGE(gather_1010102, const SkRasterPipeline_GatherCtx* ctx) {
     U32 ix = ix_and_ptr(&ptr, ctx, r,g);
     from_1010102(gather(ptr, ix), &r,&g,&b,&a);
 }
+STAGE(gather_1010102_xr, const SkRasterPipeline_GatherCtx* ctx) {
+    const uint32_t* ptr;
+    U32 ix = ix_and_ptr(&ptr, ctx, r, g);
+    from_1010102_xr(gather(ptr, ix), &r,&g,&b,&a);
+}
 STAGE(store_1010102, const SkRasterPipeline_MemoryCtx* ctx) {
     auto ptr = ptr_at_xy<uint32_t>(ctx, dx,dy);
 
@@ -2978,7 +2998,7 @@ STAGE(matrix_perspective, const float* m) {
 SI void gradient_lookup(const SkRasterPipeline_GradientCtx* c, U32 idx, F t,
                         F* r, F* g, F* b, F* a) {
     F fr, br, fg, bg, fb, bb, fa, ba;
-#if defined(JUMPER_IS_HSW) || defined(JUMPER_IS_SKX)
+#if defined(JUMPER_IS_HSW)
     if (c->stopCount <=8) {
         fr = _mm256_permutevar8x32_ps(_mm256_loadu_ps(c->fs[0]), idx);
         br = _mm256_permutevar8x32_ps(_mm256_loadu_ps(c->bs[0]), idx);
@@ -3281,6 +3301,12 @@ STAGE(callback, SkRasterPipeline_CallbackCtx* c) {
     load4(c->read_from,0, &r,&g,&b,&a);
 }
 
+STAGE_TAIL(set_base_pointer, std::byte* p) {
+    base = p;
+}
+
+#ifdef SK_ENABLE_SKSL_IN_RASTER_PIPELINE
+
 // All control flow stages used by SkSL maintain some state in the common registers:
 //   r: condition mask
 //   g: loop mask
@@ -3291,9 +3317,6 @@ STAGE(callback, SkRasterPipeline_CallbackCtx* c) {
 #define update_execution_mask() a = sk_bit_cast<F>(sk_bit_cast<I32>(r) & \
                                                    sk_bit_cast<I32>(g) & \
                                                    sk_bit_cast<I32>(b))
-STAGE_TAIL(set_base_pointer, std::byte* p) {
-    base = p;
-}
 
 STAGE_TAIL(init_lane_masks, NoCtx) {
     uint32_t iota[] = {0,1,2,3,4,5,6,7};
@@ -3342,6 +3365,12 @@ STAGE_TAIL(merge_condition_mask, I32* ptr) {
     update_execution_mask();
 }
 
+STAGE_TAIL(merge_inv_condition_mask, I32* ptr) {
+    // Set the condition-mask to the intersection of the first mask and the inverse of the second.
+    r = sk_bit_cast<F>(ptr[0] & ~ptr[1]);
+    update_execution_mask();
+}
+
 STAGE_TAIL(load_loop_mask, F* ctx) {
     g = sk_unaligned_load<F>(ctx);
     update_execution_mask();
@@ -3371,10 +3400,21 @@ STAGE_TAIL(merge_loop_mask, I32* ptr) {
     update_execution_mask();
 }
 
-STAGE_TAIL(case_op, SkRasterPipeline_CaseOpCtx* ctx) {
+STAGE_TAIL(continue_op, I32* continueMask) {
+    // Set any currently-executing lanes in the continue-mask to true.
+    *continueMask |= execution_mask();
+
+    // Disable any currently-executing lanes from the loop mask. (Just like `mask_off_loop_mask`.)
+    g = sk_bit_cast<F>(sk_bit_cast<I32>(g) & ~execution_mask());
+    update_execution_mask();
+}
+
+STAGE_TAIL(case_op, SkRasterPipeline_CaseOpCtx* packed) {
+    auto ctx = SkRPCtxUtils::Unpack(packed);
+
     // Check each lane to see if the case value matches the expectation.
-    I32* actualValue = (I32*)ctx->ptr;
-    I32 caseMatches = cond_to_mask(*actualValue == ctx->expectedValue);
+    I32* actualValue = (I32*)(base + ctx.offset);
+    I32 caseMatches = cond_to_mask(*actualValue == ctx.expectedValue);
 
     // In lanes where we found a match, enable the loop mask...
     g = sk_bit_cast<F>(sk_bit_cast<I32>(g) | caseMatches);
@@ -3766,10 +3806,6 @@ SI void apply_adjacent_unary(T* dst, T* end) {
     } while (dst != end);
 }
 
-SI void bitwise_not_fn(I32* dst) {
-    *dst = ~*dst;
-}
-
 #if defined(JUMPER_IS_SCALAR)
 template <typename T>
 SI void cast_to_float_from_fn(T* dst) {
@@ -3794,8 +3830,7 @@ SI void cast_to_uint_from_fn(F* dst) {
 }
 #endif
 
-template <typename T>
-SI void abs_fn(T* dst) {
+SI void abs_fn(I32* dst) {
     *dst = abs_(*dst);
 }
 
@@ -3829,14 +3864,13 @@ SI void invsqrt_fn(F* dst) {
     STAGE_TAIL(name##_3_uints, U32* dst) { apply_adjacent_unary<U32, &name##_fn>(dst, dst + 3); } \
     STAGE_TAIL(name##_4_uints, U32* dst) { apply_adjacent_unary<U32, &name##_fn>(dst, dst + 4); }
 
-DECLARE_UNARY_INT(bitwise_not)
 DECLARE_UNARY_INT(cast_to_float_from) DECLARE_UNARY_UINT(cast_to_float_from)
 DECLARE_UNARY_FLOAT(cast_to_int_from)
 DECLARE_UNARY_FLOAT(cast_to_uint_from)
-DECLARE_UNARY_FLOAT(abs) DECLARE_UNARY_INT(abs)
 DECLARE_UNARY_FLOAT(floor)
 DECLARE_UNARY_FLOAT(ceil)
 DECLARE_UNARY_FLOAT(invsqrt)
+DECLARE_UNARY_INT(abs)
 
 #undef DECLARE_UNARY_FLOAT
 #undef DECLARE_UNARY_INT
@@ -3949,18 +3983,21 @@ SI void apply_adjacent_binary(T* dst, T* src) {
 template <typename T, void (*ApplyFn)(T*, T*)>
 SI void apply_adjacent_binary_packed(SkRasterPipeline_BinaryOpCtx* packed, std::byte* base) {
     auto ctx = SkRPCtxUtils::Unpack(packed);
-    T* dst = (T*)(base + ctx.dst);
-    T* src = (T*)(base + ctx.src);
-    apply_adjacent_binary<T, ApplyFn>(dst, src);
+    std::byte* dst = base + ctx.dst;
+    std::byte* src = base + ctx.src;
+    apply_adjacent_binary<T, ApplyFn>((T*)dst, (T*)src);
 }
 
-template <typename V, typename S, void (*ApplyFn)(V*, V*)>
+template <int N, typename V, typename S, void (*ApplyFn)(V*, V*)>
 SI void apply_binary_immediate(SkRasterPipeline_ConstantCtx* packed, std::byte* base) {
     auto ctx = SkRPCtxUtils::Unpack(packed);
     V* dst = (V*)(base + ctx.dst);         // get a pointer to the destination
     S scalar = sk_bit_cast<S>(ctx.value);  // bit-pun the constant value as desired
     V src = scalar;                        // broadcast the constant value into a vector
-    ApplyFn(dst, &src);                    // perform the operation
+    for (int index = 0; index < N; ++index) {
+        ApplyFn(dst, &src);                // perform the operation
+        dst += 1;
+    }
 }
 
 template <typename T>
@@ -4111,24 +4148,42 @@ DECLARE_N_WAY_BINARY_FLOAT(pow)
 // Some ops have an optimized version when the right-side is an immediate value.
 #define DECLARE_IMM_BINARY_FLOAT(name)                                   \
     STAGE_TAIL(name##_imm_float, SkRasterPipeline_ConstantCtx* packed) { \
-        apply_binary_immediate<F, float, &name##_fn>(packed, base);      \
+        apply_binary_immediate<1, F, float, &name##_fn>(packed, base);   \
     }
-#define DECLARE_IMM_BINARY_INT(name)                                     \
-    STAGE_TAIL(name##_imm_int, SkRasterPipeline_ConstantCtx* packed) {   \
-        apply_binary_immediate<I32, int32_t, &name##_fn>(packed, base);  \
+#define DECLARE_IMM_BINARY_INT(name)                                       \
+    STAGE_TAIL(name##_imm_int, SkRasterPipeline_ConstantCtx* packed) {     \
+        apply_binary_immediate<1, I32, int32_t, &name##_fn>(packed, base); \
     }
-#define DECLARE_IMM_BINARY_UINT(name)                                    \
-    STAGE_TAIL(name##_imm_uint, SkRasterPipeline_ConstantCtx* packed) {  \
-        apply_binary_immediate<U32, uint32_t, &name##_fn>(packed, base); \
+#define DECLARE_MULTI_IMM_BINARY_INT(name)                                 \
+    STAGE_TAIL(name##_imm_int, SkRasterPipeline_ConstantCtx* packed) {     \
+        apply_binary_immediate<1, I32, int32_t, &name##_fn>(packed, base); \
+    }                                                                      \
+    STAGE_TAIL(name##_imm_2_ints, SkRasterPipeline_ConstantCtx* packed) {  \
+        apply_binary_immediate<2, I32, int32_t, &name##_fn>(packed, base); \
+    }                                                                      \
+    STAGE_TAIL(name##_imm_3_ints, SkRasterPipeline_ConstantCtx* packed) {  \
+        apply_binary_immediate<3, I32, int32_t, &name##_fn>(packed, base); \
+    }                                                                      \
+    STAGE_TAIL(name##_imm_4_ints, SkRasterPipeline_ConstantCtx* packed) {  \
+        apply_binary_immediate<4, I32, int32_t, &name##_fn>(packed, base); \
+    }
+#define DECLARE_IMM_BINARY_UINT(name)                                       \
+    STAGE_TAIL(name##_imm_uint, SkRasterPipeline_ConstantCtx* packed) {     \
+        apply_binary_immediate<1, U32, uint32_t, &name##_fn>(packed, base); \
     }
 
 DECLARE_IMM_BINARY_FLOAT(add)   DECLARE_IMM_BINARY_INT(add)
 DECLARE_IMM_BINARY_FLOAT(mul)   DECLARE_IMM_BINARY_INT(mul)
+                                DECLARE_MULTI_IMM_BINARY_INT(bitwise_and)
+                                DECLARE_IMM_BINARY_FLOAT(max)
+                                DECLARE_IMM_BINARY_FLOAT(min)
+                                DECLARE_IMM_BINARY_INT(bitwise_xor)
 DECLARE_IMM_BINARY_FLOAT(cmplt) DECLARE_IMM_BINARY_INT(cmplt) DECLARE_IMM_BINARY_UINT(cmplt)
 DECLARE_IMM_BINARY_FLOAT(cmple) DECLARE_IMM_BINARY_INT(cmple) DECLARE_IMM_BINARY_UINT(cmple)
 DECLARE_IMM_BINARY_FLOAT(cmpeq) DECLARE_IMM_BINARY_INT(cmpeq)
 DECLARE_IMM_BINARY_FLOAT(cmpne) DECLARE_IMM_BINARY_INT(cmpne)
 
+#undef DECLARE_MULTI_IMM_BINARY_INT
 #undef DECLARE_IMM_BINARY_FLOAT
 #undef DECLARE_IMM_BINARY_INT
 #undef DECLARE_IMM_BINARY_UINT
@@ -4246,13 +4301,26 @@ STAGE_TAIL(refract_4_floats, F* dst) {
 // Ternary operations work like binary ops (see immediately above) but take two source inputs.
 template <typename T, void (*ApplyFn)(T*, T*, T*)>
 SI void apply_adjacent_ternary(T* dst, T* src0, T* src1) {
-    T* end = src0;
-    do {
+    int count = src0 - dst;
+#if !defined(JUMPER_IS_SCALAR)
+    __builtin_assume(count >= 1);
+#endif
+
+    for (int index = 0; index < count; ++index) {
         ApplyFn(dst, src0, src1);
         dst += 1;
         src0 += 1;
         src1 += 1;
-    } while (dst != end);
+    }
+}
+
+template <typename T, void (*ApplyFn)(T*, T*, T*)>
+SI void apply_adjacent_ternary_packed(SkRasterPipeline_TernaryOpCtx* packed, std::byte* base) {
+    auto ctx = SkRPCtxUtils::Unpack(packed);
+    std::byte* dst  = base + ctx.dst;
+    std::byte* src0 = dst  + ctx.delta;
+    std::byte* src1 = src0 + ctx.delta;
+    apply_adjacent_ternary<T, ApplyFn>((T*)dst, (T*)src0, (T*)src1);
 }
 
 SI void mix_fn(F* a, F* x, F* y) {
@@ -4270,9 +4338,9 @@ SI void smoothstep_fn(F* edge0, F* edge1, F* x) {
     *edge0 = t * t * (3.0 - 2.0 * t);
 }
 
-#define DECLARE_N_WAY_TERNARY_FLOAT(name)                                                  \
-    STAGE_TAIL(name##_n_floats, SkRasterPipeline_TernaryOpCtx* ctx) {                      \
-        apply_adjacent_ternary<F, &name##_fn>((F*)ctx->dst, (F*)ctx->src0, (F*)ctx->src1); \
+#define DECLARE_N_WAY_TERNARY_FLOAT(name)                                \
+    STAGE_TAIL(name##_n_floats, SkRasterPipeline_TernaryOpCtx* packed) { \
+        apply_adjacent_ternary_packed<F, &name##_fn>(packed, base);      \
     }
 
 #define DECLARE_TERNARY_FLOAT(name)                                                           \
@@ -4282,13 +4350,13 @@ SI void smoothstep_fn(F* edge0, F* edge1, F* x) {
     STAGE_TAIL(name##_4_floats, F* p) { apply_adjacent_ternary<F, &name##_fn>(p, p+4, p+8); } \
     DECLARE_N_WAY_TERNARY_FLOAT(name)
 
-#define DECLARE_TERNARY_INT(name)                                                                  \
-    STAGE_TAIL(name##_int, I32* p) { apply_adjacent_ternary<I32, &name##_fn>(p, p+1, p+2); }       \
-    STAGE_TAIL(name##_2_ints, I32* p) { apply_adjacent_ternary<I32, &name##_fn>(p, p+2, p+4); }    \
-    STAGE_TAIL(name##_3_ints, I32* p) { apply_adjacent_ternary<I32, &name##_fn>(p, p+3, p+6); }    \
-    STAGE_TAIL(name##_4_ints, I32* p) { apply_adjacent_ternary<I32, &name##_fn>(p, p+4, p+8); }    \
-    STAGE_TAIL(name##_n_ints, SkRasterPipeline_TernaryOpCtx* ctx) {                                \
-        apply_adjacent_ternary<I32, &name##_fn>((I32*)ctx->dst, (I32*)ctx->src0, (I32*)ctx->src1); \
+#define DECLARE_TERNARY_INT(name)                                                               \
+    STAGE_TAIL(name##_int, I32* p) { apply_adjacent_ternary<I32, &name##_fn>(p, p+1, p+2); }    \
+    STAGE_TAIL(name##_2_ints, I32* p) { apply_adjacent_ternary<I32, &name##_fn>(p, p+2, p+4); } \
+    STAGE_TAIL(name##_3_ints, I32* p) { apply_adjacent_ternary<I32, &name##_fn>(p, p+3, p+6); } \
+    STAGE_TAIL(name##_4_ints, I32* p) { apply_adjacent_ternary<I32, &name##_fn>(p, p+4, p+8); } \
+    STAGE_TAIL(name##_n_ints, SkRasterPipeline_TernaryOpCtx* packed) {                          \
+        apply_adjacent_ternary_packed<I32, &name##_fn>(packed, base);                           \
     }
 
 DECLARE_N_WAY_TERNARY_FLOAT(smoothstep)
@@ -4298,6 +4366,8 @@ DECLARE_TERNARY_INT(mix)
 #undef DECLARE_N_WAY_TERNARY_FLOAT
 #undef DECLARE_TERNARY_FLOAT
 #undef DECLARE_TERNARY_INT
+
+#endif  // SK_ENABLE_SKSL_IN_RASTER_PIPELINE
 
 STAGE(gauss_a_to_rgba, NoCtx) {
     // x = 1 - x;
@@ -4440,7 +4510,7 @@ namespace lowp {
 
 #else  // We are compiling vector code with Clang... let's make some lowp stages!
 
-#if defined(JUMPER_IS_HSW) || defined(JUMPER_IS_SKX)
+#if defined(JUMPER_IS_HSW)
     using U8  = uint8_t  __attribute__((ext_vector_type(16)));
     using U16 = uint16_t __attribute__((ext_vector_type(16)));
     using I16 =  int16_t __attribute__((ext_vector_type(16)));
@@ -4713,7 +4783,7 @@ SI U32 trunc_(F x) { return (U32)cast<I32>(x); }
 
 // Use approximate instructions and one Newton-Raphson step to calculate 1/x.
 SI F rcp_precise(F x) {
-#if defined(JUMPER_IS_HSW) || defined(JUMPER_IS_SKX)
+#if defined(JUMPER_IS_HSW)
     __m256 lo,hi;
     split(x, &lo,&hi);
     return join<F>(SK_OPTS_NS::rcp_precise(lo), SK_OPTS_NS::rcp_precise(hi));
@@ -4730,7 +4800,7 @@ SI F rcp_precise(F x) {
 #endif
 }
 SI F sqrt_(F x) {
-#if defined(JUMPER_IS_HSW) || defined(JUMPER_IS_SKX)
+#if defined(JUMPER_IS_HSW)
     __m256 lo,hi;
     split(x, &lo,&hi);
     return join<F>(_mm256_sqrt_ps(lo), _mm256_sqrt_ps(hi));
@@ -4765,7 +4835,7 @@ SI F floor_(F x) {
     float32x4_t lo,hi;
     split(x, &lo,&hi);
     return join<F>(vrndmq_f32(lo), vrndmq_f32(hi));
-#elif defined(JUMPER_IS_HSW) || defined(JUMPER_IS_SKX)
+#elif defined(JUMPER_IS_HSW)
     __m256 lo,hi;
     split(x, &lo,&hi);
     return join<F>(_mm256_floor_ps(lo), _mm256_floor_ps(hi));
@@ -4785,7 +4855,7 @@ SI F floor_(F x) {
 // The result is a number on [-1, 1).
 // Note: on neon this is a saturating multiply while the others are not.
 SI I16 scaled_mult(I16 a, I16 b) {
-#if defined(JUMPER_IS_HSW) || defined(JUMPER_IS_SKX)
+#if defined(JUMPER_IS_HSW)
     return _mm256_mulhrs_epi16(a, b);
 #elif defined(JUMPER_IS_SSE41) || defined(JUMPER_IS_AVX)
     return _mm_mulhrs_epi16(a, b);
@@ -4949,6 +5019,7 @@ STAGE_PP(swap_src_dst, NoCtx) {
     }                                                    \
     SI U16 name##_channel(U16 s, U16 d, U16 sa, U16 da)
 
+#if defined(SK_USE_INACCURATE_DIV255_IN_BLEND)
     BLEND_MODE(clear)    { return 0; }
     BLEND_MODE(srcatop)  { return div255( s*da + d*inv(sa) ); }
     BLEND_MODE(dstatop)  { return div255( d*sa + s*inv(da) ); }
@@ -4963,6 +5034,22 @@ STAGE_PP(swap_src_dst, NoCtx) {
     BLEND_MODE(plus_)    { return min(s+d, 255); }
     BLEND_MODE(screen)   { return s + d - div255( s*d ); }
     BLEND_MODE(xor_)     { return div255( s*inv(da) + d*inv(sa) ); }
+#else
+    BLEND_MODE(clear)    { return 0; }
+    BLEND_MODE(srcatop)  { return div255( s*da + d*inv(sa) ); }
+    BLEND_MODE(dstatop)  { return div255( d*sa + s*inv(da) ); }
+    BLEND_MODE(srcin)    { return div255_accurate( s*da ); }
+    BLEND_MODE(dstin)    { return div255_accurate( d*sa ); }
+    BLEND_MODE(srcout)   { return div255_accurate( s*inv(da) ); }
+    BLEND_MODE(dstout)   { return div255_accurate( d*inv(sa) ); }
+    BLEND_MODE(srcover)  { return s + div255_accurate( d*inv(sa) ); }
+    BLEND_MODE(dstover)  { return d + div255_accurate( s*inv(da) ); }
+    BLEND_MODE(modulate) { return div255_accurate( s*d ); }
+    BLEND_MODE(multiply) { return div255( s*inv(da) + d*inv(sa) + s*d ); }
+    BLEND_MODE(plus_)    { return min(s+d, 255); }
+    BLEND_MODE(screen)   { return s + d - div255_accurate( s*d ); }
+    BLEND_MODE(xor_)     { return div255( s*inv(da) + d*inv(sa) ); }
+#endif
 #undef BLEND_MODE
 
 // The same logic applied to color, and srcover for alpha.
@@ -5036,7 +5123,7 @@ SI V load(const T* ptr, size_t tail) {
     V v = 0;
     switch (tail & (N-1)) {
         case  0: memcpy(&v, ptr, sizeof(v)); break;
-    #if defined(JUMPER_IS_HSW) || defined(JUMPER_IS_SKX)
+    #if defined(JUMPER_IS_HSW)
         case 15: v[14] = ptr[14]; [[fallthrough]];
         case 14: v[13] = ptr[13]; [[fallthrough]];
         case 13: v[12] = ptr[12]; [[fallthrough]];
@@ -5060,7 +5147,7 @@ template <typename V, typename T>
 SI void store(T* ptr, size_t tail, V v) {
     switch (tail & (N-1)) {
         case  0: memcpy(ptr, &v, sizeof(v)); break;
-    #if defined(JUMPER_IS_HSW) || defined(JUMPER_IS_SKX)
+    #if defined(JUMPER_IS_HSW)
         case 15: ptr[14] = v[14]; [[fallthrough]];
         case 14: ptr[13] = v[13]; [[fallthrough]];
         case 13: ptr[12] = v[12]; [[fallthrough]];
@@ -5080,7 +5167,7 @@ SI void store(T* ptr, size_t tail, V v) {
     }
 }
 
-#if defined(JUMPER_IS_HSW) || defined(JUMPER_IS_SKX)
+#if defined(JUMPER_IS_HSW)
     template <typename V, typename T>
     SI V gather(const T* ptr, U32 ix) {
         return V{ ptr[ix[ 0]], ptr[ix[ 1]], ptr[ix[ 2]], ptr[ix[ 3]],
@@ -5118,7 +5205,7 @@ SI void store(T* ptr, size_t tail, V v) {
 // ~~~~~~ 32-bit memory loads and stores ~~~~~~ //
 
 SI void from_8888(U32 rgba, U16* r, U16* g, U16* b, U16* a) {
-#if defined(JUMPER_IS_HSW) || defined(JUMPER_IS_SKX)
+#if defined(JUMPER_IS_HSW)
     // Swap the middle 128-bit lanes to make _mm256_packus_epi32() in cast_U16() work out nicely.
     __m256i _01,_23;
     split(rgba, &_01, &_23);
@@ -5587,19 +5674,19 @@ STAGE_PP(check_decal_mask, SkRasterPipeline_DecalTileCtx* ctx) {
 }
 
 SI void round_F_to_U16(F R, F G, F B, F A, U16* r, U16* g, U16* b, U16* a) {
-    auto round = [](F x) { return cast<U16>(x * 255.0f + 0.5f); };
+    auto round_color = [](F x) { return cast<U16>(x * 255.0f + 0.5f); };
 
-    *r = round(min(max(0, R), 1));
-    *g = round(min(max(0, G), 1));
-    *b = round(min(max(0, B), 1));
-    *a = round(A);  // we assume alpha is already in [0,1].
+    *r = round_color(min(max(0, R), 1));
+    *g = round_color(min(max(0, G), 1));
+    *b = round_color(min(max(0, B), 1));
+    *a = round_color(A);  // we assume alpha is already in [0,1].
 }
 
 SI void gradient_lookup(const SkRasterPipeline_GradientCtx* c, U32 idx, F t,
                         U16* r, U16* g, U16* b, U16* a) {
 
     F fr, fg, fb, fa, br, bg, bb, ba;
-#if defined(JUMPER_IS_HSW) || defined(JUMPER_IS_SKX)
+#if defined(JUMPER_IS_HSW)
     if (c->stopCount <=8) {
         __m256i lo, hi;
         split(idx, &lo, &hi);

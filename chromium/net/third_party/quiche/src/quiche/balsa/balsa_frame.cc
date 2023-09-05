@@ -5,13 +5,11 @@
 #include "quiche/balsa/balsa_frame.h"
 
 #include <algorithm>
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <limits>
 #include <memory>
-#include <ostream>
 #include <string>
 #include <utility>
 
@@ -43,7 +41,8 @@ namespace quiche {
 
 namespace {
 
-const size_t kContinueStatusCode = 100;
+constexpr size_t kContinueStatusCode = 100;
+constexpr size_t kSwitchingProtocolsStatusCode = 101;
 
 constexpr absl::string_view kChunked = "chunked";
 constexpr absl::string_view kContentLength = "content-length";
@@ -68,8 +67,6 @@ void BalsaFrame::Reset() {
   // visitor_ = &do_nothing_visitor_;  // not reset between messages.
   chunk_length_remaining_ = 0;
   content_length_remaining_ = 0;
-  last_slash_n_loc_ = nullptr;
-  last_recorded_slash_n_loc_ = nullptr;
   last_slash_n_idx_ = 0;
   term_chars_ = 0;
   parse_state_ = BalsaFrameEnums::READING_HEADER_AND_FIRSTLINE;
@@ -528,7 +525,9 @@ void BalsaFrame::ProcessTransferEncodingLine(HeaderLines::size_type line_idx) {
     return;
   }
 
-  HandleError(BalsaFrameEnums::UNKNOWN_TRANSFER_ENCODING);
+  if (http_validation_policy().validate_transfer_encoding) {
+    HandleError(BalsaFrameEnums::UNKNOWN_TRANSFER_ENCODING);
+  }
 }
 
 bool BalsaFrame::CheckHeaderLinesForInvalidChars(const Lines& lines,
@@ -635,7 +634,8 @@ void BalsaFrame::ProcessHeaderLines(const Lines& lines, bool is_trailer,
       continue;
     }
     if (absl::EqualsIgnoreCase(key, kTransferEncoding)) {
-      if (transfer_encoding_idx != 0) {
+      if (http_validation_policy().validate_transfer_encoding &&
+          transfer_encoding_idx != 0) {
         HandleError(BalsaFrameEnums::MULTIPLE_TRANSFER_ENCODING_KEYS);
         return;
       }
@@ -644,7 +644,8 @@ void BalsaFrame::ProcessHeaderLines(const Lines& lines, bool is_trailer,
   }
 
   if (!is_trailer) {
-    if (http_validation_policy()
+    if (http_validation_policy().validate_transfer_encoding &&
+        http_validation_policy()
             .disallow_transfer_encoding_with_content_length &&
         content_length_idx != 0 && transfer_encoding_idx != 0) {
       HandleError(BalsaFrameEnums::BOTH_TRANSFER_ENCODING_AND_CONTENT_LENGTH);
@@ -714,7 +715,8 @@ void BalsaFrame::AssignParseStateAfterHeadersHaveBeenParsed() {
         const absl::string_view method = headers_->request_method();
         // POSTs and PUTs should have a detectable body length.  If they
         // do not we consider it an error.
-        if (method != "POST" && method != "PUT") {
+        if ((method != "POST" && method != "PUT") ||
+            !http_validation_policy().require_content_length_if_body_required) {
           parse_state_ = BalsaFrameEnums::MESSAGE_FULLY_READ;
           break;
         } else if (!allow_reading_until_close_for_request_) {
@@ -850,10 +852,13 @@ size_t BalsaFrame::ProcessHeaders(const char* message_start,
     }
 
     if (use_interim_headers_callback_ &&
-        IsInterimResponse(headers_->parsed_response_code())) {
+        IsInterimResponse(headers_->parsed_response_code()) &&
+        headers_->parsed_response_code() != kSwitchingProtocolsStatusCode) {
       // Deliver headers from this interim response but reset everything else to
-      // prepare for the next set of headers.
-      visitor_->OnInterimHeaders(std::move(*headers_));
+      // prepare for the next set of headers. Skip 101 Switching Protocols
+      // because these are considered final headers for the current protocol.
+      visitor_->OnInterimHeaders(
+          std::make_unique<BalsaHeaders>(std::move(*headers_)));
       Reset();
       checkpoint = message_start = message_current;
       continue;

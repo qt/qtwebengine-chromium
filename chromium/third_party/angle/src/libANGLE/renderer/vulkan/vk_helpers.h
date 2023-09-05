@@ -252,7 +252,7 @@ class DynamicDescriptorPool final : angle::NonCopyable
                                              VkDescriptorSet *descriptorSetOut,
                                              SharedDescriptorSetCacheKey *sharedCacheKeyOut);
 
-    void releaseCachedDescriptorSet(ContextVk *contextVk, const DescriptorSetDesc &desc);
+    void releaseCachedDescriptorSet(RendererVk *renderer, const DescriptorSetDesc &desc);
     void destroyCachedDescriptorSet(RendererVk *renderer, const DescriptorSetDesc &desc);
 
     template <typename Accumulator>
@@ -777,7 +777,7 @@ class BufferHelper : public ReadWriteResource
 
     void destroy(RendererVk *renderer);
     void release(RendererVk *renderer);
-    void releaseBufferAndDescriptorSetCache(ContextVk *contextVk);
+    void releaseBufferAndDescriptorSetCache(RendererVk *renderer);
 
     BufferSerial getBufferSerial() const { return mSerial; }
     BufferSerial getBlockSerial() const
@@ -1195,6 +1195,19 @@ class CommandBufferHelperCommon : angle::NonCopyable
     template <class DerivedT>
     void assertCanBeRecycledImpl();
 
+    void bufferReadImpl(VkAccessFlags readAccessType,
+                        PipelineStage readStage,
+                        BufferHelper *buffer);
+    void bufferReadImpl(VkAccessFlags readAccessType,
+                        const gl::ShaderBitSet &readShaderStages,
+                        BufferHelper *buffer)
+    {
+        for (gl::ShaderType shaderType : readShaderStages)
+        {
+            const vk::PipelineStage readStage = vk::GetPipelineStage(shaderType);
+            bufferReadImpl(readAccessType, readStage, buffer);
+        }
+    }
     void imageReadImpl(ContextVk *contextVk,
                        VkImageAspectFlags aspectFlags,
                        ImageLayout imageLayout,
@@ -1279,7 +1292,20 @@ class OutsideRenderPassCommandBufferHelper final : public CommandBufferHelperCom
     void bufferRead(ContextVk *contextVk,
                     VkAccessFlags readAccessType,
                     PipelineStage readStage,
-                    BufferHelper *buffer);
+                    BufferHelper *buffer)
+    {
+        bufferReadImpl(readAccessType, readStage, buffer);
+        setBufferReadQueueSerial(contextVk, buffer);
+    }
+
+    void bufferRead(ContextVk *contextVk,
+                    VkAccessFlags readAccessType,
+                    const gl::ShaderBitSet &readShaderStages,
+                    BufferHelper *buffer)
+    {
+        bufferReadImpl(readAccessType, readShaderStages, buffer);
+        setBufferReadQueueSerial(contextVk, buffer);
+    }
 
     void imageRead(ContextVk *contextVk,
                    VkImageAspectFlags aspectFlags,
@@ -1313,6 +1339,7 @@ class OutsideRenderPassCommandBufferHelper final : public CommandBufferHelperCom
   private:
     angle::Result initializeCommandBuffer(Context *context);
     angle::Result endCommandBuffer(Context *context);
+    void setBufferReadQueueSerial(ContextVk *contextVk, BufferHelper *buffer);
 
     OutsideRenderPassCommandBuffer mCommandBuffer;
     bool mIsCommandBufferEnded = false;
@@ -1409,7 +1436,19 @@ class RenderPassCommandBufferHelper final : public CommandBufferHelperCommon
     void bufferRead(ContextVk *contextVk,
                     VkAccessFlags readAccessType,
                     PipelineStage readStage,
-                    BufferHelper *buffer);
+                    BufferHelper *buffer)
+    {
+        bufferReadImpl(readAccessType, readStage, buffer);
+        buffer->setQueueSerial(mQueueSerial);
+    }
+    void bufferRead(ContextVk *contextVk,
+                    VkAccessFlags readAccessType,
+                    const gl::ShaderBitSet &readShaderStages,
+                    BufferHelper *buffer)
+    {
+        bufferReadImpl(readAccessType, readShaderStages, buffer);
+        buffer->setQueueSerial(mQueueSerial);
+    }
 
     void colorImagesDraw(gl::LevelIndex level,
                          uint32_t layerStart,
@@ -2332,6 +2371,14 @@ class ImageHelper final : public Resource, public angle::Subject
                                                   uint32_t layerCount,
                                                   void *pixels);
 
+    angle::Result readPixelsWithCompute(ContextVk *contextVk,
+                                        ImageHelper *src,
+                                        const PackPixelsParams &packPixelsParams,
+                                        const VkOffset3D &srcOffset,
+                                        const VkExtent3D &srcExtent,
+                                        ptrdiff_t pixelsOffset,
+                                        const VkImageSubresourceLayers &srcSubresource);
+
     angle::Result readPixels(ContextVk *contextVk,
                              const gl::Rectangle &area,
                              const PackPixelsParams &packPixelsParams,
@@ -2668,6 +2715,9 @@ class ImageHelper final : public Resource, public angle::Subject
 
     bool canCopyWithTransformForReadPixels(const PackPixelsParams &packPixelsParams,
                                            const angle::Format *readFormat);
+    bool canCopyWithComputeForReadPixels(const PackPixelsParams &packPixelsParams,
+                                         const angle::Format *readFormat,
+                                         ptrdiff_t pixelsOffset);
 
     // Returns true if source data and actual image format matches except color space differences.
     bool isDataFormatMatchForCopy(angle::FormatID srcDataFormatID) const
@@ -3264,7 +3314,8 @@ class CommandBufferAccess : angle::NonCopyable
     }
     void onBufferComputeShaderWrite(BufferHelper *buffer)
     {
-        onBufferWrite(VK_ACCESS_SHADER_WRITE_BIT, PipelineStage::ComputeShader, buffer);
+        onBufferWrite(VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT,
+                      PipelineStage::ComputeShader, buffer);
     }
 
     void onImageTransferRead(VkImageAspectFlags aspectFlags, ImageHelper *image)

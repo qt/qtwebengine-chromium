@@ -143,13 +143,13 @@ private:
         return fName.c_str();
     }
 
-    SkIPoint onGetSize() override {
+    SkISize onGetSize() override {
         return { 256, 256 };
     }
 
     void onDelayedSetup() override {
         // Pass the image though a premul canvas so that we "forget" it is opaque.
-        auto surface = SkSurface::MakeRasterN32Premul(256, 256);
+        auto surface = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(256, 256));
         surface->getCanvas()->drawImage(GetResourceAsImage("images/mandrill_256.png"), 0, 0);
 
         fImage = surface->makeImageSnapshot();

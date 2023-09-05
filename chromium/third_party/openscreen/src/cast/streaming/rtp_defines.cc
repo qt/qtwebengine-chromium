@@ -11,9 +11,7 @@ namespace cast {
 
 RtpPayloadType GetPayloadType(AudioCodec codec, bool use_android_rtp_hack) {
   if (use_android_rtp_hack) {
-    return codec == AudioCodec::kNotSpecified
-               ? RtpPayloadType::kAudioVarious
-               : RtpPayloadType::kAudioHackForAndroidTV;
+    return RtpPayloadType::kAudioHackForAndroidTV;
   }
 
   switch (codec) {
@@ -30,9 +28,7 @@ RtpPayloadType GetPayloadType(AudioCodec codec, bool use_android_rtp_hack) {
 
 RtpPayloadType GetPayloadType(VideoCodec codec, bool use_android_rtp_hack) {
   if (use_android_rtp_hack) {
-    return codec == VideoCodec::kNotSpecified
-               ? RtpPayloadType::kVideoVarious
-               : RtpPayloadType::kVideoHackForAndroidTV;
+    return RtpPayloadType::kVideoHackForAndroidTV;
   }
   switch (codec) {
     // VP8 and VP9 share the same payload type.

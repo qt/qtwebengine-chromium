@@ -45,6 +45,7 @@
 #include "quiche/quic/platform/api/quic_flags.h"
 #include "quiche/quic/platform/api/quic_socket_address.h"
 #include "quiche/common/platform/api/quiche_mem_slice.h"
+#include "quiche/common/quiche_callbacks.h"
 #include "quiche/common/quiche_linked_hash_map.h"
 
 namespace quic {
@@ -181,10 +182,9 @@ class QUIC_EXPORT_PRIVATE QuicSession
   bool ValidateToken(absl::string_view token) override;
   bool MaybeSendAddressToken() override;
   void OnBandwidthUpdateTimeout() override {}
-  std::unique_ptr<QuicPathValidationContext> CreateContextForMultiPortPath()
-      override {
-    return nullptr;
-  }
+  void CreateContextForMultiPortPath(
+      std::unique_ptr<MultiPortPathContextObserver> /*context_observer*/)
+      override {}
   void MigrateToMultiPortPath(
       std::unique_ptr<QuicPathValidationContext> /*context*/) override {}
   void OnServerPreferredAddressAvailable(
@@ -325,6 +325,10 @@ class QUIC_EXPORT_PRIVATE QuicSession
   void OnHandshakeCallbackDone() override;
   bool PacketFlusherAttached() const override;
   ParsedQuicVersion parsed_version() const override { return version(); }
+  void OnEncryptedClientHelloSent(
+      absl::string_view client_hello) const override;
+  void OnEncryptedClientHelloReceived(
+      absl::string_view client_hello) const override;
 
   // Implement StreamDelegateInterface.
   void OnStreamError(QuicErrorCode error_code,
@@ -801,9 +805,10 @@ class QUIC_EXPORT_PRIVATE QuicSession
 
   // Called by applications to perform |action| on active streams.
   // Stream iteration will be stopped if action returns false.
-  void PerformActionOnActiveStreams(std::function<bool(QuicStream*)> action);
   void PerformActionOnActiveStreams(
-      std::function<bool(QuicStream*)> action) const;
+      quiche::UnretainedCallback<bool(QuicStream*)> action);
+  void PerformActionOnActiveStreams(
+      quiche::UnretainedCallback<bool(QuicStream*)> action) const;
 
   // Return the largest peer created stream id depending on directionality
   // indicated by |unidirectional|.

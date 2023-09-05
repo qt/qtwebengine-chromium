@@ -17,6 +17,8 @@ set(
   curve25519/asm/x25519-asm-arm.S
   hrss/asm/poly_rq_mul.S
   poly1305/poly1305_arm_asm.S
+  ../third_party/fiat/asm/fiat_curve25519_adx_mul.S
+  ../third_party/fiat/asm/fiat_curve25519_adx_square.S
 )
 perlasm(CRYPTO_SOURCES aarch64 chacha/chacha-armv8 chacha/asm/chacha-armv8.pl)
 perlasm(CRYPTO_SOURCES aarch64 cipher_extra/chacha20_poly1305_armv8 cipher_extra/asm/chacha20_poly1305_armv8.pl)
@@ -126,15 +128,18 @@ add_library(
   conf/conf.c
   cpu_aarch64_apple.c
   cpu_aarch64_freebsd.c
+  cpu_aarch64_openbsd.c
   cpu_aarch64_fuchsia.c
   cpu_aarch64_linux.c
   cpu_aarch64_win.c
   cpu_arm_freebsd.c
+  cpu_arm_openbsd.c
   cpu_arm_linux.c
   cpu_arm.c
   cpu_intel.c
   crypto.c
   curve25519/curve25519.c
+  curve25519/curve25519_64_adx.c
   curve25519/spake25519.c
   des/des.c
   dh_extra/params.c
@@ -200,8 +205,7 @@ add_library(
   rand_extra/rand_extra.c
   rand_extra/windows.c
   rc4/rc4.c
-  refcount_c11.c
-  refcount_lock.c
+  refcount.c
   rsa_extra/rsa_asn1.c
   rsa_extra/rsa_crypt.c
   rsa_extra/rsa_print.c

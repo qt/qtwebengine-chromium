@@ -43,11 +43,15 @@ void VulkanCaps::init(const skgpu::VulkanInterface* vkInterface,
     // Graphite requires Vulkan version 1.1 or later, which has protected support.
     fProtectedSupport = true;
 
-    fRequiredUniformBufferAlignment = 1;
+    // We could actually query and get a max size for each config, however maxImageDimension2D will
+    // give the minimum max size across all configs. So for simplicity we will use that for now.
+    fMaxTextureSize = std::min(physDevProperties.limits.maxImageDimension2D, (uint32_t)INT_MAX);
+
+    fRequiredUniformBufferAlignment = 256;
     fRequiredStorageBufferAlignment = 1;
     fRequiredTransferBufferAlignment = 4;
 
-    fResourceBindingReqs.fUniformBufferLayout = Layout::kStd430;
+    fResourceBindingReqs.fUniformBufferLayout = Layout::kStd140;
     fResourceBindingReqs.fStorageBufferLayout = Layout::kStd430;
     fResourceBindingReqs.fSeparateTextureAndSamplerBinding = false;
     fResourceBindingReqs.fDistinctIndexRanges = false;
@@ -85,6 +89,15 @@ void VulkanCaps::init(const skgpu::VulkanInterface* vkInterface,
     if (!contextOptions.fDisableDriverCorrectnessWorkarounds) {
         this->applyDriverCorrectnessWorkarounds(physDevProperties);
     }
+
+    if (physDevProperties.vendorID == kAMD_VkVendor) {
+        // AMD advertises support for MAX_UINT vertex attributes but in reality only supports 32.
+        fMaxVertexAttributes = 32;
+    } else {
+        fMaxVertexAttributes = physDevProperties.limits.maxVertexInputAttributes;
+    }
+
+    this->finishInitialization(contextOptions);
 }
 
 void VulkanCaps::applyDriverCorrectnessWorkarounds(const VkPhysicalDeviceProperties& properties) {
@@ -638,9 +651,8 @@ void VulkanCaps::initFormatTable(const skgpu::VulkanInterface* interface,
         auto& info = this->getFormatInfo(format);
         if (fSupportsYcbcrConversion) {
             info.init(interface, physDev, properties, format);
-            SkDEBUGCODE(info.fIsWrappedOnly = true;)
         }
-         if (info.isTexturable(VK_IMAGE_TILING_OPTIMAL)) {
+        if (info.isTexturable(VK_IMAGE_TILING_OPTIMAL)) {
             info.fColorTypeInfoCount = 1;
             info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
             int ctIdx = 0;
@@ -652,6 +664,7 @@ void VulkanCaps::initFormatTable(const skgpu::VulkanInterface* interface,
                 ctInfo.fTransferColorType = ct;
                 ctInfo.fFlags = ColorTypeInfo::kUploadData_Flag;
             }
+            SkDEBUGCODE(info.fIsWrappedOnly = true;)
         }
     }
     // Format: VK_FORMAT_G8_B8R8_2PLANE_420_UNORM
@@ -660,9 +673,8 @@ void VulkanCaps::initFormatTable(const skgpu::VulkanInterface* interface,
         auto& info = this->getFormatInfo(format);
         if (fSupportsYcbcrConversion) {
             info.init(interface, physDev, properties, format);
-            SkDEBUGCODE(info.fIsWrappedOnly = true;)
         }
-         if (info.isTexturable(VK_IMAGE_TILING_OPTIMAL)) {
+        if (info.isTexturable(VK_IMAGE_TILING_OPTIMAL)) {
             info.fColorTypeInfoCount = 1;
             info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
             int ctIdx = 0;
@@ -674,6 +686,7 @@ void VulkanCaps::initFormatTable(const skgpu::VulkanInterface* interface,
                 ctInfo.fTransferColorType = ct;
                 ctInfo.fFlags = ColorTypeInfo::kUploadData_Flag;
             }
+            SkDEBUGCODE(info.fIsWrappedOnly = true;)
         }
     }
     // Format: VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK
@@ -949,8 +962,10 @@ void VulkanCaps::DepthStencilFormatInfo::init(const skgpu::VulkanInterface* inte
     memset(&fFormatProperties, 0, sizeof(VkFormatProperties));
     VULKAN_CALL(interface, GetPhysicalDeviceFormatProperties(physDev, format, &fFormatProperties));
 
-    VkImageUsageFlags usageFlags = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    fSupportedSampleCounts.initSampleCounts(interface, physDev, properties, format, usageFlags);
+    if (this->isDepthStencilSupported(fFormatProperties.optimalTilingFeatures)) {
+        VkImageUsageFlags usageFlags = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+        fSupportedSampleCounts.initSampleCounts(interface, physDev, properties, format, usageFlags);
+    }
 }
 
 bool VulkanCaps::DepthStencilFormatInfo::isDepthStencilSupported(VkFormatFeatureFlags flags) const {
@@ -997,6 +1012,18 @@ const Caps::ColorTypeInfo* VulkanCaps::getColorTypeInfo(SkColorType ct,
     }
 
     return nullptr;
+}
+
+bool VulkanCaps::onIsTexturable(const TextureInfo& texInfo) const {
+    VulkanTextureInfo vkInfo;
+    texInfo.getVulkanTextureInfo(&vkInfo);
+
+    // TODO:
+    // Once we support external formats with associated YCbCr conversion info, check for that
+    // and return true here because we can always texture from an external format.
+
+    const FormatInfo& info = this->getFormatInfo(vkInfo.fFormat);
+    return info.isTexturable(vkInfo.fImageTiling);
 }
 
 bool VulkanCaps::supportsWritePixels(const TextureInfo& texInfo) const {

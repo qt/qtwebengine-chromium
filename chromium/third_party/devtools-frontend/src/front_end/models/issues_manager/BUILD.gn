@@ -11,6 +11,7 @@ devtools_module("issues_manager") {
   sources = [
     "AttributionReportingIssue.ts",
     "BounceTrackingIssue.ts",
+    "CheckFormsIssuesTrigger.ts",
     "ClientHintIssue.ts",
     "ContentSecurityPolicyIssue.ts",
     "ContrastCheckTrigger.ts",
@@ -19,6 +20,7 @@ devtools_module("issues_manager") {
     "CrossOriginEmbedderPolicyIssue.ts",
     "DeprecationIssue.ts",
     "FederatedAuthRequestIssue.ts",
+    "FederatedAuthUserInfoRequestIssue.ts",
     "GenericIssue.ts",
     "HeavyAdIssue.ts",
     "Issue.ts",
@@ -28,12 +30,11 @@ devtools_module("issues_manager") {
     "LowTextContrastIssue.ts",
     "MarkdownIssueDescription.ts",
     "MixedContentIssue.ts",
-    "NavigatorUserAgentIssue.ts",
     "QuirksModeIssue.ts",
     "RelatedIssue.ts",
     "SharedArrayBufferIssue.ts",
     "SourceFrameIssuesManager.ts",
-    "TrustedWebActivityIssue.ts",
+    "StylesheetLoadingIssue.ts",
   ]
 
   deps = [
@@ -55,7 +56,6 @@ devtools_module("issues_manager") {
 
 devtools_issue_description_files = [
   "arInsecureContext.md",
-  "arInvalidEligibleHeader.md",
   "arInvalidRegisterOsSourceHeader.md",
   "arInvalidRegisterOsTriggerHeader.md",
   "arInvalidRegisterSourceHeader.md",
@@ -100,7 +100,6 @@ devtools_issue_description_files = [
   "cspTrustedTypesSinkViolation.md",
   "cspURLViolation.md",
   "deprecation.md",
-  "deprecationNavigatorUserAgent.md",
   "genericCrossOriginPortalPostMessageError.md",
   "genericFormLabelForNameError.md",
   "genericFormDuplicateIdForInputError.md",
@@ -131,6 +130,15 @@ devtools_issue_description_files = [
   "federatedAuthRequestIdTokenInvalidRequest.md",
   "federatedAuthRequestErrorIdToken.md",
   "federatedAuthRequestCanceled.md",
+  "federatedAuthUserInfoRequestInvalidAccountsResponse.md",
+  "federatedAuthUserInfoRequestInvalidConfigOrWellKnown.md",
+  "federatedAuthUserInfoRequestNoAccountSharingPermission.md",
+  "federatedAuthUserInfoRequestNoApiPermission.md",
+  "federatedAuthUserInfoRequestNoReturningUserFromFetchedAccounts.md",
+  "federatedAuthUserInfoRequestNotIframe.md",
+  "federatedAuthUserInfoRequestNotPotentiallyTrustworthy.md",
+  "federatedAuthUserInfoRequestNotSameOrigin.md",
+  "federatedAuthUserInfoRequestNotSignedInWithIdp.md",
   "heavyAd.md",
   "LowTextContrast.md",
   "mixedContent.md",
@@ -150,9 +158,8 @@ devtools_issue_description_files = [
   "SameSiteWarnCrossDowngradeSet.md",
   "SameSiteWarnStrictLaxDowngradeStrict.md",
   "sharedArrayBuffer.md",
-  "TwaDigitalAssetLinksFailed.md",
-  "TwaHttpError.md",
-  "TwaPageUnavailableOffline.md",
+  "stylesheetLateImport.md",
+  "stylesheetRequestFailed.md",
 ]
 
 devtools_pre_built("descriptions") {
@@ -177,7 +184,6 @@ devtools_entrypoint("bundle") {
     "../../panels/application/*",
     "../../panels/console/*",
     "../../panels/console_counters/*",
-    "../../panels/elements/*",
     "../../panels/elements/*",
     "../../panels/issues/*",
     "../../panels/network/*",

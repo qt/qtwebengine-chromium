@@ -84,8 +84,9 @@ class Code : public HeapObject {
       WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
   inline void SetInstructionStartForOffHeapBuiltin(Isolate* isolate_for_sandbox,
                                                    Address entry);
-  inline void SetInstructionStartForSerialization(Isolate* isolate,
-                                                  Address entry);
+  inline CodePointer_t ClearInstructionStartForSerialization(Isolate* isolate);
+  inline void RestoreInstructionStartForSerialization(
+      Isolate* isolate, CodePointer_t previous_value);
   inline void UpdateInstructionStart(Isolate* isolate_for_sandbox,
                                      InstructionStream istream);
 
@@ -197,8 +198,8 @@ class Code : public HeapObject {
   inline int unwinding_info_size() const;
   inline bool has_unwinding_info() const;
 
-  inline byte* relocation_start() const;
-  inline byte* relocation_end() const;
+  inline uint8_t* relocation_start() const;
+  inline uint8_t* relocation_end() const;
   inline int relocation_size() const;
 
   inline int safepoint_table_offset() const { return 0; }
@@ -291,6 +292,10 @@ class Code : public HeapObject {
   V8_EXPORT_PRIVATE void Disassemble(const char* name, std::ostream& os,
                                      Isolate* isolate,
                                      Address current_pc = kNullAddress);
+  V8_EXPORT_PRIVATE void DisassembleOnlyCode(const char* name, std::ostream& os,
+                                             Isolate* isolate,
+                                             Address current_pc,
+                                             size_t range_limit);
 #endif  // ENABLE_DISASSEMBLER
 
 #ifdef OBJECT_PRINT
@@ -312,7 +317,7 @@ class Code : public HeapObject {
   V(kInstructionStreamOffset, kTaggedSize)                                    \
   V(kEndOfStrongFieldsOffset, 0)                                              \
   /* Untagged data not directly visited by GC starts here. */                 \
-  V(kInstructionStartOffset, kSystemPointerSize)                              \
+  V(kInstructionStartOffset, kCodePointerSlotSize)                            \
   /* The serializer needs to copy bytes starting from here verbatim. */       \
   V(kFlagsOffset, kUInt32Size)                                                \
   V(kInstructionSizeOffset, kIntSize)                                         \
@@ -363,6 +368,7 @@ class Code : public HeapObject {
   // The {marked_for_deoptimization} field is accessed from generated code.
   static const int kMarkedForDeoptimizationBit =
       MarkedForDeoptimizationField::kShift;
+  static const int kIsTurbofannedBit = IsTurbofannedField::kShift;
 
   // Reserve one argument count value as the "don't adapt arguments" sentinel.
   static const int kArgumentsBits = 16;

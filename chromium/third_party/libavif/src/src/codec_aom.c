@@ -545,6 +545,7 @@ static avifResult aomCodecEncodeImage(avifCodec * codec,
                                       int tileColsLog2,
                                       int quantizer,
                                       avifEncoderChanges encoderChanges,
+                                      avifBool disableLaggedOutput,
                                       avifAddImageFlags addImageFlags,
                                       avifCodecEncodeOutput * output)
 {
@@ -705,11 +706,18 @@ static avifResult aomCodecEncodeImage(avifCodec * codec,
             cfg->kf_mode = AOM_KF_DISABLED;
             // Tell libaom that all frames will be key frames.
             cfg->kf_max_dist = 0;
+        } else {
+            if (encoder->keyframeInterval > 0) {
+                cfg->kf_max_dist = encoder->keyframeInterval;
+            }
         }
         if (encoder->extraLayerCount > 0) {
             cfg->g_limit = encoder->extraLayerCount + 1;
             // For layered image, disable lagged encoding to always get output
             // frame for each input frame.
+            cfg->g_lag_in_frames = 0;
+        }
+        if (disableLaggedOutput) {
             cfg->g_lag_in_frames = 0;
         }
         if (encoder->maxThreads > 1) {

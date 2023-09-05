@@ -667,7 +667,7 @@ void JSGeneratorObject::JSGeneratorObjectPrint(std::ostream& os) {
     if (fun_info.HasSourceCode()) {
       Script script = Script::cast(fun_info.script());
       String script_name = script.name().IsString()
-                               ? String::cast(script.name())
+                               ? Tagged<String>::cast(script.name())
                                : GetReadOnlyRoots().empty_string();
 
       os << "\n - source position: ";
@@ -919,8 +919,8 @@ void PrintTableContentsGeneric(std::ostream& os, T dict,
 }
 
 void PrintNameDictionaryFlags(std::ostream& os, NameDictionary dict) {
-  if (dict.may_have_interesting_symbols()) {
-    os << "\n - may_have_interesting_symbols";
+  if (dict.may_have_interesting_properties()) {
+    os << "\n - may_have_interesting_properties";
   }
 }
 
@@ -1398,6 +1398,11 @@ void Oddball::OddballPrint(std::ostream& os) {
   os << s.PrefixForDebugPrint();
   s.PrintUC16(os);
   os << s.SuffixForDebugPrint();
+  os << std::endl;
+}
+
+void Hole::HolePrint(std::ostream& os) {
+  PrintHeapObjectHeaderWithoutMap(*this, os, "Hole");
   os << std::endl;
 }
 
@@ -2093,7 +2098,16 @@ void WasmStruct::WasmStructPrint(std::ostream& os) {
         break;
       }
       case wasm::kS128:
-        os << "UNIMPLEMENTED";  // TODO(7748): Implement.
+        os << "0x" << std::hex << std::setfill('0');
+#ifdef V8_TARGET_BIG_ENDIAN
+        for (int j = 0; j < kSimd128Size; j++) {
+#else
+        for (int j = kSimd128Size - 1; j >= 0; j--) {
+#endif
+          os << std::setw(2)
+             << static_cast<int>(reinterpret_cast<uint8_t*>(field_address)[j]);
+        }
+        os << std::dec << std::setfill(' ');
         break;
       case wasm::kBottom:
       case wasm::kVoid:
@@ -2154,15 +2168,18 @@ void WasmArray::WasmArrayPrint(std::ostream& os) {
       for (uint32_t i = 0;
            i < std::min(this->length(), kWasmArrayMaximumPrintedElements);
            i++) {
-        os << "\n   " << static_cast<int>(i) << " - 0x" << std::hex;
+        os << "\n   " << static_cast<int>(i) << " - 0x" << std::hex
+           << std::setfill('0');
 #ifdef V8_TARGET_BIG_ENDIAN
         for (int j = 0; j < kSimd128Size; j++) {
 #else
         for (int j = kSimd128Size - 1; j >= 0; j--) {
 #endif
-          os << reinterpret_cast<byte*>(this->ElementAddress(i))[j];
+          os << std::setw(2)
+             << static_cast<int>(
+                    reinterpret_cast<uint8_t*>(this->ElementAddress(i))[j]);
         }
-        os << std::dec;
+        os << std::dec << std::setfill(' ');
       }
       if (this->length() > kWasmArrayMaximumPrintedElements) os << "\n   ...";
       break;
@@ -2187,6 +2204,9 @@ void WasmSuspenderObject::WasmSuspenderObjectPrint(std::ostream& os) {
   PrintHeader(os, "WasmSuspenderObject");
   os << "\n - continuation: " << continuation();
   os << "\n - parent: " << parent();
+  os << "\n - promise: " << promise();
+  os << "\n - resume: " << resume();
+  os << "\n - reject: " << reject();
   os << "\n - state: " << state();
   os << "\n - wasm_to_js_counter: " << wasm_to_js_counter();
   os << "\n";
@@ -2207,7 +2227,7 @@ void WasmInstanceObject::WasmInstanceObjectPrint(std::ostream& os) {
   PRINT_WASM_INSTANCE_FIELD(module_object, Brief);
   PRINT_WASM_INSTANCE_FIELD(exports_object, Brief);
   PRINT_WASM_INSTANCE_FIELD(native_context, Brief);
-  PRINT_OPTIONAL_WASM_INSTANCE_FIELD(memory_object, Brief);
+  PRINT_WASM_INSTANCE_FIELD(memory_objects, Brief);
   PRINT_OPTIONAL_WASM_INSTANCE_FIELD(untagged_globals_buffer, Brief);
   PRINT_OPTIONAL_WASM_INSTANCE_FIELD(tagged_globals_buffer, Brief);
   PRINT_OPTIONAL_WASM_INSTANCE_FIELD(imported_mutable_globals_buffers, Brief);
@@ -2219,8 +2239,9 @@ void WasmInstanceObject::WasmInstanceObjectPrint(std::ostream& os) {
   PRINT_WASM_INSTANCE_FIELD(wasm_internal_functions, Brief);
   PRINT_WASM_INSTANCE_FIELD(managed_object_maps, Brief);
   PRINT_WASM_INSTANCE_FIELD(feedback_vectors, Brief);
-  PRINT_WASM_INSTANCE_FIELD(memory_start, to_void_ptr);
-  PRINT_WASM_INSTANCE_FIELD(memory_size, +);
+  PRINT_WASM_INSTANCE_FIELD(well_known_imports, Brief);
+  PRINT_WASM_INSTANCE_FIELD(memory0_start, to_void_ptr);
+  PRINT_WASM_INSTANCE_FIELD(memory0_size, +);
   PRINT_WASM_INSTANCE_FIELD(stack_limit_address, to_void_ptr);
   PRINT_WASM_INSTANCE_FIELD(real_stack_limit_address, to_void_ptr);
   PRINT_WASM_INSTANCE_FIELD(new_allocation_limit_address, to_void_ptr);
@@ -2241,6 +2262,7 @@ void WasmInstanceObject::WasmInstanceObjectPrint(std::ostream& os) {
   PRINT_WASM_INSTANCE_FIELD(element_segments, Brief);
   PRINT_WASM_INSTANCE_FIELD(hook_on_function_call_address, to_void_ptr);
   PRINT_WASM_INSTANCE_FIELD(tiering_budget_array, to_void_ptr);
+  PRINT_WASM_INSTANCE_FIELD(memory_bases_and_sizes, Brief);
   PRINT_WASM_INSTANCE_FIELD(break_on_entry, static_cast<int>);
   JSObjectPrintBody(os, *this);
   os << "\n";
@@ -2868,7 +2890,8 @@ void Map::MapPrint(std::ostream& os) {
   if (is_dictionary_map()) os << "\n - dictionary_map";
   if (has_named_interceptor()) os << "\n - named_interceptor";
   if (has_indexed_interceptor()) os << "\n - indexed_interceptor";
-  if (may_have_interesting_symbols()) os << "\n - may_have_interesting_symbols";
+  if (may_have_interesting_properties())
+    os << "\n - may_have_interesting_properties";
   if (is_undetectable()) os << "\n - undetectable";
   if (is_callable()) os << "\n - callable";
   if (is_constructor()) os << "\n - constructor";
@@ -2913,6 +2936,9 @@ void Map::MapPrint(std::ostream& os) {
     }
   }
   os << "\n - prototype: " << Brief(prototype());
+  if (has_non_instance_prototype()) {
+    os << "\n - non-instance prototype: " << Brief(GetNonInstancePrototype());
+  }
   if (!IsContextMap()) {
     os << "\n - constructor: " << Brief(GetConstructor());
   }
@@ -3180,6 +3206,38 @@ V8_EXPORT_PRIVATE extern void _v8_internal_Print_Code(void* object) {
   lookup_result->Disassemble(nullptr, os, isolate, address);
 #else
   lookup_result->Print();
+#endif
+}
+
+V8_DONT_STRIP_SYMBOL
+V8_EXPORT_PRIVATE extern void _v8_internal_Print_OnlyCode(void* object,
+                                                          size_t range_limit) {
+  i::Address address = reinterpret_cast<i::Address>(object);
+  i::Isolate* isolate = i::Isolate::Current();
+
+#if V8_ENABLE_WEBASSEMBLY
+  {
+    i::wasm::WasmCodeRefScope scope;
+    if (i::wasm::GetWasmCodeManager()->LookupCode(address)) {
+      i::PrintF("Not supported on wasm code");
+      return;
+    }
+  }
+#endif  // V8_ENABLE_WEBASSEMBLY
+
+  v8::base::Optional<i::Code> lookup_result =
+      isolate->heap()->TryFindCodeForInnerPointerForPrinting(address);
+  if (!lookup_result.has_value()) {
+    i::PrintF(
+        "%p is not within the current isolate's code or embedded spaces\n",
+        object);
+    return;
+  }
+
+#if defined(ENABLE_DISASSEMBLER)
+  i::StdoutStream os;
+  lookup_result->DisassembleOnlyCode(nullptr, os, isolate, address,
+                                     range_limit);
 #endif
 }
 

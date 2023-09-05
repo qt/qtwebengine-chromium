@@ -37,7 +37,7 @@ absl::Status Medium::OpenRfcomm() {
   if (!bt_classic_medium_.has_value()) {
     return absl::FailedPreconditionError("BT classic unsupported");
   }
-  if (!device_.public_address().has_value()) {
+  if (!device_.GetPublicAddress().has_value()) {
     return absl::FailedPreconditionError(
         "Connect open RFCOMM without public BT address");
   }
@@ -45,10 +45,11 @@ absl::Status Medium::OpenRfcomm() {
   executor_.Execute("open-rfcomm", [this, classic_medium]() {
     if (cancellation_flag_.Cancelled()) return;
     BluetoothDevice device =
-        classic_medium->GetRemoteDevice(device_.public_address().value());
+        classic_medium->GetRemoteDevice(device_.GetPublicAddress().value());
     if (!device.IsValid()) {
-      observer_.OnConnectionResult(absl::UnavailableError(absl::StrFormat(
-          "Remote BT device %s not found", device_.public_address().value())));
+      observer_.OnConnectionResult(absl::UnavailableError(
+          absl::StrFormat("Remote BT device %s not found",
+                          device_.GetPublicAddress().value())));
       return;
     }
     SetSocket(classic_medium->ConnectToService(device, kRfcommUuid,
@@ -58,7 +59,7 @@ absl::Status Medium::OpenRfcomm() {
                               ? absl::OkStatus()
                               : absl::UnavailableError(absl::StrFormat(
                                     "Failed to open RFCOMM with %s",
-                                    device_.public_address().value()));
+                                    device_.GetPublicAddress().value()));
     observer_.OnConnectionResult(status);
     if (status.ok()) {
       RunLoop(std::move(socket));
@@ -146,11 +147,14 @@ ByteArray Medium::Serialize(Message message, bool compute_and_append_mac) {
 }
 
 void Medium::SetSocket(BluetoothSocket socket) {
+  if (!socket.IsValid()) return;
   MutexLock lock(&mutex_);
+  NEARBY_LOGS(INFO) << "SetSocket 1";
   if (cancellation_flag_.Cancelled()) {
     NEARBY_LOGS(INFO) << "Medium already closed. Closing socket";
     socket.Close();
   } else {
+    NEARBY_LOGS(INFO) << "SetSocket 2";
     socket_ = std::move(socket);
   }
 }

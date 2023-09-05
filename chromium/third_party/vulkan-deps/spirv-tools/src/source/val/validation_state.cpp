@@ -2048,8 +2048,6 @@ std::string ValidationState_t::VkErrorID(uint32_t id,
       return VUID_WRAP(VUID-StandaloneSpirv-OpImageTexelPointer-04658);
     case 4659:
       return VUID_WRAP(VUID-StandaloneSpirv-OpImageQuerySizeLod-04659);
-    case 4662:
-      return VUID_WRAP(VUID-StandaloneSpirv-Offset-04662);
     case 4663:
       return VUID_WRAP(VUID-StandaloneSpirv-Offset-04663);
     case 4664:
@@ -2180,6 +2178,10 @@ std::string ValidationState_t::VkErrorID(uint32_t id,
       return VUID_WRAP(VUID-StandaloneSpirv-Component-07703);
     case 7951:
       return VUID_WRAP(VUID-StandaloneSpirv-SubgroupVoteKHR-07951);
+    case 8721:
+      return VUID_WRAP(VUID-StandaloneSpirv-OpEntryPoint-08721);
+    case 8722:
+      return VUID_WRAP(VUID-StandaloneSpirv-OpEntryPoint-08722);
     default:
       return "";  // unknown id
   }

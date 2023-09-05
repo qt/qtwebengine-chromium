@@ -12,7 +12,7 @@ namespace openscreen {
 namespace cast {
 
 StreamingVideoEncoder::StreamingVideoEncoder(const Parameters& params,
-                                             TaskRunner* task_runner,
+                                             TaskRunner& task_runner,
                                              std::unique_ptr<Sender> sender)
     : params_(params),
       main_task_runner_(task_runner),
@@ -24,7 +24,6 @@ StreamingVideoEncoder::StreamingVideoEncoder(const Parameters& params,
   OSP_DCHECK_LE(params_.max_quantizer, kMaxQuantizer);
   OSP_DCHECK_LT(0.0, params_.max_time_utilization);
   OSP_DCHECK_LE(params_.max_time_utilization, 1.0);
-  OSP_DCHECK(main_task_runner_);
   OSP_DCHECK(sender_);
 }
 

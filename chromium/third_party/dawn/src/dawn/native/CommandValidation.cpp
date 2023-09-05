@@ -22,7 +22,6 @@
 
 #include "dawn/common/BitSetIterator.h"
 #include "dawn/common/Numeric.h"
-#include "dawn/native/Adapter.h"
 #include "dawn/native/BindGroup.h"
 #include "dawn/native/Buffer.h"
 #include "dawn/native/CommandBufferStateTracker.h"
@@ -30,6 +29,7 @@
 #include "dawn/native/Device.h"
 #include "dawn/native/Instance.h"
 #include "dawn/native/PassResourceUsage.h"
+#include "dawn/native/PhysicalDevice.h"
 #include "dawn/native/QuerySet.h"
 #include "dawn/native/RenderBundle.h"
 #include "dawn/native/RenderPipeline.h"
@@ -79,7 +79,7 @@ MaybeError ValidateTimestampQuery(const DeviceBase* device,
 
     DAWN_INVALID_IF(!device->HasFeature(requiredFeature),
                     "Timestamp queries used without the %s feature enabled.",
-                    device->GetAdapter()
+                    device->GetPhysicalDevice()
                         ->GetInstance()
                         ->GetFeatureInfo(FeatureEnumToAPIFeature(requiredFeature))
                         ->name);
@@ -175,8 +175,17 @@ ResultOrError<uint64_t> ComputeRequiredBytesInCopy(const TexelBlockInfo& blockIn
 
 MaybeError ValidateCopySizeFitsInBuffer(const Ref<BufferBase>& buffer,
                                         uint64_t offset,
-                                        uint64_t size) {
-    uint64_t bufferSize = buffer->GetSize();
+                                        uint64_t size,
+                                        BufferSizeType checkBufferSizeType) {
+    uint64_t bufferSize = 0;
+    switch (checkBufferSizeType) {
+        case BufferSizeType::Size:
+            bufferSize = buffer->GetSize();
+            break;
+        case BufferSizeType::AllocatedSize:
+            bufferSize = buffer->GetAllocatedSize();
+            break;
+    }
     bool fitsInBuffer = offset <= bufferSize && (size <= (bufferSize - offset));
     DAWN_INVALID_IF(!fitsInBuffer,
                     "Copy range (offset: %u, size: %u) does not fit in %s size (%u).", offset, size,

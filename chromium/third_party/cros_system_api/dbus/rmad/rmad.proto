@@ -404,6 +404,16 @@ message RestockState {
 
 // Allow device info to be updated if necessary.
 message UpdateDeviceInfoState {
+  enum FeatureLevel {
+    // The device doesn't require feature level.
+    RMAD_FEATURE_LEVEL_UNSUPPORTED = 0;
+    // The device requires feature level but it is currently unknown.
+    RMAD_FEATURE_LEVEL_UNKNOWN = 1;
+    // Detected feature level.
+    RMAD_FEATURE_LEVEL_0 = 2;
+    RMAD_FEATURE_LEVEL_1 = 3;
+  }
+
   // User provided serial number of device.
   string serial_number = 1;
   // Chosen region index for the current choice. See |region_list| below.
@@ -417,6 +427,10 @@ message UpdateDeviceInfoState {
   string dram_part_number = 5;
   // Chosen custom-label index of device. See |custom_label_list| below.
   int32 custom_label_index = 6;
+  // Chosen boolean for branded chassis.
+  bool is_chassis_branded = 7;
+  // Chosen hardware compliance version, 4 bits.
+  uint32 hw_compliance_version = 8;
 
   // Read only data.
   // List of all valid regions for this device.
@@ -442,6 +456,8 @@ message UpdateDeviceInfoState {
   string original_dram_part_number = 205;
   // Custom-label index of device at beginning of RMA finalization.
   int32 original_custom_label_index = 206;
+  // Detected feature level at beginning of RMA finalization.
+  FeatureLevel original_feature_level = 207;
 
   // MLB repair mode.
   bool mlb_repair = 301;

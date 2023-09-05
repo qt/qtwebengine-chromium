@@ -14,58 +14,130 @@
 
 #include "internal/network/http_client_impl.h"
 
+#include <chrono>  // NOLINT
 #include <functional>
+#include <future>  // NOLINT
 #include <memory>
 #include <ostream>
 #include <sstream>
 #include <utility>
 
-#include "absl/status/statusor.h"
+#include "absl/status/status.h"
+#include "internal/flags/nearby_flags.h"
 #include "internal/network/debug.h"
-#include "internal/platform/implementation/platform.h"
+#include "internal/platform/flags/nearby_platform_feature_flags.h"
 #include "internal/platform/logging.h"
 #include "internal/platform/mutex_lock.h"
+#include "internal/platform/single_thread_executor.h"
 
 namespace nearby {
 namespace network {
-namespace {
-
-// In nearby SDK, allowed maximum thread count.
-constexpr int kMaxNetworkThreadCount = 3;
-
-}  // namespace
-
-NearbyHttpClient::NearbyHttpClient() {
-  network_executor_ =
-      std::make_unique<MultiThreadExecutor>(kMaxNetworkThreadCount);
-}
 
 void NearbyHttpClient::StartRequest(
     const HttpRequest& request,
     std::function<void(const absl::StatusOr<HttpResponse>&)> callback) {
   MutexLock lock(&mutex_);
-  NEARBY_LOGS(INFO) << __func__ << ": Start async request to url="
-                    << request.GetUrl().GetUrlPath();
-  if (network_executor_ == nullptr) {
-    callback(absl::ResourceExhaustedError("no available thread"));
+  if (NearbyFlags::GetInstance().GetBoolFlag(
+          platform::config_package_nearby::nearby_platform_feature::
+              kEnablePlatformThreadToNetwork)) {
+    executor_.Execute([request = std::move(request),
+                       callback = std::move(callback)]() {
+      NEARBY_LOGS(INFO) << __func__ << ": Start async request to url="
+                        << request.GetUrl().GetUrlPath();
+      absl::StatusOr<HttpResponse> response = InternalGetResponse(request);
+      if (response.ok()) {
+        NEARBY_LOGS(INFO) << __func__ << ": Got response from url="
+                          << request.GetUrl().GetUrlPath();
+      } else {
+        NEARBY_LOGS(ERROR) << __func__ << ": Failed to get response from url="
+                           << request.GetUrl().GetUrlPath() << ", status"
+                           << response.status();
+      }
+
+      if (callback) {
+        callback(response);
+      }
+      NEARBY_LOGS(INFO) << __func__ << ": Completed request to url="
+                        << request.GetUrl().GetUrlPath();
+    });
+  } else {
+    CleanThreads();
+
+    std::future<void> http_thread = std::async(std::launch::async, [=]() {
+      NEARBY_LOGS(INFO) << __func__ << ": Start async request to url="
+                        << request.GetUrl().GetUrlPath();
+      absl::StatusOr<HttpResponse> response = InternalGetResponse(request);
+      if (response.ok()) {
+        NEARBY_LOGS(INFO) << __func__ << ": Got response from url="
+                          << request.GetUrl().GetUrlPath();
+      } else {
+        NEARBY_LOGS(ERROR) << __func__ << ": Failed to get response from url="
+                           << request.GetUrl().GetUrlPath() << ", status"
+                           << response.status();
+      }
+
+      if (callback) {
+        callback(response);
+      }
+      NEARBY_LOGS(INFO) << __func__ << ": Completed request to url="
+                        << request.GetUrl().GetUrlPath();
+    });
+
+    http_threads_.push_back(std::move(http_thread));
+  }
+}
+
+void NearbyHttpClient::StartCancellableRequest(
+    std::unique_ptr<CancellableRequest> cancellable_request,
+    std::function<void(const absl::StatusOr<HttpResponse>&)> callback) {
+  MutexLock lock(&mutex_);
+  if (cancellable_request == nullptr) {
+    NEARBY_LOGS(ERROR) << __func__ << ": invalid cancellable request.";
+    callback(absl::InvalidArgumentError("invalid cancellable request"));
     return;
   }
+  executor_
+      .Execute(
+          [cancellable_request = std::move(cancellable_request),
+           callback = std::move(callback)]() {
+            NEARBY_LOGS(INFO)
+                << __func__ << ": Start async request to url="
+                << cancellable_request->http_request().GetUrl().GetUrlPath();
+            if (cancellable_request->is_cancelled()) {
+              NEARBY_LOGS(WARNING)
+                  << __func__ << ": Async request to url="
+                  << cancellable_request->http_request().GetUrl().GetUrlPath()
+                  << " is cancelled.";
+              return;
+            }
+            absl::StatusOr<HttpResponse> response =
+                InternalGetResponse(cancellable_request->http_request());
+            if (response.ok()) {
+              NEARBY_LOGS(INFO)
+                  << __func__ << ": Got response from url="
+                  << cancellable_request->http_request().GetUrl().GetUrlPath();
+            } else {
+              NEARBY_LOGS(ERROR)
+                  << __func__ << ": Failed to get response from url="
+                  << cancellable_request->http_request().GetUrl().GetUrlPath()
+                  << ", status" << response.status();
+            }
 
-  network_executor_->Execute([&, request, callback]() {
-    absl::StatusOr<HttpResponse> response = InternalGetResponse(request);
-    if (response.ok()) {
-      NEARBY_LOGS(INFO) << __func__ << ": Got response from url="
-                        << request.GetUrl().GetUrlPath();
-    } else {
-      NEARBY_LOGS(ERROR) << __func__ << ": Failed to get response from url="
-                         << request.GetUrl().GetUrlPath() << ", status"
-                         << response.status();
-    }
+            if (cancellable_request->is_cancelled()) {
+              NEARBY_LOGS(WARNING)
+                  << __func__ << ": Async request to url="
+                  << cancellable_request->http_request().GetUrl().GetUrlPath()
+                  << " is cancelled.";
+              return;
+            }
 
-    callback(response);
-    NEARBY_LOGS(INFO) << __func__ << ": Completed request to url="
-                      << request.GetUrl().GetUrlPath();
-  });
+            if (callback) {
+              callback(response);
+            }
+            NEARBY_LOGS(INFO)
+                << __func__ << ": Completed request to url="
+                << cancellable_request->http_request().GetUrl().GetUrlPath();
+          });
 }
 
 absl::StatusOr<HttpResponse> NearbyHttpClient::GetResponse(
@@ -84,6 +156,20 @@ absl::StatusOr<HttpResponse> NearbyHttpClient::GetResponse(
   }
 
   return response;
+}
+
+void NearbyHttpClient::CleanThreads() {
+  auto it = http_threads_.begin();
+
+  while (it != http_threads_.end()) {
+    // Delete the thread if it is ready
+    auto status = it->wait_for(std::chrono::seconds(0));
+    if (status == std::future_status::ready) {
+      it = http_threads_.erase(it);
+    } else {
+      ++it;
+    }
+  }
 }
 
 absl::StatusOr<HttpResponse> NearbyHttpClient::InternalGetResponse(

@@ -59,6 +59,11 @@ TEST(SpanTest, TestBasics) {
   EXPECT_EQ(middleBytes.size(), size_t{4});
   EXPECT_EQ(middleBytes[0], 'o');
   EXPECT_EQ(middleBytes[3], 'e');
+
+  ByteView fromPointers(kSampleData, kSampleData + kSampleSize);
+  EXPECT_EQ(googlePlex.data(), kSampleData);
+  EXPECT_EQ(googlePlex.size(), kSampleSize);
+  EXPECT_FALSE(googlePlex.empty());
 }
 
 TEST(SpanTest, TestIterators) {

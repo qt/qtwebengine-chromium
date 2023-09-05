@@ -98,7 +98,7 @@ class SessionMessengerTest : public ::testing::Test {
             kSenderId,
             kReceiverId,
             message_store_.GetErrorCallback(),
-            &task_runner_))
+            task_runner_))
 
   {}
 
@@ -562,7 +562,7 @@ TEST_F(SessionMessengerTest, SenderRejectsMessagesWithoutHandler) {
   SimpleMessagePort port(kReceiverId);
   SenderSessionMessenger messenger(&port, kSenderId, kReceiverId,
                                    message_store_.GetErrorCallback(),
-                                   &task_runner_);
+                                   task_runner_);
 
   port.ReceiveMessage(kReceiverId, kCastWebrtcNamespace, R"({
         "seqNum": 12345,

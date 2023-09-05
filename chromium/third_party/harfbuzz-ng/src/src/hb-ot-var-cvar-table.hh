@@ -51,6 +51,27 @@ struct cvar
   const TupleVariationData* get_tuple_var_data (void) const
   { return &tupleVariationData; }
 
+  bool decompile_tuple_variations (unsigned axis_count,
+                                   unsigned point_count,
+                                   bool is_gvar,
+                                   const hb_map_t *axes_old_index_tag_map,
+                                   TupleVariationData::tuple_variations_t& tuple_variations /* OUT */) const
+  {
+    hb_vector_t<unsigned> shared_indices;
+    TupleVariationData::tuple_iterator_t iterator;
+    unsigned var_data_length = tupleVariationData.get_size (axis_count);
+    hb_bytes_t var_data_bytes = hb_bytes_t (reinterpret_cast<const char*> (get_tuple_var_data ()), var_data_length);
+    if (!TupleVariationData::get_tuple_iterator (var_data_bytes, axis_count, this,
+                                                 shared_indices, &iterator))
+      return false;
+
+    return tupleVariationData.decompile_tuple_variations (point_count, is_gvar, iterator,
+                                                          axes_old_index_tag_map,
+                                                          shared_indices,
+                                                          hb_array<const F2DOT14> (),
+                                                          tuple_variations);
+  }
+
   static bool calculate_cvt_deltas (unsigned axis_count,
                                     hb_array_t<int> coords,
                                     unsigned num_cvt_item,
@@ -126,7 +147,6 @@ struct cvar
       hb_blob_destroy (cvt_prime_blob);
       return false;
     }
-    hb_memset (cvt_deltas.arrayZ, 0, cvt_deltas.get_size ());
 
     if (!calculate_cvt_deltas (plan->normalized_coords.length, plan->normalized_coords.as_array (),
                                num_cvt_item, tuple_var_data, base, cvt_deltas))

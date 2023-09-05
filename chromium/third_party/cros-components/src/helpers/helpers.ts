@@ -51,3 +51,24 @@ export function hexToRgb(hexString: string): [number, number, number] {
     Number(`0x${bHex}`),
   ];
 }
+
+/**
+ * Whether `event.target` should forward a click event to its children and local
+ * state. False means a child should already be aware of the click.
+ */
+export function shouldProcessClick(event: MouseEvent) {
+  // Event must start at the event target.
+  if (event.currentTarget !== event.target) {
+    return false;
+  }
+  // Event must not be retargeted from shadowRoot.
+  if (event.composedPath()[0] !== event.target) {
+    return false;
+  }
+  // Target must not be disabled; this should only occur for a synthetically
+  // dispatched click.
+  if ((event.target as EventTarget & {disabled: boolean}).disabled) {
+    return false;
+  }
+  return true;
+}

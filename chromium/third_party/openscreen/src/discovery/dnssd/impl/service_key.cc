@@ -7,8 +7,8 @@
 #include "absl/strings/str_join.h"
 #include "absl/strings/str_split.h"
 #include "discovery/dnssd/impl/conversion_layer.h"
-#include "discovery/mdns/mdns_records.h"
 #include "discovery/mdns/public/mdns_constants.h"
+#include "discovery/mdns/public/mdns_records.h"
 
 namespace openscreen {
 namespace discovery {

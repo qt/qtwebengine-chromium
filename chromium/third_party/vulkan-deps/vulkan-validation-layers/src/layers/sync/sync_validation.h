@@ -39,10 +39,33 @@ struct ResourceFirstAccess;
 class SyncEventsContext;
 struct SyncEventState;
 class SyncValidator;
+
 namespace syncval_state {
 class CommandBuffer;
 class Swapchain;
+
+class ImageState : public IMAGE_STATE {
+  public:
+    ImageState(const ValidationStateTracker *dev_data, VkImage img, const VkImageCreateInfo *pCreateInfo,
+               VkFormatFeatureFlags2KHR features)
+        : IMAGE_STATE(dev_data, img, pCreateInfo, features), opaque_base_address_(0U) {}
+
+    ImageState(const ValidationStateTracker *dev_data, VkImage img, const VkImageCreateInfo *pCreateInfo, VkSwapchainKHR swapchain,
+               uint32_t swapchain_index, VkFormatFeatureFlags2KHR features)
+        : IMAGE_STATE(dev_data, img, pCreateInfo, swapchain, swapchain_index, features), opaque_base_address_(0U) {}
+    bool IsLinear() const { return fragment_encoder->IsLinearImage(); }
+    bool IsTiled() const { return !IsLinear(); }
+
+    void SetOpaqueBaseAddress(ValidationStateTracker &dev_data);
+
+    VkDeviceSize GetOpaqueBaseAddress() const { return opaque_base_address_; }
+    bool HasOpaqueMapping() const { return 0U != opaque_base_address_; }
+
+  protected:
+    VkDeviceSize opaque_base_address_ = 0U;
+};
 }  // namespace syncval_state
+VALSTATETRACK_DERIVED_STATE_OBJECT(VkImage, syncval_state::ImageState, IMAGE_STATE);
 
 using ImageRangeGen = subresource_adapter::ImageRangeGenerator;
 
@@ -310,8 +333,6 @@ struct SyncBarrier {
     }
 };
 
-enum class AccessAddressType : uint32_t { kLinear = 0, kIdealized = 1, kMaxType = 1, kTypeCount = kMaxType + 1 };
-
 struct SemaphoreScope : SyncExecScope {
     SemaphoreScope(QueueId qid, const SyncExecScope &exec_scope) : SyncExecScope(exec_scope), queue(qid) {}
     SemaphoreScope() = default;
@@ -319,8 +340,7 @@ struct SemaphoreScope : SyncExecScope {
 };
 
 struct AcquiredImage {
-    std::shared_ptr<const IMAGE_STATE> image;
-    AccessAddressType address_type;
+    std::shared_ptr<const syncval_state::ImageState> image;
     subresource_adapter::ImageRangeGenerator generator;
     ResourceUsageTag present_tag;
     ResourceUsageTag acquire_tag;
@@ -716,7 +736,6 @@ class AttachmentViewGen {
     AttachmentViewGen(const IMAGE_VIEW_STATE *view_, const VkOffset3D &offset, const VkExtent3D &extent);
     AttachmentViewGen(const AttachmentViewGen &other) = default;
     AttachmentViewGen(AttachmentViewGen &&other) = default;
-    AccessAddressType GetAddressType() const;
     const IMAGE_VIEW_STATE *GetViewState() const { return view_; }
     const std::optional<ImageRangeGen> &GetRangeGen(Gen type) const;
     bool IsValid() const { return gen_store_[Gen::kViewSubresource].has_value(); }
@@ -745,7 +764,8 @@ struct SyncBufferMemoryBarrier {
 };
 
 struct SyncImageMemoryBarrier {
-    using Image = std::shared_ptr<const IMAGE_STATE>;
+    using ImageState = syncval_state::ImageState;
+    using Image = std::shared_ptr<const ImageState>;
 
     Image image;
     uint32_t index;
@@ -756,7 +776,7 @@ struct SyncImageMemoryBarrier {
 
     bool IsLayoutTransition() const { return old_layout != new_layout; }
     const VkImageSubresourceRange &Range() const { return range; };
-    const IMAGE_STATE *GetState() const { return image.get(); }
+    const ImageState *GetState() const { return image.get(); }
     SyncImageMemoryBarrier(const Image &image_, uint32_t index_, const SyncBarrier &barrier_, VkImageLayout old_layout_,
                            VkImageLayout new_layout_, const VkImageSubresourceRange &subresource_range_)
         : image(image_),
@@ -830,6 +850,7 @@ class SyncOpBarriers : public SyncOpBase {
 
   protected:
     struct BarrierSet {
+        using ImageState = syncval_state::ImageState;
         VkDependencyFlags dependency_flags;
         SyncExecScope src_exec_scope;
         SyncExecScope dst_exec_scope;
@@ -1000,57 +1021,51 @@ class SyncOpEndRenderPass : public SyncOpBase {
 
 class AccessContext {
   public:
+    using ImageState = syncval_state::ImageState;
     enum DetectOptions : uint32_t {
         kDetectPrevious = 1U << 0,
         kDetectAsync = 1U << 1,
         kDetectAll = (kDetectPrevious | kDetectAsync)
     };
-    struct AddressRange {
-        AccessAddressType type;
-        ResourceAccessRange range;
-        AddressRange() = default;  // the explicit constructor below isn't needed in 20, but would delete the default.
-        AddressRange(AccessAddressType type_, ResourceAccessRange range_) : type(type_), range(range_) {}
-    };
-    using MapArray = std::array<ResourceAccessRangeMap, static_cast<size_t>(AccessAddressType::kTypeCount)>;
 
     using TrackBack = SubpassBarrierTrackback<AccessContext>;
 
     template <typename Detector, typename RangeGen>
-    HazardResult DetectHazard(AccessAddressType type, Detector &detector, RangeGen &range_gen, DetectOptions options) const;
+    HazardResult DetectHazard(Detector &detector, RangeGen &range_gen, DetectOptions options) const;
     template <typename Detector, typename RangeGen>
-    HazardResult DetectHazard(AccessAddressType type, Detector &detector, const RangeGen &range_gen, DetectOptions options) const {
+    HazardResult DetectHazard(Detector &detector, const RangeGen &range_gen, DetectOptions options) const {
         RangeGen mutable_gen(range_gen);
-        return DetectHazard<Detector, RangeGen>(type, detector, mutable_gen, options);
+        return DetectHazard<Detector, RangeGen>(detector, mutable_gen, options);
     }
 
     HazardResult DetectHazard(const BUFFER_STATE &buffer, SyncStageAccessIndex usage_index, const ResourceAccessRange &range) const;
-    HazardResult DetectHazard(const IMAGE_STATE &image, SyncStageAccessIndex current_usage,
+    HazardResult DetectHazard(const ImageState &image, SyncStageAccessIndex current_usage,
                               const VkImageSubresourceLayers &subresource, const VkOffset3D &offset, const VkExtent3D &extent,
                               bool is_depth_sliced) const;
     template <typename Detector>
     HazardResult DetectHazard(Detector &detector, const AttachmentViewGen &view_gen, AttachmentViewGen::Gen gen_type,
                               DetectOptions options) const;
     template <typename Detector>
-    HazardResult DetectHazard(Detector &detector, const IMAGE_STATE &image, const VkImageSubresourceRange &subresource_range,
+    HazardResult DetectHazard(Detector &detector, const ImageState &image, const VkImageSubresourceRange &subresource_range,
                               const VkOffset3D &offset, const VkExtent3D &extent, bool is_depth_sliced,
                               DetectOptions options) const;
     template <typename Detector>
-    HazardResult DetectHazard(Detector &detector, const IMAGE_STATE &image, const VkImageSubresourceRange &subresource_range,
+    HazardResult DetectHazard(Detector &detector, const ImageState &image, const VkImageSubresourceRange &subresource_range,
                               bool is_depth_sliced, DetectOptions options) const;
-    HazardResult DetectHazard(const IMAGE_STATE &image, SyncStageAccessIndex current_usage,
+    HazardResult DetectHazard(const ImageState &image, SyncStageAccessIndex current_usage,
                               const VkImageSubresourceRange &subresource_range, bool is_depth_sliced) const;
     HazardResult DetectHazard(const AttachmentViewGen &view_gen, AttachmentViewGen::Gen gen_type,
                               SyncStageAccessIndex current_usage, SyncOrdering ordering_rule) const;
 
-    HazardResult DetectHazard(const IMAGE_STATE &image, SyncStageAccessIndex current_usage,
+    HazardResult DetectHazard(const ImageState &image, SyncStageAccessIndex current_usage,
                               const VkImageSubresourceRange &subresource_range, SyncOrdering ordering_rule,
                               const VkOffset3D &offset, const VkExtent3D &extent, bool is_depth_sliced) const;
-    HazardResult DetectImageBarrierHazard(const IMAGE_STATE &image, const VkImageSubresourceRange &subresource_range,
+    HazardResult DetectImageBarrierHazard(const ImageState &image, const VkImageSubresourceRange &subresource_range,
                                           VkPipelineStageFlags2KHR src_exec_scope, const SyncStageAccessFlags &src_access_scope,
                                           QueueId queue_id, const SyncEventState &sync_event, DetectOptions options) const;
     HazardResult DetectImageBarrierHazard(const AttachmentViewGen &attachment_view, const SyncBarrier &barrier,
                                           DetectOptions options) const;
-    HazardResult DetectImageBarrierHazard(const IMAGE_STATE &image, VkPipelineStageFlags2KHR src_exec_scope,
+    HazardResult DetectImageBarrierHazard(const ImageState &image, VkPipelineStageFlags2KHR src_exec_scope,
                                           const SyncStageAccessFlags &src_access_scope,
                                           const VkImageSubresourceRange &subresource_range, DetectOptions options) const;
     HazardResult DetectImageBarrierHazard(const SyncImageMemoryBarrier &image_barrier) const;
@@ -1070,9 +1085,7 @@ class AccessContext {
         src_external_ = nullptr;
         dst_external_ = TrackBack();
         start_tag_ = ResourceUsageTag();
-        for (auto &map : access_state_maps_) {
-            map.clear();
-        }
+        access_state_map_.clear();
     }
 
     // Follow the context previous to access the access state, supporting "lazy" import into the context. Not intended for
@@ -1080,9 +1093,9 @@ class AccessContext {
     // TODO: See if returning the lower_bound would be useful from a performance POV -- look at the lower_bound overhead
     // Would need to add a "hint" overload to parallel_iterator::invalidate_[AB] call, if so.
     template <typename BarrierAction>
-    void ResolvePreviousAccessStack(AccessAddressType type, const ResourceAccessRange &range, ResourceAccessRangeMap *descent_map,
+    void ResolvePreviousAccessStack(const ResourceAccessRange &range, ResourceAccessRangeMap *descent_map,
                                     const ResourceAccessState *infill_state, const BarrierAction &previous_barrie) const;
-    void ResolvePreviousAccess(AccessAddressType type, const ResourceAccessRange &range, ResourceAccessRangeMap *descent_map,
+    void ResolvePreviousAccess(const ResourceAccessRange &range, ResourceAccessRangeMap *descent_map,
                                const ResourceAccessState *infill_state,
                                const ResourceAccessStateFunction *previous_barrier = nullptr) const;
     void ResolvePreviousAccesses();
@@ -1090,27 +1103,25 @@ class AccessContext {
     void ResolveAccessRange(const AttachmentViewGen &view_gen, AttachmentViewGen::Gen gen_type, BarrierAction &barrier_action,
                             ResourceAccessRangeMap *descent_map, const ResourceAccessState *infill_state) const;
     template <typename BarrierAction>
-    void ResolveAccessRange(AccessAddressType type, const ResourceAccessRange &range, BarrierAction &barrier_action,
-                            ResourceAccessRangeMap *resolve_map, const ResourceAccessState *infill_state,
-                            bool recur_to_infill = true) const;
+    void ResolveAccessRange(const ResourceAccessRange &range, BarrierAction &barrier_action, ResourceAccessRangeMap *resolve_map,
+                            const ResourceAccessState *infill_state, bool recur_to_infill = true) const;
     template <typename ResolveOp>
     void ResolveFromContext(ResolveOp &&resolve_op, const AccessContext &from_context,
                             const ResourceAccessState *infill_state = nullptr, bool recur_to_infill = false);
     template <typename ResolveOp, typename RangeGenerator>
-    void ResolveFromContext(ResolveOp &&resolve_op, const AccessContext &from_context, AccessAddressType address_type,
-                            RangeGenerator range_gen, const ResourceAccessState *infill_state = nullptr,
-                            bool recur_to_infill = false);
+    void ResolveFromContext(ResolveOp &&resolve_op, const AccessContext &from_context, RangeGenerator range_gen,
+                            const ResourceAccessState *infill_state = nullptr, bool recur_to_infill = false);
 
     void UpdateAccessState(const BUFFER_STATE &buffer, SyncStageAccessIndex current_usage, SyncOrdering ordering_rule,
                            const ResourceAccessRange &range, ResourceUsageTag tag);
-    void UpdateAccessState(const IMAGE_STATE &image, SyncStageAccessIndex current_usage, SyncOrdering ordering_rule,
+    void UpdateAccessState(const ImageState &image, SyncStageAccessIndex current_usage, SyncOrdering ordering_rule,
                            const VkImageSubresourceRange &subresource_range, const ResourceUsageTag &tag);
-    void UpdateAccessState(const IMAGE_STATE &image, SyncStageAccessIndex current_usage, SyncOrdering ordering_rule,
+    void UpdateAccessState(const ImageState &image, SyncStageAccessIndex current_usage, SyncOrdering ordering_rule,
                            const VkImageSubresourceRange &subresource_range, const VkOffset3D &offset, const VkExtent3D &extent,
                            ResourceUsageTag tag);
     void UpdateAccessState(const AttachmentViewGen &view_gen, AttachmentViewGen::Gen gen_type, SyncStageAccessIndex current_usage,
                            SyncOrdering ordering_rule, ResourceUsageTag tag);
-    void UpdateAccessState(const IMAGE_STATE &image, SyncStageAccessIndex current_usage, SyncOrdering ordering_rule,
+    void UpdateAccessState(const ImageState &image, SyncStageAccessIndex current_usage, SyncOrdering ordering_rule,
                            const VkImageSubresourceLayers &subresource, const VkOffset3D &offset, const VkExtent3D &extent,
                            ResourceUsageTag tag);
     void UpdateAttachmentResolveAccess(const RENDER_PASS_STATE &rp_state, const AttachmentViewGenVector &attachment_views,
@@ -1122,12 +1133,11 @@ class AccessContext {
 
     void ImportAsyncContexts(const AccessContext &from);
     template <typename Action, typename RangeGen>
-    void ApplyUpdateAction(AccessAddressType address_type, const Action &action, RangeGen *range_gen_arg);
+    void ApplyUpdateAction(const Action &action, RangeGen *range_gen_arg);
     template <typename Action>
     void ApplyUpdateAction(const AttachmentViewGen &view_gen, AttachmentViewGen::Gen gen_type, const Action &action);
     template <typename Action>
     void ApplyToContext(const Action &barrier_action);
-    static AccessAddressType ImageAddressType(const IMAGE_STATE &image);
 
     AccessContext(uint32_t subpass, VkQueueFlags queue_flags, const std::vector<SubpassDependencyGraphNode> &dependencies,
                   const std::vector<AccessContext> &contexts, const AccessContext *external_context);
@@ -1137,10 +1147,8 @@ class AccessContext {
     void Trim();
     void AddReferencedTags(ResourceUsageTagSet &referenced) const;
 
-    ResourceAccessRangeMap &GetAccessStateMap(AccessAddressType type) { return access_state_maps_[static_cast<size_t>(type)]; }
-    const ResourceAccessRangeMap &GetAccessStateMap(AccessAddressType type) const {
-        return access_state_maps_[static_cast<size_t>(type)];
-    }
+    ResourceAccessRangeMap &GetAccessStateMap() { return access_state_map_; }
+    const ResourceAccessRangeMap &GetAccessStateMap() const { return access_state_map_; }
     const TrackBack *GetTrackBackFromSubpass(uint32_t subpass) const {
         if (subpass == VK_SUBPASS_EXTERNAL) {
             return src_external_;
@@ -1192,17 +1200,15 @@ class AccessContext {
 
   private:
     template <typename Detector>
-    HazardResult DetectHazard(AccessAddressType type, Detector &detector, const ResourceAccessRange &range,
-                              DetectOptions options) const;
+    HazardResult DetectHazard(Detector &detector, const ResourceAccessRange &range, DetectOptions options) const;
     template <typename Detector>
-    HazardResult DetectAsyncHazard(AccessAddressType type, const Detector &detector, const ResourceAccessRange &range,
-                                   ResourceUsageTag async_tag) const;
+    HazardResult DetectAsyncHazard(const Detector &detector, const ResourceAccessRange &range, ResourceUsageTag async_tag) const;
     template <typename Detector>
-    HazardResult DetectPreviousHazard(AccessAddressType type, Detector &detector, const ResourceAccessRange &range) const;
-    void UpdateAccessState(AccessAddressType type, SyncStageAccessIndex current_usage, SyncOrdering ordering_rule,
-                           const ResourceAccessRange &range, ResourceUsageTag tag);
+    HazardResult DetectPreviousHazard(Detector &detector, const ResourceAccessRange &range) const;
+    void UpdateAccessState(SyncStageAccessIndex current_usage, SyncOrdering ordering_rule, const ResourceAccessRange &range,
+                           ResourceUsageTag tag);
 
-    MapArray access_state_maps_;
+    ResourceAccessRangeMap access_state_map_;
     std::vector<TrackBack> prev_;
     std::vector<TrackBack *> prev_by_subpass_;
     // These contexts *must* have the same lifespan as this context, or be cleared, before the referenced contexts can expire
@@ -1245,7 +1251,7 @@ struct SyncEventState {
     }
 
     void ResetFirstScope();
-    const ScopeMap &FirstScope(AccessAddressType address_type) const { return first_scope->GetAccessStateMap(address_type); }
+    const ScopeMap &FirstScope() const { return first_scope->GetAccessStateMap(); }
     IgnoreReason IsIgnoredByWait(CMD_TYPE cmd_type, VkPipelineStageFlags2KHR srcStageMask) const;
     bool HasBarrier(VkPipelineStageFlags2KHR stageMask, VkPipelineStageFlags2KHR exec_scope) const;
     void AddReferencedTags(ResourceUsageTagSet &referenced) const;
@@ -1380,10 +1386,19 @@ class CommandExecutionContext {
 
     virtual HazardResult DetectFirstUseHazard(const ResourceUsageRange &tag_range) = 0;
     virtual void BeginRenderPassReplay(const SyncOpBeginRenderPass &begin_op, ResourceUsageTag tag) {
-        assert("Must override if use by derived type is valid" == nullptr);
+        // Must override if use by derived type is valid
+        assert(false);
     }
-    virtual void NextSubpassReplay() { assert("Must override if use by derived type is valid" == nullptr); }
-    virtual void EndRenderPassReplay() { assert("Must override if use by derived type is valid" == nullptr); }
+
+    virtual void NextSubpassReplay() {
+        // Must override if use by derived type is valid
+        assert(false);
+    }
+
+    virtual void EndRenderPassReplay() {
+        // Must override if use by derived type is valid
+        assert(false);
+    }
 
     bool ValidForSyncOps() const;
 
@@ -1660,13 +1675,12 @@ struct PresentedImageRecord {
     uint32_t image_index;
     uint32_t present_index;
     std::weak_ptr<const syncval_state::Swapchain> swapchain_state;
-    std::shared_ptr<const IMAGE_STATE> image;
+    std::shared_ptr<const syncval_state::ImageState> image;
 };
 
 struct PresentedImage : public PresentedImageRecord {
     std::shared_ptr<QueueBatchContext> batch;
     subresource_adapter::ImageRangeGenerator range_gen;
-    AccessAddressType address_type = AccessAddressType::kLinear;
 
     PresentedImage() = default;
     void UpdateMemoryAccess(SyncStageAccessIndex usage, ResourceUsageTag tag, AccessContext &access_context) const;
@@ -1899,6 +1913,7 @@ struct SubmitInfoConverter {
 
 class SyncValidator : public ValidationStateTracker, public SyncStageAccess {
   public:
+    using ImageState = syncval_state::ImageState;
     using StateTracker = ValidationStateTracker;
     SyncValidator() { container_type = LayerObjectTypeSyncValidation; }
 
@@ -1926,6 +1941,8 @@ class SyncValidator : public ValidationStateTracker, public SyncStageAccess {
 
     void WaitForFence(VkFence fence);
 
+    void UpdateSyncImageMemoryBindState(uint32_t count, const VkBindImageMemoryInfo *infos);
+
     const QueueSyncState *GetQueueSyncState(VkQueue queue) const;
     QueueSyncState *GetQueueSyncState(VkQueue queue);
     std::shared_ptr<const QueueSyncState> GetQueueSyncStateShared(VkQueue queue) const;
@@ -1948,6 +1965,11 @@ class SyncValidator : public ValidationStateTracker, public SyncStageAccess {
                                                            const COMMAND_POOL_STATE *cmd_pool) override;
     std::shared_ptr<SWAPCHAIN_NODE> CreateSwapchainState(const VkSwapchainCreateInfoKHR *create_info,
                                                          VkSwapchainKHR swapchain) final;
+    std::shared_ptr<IMAGE_STATE> CreateImageState(VkImage img, const VkImageCreateInfo *pCreateInfo,
+                                                  VkFormatFeatureFlags2KHR features) final;
+
+    std::shared_ptr<IMAGE_STATE> CreateImageState(VkImage img, const VkImageCreateInfo *pCreateInfo, VkSwapchainKHR swapchain,
+                                                  uint32_t swapchain_index, VkFormatFeatureFlags2KHR features) final;
 
     void RecordCmdBeginRenderPass(VkCommandBuffer commandBuffer, const VkRenderPassBeginInfo *pRenderPassBegin,
                                   const VkSubpassBeginInfo *pSubpassBeginInfo, CMD_TYPE cmd_type);
@@ -2315,6 +2337,12 @@ class SyncValidator : public ValidationStateTracker, public SyncStageAccess {
                                            const VkCommandBuffer *pCommandBuffers) const override;
     void PreCallRecordCmdExecuteCommands(VkCommandBuffer commandBuffer, uint32_t commandBufferCount,
                                          const VkCommandBuffer *pCommandBuffers) override;
+    void PostCallRecordBindImageMemory(VkDevice device, VkImage image, VkDeviceMemory mem, VkDeviceSize memoryOffset,
+                                       VkResult result) override;
+    void PostCallRecordBindImageMemory2(VkDevice device, uint32_t bindInfoCount, const VkBindImageMemoryInfo *pBindInfos,
+                                        VkResult result) override;
+    void PostCallRecordBindImageMemory2KHR(VkDevice device, uint32_t bindInfoCount, const VkBindImageMemoryInfo *pBindInfos,
+                                           VkResult result) override;
     void PostCallRecordQueueWaitIdle(VkQueue queue, VkResult result) override;
     void PostCallRecordDeviceWaitIdle(VkDevice device, VkResult result) override;
 
@@ -2346,4 +2374,6 @@ class SyncValidator : public ValidationStateTracker, public SyncStageAccess {
     void PostCallRecordGetFenceStatus(VkDevice device, VkFence fence, VkResult result) override;
     void PostCallRecordWaitForFences(VkDevice device, uint32_t fenceCount, const VkFence *pFences, VkBool32 waitAll,
                                      uint64_t timeout, VkResult result) override;
+    void PostCallRecordGetSwapchainImagesKHR(VkDevice device, VkSwapchainKHR swapchain, uint32_t *pSwapchainImageCount,
+                                             VkImage *pSwapchainImages, VkResult result) override;
 };

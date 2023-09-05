@@ -25,6 +25,7 @@
 #include "av1/av1_iface_common.h"
 #include "av1/encoder/bitstream.h"
 #include "av1/encoder/encoder.h"
+#include "av1/encoder/encoder_alloc.h"
 #include "av1/encoder/encoder_utils.h"
 #include "av1/encoder/ethread.h"
 #include "av1/encoder/external_partition.h"
@@ -2464,10 +2465,15 @@ static aom_codec_err_t ctrl_set_target_seq_level_idx(aom_codec_alg_priv_t *ctx,
   const int val = CAST(AV1E_SET_TARGET_SEQ_LEVEL_IDX, args);
   const int level = val % 100;
   const int operating_point_idx = val / 100;
-  if (operating_point_idx >= 0 &&
-      operating_point_idx < MAX_NUM_OPERATING_POINTS) {
-    extra_cfg.target_seq_level_idx[operating_point_idx] = (AV1_LEVEL)level;
+  if (operating_point_idx < 0 ||
+      operating_point_idx >= MAX_NUM_OPERATING_POINTS) {
+    char *const err_string = ctx->ppi->error.detail;
+    snprintf(err_string, ARG_ERR_MSG_MAX_LEN,
+             "Invalid operating point index: %d", operating_point_idx);
+    ctx->base.err_detail = err_string;
+    return AOM_CODEC_INVALID_PARAM;
   }
+  extra_cfg.target_seq_level_idx[operating_point_idx] = (AV1_LEVEL)level;
   return update_extra_cfg(ctx, &extra_cfg);
 }
 
@@ -2550,6 +2556,24 @@ static aom_codec_err_t ctrl_set_quantizer_one_pass(aom_codec_alg_priv_t *ctx,
   ctx->ppi->cpi->rc.use_external_qp_one_pass = 1;
 
   return update_extra_cfg(ctx, &extra_cfg);
+}
+
+static aom_codec_err_t ctrl_set_bitrate_one_pass_cbr(aom_codec_alg_priv_t *ctx,
+                                                     va_list args) {
+  AV1_PRIMARY *const ppi = ctx->ppi;
+  AV1_COMP *const cpi = ppi->cpi;
+  AV1EncoderConfig *oxcf = &cpi->oxcf;
+  if (!is_one_pass_rt_params(cpi) || oxcf->rc_cfg.mode != AOM_CBR ||
+      cpi->ppi->use_svc || ppi->num_fp_contexts != 1 || ppi->cpi_lap != NULL) {
+    return AOM_CODEC_INVALID_PARAM;
+  }
+  const int new_bitrate = CAST(AV1E_SET_BITRATE_ONE_PASS_CBR, args);
+  ctx->cfg.rc_target_bitrate = new_bitrate;
+  oxcf->rc_cfg.target_bandwidth = new_bitrate * 1000;
+  set_primary_rc_buffer_sizes(oxcf, ppi);
+  av1_new_framerate(cpi, cpi->framerate);
+  check_reset_rc_flag(cpi);
+  return AOM_CODEC_OK;
 }
 
 #if !CONFIG_REALTIME_ONLY
@@ -3095,6 +3119,19 @@ static aom_codec_err_t encoder_encode(aom_codec_alg_priv_t *ctx,
       }
 #endif  // CONFIG_MULTITHREAD
     }
+
+    // Re-allocate thread data if workers for encoder multi-threading stage
+    // exceeds prev_num_enc_workers.
+    const int num_enc_workers =
+        av1_get_num_mod_workers_for_alloc(&ppi->p_mt_info, MOD_ENC);
+    if (ppi->p_mt_info.prev_num_enc_workers < num_enc_workers &&
+        num_enc_workers <= ppi->p_mt_info.num_workers) {
+      free_thread_data(ppi);
+      for (int j = 0; j < ppi->num_fp_contexts; j++)
+        aom_free(ppi->parallel_cpi[j]->td.tctx);
+      av1_init_tile_thread_data(ppi, cpi->oxcf.pass == AOM_RC_FIRST_PASS);
+    }
+
     for (int i = 0; i < ppi->num_fp_contexts; i++) {
       av1_init_frame_mt(ppi, ppi->parallel_cpi[i]);
     }
@@ -3110,7 +3147,8 @@ static aom_codec_err_t encoder_encode(aom_codec_alg_priv_t *ctx,
       const int status = av1_get_compressed_data(cpi_lap, &cpi_lap_data);
       if (status != -1) {
         if (status != AOM_CODEC_OK) {
-          aom_internal_error(&ppi->error, AOM_CODEC_ERROR, NULL);
+          aom_internal_error(&ppi->error, cpi->common.error->error_code, "%s",
+                             cpi->common.error->detail);
         }
       }
       av1_post_encode_updates(cpi_lap, &cpi_lap_data);
@@ -3166,7 +3204,8 @@ static aom_codec_err_t encoder_encode(aom_codec_alg_priv_t *ctx,
       }
       if (status == -1) break;
       if (status != AOM_CODEC_OK) {
-        aom_internal_error(&ppi->error, AOM_CODEC_ERROR, NULL);
+        aom_internal_error(&ppi->error, cpi->common.error->error_code, "%s",
+                           cpi->common.error->detail);
       }
       if (ppi->num_fp_contexts > 0 && frame_is_intra_only(&cpi->common)) {
         av1_init_sc_decisions(ppi);
@@ -4053,8 +4092,12 @@ static aom_codec_err_t encoder_set_option(aom_codec_alg_priv_t *ctx,
     const int val = arg_parse_int_helper(&arg, err_string);
     const int level = val % 100;
     const int operating_point_idx = val / 100;
-    if (operating_point_idx >= 0 &&
-        operating_point_idx < MAX_NUM_OPERATING_POINTS) {
+    if (operating_point_idx < 0 ||
+        operating_point_idx >= MAX_NUM_OPERATING_POINTS) {
+      snprintf(err_string, ARG_ERR_MSG_MAX_LEN,
+               "Invalid operating point index: %d", operating_point_idx);
+      err = AOM_CODEC_INVALID_PARAM;
+    } else {
       extra_cfg.target_seq_level_idx[operating_point_idx] = (AV1_LEVEL)level;
     }
   } else if (arg_match_helper(&arg,
@@ -4152,6 +4195,16 @@ static aom_codec_err_t ctrl_get_num_operating_points(aom_codec_alg_priv_t *ctx,
   int *const arg = va_arg(args, int *);
   if (arg == NULL) return AOM_CODEC_INVALID_PARAM;
   *arg = ctx->ppi->seq_params.operating_points_cnt_minus_1 + 1;
+  return AOM_CODEC_OK;
+}
+
+static aom_codec_err_t ctrl_get_luma_cdef_strength(aom_codec_alg_priv_t *ctx,
+                                                   va_list args) {
+  int *arg = va_arg(args, int *);
+  AV1_COMMON const *cm = &ctx->ppi->cpi->common;
+  if (arg == NULL) return AOM_CODEC_INVALID_PARAM;
+  memcpy(arg, cm->cdef_info.cdef_strengths, CDEF_MAX_STRENGTHS * sizeof(*arg));
+
   return AOM_CODEC_OK;
 }
 
@@ -4298,6 +4351,7 @@ static aom_codec_ctrl_fn_map_t encoder_ctrl_maps[] = {
   { AV1E_SET_AUTO_INTRA_TOOLS_OFF, ctrl_set_auto_intra_tools_off },
   { AV1E_SET_RTC_EXTERNAL_RC, ctrl_set_rtc_external_rc },
   { AV1E_SET_QUANTIZER_ONE_PASS, ctrl_set_quantizer_one_pass },
+  { AV1E_SET_BITRATE_ONE_PASS_CBR, ctrl_set_bitrate_one_pass_cbr },
 
   // Getters
   { AOME_GET_LAST_QUANTIZER, ctrl_get_quantizer },
@@ -4313,6 +4367,7 @@ static aom_codec_ctrl_fn_map_t encoder_ctrl_maps[] = {
   { AV1E_GET_BASELINE_GF_INTERVAL, ctrl_get_baseline_gf_interval },
   { AV1E_GET_TARGET_SEQ_LEVEL_IDX, ctrl_get_target_seq_level_idx },
   { AV1E_GET_NUM_OPERATING_POINTS, ctrl_get_num_operating_points },
+  { AV1E_GET_LUMA_CDEF_STRENGTH, ctrl_get_luma_cdef_strength },
 
   CTRL_MAP_END,
 };

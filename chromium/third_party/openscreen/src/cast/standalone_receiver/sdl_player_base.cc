@@ -20,7 +20,7 @@ namespace openscreen {
 namespace cast {
 
 SDLPlayerBase::SDLPlayerBase(ClockNowFunctionPtr now_function,
-                             TaskRunner* task_runner,
+                             TaskRunner& task_runner,
                              Receiver* receiver,
                              const std::string& codec_name,
                              std::function<void()> error_callback,

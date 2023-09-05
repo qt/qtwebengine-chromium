@@ -15,34 +15,25 @@
 #include <memory>
 #include <utility>
 
-namespace SkSL {
+namespace SkSL::dsl {
 
-class Expression;
-
-namespace dsl {
-
-class DSLBlock;
 class DSLExpression;
 
 class DSLStatement {
 public:
-    DSLStatement();
+    DSLStatement() = default;
+    ~DSLStatement() = default;
+
+    DSLStatement(DSLStatement&&) = default;
+    DSLStatement& operator=(DSLStatement&& other) = default;
+
+    DSLStatement(const DSLStatement&) = delete;
+    DSLStatement& operator=(const DSLStatement& other) = delete;
 
     DSLStatement(DSLExpression expr);
 
-    DSLStatement(DSLBlock block);
-
-    DSLStatement(DSLStatement&&) = default;
-
-    DSLStatement(std::unique_ptr<SkSL::Expression> expr);
-
     DSLStatement(std::unique_ptr<SkSL::Statement> stmt, Position pos);
-
     DSLStatement(std::unique_ptr<SkSL::Statement> stmt);
-
-    ~DSLStatement();
-
-    DSLStatement& operator=(DSLStatement&& other) = default;
 
     Position position() {
         SkASSERT(this->hasValue());
@@ -61,22 +52,14 @@ public:
         return std::move(fStatement);
     }
 
-private:
     std::unique_ptr<SkSL::Statement> releaseIfPossible() {
         return std::move(fStatement);
     }
 
+private:
     std::unique_ptr<SkSL::Statement> fStatement;
-
-    friend class DSLCore;
-    friend class DSLWriter;
-    friend DSLStatement operator,(DSLStatement left, DSLStatement right);
 };
 
-DSLStatement operator,(DSLStatement left, DSLStatement right);
-
-} // namespace dsl
-
-} // namespace SkSL
+}  // namespace SkSL::dsl
 
 #endif

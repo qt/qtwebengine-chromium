@@ -13,7 +13,10 @@ const char kDebugdServiceName[] = "org.chromium.debugd";
 // Methods.
 const char kCupsAddManuallyConfiguredPrinter[] =
     "CupsAddManuallyConfiguredPrinter";
+const char kCupsAddManuallyConfiguredPrinterV2[] =
+    "CupsAddManuallyConfiguredPrinterV2";
 const char kCupsAddAutoConfiguredPrinter[] = "CupsAddAutoConfiguredPrinter";
+const char kCupsAddAutoConfiguredPrinterV2[] = "CupsAddAutoConfiguredPrinterV2";
 const char kCupsRemovePrinter[] = "CupsRemovePrinter";
 const char kCupsRetrievePpd[] = "CupsRetrievePpd";
 const char kDumpDebugLogs[] = "DumpDebugLogs";

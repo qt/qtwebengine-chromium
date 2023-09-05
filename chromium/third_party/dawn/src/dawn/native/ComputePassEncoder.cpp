@@ -183,6 +183,12 @@ void ComputePassEncoder::APIDispatchWorkgroups(uint32_t workgroupCountX,
         this,
         [&](CommandAllocator* allocator) -> MaybeError {
             if (IsValidationEnabled()) {
+                if (workgroupCountX == 0 || workgroupCountY == 0 || workgroupCountZ == 0) {
+                    GetDevice()->EmitWarningOnce(absl::StrFormat(
+                        "Calling %s.DispatchWorkgroups with a workgroup count of 0 is unusual.",
+                        this));
+                }
+
                 DAWN_TRY(mCommandBufferState.ValidateCanDispatch());
 
                 uint32_t workgroupsPerDimension =
@@ -202,6 +208,10 @@ void ComputePassEncoder::APIDispatchWorkgroups(uint32_t workgroupCountX,
                                 "Dispatch workgroup count Z (%u) exceeds max compute "
                                 "workgroups per dimension (%u).",
                                 workgroupCountZ, workgroupsPerDimension);
+
+                if (GetDevice()->IsCompatibilityMode()) {
+                    DAWN_TRY(mCommandBufferState.ValidateNoDifferentTextureViewsOnSameTexture());
+                }
             }
 
             // Record the synchronization scope for Dispatch, which is just the current
@@ -332,6 +342,10 @@ void ComputePassEncoder::APIDispatchWorkgroupsIndirect(BufferBase* indirectBuffe
                     "Indirect offset (%u) and dispatch size (%u) exceeds the indirect buffer "
                     "size (%u).",
                     indirectOffset, kDispatchIndirectSize, indirectBuffer->GetSize());
+
+                if (GetDevice()->IsCompatibilityMode()) {
+                    DAWN_TRY(mCommandBufferState.ValidateNoDifferentTextureViewsOnSameTexture());
+                }
             }
 
             SyncScopeUsageTracker scope;
@@ -413,9 +427,15 @@ void ComputePassEncoder::APISetBindGroup(uint32_t groupIndexIn,
                     ValidateSetBindGroup(groupIndex, group, dynamicOffsetCount, dynamicOffsets));
             }
 
-            mUsageTracker.AddResourcesReferencedByBindGroup(group);
-            RecordSetBindGroup(allocator, groupIndex, group, dynamicOffsetCount, dynamicOffsets);
-            mCommandBufferState.SetBindGroup(groupIndex, group, dynamicOffsetCount, dynamicOffsets);
+            if (group == nullptr) {
+                mCommandBufferState.UnsetBindGroup(groupIndex);
+            } else {
+                mUsageTracker.AddResourcesReferencedByBindGroup(group);
+                RecordSetBindGroup(allocator, groupIndex, group, dynamicOffsetCount,
+                                   dynamicOffsets);
+                mCommandBufferState.SetBindGroup(groupIndex, group, dynamicOffsetCount,
+                                                 dynamicOffsets);
+            }
 
             return {};
         },

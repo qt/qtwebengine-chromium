@@ -14,11 +14,19 @@
 #include "core/fxge/dib/fx_dib.h"
 #include "third_party/base/span.h"
 
+#if defined(_SKIA_SUPPORT_)
+#include "third_party/skia/include/core/SkRefCnt.h"  // nogncheck
+#endif
+
 class CFX_ClipRgn;
 class CFX_DIBitmap;
 class CFX_Matrix;
 class PauseIndicatorIface;
 struct FX_RECT;
+
+#if defined(_SKIA_SUPPORT_)
+class SkImage;
+#endif  // defined(_SKIA_SUPPORT_)
 
 // Base class for all Device-Independent Bitmaps.
 class CFX_DIBBase : public Retainable {
@@ -32,17 +40,11 @@ class CFX_DIBBase : public Retainable {
 
   static constexpr uint32_t kPaletteSize = 256;
 
-  ~CFX_DIBBase() override;
-
-  virtual pdfium::span<uint8_t> GetBuffer() const;
+  virtual pdfium::span<const uint8_t> GetBuffer() const;
   virtual pdfium::span<const uint8_t> GetScanline(int line) const = 0;
   virtual bool SkipToScanline(int line, PauseIndicatorIface* pPause) const;
   virtual size_t GetEstimatedImageMemoryBurden() const;
 
-  pdfium::span<uint8_t> GetWritableScanline(int line) {
-    pdfium::span<const uint8_t> src = GetScanline(line);
-    return {const_cast<uint8_t*>(src.data()), src.size()};
-  }
   int GetWidth() const { return m_Width; }
   int GetHeight() const { return m_Height; }
   uint32_t GetPitch() const { return m_Pitch; }
@@ -87,8 +89,17 @@ class CFX_DIBBase : public Retainable {
                       int& src_top,
                       const CFX_ClipRgn* pClipRgn) const;
 
+#if defined(_SKIA_SUPPORT_)
+  // Realizes an `SkImage` from this DIB.
+  //
+  // This may share the underlying pixels, in which case, this DIB should not be
+  // modified during the lifetime of the `SkImage`.
+  virtual sk_sp<SkImage> RealizeSkImage() const;
+#endif  // defined(_SKIA_SUPPORT_)
+
  protected:
   CFX_DIBBase();
+  ~CFX_DIBBase() override;
 
   static bool ConvertBuffer(FXDIB_Format dest_format,
                             pdfium::span<uint8_t> dest_buf,
@@ -99,6 +110,11 @@ class CFX_DIBBase : public Retainable {
                             int src_left,
                             int src_top,
                             DataVector<uint32_t>* pal);
+
+#if defined(_SKIA_SUPPORT_)
+  // Whether alpha is premultiplied (if `IsAlphaFormat()`).
+  virtual bool IsPremultiplied() const;
+#endif  // defined(_SKIA_SUPPORT_)
 
   RetainPtr<CFX_DIBitmap> ClipToInternal(const FX_RECT* pClip) const;
   void BuildPalette();

@@ -12,12 +12,16 @@ SHARED_FILES = [
     "AtlasTypes.h",
     "Blend.cpp",
     "Blend.h",
+    "BlendFormula.cpp",
+    "BlendFormula.h",
     "BufferWriter.h",
     "DitherUtils.cpp",
     "DitherUtils.h",
     "GpuTypesPriv.h",
     "KeyBuilder.h",
     "MutableTextureStateRef.h",
+    "PipelineUtils.cpp",
+    "PipelineUtils.h",
     "Rectanizer.h",
     "RectanizerPow2.cpp",
     "RectanizerPow2.h",
@@ -29,6 +33,8 @@ SHARED_FILES = [
     "SkBackingFit.h",
     "Swizzle.cpp",
     "Swizzle.h",
+    "TiledTextureUtils.cpp",
+    "TiledTextureUtils.h",
 ]
 
 split_srcs_and_hdrs(
@@ -38,7 +44,6 @@ split_srcs_and_hdrs(
 
 CORE_FILES = [
     "GrAHardwareBufferUtils.h",
-    "GrRectanizer.h",
     "ShaderErrorHandler.cpp",
     "SkRenderEngineAbortf.h",
 ]

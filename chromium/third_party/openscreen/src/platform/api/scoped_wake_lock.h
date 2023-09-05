@@ -23,13 +23,13 @@ namespace openscreen {
 // instances have been destroyed.
 class ScopedWakeLock {
  public:
-  static SerialDeletePtr<ScopedWakeLock> Create(TaskRunner* task_runner);
+  static SerialDeletePtr<ScopedWakeLock> Create(TaskRunner& task_runner);
 
   // Instances are not copied nor moved.
   ScopedWakeLock(const ScopedWakeLock&) = delete;
-  ScopedWakeLock(ScopedWakeLock&&) = delete;
+  ScopedWakeLock(ScopedWakeLock&&) noexcept = delete;
   ScopedWakeLock& operator=(const ScopedWakeLock&) = delete;
-  ScopedWakeLock& operator=(ScopedWakeLock&&) = delete;
+  ScopedWakeLock& operator=(ScopedWakeLock&&) noexcept = delete;
 
   ScopedWakeLock();
   virtual ~ScopedWakeLock();

@@ -22,6 +22,7 @@
 #include "absl/strings/string_view.h"
 #include "fastpair/repository/device_metadata.h"
 #include "fastpair/server_access/fast_pair_repository.h"
+#include "internal/platform/single_thread_executor.h"
 
 namespace nearby {
 namespace fastpair {
@@ -32,6 +33,9 @@ class FakeFastPairRepository : public FastPairRepository {
   FakeFastPairRepository& operator=(const FakeFastPairRepository&) = delete;
   ~FakeFastPairRepository() override = default;
 
+  static std::unique_ptr<FakeFastPairRepository> Create(
+      absl::string_view model_id, absl::string_view public_anti_spoof_key);
+
   void SetFakeMetadata(absl::string_view hex_model_id, proto::Device metadata);
   void ClearFakeMetadata(absl::string_view hex_model_id);
   // FastPairRepository::
@@ -40,7 +44,7 @@ class FakeFastPairRepository : public FastPairRepository {
 
  private:
   absl::flat_hash_map<std::string, std::unique_ptr<DeviceMetadata>> data_;
-  DeviceMetadataCallback callback_;
+  SingleThreadExecutor executor_;
 };
 }  // namespace fastpair
 }  // namespace nearby

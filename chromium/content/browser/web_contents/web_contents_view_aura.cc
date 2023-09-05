@@ -97,7 +97,7 @@ namespace content {
 std::unique_ptr<WebContentsView> CreateWebContentsView(
     WebContentsImpl* web_contents,
     std::unique_ptr<WebContentsViewDelegate> delegate,
-    RenderViewHostDelegateView** render_view_host_delegate_view) {
+    raw_ptr<RenderViewHostDelegateView>* render_view_host_delegate_view) {
   auto rv =
       std::make_unique<WebContentsViewAura>(web_contents, std::move(delegate));
   *render_view_host_delegate_view = rv.get();
@@ -1302,7 +1302,7 @@ void WebContentsViewAura::OnBoundsChanged(const gfx::Rect& old_bounds,
 }
 
 gfx::NativeCursor WebContentsViewAura::GetCursor(const gfx::Point& point) {
-  return gfx::kNullCursor;
+  return gfx::NativeCursor{};
 }
 
 int WebContentsViewAura::GetNonClientComponent(const gfx::Point& point) const {
@@ -1346,7 +1346,8 @@ void WebContentsViewAura::OnWindowTargetVisibilityChanged(bool visible) {
 }
 
 void WebContentsViewAura::OnWindowOcclusionChanged(
-    aura::Window::OcclusionState occlusion_state) {
+    aura::Window::OcclusionState old_occlusion_state,
+    aura::Window::OcclusionState new_occlusion_state) {
   UpdateWebContentsVisibility();
 }
 

@@ -28,6 +28,7 @@
 #include "src/objects/deoptimization-data-inl.h"
 #include "src/objects/heap-number-inl.h"
 #include "src/objects/heap-object.h"
+#include "src/objects/hole-inl.h"
 #include "src/objects/js-proxy-inl.h"  // TODO(jkummerow): Drop.
 #include "src/objects/keys.h"
 #include "src/objects/literal-objects.h"
@@ -46,6 +47,7 @@
 #include "src/objects/templates.h"
 #include "src/roots/roots.h"
 #include "src/sandbox/bounded-size-inl.h"
+#include "src/sandbox/code-pointer-inl.h"
 #include "src/sandbox/external-pointer-inl.h"
 #include "src/sandbox/sandboxed-pointer-inl.h"
 
@@ -123,6 +125,7 @@ IS_TYPE_FUNCTION_DEF(SmallOrderedHashTable)
   }                                                              \
   bool HeapObject::Is##Type() const { return Is##Type(GetReadOnlyRoots()); }
 ODDBALL_LIST(IS_TYPE_FUNCTION_DEF)
+HOLE_LIST(IS_TYPE_FUNCTION_DEF)
 #undef IS_TYPE_FUNCTION_DEF
 
 #if V8_STATIC_ROOTS_BOOL
@@ -139,6 +142,7 @@ ODDBALL_LIST(IS_TYPE_FUNCTION_DEF)
   }
 #endif
 ODDBALL_LIST(IS_TYPE_FUNCTION_DEF)
+HOLE_LIST(IS_TYPE_FUNCTION_DEF)
 #undef IS_TYPE_FUNCTION_DEF
 
 bool Object::IsNullOrUndefined(Isolate* isolate) const {
@@ -717,6 +721,19 @@ void Object::WriteExternalPointerField(size_t offset, Isolate* isolate,
   i::WriteExternalPointerField<tag>(field_address(offset), isolate, value);
 }
 
+void Object::InitCodePointerField(size_t offset, Isolate* isolate,
+                                  Address value) {
+  i::InitCodePointerField(field_address(offset), isolate, value);
+}
+
+Address Object::ReadCodePointerField(size_t offset) const {
+  return i::ReadCodePointerField(field_address(offset));
+}
+
+void Object::WriteCodePointerField(size_t offset, Address value) {
+  i::WriteCodePointerField(field_address(offset), value);
+}
+
 ObjectSlot HeapObject::RawField(int byte_offset) const {
   return ObjectSlot(field_address(byte_offset));
 }
@@ -725,8 +742,9 @@ MaybeObjectSlot HeapObject::RawMaybeWeakField(int byte_offset) const {
   return MaybeObjectSlot(field_address(byte_offset));
 }
 
-CodeObjectSlot HeapObject::RawCodeField(int byte_offset) const {
-  return CodeObjectSlot(field_address(byte_offset));
+InstructionStreamSlot HeapObject::RawInstructionStreamField(
+    int byte_offset) const {
+  return InstructionStreamSlot(field_address(byte_offset));
 }
 
 ExternalPointerSlot HeapObject::RawExternalPointerField(int byte_offset) const {

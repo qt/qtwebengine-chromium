@@ -115,10 +115,25 @@ int32_t ParagraphImpl::unresolvedGlyphs() {
     return fUnresolvedGlyphs;
 }
 
-void ParagraphImpl::layout(SkScalar rawWidth) {
+std::unordered_set<SkUnichar> ParagraphImpl::unresolvedCodepoints() {
+    return fUnresolvedCodepoints;
+}
 
+void ParagraphImpl::addUnresolvedCodepoints(TextRange textRange) {
+    fUnicode->forEachCodepoint(
+        &fText[textRange.start], textRange.width(),
+        [&](SkUnichar unichar, int32_t start, int32_t end, int32_t count) {
+            fUnresolvedCodepoints.emplace(unichar);
+        }
+    );
+}
+
+void ParagraphImpl::layout(SkScalar rawWidth) {
     // TODO: This rounding is done to match Flutter tests. Must be removed...
-    auto floorWidth = SkScalarFloorToScalar(rawWidth);
+    auto floorWidth = rawWidth;
+    if (getApplyRoundingHack()) {
+        floorWidth = SkScalarFloorToScalar(floorWidth);
+    }
 
     if ((!SkScalarIsFinite(rawWidth) || fLongestLine <= floorWidth) &&
         fState >= kLineBroken &&
@@ -198,9 +213,11 @@ void ParagraphImpl::layout(SkScalar rawWidth) {
     this->fOldWidth = floorWidth;
     this->fOldHeight = this->fHeight;
 
-    // TODO: This rounding is done to match Flutter tests. Must be removed...
-    fMinIntrinsicWidth = littleRound(fMinIntrinsicWidth);
-    fMaxIntrinsicWidth = littleRound(fMaxIntrinsicWidth);
+    if (getApplyRoundingHack()) {
+        // TODO: This rounding is done to match Flutter tests. Must be removed...
+        fMinIntrinsicWidth = littleRound(fMinIntrinsicWidth);
+        fMaxIntrinsicWidth = littleRound(fMaxIntrinsicWidth);
+    }
 
     // TODO: This is strictly Flutter thing. Must be factored out into some flutter code
     if (fParagraphStyle.getMaxLines() == 1 ||
@@ -473,7 +490,7 @@ void ParagraphImpl::buildClusterTable() {
         fCodeUnitProperties[fRuns.back().textRange().end] |= SkUnicode::CodeUnitFlags::kGraphemeStart;
         fCodeUnitProperties[fRuns.back().textRange().end] |= SkUnicode::CodeUnitFlags::kGlyphClusterStart;
     }
-    fClusters.reserve_back(cluster_count);
+    fClusters.reserve_exact(fClusters.size() + cluster_count);
 
     // Walk through all the run in the direction of input text
     for (auto& run : fRuns) {
@@ -521,6 +538,7 @@ bool ParagraphImpl::shapeTextIntoEndlessLine() {
         return false;
     }
 
+    fUnresolvedCodepoints.clear();
     fFontSwitches.clear();
 
     OneLineShaper oneLineShaper(this);
@@ -1166,7 +1184,7 @@ void ParagraphImpl::visit(const Visitor& visitor) {
 int ParagraphImpl::getLineNumberAt(TextIndex codeUnitIndex) const {
     for (auto i = 0; i < fLines.size(); ++i) {
         auto& line = fLines[i];
-        if (line.text().contains({codeUnitIndex, codeUnitIndex})) {
+        if (line.text().contains({codeUnitIndex, codeUnitIndex + 1})) {
             return i;
         }
     }

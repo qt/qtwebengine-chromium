@@ -79,12 +79,13 @@ export class TimelineDetailsView extends UI.Widget.VBox {
   private rangeDetailViews: Map<string, TimelineTreeView>;
   private readonly additionalMetricsToolbar: UI.Toolbar.Toolbar;
   private model!: PerformanceModel;
-  private track?: TimelineModel.TimelineModel.Track|null;
+  #selectedEvents?: SDK.TracingModel.CompatibleTraceEvent[]|null;
   private lazyPaintProfilerView?: TimelinePaintProfilerView|null;
   private lazyLayersView?: TimelineLayersView|null;
   private preferredTabId?: string;
   private selection?: TimelineSelection|null;
-  #traceEngineData: TraceEngine.TraceModel.PartialTraceParseDataDuringMigration|null = null;
+  #traceEngineData: TraceEngine.Handlers.Migration.PartialTraceData|null = null;
+  #filmStripModel: SDK.FilmStripModel.FilmStripModel|null = null;
 
   constructor(delegate: TimelineModeViewDelegate) {
     super();
@@ -123,8 +124,9 @@ export class TimelineDetailsView extends UI.Widget.VBox {
   }
 
   setModel(
-      model: PerformanceModel|null, traceEngineData: TraceEngine.TraceModel.PartialTraceParseDataDuringMigration|null,
-      track: TimelineModel.TimelineModel.Track|null): void {
+      model: PerformanceModel|null, traceEngineData: TraceEngine.Handlers.Migration.PartialTraceData|null,
+      filmStripModel: SDK.FilmStripModel.FilmStripModel|null,
+      selectedEvents: SDK.TracingModel.CompatibleTraceEvent[]|null): void {
     if (this.model !== model) {
       if (this.model) {
         this.model.removeEventListener(Events.WindowChanged, this.onWindowChanged, this);
@@ -135,10 +137,11 @@ export class TimelineDetailsView extends UI.Widget.VBox {
       }
     }
     this.#traceEngineData = traceEngineData;
-    this.track = track;
+    this.#selectedEvents = selectedEvents;
+    this.#filmStripModel = filmStripModel;
     this.tabbedPane.closeTabs([Tab.PaintProfiler, Tab.LayerViewer], false);
     for (const view of this.rangeDetailViews.values()) {
-      view.setModel(model, track, traceEngineData);
+      view.setModelWithEvents(model, selectedEvents, traceEngineData);
     }
     this.lazyPaintProfilerView = null;
     this.lazyLayersView = null;
@@ -212,6 +215,16 @@ export class TimelineDetailsView extends UI.Widget.VBox {
     this.updateContents();
   }
 
+  #getFilmStripFrame(frame: TimelineModel.TimelineFrameModel.TimelineFrame): SDK.FilmStripModel.Frame|null {
+    if (!this.#filmStripModel) {
+      return null;
+    }
+    // For idle frames, look at the state at the beginning of the frame.
+    const screenshotTime = frame.idle ? frame.startTime : frame.endTime;
+    const filmStripFrame = this.#filmStripModel.frameByTimestamp(screenshotTime);
+    return filmStripFrame && filmStripFrame.timestamp - frame.endTime < 10 ? filmStripFrame : null;
+  }
+
   setSelection(selection: TimelineSelection|null): void {
     this.detailsLinkifier.reset();
     this.selection = selection;
@@ -227,7 +240,7 @@ export class TimelineDetailsView extends UI.Widget.VBox {
           .then(fragment => this.appendDetailsTabsForTraceEventAndShowDetails(event, fragment));
     } else if (TimelineSelection.isFrameObject(selectionObject)) {
       const frame = selectionObject;
-      const filmStripFrame = this.model.filmStripModelFrame(frame);
+      const filmStripFrame = this.#getFilmStripFrame(frame);
       this.setContent(TimelineUIUtils.generateDetailsContentForFrame(frame, filmStripFrame));
       if (frame.layerTree) {
         const layersView = this.layersView();
@@ -281,8 +294,8 @@ export class TimelineDetailsView extends UI.Widget.VBox {
     this.tabbedPane.selectTab(Tab.PaintProfiler, true);
   }
 
-  private appendDetailsTabsForTraceEventAndShowDetails(
-      event: SDK.TracingModel.Event|TraceEngine.Types.TraceEvents.TraceEventData, content: Node): void {
+  private appendDetailsTabsForTraceEventAndShowDetails(event: SDK.TracingModel.CompatibleTraceEvent, content: Node):
+      void {
     this.setContent(content);
     if (SDK.TracingModel.eventIsFromNewEngine(event)) {
       // TODO(crbug.com/1386091): Add support for this use case in the
@@ -313,10 +326,10 @@ export class TimelineDetailsView extends UI.Widget.VBox {
   }
 
   private updateSelectedRangeStats(startTime: number, endTime: number): void {
-    if (!this.model || !this.track) {
+    if (!this.model || !this.#selectedEvents) {
       return;
     }
-    const aggregatedStats = TimelineUIUtils.statsForTimeRange(this.track.eventsForTreeView(), startTime, endTime);
+    const aggregatedStats = TimelineUIUtils.statsForTimeRange(this.#selectedEvents, startTime, endTime);
     const startOffset = startTime - this.model.timelineModel().minimumRecordTime();
     const endOffset = endTime - this.model.timelineModel().minimumRecordTime();
 

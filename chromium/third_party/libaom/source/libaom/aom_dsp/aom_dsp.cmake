@@ -112,6 +112,7 @@ list(APPEND AOM_DSP_COMMON_INTRIN_AVX2
 
 list(APPEND AOM_DSP_COMMON_INTRIN_NEON
             "${AOM_ROOT}/aom_dsp/arm/aom_convolve_copy_neon.c"
+            "${AOM_ROOT}/aom_dsp/arm/aom_convolve8_neon.c"
             "${AOM_ROOT}/aom_dsp/arm/fwd_txfm_neon.c"
             "${AOM_ROOT}/aom_dsp/arm/loopfilter_neon.c"
             "${AOM_ROOT}/aom_dsp/arm/highbd_intrapred_neon.c"
@@ -257,14 +258,16 @@ if(CONFIG_AV1_ENCODER)
               "${AOM_ROOT}/aom_dsp/x86/obmc_variance_sse4.c")
 
   list(APPEND AOM_DSP_ENCODER_INTRIN_NEON
-              "${AOM_ROOT}/aom_dsp/arm/sad4d_neon.c"
+              "${AOM_ROOT}/aom_dsp/arm/sadxd_neon.c"
               "${AOM_ROOT}/aom_dsp/arm/sad_neon.c"
               "${AOM_ROOT}/aom_dsp/arm/masked_sad_neon.c"
+              "${AOM_ROOT}/aom_dsp/arm/masked_sad4d_neon.c"
               "${AOM_ROOT}/aom_dsp/arm/subpel_variance_neon.c"
               "${AOM_ROOT}/aom_dsp/arm/variance_neon.c"
               "${AOM_ROOT}/aom_dsp/arm/hadamard_neon.c"
               "${AOM_ROOT}/aom_dsp/arm/avg_neon.c"
               "${AOM_ROOT}/aom_dsp/arm/obmc_variance_neon.c"
+              "${AOM_ROOT}/aom_dsp/arm/obmc_sad_neon.c"
               "${AOM_ROOT}/aom_dsp/arm/sse_neon.c"
               "${AOM_ROOT}/aom_dsp/arm/sum_squares_neon.c")
 
@@ -288,7 +291,12 @@ if(CONFIG_AV1_ENCODER)
                 "${AOM_ROOT}/aom_dsp/x86/highbd_variance_sse4.c")
 
     list(APPEND AOM_DSP_ENCODER_INTRIN_NEON
+                "${AOM_ROOT}/aom_dsp/arm/highbd_avg_neon.c"
+                "${AOM_ROOT}/aom_dsp/arm/highbd_hadamard_neon.c"
                 "${AOM_ROOT}/aom_dsp/arm/highbd_quantize_neon.c"
+                "${AOM_ROOT}/aom_dsp/arm/highbd_sad_neon.c"
+                "${AOM_ROOT}/aom_dsp/arm/highbd_sad4d_neon.c"
+                "${AOM_ROOT}/aom_dsp/arm/highbd_subpel_variance_neon.c"
                 "${AOM_ROOT}/aom_dsp/arm/highbd_variance_neon.c")
   endif()
 

@@ -294,7 +294,8 @@ def _CheckBazelBUILDFiles(input_api, output_api):
     excluded_paths = ["infra/", "bazel/rbe/", "bazel/external/", "bazel/common_config_settings/",
                       "modules/canvaskit/go/", "experimental/", "bazel/platform", "third_party/",
                       "tests/", "resources/", "bazel/deps_parser/", "bazel/exporter_tool/",
-                      "tools/gpu/gl/interface/", "bazel/utils/", "include/config/"]
+                      "tools/gpu/gl/interface/", "bazel/utils/", "include/config/",
+                      "bench/"]
     is_excluded = any(affected_file_path.startswith(n) for n in excluded_paths)
     if is_bazel and not is_excluded:
       with open(affected_file_path, 'r') as file:
@@ -613,7 +614,7 @@ def _CheckReleaseNotesForPublicAPI(input_api, output_api):
     # We only care about files that end in .h and are under the top-level
     # include dir, but not include/private.
     if (file_ext == '.h' and
-        os.path.dirname(file_path) == 'include' and
+        file_path.split(os.path.sep)[0] == 'include' and
         'private' not in file_path):
       public_api_changed = True
     elif os.path.dirname(file_path) == RELEASE_NOTES_DIR:

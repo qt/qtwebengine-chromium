@@ -11,6 +11,7 @@
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLContext.h"
 #include "src/sksl/SkSLErrorReporter.h"
+#include "src/sksl/SkSLIntrinsicList.h"
 #include "src/sksl/SkSLMangler.h"
 #include "src/sksl/SkSLModifiersPool.h"
 #include "src/sksl/SkSLProgramSettings.h"
@@ -22,7 +23,6 @@
 #include "src/sksl/ir/SkSLSymbolTable.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
 
-#include <type_traits>
 #include <utility>
 
 namespace SkSL {
@@ -34,7 +34,7 @@ Variable::~Variable() {
     }
 }
 
-InterfaceBlockVariable::~InterfaceBlockVariable() {
+ExtendedVariable::~ExtendedVariable() {
     // Unhook this Variable from its associated InterfaceBlock, since we're being deleted.
     if (fInterfaceBlockElement) {
         fInterfaceBlockElement->detachDeadVariable();
@@ -80,27 +80,17 @@ void Variable::setGlobalVarDeclaration(GlobalVarDeclaration* global) {
     fDeclaringElement = global;
 }
 
-std::string Variable::mangledName() const {
-    // Only private variables need to use name mangling.
-    std::string_view name = this->name();
-    if (!skstd::starts_with(name, '$')) {
-        return std::string(name);
-    }
-
-    // The $ prefix will fail to compile in GLSL, so replace it with `sk_Priv`.
-    name.remove_prefix(1);
-    return "sk_Priv" + std::string(name);
+std::string_view ExtendedVariable::mangledName() const {
+    return fMangledName.empty() ? this->name() : fMangledName;
 }
 
 std::unique_ptr<Variable> Variable::Convert(const Context& context,
                                             Position pos,
                                             Position modifiersPos,
                                             const Modifiers& modifiers,
-                                            const Type* baseType,
+                                            const Type* type,
                                             Position namePos,
                                             std::string_view name,
-                                            bool isArray,
-                                            std::unique_ptr<Expression> arraySize,
                                             Variable::Storage storage) {
     if (modifiers.fLayout.fLocation == 0 && modifiers.fLayout.fIndex == 0 &&
         (modifiers.fFlags & Modifiers::kOut_Flag) &&
@@ -108,7 +98,7 @@ std::unique_ptr<Variable> Variable::Convert(const Context& context,
         context.fErrors->error(modifiersPos,
                                "out location=0, index=0 is reserved for sk_FragColor");
     }
-    if (baseType->isUnsizedArray() && storage != Variable::Storage::kInterfaceBlock) {
+    if (type->isUnsizedArray() && storage != Variable::Storage::kInterfaceBlock) {
         context.fErrors->error(pos, "unsized arrays are not permitted here");
     }
     if (ProgramConfig::IsCompute(ThreadContext::Context().fConfig->fKind) &&
@@ -122,37 +112,37 @@ std::unique_ptr<Variable> Variable::Convert(const Context& context,
         }
     }
 
-    return Make(context, pos, modifiersPos, modifiers, baseType, name, isArray,
-                std::move(arraySize), storage);
+    return Make(context, pos, modifiersPos, modifiers, type, name, storage);
 }
 
 std::unique_ptr<Variable> Variable::Make(const Context& context,
                                          Position pos,
                                          Position modifiersPos,
                                          const Modifiers& modifiers,
-                                         const Type* baseType,
+                                         const Type* type,
                                          std::string_view name,
-                                         bool isArray,
-                                         std::unique_ptr<Expression> arraySize,
                                          Variable::Storage storage) {
-    const Type* type = baseType;
-    int arraySizeValue = 0;
-    if (isArray) {
-        SkASSERT(arraySize);
-        arraySizeValue = type->convertArraySize(context, pos, std::move(arraySize));
-        if (!arraySizeValue) {
-            return nullptr;
-        }
-        type = ThreadContext::SymbolTable()->addArrayDimension(type, arraySizeValue);
+    // Invent a mangled name for the variable, if it needs one.
+    std::string mangledName;
+    if (skstd::starts_with(name, '$')) {
+        // The $ prefix will fail to compile in GLSL, so replace it with `sk_Priv`.
+        mangledName = "sk_Priv" + std::string(name.substr(1));
+    } else if (FindIntrinsicKind(name) != kNotIntrinsic) {
+        // Having a variable name overlap an intrinsic name will prevent us from calling the
+        // intrinsic, but it's not illegal for user names to shadow a global symbol.
+        // Mangle the name to avoid a possible collision.
+        mangledName = Mangler{}.uniqueName(name, context.fSymbolTable.get());
     }
-    if (type->componentType().isInterfaceBlock()) {
-        return std::make_unique<InterfaceBlockVariable>(pos,
-                                                        modifiersPos,
-                                                        context.fModifiersPool->add(modifiers),
-                                                        name,
-                                                        type,
-                                                        context.fConfig->fIsBuiltinCode,
-                                                        storage);
+
+    if (type->componentType().isInterfaceBlock() || !mangledName.empty()) {
+        return std::make_unique<ExtendedVariable>(pos,
+                                                  modifiersPos,
+                                                  context.fModifiersPool->add(modifiers),
+                                                  name,
+                                                  type,
+                                                  context.fConfig->fIsBuiltinCode,
+                                                  storage,
+                                                  std::move(mangledName));
     } else {
         return std::make_unique<Variable>(pos,
                                           modifiersPos,

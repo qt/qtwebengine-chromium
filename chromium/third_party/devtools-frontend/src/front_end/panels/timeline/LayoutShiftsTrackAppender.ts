@@ -5,17 +5,12 @@ import * as TraceEngine from '../../models/trace/trace.js';
 import type * as PerfUI from '../../ui/legacy/components/perf_ui/perf_ui.js';
 
 import {
-  EntryType,
-  type TimelineFlameChartEntry,
-} from './TimelineFlameChartDataProvider.js';
-import {
   type CompatibilityTracksAppender,
   type TrackAppender,
   type HighlightedEntryInfo,
   type TrackAppenderName,
 } from './CompatibilityTracksAppender.js';
 import * as i18n from '../../core/i18n/i18n.js';
-import type * as TimelineModel from '../../models/timeline_model/timeline_model.js';
 import {buildGroupStyle, buildTrackHeader, getFormattedTime} from './AppenderUtils.js';
 
 const UIStrings = {
@@ -33,44 +28,31 @@ export class LayoutShiftsTrackAppender implements TrackAppender {
 
   #compatibilityBuilder: CompatibilityTracksAppender;
   #flameChartData: PerfUI.FlameChart.FlameChartTimelineData;
-  #traceParsedData: Readonly<TraceEngine.TraceModel.PartialTraceParseDataDuringMigration>;
-  #entryData: TimelineFlameChartEntry[];
-  // TODO(crbug.com/1416533)
-  // These are used only for compatibility with the legacy flame chart
-  // architecture of the panel. Once all tracks have been migrated to
-  // use the new engine and flame chart architecture, the reference can
-  // be removed.
-  #legacyEntryTypeByLevel: EntryType[];
-  #legacyTrack: TimelineModel.TimelineModel.Track|null;
+  #traceParsedData: Readonly<TraceEngine.Handlers.Migration.PartialTraceData>;
 
   constructor(
       compatibilityBuilder: CompatibilityTracksAppender, flameChartData: PerfUI.FlameChart.FlameChartTimelineData,
-      traceParsedData: TraceEngine.TraceModel.PartialTraceParseDataDuringMigration,
-      entryData: TimelineFlameChartEntry[], legacyEntryTypeByLevel: EntryType[],
-      legacyTrack?: TimelineModel.TimelineModel.Track) {
+      traceParsedData: TraceEngine.Handlers.Migration.PartialTraceData) {
     this.#compatibilityBuilder = compatibilityBuilder;
     this.#flameChartData = flameChartData;
     this.#traceParsedData = traceParsedData;
-    this.#entryData = entryData;
-    this.#legacyEntryTypeByLevel = legacyEntryTypeByLevel;
-    this.#legacyTrack = legacyTrack || null;
   }
 
   /**
    * Appends into the flame chart data the data corresponding to the
    * layout shifts track.
-   * @param level the horizontal level of the flame chart events where
+   * @param trackStartLevel the horizontal level of the flame chart events where
    * the track's events will start being appended.
    * @param expanded wether the track should be rendered expanded.
    * @returns the first available level to append more data after having
    * appended the track's events.
    */
-  appendTrackAtLevel(currentLevel: number, expanded?: boolean): number {
+  appendTrackAtLevel(trackStartLevel: number, expanded?: boolean): number {
     if (this.#traceParsedData.LayoutShifts.clusters.length === 0) {
-      return currentLevel;
+      return trackStartLevel;
     }
-    this.#appendTrackHeaderAtLevel(currentLevel, expanded);
-    return this.#appendLayoutShiftsAtLevel(currentLevel);
+    this.#appendTrackHeaderAtLevel(trackStartLevel, expanded);
+    return this.#appendLayoutShiftsAtLevel(trackStartLevel);
   }
 
   /**
@@ -86,8 +68,8 @@ export class LayoutShiftsTrackAppender implements TrackAppender {
     const style = buildGroupStyle({collapsible: false});
     const group = buildTrackHeader(
         currentLevel, i18nString(UIStrings.layoutShifts), style,
-        /* selectable= */ true, expanded, this.#legacyTrack);
-    this.#flameChartData.groups.push(group);
+        /* selectable= */ true, expanded);
+    this.#compatibilityBuilder.registerTrackForGroup(group, this);
   }
 
   /**
@@ -99,47 +81,23 @@ export class LayoutShiftsTrackAppender implements TrackAppender {
    * layout shifts (the first available level to append more data).
    */
   #appendLayoutShiftsAtLevel(currentLevel: number): number {
-    const allLayoutShifts = this.#traceParsedData.LayoutShifts.clusters.flatMap(cluster => {
-      return cluster.events;
-    });
-    const lastUsedTimeByLevel: number[] = [];
-    for (let i = 0; i < allLayoutShifts.length; ++i) {
-      const event = allLayoutShifts[i];
-      const startTime = event.ts;
-      let level;
-      // look vertically for the first level where this event fits,
-      // that is, where it wouldn't overlap with other events.
-      for (level = 0; level < lastUsedTimeByLevel.length && lastUsedTimeByLevel[level] > startTime; ++level) {
-      }
-      this.#appendEventAtLevel(event, currentLevel + level);
-      // End time is the same as the start time as LayoutShifts are instant events.
-      lastUsedTimeByLevel[level] = event.ts;
-    }
-    this.#legacyEntryTypeByLevel.length = currentLevel + lastUsedTimeByLevel.length;
-    this.#legacyEntryTypeByLevel.fill(EntryType.TrackAppender, currentLevel);
-    return currentLevel + lastUsedTimeByLevel.length;
-  }
+    const allLayoutShifts = this.#traceParsedData.LayoutShifts.clusters.flatMap(cluster => cluster.events);
+    const newLevel = this.#compatibilityBuilder.appendEventsAtLevel(allLayoutShifts, currentLevel, this);
 
-  /**
-   * Adds an event to the flame chart data at a defined level.
-   * @returns the position occupied by the new event in the entryData
-   * array, which contains all the events in the timeline.
-   */
-  #appendEventAtLevel(event: TraceEngine.Types.TraceEvents.TraceEventData, level: number): number {
-    this.#compatibilityBuilder.registerTrackForLevel(level, this);
-    const index = this.#entryData.length;
-    this.#entryData.push(event);
-    this.#legacyEntryTypeByLevel[level] = EntryType.TrackAppender;
-    this.#flameChartData.entryLevels[index] = level;
-    this.#flameChartData.entryStartTimes[index] = TraceEngine.Helpers.Timing.microSecondsToMilliseconds(event.ts);
     // Bit of a hack: LayoutShifts are instant events, so have no duration. But
     // OPP doesn't do well at making tiny events easy to spot and click. So we
     // set it to a small duration so that the user is able to see and click
     // them more easily. Long term we will explore a better UI solution to
     // allow us to do this properly and not hack around it.
     const msDuration = TraceEngine.Types.Timing.MicroSeconds(5_000);
-    this.#flameChartData.entryTotalTimes[index] = TraceEngine.Helpers.Timing.microSecondsToMilliseconds(msDuration);
-    return index;
+    for (let i = 0; i < allLayoutShifts.length; ++i) {
+      const index = this.#compatibilityBuilder.indexForEvent(allLayoutShifts[i]);
+      if (index === undefined) {
+        continue;
+      }
+      this.#flameChartData.entryTotalTimes[index] = TraceEngine.Helpers.Timing.microSecondsToMilliseconds(msDuration);
+    }
+    return newLevel;
   }
 
   /*

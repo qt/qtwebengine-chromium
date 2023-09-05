@@ -57,7 +57,7 @@ class SDLPlayerBase : public Receiver::Consumer, public Decoder::Client {
   // player has halted and set |error_status()|. |media_type| should be "audio"
   // or "video" (only used when logging).
   SDLPlayerBase(ClockNowFunctionPtr now_function,
-                TaskRunner* task_runner,
+                TaskRunner& task_runner,
                 Receiver* receiver,
                 const std::string& codec_name,
                 std::function<void()> error_callback,

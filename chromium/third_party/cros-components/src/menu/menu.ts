@@ -49,12 +49,16 @@ export class Menu extends LitElement {
     delegatesFocus: true
   };
 
+  /** @export */
   anchor: HTMLElement|null;
+  /** @export */
   anchorCorner: Corner;
+  /** @export */
   hasOverflow: boolean;
   /**
    * Sets the initial state of the md-menu on first render. In general do not
    * set this and instead use show() and close().
+   * @export
    */
   open: boolean;
 
@@ -62,20 +66,24 @@ export class Menu extends LitElement {
   // navigation
   /**
    * Skips the opening and closing animations.
+   * @export
    */
   quick: boolean;
   /**
    * The corner of the menu which to align the anchor in the standard logical
    * property style of <block>_<inline>.
+   * @export
    */
   menuCorner: Corner;
   /**
    * The element that should be focused by default once opened.
+   * @export
    */
   defaultFocus: DefaultFocusState;
   /**
    * After closing, does not restore focus to the last focused element before
    * the menu was opened.
+   * @export
    */
   skipRestoreFocus: boolean;
 

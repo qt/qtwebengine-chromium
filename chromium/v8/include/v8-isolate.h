@@ -534,7 +534,7 @@ class V8_EXPORT Isolate {
     kTurboFanOsrCompileStarted = 115,
     kAsyncStackTaggingCreateTaskCall = 116,
     kDurationFormat = 117,
-    kInvalidatedNumberStringPrototypeNoReplaceProtector = 118,
+    kInvalidatedNumberStringNotRegexpLikeProtector = 118,
     kRegExpUnicodeSetIncompatibilitiesWithUnicodeMode = 119,  // Unused.
     kImportAssertionDeprecatedSyntax = 120,
     kLocaleInfoObsoletedGetters = 121,
@@ -1519,6 +1519,13 @@ class V8_EXPORT Isolate {
 
   void SetSharedArrayBufferConstructorEnabledCallback(
       SharedArrayBufferConstructorEnabledCallback callback);
+
+  /**
+   * Register callback to control whether compile hints magic comments are
+   * enabled.
+   */
+  void SetJavaScriptCompileHintsMagicEnabledCallback(
+      JavaScriptCompileHintsMagicEnabledCallback callback);
 
   /**
    * This function can be called by the embedder to signal V8 that the dynamic

@@ -20,14 +20,6 @@
 #include "src/core/SkResourceCache.h"
 #include "src/core/SkYUVPlanesCache.h"
 
-#if defined(SK_GANESH)
-#include "include/gpu/ganesh/SkImageGanesh.h"
-#endif
-
-#if defined(SK_GRAPHITE)
-#include "src/gpu/graphite/TextureUtils.h"
-#endif
-
 #include <utility>
 
 enum SkColorType : int;
@@ -190,33 +182,25 @@ bool SkImage_Lazy::isValid(GrRecordingContext* context) const {
     return generator->isValid(context);
 }
 
-sk_sp<SkImage> SkImage_Lazy::onMakeSubset(const SkIRect& subset, GrDirectContext* direct) const {
-    // TODO: can we do this more efficiently, by telling the generator we want to
-    //       "realize" a subset?
 
-#if defined(SK_GANESH)
-    auto pixels = direct ? SkImages::TextureFromImage(direct, this) : this->makeRasterImage();
-#else
-    auto pixels = this->makeRasterImage();
-#endif
-    return pixels ? pixels->makeSubset(subset, direct) : nullptr;
+sk_sp<SkImage> SkImage_Lazy::onMakeSubset(GrDirectContext*, const SkIRect& subset) const {
+    // neither picture-backed nor codec-backed lazy images need the context to do readbacks.
+    // The subclass for cross-context images *does* use the direct context.
+    auto pixels = this->makeRasterImage(nullptr);
+    return pixels ? pixels->makeSubset(nullptr, subset) : nullptr;
 }
 
-#if defined(SK_GRAPHITE)
-
-sk_sp<SkImage> SkImage_Lazy::onMakeSubset(const SkIRect& subset,
-                                          skgpu::graphite::Recorder* recorder,
-                                          RequiredImageProperties requiredProperties) const {
+sk_sp<SkImage> SkImage_Lazy::onMakeSubset(skgpu::graphite::Recorder*,
+                                          const SkIRect& subset,
+                                          RequiredProperties props) const {
     // TODO: can we do this more efficiently, by telling the generator we want to
     //       "realize" a subset?
-
-    sk_sp<SkImage> nonLazyImg = recorder ? this->makeTextureImage(recorder, requiredProperties)
-                                         : this->makeRasterImage();
-
-    return nonLazyImg ? nonLazyImg->makeSubset(subset, recorder, requiredProperties) : nullptr;
+    sk_sp<SkImage> nonLazyImg = this->makeRasterImage(nullptr);
+    if (!nonLazyImg) {
+        return nullptr;
+    }
+    return nonLazyImg->makeSubset(nullptr, subset, props);
 }
-
-#endif // SK_GRAPHITE
 
 sk_sp<SkImage> SkImage_Lazy::onMakeColorTypeAndColorSpace(SkColorType targetCT,
                                                           sk_sp<SkColorSpace> targetCS,
@@ -286,74 +270,6 @@ sk_sp<SkCachedData> SkImage_Lazy::getPlanes(
 void SkImage_Lazy::addUniqueIDListener(sk_sp<SkIDChangeListener> listener) const {
     fUniqueIDListeners.add(std::move(listener));
 }
-
-#if defined(SK_GRAPHITE)
-
-/*
- *  We only have 2 ways to create a Graphite-backed image.
- *
- *  1. Ask the generator to natively create one
- *  2. Ask the generator to return RGB(A) data, which the GPU can convert
- */
-sk_sp<SkImage> SkImage_Lazy::onMakeTextureImage(skgpu::graphite::Recorder* recorder,
-                                                RequiredImageProperties requiredProps) const {
-    using namespace skgpu::graphite;
-
-    // 1. Ask the generator to natively create one.
-    {
-        // Disable mipmaps here bc Graphite doesn't currently support mipmap regeneration
-        // In this case, we would allocate the mipmaps and fill in the base layer but the mipmap
-        // levels would never be filled out - yielding incorrect draws. Please see: b/238754357.
-        requiredProps.fMipmapped = skgpu::Mipmapped::kNo;
-
-        ScopedGenerator generator(fSharedGenerator);
-        sk_sp<SkImage> newImage = generator->makeTextureImage(recorder,
-                                                              this->imageInfo(),
-                                                              requiredProps.fMipmapped);
-        if (newImage) {
-            SkASSERT(as_IB(newImage)->isGraphiteBacked());
-            return newImage;
-        }
-    }
-
-    // 2. Ask the generator to return a bitmap, which the GPU can convert.
-    if (SkBitmap bitmap; this->getROPixels(nullptr, &bitmap, CachingHint::kDisallow_CachingHint)) {
-        return skgpu::graphite::MakeFromBitmap(recorder,
-                                               this->imageInfo().colorInfo(),
-                                               bitmap,
-                                               nullptr,
-                                               skgpu::Budgeted::kNo,
-                                               requiredProps);
-    }
-
-    return nullptr;
-}
-
-sk_sp<SkImage> SkImage_Lazy::onMakeColorTypeAndColorSpace(
-        SkColorType targetCT,
-        sk_sp<SkColorSpace> targetCS,
-        skgpu::graphite::Recorder* recorder,
-        RequiredImageProperties requiredProps) const {
-    SkAutoMutexExclusive autoAquire(fOnMakeColorTypeAndSpaceMutex);
-    if (fOnMakeColorTypeAndSpaceResult &&
-        targetCT == fOnMakeColorTypeAndSpaceResult->colorType() &&
-        SkColorSpace::Equals(targetCS.get(), fOnMakeColorTypeAndSpaceResult->colorSpace())) {
-        return fOnMakeColorTypeAndSpaceResult;
-    }
-    Validator validator(fSharedGenerator, &targetCT, targetCS);
-    sk_sp<SkImage> result = validator ? sk_sp<SkImage>(new SkImage_Lazy(&validator)) : nullptr;
-    if (result) {
-        fOnMakeColorTypeAndSpaceResult = result;
-    }
-
-    if (recorder) {
-        return result->makeTextureImage(recorder, requiredProps);
-    } else {
-        return result;
-    }
-}
-
-#endif
 
 // TODO(kjlubick) move SharedGenerate to SkImage_Lazy.h and this to SkImage_LazyFactories
 namespace SkImages {

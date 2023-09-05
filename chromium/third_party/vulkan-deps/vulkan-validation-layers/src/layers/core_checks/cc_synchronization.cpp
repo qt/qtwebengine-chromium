@@ -23,8 +23,9 @@
 
 #include "generated/vk_enum_string_helper.h"
 #include "generated/chassis.h"
-#include "core_validation.h"
+#include "core_checks/core_validation.h"
 #include "sync/sync_utils.h"
+#include "generated/enum_flag_bits.h"
 
 ReadLockGuard CoreChecks::ReadLock() const {
     if (fine_grained_locking) {
@@ -986,6 +987,21 @@ bool CoreChecks::ValidatePipelineStage(const LogObjectList &objlist, const Locat
 bool CoreChecks::ValidateAccessMask(const LogObjectList &objlist, const Location &loc, VkQueueFlags queue_flags,
                                     VkAccessFlags2KHR access_mask, VkPipelineStageFlags2KHR stage_mask) const {
     bool skip = false;
+
+    const auto expanded_pipeline_stages = sync_utils::ExpandPipelineStages(stage_mask, queue_flags);
+
+    if (!enabled_features.ray_query_features.rayQuery && (access_mask & VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR)) {
+        const auto illegal_pipeline_stages = allVkPipelineShaderStageBits2 & ~VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR;
+        if (stage_mask & illegal_pipeline_stages) {
+            // Select right vuid based on enabled extensions
+            const char *vuid = sync_vuid_maps::GetAccessMaskRayQueryVUIDSelector(loc, device_extensions);
+            const auto stages_string = sync_utils::StringPipelineStageFlags(stage_mask);
+            std::stringstream msg;
+            msg << loc.Message() << " contains pipeline stages " << stages_string << '.';
+            skip |= LogError(objlist, vuid, "%s", msg.str().c_str());
+        }
+    }
+
     // Early out if all commands set
     if ((stage_mask & VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT_KHR) != 0) return skip;
 
@@ -993,12 +1009,12 @@ bool CoreChecks::ValidateAccessMask(const LogObjectList &objlist, const Location
     access_mask &= ~(VK_ACCESS_2_MEMORY_READ_BIT_KHR | VK_ACCESS_2_MEMORY_WRITE_BIT_KHR);
     if (access_mask == 0) return skip;
 
-    auto expanded_stages = sync_utils::ExpandPipelineStages(stage_mask, queue_flags);  // TODO:
-    auto valid_accesses = sync_utils::CompatibleAccessMask(expanded_stages);
-    auto bad_accesses = (access_mask & ~valid_accesses);
+    const auto valid_accesses = sync_utils::CompatibleAccessMask(expanded_pipeline_stages);
+    const auto bad_accesses = (access_mask & ~valid_accesses);
     if (bad_accesses == 0) {
         return skip;
     }
+
     for (size_t i = 0; i < sizeof(bad_accesses) * 8; i++) {
         VkAccessFlags2KHR bit = (1ULL << i);
         if (bad_accesses & bit) {
@@ -1009,6 +1025,7 @@ bool CoreChecks::ValidateAccessMask(const LogObjectList &objlist, const Location
             skip |= LogError(objlist, vuid, "%s", msg.str().c_str());
         }
     }
+
     return skip;
 }
 
@@ -1229,8 +1246,16 @@ bool CoreChecks::PreCallValidateCmdPipelineBarrier(VkCommandBuffer commandBuffer
         }
     }
     if (cb_state->activeRenderPass && cb_state->activeRenderPass->UsesDynamicRendering()) {
-        skip |= LogError(commandBuffer, "VUID-vkCmdPipelineBarrier-None-06191",
-                         "vkCmdPipelineBarrier(): a dynamic render pass instance is active.");
+        // In dynamic rendering, vkCmdPipelineBarrier is only allowed if
+        // VK_EXT_shader_tile_image extension is enabled
+        if (IsExtEnabled(device_extensions.vk_ext_shader_tile_image)) {
+            skip |=
+                ValidateBarriersForShaderTileImage(objlist, loc, dependencyFlags, memoryBarrierCount, pMemoryBarriers,
+                                                   bufferMemoryBarrierCount, imageMemoryBarrierCount, srcStageMask, dstStageMask);
+        } else {
+            skip |= LogError(commandBuffer, "VUID-vkCmdPipelineBarrier-None-06191",
+                             "vkCmdPipelineBarrier(): a dynamic render pass instance is active.");
+        }
     }
     skip |= ValidateBarriers(loc, cb_state.get(), srcStageMask, dstStageMask, memoryBarrierCount, pMemoryBarriers,
                              bufferMemoryBarrierCount, pBufferMemoryBarriers, imageMemoryBarrierCount, pImageMemoryBarriers);
@@ -1262,8 +1287,17 @@ bool CoreChecks::ValidateCmdPipelineBarrier2(VkCommandBuffer commandBuffer, cons
         }
     }
     if (cb_state->activeRenderPass && cb_state->activeRenderPass->UsesDynamicRendering()) {
-        skip |= LogError(commandBuffer, "VUID-vkCmdPipelineBarrier2-None-06191",
-                         "vkCmdPipelineBarrier(): a dynamic render pass instance is active.");
+        // In dynamic rendering, vkCmdPipelineBarrier2 is only allowed if
+        // VK_EXT_shader_tile_image extension is enabled
+        if (IsExtEnabled(device_extensions.vk_ext_shader_tile_image)) {
+            skip |= ValidateBarriersForShaderTileImage(objlist, loc, pDependencyInfo->dependencyFlags,
+                                                       pDependencyInfo->memoryBarrierCount, pDependencyInfo->pMemoryBarriers,
+                                                       pDependencyInfo->bufferMemoryBarrierCount,
+                                                       pDependencyInfo->imageMemoryBarrierCount);
+        } else {
+            skip |= LogError(commandBuffer, "VUID-vkCmdPipelineBarrier2-None-06191",
+                             "vkCmdPipelineBarrier(): a dynamic render pass instance is active.");
+        }
     }
     skip |= ValidateDependencyInfo(objlist, loc, cb_state.get(), pDependencyInfo);
     return skip;
@@ -1622,10 +1656,7 @@ bool CoreChecks::ValidateBarriersToImages(const Location &outer_loc, const CMD_B
         }
 
         if (has_depth_mask) {
-            if (img_barrier.oldLayout == VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL ||
-                img_barrier.oldLayout == VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL ||
-                img_barrier.newLayout == VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL ||
-                img_barrier.newLayout == VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL) {
+            if (IsImageLayoutStencilOnly(img_barrier.oldLayout) || IsImageLayoutStencilOnly(img_barrier.newLayout)) {
                 auto vuid = GetImageBarrierVUID(loc, ImageError::kSeparateDepthWithStencilLayout);
                 skip |= LogError(
                     img_barrier.image, vuid,
@@ -1636,10 +1667,7 @@ bool CoreChecks::ValidateBarriersToImages(const Location &outer_loc, const CMD_B
             }
         }
         if (has_stencil_mask) {
-            if (img_barrier.oldLayout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL ||
-                img_barrier.oldLayout == VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL ||
-                img_barrier.newLayout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL ||
-                img_barrier.newLayout == VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL) {
+            if (IsImageLayoutDepthOnly(img_barrier.oldLayout) || IsImageLayoutDepthOnly(img_barrier.newLayout)) {
                 auto vuid = GetImageBarrierVUID(loc, ImageError::kSeparateStencilhWithDepthLayout);
                 skip |= LogError(
                     img_barrier.image, vuid,
@@ -1719,7 +1747,7 @@ bool CoreChecks::ValidateImageBarrierAttachment(const Location &loc, CMD_BUFFER_
             sub_image_layout = sub_desc.pDepthStencilAttachment->layout;
             sub_image_found = true;
         }
-        if (!sub_image_found && IsExtEnabled(device_extensions.vk_khr_depth_stencil_resolve)) {
+        if (!sub_image_found) {
             const auto *resolve = LvlFindInChain<VkSubpassDescriptionDepthStencilResolve>(sub_desc.pNext);
             if (resolve && resolve->pDepthStencilResolveAttachment &&
                 resolve->pDepthStencilResolveAttachment->attachment == attach_index) {
@@ -2361,8 +2389,7 @@ bool CoreChecks::ValidateImageBarrier(const LogObjectList &objects, const Locati
         skip |= ValidateImageAspectMask(image_data->image(), image_data->createInfo.format, mem_barrier.subresourceRange.aspectMask,
                                         image_data->disjoint, loc.StringFunc().c_str());
 
-        skip |=
-            ValidateImageBarrierSubresourceRange(loc.dot(Field::subresourceRange), image_data.get(), mem_barrier.subresourceRange);
+        skip |= ValidateImageBarrierSubresourceRange(loc.dot(Field::subresourceRange), *image_data, mem_barrier.subresourceRange);
     }
     return skip;
 }
@@ -2402,11 +2429,6 @@ bool CoreChecks::ValidateBarriers(const Location &outer_loc, const CMD_BUFFER_ST
 bool CoreChecks::ValidateDependencyInfo(const LogObjectList &objects, const Location &outer_loc, const CMD_BUFFER_STATE *cb_state,
                                         const VkDependencyInfoKHR *dep_info) const {
     bool skip = false;
-
-    if (cb_state->activeRenderPass) {
-        skip |= ValidateRenderPassPipelineBarriers(outer_loc, cb_state, dep_info);
-        if (skip) return true;  // Early return to avoid redundant errors from below calls
-    }
     for (uint32_t i = 0; i < dep_info->memoryBarrierCount; ++i) {
         const auto &mem_barrier = dep_info->pMemoryBarriers[i];
         auto loc = outer_loc.dot(Struct::VkMemoryBarrier2, Field::pMemoryBarriers, i);
@@ -2430,6 +2452,89 @@ bool CoreChecks::ValidateDependencyInfo(const LogObjectList &objects, const Loca
         skip |= ValidateBufferBarrier(objects, loc, cb_state, mem_barrier);
     }
 
+    return skip;
+}
+
+bool CoreChecks::ValidatePipelineStageForShaderTileImage(const LogObjectList &objlist, const Location &loc,
+                                                         VkPipelineStageFlags2KHR stage_mask, const std::string &vuid) const {
+    bool skip = false;
+    if (HasNonFramebufferStagePipelineStageFlags(stage_mask)) {
+        skip |= LogError(objlist, vuid, "%s (%s) is restricted to framebuffer space stages (%s).", loc.Message().c_str(),
+                         sync_utils::StringPipelineStageFlags(stage_mask).c_str(),
+                         sync_utils::StringPipelineStageFlags(kFramebufferStagePipelineStageFlags).c_str());
+    }
+    return skip;
+}
+
+bool CoreChecks::ValidateAccessMaskForShaderTileImage(const LogObjectList &objlist, const Location &loc,
+                                                      VkAccessFlags2KHR access_mask, const std::string &vuid) const {
+    bool skip = false;
+    if (HasNonShaderTileImageAccessFlags(access_mask)) {
+        skip |= LogError(objlist, vuid, "%s (%s) is not from allowed access mask (%s).", loc.Message().c_str(),
+                         sync_utils::StringAccessFlags(access_mask).c_str(),
+                         sync_utils::StringAccessFlags(kShaderTileImageAllowedAccessFlags).c_str());
+    }
+    return skip;
+}
+
+template <typename Barrier>
+bool CoreChecks::ValidateBarriersForShaderTileImage(const LogObjectList &objlist, const Location &outer_loc,
+                                                    VkDependencyFlags dependencyFlags, uint32_t memBarrierCount,
+                                                    const Barrier *pMemBarriers, uint32_t bufferBarrierCount,
+                                                    uint32_t imageMemBarrierCount, VkPipelineStageFlags src_stage_mask,
+                                                    VkPipelineStageFlags dst_stage_mask) const {
+    bool skip = false;
+
+    using sync_vuid_maps::GetShaderTileImageVUID;
+    using sync_vuid_maps::ShaderTileImageError;
+
+    static_assert(std::is_same_v<Barrier, VkMemoryBarrier> || std::is_same_v<Barrier, VkMemoryBarrier2>);
+
+    // Check shader tile image features
+    const auto tile_image_features = enabled_features.shader_tile_image_features;
+    const bool features_enabled = tile_image_features.shaderTileImageColorReadAccess ||
+                                  tile_image_features.shaderTileImageDepthReadAccess ||
+                                  tile_image_features.shaderTileImageStencilReadAccess;
+
+    if (!features_enabled) {
+        const auto &vuid = GetShaderTileImageVUID(outer_loc, ShaderTileImageError::kShaderTileImageFeatureError);
+        skip |= LogError(objlist, vuid, "%s can not be used if none of the features of tile image read is enabled.",
+                         outer_loc.StringFunc().c_str());
+        return skip;
+    }
+
+    const auto &vuid = GetShaderTileImageVUID(outer_loc, ShaderTileImageError::kShaderTileImageBarrierError);
+
+    if ((dependencyFlags & VK_DEPENDENCY_BY_REGION_BIT) != VK_DEPENDENCY_BY_REGION_BIT) {
+        skip |= LogError(objlist, vuid, "%s should contain VK_DEPENDENCY_BY_REGION_BIT.",
+                         outer_loc.dot(Field::dependencyFlags).Message().c_str());
+    }
+
+    if (bufferBarrierCount != 0 || imageMemBarrierCount != 0) {
+        skip |= LogError(objlist, vuid, "%s can only include memory barriers.", outer_loc.StringFunc().c_str());
+    }
+
+    constexpr bool mem_barrier2 = std::is_same_v<Barrier, VkMemoryBarrier2>;
+
+    if constexpr (!mem_barrier2) {
+        skip |= ValidatePipelineStageForShaderTileImage(objlist, outer_loc.dot(Field::srcStageMask), src_stage_mask, vuid);
+        skip |= ValidatePipelineStageForShaderTileImage(objlist, outer_loc.dot(Field::dstStageMask), dst_stage_mask, vuid);
+    }
+
+    for (uint32_t i = 0; i < memBarrierCount; ++i) {
+        const Barrier &mem_barrier = pMemBarriers[i];
+        Location loc(outer_loc.function);
+        if constexpr (mem_barrier2) {
+            loc = outer_loc.dot(Struct::VkMemoryBarrier2, Field::pMemoryBarriers, i);
+            skip |= ValidatePipelineStageForShaderTileImage(objlist, loc.dot(Field::srcStageMask), mem_barrier.srcStageMask, vuid);
+            skip |= ValidatePipelineStageForShaderTileImage(objlist, loc.dot(Field::dstStageMask), mem_barrier.dstStageMask, vuid);
+        } else {
+            loc = outer_loc.dot(Struct::VkMemoryBarrier, Field::pMemoryBarriers, i);
+        }
+
+        skip |= ValidateAccessMaskForShaderTileImage(objlist, loc.dot(Field::srcAccessMask), mem_barrier.srcAccessMask, vuid);
+        skip |= ValidateAccessMaskForShaderTileImage(objlist, loc.dot(Field::dstAccessMask), mem_barrier.dstAccessMask, vuid);
+    }
     return skip;
 }
 

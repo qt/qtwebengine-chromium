@@ -369,7 +369,10 @@ export class ResourceTreeModel extends SDKModel<EventTypes> {
   private addFramesRecursively(
       sameTargetParentFrame: ResourceTreeFrame|null, frameTreePayload: Protocol.Page.FrameResourceTree): void {
     const framePayload = frameTreePayload.frame;
-    const frame = new ResourceTreeFrame(this, sameTargetParentFrame, framePayload.id, framePayload, null);
+    let frame = this.framesInternal.get(framePayload.id);
+    if (!frame) {
+      frame = new ResourceTreeFrame(this, sameTargetParentFrame, framePayload.id, framePayload, null);
+    }
     if (!sameTargetParentFrame && framePayload.parentId) {
       frame.crossTargetParentFrameId = framePayload.parentId;
     }
@@ -1241,6 +1244,9 @@ class PreloadDispatcher implements ProtocolProxyApi.PreloadDispatcher {
   }
 
   prerenderStatusUpdated(_event: Protocol.Preload.PrerenderStatusUpdatedEvent): void {
+  }
+
+  preloadEnabledStateUpdated(_event: Protocol.Preload.PreloadEnabledStateUpdatedEvent): void {
   }
 
   preloadingAttemptSourcesUpdated(): void {

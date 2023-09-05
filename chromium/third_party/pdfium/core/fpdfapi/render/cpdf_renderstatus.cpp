@@ -72,10 +72,6 @@
 #include "third_party/base/notreached.h"
 #include "third_party/base/span.h"
 
-#if defined(_SKIA_SUPPORT_)
-#include "core/fxge/skia/fx_skia_device.h"
-#endif
-
 namespace {
 
 constexpr int kRenderMaxRecursionDepth = 64;
@@ -1213,10 +1209,6 @@ void CPDF_RenderStatus::CompositeDIBitmap(
         }
         pDIBitmap->MultiplyAlpha(bitmap_alpha);
       }
-#if defined(_SKIA_SUPPORT_)
-      if (CFX_DefaultRenderDevice::SkiaIsDefaultRenderer())
-        pDIBitmap->PreMultiply();
-#endif
       if (m_pDevice->SetDIBits(pDIBitmap, left, top)) {
         return;
       }
@@ -1375,7 +1367,7 @@ RetainPtr<CFX_DIBitmap> CPDF_RenderStatus::LoadSMask(
   if (!pMask->Create(width, height, FXDIB_Format::k8bppMask))
     return nullptr;
 
-  pdfium::span<uint8_t> dest_buf = pMask->GetBuffer();
+  pdfium::span<uint8_t> dest_buf = pMask->GetWritableBuffer();
   pdfium::span<const uint8_t> src_buf = bitmap->GetBuffer();
   int dest_pitch = pMask->GetPitch();
   int src_pitch = bitmap->GetPitch();

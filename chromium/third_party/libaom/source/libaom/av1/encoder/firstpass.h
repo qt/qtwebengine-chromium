@@ -464,7 +464,6 @@ typedef struct {
   int last_kfgroup_zeromotion_pct;
   int extend_minq;
   int extend_maxq;
-  int extend_minq_fast;
   /*!\endcond */
 } TWO_PASS;
 

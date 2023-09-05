@@ -23,11 +23,24 @@ struct YUVBlock
 
 static avifBool avifPrepareReformatState(const avifImage * image, const avifRGBImage * rgb, avifReformatState * state)
 {
+#if defined(AVIF_ENABLE_EXPERIMENTAL_YCGCO_R)
+    const avifBool useYCgCoRe = (image->matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_YCGCO_RE);
+    const avifBool useYCgCoRo = (image->matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_YCGCO_RO);
+#else
+    const avifBool useYCgCoRe = AVIF_FALSE;
+    const avifBool useYCgCoRo = AVIF_FALSE;
+#endif
     if ((image->depth != 8) && (image->depth != 10) && (image->depth != 12) && (image->depth != 16)) {
         return AVIF_FALSE;
     }
     if ((rgb->depth != 8) && (rgb->depth != 10) && (rgb->depth != 12) && (rgb->depth != 16)) {
         return AVIF_FALSE;
+    }
+    if (useYCgCoRe || useYCgCoRo) {
+        const int bitOffset = (useYCgCoRe) ? 2 : 1;
+        if (image->depth - bitOffset != rgb->depth) {
+            return AVIF_FALSE;
+        }
     }
     if (rgb->isFloat && rgb->depth != 16) {
         return AVIF_FALSE;
@@ -48,11 +61,12 @@ static avifBool avifPrepareReformatState(const avifImage * image, const avifRGBI
     // YCgCo performs limited-full range adjustment on R,G,B but the current implementation performs range adjustment
     // on Y,U,V. So YCgCo with limited range is unsupported.
     if ((image->matrixCoefficients == 3 /* CICP reserved */) ||
-        ((image->matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_YCGCO) && (image->yuvRange == AVIF_RANGE_LIMITED)) ||
+        ((image->matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_YCGCO || useYCgCoRe || useYCgCoRo) &&
+         (image->yuvRange == AVIF_RANGE_LIMITED)) ||
         (image->matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_BT2020_CL) ||
         (image->matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_SMPTE2085) ||
         (image->matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_CHROMA_DERIVED_CL) ||
-        (image->matrixCoefficients >= AVIF_MATRIX_COEFFICIENTS_ICTCP)) { // Note the >= catching "future" CICP values here too
+        (image->matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_ICTCP) || (image->matrixCoefficients >= AVIF_MATRIX_COEFFICIENTS_LAST)) {
         return AVIF_FALSE;
     }
 
@@ -68,6 +82,12 @@ static avifBool avifPrepareReformatState(const avifImage * image, const avifRGBI
         state->mode = AVIF_REFORMAT_MODE_IDENTITY;
     } else if (image->matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_YCGCO) {
         state->mode = AVIF_REFORMAT_MODE_YCGCO;
+#if defined(AVIF_ENABLE_EXPERIMENTAL_YCGCO_R)
+    } else if (useYCgCoRe) {
+        state->mode = AVIF_REFORMAT_MODE_YCGCO_RE;
+    } else if (useYCgCoRo) {
+        state->mode = AVIF_REFORMAT_MODE_YCGCO_RO;
+#endif
     }
 
     if (state->mode != AVIF_REFORMAT_MODE_YUV_COEFFICIENTS) {
@@ -158,7 +178,13 @@ static int avifReformatStateUVToUNorm(avifReformatState * state, float v)
 
     // YCgCo performs limited-full range adjustment on R,G,B but the current implementation performs range adjustment
     // on Y,U,V. So YCgCo with limited range is unsupported.
+#if defined(AVIF_ENABLE_EXPERIMENTAL_YCGCO_R)
+    assert((state->mode != AVIF_REFORMAT_MODE_YCGCO && state->mode != AVIF_REFORMAT_MODE_YCGCO_RE &&
+            state->mode != AVIF_REFORMAT_MODE_YCGCO_RO) ||
+           (state->yuvRange == AVIF_RANGE_FULL));
+#else
     assert((state->mode != AVIF_REFORMAT_MODE_YCGCO) || (state->yuvRange == AVIF_RANGE_FULL));
+#endif
 
     if (state->mode == AVIF_REFORMAT_MODE_IDENTITY) {
         unorm = (int)avifRoundf(v * state->rangeY + state->biasY);
@@ -313,6 +339,19 @@ avifResult avifImageRGBToYUV(avifImage * image, const avifRGBImage * rgb)
                             yuvBlock[bI][bJ].y = 0.5f * rgbPixel[1] + 0.25f * (rgbPixel[0] + rgbPixel[2]);
                             yuvBlock[bI][bJ].u = 0.5f * rgbPixel[1] - 0.25f * (rgbPixel[0] + rgbPixel[2]);
                             yuvBlock[bI][bJ].v = 0.5f * (rgbPixel[0] - rgbPixel[2]);
+#if defined(AVIF_ENABLE_EXPERIMENTAL_YCGCO_R)
+                        } else if (state.mode == AVIF_REFORMAT_MODE_YCGCO_RE || state.mode == AVIF_REFORMAT_MODE_YCGCO_RO) {
+                            // Formulas from JVET-U0093.
+                            const int R = (int)avifRoundf(AVIF_CLAMP(rgbPixel[0] * rgbMaxChannelF, 0.0f, rgbMaxChannelF));
+                            const int G = (int)avifRoundf(AVIF_CLAMP(rgbPixel[1] * rgbMaxChannelF, 0.0f, rgbMaxChannelF));
+                            const int B = (int)avifRoundf(AVIF_CLAMP(rgbPixel[2] * rgbMaxChannelF, 0.0f, rgbMaxChannelF));
+                            const int Co = R - B;
+                            const int t = B + (Co >> 1);
+                            const int Cg = G - t;
+                            yuvBlock[bI][bJ].y = (t + (Cg >> 1)) / state.rangeY;
+                            yuvBlock[bI][bJ].u = Cg / state.rangeUV;
+                            yuvBlock[bI][bJ].v = Co / state.rangeUV;
+#endif
                         } else {
                             float Y = (kr * rgbPixel[0]) + (kg * rgbPixel[1]) + (kb * rgbPixel[2]);
                             yuvBlock[bI][bJ].y = Y;
@@ -701,6 +740,19 @@ static avifResult avifImageYUVAnyToRGBAnySlow(const avifImage * image,
                     G = Y + Cb;
                     B = t - Cr;
                     R = t + Cr;
+#if defined(AVIF_ENABLE_EXPERIMENTAL_YCGCO_R)
+                } else if (state->mode == AVIF_REFORMAT_MODE_YCGCO_RE || state->mode == AVIF_REFORMAT_MODE_YCGCO_RO) {
+                    const int YY = unormY;
+                    const int Cg = (int)avifRoundf(Cb * yuvMaxChannel);
+                    const int Co = (int)avifRoundf(Cr * yuvMaxChannel);
+                    const int t = YY - (Cg >> 1);
+                    G = AVIF_CLAMP(t + Cg, 0, state->rgbMaxChannel);
+                    B = AVIF_CLAMP(t - (Co >> 1), 0, state->rgbMaxChannel);
+                    R = AVIF_CLAMP(B + Co, 0, state->rgbMaxChannel);
+                    G /= rgbMaxChannelF;
+                    B /= rgbMaxChannelF;
+                    R /= rgbMaxChannelF;
+#endif
                 } else {
                     // Normal YUV
                     R = Y + (2 * (1 - kr)) * Cr;

@@ -39,7 +39,6 @@ struct DispatchVuidsCmdDraw : DrawDispatchVuid {
         viewport_scissor_count_03419             = "VUID-vkCmdDraw-viewportCount-03419";
         primitive_topology_class_03420           = "VUID-vkCmdDraw-primitiveTopology-03420";
         primitive_topology_class_ds3_07500       = "VUID-vkCmdDraw-dynamicPrimitiveTopologyUnrestricted-07500";
-        dynamic_primitive_topology_07842         = "VUID-vkCmdDraw-None-07842";
         corner_sampled_address_mode_02696        = "VUID-vkCmdDraw-flags-02696";
         imageview_atomic_02691                   = "VUID-vkCmdDraw-None-02691";
         bufferview_atomic_07888                  = "VUID-vkCmdDraw-None-07888";
@@ -77,11 +76,18 @@ struct DispatchVuidsCmdDraw : DrawDispatchVuid {
         dynamic_exclusive_scissor_enable_07879   = "VUID-vkCmdDraw-None-07879";
         dynamic_color_write_enable_07749         = "VUID-vkCmdDraw-None-07749";
         dynamic_color_write_enable_count_07750   = "VUID-vkCmdDraw-attachmentCount-07750";
+        dynamic_attachment_feedback_loop_08877   = "VUID-vkCmdDraw-None-08877";
         dynamic_rendering_view_mask_06178        = "VUID-vkCmdDraw-viewMask-06178";
         dynamic_rendering_color_count_06179      = "VUID-vkCmdDraw-colorAttachmentCount-06179";
         dynamic_rendering_color_formats_06180    = "VUID-vkCmdDraw-colorAttachmentCount-06180";
+        dynamic_rendering_unused_attachments_08911 = "VUID-vkCmdDraw-dynamicRenderingUnusedAttachments-08911";
+        dynamic_rendering_undefined_color_formats_07616 = "VUID-vkCmdDraw-colorAttachmentCount-07616";
+        dynamic_rendering_undefined_depth_format_07617 = "VUID-vkCmdDraw-pDepthAttachment-07617";
+        dynamic_rendering_undefined_stencil_format_07618 = "VUID-vkCmdDraw-pStencilAttachment-07618";
         dynamic_rendering_depth_format_06181     = "VUID-vkCmdDraw-pDepthAttachment-06181";
+        dynamic_rendering_unused_attachments_08915 = "VUID-vkCmdDraw-dynamicRenderingUnusedAttachments-08915";
         dynamic_rendering_stencil_format_06182   = "VUID-vkCmdDraw-pStencilAttachment-06182";
+        dynamic_rendering_unused_attachments_08918 = "VUID-vkCmdDraw-dynamicRenderingUnusedAttachments-08918";
         dynamic_rendering_fsr_06183              = "VUID-vkCmdDraw-imageView-06183";
         dynamic_rendering_fdm_06184              = "VUID-vkCmdDraw-imageView-06184";
         dynamic_rendering_color_sample_06185     = "VUID-vkCmdDraw-colorAttachmentCount-06185";
@@ -147,10 +153,21 @@ struct DispatchVuidsCmdDraw : DrawDispatchVuid {
         dynamic_line_stipple_ext_07849           = "VUID-vkCmdDraw-None-07849";
         dynamic_blend_constants_07835            = "VUID-vkCmdDraw-None-07835";
         dynamic_depth_bounds_07836               = "VUID-vkCmdDraw-None-07836";
+        dynamic_depth_enable_08715               = "VUID-vkCmdDraw-pDynamicStates-08715";
         dynamic_stencil_compare_mask_07837       = "VUID-vkCmdDraw-None-07837";
         dynamic_stencil_write_mask_07838         = "VUID-vkCmdDraw-None-07838";
+        dynamic_stencil_write_mask_08716         = "VUID-vkCmdDraw-pDynamicStates-08716";
         dynamic_stencil_reference_07839          = "VUID-vkCmdDraw-None-07839";
         dynamic_state_inherited_07850            = "VUID-vkCmdDraw-None-07850";
+        dynamic_cull_mode_07840                  = "VUID-vkCmdDraw-None-07840";
+        dynamic_front_face_07841                 = "VUID-vkCmdDraw-None-07841";
+        dynamic_primitive_topology_07842         = "VUID-vkCmdDraw-None-07842";
+        dynamic_depth_test_enable_07843          = "VUID-vkCmdDraw-None-07843";
+        dynamic_depth_write_enable_07844         = "VUID-vkCmdDraw-None-07844";
+        dynamic_depth_compare_op_07845           = "VUID-vkCmdDraw-None-07845";
+        dynamic_depth_bound_test_enable_07846    = "VUID-vkCmdDraw-None-07846";
+        dynamic_stencil_test_enable_07847        = "VUID-vkCmdDraw-None-07847";
+        dynamic_stencil_op_07848                 = "VUID-vkCmdDraw-None-07848";
         primitives_generated_06708               = "VUID-vkCmdDraw-primitivesGeneratedQueryWithRasterizerDiscard-06708";
         primitives_generated_streams_06709       = "VUID-vkCmdDraw-primitivesGeneratedQueryWithNonZeroStreams-06709";
         invalid_mesh_shader_stages_06481         = "VUID-vkCmdDraw-stage-06481";
@@ -183,7 +200,6 @@ struct DispatchVuidsCmdDrawMultiEXT : DrawDispatchVuid {
         viewport_scissor_count_03419             = "VUID-vkCmdDrawMultiEXT-viewportCount-03419";
         primitive_topology_class_03420           = "VUID-vkCmdDrawMultiEXT-primitiveTopology-03420";
         primitive_topology_class_ds3_07500       = "VUID-vkCmdDrawMultiEXT-dynamicPrimitiveTopologyUnrestricted-07500";
-        dynamic_primitive_topology_07842         = "VUID-vkCmdDrawMultiEXT-None-07842";
         corner_sampled_address_mode_02696        = "VUID-vkCmdDrawMultiEXT-flags-02696";
         imageview_atomic_02691                   = "VUID-vkCmdDrawMultiEXT-None-02691";
         bufferview_atomic_07888                  = "VUID-vkCmdDrawMultiEXT-None-07888";
@@ -221,11 +237,18 @@ struct DispatchVuidsCmdDrawMultiEXT : DrawDispatchVuid {
         dynamic_exclusive_scissor_enable_07879   = "VUID-vkCmdDrawMultiEXT-None-07879";
         dynamic_color_write_enable_07749         = "VUID-vkCmdDrawMultiEXT-None-07749";
         dynamic_color_write_enable_count_07750   = "VUID-vkCmdDrawMultiEXT-attachmentCount-07750";
+        dynamic_attachment_feedback_loop_08877   = "VUID-vkCmdDrawMultiEXT-None-08877";
         dynamic_rendering_view_mask_06178        = "VUID-vkCmdDrawMultiEXT-viewMask-06178";
         dynamic_rendering_color_count_06179      = "VUID-vkCmdDrawMultiEXT-colorAttachmentCount-06179";
         dynamic_rendering_color_formats_06180    = "VUID-vkCmdDrawMultiEXT-colorAttachmentCount-06180";
+        dynamic_rendering_unused_attachments_08911 = "VUID-vkCmdDrawMultiEXT-dynamicRenderingUnusedAttachments-08911";
+        dynamic_rendering_undefined_color_formats_07616 = "VUID-vkCmdDrawMultiEXT-colorAttachmentCount-07616";
+        dynamic_rendering_undefined_depth_format_07617 = "VUID-vkCmdDrawMultiEXT-pDepthAttachment-07617";
+        dynamic_rendering_undefined_stencil_format_07618 = "VUID-vkCmdDrawMultiEXT-pStencilAttachment-07618";
         dynamic_rendering_depth_format_06181     = "VUID-vkCmdDrawMultiEXT-pDepthAttachment-06181";
+        dynamic_rendering_unused_attachments_08915 = "VUID-vkCmdDrawMultiEXT-dynamicRenderingUnusedAttachments-08915";
         dynamic_rendering_stencil_format_06182   = "VUID-vkCmdDrawMultiEXT-pStencilAttachment-06182";
+        dynamic_rendering_unused_attachments_08918 = "VUID-vkCmdDrawMultiEXT-dynamicRenderingUnusedAttachments-08918";
         dynamic_rendering_fsr_06183              = "VUID-vkCmdDrawMultiEXT-imageView-06183";
         dynamic_rendering_fdm_06184              = "VUID-vkCmdDrawMultiEXT-imageView-06184";
         dynamic_rendering_color_sample_06185     = "VUID-vkCmdDrawMultiEXT-colorAttachmentCount-06185";
@@ -291,10 +314,21 @@ struct DispatchVuidsCmdDrawMultiEXT : DrawDispatchVuid {
         dynamic_line_stipple_ext_07849           = "VUID-vkCmdDrawMultiEXT-None-07849";
         dynamic_blend_constants_07835            = "VUID-vkCmdDrawMultiEXT-None-07835";
         dynamic_depth_bounds_07836               = "VUID-vkCmdDrawMultiEXT-None-07836";
+        dynamic_depth_enable_08715               = "VUID-vkCmdDrawMultiEXT-pDynamicStates-08715";
         dynamic_stencil_compare_mask_07837       = "VUID-vkCmdDrawMultiEXT-None-07837";
         dynamic_stencil_write_mask_07838         = "VUID-vkCmdDrawMultiEXT-None-07838";
+        dynamic_stencil_write_mask_08716         = "VUID-vkCmdDrawMultiEXT-pDynamicStates-08716";
         dynamic_stencil_reference_07839          = "VUID-vkCmdDrawMultiEXT-None-07839";
         dynamic_state_inherited_07850            = "VUID-vkCmdDrawMultiEXT-None-07850";
+        dynamic_cull_mode_07840                  = "VUID-vkCmdDrawMultiEXT-None-07840";
+        dynamic_front_face_07841                 = "VUID-vkCmdDrawMultiEXT-None-07841";
+        dynamic_primitive_topology_07842         = "VUID-vkCmdDrawMultiEXT-None-07842";
+        dynamic_depth_test_enable_07843          = "VUID-vkCmdDrawMultiEXT-None-07843";
+        dynamic_depth_write_enable_07844         = "VUID-vkCmdDrawMultiEXT-None-07844";
+        dynamic_depth_compare_op_07845           = "VUID-vkCmdDrawMultiEXT-None-07845";
+        dynamic_depth_bound_test_enable_07846    = "VUID-vkCmdDrawMultiEXT-None-07846";
+        dynamic_stencil_test_enable_07847        = "VUID-vkCmdDrawMultiEXT-None-07847";
+        dynamic_stencil_op_07848                 = "VUID-vkCmdDrawMultiEXT-None-07848";
         primitives_generated_06708               = "VUID-vkCmdDrawMultiEXT-primitivesGeneratedQueryWithRasterizerDiscard-06708";
         primitives_generated_streams_06709       = "VUID-vkCmdDrawMultiEXT-primitivesGeneratedQueryWithNonZeroStreams-06709";
         invalid_mesh_shader_stages_06481         = "VUID-vkCmdDrawMultiEXT-stage-06481";
@@ -328,7 +362,6 @@ struct DispatchVuidsCmdDrawIndexed : DrawDispatchVuid {
         viewport_scissor_count_03419             = "VUID-vkCmdDrawIndexed-viewportCount-03419";
         primitive_topology_class_03420           = "VUID-vkCmdDrawIndexed-primitiveTopology-03420";
         primitive_topology_class_ds3_07500       = "VUID-vkCmdDrawIndexed-dynamicPrimitiveTopologyUnrestricted-07500";
-        dynamic_primitive_topology_07842         = "VUID-vkCmdDrawIndexed-None-07842";
         corner_sampled_address_mode_02696        = "VUID-vkCmdDrawIndexed-flags-02696";
         imageview_atomic_02691                   = "VUID-vkCmdDrawIndexed-None-02691";
         bufferview_atomic_07888                  = "VUID-vkCmdDrawIndexed-None-07888";
@@ -366,11 +399,18 @@ struct DispatchVuidsCmdDrawIndexed : DrawDispatchVuid {
         dynamic_exclusive_scissor_enable_07879   = "VUID-vkCmdDrawIndexed-None-07879";
         dynamic_color_write_enable_07749         = "VUID-vkCmdDrawIndexed-None-07749";
         dynamic_color_write_enable_count_07750   = "VUID-vkCmdDrawIndexed-attachmentCount-07750";
+        dynamic_attachment_feedback_loop_08877   = "VUID-vkCmdDrawIndexed-None-08877";
         dynamic_rendering_view_mask_06178        = "VUID-vkCmdDrawIndexed-viewMask-06178";
         dynamic_rendering_color_count_06179      = "VUID-vkCmdDrawIndexed-colorAttachmentCount-06179";
         dynamic_rendering_color_formats_06180    = "VUID-vkCmdDrawIndexed-colorAttachmentCount-06180";
+        dynamic_rendering_unused_attachments_08911 = "VUID-vkCmdDrawIndexed-dynamicRenderingUnusedAttachments-08911";
+        dynamic_rendering_undefined_color_formats_07616 = "VUID-vkCmdDrawIndexed-colorAttachmentCount-07616";
+        dynamic_rendering_undefined_depth_format_07617 = "VUID-vkCmdDrawIndexed-pDepthAttachment-07617";
+        dynamic_rendering_undefined_stencil_format_07618 = "VUID-vkCmdDrawIndexed-pStencilAttachment-07618";
         dynamic_rendering_depth_format_06181     = "VUID-vkCmdDrawIndexed-pDepthAttachment-06181";
+        dynamic_rendering_unused_attachments_08915 = "VUID-vkCmdDrawIndexed-dynamicRenderingUnusedAttachments-08915";
         dynamic_rendering_stencil_format_06182   = "VUID-vkCmdDrawIndexed-pStencilAttachment-06182";
+        dynamic_rendering_unused_attachments_08918 = "VUID-vkCmdDrawIndexed-dynamicRenderingUnusedAttachments-08918";
         dynamic_rendering_fsr_06183              = "VUID-vkCmdDrawIndexed-imageView-06183";
         dynamic_rendering_fdm_06184              = "VUID-vkCmdDrawIndexed-imageView-06184";
         dynamic_rendering_color_sample_06185     = "VUID-vkCmdDrawIndexed-colorAttachmentCount-06185";
@@ -436,10 +476,21 @@ struct DispatchVuidsCmdDrawIndexed : DrawDispatchVuid {
         dynamic_line_stipple_ext_07849           = "VUID-vkCmdDrawIndexed-None-07849";
         dynamic_blend_constants_07835            = "VUID-vkCmdDrawIndexed-None-07835";
         dynamic_depth_bounds_07836               = "VUID-vkCmdDrawIndexed-None-07836";
+        dynamic_depth_enable_08715               = "VUID-vkCmdDrawIndexed-pDynamicStates-08715";
         dynamic_stencil_compare_mask_07837       = "VUID-vkCmdDrawIndexed-None-07837";
         dynamic_stencil_write_mask_07838         = "VUID-vkCmdDrawIndexed-None-07838";
+        dynamic_stencil_write_mask_08716         = "VUID-vkCmdDrawIndexed-pDynamicStates-08716";
         dynamic_stencil_reference_07839          = "VUID-vkCmdDrawIndexed-None-07839";
         dynamic_state_inherited_07850            = "VUID-vkCmdDrawIndexed-None-07850";
+        dynamic_cull_mode_07840                  = "VUID-vkCmdDrawIndexed-None-07840";
+        dynamic_front_face_07841                 = "VUID-vkCmdDrawIndexed-None-07841";
+        dynamic_primitive_topology_07842         = "VUID-vkCmdDrawIndexed-None-07842";
+        dynamic_depth_test_enable_07843          = "VUID-vkCmdDrawIndexed-None-07843";
+        dynamic_depth_write_enable_07844         = "VUID-vkCmdDrawIndexed-None-07844";
+        dynamic_depth_compare_op_07845           = "VUID-vkCmdDrawIndexed-None-07845";
+        dynamic_depth_bound_test_enable_07846    = "VUID-vkCmdDrawIndexed-None-07846";
+        dynamic_stencil_test_enable_07847        = "VUID-vkCmdDrawIndexed-None-07847";
+        dynamic_stencil_op_07848                 = "VUID-vkCmdDrawIndexed-None-07848";
         primitives_generated_06708               = "VUID-vkCmdDrawIndexed-primitivesGeneratedQueryWithRasterizerDiscard-06708";
         primitives_generated_streams_06709       = "VUID-vkCmdDrawIndexed-primitivesGeneratedQueryWithNonZeroStreams-06709";
         invalid_mesh_shader_stages_06481         = "VUID-vkCmdDrawIndexed-stage-06481";
@@ -473,7 +524,6 @@ struct DispatchVuidsCmdDrawMultiIndexedEXT : DrawDispatchVuid {
         viewport_scissor_count_03419             = "VUID-vkCmdDrawMultiIndexedEXT-viewportCount-03419";
         primitive_topology_class_03420           = "VUID-vkCmdDrawMultiIndexedEXT-primitiveTopology-03420";
         primitive_topology_class_ds3_07500       = "VUID-vkCmdDrawMultiIndexedEXT-dynamicPrimitiveTopologyUnrestricted-07500";
-        dynamic_primitive_topology_07842         = "VUID-vkCmdDrawMultiIndexedEXT-None-07842";
         corner_sampled_address_mode_02696        = "VUID-vkCmdDrawMultiIndexedEXT-flags-02696";
         imageview_atomic_02691                   = "VUID-vkCmdDrawMultiIndexedEXT-None-02691";
         bufferview_atomic_07888                  = "VUID-vkCmdDrawMultiIndexedEXT-None-07888";
@@ -511,11 +561,18 @@ struct DispatchVuidsCmdDrawMultiIndexedEXT : DrawDispatchVuid {
         dynamic_exclusive_scissor_enable_07879   = "VUID-vkCmdDrawMultiIndexedEXT-None-07879";
         dynamic_color_write_enable_07749         = "VUID-vkCmdDrawMultiIndexedEXT-None-07749";
         dynamic_color_write_enable_count_07750   = "VUID-vkCmdDrawMultiIndexedEXT-attachmentCount-07750";
+        dynamic_attachment_feedback_loop_08877   = "VUID-vkCmdDrawMultiIndexedEXT-None-08877";
         dynamic_rendering_view_mask_06178        = "VUID-vkCmdDrawMultiIndexedEXT-viewMask-06178";
         dynamic_rendering_color_count_06179      = "VUID-vkCmdDrawMultiIndexedEXT-colorAttachmentCount-06179";
         dynamic_rendering_color_formats_06180    = "VUID-vkCmdDrawMultiIndexedEXT-colorAttachmentCount-06180";
+        dynamic_rendering_unused_attachments_08911 = "VUID-vkCmdDrawMultiIndexedEXT-dynamicRenderingUnusedAttachments-08911";
+        dynamic_rendering_undefined_color_formats_07616 = "VUID-vkCmdDrawMultiIndexedEXT-colorAttachmentCount-07616";
+        dynamic_rendering_undefined_depth_format_07617 = "VUID-vkCmdDrawMultiIndexedEXT-pDepthAttachment-07617";
+        dynamic_rendering_undefined_stencil_format_07618 = "VUID-vkCmdDrawMultiIndexedEXT-pStencilAttachment-07618";
         dynamic_rendering_depth_format_06181     = "VUID-vkCmdDrawMultiIndexedEXT-pDepthAttachment-06181";
+        dynamic_rendering_unused_attachments_08915 = "VUID-vkCmdDrawMultiIndexedEXT-dynamicRenderingUnusedAttachments-08915";
         dynamic_rendering_stencil_format_06182   = "VUID-vkCmdDrawMultiIndexedEXT-pStencilAttachment-06182";
+        dynamic_rendering_unused_attachments_08918 = "VUID-vkCmdDrawMultiIndexedEXT-dynamicRenderingUnusedAttachments-08918";
         dynamic_rendering_fsr_06183              = "VUID-vkCmdDrawMultiIndexedEXT-imageView-06183";
         dynamic_rendering_fdm_06184              = "VUID-vkCmdDrawMultiIndexedEXT-imageView-06184";
         dynamic_rendering_color_sample_06185     = "VUID-vkCmdDrawMultiIndexedEXT-colorAttachmentCount-06185";
@@ -581,10 +638,21 @@ struct DispatchVuidsCmdDrawMultiIndexedEXT : DrawDispatchVuid {
         dynamic_line_stipple_ext_07849           = "VUID-vkCmdDrawMultiIndexedEXT-None-07849";
         dynamic_blend_constants_07835            = "VUID-vkCmdDrawMultiIndexedEXT-None-07835";
         dynamic_depth_bounds_07836               = "VUID-vkCmdDrawMultiIndexedEXT-None-07836";
+        dynamic_depth_enable_08715               = "VUID-vkCmdDrawMultiIndexedEXT-pDynamicStates-08715";
         dynamic_stencil_compare_mask_07837       = "VUID-vkCmdDrawMultiIndexedEXT-None-07837";
         dynamic_stencil_write_mask_07838         = "VUID-vkCmdDrawMultiIndexedEXT-None-07838";
+        dynamic_stencil_write_mask_08716         = "VUID-vkCmdDrawMultiIndexedEXT-pDynamicStates-08716";
         dynamic_stencil_reference_07839          = "VUID-vkCmdDrawMultiIndexedEXT-None-07839";
         dynamic_state_inherited_07850            = "VUID-vkCmdDrawMultiIndexedEXT-None-07850";
+        dynamic_cull_mode_07840                  = "VUID-vkCmdDrawMultiIndexedEXT-None-07840";
+        dynamic_front_face_07841                 = "VUID-vkCmdDrawMultiIndexedEXT-None-07841";
+        dynamic_primitive_topology_07842         = "VUID-vkCmdDrawMultiIndexedEXT-None-07842";
+        dynamic_depth_test_enable_07843          = "VUID-vkCmdDrawMultiIndexedEXT-None-07843";
+        dynamic_depth_write_enable_07844         = "VUID-vkCmdDrawMultiIndexedEXT-None-07844";
+        dynamic_depth_compare_op_07845           = "VUID-vkCmdDrawMultiIndexedEXT-None-07845";
+        dynamic_depth_bound_test_enable_07846    = "VUID-vkCmdDrawMultiIndexedEXT-None-07846";
+        dynamic_stencil_test_enable_07847        = "VUID-vkCmdDrawMultiIndexedEXT-None-07847";
+        dynamic_stencil_op_07848                 = "VUID-vkCmdDrawMultiIndexedEXT-None-07848";
         primitives_generated_06708               = "VUID-vkCmdDrawMultiIndexedEXT-primitivesGeneratedQueryWithRasterizerDiscard-06708";
         primitives_generated_streams_06709       = "VUID-vkCmdDrawMultiIndexedEXT-primitivesGeneratedQueryWithNonZeroStreams-06709";
         invalid_mesh_shader_stages_06481         = "VUID-vkCmdDrawMultiIndexedEXT-stage-06481";
@@ -620,7 +688,6 @@ struct DispatchVuidsCmdDrawIndirect : DrawDispatchVuid {
         viewport_scissor_count_03419             = "VUID-vkCmdDrawIndirect-viewportCount-03419";
         primitive_topology_class_03420           = "VUID-vkCmdDrawIndirect-primitiveTopology-03420";
         primitive_topology_class_ds3_07500       = "VUID-vkCmdDrawIndirect-dynamicPrimitiveTopologyUnrestricted-07500";
-        dynamic_primitive_topology_07842         = "VUID-vkCmdDrawIndirect-None-07842";
         corner_sampled_address_mode_02696        = "VUID-vkCmdDrawIndirect-flags-02696";
         imageview_atomic_02691                   = "VUID-vkCmdDrawIndirect-None-02691";
         bufferview_atomic_07888                  = "VUID-vkCmdDrawIndirect-None-07888";
@@ -657,11 +724,18 @@ struct DispatchVuidsCmdDrawIndirect : DrawDispatchVuid {
         dynamic_exclusive_scissor_enable_07879   = "VUID-vkCmdDrawIndirect-None-07879";
         dynamic_color_write_enable_07749         = "VUID-vkCmdDrawIndirect-None-07749";
         dynamic_color_write_enable_count_07750   = "VUID-vkCmdDrawIndirect-attachmentCount-07750";
+        dynamic_attachment_feedback_loop_08877   = "VUID-vkCmdDrawIndirect-None-08877";
         dynamic_rendering_view_mask_06178        = "VUID-vkCmdDrawIndirect-viewMask-06178";
         dynamic_rendering_color_count_06179      = "VUID-vkCmdDrawIndirect-colorAttachmentCount-06179";
         dynamic_rendering_color_formats_06180    = "VUID-vkCmdDrawIndirect-colorAttachmentCount-06180";
+        dynamic_rendering_unused_attachments_08911 = "VUID-vkCmdDrawIndirect-dynamicRenderingUnusedAttachments-08911";
+        dynamic_rendering_undefined_color_formats_07616 = "VUID-vkCmdDrawIndirect-colorAttachmentCount-07616";
+        dynamic_rendering_undefined_depth_format_07617 = "VUID-vkCmdDrawIndirect-pDepthAttachment-07617";
+        dynamic_rendering_undefined_stencil_format_07618 = "VUID-vkCmdDrawIndirect-pStencilAttachment-07618";
         dynamic_rendering_depth_format_06181     = "VUID-vkCmdDrawIndirect-pDepthAttachment-06181";
+        dynamic_rendering_unused_attachments_08915 = "VUID-vkCmdDrawIndirect-dynamicRenderingUnusedAttachments-08915";
         dynamic_rendering_stencil_format_06182   = "VUID-vkCmdDrawIndirect-pStencilAttachment-06182";
+        dynamic_rendering_unused_attachments_08918 = "VUID-vkCmdDrawIndirect-dynamicRenderingUnusedAttachments-08918";
         dynamic_rendering_fsr_06183              = "VUID-vkCmdDrawIndirect-imageView-06183";
         dynamic_rendering_fdm_06184              = "VUID-vkCmdDrawIndirect-imageView-06184";
         dynamic_rendering_color_sample_06185     = "VUID-vkCmdDrawIndirect-colorAttachmentCount-06185";
@@ -727,10 +801,21 @@ struct DispatchVuidsCmdDrawIndirect : DrawDispatchVuid {
         dynamic_line_stipple_ext_07849           = "VUID-vkCmdDrawIndirect-None-07849";
         dynamic_blend_constants_07835            = "VUID-vkCmdDrawIndirect-None-07835";
         dynamic_depth_bounds_07836               = "VUID-vkCmdDrawIndirect-None-07836";
+        dynamic_depth_enable_08715               = "VUID-vkCmdDrawIndirect-pDynamicStates-08715";
         dynamic_stencil_compare_mask_07837       = "VUID-vkCmdDrawIndirect-None-07837";
         dynamic_stencil_write_mask_07838         = "VUID-vkCmdDrawIndirect-None-07838";
+        dynamic_stencil_write_mask_08716         = "VUID-vkCmdDrawIndirect-pDynamicStates-08716";
         dynamic_stencil_reference_07839          = "VUID-vkCmdDrawIndirect-None-07839";
         dynamic_state_inherited_07850            = "VUID-vkCmdDrawIndirect-None-07850";
+        dynamic_cull_mode_07840                  = "VUID-vkCmdDrawIndirect-None-07840";
+        dynamic_front_face_07841                 = "VUID-vkCmdDrawIndirect-None-07841";
+        dynamic_primitive_topology_07842         = "VUID-vkCmdDrawIndirect-None-07842";
+        dynamic_depth_test_enable_07843          = "VUID-vkCmdDrawIndirect-None-07843";
+        dynamic_depth_write_enable_07844         = "VUID-vkCmdDrawIndirect-None-07844";
+        dynamic_depth_compare_op_07845           = "VUID-vkCmdDrawIndirect-None-07845";
+        dynamic_depth_bound_test_enable_07846    = "VUID-vkCmdDrawIndirect-None-07846";
+        dynamic_stencil_test_enable_07847        = "VUID-vkCmdDrawIndirect-None-07847";
+        dynamic_stencil_op_07848                 = "VUID-vkCmdDrawIndirect-None-07848";
         primitives_generated_06708               = "VUID-vkCmdDrawIndirect-primitivesGeneratedQueryWithRasterizerDiscard-06708";
         primitives_generated_streams_06709       = "VUID-vkCmdDrawIndirect-primitivesGeneratedQueryWithNonZeroStreams-06709";
         invalid_mesh_shader_stages_06481         = "VUID-vkCmdDrawIndirect-stage-06481";
@@ -767,7 +852,6 @@ struct DispatchVuidsCmdDrawIndexedIndirect : DrawDispatchVuid {
         viewport_scissor_count_03419             = "VUID-vkCmdDrawIndexedIndirect-viewportCount-03419";
         primitive_topology_class_03420           = "VUID-vkCmdDrawIndexedIndirect-primitiveTopology-03420";
         primitive_topology_class_ds3_07500       = "VUID-vkCmdDrawIndexedIndirect-dynamicPrimitiveTopologyUnrestricted-07500";
-        dynamic_primitive_topology_07842         = "VUID-vkCmdDrawIndexedIndirect-None-07842";
         corner_sampled_address_mode_02696        = "VUID-vkCmdDrawIndexedIndirect-flags-02696";
         imageview_atomic_02691                   = "VUID-vkCmdDrawIndexedIndirect-None-02691";
         bufferview_atomic_07888                  = "VUID-vkCmdDrawIndexedIndirect-None-07888";
@@ -804,11 +888,18 @@ struct DispatchVuidsCmdDrawIndexedIndirect : DrawDispatchVuid {
         dynamic_exclusive_scissor_enable_07879   = "VUID-vkCmdDrawIndexedIndirect-None-07879";
         dynamic_color_write_enable_07749         = "VUID-vkCmdDrawIndexedIndirect-None-07749";
         dynamic_color_write_enable_count_07750   = "VUID-vkCmdDrawIndexedIndirect-attachmentCount-07750";
+        dynamic_attachment_feedback_loop_08877   = "VUID-vkCmdDrawIndexedIndirect-None-08877";
         dynamic_rendering_view_mask_06178        = "VUID-vkCmdDrawIndexedIndirect-viewMask-06178";
         dynamic_rendering_color_count_06179      = "VUID-vkCmdDrawIndexedIndirect-colorAttachmentCount-06179";
         dynamic_rendering_color_formats_06180    = "VUID-vkCmdDrawIndexedIndirect-colorAttachmentCount-06180";
+        dynamic_rendering_unused_attachments_08911 = "VUID-vkCmdDrawIndexedIndirect-dynamicRenderingUnusedAttachments-08911";
+        dynamic_rendering_undefined_color_formats_07616 = "VUID-vkCmdDrawIndexedIndirect-colorAttachmentCount-07616";
+        dynamic_rendering_undefined_depth_format_07617 = "VUID-vkCmdDrawIndexedIndirect-pDepthAttachment-07617";
+        dynamic_rendering_undefined_stencil_format_07618 = "VUID-vkCmdDrawIndexedIndirect-pStencilAttachment-07618";
         dynamic_rendering_depth_format_06181     = "VUID-vkCmdDrawIndexedIndirect-pDepthAttachment-06181";
+        dynamic_rendering_unused_attachments_08915 = "VUID-vkCmdDrawIndexedIndirect-dynamicRenderingUnusedAttachments-08915";
         dynamic_rendering_stencil_format_06182   = "VUID-vkCmdDrawIndexedIndirect-pStencilAttachment-06182";
+        dynamic_rendering_unused_attachments_08918 = "VUID-vkCmdDrawIndexedIndirect-dynamicRenderingUnusedAttachments-08918";
         dynamic_rendering_fsr_06183              = "VUID-vkCmdDrawIndexedIndirect-imageView-06183";
         dynamic_rendering_fdm_06184              = "VUID-vkCmdDrawIndexedIndirect-imageView-06184";
         dynamic_rendering_color_sample_06185     = "VUID-vkCmdDrawIndexedIndirect-colorAttachmentCount-06185";
@@ -874,10 +965,21 @@ struct DispatchVuidsCmdDrawIndexedIndirect : DrawDispatchVuid {
         dynamic_line_stipple_ext_07849           = "VUID-vkCmdDrawIndexedIndirect-None-07849";
         dynamic_blend_constants_07835            = "VUID-vkCmdDrawIndexedIndirect-None-07835";
         dynamic_depth_bounds_07836               = "VUID-vkCmdDrawIndexedIndirect-None-07836";
+        dynamic_depth_enable_08715               = "VUID-vkCmdDrawIndexedIndirect-pDynamicStates-08715";
         dynamic_stencil_compare_mask_07837       = "VUID-vkCmdDrawIndexedIndirect-None-07837";
         dynamic_stencil_write_mask_07838         = "VUID-vkCmdDrawIndexedIndirect-None-07838";
+        dynamic_stencil_write_mask_08716         = "VUID-vkCmdDrawIndexedIndirect-pDynamicStates-08716";
         dynamic_stencil_reference_07839          = "VUID-vkCmdDrawIndexedIndirect-None-07839";
         dynamic_state_inherited_07850            = "VUID-vkCmdDrawIndexedIndirect-None-07850";
+        dynamic_cull_mode_07840                  = "VUID-vkCmdDrawIndexedIndirect-None-07840";
+        dynamic_front_face_07841                 = "VUID-vkCmdDrawIndexedIndirect-None-07841";
+        dynamic_primitive_topology_07842         = "VUID-vkCmdDrawIndexedIndirect-None-07842";
+        dynamic_depth_test_enable_07843          = "VUID-vkCmdDrawIndexedIndirect-None-07843";
+        dynamic_depth_write_enable_07844         = "VUID-vkCmdDrawIndexedIndirect-None-07844";
+        dynamic_depth_compare_op_07845           = "VUID-vkCmdDrawIndexedIndirect-None-07845";
+        dynamic_depth_bound_test_enable_07846    = "VUID-vkCmdDrawIndexedIndirect-None-07846";
+        dynamic_stencil_test_enable_07847        = "VUID-vkCmdDrawIndexedIndirect-None-07847";
+        dynamic_stencil_op_07848                 = "VUID-vkCmdDrawIndexedIndirect-None-07848";
         primitives_generated_06708               = "VUID-vkCmdDrawIndexedIndirect-primitivesGeneratedQueryWithRasterizerDiscard-06708";
         primitives_generated_streams_06709       = "VUID-vkCmdDrawIndexedIndirect-primitivesGeneratedQueryWithNonZeroStreams-06709";
         invalid_mesh_shader_stages_06481         = "VUID-vkCmdDrawIndexedIndirect-stage-06481";
@@ -1000,7 +1102,6 @@ struct DispatchVuidsCmdDrawIndirectCount : DrawDispatchVuid {
         viewport_scissor_count_03419             = "VUID-vkCmdDrawIndirectCount-viewportCount-03419";
         primitive_topology_class_03420           = "VUID-vkCmdDrawIndirectCount-primitiveTopology-03420";
         primitive_topology_class_ds3_07500       = "VUID-vkCmdDrawIndirectCount-dynamicPrimitiveTopologyUnrestricted-07500";
-        dynamic_primitive_topology_07842         = "VUID-vkCmdDrawIndirectCount-None-07842";
         corner_sampled_address_mode_02696        = "VUID-vkCmdDrawIndirectCount-flags-02696";
         imageview_atomic_02691                   = "VUID-vkCmdDrawIndirectCount-None-02691";
         bufferview_atomic_07888                  = "VUID-vkCmdDrawIndirectCount-None-07888";
@@ -1037,11 +1138,18 @@ struct DispatchVuidsCmdDrawIndirectCount : DrawDispatchVuid {
         dynamic_exclusive_scissor_enable_07879   = "VUID-vkCmdDrawIndirectCount-None-07879";
         dynamic_color_write_enable_07749         = "VUID-vkCmdDrawIndirectCount-None-07749";
         dynamic_color_write_enable_count_07750   = "VUID-vkCmdDrawIndirectCount-attachmentCount-07750";
+        dynamic_attachment_feedback_loop_08877   = "VUID-vkCmdDrawIndirectCount-None-08877";
         dynamic_rendering_view_mask_06178        = "VUID-vkCmdDrawIndirectCount-viewMask-06178";
         dynamic_rendering_color_count_06179      = "VUID-vkCmdDrawIndirectCount-colorAttachmentCount-06179";
         dynamic_rendering_color_formats_06180    = "VUID-vkCmdDrawIndirectCount-colorAttachmentCount-06180";
+        dynamic_rendering_unused_attachments_08911 = "VUID-vkCmdDrawIndirectCount-dynamicRenderingUnusedAttachments-08911";
+        dynamic_rendering_undefined_color_formats_07616 = "VUID-vkCmdDrawIndirectCount-colorAttachmentCount-07616";
+        dynamic_rendering_undefined_depth_format_07617 = "VUID-vkCmdDrawIndirectCount-pDepthAttachment-07617";
+        dynamic_rendering_undefined_stencil_format_07618 = "VUID-vkCmdDrawIndirectCount-pStencilAttachment-07618";
         dynamic_rendering_depth_format_06181     = "VUID-vkCmdDrawIndirectCount-pDepthAttachment-06181";
+        dynamic_rendering_unused_attachments_08915 = "VUID-vkCmdDrawIndirectCount-dynamicRenderingUnusedAttachments-08915";
         dynamic_rendering_stencil_format_06182   = "VUID-vkCmdDrawIndirectCount-pStencilAttachment-06182";
+        dynamic_rendering_unused_attachments_08918 = "VUID-vkCmdDrawIndirectCount-dynamicRenderingUnusedAttachments-08918";
         dynamic_rendering_fsr_06183              = "VUID-vkCmdDrawIndirectCount-imageView-06183";
         dynamic_rendering_fdm_06184              = "VUID-vkCmdDrawIndirectCount-imageView-06184";
         dynamic_rendering_color_sample_06185     = "VUID-vkCmdDrawIndirectCount-colorAttachmentCount-06185";
@@ -1107,10 +1215,21 @@ struct DispatchVuidsCmdDrawIndirectCount : DrawDispatchVuid {
         dynamic_line_stipple_ext_07849           = "VUID-vkCmdDrawIndirectCount-None-07849";
         dynamic_blend_constants_07835            = "VUID-vkCmdDrawIndirectCount-None-07835";
         dynamic_depth_bounds_07836               = "VUID-vkCmdDrawIndirectCount-None-07836";
+        dynamic_depth_enable_08715               = "VUID-vkCmdDrawIndirectCount-pDynamicStates-08715";
         dynamic_stencil_compare_mask_07837       = "VUID-vkCmdDrawIndirectCount-None-07837";
         dynamic_stencil_write_mask_07838         = "VUID-vkCmdDrawIndirectCount-None-07838";
+        dynamic_stencil_write_mask_08716         = "VUID-vkCmdDrawIndirectCount-pDynamicStates-08716";
         dynamic_stencil_reference_07839          = "VUID-vkCmdDrawIndirectCount-None-07839";
         dynamic_state_inherited_07850            = "VUID-vkCmdDrawIndirectCount-None-07850";
+        dynamic_cull_mode_07840                  = "VUID-vkCmdDrawIndirectCount-None-07840";
+        dynamic_front_face_07841                 = "VUID-vkCmdDrawIndirectCount-None-07841";
+        dynamic_primitive_topology_07842         = "VUID-vkCmdDrawIndirectCount-None-07842";
+        dynamic_depth_test_enable_07843          = "VUID-vkCmdDrawIndirectCount-None-07843";
+        dynamic_depth_write_enable_07844         = "VUID-vkCmdDrawIndirectCount-None-07844";
+        dynamic_depth_compare_op_07845           = "VUID-vkCmdDrawIndirectCount-None-07845";
+        dynamic_depth_bound_test_enable_07846    = "VUID-vkCmdDrawIndirectCount-None-07846";
+        dynamic_stencil_test_enable_07847        = "VUID-vkCmdDrawIndirectCount-None-07847";
+        dynamic_stencil_op_07848                 = "VUID-vkCmdDrawIndirectCount-None-07848";
         primitives_generated_06708               = "VUID-vkCmdDrawIndirectCount-primitivesGeneratedQueryWithRasterizerDiscard-06708";
         primitives_generated_streams_06709       = "VUID-vkCmdDrawIndirectCount-primitivesGeneratedQueryWithNonZeroStreams-06709";
         invalid_mesh_shader_stages_06481         = "VUID-vkCmdDrawIndirectCount-stage-06481";
@@ -1150,7 +1269,6 @@ struct DispatchVuidsCmdDrawIndexedIndirectCount : DrawDispatchVuid {
         viewport_scissor_count_03419             = "VUID-vkCmdDrawIndexedIndirectCount-viewportCount-03419";
         primitive_topology_class_03420           = "VUID-vkCmdDrawIndexedIndirectCount-primitiveTopology-03420";
         primitive_topology_class_ds3_07500       = "VUID-vkCmdDrawIndexedIndirectCount-dynamicPrimitiveTopologyUnrestricted-07500";
-        dynamic_primitive_topology_07842         = "VUID-vkCmdDrawIndexedIndirectCount-None-07842";
         corner_sampled_address_mode_02696        = "VUID-vkCmdDrawIndexedIndirectCount-flags-02696";
         imageview_atomic_02691                   = "VUID-vkCmdDrawIndexedIndirectCount-None-02691";
         bufferview_atomic_07888                  = "VUID-vkCmdDrawIndexedIndirectCount-None-07888";
@@ -1187,11 +1305,18 @@ struct DispatchVuidsCmdDrawIndexedIndirectCount : DrawDispatchVuid {
         dynamic_exclusive_scissor_enable_07879   = "VUID-vkCmdDrawIndexedIndirectCount-None-07879";
         dynamic_color_write_enable_07749         = "VUID-vkCmdDrawIndexedIndirectCount-None-07749";
         dynamic_color_write_enable_count_07750   = "VUID-vkCmdDrawIndexedIndirectCount-attachmentCount-07750";
+        dynamic_attachment_feedback_loop_08877   = "VUID-vkCmdDrawIndexedIndirectCount-None-08877";
         dynamic_rendering_view_mask_06178        = "VUID-vkCmdDrawIndexedIndirectCount-viewMask-06178";
         dynamic_rendering_color_count_06179      = "VUID-vkCmdDrawIndexedIndirectCount-colorAttachmentCount-06179";
         dynamic_rendering_color_formats_06180    = "VUID-vkCmdDrawIndexedIndirectCount-colorAttachmentCount-06180";
+        dynamic_rendering_unused_attachments_08911 = "VUID-vkCmdDrawIndexedIndirectCount-dynamicRenderingUnusedAttachments-08911";
+        dynamic_rendering_undefined_color_formats_07616 = "VUID-vkCmdDrawIndexedIndirectCount-colorAttachmentCount-07616";
+        dynamic_rendering_undefined_depth_format_07617 = "VUID-vkCmdDrawIndexedIndirectCount-pDepthAttachment-07617";
+        dynamic_rendering_undefined_stencil_format_07618 = "VUID-vkCmdDrawIndexedIndirectCount-pStencilAttachment-07618";
         dynamic_rendering_depth_format_06181     = "VUID-vkCmdDrawIndexedIndirectCount-pDepthAttachment-06181";
+        dynamic_rendering_unused_attachments_08915 = "VUID-vkCmdDrawIndexedIndirectCount-dynamicRenderingUnusedAttachments-08915";
         dynamic_rendering_stencil_format_06182   = "VUID-vkCmdDrawIndexedIndirectCount-pStencilAttachment-06182";
+        dynamic_rendering_unused_attachments_08918 = "VUID-vkCmdDrawIndexedIndirectCount-dynamicRenderingUnusedAttachments-08918";
         dynamic_rendering_fsr_06183              = "VUID-vkCmdDrawIndexedIndirectCount-imageView-06183";
         dynamic_rendering_fdm_06184              = "VUID-vkCmdDrawIndexedIndirectCount-imageView-06184";
         dynamic_rendering_color_sample_06185     = "VUID-vkCmdDrawIndexedIndirectCount-colorAttachmentCount-06185";
@@ -1257,10 +1382,21 @@ struct DispatchVuidsCmdDrawIndexedIndirectCount : DrawDispatchVuid {
         dynamic_line_stipple_ext_07849           = "VUID-vkCmdDrawIndexedIndirectCount-None-07849";
         dynamic_blend_constants_07835            = "VUID-vkCmdDrawIndexedIndirectCount-None-07835";
         dynamic_depth_bounds_07836               = "VUID-vkCmdDrawIndexedIndirectCount-None-07836";
+        dynamic_depth_enable_08715               = "VUID-vkCmdDrawIndexedIndirectCount-pDynamicStates-08715";
         dynamic_stencil_compare_mask_07837       = "VUID-vkCmdDrawIndexedIndirectCount-None-07837";
         dynamic_stencil_write_mask_07838         = "VUID-vkCmdDrawIndexedIndirectCount-None-07838";
+        dynamic_stencil_write_mask_08716         = "VUID-vkCmdDrawIndexedIndirectCount-pDynamicStates-08716";
         dynamic_stencil_reference_07839          = "VUID-vkCmdDrawIndexedIndirectCount-None-07839";
         dynamic_state_inherited_07850            = "VUID-vkCmdDrawIndexedIndirectCount-None-07850";
+        dynamic_cull_mode_07840                  = "VUID-vkCmdDrawIndexedIndirectCount-None-07840";
+        dynamic_front_face_07841                 = "VUID-vkCmdDrawIndexedIndirectCount-None-07841";
+        dynamic_primitive_topology_07842         = "VUID-vkCmdDrawIndexedIndirectCount-None-07842";
+        dynamic_depth_test_enable_07843          = "VUID-vkCmdDrawIndexedIndirectCount-None-07843";
+        dynamic_depth_write_enable_07844         = "VUID-vkCmdDrawIndexedIndirectCount-None-07844";
+        dynamic_depth_compare_op_07845           = "VUID-vkCmdDrawIndexedIndirectCount-None-07845";
+        dynamic_depth_bound_test_enable_07846    = "VUID-vkCmdDrawIndexedIndirectCount-None-07846";
+        dynamic_stencil_test_enable_07847        = "VUID-vkCmdDrawIndexedIndirectCount-None-07847";
+        dynamic_stencil_op_07848                 = "VUID-vkCmdDrawIndexedIndirectCount-None-07848";
         primitives_generated_06708               = "VUID-vkCmdDrawIndexedIndirectCount-primitivesGeneratedQueryWithRasterizerDiscard-06708";
         primitives_generated_streams_06709       = "VUID-vkCmdDrawIndexedIndirectCount-primitivesGeneratedQueryWithNonZeroStreams-06709";
         invalid_mesh_shader_stages_06481         = "VUID-vkCmdDrawIndexedIndirectCount-stage-06481";
@@ -1488,11 +1624,18 @@ struct DispatchVuidsCmdDrawMeshTasksNV: DrawDispatchVuid {
         dynamic_exclusive_scissor_enable_07879   = "VUID-vkCmdDrawMeshTasksNV-None-07879";
         dynamic_color_write_enable_07749         = "VUID-vkCmdDrawMeshTasksNV-None-07749";
         dynamic_color_write_enable_count_07750   = "VUID-vkCmdDrawMeshTasksNV-attachmentCount-07750";
+        dynamic_attachment_feedback_loop_08877   = "VUID-vkCmdDrawMeshTasksNV-None-08877";
         dynamic_rendering_view_mask_06178        = "VUID-vkCmdDrawMeshTasksNV-viewMask-06178";
         dynamic_rendering_color_count_06179      = "VUID-vkCmdDrawMeshTasksNV-colorAttachmentCount-06179";
         dynamic_rendering_color_formats_06180    = "VUID-vkCmdDrawMeshTasksNV-colorAttachmentCount-06180";
+        dynamic_rendering_unused_attachments_08911 = "VUID-vkCmdDrawMeshTasksNV-dynamicRenderingUnusedAttachments-08911";
+        dynamic_rendering_undefined_color_formats_07616 = "VUID-vkCmdDrawMeshTasksNV-colorAttachmentCount-07616";
+        dynamic_rendering_undefined_depth_format_07617 = "VUID-vkCmdDrawMeshTasksNV-pDepthAttachment-07617";
+        dynamic_rendering_undefined_stencil_format_07618 = "VUID-vkCmdDrawMeshTasksNV-pStencilAttachment-07618";
         dynamic_rendering_depth_format_06181     = "VUID-vkCmdDrawMeshTasksNV-pDepthAttachment-06181";
+        dynamic_rendering_unused_attachments_08915 = "VUID-vkCmdDrawMeshTasksNV-dynamicRenderingUnusedAttachments-08915";
         dynamic_rendering_stencil_format_06182   = "VUID-vkCmdDrawMeshTasksNV-pStencilAttachment-06182";
+        dynamic_rendering_unused_attachments_08918 = "VUID-vkCmdDrawMeshTasksNV-dynamicRenderingUnusedAttachments-08918";
         dynamic_rendering_fsr_06183              = "VUID-vkCmdDrawMeshTasksNV-imageView-06183";
         dynamic_rendering_fdm_06184              = "VUID-vkCmdDrawMeshTasksNV-imageView-06184";
         dynamic_rendering_color_sample_06185     = "VUID-vkCmdDrawMeshTasksNV-colorAttachmentCount-06185";
@@ -1558,10 +1701,20 @@ struct DispatchVuidsCmdDrawMeshTasksNV: DrawDispatchVuid {
         dynamic_line_stipple_ext_07849           = "VUID-vkCmdDrawMeshTasksNV-None-07849";
         dynamic_blend_constants_07835            = "VUID-vkCmdDrawMeshTasksNV-None-07835";
         dynamic_depth_bounds_07836               = "VUID-vkCmdDrawMeshTasksNV-None-07836";
+        dynamic_depth_enable_08715               = "VUID-vkCmdDrawMeshTasksNV-pDynamicStates-08715";
         dynamic_stencil_compare_mask_07837       = "VUID-vkCmdDrawMeshTasksNV-None-07837";
         dynamic_stencil_write_mask_07838         = "VUID-vkCmdDrawMeshTasksNV-None-07838";
+        dynamic_stencil_write_mask_08716         = "VUID-vkCmdDrawMeshTasksNV-pDynamicStates-08716";
         dynamic_stencil_reference_07839          = "VUID-vkCmdDrawMeshTasksNV-None-07839";
         dynamic_state_inherited_07850            = "VUID-vkCmdDrawMeshTasksNV-None-07850";
+        dynamic_cull_mode_07840                  = "VUID-vkCmdDrawMeshTasksNV-None-07840";
+        dynamic_front_face_07841                 = "VUID-vkCmdDrawMeshTasksNV-None-07841";
+        dynamic_depth_test_enable_07843          = "VUID-vkCmdDrawMeshTasksNV-None-07843";
+        dynamic_depth_write_enable_07844         = "VUID-vkCmdDrawMeshTasksNV-None-07844";
+        dynamic_depth_compare_op_07845           = "VUID-vkCmdDrawMeshTasksNV-None-07845";
+        dynamic_depth_bound_test_enable_07846    = "VUID-vkCmdDrawMeshTasksNV-None-07846";
+        dynamic_stencil_test_enable_07847        = "VUID-vkCmdDrawMeshTasksNV-None-07847";
+        dynamic_stencil_op_07848                 = "VUID-vkCmdDrawMeshTasksNV-None-07848";
         primitives_generated_06708               = "VUID-vkCmdDrawMeshTasksNV-primitivesGeneratedQueryWithRasterizerDiscard-06708";
         primitives_generated_streams_06709       = "VUID-vkCmdDrawMeshTasksNV-primitivesGeneratedQueryWithNonZeroStreams-06709";
         mesh_shader_stages_06480                 = "VUID-vkCmdDrawMeshTasksNV-stage-06480";
@@ -1625,11 +1778,18 @@ struct DispatchVuidsCmdDrawMeshTasksIndirectNV: DrawDispatchVuid {
         dynamic_exclusive_scissor_enable_07879   = "VUID-vkCmdDrawMeshTasksIndirectNV-None-07879";
         dynamic_color_write_enable_07749         = "VUID-vkCmdDrawMeshTasksIndirectNV-None-07749";
         dynamic_color_write_enable_count_07750   = "VUID-vkCmdDrawMeshTasksIndirectNV-attachmentCount-07750";
+        dynamic_attachment_feedback_loop_08877   = "VUID-vkCmdDrawMeshTasksIndirectNV-None-08877";
         dynamic_rendering_view_mask_06178        = "VUID-vkCmdDrawMeshTasksIndirectNV-viewMask-06178";
         dynamic_rendering_color_count_06179      = "VUID-vkCmdDrawMeshTasksIndirectNV-colorAttachmentCount-06179";
         dynamic_rendering_color_formats_06180    = "VUID-vkCmdDrawMeshTasksIndirectNV-colorAttachmentCount-06180";
+        dynamic_rendering_unused_attachments_08911 = "VUID-vkCmdDrawMeshTasksIndirectNV-dynamicRenderingUnusedAttachments-08911";
+        dynamic_rendering_undefined_color_formats_07616 = "VUID-vkCmdDrawMeshTasksIndirectNV-colorAttachmentCount-07616";
+        dynamic_rendering_undefined_depth_format_07617 = "VUID-vkCmdDrawMeshTasksIndirectNV-pDepthAttachment-07617";
+        dynamic_rendering_undefined_stencil_format_07618 = "VUID-vkCmdDrawMeshTasksIndirectNV-pStencilAttachment-07618";
         dynamic_rendering_depth_format_06181     = "VUID-vkCmdDrawMeshTasksIndirectNV-pDepthAttachment-06181";
+        dynamic_rendering_unused_attachments_08915 = "VUID-vkCmdDrawMeshTasksIndirectNV-dynamicRenderingUnusedAttachments-08915";
         dynamic_rendering_stencil_format_06182   = "VUID-vkCmdDrawMeshTasksIndirectNV-pStencilAttachment-06182";
+        dynamic_rendering_unused_attachments_08918 = "VUID-vkCmdDrawMeshTasksIndirectNV-dynamicRenderingUnusedAttachments-08918";
         dynamic_rendering_fsr_06183              = "VUID-vkCmdDrawMeshTasksIndirectNV-imageView-06183";
         dynamic_rendering_fdm_06184              = "VUID-vkCmdDrawMeshTasksIndirectNV-imageView-06184";
         dynamic_rendering_color_sample_06185     = "VUID-vkCmdDrawMeshTasksIndirectNV-colorAttachmentCount-06185";
@@ -1695,10 +1855,20 @@ struct DispatchVuidsCmdDrawMeshTasksIndirectNV: DrawDispatchVuid {
         dynamic_line_stipple_ext_07849           = "VUID-vkCmdDrawMeshTasksIndirectNV-None-07849";
         dynamic_blend_constants_07835            = "VUID-vkCmdDrawMeshTasksIndirectNV-None-07835";
         dynamic_depth_bounds_07836               = "VUID-vkCmdDrawMeshTasksIndirectNV-None-07836";
+        dynamic_depth_enable_08715               = "VUID-vkCmdDrawMeshTasksIndirectNV-pDynamicStates-08715";
         dynamic_stencil_compare_mask_07837       = "VUID-vkCmdDrawMeshTasksIndirectNV-None-07837";
         dynamic_stencil_write_mask_07838         = "VUID-vkCmdDrawMeshTasksIndirectNV-None-07838";
+        dynamic_stencil_write_mask_08716         = "VUID-vkCmdDrawMeshTasksIndirectNV-pDynamicStates-08716";
         dynamic_stencil_reference_07839          = "VUID-vkCmdDrawMeshTasksIndirectNV-None-07839";
         dynamic_state_inherited_07850            = "VUID-vkCmdDrawMeshTasksIndirectNV-None-07850";
+        dynamic_cull_mode_07840                  = "VUID-vkCmdDrawMeshTasksIndirectNV-None-07840";
+        dynamic_front_face_07841                 = "VUID-vkCmdDrawMeshTasksIndirectNV-None-07841";
+        dynamic_depth_test_enable_07843          = "VUID-vkCmdDrawMeshTasksIndirectNV-None-07843";
+        dynamic_depth_write_enable_07844         = "VUID-vkCmdDrawMeshTasksIndirectNV-None-07844";
+        dynamic_depth_compare_op_07845           = "VUID-vkCmdDrawMeshTasksIndirectNV-None-07845";
+        dynamic_depth_bound_test_enable_07846    = "VUID-vkCmdDrawMeshTasksIndirectNV-None-07846";
+        dynamic_stencil_test_enable_07847        = "VUID-vkCmdDrawMeshTasksIndirectNV-None-07847";
+        dynamic_stencil_op_07848                 = "VUID-vkCmdDrawMeshTasksIndirectNV-None-07848";
         primitives_generated_06708               = "VUID-vkCmdDrawMeshTasksIndirectNV-primitivesGeneratedQueryWithRasterizerDiscard-06708";
         primitives_generated_streams_06709       = "VUID-vkCmdDrawMeshTasksIndirectNV-primitivesGeneratedQueryWithNonZeroStreams-06709";
         mesh_shader_stages_06480                 = "VUID-vkCmdDrawMeshTasksIndirectNV-stage-06480";
@@ -1765,11 +1935,18 @@ struct DispatchVuidsCmdDrawMeshTasksIndirectCountNV : DrawDispatchVuid {
         dynamic_exclusive_scissor_enable_07879   = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-07879";
         dynamic_color_write_enable_07749         = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-07749";
         dynamic_color_write_enable_count_07750   = "VUID-vkCmdDrawMeshTasksIndirectCountNV-attachmentCount-07750";
+        dynamic_attachment_feedback_loop_08877   = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-08877";
         dynamic_rendering_view_mask_06178        = "VUID-vkCmdDrawMeshTasksIndirectCountNV-viewMask-06178";
         dynamic_rendering_color_count_06179      = "VUID-vkCmdDrawMeshTasksIndirectCountNV-colorAttachmentCount-06179";
         dynamic_rendering_color_formats_06180    = "VUID-vkCmdDrawMeshTasksIndirectCountNV-colorAttachmentCount-06180";
+        dynamic_rendering_unused_attachments_08911 = "VUID-vkCmdDrawMeshTasksIndirectCountNV-dynamicRenderingUnusedAttachments-08911";
+        dynamic_rendering_undefined_color_formats_07616 = "VUID-vkCmdDrawMeshTasksIndirectCountNV-colorAttachmentCount-07616";
+        dynamic_rendering_undefined_depth_format_07617 = "VUID-vkCmdDrawMeshTasksIndirectCountNV-pDepthAttachment-07617";
+        dynamic_rendering_undefined_stencil_format_07618 = "VUID-vkCmdDrawMeshTasksIndirectCountNV-pStencilAttachment-07618";
         dynamic_rendering_depth_format_06181     = "VUID-vkCmdDrawMeshTasksIndirectCountNV-pDepthAttachment-06181";
+        dynamic_rendering_unused_attachments_08915 = "VUID-vkCmdDrawMeshTasksIndirectCountNV-dynamicRenderingUnusedAttachments-08915";
         dynamic_rendering_stencil_format_06182   = "VUID-vkCmdDrawMeshTasksIndirectCountNV-pStencilAttachment-06182";
+        dynamic_rendering_unused_attachments_08918 = "VUID-vkCmdDrawMeshTasksIndirectCountNV-dynamicRenderingUnusedAttachments-08918";
         dynamic_rendering_fsr_06183              = "VUID-vkCmdDrawMeshTasksIndirectCountNV-imageView-06183";
         dynamic_rendering_fdm_06184              = "VUID-vkCmdDrawMeshTasksIndirectCountNV-imageView-06184";
         dynamic_rendering_color_sample_06185     = "VUID-vkCmdDrawMeshTasksIndirectCountNV-colorAttachmentCount-06185";
@@ -1835,10 +2012,20 @@ struct DispatchVuidsCmdDrawMeshTasksIndirectCountNV : DrawDispatchVuid {
         dynamic_line_stipple_ext_07849           = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-07849";
         dynamic_blend_constants_07835            = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-07835";
         dynamic_depth_bounds_07836               = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-07836";
+        dynamic_depth_enable_08715               = "VUID-vkCmdDrawMeshTasksIndirectCountNV-pDynamicStates-08715";
         dynamic_stencil_compare_mask_07837       = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-07837";
         dynamic_stencil_write_mask_07838         = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-07838";
+        dynamic_stencil_write_mask_08716         = "VUID-vkCmdDrawMeshTasksIndirectCountNV-pDynamicStates-08716";
         dynamic_stencil_reference_07839          = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-07839";
         dynamic_state_inherited_07850            = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-07850";
+        dynamic_cull_mode_07840                  = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-07840";
+        dynamic_front_face_07841                 = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-07841";
+        dynamic_depth_test_enable_07843          = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-07843";
+        dynamic_depth_write_enable_07844         = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-07844";
+        dynamic_depth_compare_op_07845           = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-07845";
+        dynamic_depth_bound_test_enable_07846    = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-07846";
+        dynamic_stencil_test_enable_07847        = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-07847";
+        dynamic_stencil_op_07848                 = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-07848";
         primitives_generated_06708               = "VUID-vkCmdDrawMeshTasksIndirectCountNV-primitivesGeneratedQueryWithRasterizerDiscard-06708";
         primitives_generated_streams_06709       = "VUID-vkCmdDrawMeshTasksIndirectCountNV-primitivesGeneratedQueryWithNonZeroStreams-06709";
         mesh_shader_stages_06480                 = "VUID-vkCmdDrawMeshTasksIndirectCountNV-stage-06480";
@@ -1899,11 +2086,18 @@ struct DispatchVuidsCmdDrawMeshTasksEXT: DrawDispatchVuid {
         dynamic_exclusive_scissor_enable_07879   = "VUID-vkCmdDrawMeshTasksEXT-None-07879";
         dynamic_color_write_enable_07749         = "VUID-vkCmdDrawMeshTasksEXT-None-07749";
         dynamic_color_write_enable_count_07750   = "VUID-vkCmdDrawMeshTasksEXT-attachmentCount-07750";
+        dynamic_attachment_feedback_loop_08877   = "VUID-vkCmdDrawMeshTasksEXT-None-08877";
         dynamic_rendering_view_mask_06178        = "VUID-vkCmdDrawMeshTasksEXT-viewMask-06178";
         dynamic_rendering_color_count_06179      = "VUID-vkCmdDrawMeshTasksEXT-colorAttachmentCount-06179";
         dynamic_rendering_color_formats_06180    = "VUID-vkCmdDrawMeshTasksEXT-colorAttachmentCount-06180";
+        dynamic_rendering_unused_attachments_08911 = "VUID-vkCmdDrawMeshTasksEXT-dynamicRenderingUnusedAttachments-08911";
+        dynamic_rendering_undefined_color_formats_07616 = "VUID-vkCmdDrawMeshTasksEXT-colorAttachmentCount-07616";
+        dynamic_rendering_undefined_depth_format_07617 = "VUID-vkCmdDrawMeshTasksEXT-pDepthAttachment-07617";
+        dynamic_rendering_undefined_stencil_format_07618 = "VUID-vkCmdDrawMeshTasksEXT-pStencilAttachment-07618";
         dynamic_rendering_depth_format_06181     = "VUID-vkCmdDrawMeshTasksEXT-pDepthAttachment-06181";
+        dynamic_rendering_unused_attachments_08915 = "VUID-vkCmdDrawMeshTasksEXT-dynamicRenderingUnusedAttachments-08915";
         dynamic_rendering_stencil_format_06182   = "VUID-vkCmdDrawMeshTasksEXT-pStencilAttachment-06182";
+        dynamic_rendering_unused_attachments_08918 = "VUID-vkCmdDrawMeshTasksEXT-dynamicRenderingUnusedAttachments-08918";
         dynamic_rendering_fsr_06183              = "VUID-vkCmdDrawMeshTasksEXT-imageView-06183";
         dynamic_rendering_fdm_06184              = "VUID-vkCmdDrawMeshTasksEXT-imageView-06184";
         dynamic_rendering_color_sample_06185     = "VUID-vkCmdDrawMeshTasksEXT-colorAttachmentCount-06185";
@@ -1969,10 +2163,20 @@ struct DispatchVuidsCmdDrawMeshTasksEXT: DrawDispatchVuid {
         dynamic_line_stipple_ext_07849           = "VUID-vkCmdDrawMeshTasksEXT-None-07849";
         dynamic_blend_constants_07835            = "VUID-vkCmdDrawMeshTasksEXT-None-07835";
         dynamic_depth_bounds_07836               = "VUID-vkCmdDrawMeshTasksEXT-None-07836";
+        dynamic_depth_enable_08715               = "VUID-vkCmdDrawMeshTasksEXT-pDynamicStates-08715";
         dynamic_stencil_compare_mask_07837       = "VUID-vkCmdDrawMeshTasksEXT-None-07837";
         dynamic_stencil_write_mask_07838         = "VUID-vkCmdDrawMeshTasksEXT-None-07838";
+        dynamic_stencil_write_mask_08716         = "VUID-vkCmdDrawMeshTasksEXT-pDynamicStates-08716";
         dynamic_stencil_reference_07839          = "VUID-vkCmdDrawMeshTasksEXT-None-07839";
         dynamic_state_inherited_07850            = "VUID-vkCmdDrawMeshTasksEXT-None-07850";
+        dynamic_cull_mode_07840                  = "VUID-vkCmdDrawMeshTasksEXT-None-07840";
+        dynamic_front_face_07841                 = "VUID-vkCmdDrawMeshTasksEXT-None-07841";
+        dynamic_depth_test_enable_07843          = "VUID-vkCmdDrawMeshTasksEXT-None-07843";
+        dynamic_depth_write_enable_07844         = "VUID-vkCmdDrawMeshTasksEXT-None-07844";
+        dynamic_depth_compare_op_07845           = "VUID-vkCmdDrawMeshTasksEXT-None-07845";
+        dynamic_depth_bound_test_enable_07846    = "VUID-vkCmdDrawMeshTasksEXT-None-07846";
+        dynamic_stencil_test_enable_07847        = "VUID-vkCmdDrawMeshTasksEXT-None-07847";
+        dynamic_stencil_op_07848                 = "VUID-vkCmdDrawMeshTasksEXT-None-07848";
         primitives_generated_06708               = "VUID-vkCmdDrawMeshTasksEXT-primitivesGeneratedQueryWithRasterizerDiscard-06708";
         primitives_generated_streams_06709       = "VUID-vkCmdDrawMeshTasksEXT-primitivesGeneratedQueryWithNonZeroStreams-06709";
         mesh_shader_stages_06480                 = "VUID-vkCmdDrawMeshTasksEXT-stage-06480";
@@ -2036,11 +2240,18 @@ struct DispatchVuidsCmdDrawMeshTasksIndirectEXT: DrawDispatchVuid {
         dynamic_exclusive_scissor_enable_07879   = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-07879";
         dynamic_color_write_enable_07749         = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-07749";
         dynamic_color_write_enable_count_07750   = "VUID-vkCmdDrawMeshTasksIndirectEXT-attachmentCount-07750";
+        dynamic_attachment_feedback_loop_08877   = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-08877";
         dynamic_rendering_view_mask_06178        = "VUID-vkCmdDrawMeshTasksIndirectEXT-viewMask-06178";
         dynamic_rendering_color_count_06179      = "VUID-vkCmdDrawMeshTasksIndirectEXT-colorAttachmentCount-06179";
         dynamic_rendering_color_formats_06180    = "VUID-vkCmdDrawMeshTasksIndirectEXT-colorAttachmentCount-06180";
+        dynamic_rendering_unused_attachments_08911 = "VUID-vkCmdDrawMeshTasksIndirectEXT-dynamicRenderingUnusedAttachments-08911";
+        dynamic_rendering_undefined_color_formats_07616 = "VUID-vkCmdDrawMeshTasksIndirectEXT-colorAttachmentCount-07616";
+        dynamic_rendering_undefined_depth_format_07617 = "VUID-vkCmdDrawMeshTasksIndirectEXT-pDepthAttachment-07617";
+        dynamic_rendering_undefined_stencil_format_07618 = "VUID-vkCmdDrawMeshTasksIndirectEXT-pStencilAttachment-07618";
         dynamic_rendering_depth_format_06181     = "VUID-vkCmdDrawMeshTasksIndirectEXT-pDepthAttachment-06181";
+        dynamic_rendering_unused_attachments_08915 = "VUID-vkCmdDrawMeshTasksIndirectEXT-dynamicRenderingUnusedAttachments-08915";
         dynamic_rendering_stencil_format_06182   = "VUID-vkCmdDrawMeshTasksIndirectEXT-pStencilAttachment-06182";
+        dynamic_rendering_unused_attachments_08918 = "VUID-vkCmdDrawMeshTasksIndirectEXT-dynamicRenderingUnusedAttachments-08918";
         dynamic_rendering_fsr_06183              = "VUID-vkCmdDrawMeshTasksIndirectEXT-imageView-06183";
         dynamic_rendering_fdm_06184              = "VUID-vkCmdDrawMeshTasksIndirectEXT-imageView-06184";
         dynamic_rendering_color_sample_06185     = "VUID-vkCmdDrawMeshTasksIndirectEXT-colorAttachmentCount-06185";
@@ -2106,10 +2317,20 @@ struct DispatchVuidsCmdDrawMeshTasksIndirectEXT: DrawDispatchVuid {
         dynamic_line_stipple_ext_07849           = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-07849";
         dynamic_blend_constants_07835            = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-07835";
         dynamic_depth_bounds_07836               = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-07836";
+        dynamic_depth_enable_08715               = "VUID-vkCmdDrawMeshTasksIndirectEXT-pDynamicStates-08715";
         dynamic_stencil_compare_mask_07837       = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-07837";
         dynamic_stencil_write_mask_07838         = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-07838";
+        dynamic_stencil_write_mask_08716         = "VUID-vkCmdDrawMeshTasksIndirectEXT-pDynamicStates-08716";
         dynamic_stencil_reference_07839          = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-07839";
         dynamic_state_inherited_07850            = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-07850";
+        dynamic_cull_mode_07840                  = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-07840";
+        dynamic_front_face_07841                 = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-07841";
+        dynamic_depth_test_enable_07843          = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-07843";
+        dynamic_depth_write_enable_07844         = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-07844";
+        dynamic_depth_compare_op_07845           = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-07845";
+        dynamic_depth_bound_test_enable_07846    = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-07846";
+        dynamic_stencil_test_enable_07847        = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-07847";
+        dynamic_stencil_op_07848                 = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-07848";
         primitives_generated_06708               = "VUID-vkCmdDrawMeshTasksIndirectEXT-primitivesGeneratedQueryWithRasterizerDiscard-06708";
         primitives_generated_streams_06709       = "VUID-vkCmdDrawMeshTasksIndirectEXT-primitivesGeneratedQueryWithNonZeroStreams-06709";
         mesh_shader_stages_06480                 = "VUID-vkCmdDrawMeshTasksIndirectEXT-stage-06480";
@@ -2176,11 +2397,18 @@ struct DispatchVuidsCmdDrawMeshTasksIndirectCountEXT : DrawDispatchVuid {
         dynamic_exclusive_scissor_enable_07879   = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-07879";
         dynamic_color_write_enable_07749         = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-07749";
         dynamic_color_write_enable_count_07750   = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-attachmentCount-07750";
+        dynamic_attachment_feedback_loop_08877   = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-08877";
         dynamic_rendering_view_mask_06178        = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-viewMask-06178";
         dynamic_rendering_color_count_06179      = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-colorAttachmentCount-06179";
         dynamic_rendering_color_formats_06180    = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-colorAttachmentCount-06180";
+        dynamic_rendering_unused_attachments_08911 = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-dynamicRenderingUnusedAttachments-08911";
+        dynamic_rendering_undefined_color_formats_07616 = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-colorAttachmentCount-07616";
+        dynamic_rendering_undefined_depth_format_07617 = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-pDepthAttachment-07617";
+        dynamic_rendering_undefined_stencil_format_07618 = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-pStencilAttachment-07618";
         dynamic_rendering_depth_format_06181     = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-pDepthAttachment-06181";
+        dynamic_rendering_unused_attachments_08915 = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-dynamicRenderingUnusedAttachments-08915";
         dynamic_rendering_stencil_format_06182   = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-pStencilAttachment-06182";
+        dynamic_rendering_unused_attachments_08918 = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-dynamicRenderingUnusedAttachments-08918";
         dynamic_rendering_fsr_06183              = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-imageView-06183";
         dynamic_rendering_fdm_06184              = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-imageView-06184";
         dynamic_rendering_color_sample_06185     = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-colorAttachmentCount-06185";
@@ -2246,10 +2474,20 @@ struct DispatchVuidsCmdDrawMeshTasksIndirectCountEXT : DrawDispatchVuid {
         dynamic_line_stipple_ext_07849           = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-07849";
         dynamic_blend_constants_07835            = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-07835";
         dynamic_depth_bounds_07836               = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-07836";
+        dynamic_depth_enable_08715               = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-pDynamicStates-08715";
         dynamic_stencil_compare_mask_07837       = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-07837";
         dynamic_stencil_write_mask_07838         = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-07838";
+        dynamic_stencil_write_mask_08716         = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-pDynamicStates-08716";
         dynamic_stencil_reference_07839          = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-07839";
         dynamic_state_inherited_07850            = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-07850";
+        dynamic_cull_mode_07840                  = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-07840";
+        dynamic_front_face_07841                 = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-07841";
+        dynamic_depth_test_enable_07843          = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-07843";
+        dynamic_depth_write_enable_07844         = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-07844";
+        dynamic_depth_compare_op_07845           = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-07845";
+        dynamic_depth_bound_test_enable_07846    = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-07846";
+        dynamic_stencil_test_enable_07847        = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-07847";
+        dynamic_stencil_op_07848                 = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-07848";
         primitives_generated_06708               = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-primitivesGeneratedQueryWithRasterizerDiscard-06708";
         primitives_generated_streams_06709       = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-primitivesGeneratedQueryWithNonZeroStreams-06709";
         mesh_shader_stages_06480                 = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-stage-06480";
@@ -2286,7 +2524,6 @@ struct DispatchVuidsCmdDrawIndirectByteCountEXT: DrawDispatchVuid {
         viewport_scissor_count_03419             = "VUID-vkCmdDrawIndirectByteCountEXT-viewportCount-03419";
         primitive_topology_class_03420           = "VUID-vkCmdDrawIndirectByteCountEXT-primitiveTopology-03420";
         primitive_topology_class_ds3_07500       = "VUID-vkCmdDrawIndirectByteCountEXT-dynamicPrimitiveTopologyUnrestricted-07500";
-        dynamic_primitive_topology_07842         = "VUID-vkCmdDrawIndirectByteCountEXT-None-07842";
         corner_sampled_address_mode_02696        = "VUID-vkCmdDrawIndirectByteCountEXT-flags-02696";
         imageview_atomic_02691                   = "VUID-vkCmdDrawIndirectByteCountEXT-None-02691";
         bufferview_atomic_07888                  = "VUID-vkCmdDrawIndirectByteCountEXT-None-07888";
@@ -2323,11 +2560,18 @@ struct DispatchVuidsCmdDrawIndirectByteCountEXT: DrawDispatchVuid {
         dynamic_exclusive_scissor_enable_07879   = "VUID-vkCmdDrawIndirectByteCountEXT-None-07879";
         dynamic_color_write_enable_07749         = "VUID-vkCmdDrawIndirectByteCountEXT-None-07749";
         dynamic_color_write_enable_count_07750   = "VUID-vkCmdDrawIndirectByteCountEXT-attachmentCount-07750";
+        dynamic_attachment_feedback_loop_08877   = "VUID-vkCmdDrawIndirectByteCountEXT-None-08877";
         dynamic_rendering_view_mask_06178        = "VUID-vkCmdDrawIndirectByteCountEXT-viewMask-06178";
         dynamic_rendering_color_count_06179      = "VUID-vkCmdDrawIndirectByteCountEXT-colorAttachmentCount-06179";
         dynamic_rendering_color_formats_06180    = "VUID-vkCmdDrawIndirectByteCountEXT-colorAttachmentCount-06180";
+        dynamic_rendering_unused_attachments_08911 = "VUID-vkCmdDrawIndirectByteCountEXT-dynamicRenderingUnusedAttachments-08911";
+        dynamic_rendering_undefined_color_formats_07616 = "VUID-vkCmdDrawIndirectByteCountEXT-colorAttachmentCount-07616";
+        dynamic_rendering_undefined_depth_format_07617 = "VUID-vkCmdDrawIndirectByteCountEXT-pDepthAttachment-07617";
+        dynamic_rendering_undefined_stencil_format_07618 = "VUID-vkCmdDrawIndirectByteCountEXT-pStencilAttachment-07618";
         dynamic_rendering_depth_format_06181     = "VUID-vkCmdDrawIndirectByteCountEXT-pDepthAttachment-06181";
+        dynamic_rendering_unused_attachments_08915 = "VUID-vkCmdDrawIndirectByteCountEXT-dynamicRenderingUnusedAttachments-08915";
         dynamic_rendering_stencil_format_06182   = "VUID-vkCmdDrawIndirectByteCountEXT-pStencilAttachment-06182";
+        dynamic_rendering_unused_attachments_08918 = "VUID-vkCmdDrawIndirectByteCountEXT-dynamicRenderingUnusedAttachments-08918";
         dynamic_rendering_fsr_06183              = "VUID-vkCmdDrawIndirectByteCountEXT-imageView-06183";
         dynamic_rendering_fdm_06184              = "VUID-vkCmdDrawIndirectByteCountEXT-imageView-06184";
         dynamic_rendering_color_sample_06185     = "VUID-vkCmdDrawIndirectByteCountEXT-colorAttachmentCount-06185";
@@ -2393,10 +2637,21 @@ struct DispatchVuidsCmdDrawIndirectByteCountEXT: DrawDispatchVuid {
         dynamic_line_stipple_ext_07849           = "VUID-vkCmdDrawIndirectByteCountEXT-None-07849";
         dynamic_blend_constants_07835            = "VUID-vkCmdDrawIndirectByteCountEXT-None-07835";
         dynamic_depth_bounds_07836               = "VUID-vkCmdDrawIndirectByteCountEXT-None-07836";
+        dynamic_depth_enable_08715               = "VUID-vkCmdDrawIndirectByteCountEXT-pDynamicStates-08715";
         dynamic_stencil_compare_mask_07837       = "VUID-vkCmdDrawIndirectByteCountEXT-None-07837";
         dynamic_stencil_write_mask_07838         = "VUID-vkCmdDrawIndirectByteCountEXT-None-07838";
+        dynamic_stencil_write_mask_08716         = "VUID-vkCmdDrawIndirectByteCountEXT-pDynamicStates-08716";
         dynamic_stencil_reference_07839          = "VUID-vkCmdDrawIndirectByteCountEXT-None-07839";
         dynamic_state_inherited_07850            = "VUID-vkCmdDrawIndirectByteCountEXT-None-07850";
+        dynamic_cull_mode_07840                  = "VUID-vkCmdDrawIndirectByteCountEXT-None-07840";
+        dynamic_front_face_07841                 = "VUID-vkCmdDrawIndirectByteCountEXT-None-07841";
+        dynamic_primitive_topology_07842         = "VUID-vkCmdDrawIndirectByteCountEXT-None-07842";
+        dynamic_depth_test_enable_07843          = "VUID-vkCmdDrawIndirectByteCountEXT-None-07843";
+        dynamic_depth_write_enable_07844         = "VUID-vkCmdDrawIndirectByteCountEXT-None-07844";
+        dynamic_depth_compare_op_07845           = "VUID-vkCmdDrawIndirectByteCountEXT-None-07845";
+        dynamic_depth_bound_test_enable_07846    = "VUID-vkCmdDrawIndirectByteCountEXT-None-07846";
+        dynamic_stencil_test_enable_07847        = "VUID-vkCmdDrawIndirectByteCountEXT-None-07847";
+        dynamic_stencil_op_07848                 = "VUID-vkCmdDrawIndirectByteCountEXT-None-07848";
         primitives_generated_06708               = "VUID-vkCmdDrawIndirectByteCountEXT-primitivesGeneratedQueryWithRasterizerDiscard-06708";
         primitives_generated_streams_06709       = "VUID-vkCmdDrawIndirectByteCountEXT-primitivesGeneratedQueryWithNonZeroStreams-06709";
         invalid_mesh_shader_stages_06481         = "VUID-vkCmdDrawIndirectByteCountEXT-stage-06481";
@@ -3177,8 +3432,8 @@ bool CoreChecks::ValidateCmdBufDrawState(const CMD_BUFFER_STATE &cb_state, CMD_T
     const DrawDispatchVuid &vuid = GetDrawDispatchVuid(cmd_type);
     const char *function = CommandTypeString(cmd_type);
     const auto lv_bind_point = ConvertToLvlBindPoint(bind_point);
-    const auto &last_bound = cb_state.lastBound[lv_bind_point];
-    const auto *last_pipeline = last_bound.pipeline_state;
+    const auto &last_bound_state = cb_state.lastBound[lv_bind_point];
+    const auto *last_pipeline = last_bound_state.pipeline_state;
 
     if (!last_pipeline || !last_pipeline->pipeline()) {
         // For now, don't validate anything and just return
@@ -3194,7 +3449,7 @@ bool CoreChecks::ValidateCmdBufDrawState(const CMD_BUFFER_STATE &cb_state, CMD_T
 
     bool skip = false;
 
-    for (const auto &ds : last_bound.per_set) {
+    for (const auto &ds : last_bound_state.per_set) {
         if (pipeline.descriptor_buffer_mode) {
             if (ds.bound_descriptor_set && !ds.bound_descriptor_set->IsPushDescriptor()) {
                 const LogObjectList objlist(cb_state.Handle(), pipeline.Handle(), ds.bound_descriptor_set->Handle());
@@ -3219,8 +3474,8 @@ bool CoreChecks::ValidateCmdBufDrawState(const CMD_BUFFER_STATE &cb_state, CMD_T
     }
 
     if (VK_PIPELINE_BIND_POINT_GRAPHICS == bind_point) {
-        skip |= ValidateDrawDynamicState(cb_state, pipeline, cmd_type);
-        skip |= ValidatePipelineDrawtimeState(last_bound, cb_state, cmd_type, pipeline);
+        skip |= ValidateDrawDynamicState(last_bound_state, cmd_type);
+        skip |= ValidatePipelineDrawtimeState(last_bound_state, cmd_type);
 
         if (cb_state.activeRenderPass && cb_state.activeFramebuffer) {
             // Verify attachments for unprotected/protected command buffer.
@@ -3252,7 +3507,7 @@ bool CoreChecks::ValidateCmdBufDrawState(const CMD_BUFFER_STATE &cb_state, CMD_T
 
     // Check if the current pipeline is compatible for the maximum used set with the bound sets.
     if (!pipeline.descriptor_buffer_mode) {
-        if (!pipeline.active_slots.empty() && !IsBoundSetCompat(pipeline.max_active_slot, last_bound, *pipeline_layout)) {
+        if (!pipeline.active_slots.empty() && !IsBoundSetCompat(pipeline.max_active_slot, last_bound_state, *pipeline_layout)) {
             LogObjectList objlist(pipeline.pipeline());
             const auto layouts = pipeline.PipelineLayoutStateUnion();
             std::ostringstream pipe_layouts_log;
@@ -3266,17 +3521,17 @@ bool CoreChecks::ValidateCmdBufDrawState(const CMD_BUFFER_STATE &cb_state, CMD_T
             } else {
                 pipe_layouts_log << report_data->FormatHandle(layouts.front()->layout());
             }
-            objlist.add(last_bound.pipeline_layout);
+            objlist.add(last_bound_state.pipeline_layout);
             skip |= LogError(objlist, vuid.compatible_pipeline_02697,
                              "%s(): The %s (created with %s) statically uses descriptor set (index #%" PRIu32
                              ") which is not compatible with the currently bound descriptor set's pipeline layout (%s)",
                              function, report_data->FormatHandle(pipeline.pipeline()).c_str(), pipe_layouts_log.str().c_str(),
-                             pipeline.max_active_slot, report_data->FormatHandle(last_bound.pipeline_layout).c_str());
+                             pipeline.max_active_slot, report_data->FormatHandle(last_bound_state.pipeline_layout).c_str());
         } else {
             // if the bound set is not copmatible, the rest will just be extra redundant errors
             for (const auto &set_binding_pair : pipeline.active_slots) {
                 uint32_t set_index = set_binding_pair.first;
-                const auto set_info = last_bound.per_set[set_index];
+                const auto set_info = last_bound_state.per_set[set_index];
                 if (!set_info.bound_descriptor_set) {
                     skip |= LogError(cb_state.commandBuffer(), vuid.compatible_pipeline_02697,
                                      "%s(): %s uses set #%" PRIu32 " but that set is not bound.", function,
@@ -3349,10 +3604,8 @@ bool CoreChecks::ValidateCmdBufDrawState(const CMD_BUFFER_STATE &cb_state, CMD_T
     //       Discussion on validity of these checks can be found at https://gitlab.khronos.org/vulkan/vulkan/-/issues/2602.
     if (!cb_state.push_constant_data_ranges || (pipeline_layout->push_constant_ranges == cb_state.push_constant_data_ranges)) {
         for (const auto &stage : pipeline.stage_states) {
-            const auto *push_constants =
-                stage.module_state->FindEntrypointPushConstant(stage.create_info->pName, stage.create_info->stage);
-            if (!push_constants || !push_constants->IsUsed()) {
-                continue;
+            if (!stage.entrypoint || !stage.entrypoint->push_constant_variable) {
+                continue;  // no static push constant in shader
             }
 
             // Edge case where if the shader is using push constants statically and there never was a vkCmdPushConstants
@@ -3363,12 +3616,6 @@ bool CoreChecks::ValidateCmdBufDrawState(const CMD_BUFFER_STATE &cb_state, CMD_T
                                  "pipeline layout %s.",
                                  function, string_VkShaderStageFlags(stage.create_info->stage).c_str(),
                                  report_data->FormatHandle(pipeline_layout->layout()).c_str());
-            }
-
-            const auto it = cb_state.push_constant_data_update.find(stage.create_info->stage);
-            if (it == cb_state.push_constant_data_update.end()) {
-                // This error has been printed in ValidatePushConstantUsage.
-                break;
             }
         }
     }

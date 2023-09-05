@@ -1,4 +1,4 @@
-// Copyright 2022 Google LLC
+// Copyright 2022-2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,18 +15,24 @@
 #include "connections/implementation/analytics/analytics_recorder.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <iterator>
 #include <memory>
-#include <optional>
+#include <ostream>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "absl/algorithm/container.h"
+#include "absl/container/btree_map.h"
+#include "absl/strings/string_view.h"
 #include "absl/time/time.h"
 #include "internal/analytics/event_logger.h"
+#include "internal/platform/error_code_params.h"
+#include "internal/platform/implementation/system_clock.h"
 #include "internal/platform/logging.h"
 #include "internal/platform/mutex_lock.h"
-#include "internal/platform/system_clock.h"
+#include "internal/platform/single_thread_executor.h"
 #include "internal/proto/analytics/connections_log.pb.h"
 #include "proto/connections_enums.pb.h"
 
@@ -204,6 +210,26 @@ void AnalyticsRecorder::OnStopDiscovery() {
     return;
   }
   RecordDiscoveryPhaseDurationLocked();
+}
+
+void AnalyticsRecorder::OnStartedIncomingConnectionListening(
+    connections::Strategy strategy) {
+  MutexLock lock(&mutex_);
+  if (!CanRecordAnalyticsLocked("OnStartedIncomingConnectionListening")) {
+    return;
+  }
+  UpdateStrategySessionLocked(strategy, ADVERTISER);
+  if (started_advertising_phase_time_ == absl::Now()) {
+    started_advertising_phase_time_ = SystemClock::ElapsedRealtime();
+  }
+}
+
+void AnalyticsRecorder::OnStoppedIncomingConnectionListening() {
+  MutexLock lock(&mutex_);
+  if (!CanRecordAnalyticsLocked("OnStoppedIncomingConnectionListening")) {
+    return;
+  }
+  RecordAdvertisingPhaseDurationLocked();
 }
 
 void AnalyticsRecorder::OnEndpointFound(Medium medium) {
@@ -445,6 +471,14 @@ void AnalyticsRecorder::OnConnectionClosed(const std::string &endpoint_id,
   if (!CanRecordAnalyticsLocked("OnConnectionClosed")) {
     return;
   }
+
+  if (current_strategy_session_ == nullptr) {
+    NEARBY_LOGS(VERBOSE)
+        << "AnalyticsRecorder CanRecordAnalytics Unexpected call " << __func__
+        << " since current_strategy_session_ is required.";
+    return;
+  }
+
   auto it = active_connections_.find(endpoint_id);
   if (it == active_connections_.end()) {
     return;
@@ -457,24 +491,11 @@ void AnalyticsRecorder::OnConnectionClosed(const std::string &endpoint_id,
     // re-established with a new ConnectionRequest.
     auto pair = active_connections_.extract(it);
     std::unique_ptr<LogicalConnection> &logical_connection = pair.mapped();
-    logical_connection->GetEstablisedConnections();
 
-    // TODO(b/245553737): the recent change in protobuf may broken the class of
-    // RepeatedFieldPtr. Our app will crash after sending file. The app also
-    // crashes even only print the size of mutable_established_connection. we
-    // need to reccover the code when protobuf fixes the issue.
-
-    //     auto pair = active_connections_.extract(it);
-    //     std::unique_ptr<LogicalConnection> &logical_connection =
-    //     pair.mapped();
-
-    //     std::vector<ConnectionsLog::EstablishedConnection> connections =
-    //         logical_connection->GetEstablisedConnections();
-    //     auto established_connections =
-    //         current_strategy_session_->mutable_established_connection();
-    //     for (auto &connection : connections) {
-    //       established_connections->Add(std::move(connection));
-    //     }
+    absl::c_copy(
+        logical_connection->GetEstablisedConnections(),
+        RepeatedFieldBackInserter(
+            current_strategy_session_->mutable_established_connection()));
   }
 }
 

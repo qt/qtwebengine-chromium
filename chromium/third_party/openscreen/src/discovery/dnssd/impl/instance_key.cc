@@ -11,8 +11,8 @@
 #include "discovery/dnssd/impl/conversion_layer.h"
 #include "discovery/dnssd/impl/service_key.h"
 #include "discovery/dnssd/public/dns_sd_instance.h"
-#include "discovery/mdns/mdns_records.h"
 #include "discovery/mdns/public/mdns_constants.h"
+#include "discovery/mdns/public/mdns_records.h"
 
 namespace openscreen {
 namespace discovery {

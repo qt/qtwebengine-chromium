@@ -105,10 +105,9 @@ class QuicEndpoint : public QuicEndpointBase,
   bool ValidateToken(absl::string_view /*token*/) override { return true; }
   bool MaybeSendAddressToken() override { return false; }
   void OnBandwidthUpdateTimeout() override {}
-  std::unique_ptr<QuicPathValidationContext> CreateContextForMultiPortPath()
-      override {
-    return nullptr;
-  }
+  void CreateContextForMultiPortPath(
+      std::unique_ptr<MultiPortPathContextObserver> /*context_observer*/)
+      override {}
   void MigrateToMultiPortPath(
       std::unique_ptr<QuicPathValidationContext> /*context*/) override {}
   void OnServerPreferredAddressAvailable(

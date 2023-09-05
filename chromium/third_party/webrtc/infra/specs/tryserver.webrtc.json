@@ -2316,34 +2316,6 @@
       },
       {
         "args": [
-          "--quick",
-          "--test-launcher-summary-output=${ISOLATED_OUTDIR}/gtest_output.json",
-          "--test-arg=--gtest_output=json:/custom_artifacts/gtest_output.json",
-          "--test-arg=--undefok=test_launcher_summary_output",
-          "--gtest_output=json:${ISOLATED_OUTDIR}/gtest_output.json"
-        ],
-        "isolate_name": "low_bandwidth_audio_test",
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "low_bandwidth_audio_test",
-        "resultdb": {
-          "result_file": "${ISOLATED_OUTDIR}/gtest_output.json",
-          "result_format": "gtest_json"
-        },
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "cpu": "x86-64",
-              "os": "Ubuntu-18.04"
-            }
-          ]
-        },
-        "test_id_prefix": "ninja://audio:low_bandwidth_audio_test/"
-      },
-      {
-        "args": [
           "--test-launcher-summary-output=${ISOLATED_OUTDIR}/gtest_output.json",
           "--test-arg=--gtest_output=json:/custom_artifacts/gtest_output.json",
           "--test-arg=--undefok=test_launcher_summary_output",
@@ -5867,29 +5839,6 @@
         "test_id_prefix": "ninja://net/dcsctp:dcsctp_unittests/"
       },
       {
-        "args": [
-          "--quick"
-        ],
-        "isolate_name": "low_bandwidth_audio_test",
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "low_bandwidth_audio_test",
-        "resultdb": {
-          "result_format": "json"
-        },
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "cpu": "x86-64",
-              "os": "Ubuntu-18.04"
-            }
-          ]
-        },
-        "test_id_prefix": "ninja://audio:low_bandwidth_audio_test/"
-      },
-      {
         "isolate_name": "modules_tests",
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
@@ -6330,30 +6279,6 @@
         "test_id_prefix": "ninja://net/dcsctp:dcsctp_unittests/"
       },
       {
-        "args": [
-          "--quick"
-        ],
-        "isolate_name": "low_bandwidth_audio_test",
-        "isolate_profile_data": true,
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "low_bandwidth_audio_test",
-        "resultdb": {
-          "result_format": "json"
-        },
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "cpu": "x86-64",
-              "os": "Ubuntu-18.04"
-            }
-          ]
-        },
-        "test_id_prefix": "ninja://audio:low_bandwidth_audio_test/"
-      },
-      {
         "isolate_name": "modules_tests",
         "isolate_profile_data": true,
         "merge": {
@@ -6675,6 +6600,33 @@
         "test_id_prefix": "ninja://modules/video_capture:video_capture_tests/"
       },
       {
+        "args": [
+          "--force_fieldtrials=WebRTC-QuickPerfTest/Enabled/",
+          "--nologs",
+          "--gtest_output=json:${ISOLATED_OUTDIR}/gtest_output.json"
+        ],
+        "isolate_name": "video_codec_perf_tests",
+        "isolate_profile_data": true,
+        "merge": {
+          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
+        },
+        "name": "video_codec_perf_tests",
+        "resultdb": {
+          "result_file": "${ISOLATED_OUTDIR}/gtest_output.json",
+          "result_format": "gtest_json"
+        },
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "dimension_sets": [
+            {
+              "cpu": "x86-64",
+              "os": "Ubuntu-18.04"
+            }
+          ]
+        },
+        "test_id_prefix": "ninja://modules/video_coding:video_codec_perf_tests/"
+      },
+      {
         "isolate_name": "video_engine_tests",
         "isolate_profile_data": true,
         "merge": {
@@ -6848,29 +6800,6 @@
           ]
         },
         "test_id_prefix": "ninja://net/dcsctp:dcsctp_unittests/"
-      },
-      {
-        "args": [
-          "--quick"
-        ],
-        "isolate_name": "low_bandwidth_audio_test",
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "low_bandwidth_audio_test",
-        "resultdb": {
-          "result_format": "json"
-        },
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "cpu": "x86-64",
-              "os": "Ubuntu-18.04"
-            }
-          ]
-        },
-        "test_id_prefix": "ninja://audio:low_bandwidth_audio_test/"
       },
       {
         "isolate_name": "modules_tests",
@@ -7302,29 +7231,6 @@
           ]
         },
         "test_id_prefix": "ninja://net/dcsctp:dcsctp_unittests/"
-      },
-      {
-        "args": [
-          "--quick"
-        ],
-        "isolate_name": "low_bandwidth_audio_test",
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "low_bandwidth_audio_test",
-        "resultdb": {
-          "result_format": "json"
-        },
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "cpu": "x86-64",
-              "os": "Ubuntu-18.04"
-            }
-          ]
-        },
-        "test_id_prefix": "ninja://audio:low_bandwidth_audio_test/"
       },
       {
         "isolate_name": "modules_tests",
@@ -7782,29 +7688,6 @@
         "test_id_prefix": "ninja://net/dcsctp:dcsctp_unittests/"
       },
       {
-        "args": [
-          "--quick"
-        ],
-        "isolate_name": "low_bandwidth_audio_test",
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "low_bandwidth_audio_test",
-        "resultdb": {
-          "result_format": "json"
-        },
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "cpu": "x86-64",
-              "os": "Ubuntu-20.04"
-            }
-          ]
-        },
-        "test_id_prefix": "ninja://audio:low_bandwidth_audio_test/"
-      },
-      {
         "isolate_name": "modules_tests",
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
@@ -8215,29 +8098,6 @@
         "test_id_prefix": "ninja://net/dcsctp:dcsctp_unittests/"
       },
       {
-        "args": [
-          "--quick"
-        ],
-        "isolate_name": "low_bandwidth_audio_test",
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "low_bandwidth_audio_test",
-        "resultdb": {
-          "result_format": "json"
-        },
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "cpu": "x86-64",
-              "os": "Ubuntu-18.04"
-            }
-          ]
-        },
-        "test_id_prefix": "ninja://audio:low_bandwidth_audio_test/"
-      },
-      {
         "isolate_name": "modules_tests",
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
@@ -8544,6 +8404,32 @@
         "test_id_prefix": "ninja://modules/video_capture:video_capture_tests/"
       },
       {
+        "args": [
+          "--force_fieldtrials=WebRTC-QuickPerfTest/Enabled/",
+          "--nologs",
+          "--gtest_output=json:${ISOLATED_OUTDIR}/gtest_output.json"
+        ],
+        "isolate_name": "video_codec_perf_tests",
+        "merge": {
+          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
+        },
+        "name": "video_codec_perf_tests",
+        "resultdb": {
+          "result_file": "${ISOLATED_OUTDIR}/gtest_output.json",
+          "result_format": "gtest_json"
+        },
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "dimension_sets": [
+            {
+              "cpu": "x86-64",
+              "os": "Ubuntu-18.04"
+            }
+          ]
+        },
+        "test_id_prefix": "ninja://modules/video_coding:video_codec_perf_tests/"
+      },
+      {
         "isolate_name": "video_engine_tests",
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
@@ -8713,29 +8599,6 @@
           ]
         },
         "test_id_prefix": "ninja://net/dcsctp:dcsctp_unittests/"
-      },
-      {
-        "args": [
-          "--quick"
-        ],
-        "isolate_name": "low_bandwidth_audio_test",
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "low_bandwidth_audio_test",
-        "resultdb": {
-          "result_format": "json"
-        },
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "cpu": "x86-64",
-              "os": "Ubuntu-18.04"
-            }
-          ]
-        },
-        "test_id_prefix": "ninja://audio:low_bandwidth_audio_test/"
       },
       {
         "isolate_name": "modules_tests",
@@ -9146,29 +9009,6 @@
           ]
         },
         "test_id_prefix": "ninja://net/dcsctp:dcsctp_unittests/"
-      },
-      {
-        "args": [
-          "--quick"
-        ],
-        "isolate_name": "low_bandwidth_audio_test",
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "low_bandwidth_audio_test",
-        "resultdb": {
-          "result_format": "json"
-        },
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "cpu": "x86-64",
-              "os": "Ubuntu-18.04"
-            }
-          ]
-        },
-        "test_id_prefix": "ninja://audio:low_bandwidth_audio_test/"
       },
       {
         "isolate_name": "modules_tests",
@@ -9601,29 +9441,6 @@
         "test_id_prefix": "ninja://net/dcsctp:dcsctp_unittests/"
       },
       {
-        "args": [
-          "--quick"
-        ],
-        "isolate_name": "low_bandwidth_audio_test",
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "low_bandwidth_audio_test",
-        "resultdb": {
-          "result_format": "json"
-        },
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "cpu": "x86-64",
-              "os": "Ubuntu-18.04"
-            }
-          ]
-        },
-        "test_id_prefix": "ninja://audio:low_bandwidth_audio_test/"
-      },
-      {
         "isolate_name": "modules_tests",
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
@@ -10054,29 +9871,6 @@
         "test_id_prefix": "ninja://net/dcsctp:dcsctp_unittests/"
       },
       {
-        "args": [
-          "--quick"
-        ],
-        "isolate_name": "low_bandwidth_audio_test",
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "low_bandwidth_audio_test",
-        "resultdb": {
-          "result_format": "json"
-        },
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "cpu": "x86-64",
-              "os": "Ubuntu-18.04"
-            }
-          ]
-        },
-        "test_id_prefix": "ninja://audio:low_bandwidth_audio_test/"
-      },
-      {
         "isolate_name": "modules_tests",
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
@@ -10485,29 +10279,6 @@
           ]
         },
         "test_id_prefix": "ninja://net/dcsctp:dcsctp_unittests/"
-      },
-      {
-        "args": [
-          "--quick"
-        ],
-        "isolate_name": "low_bandwidth_audio_test",
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "low_bandwidth_audio_test",
-        "resultdb": {
-          "result_format": "json"
-        },
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "cpu": "x86-64",
-              "os": "Ubuntu-18.04"
-            }
-          ]
-        },
-        "test_id_prefix": "ninja://audio:low_bandwidth_audio_test/"
       },
       {
         "isolate_name": "modules_tests",
@@ -10922,30 +10693,6 @@
           ]
         },
         "test_id_prefix": "ninja://net/dcsctp:dcsctp_unittests/"
-      },
-      {
-        "args": [
-          "--quick"
-        ],
-        "isolate_name": "low_bandwidth_audio_test",
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "low_bandwidth_audio_test",
-        "resultdb": {
-          "result_format": "json"
-        },
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "cores": "12",
-              "cpu": "x86-64",
-              "os": "Mac-12"
-            }
-          ]
-        },
-        "test_id_prefix": "ninja://audio:low_bandwidth_audio_test/"
       },
       {
         "isolate_name": "modules_tests",
@@ -11380,30 +11127,6 @@
         "test_id_prefix": "ninja://net/dcsctp:dcsctp_unittests/"
       },
       {
-        "args": [
-          "--quick"
-        ],
-        "isolate_name": "low_bandwidth_audio_test",
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "low_bandwidth_audio_test",
-        "resultdb": {
-          "result_format": "json"
-        },
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "cores": "12",
-              "cpu": "x86-64",
-              "os": "Mac-12"
-            }
-          ]
-        },
-        "test_id_prefix": "ninja://audio:low_bandwidth_audio_test/"
-      },
-      {
         "isolate_name": "modules_tests",
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
@@ -11830,29 +11553,6 @@
         "test_id_prefix": "ninja://net/dcsctp:dcsctp_unittests/"
       },
       {
-        "args": [
-          "--quick"
-        ],
-        "isolate_name": "low_bandwidth_audio_test",
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "low_bandwidth_audio_test",
-        "resultdb": {
-          "result_format": "json"
-        },
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "cpu": "arm64-64-Apple_M1",
-              "os": "Mac-12"
-            }
-          ]
-        },
-        "test_id_prefix": "ninja://audio:low_bandwidth_audio_test/"
-      },
-      {
         "isolate_name": "modules_tests",
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
@@ -12263,29 +11963,6 @@
         "test_id_prefix": "ninja://net/dcsctp:dcsctp_unittests/"
       },
       {
-        "args": [
-          "--quick"
-        ],
-        "isolate_name": "low_bandwidth_audio_test",
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "low_bandwidth_audio_test",
-        "resultdb": {
-          "result_format": "json"
-        },
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "cpu": "x86-64",
-              "os": "Mac-12"
-            }
-          ]
-        },
-        "test_id_prefix": "ninja://audio:low_bandwidth_audio_test/"
-      },
-      {
         "isolate_name": "modules_tests",
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
@@ -12572,6 +12249,32 @@
         "test_id_prefix": "ninja://modules/video_capture:video_capture_tests/"
       },
       {
+        "args": [
+          "--force_fieldtrials=WebRTC-QuickPerfTest/Enabled/",
+          "--nologs",
+          "--gtest_output=json:${ISOLATED_OUTDIR}/gtest_output.json"
+        ],
+        "isolate_name": "video_codec_perf_tests",
+        "merge": {
+          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
+        },
+        "name": "video_codec_perf_tests",
+        "resultdb": {
+          "result_file": "${ISOLATED_OUTDIR}/gtest_output.json",
+          "result_format": "gtest_json"
+        },
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "dimension_sets": [
+            {
+              "cpu": "x86-64",
+              "os": "Mac-12"
+            }
+          ]
+        },
+        "test_id_prefix": "ninja://modules/video_coding:video_codec_perf_tests/"
+      },
+      {
         "isolate_name": "video_engine_tests",
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
@@ -12741,29 +12444,6 @@
           ]
         },
         "test_id_prefix": "ninja://net/dcsctp:dcsctp_unittests/"
-      },
-      {
-        "args": [
-          "--quick"
-        ],
-        "isolate_name": "low_bandwidth_audio_test",
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "low_bandwidth_audio_test",
-        "resultdb": {
-          "result_format": "json"
-        },
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "cpu": "arm64-64-Apple_M1",
-              "os": "Mac-12"
-            }
-          ]
-        },
-        "test_id_prefix": "ninja://audio:low_bandwidth_audio_test/"
       },
       {
         "isolate_name": "modules_tests",
@@ -13174,29 +12854,6 @@
           ]
         },
         "test_id_prefix": "ninja://net/dcsctp:dcsctp_unittests/"
-      },
-      {
-        "args": [
-          "--quick"
-        ],
-        "isolate_name": "low_bandwidth_audio_test",
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "low_bandwidth_audio_test",
-        "resultdb": {
-          "result_format": "json"
-        },
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "cpu": "x86-64",
-              "os": "Windows-10-19045"
-            }
-          ]
-        },
-        "test_id_prefix": "ninja://audio:low_bandwidth_audio_test/"
       },
       {
         "isolate_name": "modules_tests",
@@ -13613,29 +13270,6 @@
         "test_id_prefix": "ninja://net/dcsctp:dcsctp_unittests/"
       },
       {
-        "args": [
-          "--quick"
-        ],
-        "isolate_name": "low_bandwidth_audio_test",
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "low_bandwidth_audio_test",
-        "resultdb": {
-          "result_format": "json"
-        },
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "cpu": "x86-64",
-              "os": "Windows-10-19045"
-            }
-          ]
-        },
-        "test_id_prefix": "ninja://audio:low_bandwidth_audio_test/"
-      },
-      {
         "isolate_name": "modules_tests",
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
@@ -14044,29 +13678,6 @@
           ]
         },
         "test_id_prefix": "ninja://net/dcsctp:dcsctp_unittests/"
-      },
-      {
-        "args": [
-          "--quick"
-        ],
-        "isolate_name": "low_bandwidth_audio_test",
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "low_bandwidth_audio_test",
-        "resultdb": {
-          "result_format": "json"
-        },
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "cpu": "x86-64",
-              "os": "Windows-10-19045"
-            }
-          ]
-        },
-        "test_id_prefix": "ninja://audio:low_bandwidth_audio_test/"
       },
       {
         "isolate_name": "modules_tests",
@@ -14479,29 +14090,6 @@
         "test_id_prefix": "ninja://net/dcsctp:dcsctp_unittests/"
       },
       {
-        "args": [
-          "--quick"
-        ],
-        "isolate_name": "low_bandwidth_audio_test",
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "low_bandwidth_audio_test",
-        "resultdb": {
-          "result_format": "json"
-        },
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "cpu": "x86-64",
-              "os": "Windows-10-19045"
-            }
-          ]
-        },
-        "test_id_prefix": "ninja://audio:low_bandwidth_audio_test/"
-      },
-      {
         "isolate_name": "modules_tests",
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
@@ -14912,29 +14500,6 @@
         "test_id_prefix": "ninja://net/dcsctp:dcsctp_unittests/"
       },
       {
-        "args": [
-          "--quick"
-        ],
-        "isolate_name": "low_bandwidth_audio_test",
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "low_bandwidth_audio_test",
-        "resultdb": {
-          "result_format": "json"
-        },
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "cpu": "x86-64",
-              "os": "Windows-10-19045"
-            }
-          ]
-        },
-        "test_id_prefix": "ninja://audio:low_bandwidth_audio_test/"
-      },
-      {
         "isolate_name": "modules_tests",
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
@@ -15219,6 +14784,32 @@
           ]
         },
         "test_id_prefix": "ninja://modules/video_capture:video_capture_tests/"
+      },
+      {
+        "args": [
+          "--force_fieldtrials=WebRTC-QuickPerfTest/Enabled/",
+          "--nologs",
+          "--gtest_output=json:${ISOLATED_OUTDIR}/gtest_output.json"
+        ],
+        "isolate_name": "video_codec_perf_tests",
+        "merge": {
+          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
+        },
+        "name": "video_codec_perf_tests",
+        "resultdb": {
+          "result_file": "${ISOLATED_OUTDIR}/gtest_output.json",
+          "result_format": "gtest_json"
+        },
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "dimension_sets": [
+            {
+              "cpu": "x86-64",
+              "os": "Windows-10-19045"
+            }
+          ]
+        },
+        "test_id_prefix": "ninja://modules/video_coding:video_codec_perf_tests/"
       },
       {
         "isolate_name": "video_engine_tests",

@@ -193,6 +193,10 @@ static avifBool avifExtractExifAndXMP(png_structp png, png_infop info, avifBool 
             *ignoreXMP = AVIF_TRUE; // Ignore any other XMP chunk.
         }
     }
+    // The iTXt XMP payload may not contain a zero byte according to section 4.2.3.3 of
+    // the PNG specification, version 1.2. Still remove one trailing null character if any,
+    // in case libpng does not strictly enforce that at decoding.
+    avifImageFixXMP(avif);
     return AVIF_TRUE;
 }
 
@@ -313,9 +317,18 @@ avifBool avifPNGRead(const char * inputFilename,
     avif->width = rawWidth;
     avif->height = rawHeight;
     avif->yuvFormat = requestedFormat;
+#if defined(AVIF_ENABLE_EXPERIMENTAL_YCGCO_R)
+    if (avif->matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_YCGCO_RO) {
+        fprintf(stderr, "AVIF_MATRIX_COEFFICIENTS_YCGCO_RO cannot be used with PNG because it has an even bit depth.\n");
+        goto cleanup;
+    }
+    const avifBool useYCgCoR = (avif->matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_YCGCO_RE);
+#else
+    const avifBool useYCgCoR = AVIF_FALSE;
+#endif
     if (avif->yuvFormat == AVIF_PIXEL_FORMAT_NONE) {
-        if (avif->matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_IDENTITY) {
-            // Identity is only valid with YUV444.
+        if (avif->matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_IDENTITY || useYCgCoR) {
+            // Identity and YCgCo-R are only valid with YUV444.
             avif->yuvFormat = AVIF_PIXEL_FORMAT_YUV444;
         } else if ((rawColorType == PNG_COLOR_TYPE_GRAY) || (rawColorType == PNG_COLOR_TYPE_GRAY_ALPHA)) {
             avif->yuvFormat = AVIF_PIXEL_FORMAT_YUV400;
@@ -331,6 +344,19 @@ avifBool avifPNGRead(const char * inputFilename,
             avif->depth = 12;
         }
     }
+#if defined(AVIF_ENABLE_EXPERIMENTAL_YCGCO_R)
+    if (useYCgCoR) {
+        if (imgBitDepth != 8) {
+            fprintf(stderr, "AVIF_MATRIX_COEFFICIENTS_YCGCO_RE cannot be used on 16 bit input because it adds two bits.\n");
+            goto cleanup;
+        }
+        if (requestedDepth && requestedDepth != 10) {
+            fprintf(stderr, "Cannot request %u bits for YCgCo-Re as it uses 2 extra bits.\n", requestedDepth);
+            goto cleanup;
+        }
+        avif->depth = 10;
+    }
+#endif
 
     avifRGBImageSetDefaults(&rgb, avif);
     rgb.chromaDownsampling = chromaDownsampling;
@@ -396,12 +422,26 @@ avifBool avifPNGWrite(const char * outputFilename, const avifImage * avif, uint3
 
     volatile int rgbDepth = requestedDepth;
     if (rgbDepth == 0) {
-        if (avif->depth > 8) {
-            rgbDepth = 16;
-        } else {
-            rgbDepth = 8;
-        }
+        rgbDepth = (avif->depth > 8) ? 16 : 8;
     }
+#if defined(AVIF_ENABLE_EXPERIMENTAL_YCGCO_R)
+    if (avif->matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_YCGCO_RO) {
+        fprintf(stderr, "AVIF_MATRIX_COEFFICIENTS_YCGCO_RO cannot be used with PNG because it has an even bit depth.\n");
+        goto cleanup;
+    }
+    if (avif->matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_YCGCO_RE) {
+        if (avif->depth != 10) {
+            fprintf(stderr, "avif->depth must be 10 bits and not %u.\n", avif->depth);
+            goto cleanup;
+        }
+        if (requestedDepth && requestedDepth != 8) {
+            fprintf(stderr, "Cannot request %u bits for YCgCo-Re as it only works for 8 bits.\n", requestedDepth);
+            goto cleanup;
+        }
+
+        rgbDepth = 8;
+    }
+#endif
 
     volatile avifBool monochrome8bit = (avif->yuvFormat == AVIF_PIXEL_FORMAT_YUV400) && !avif->alphaPlane && (avif->depth == 8) &&
                                        (rgbDepth == 8);
@@ -479,26 +519,23 @@ avifBool avifPNGWrite(const char * outputFilename, const avifImage * avif, uint3
     if (avif->xmp.data && (avif->xmp.size > 0)) {
         // The iTXt XMP payload may not contain a zero byte according to section 4.2.3.3 of
         // the PNG specification, version 1.2.
-        if (memchr(avif->xmp.data, '\0', avif->xmp.size)) {
-            fprintf(stderr, "Error writing PNG: XMP metadata contains an invalid null character\n");
+        // The chunk is given to libpng as is. Bytes after a zero byte may be stripped.
+
+        // Providing the length through png_text.itxt_length does not work.
+        // The given png_text.text string must end with a zero byte.
+        if (avif->xmp.size >= SIZE_MAX) {
+            fprintf(stderr, "Error writing PNG: XMP metadata is too big\n");
             goto cleanup;
-        } else {
-            // Providing the length through png_text.itxt_length does not work.
-            // The given png_text.text string must end with a zero byte.
-            if (avif->xmp.size >= SIZE_MAX) {
-                fprintf(stderr, "Error writing PNG: XMP metadata is too big\n");
-                goto cleanup;
-            }
-            avifRWDataRealloc(&xmp, avif->xmp.size + 1);
-            memcpy(xmp.data, avif->xmp.data, avif->xmp.size);
-            xmp.data[avif->xmp.size] = '\0';
-            png_text * text = &texts[numTextMetadataChunks++];
-            memset(text, 0, sizeof(*text));
-            text->compression = PNG_ITXT_COMPRESSION_NONE;
-            text->key = "XML:com.adobe.xmp";
-            text->text = (char *)xmp.data;
-            text->itxt_length = xmp.size;
         }
+        avifRWDataRealloc(&xmp, avif->xmp.size + 1);
+        memcpy(xmp.data, avif->xmp.data, avif->xmp.size);
+        xmp.data[avif->xmp.size] = '\0';
+        png_text * text = &texts[numTextMetadataChunks++];
+        memset(text, 0, sizeof(*text));
+        text->compression = PNG_ITXT_COMPRESSION_NONE;
+        text->key = "XML:com.adobe.xmp";
+        text->text = (char *)xmp.data;
+        text->itxt_length = xmp.size;
     }
     if (numTextMetadataChunks != 0) {
         png_set_text(png, info, texts, numTextMetadataChunks);

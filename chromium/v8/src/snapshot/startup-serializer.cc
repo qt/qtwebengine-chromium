@@ -62,10 +62,8 @@ class V8_NODISCARD SanitizeIsolateScope final {
 
 StartupSerializer::StartupSerializer(
     Isolate* isolate, Snapshot::SerializerFlags flags,
-    ReadOnlySerializer* read_only_serializer,
     SharedHeapSerializer* shared_heap_serializer)
     : RootsSerializer(isolate, flags, RootIndex::kFirstStrongRoot),
-      read_only_serializer_(read_only_serializer),
       shared_heap_serializer_(shared_heap_serializer),
       accessor_infos_(isolate->heap()),
       call_handler_infos_(isolate->heap()) {
@@ -82,18 +80,6 @@ StartupSerializer::~StartupSerializer() {
   OutputStatistics("StartupSerializer");
 }
 
-#ifdef DEBUG
-namespace {
-
-bool IsUnexpectedInstructionStreamObject(Isolate* isolate, HeapObject obj) {
-  if (!obj.IsInstructionStream()) return false;
-  // TODO(jgruber): Is REGEXP code still fully supported?
-  return InstructionStream::cast(obj).code(kAcquireLoad).kind() !=
-         CodeKind::REGEXP;
-}
-
-}  // namespace
-#endif  // DEBUG
 void StartupSerializer::SerializeObjectImpl(Handle<HeapObject> obj,
                                             SlotType slot_type) {
   PtrComprCageBase cage_base(isolate());
@@ -110,12 +96,12 @@ void StartupSerializer::SerializeObjectImpl(Handle<HeapObject> obj,
   {
     DisallowGarbageCollection no_gc;
     HeapObject raw = *obj;
-    DCHECK(!IsUnexpectedInstructionStreamObject(isolate(), raw));
+    DCHECK(!raw.IsInstructionStream());
     if (SerializeHotObject(raw)) return;
     if (IsRootAndHasBeenSerialized(raw) && SerializeRoot(raw)) return;
   }
 
-  if (SerializeUsingReadOnlyObjectCache(&sink_, obj)) return;
+  if (SerializeReadOnlyObjectReference(*obj, &sink_)) return;
   if (SerializeUsingSharedHeapObjectCache(&sink_, obj)) return;
   if (SerializeBackReference(*obj)) return;
 
@@ -187,11 +173,6 @@ SerializedHandleChecker::SerializedHandleChecker(Isolate* isolate,
   for (auto const& context : *contexts) {
     AddToSet(context.serialized_objects());
   }
-}
-
-bool StartupSerializer::SerializeUsingReadOnlyObjectCache(
-    SnapshotByteSink* sink, Handle<HeapObject> obj) {
-  return read_only_serializer_->SerializeUsingReadOnlyObjectCache(sink, obj);
 }
 
 bool StartupSerializer::SerializeUsingSharedHeapObjectCache(

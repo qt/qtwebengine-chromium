@@ -233,13 +233,17 @@ const av1_codec_arg_definitions_t g_av1_codec_arg_defs = {
       ARG_DEF(NULL, "use-16bit-internal", 0, "Force use of 16-bit pipeline"),
   .dropframe_thresh =
       ARG_DEF(NULL, "drop-frame", 1, "Temporal resampling threshold (buf %)"),
-  .resize_mode = ARG_DEF(NULL, "resize-mode", 1, "Frame resize mode"),
+  .resize_mode = ARG_DEF(
+      NULL, "resize-mode", 1,
+      "Frame resize mode (0: off (default), 1: fixed, 2: random, 3: dynamic)"),
   .resize_denominator =
       ARG_DEF(NULL, "resize-denominator", 1, "Frame resize denominator"),
   .resize_kf_denominator = ARG_DEF(NULL, "resize-kf-denominator", 1,
                                    "Frame resize keyframe denominator"),
   .superres_mode =
-      ARG_DEF(NULL, "superres-mode", 1, "Frame super-resolution mode"),
+      ARG_DEF(NULL, "superres-mode", 1,
+              "Frame super-resolution mode (0: disabled (default), 1: fixed, "
+              "2: random, 3: qthresh, 4: auto)"),
   .superres_denominator = ARG_DEF(NULL, "superres-denominator", 1,
                                   "Frame super-resolution denominator"),
   .superres_kf_denominator =

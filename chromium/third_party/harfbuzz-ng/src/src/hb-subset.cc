@@ -96,8 +96,8 @@ static hb_tag_t known_tables[] {
   HB_OT_TAG_BASE,
   HB_OT_TAG_CBDT,
   HB_OT_TAG_CBLC,
-  HB_OT_TAG_cff1,
-  HB_OT_TAG_cff2,
+  HB_OT_TAG_CFF1,
+  HB_OT_TAG_CFF2,
   HB_OT_TAG_cmap,
   HB_OT_TAG_COLR,
   HB_OT_TAG_CPAL,
@@ -198,9 +198,9 @@ _plan_estimate_subset_table_size (hb_subset_plan_t *plan,
   unsigned dst_glyphs = plan->glyphset ()->get_population ();
 
   if (unlikely (!src_glyphs) || same_size)
-    return 512 + table_len;
+    return 8192 + table_len;
 
-  return 512 + (unsigned) (table_len * sqrt ((double) dst_glyphs / src_glyphs));
+  return 8192 + (unsigned) (table_len * sqrt ((double) dst_glyphs / src_glyphs));
 }
 
 /*
@@ -457,8 +457,8 @@ _subset_table (hb_subset_plan_t *plan,
   case HB_OT_TAG_MATH: return _subset<const OT::MATH> (plan, buf);
 
 #ifndef HB_NO_SUBSET_CFF
-  case HB_OT_TAG_cff1: return _subset<const OT::cff1> (plan, buf);
-  case HB_OT_TAG_cff2: return _subset<const OT::cff2> (plan, buf);
+  case HB_OT_TAG_CFF1: return _subset<const OT::cff1> (plan, buf);
+  case HB_OT_TAG_CFF2: return _subset<const OT::cff2> (plan, buf);
   case HB_OT_TAG_VORG: return _subset<const OT::VORG> (plan, buf);
 #endif
 
@@ -587,46 +587,49 @@ hb_subset_plan_execute_or_fail (hb_subset_plan_t *plan)
     offset += num_tables;
   }
 
-  hb_vector_t<char> buf;
-  buf.alloc (4096 - 16);
-
-
   bool success = true;
 
-  while (!pending_subset_tags.is_empty ())
   {
-    if (subsetted_tags.in_error ()
-        || pending_subset_tags.in_error ()) {
-      success = false;
-      goto end;
-    }
+    // Grouping to deallocate buf before calling hb_face_reference (plan->dest).
 
-    bool made_changes = false;
-    for (hb_tag_t tag : pending_subset_tags)
+    hb_vector_t<char> buf;
+    buf.alloc (8192 - 16);
+
+    while (!pending_subset_tags.is_empty ())
     {
-      if (!_dependencies_satisfied (plan, tag,
-                                    subsetted_tags,
-                                    pending_subset_tags))
-      {
-        // delayed subsetting for some tables since they might have dependency on other tables
-        // in some cases: e.g: during instantiating glyf tables, hmetrics/vmetrics are updated
-        // and saved in subset plan, hmtx/vmtx subsetting need to use these updated metrics values
-        continue;
+      if (subsetted_tags.in_error ()
+	  || pending_subset_tags.in_error ()) {
+	success = false;
+	goto end;
       }
 
-      pending_subset_tags.del (tag);
-      subsetted_tags.add (tag);
-      made_changes = true;
+      bool made_changes = false;
+      for (hb_tag_t tag : pending_subset_tags)
+      {
+	if (!_dependencies_satisfied (plan, tag,
+				      subsetted_tags,
+				      pending_subset_tags))
+	{
+	  // delayed subsetting for some tables since they might have dependency on other tables
+	  // in some cases: e.g: during instantiating glyf tables, hmetrics/vmetrics are updated
+	  // and saved in subset plan, hmtx/vmtx subsetting need to use these updated metrics values
+	  continue;
+	}
 
-      success = _subset_table (plan, buf, tag);
-      if (unlikely (!success)) goto end;
-    }
+	pending_subset_tags.del (tag);
+	subsetted_tags.add (tag);
+	made_changes = true;
 
-    if (!made_changes)
-    {
-      DEBUG_MSG (SUBSET, nullptr, "Table dependencies unable to be satisfied. Subset failed.");
-      success = false;
-      goto end;
+	success = _subset_table (plan, buf, tag);
+	if (unlikely (!success)) goto end;
+      }
+
+      if (!made_changes)
+      {
+	DEBUG_MSG (SUBSET, nullptr, "Table dependencies unable to be satisfied. Subset failed.");
+	success = false;
+	goto end;
+      }
     }
   }
 

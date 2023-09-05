@@ -14,20 +14,27 @@
 
 #include "internal/platform/implementation/windows/ble_v2.h"
 
+#include <algorithm>
 #include <array>
 #include <exception>
 #include <iostream>
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/strings/escaping.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/synchronization/mutex.h"
+#include "absl/time/time.h"
+#include "internal/flags/nearby_flags.h"
+#include "internal/platform/bluetooth_adapter.h"
+#include "internal/platform/byte_array.h"
 #include "internal/platform/cancellation_flag.h"
 #include "internal/platform/cancellation_flag_listener.h"
+#include "internal/platform/flags/nearby_platform_feature_flags.h"
 #include "internal/platform/implementation/ble_v2.h"
 #include "internal/platform/implementation/windows/ble_gatt_client.h"
 #include "internal/platform/implementation/windows/ble_gatt_server.h"
@@ -35,6 +42,8 @@
 #include "internal/platform/implementation/windows/ble_v2_socket.h"
 #include "internal/platform/implementation/windows/utils.h"
 #include "internal/platform/logging.h"
+#include "internal/platform/prng.h"
+#include "internal/platform/uuid.h"
 #include "winrt/Windows.Devices.Bluetooth.Advertisement.h"
 #include "winrt/Windows.Devices.Bluetooth.h"
 #include "winrt/Windows.Foundation.Collections.h"
@@ -97,6 +106,15 @@ std::string TxPowerLevelToName(TxPowerLevel tx_power_level) {
   }
 }
 
+// Max times trying to generate unused session id.
+static constexpr uint64_t kGenerateSessionIdRetryLimit = 3;
+// Indicating failed to generate unused session id.
+static constexpr uint64_t kFailedGenerateSessionId = 0;
+
+// Remove lost/unused peripherals after a timeout.
+constexpr absl::Duration kPeripheralExpiryTime = absl::Minutes(15);
+// Prevent too frequent cleanup tasks.
+constexpr absl::Duration kMaxPeripheralCleanupFrequency = absl::Minutes(3);
 }  // namespace
 
 BleV2Medium::BleV2Medium(api::BluetoothAdapter& adapter)
@@ -238,16 +256,136 @@ bool BleV2Medium::StartScanning(const Uuid& service_uuid,
 std::unique_ptr<BleV2Medium::ScanningSession> BleV2Medium::StartScanning(
     const Uuid& service_uuid, TxPowerLevel tx_power_level,
     BleV2Medium::ScanningCallback callback) {
-  NEARBY_LOGS(INFO) << __func__ << ": Start scanning.";
+  NEARBY_LOGS(INFO) << __func__
+                    << ": service UUID: " << std::string(service_uuid)
+                    << ", TxPowerLevel: " << TxPowerLevelToName(tx_power_level);
+  if (!adapter_->IsEnabled()) {
+    NEARBY_LOGS(WARNING) << __func__
+                         << "BLE cannot start scanning because the "
+                            "Bluetooth adapter is not enabled.";
+    return nullptr;
+  }
+  if (!is_watcher_started_) {
+    NEARBY_LOGS(WARNING) << __func__ << ": Starting BLE Scanning.";
+    try {
+      watcher_ = BluetoothLEAdvertisementWatcher();
+      watcher_token_ = watcher_.Stopped({this, &BleV2Medium::WatcherHandler});
+      advertisement_received_token_ =
+          watcher_.Received({this, &BleV2Medium::AdvertisementFoundHandler});
 
-  // TODO(hais): add real impl for windows StartAdvertising.
-  return std::make_unique<ScanningSession>(ScanningSession{});
+      if (adapter_->IsExtendedAdvertisingSupported()) {
+        watcher_.AllowExtendedAdvertisements(true);
+      } else {
+        watcher_.AllowExtendedAdvertisements(false);
+      }
+
+      // Active mode indicates that scan request packets will be sent to query
+      // for Scan Response
+      watcher_.ScanningMode(BluetoothLEScanningMode::Active);
+      ::winrt::Windows::Devices::Bluetooth::BluetoothSignalStrengthFilter
+          filter;
+      filter.SamplingInterval(TimeSpan(std::chrono::seconds(2)));
+      watcher_.SignalStrengthFilter(filter);
+      watcher_.Start();
+      is_watcher_started_ = true;
+      NEARBY_LOGS(INFO) << __func__ << ": BLE scanning started.";
+    } catch (std::exception exception) {
+      NEARBY_LOGS(ERROR) << __func__ << ": Exception to start BLE scanning: "
+                         << exception.what();
+      return nullptr;
+    } catch (const winrt::hresult_error& ex) {
+      NEARBY_LOGS(ERROR) << __func__
+                         << ": Exception to start BLE scanning: " << ex.code()
+                         << ": " << winrt::to_string(ex.message());
+      return nullptr;
+    }
+  } else {
+    NEARBY_LOGS(WARNING) << __func__ << ": BLE Scanning already started.";
+  }
+  uint64_t session_id = GenerateSessionId();
+
+  // Save session id, service id and callback for this scan session.
+  {
+    absl::MutexLock lock(&map_mutex_);
+    auto iter = service_uuid_to_session_map_.find(service_uuid);
+    if (iter == service_uuid_to_session_map_.end()) {
+      service_uuid_to_session_map_[service_uuid].insert(
+          {session_id, std::move(callback)});
+    } else {
+      iter->second.insert({session_id, std::move(callback)});
+    }
+  }
+
+  // Generate and return ScanningSession.
+  return std::make_unique<BleV2Medium::ScanningSession>(
+      BleV2Medium::ScanningSession{
+          .stop_scanning =
+              [this, session_id, service_uuid]() {
+                size_t num_erased_from_service_and_session_map = 0u;
+                {
+                  absl::MutexLock lock(&map_mutex_);
+                  auto iter = service_uuid_to_session_map_.find(service_uuid);
+                  if (iter != service_uuid_to_session_map_.end()) {
+                    num_erased_from_service_and_session_map =
+                        iter->second.erase(session_id);
+                  }
+                  if (num_erased_from_service_and_session_map != 1u) {
+                    return absl::NotFoundError(
+                        "Can't find the provided internal session");
+                  }
+
+                  if (service_uuid_to_session_map_[service_uuid].empty()) {
+                    service_uuid_to_session_map_.erase(service_uuid);
+                  }
+                  // Stop discovery if there's no more on-going scan sessions.
+                  if (service_uuid_to_session_map_.empty()) {
+                    try {
+                      NEARBY_LOGS(INFO)
+                          << "No more scan sessions, stopping Ble scanning.";
+                      watcher_.Stop();
+                      is_watcher_started_ = false;
+
+                      NEARBY_LOGS(INFO) << "Ble stoped scanning successfully.";
+                    } catch (std::exception exception) {
+                      NEARBY_LOGS(ERROR)
+                          << __func__ << ": Exception to stop BLE scanning: "
+                          << exception.what();
+                      return absl::InternalError(
+                          "Bad status stopping Ble scanning");
+                    } catch (const winrt::hresult_error& ex) {
+                      NEARBY_LOGS(ERROR)
+                          << __func__
+                          << ": Exception to stop BLE scanning: " << ex.code()
+                          << ": " << winrt::to_string(ex.message());
+                      return absl::InternalError(
+                          "Bad status stopping Ble scanning");
+                    }
+                  }
+                }
+                return absl::OkStatus();
+              },
+      });
 }
 
 std::unique_ptr<api::ble_v2::GattServer> BleV2Medium::StartGattServer(
     api::ble_v2::ServerGattConnectionCallback callback) {
   NEARBY_LOGS(INFO) << __func__ << ": Start GATT server.";
 
+  if (!NearbyFlags::GetInstance().GetBoolFlag(
+          platform::config_package_nearby::nearby_platform_feature::
+              kEnableBleV2Gatt)) {
+    if (adapter_->IsExtendedAdvertisingSupported()) {
+      NEARBY_LOGS(WARNING) << __func__ << ": GATT is disabled.";
+      return nullptr;
+    }
+
+    if (!NearbyFlags::GetInstance().GetBoolFlag(
+            platform::config_package_nearby::nearby_platform_feature::
+                kEnableBleV2GattOnNonExtendedDevice)) {
+      NEARBY_LOGS(WARNING) << __func__ << ": GATT is disabled.";
+      return nullptr;
+    }
+  }
   auto gatt_server =
       std::make_unique<BleGattServer>(adapter_, std::move(callback));
 
@@ -262,6 +400,23 @@ std::unique_ptr<api::ble_v2::GattClient> BleV2Medium::ConnectToGattServer(
   NEARBY_LOGS(INFO) << "ConnectToGattServer is called, address: "
                     << peripheral.GetAddress()
                     << ", power:" << TxPowerLevelToName(tx_power_level);
+
+  if (!NearbyFlags::GetInstance().GetBoolFlag(
+          platform::config_package_nearby::nearby_platform_feature::
+              kEnableBleV2Gatt)) {
+    if (adapter_->IsExtendedAdvertisingSupported()) {
+      NEARBY_LOGS(WARNING) << __func__ << ": GATT is disabled.";
+      return nullptr;
+    }
+
+    if (!NearbyFlags::GetInstance().GetBoolFlag(
+            platform::config_package_nearby::nearby_platform_feature::
+                kEnableBleV2GattOnNonExtendedDevice)) {
+      NEARBY_LOGS(WARNING) << __func__ << ": GATT is disabled.";
+      return nullptr;
+    }
+  }
+
   try {
     BluetoothLEDevice ble_device =
         BluetoothLEDevice::FromBluetoothAddressAsync(
@@ -799,27 +954,16 @@ void BleV2Medium::AdvertisementReceivedHandler(
                                   advertisement_data.AsStringView())
                            << "(" << advertisement_data.size() << ")";
 
-      std::string peripheral_name =
+      std::string bluetooth_address =
           uint64_to_mac_address_string(args.BluetoothAddress());
-
-      auto peripheral = std::make_unique<BleV2Peripheral>();
-      std::string mac_address_string =
-          uint64_to_mac_address_string(args.BluetoothAddress());
-      peripheral->SetAddress(mac_address_string);
-      BleV2Peripheral* peripheral_ptr = nullptr;
-      {
-        absl::MutexLock lock(&peripheral_map_mutex_);
-        if (!peripheral_map_.contains(mac_address_string)) {
-          peripheral_map_[mac_address_string] = std::move(peripheral);
-        } else {
-          peripheral_map_[mac_address_string]->SetAddress(
-              uint64_to_mac_address_string(args.BluetoothAddress()));
-        }
-        peripheral_ptr = peripheral_map_[mac_address_string].get();
+      BleV2Peripheral* peripheral_ptr =
+          GetOrCreatePeripheral(bluetooth_address);
+      if (peripheral_ptr == nullptr) {
+        NEARBY_LOGS(ERROR) << "No BLE peripheral with address: "
+                           << bluetooth_address;
+        return;
       }
-
-      NEARBY_LOGS(VERBOSE) << "New BLE peripheral: " << peripheral_ptr
-                           << ", address: " << peripheral_ptr->GetAddress();
+      NEARBY_LOGS(INFO) << "BLE peripheral with address: " << bluetooth_address;
 
       // Received Advertisement packet
       NEARBY_LOGS(INFO) << "unconsumed_buffer_length: "
@@ -830,14 +974,182 @@ void BleV2Medium::AdvertisementReceivedHandler(
         ble_advertisement_data.is_extended_advertisement = false;
       } else {
         ble_advertisement_data.is_extended_advertisement = true;
-        // test purpose
-        return;
       }
 
       ble_advertisement_data.service_data[service_uuid_] = advertisement_data;
 
       scan_callback_.advertisement_found_cb(*peripheral_ptr,
                                             ble_advertisement_data);
+    }
+  }
+}
+
+void BleV2Medium::AdvertisementFoundHandler(
+    BluetoothLEAdvertisementWatcher watcher,
+    BluetoothLEAdvertisementReceivedEventArgs args) {
+  BluetoothLEAdvertisement advertisement = args.Advertisement();
+  std::vector<Uuid> service_uuid_list;
+  bool found_matching_service_uuid = false;
+  {
+    absl::MutexLock lock(&map_mutex_);
+    for (auto windows_service_uuid : advertisement.ServiceUuids()) {
+      auto nearby_service_uuid =
+          winrt_guid_to_nearby_uuid(windows_service_uuid);
+      service_uuid_list.push_back(nearby_service_uuid);
+      if (service_uuid_to_session_map_.find(nearby_service_uuid) !=
+          service_uuid_to_session_map_.end()) {
+        found_matching_service_uuid = true;
+      }
+    }
+  }
+  if (!found_matching_service_uuid) {
+    return;
+  }
+
+  // Construct BleAdvertisementData from the windows Advertisement.
+  api::ble_v2::BleAdvertisementData ble_advertisement_data;
+  for (BluetoothLEAdvertisementDataSection service_data :
+       advertisement.GetSectionsByType(0x16)) {
+    // Parse Advertisement Data for Section 0x16 (Service Data)
+    DataReader data_reader = DataReader::FromBuffer(service_data.Data());
+
+    // Discard the first 2 bytes of Service Uuid in Service Data
+    uint8_t first_byte = data_reader.ReadByte();
+    uint8_t second_byte = data_reader.ReadByte();
+
+    for (auto service_uuid : service_uuid_list) {
+      std::array<char, 16> service_id_data = service_uuid.data();
+      if (first_byte == (service_id_data[3] & 0xff) &&
+          second_byte == (service_id_data[2] & 0xff)) {
+        std::string data;
+
+        uint8_t unconsumed_buffer_length = data_reader.UnconsumedBufferLength();
+        if (unconsumed_buffer_length > 27) {
+          NEARBY_LOGS(INFO) << "Skipping extended advertisement with service "
+                            << service_uuid.Get16BitAsString();
+          return;
+        }
+        for (int i = 0; i < unconsumed_buffer_length; i++) {
+          data.append(1, static_cast<unsigned char>(data_reader.ReadByte()));
+        }
+        ble_advertisement_data.service_data[service_uuid] = ByteArray{data};
+      }
+    }
+  }
+  if (ble_advertisement_data.service_data.empty()) {
+    NEARBY_LOGS(ERROR) << "Got matching Service UUID but found no "
+                          "corresponding data, skipping";
+    return;
+  }
+  // Save the BleV2Peripheral.
+  std::string bluetooth_address =
+      uint64_to_mac_address_string(args.BluetoothAddress());
+  BleV2Peripheral* peripheral_ptr = GetOrCreatePeripheral(bluetooth_address);
+  if (peripheral_ptr == nullptr) {
+    NEARBY_LOGS(ERROR) << "No BLE peripheral with address: "
+                       << bluetooth_address;
+    return;
+  }
+  NEARBY_LOGS(INFO) << "BLE peripheral with address: " << bluetooth_address;
+
+  // Invokes callbacks that matches the UUID.
+  for (auto service_uuid : service_uuid_list) {
+    {
+      absl::MutexLock lock(&map_mutex_);
+      if (service_uuid_to_session_map_.find(service_uuid) !=
+          service_uuid_to_session_map_.end()) {
+        for (auto& id_session_pair :
+             service_uuid_to_session_map_[service_uuid]) {
+          id_session_pair.second.advertisement_found_cb(*peripheral_ptr,
+                                                        ble_advertisement_data);
+        }
+      }
+    }
+  }
+}
+
+bool BleV2Medium::GetRemotePeripheral(const std::string& mac_address,
+                                      GetRemotePeripheralCallback callback) {
+  BleV2Peripheral* peripheral = GetOrCreatePeripheral(mac_address);
+  if (peripheral != nullptr && peripheral->Ok()) {
+    callback(*peripheral);
+    return true;
+  }
+  return false;
+}
+
+bool BleV2Medium::GetRemotePeripheral(api::ble_v2::BlePeripheral::UniqueId id,
+                                      GetRemotePeripheralCallback callback) {
+  BleV2Peripheral* peripheral = GetPeripheral(id);
+  if (peripheral == nullptr) {
+    NEARBY_LOGS(WARNING) << __func__ << ": No matched peripheral device.";
+    return false;
+  }
+  callback(*peripheral);
+  return true;
+}
+
+uint64_t BleV2Medium::GenerateSessionId() {
+  absl::MutexLock lock(&map_mutex_);
+  for (int i = 0; i < kGenerateSessionIdRetryLimit; i++) {
+    uint64_t session_id = Prng().NextInt64();
+    if (session_id == kFailedGenerateSessionId) continue;
+    for (auto& element : service_uuid_to_session_map_) {
+      if (element.second.find(session_id) != element.second.end()) continue;
+    }
+    return session_id;
+  }
+  return kFailedGenerateSessionId;
+}
+
+BleV2Peripheral* BleV2Medium::GetOrCreatePeripheral(absl::string_view address) {
+  absl::MutexLock lock(&peripheral_map_mutex_);
+  auto it = std::find_if(
+      peripheral_map_.begin(), peripheral_map_.end(), [&](const auto& item) {
+        return item.second.peripheral->GetAddress() == address;
+      });
+  if (it != peripheral_map_.end()) {
+    it->second.last_access_time = absl::Now();
+    return it->second.peripheral.get();
+  }
+  RemoveExpiredPeripherals();
+  PeripheralInfo peripheral_info{
+      .last_access_time = absl::Now(),
+      .peripheral = std::make_unique<BleV2Peripheral>(address),
+  };
+  BleV2Peripheral* peripheral = peripheral_info.peripheral.get();
+  if (!peripheral->Ok()) {
+    NEARBY_LOGS(WARNING) << __func__ << "Invalid MAC address: " << address;
+    return nullptr;
+  }
+  NEARBY_LOGS(INFO) << "New BLE peripheral with address: " << address;
+
+  peripheral_map_[peripheral->GetUniqueId()] = std::move(peripheral_info);
+  return peripheral;
+}
+
+BleV2Peripheral* BleV2Medium::GetPeripheral(BleV2Peripheral::UniqueId id) {
+  absl::MutexLock lock(&peripheral_map_mutex_);
+  auto it = peripheral_map_.find(id);
+  if (it == peripheral_map_.end()) {
+    return nullptr;
+  }
+  it->second.last_access_time = absl::Now();
+  return it->second.peripheral.get();
+}
+
+void BleV2Medium::RemoveExpiredPeripherals() {
+  absl::Time now = absl::Now();
+  if (cleanup_time_ + kMaxPeripheralCleanupFrequency < now) {
+    return;
+  }
+  cleanup_time_ = now;
+  absl::Time cut_off_time = now - kPeripheralExpiryTime;
+  for (auto it = peripheral_map_.begin(); it != peripheral_map_.end();) {
+    if (it->second.last_access_time < cut_off_time) {
+      peripheral_map_.erase(it++);
+    } else {
+      ++it;
     }
   }
 }

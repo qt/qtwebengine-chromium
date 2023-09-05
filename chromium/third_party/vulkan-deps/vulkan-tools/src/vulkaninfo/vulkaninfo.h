@@ -653,7 +653,6 @@ struct AppInstance {
 
         std::vector<const char *> inst_exts;
         for (const auto &ext : inst_extensions) {
-            if (ext == "VK_LUNARG_direct_driver_loading") continue;  // skip this extension since it triggers warnings in the loader
             inst_exts.push_back(ext.c_str());
         }
 
@@ -715,9 +714,90 @@ struct AppInstance {
         global_extensions = AppGetGlobalLayerExtensions(nullptr);
     }
     void AppCompileInstanceExtensionsToEnable() {
-        // Get all supported Instance extensions (excl. layer-provided ones)
         for (const auto &ext : global_extensions) {
-            inst_extensions.push_back(ext.extensionName);
+            if (strcmp(VK_EXT_DEBUG_REPORT_EXTENSION_NAME, ext.extensionName) == 0) {
+                inst_extensions.push_back(ext.extensionName);
+            }
+            if (strcmp(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME, ext.extensionName) == 0) {
+                inst_extensions.push_back(ext.extensionName);
+            }
+            if (strcmp(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME, ext.extensionName) == 0) {
+                inst_extensions.push_back(ext.extensionName);
+            }
+            if (strcmp(VK_KHR_SURFACE_EXTENSION_NAME, ext.extensionName) == 0) {
+                inst_extensions.push_back(ext.extensionName);
+            }
+#ifdef VK_USE_PLATFORM_ANDROID_KHR
+            if (strcmp(VK_KHR_ANDROID_SURFACE_EXTENSION_NAME, ext.extensionName) == 0) {
+                inst_extensions.push_back(ext.extensionName);
+            }
+#endif
+#ifdef VK_USE_PLATFORM_FUCHSIA
+            if (strcmp(VK_FUCHSIA_IMAGEPIPE_SURFACE_EXTENSION_NAME, ext.extensionName) == 0) {
+                inst_extensions.push_back(ext.extensionName);
+            }
+#endif
+#ifdef VK_USE_PLATFORM_IOS_MVK
+            if (strcmp(VK_MVK_IOS_SURFACE_EXTENSION_NAME, ext.extensionName) == 0) {
+                inst_extensions.push_back(ext.extensionName);
+            }
+#endif
+#ifdef VK_USE_PLATFORM_MACOS_MVK
+            if (strcmp(VK_MVK_MACOS_SURFACE_EXTENSION_NAME, ext.extensionName) == 0) {
+                inst_extensions.push_back(ext.extensionName);
+            }
+#endif
+#ifdef VK_USE_PLATFORM_METAL_EXT
+            if (strcmp(VK_EXT_METAL_SURFACE_EXTENSION_NAME, ext.extensionName) == 0) {
+                inst_extensions.push_back(ext.extensionName);
+            }
+#endif
+#ifdef VK_USE_PLATFORM_VI_NN
+            if (strcmp(VK_NN_VI_SURFACE_EXTENSION_NAME, ext.extensionName) == 0) {
+                inst_extensions.push_back(ext.extensionName);
+            }
+#endif
+#ifdef VK_USE_PLATFORM_WAYLAND_KHR
+            if (strcmp(VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME, ext.extensionName) == 0) {
+                inst_extensions.push_back(ext.extensionName);
+            }
+#endif
+#ifdef VK_USE_PLATFORM_WIN32_KHR
+            if (strcmp(VK_KHR_WIN32_SURFACE_EXTENSION_NAME, ext.extensionName) == 0) {
+                inst_extensions.push_back(ext.extensionName);
+            }
+#endif
+#ifdef VK_USE_PLATFORM_XCB_KHR
+            if (strcmp(VK_KHR_XCB_SURFACE_EXTENSION_NAME, ext.extensionName) == 0) {
+                inst_extensions.push_back(ext.extensionName);
+            }
+#endif
+#ifdef VK_USE_PLATFORM_XLIB_KHR
+            if (strcmp(VK_KHR_XLIB_SURFACE_EXTENSION_NAME, ext.extensionName) == 0) {
+                inst_extensions.push_back(ext.extensionName);
+            }
+#endif
+#ifdef VK_USE_PLATFORM_DIRECTFB_EXT
+            if (strcmp(VK_EXT_DIRECTFB_SURFACE_EXTENSION_NAME, ext.extensionName) == 0) {
+                inst_extensions.push_back(ext.extensionName);
+            }
+#endif
+#ifdef VK_USE_PLATFORM_GGP
+            if (strcmp(VK_GGP_STREAM_DESCRIPTOR_SURFACE_EXTENSION_NAME, ext.extensionName) == 0) {
+                inst_extensions.push_back(ext.extensionName);
+            }
+#endif
+#ifdef VK_USE_PLATFORM_SCREEN_QNX
+            if (strcmp(VK_QNX_SCREEN_SURFACE_EXTENSION_NAME, ext.extensionName) == 0) {
+                inst_extensions.push_back(ext.extensionName);
+            }
+#endif
+            if (strcmp(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME, ext.extensionName) == 0) {
+                inst_extensions.push_back(ext.extensionName);
+            }
+            if (strcmp(VK_KHR_SURFACE_PROTECTED_CAPABILITIES_EXTENSION_NAME, ext.extensionName) == 0) {
+                inst_extensions.push_back(ext.extensionName);
+            }
         }
     }
 
@@ -1796,13 +1876,13 @@ struct AppGpu {
         if ((found_driver_props && driver_props.driverID == VK_DRIVER_ID_NVIDIA_PROPRIETARY) ||
             (!found_driver_props && props.deviceID == 4318)) {
             return std::to_string((v >> 22) & 0x3ff) + "." + std::to_string((v >> 14) & 0x0ff) + "." +
-                   std::to_string((v >> 6) & 0x0ff) + "." + std::to_string((v)&0x003ff);
+                   std::to_string((v >> 6) & 0x0ff) + "." + std::to_string(v & 0x003f);
         } else if ((found_driver_props && driver_props.driverID == VK_DRIVER_ID_INTEL_PROPRIETARY_WINDOWS)
 #if defined(WIN32)
                    || (!found_driver_props && props.deviceID == 0x8086)  // only do the fallback check if running in windows
 #endif
         ) {
-            return std::to_string((v >> 14)) + "." + std::to_string((v)&0x3fff);
+            return std::to_string(v >> 14) + "." + std::to_string(v & 0x3fff);
         } else {
             // AMD uses the standard vulkan scheme
             return VulkanVersion(v).str();

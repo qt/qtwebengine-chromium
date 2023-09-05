@@ -69,7 +69,7 @@ import {TimelineUIUtils} from './TimelineUIUtils.js';
 import {UIDevtoolsController} from './UIDevtoolsController.js';
 import {UIDevtoolsUtils} from './UIDevtoolsUtils.js';
 import type * as Protocol from '../../generated/protocol.js';
-import {traceJsonGenerator} from './SaveFileFormatter.js';
+import {traceJsonGenerator, cpuprofileJsonGenerator} from './SaveFileFormatter.js';
 
 import {TimelineSelection} from './TimelineSelection.js';
 
@@ -249,6 +249,10 @@ const UIStrings = {
    *@example {2.12} PH1
    */
   ssec: '{PH1} sec',
+  /**
+   *@description Message shown when a browser recording could not be started.
+   */
+  couldNotStart: 'Could not start recording, please try again later',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/timeline/TimelinePanel.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -283,6 +287,9 @@ export class TimelinePanel extends UI.Panel.Panel implements Client, TimelineMod
   private readonly recordReloadAction: UI.ActionRegistration.Action;
   private readonly historyManager: TimelineHistoryManager;
   private performanceModel: PerformanceModel|null;
+  // Cannot be made into an actual private field because the layout tests
+  // currently rely on accessing and setting this value.
+  private filmStripModel: SDK.FilmStripModel.FilmStripModel|null = null;
   // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private disableCaptureJSProfileSetting: Common.Settings.Setting<any>;
@@ -320,7 +327,12 @@ export class TimelinePanel extends UI.Panel.Panel implements Client, TimelineMod
   private cpuThrottlingSelect?: UI.Toolbar.ToolbarComboBox;
   private fileSelectorElement?: HTMLInputElement;
   private selection?: TimelineSelection|null;
-  #traceEngineModel: TraceEngine.TraceModel.Model<typeof TraceEngine.TraceModel.ENABLED_TRACE_HANDLERS>;
+  private primaryPageTargetPromiseCallback = (_target: SDK.Target.Target): void => {};
+  private primaryPageTargetPromise = new Promise<SDK.Target.Target>(res => {
+    this.primaryPageTargetPromiseCallback = res;
+  });
+
+  #traceEngineModel: TraceEngine.TraceModel.Model<typeof TraceEngine.Handlers.Migration.ENABLED_TRACE_HANDLERS>;
   // Tracks the index of the trace that the user is currently viewing.
   #traceEngineActiveTraceIndex = -1;
   constructor() {
@@ -411,11 +423,28 @@ export class TimelinePanel extends UI.Panel.Panel implements Client, TimelineMod
           this.consoleProfileFinished(message);
         }
       }
+      SDK.TargetManager.TargetManager.instance().observeModels(
+          SDK.CPUProfilerModel.CPUProfilerModel,
+          {
+            modelAdded: (model: SDK.CPUProfilerModel.CPUProfilerModel) => {
+              model.addEventListener(
+                  SDK.CPUProfilerModel.Events.ConsoleProfileFinished, event => this.consoleProfileFinished(event.data));
+            },
+            modelRemoved: (_model: SDK.CPUProfilerModel.CPUProfilerModel) => {
 
-      SDK.TargetManager.TargetManager.instance().addModelListener(
-          SDK.CPUProfilerModel.CPUProfilerModel, SDK.CPUProfilerModel.Events.ConsoleProfileFinished,
-          event => this.consoleProfileFinished(event.data), this);
+            },
+          },
+      );
     }
+    SDK.TargetManager.TargetManager.instance().observeTargets({
+      targetAdded: (target: SDK.Target.Target) => {
+        if (target !== SDK.TargetManager.TargetManager.instance().primaryPageTarget()) {
+          return;
+        }
+        this.primaryPageTargetPromiseCallback(target);
+      },
+      targetRemoved: (_: SDK.Target.Target) => {},
+    });
   }
 
   static instance(opts: {
@@ -615,7 +644,6 @@ export class TimelinePanel extends UI.Panel.Panel implements Client, TimelineMod
     console.assert(this.state === State.Idle);
     this.setState(State.Loading);
     if (this.performanceModel) {
-      this.performanceModel.dispose();
       this.performanceModel = null;
     }
   }
@@ -662,8 +690,29 @@ export class TimelinePanel extends UI.Panel.Panel implements Client, TimelineMod
         suggestedName: fileName,
       });
       const encoder = new TextEncoder();
-      const formattedTraceIter = traceJsonGenerator(traceEvents, metadata);
-      const traceAsString = Array.from(formattedTraceIter).join('');
+
+      // TODO(crbug.com/1456818): Extract this logic and add more tests.
+      let traceAsString;
+      if (isNode) {
+        const profileEvent = traceEvents.find(e => e.name === 'CpuProfile');
+        if (!profileEvent || !profileEvent.args?.data) {
+          return;
+        }
+        const profileEventData = profileEvent.args?.data;
+        if (profileEventData.hasOwnProperty('cpuProfile')) {
+          // TODO(crbug.com/1456799): Currently use a hack way because we can't differentiate
+          // cpuprofile from trace events when loading a file.
+          // The loader will directly add the fake trace created from CpuProfile to the tracingModel.
+          // And there is where the old saving logic saves the cpuprofile.
+          // This will be solved when the CPUProfileHandler is done. Then we can directly get it
+          // from the new traceEngine
+          const profile = (profileEventData as {cpuProfile: Protocol.Profiler.Profile}).cpuProfile;
+          traceAsString = cpuprofileJsonGenerator(profile as Protocol.Profiler.Profile);
+        }
+      } else {
+        const formattedTraceIter = traceJsonGenerator(traceEvents, metadata);
+        traceAsString = Array.from(formattedTraceIter).join('');
+      }
       const buffer = encoder.encode(traceAsString);
       const writable = await handler.createWritable();
       await writable.write(buffer);
@@ -709,12 +758,12 @@ export class TimelinePanel extends UI.Panel.Panel implements Client, TimelineMod
     this.createFileSelector();
   }
 
-  loadFromURL(url: Platform.DevToolsPath.UrlString): void {
+  async loadFromURL(url: Platform.DevToolsPath.UrlString): Promise<void> {
     if (this.state !== State.Idle) {
       return;
     }
     this.prepareToLoadTimeline();
-    this.loader = TimelineLoader.loadFromURL(url, this);
+    this.loader = await TimelineLoader.loadFromURL(url, this);
   }
 
   private updateOverviewControls(): void {
@@ -722,9 +771,8 @@ export class TimelinePanel extends UI.Panel.Panel implements Client, TimelineMod
     this.overviewControls.push(new TimelineEventOverviewResponsiveness());
     this.overviewControls.push(new TimelineEventOverviewCPUActivity());
     this.overviewControls.push(new TimelineEventOverviewNetwork());
-    if (this.showScreenshotsSetting.get() && this.performanceModel &&
-        this.performanceModel.filmStripModel().frames().length) {
-      this.overviewControls.push(new TimelineFilmStripOverview());
+    if (this.showScreenshotsSetting.get() && this.filmStripModel && this.filmStripModel.frames().length) {
+      this.overviewControls.push(new TimelineFilmStripOverview(this.filmStripModel));
     }
     if (this.showMemorySetting.get()) {
       this.overviewControls.push(new TimelineEventOverviewMemory());
@@ -851,11 +899,18 @@ export class TimelinePanel extends UI.Panel.Panel implements Client, TimelineMod
 
       this.showRecordingStarted();
 
-      const mainTarget = (SDK.TargetManager.TargetManager.instance().primaryPageTarget() as SDK.Target.Target);
+      const MAX_WAIT_FOR_TARGET_MS = 2000;
+      const timeoutPromise = new Promise(res => setTimeout(res, MAX_WAIT_FOR_TARGET_MS));
+      const primaryPageTarget = await Promise.race([this.primaryPageTargetPromise, timeoutPromise]);
+      if (!(primaryPageTarget instanceof SDK.Target.Target)) {
+        this.recordingFailed(i18nString(UIStrings.couldNotStart));
+        return;
+      }
+
       if (UIDevtoolsUtils.isUiDevTools()) {
-        this.controller = new UIDevtoolsController(mainTarget, this);
+        this.controller = new UIDevtoolsController(primaryPageTarget, this);
       } else {
-        this.controller = new TimelineController(mainTarget, this);
+        this.controller = new TimelineController(primaryPageTarget, this);
       }
       this.setUIControlsEnabled(false);
       this.hideLandingPage();
@@ -1034,7 +1089,8 @@ export class TimelinePanel extends UI.Panel.Panel implements Client, TimelineMod
 
   private setModel(
       model: PerformanceModel|null, exclusiveFilter: TimelineModel.TimelineModelFilter.TimelineModelFilter|null = null,
-      newTraceEngineData: TraceEngine.TraceModel.PartialTraceParseDataDuringMigration|null = null): void {
+      newTraceEngineData: TraceEngine.Handlers.Migration.PartialTraceData|null = null,
+      filmStripModel: SDK.FilmStripModel.FilmStripModel|null = null): void {
     if (this.performanceModel) {
       this.performanceModel.removeEventListener(Events.WindowChanged, this.onModelWindowChanged, this);
     }
@@ -1045,7 +1101,7 @@ export class TimelinePanel extends UI.Panel.Panel implements Client, TimelineMod
     } else {
       this.searchableViewInternal.hideWidget();
     }
-    this.flameChart.setModel(model, newTraceEngineData);
+    this.flameChart.setModel(model, newTraceEngineData, filmStripModel);
 
     this.updateOverviewControls();
     this.overviewPane.reset();
@@ -1166,7 +1222,7 @@ export class TimelinePanel extends UI.Panel.Panel implements Client, TimelineMod
     this.landingPage.detach();
   }
 
-  loadingStarted(): void {
+  async loadingStarted(): Promise<void> {
     this.hideLandingPage();
 
     if (this.statusPane) {
@@ -1187,16 +1243,16 @@ export class TimelinePanel extends UI.Panel.Panel implements Client, TimelineMod
     if (!this.loader) {
       this.statusPane.finish();
     }
-    this.loadingProgress(0);
+    await this.loadingProgress(0);
   }
 
-  loadingProgress(progress?: number): void {
+  async loadingProgress(progress?: number): Promise<void> {
     if (typeof progress === 'number' && this.statusPane) {
       this.statusPane.updateProgressBar(i18nString(UIStrings.received), progress * 100);
     }
   }
 
-  processingStarted(): void {
+  async processingStarted(): Promise<void> {
     if (this.statusPane) {
       this.statusPane.updateStatus(i18nString(UIStrings.processingProfile));
     }
@@ -1240,7 +1296,8 @@ export class TimelinePanel extends UI.Panel.Panel implements Client, TimelineMod
         this.#executeNewTraceEngine(tracingModel, recordingIsFresh, this.performanceModel.recordStartTime()),
       ]);
       const traceParsedData = this.#traceEngineModel.traceParsedData();
-      this.setModel(this.performanceModel, exclusiveFilter, traceParsedData);
+      this.filmStripModel = new SDK.FilmStripModel.FilmStripModel(tracingModel);
+      this.setModel(this.performanceModel, exclusiveFilter, traceParsedData, this.filmStripModel);
       // This code path is only executed when a new trace is recorded/imported,
       // so we know that the active index will be the size of the model because
       // the newest trace will be automatically set to active.
@@ -1255,7 +1312,7 @@ export class TimelinePanel extends UI.Panel.Panel implements Client, TimelineMod
         this.performanceModel.addEventListener(Events.NamesResolved, this.updateModelAndFlameChart, this);
       }
 
-      this.historyManager.addRecording(this.performanceModel, traceParsedData);
+      this.historyManager.addRecording(this.performanceModel, traceParsedData, this.filmStripModel);
     } catch (error) {
       this.recordingFailed(error.message);
       console.error(error);
@@ -1312,7 +1369,7 @@ export class TimelinePanel extends UI.Panel.Panel implements Client, TimelineMod
 
   private cancelLoading(): void {
     if (this.loader) {
-      this.loader.cancel();
+      void this.loader.cancel();
     }
   }
 
@@ -1438,7 +1495,7 @@ export class TimelinePanel extends UI.Panel.Panel implements Client, TimelineMod
     if (item.kind === 'string') {
       const url = dataTransfer.getData('text/uri-list') as Platform.DevToolsPath.UrlString;
       if (new Common.ParsedURL.ParsedURL(url).isValid) {
-        this.loadFromURL(url);
+        void this.loadFromURL(url);
       }
     } else if (item.kind === 'file') {
       const file = items[0].getAsFile();
@@ -1467,8 +1524,8 @@ export const rowHeight = 18;
 export const headerHeight = 20;
 export interface TimelineModeViewDelegate {
   select(selection: TimelineSelection|null): void;
-  selectEntryAtTime(events: SDK.TracingModel.Event[]|null, time: number): void;
-  highlightEvent(event: SDK.TracingModel.Event|null): void;
+  selectEntryAtTime(events: SDK.TracingModel.CompatibleTraceEvent[]|null, time: number): void;
+  highlightEvent(event: SDK.TracingModel.CompatibleTraceEvent|null): void;
 }
 
 export class StatusPane extends UI.Widget.VBox {
@@ -1610,8 +1667,8 @@ export class LoadTimelineHandler implements Common.QueryParamHandler.QueryParamH
   }
 
   handleQueryParam(value: string): void {
-    void UI.ViewManager.ViewManager.instance().showView('timeline').then(() => {
-      TimelinePanel.instance().loadFromURL(window.decodeURIComponent(value) as Platform.DevToolsPath.UrlString);
+    void UI.ViewManager.ViewManager.instance().showView('timeline').then(async () => {
+      await TimelinePanel.instance().loadFromURL(window.decodeURIComponent(value) as Platform.DevToolsPath.UrlString);
     });
   }
 }

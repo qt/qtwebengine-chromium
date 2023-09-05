@@ -326,7 +326,8 @@ void Sender::OnReceiverReport(const RtcpReportBlock& receiver_report) {
 }
 
 void Sender::OnReceiverIndicatesPictureLoss() {
-  TRACE_SCOPED(TraceCategory::kSender, "OnReceiverIndicatesPictureLoss");
+  TRACE_SCOPED1(TraceCategory::kSender, "OnReceiverIndicatesPictureLoss",
+                "last_received_frame_id", picture_lost_at_frame_id_.ToString());
   // The Receiver will continue the PLI notifications until it has received a
   // key frame. Thus, if a key frame is already in-flight, don't make a state
   // change that would cause this Sender to force another expensive key frame.
@@ -357,6 +358,7 @@ void Sender::OnReceiverCheckpoint(FrameId frame_id,
   TRACE_SCOPED2(TraceCategory::kSender, "OnReceiverCheckpoint", "frame_id",
                 frame_id.ToString(), "playout_delay", ToString(playout_delay));
   if (frame_id > last_enqueued_frame_id_) {
+    TRACE_SET_RESULT(Error::Code::kParameterOutOfRange);
     OSP_LOG_ERROR
         << "Ignoring checkpoint for " << latest_expected_frame_id_
         << " because this Sender could not have sent any frames after "
@@ -385,6 +387,7 @@ void Sender::OnReceiverHasFrames(std::vector<FrameId> acks) {
                 Join(acks));
 
   if (acks.back() > last_enqueued_frame_id_) {
+    TRACE_SET_RESULT(Error::Code::kParameterOutOfRange);
     OSP_LOG_ERROR << "Ignoring individual frame ACKs: ACKing frame "
                   << latest_expected_frame_id_
                   << " is invalid because this Sender could not have sent any "
@@ -433,7 +436,8 @@ void Sender::OnReceiverIsMissingPackets(std::vector<PacketNack> nacks) {
     // happen in rare cases where RTCP packets arrive out-of-order (i.e., the
     // network shuffled them).
     if (!slot) {
-      TRACE_SCOPED(TraceCategory::kSender, "MissingNackSlot");
+      TRACE_SCOPED1(TraceCategory::kSender, "MissingNackSlot", "frame_id",
+                    frame_id.ToString());
       for (++nack_it; nack_it != nacks.end() && nack_it->frame_id == frame_id;
            ++nack_it) {
       }

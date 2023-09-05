@@ -40,6 +40,7 @@
 #include "core/fxge/cfx_defaultrenderdevice.h"
 #include "core/fxge/cfx_gemodule.h"
 #include "core/fxge/cfx_renderdevice.h"
+#include "core/fxge/dib/cfx_dibitmap.h"
 #include "fpdfsdk/cpdfsdk_customaccess.h"
 #include "fpdfsdk/cpdfsdk_formfillenvironment.h"
 #include "fpdfsdk/cpdfsdk_helpers.h"
@@ -597,8 +598,8 @@ FPDF_EXPORT void FPDF_CALLCONV FPDF_RenderPage(HDC dc,
     if (win_dc.GetDeviceType() == DeviceType::kPrinter) {
       auto pDst = pdfium::MakeRetain<CFX_DIBitmap>();
       if (pDst->Create(size_x, size_y, FXDIB_Format::kRgb32)) {
-        fxcrt::spanset(pDst->GetBuffer().first(pBitmap->GetPitch() * size_y),
-                       -1);
+        fxcrt::spanset(
+            pDst->GetWritableBuffer().first(pBitmap->GetPitch() * size_y), -1);
         pDst->CompositeBitmap(0, 0, size_x, size_y, pBitmap, 0, 0,
                               BlendMode::kNormal, nullptr, false);
         win_dc.StretchDIBits(pDst, 0, 0, size_x, size_y);
@@ -731,8 +732,9 @@ FPDF_EXPORT FPDF_RECORDER FPDF_CALLCONV FPDF_RenderPageSkp(FPDF_PAGE page,
                                                            int size_x,
                                                            int size_y) {
   auto skDevice = std::make_unique<CFX_DefaultRenderDevice>();
-  std::unique_ptr<SkPictureRecorder> recorder =
-      skDevice->CreateRecorder(SkRect::MakeWH(size_x, size_y));
+  auto recorder = std::make_unique<SkPictureRecorder>();
+  recorder->beginRecording(SkRect::MakeWH(size_x, size_y));
+  skDevice->AttachCanvas(recorder->getRecordingCanvas());
 
   CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
   if (!pPage) {
@@ -919,7 +921,7 @@ FPDF_EXPORT void FPDF_CALLCONV FPDFBitmap_FillRect(FPDF_BITMAP bitmap,
 }
 
 FPDF_EXPORT void* FPDF_CALLCONV FPDFBitmap_GetBuffer(FPDF_BITMAP bitmap) {
-  return bitmap ? CFXDIBitmapFromFPDFBitmap(bitmap)->GetBuffer().data()
+  return bitmap ? CFXDIBitmapFromFPDFBitmap(bitmap)->GetWritableBuffer().data()
                 : nullptr;
 }
 

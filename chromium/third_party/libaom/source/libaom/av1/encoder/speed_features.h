@@ -35,6 +35,11 @@ enum {
   GM_FULL_SEARCH,
   GM_REDUCED_REF_SEARCH_SKIP_L2_L3,
   GM_REDUCED_REF_SEARCH_SKIP_L2_L3_ARF2,
+
+  // Same as GM_REDUCED_REF_SEARCH_SKIP_L2_L3_ARF2 but with extra filtering
+  // to keep at most two ref frames
+  GM_SEARCH_CLOSEST_REFS_ONLY,
+
   GM_DISABLE_SEARCH
 } UENUM1BYTE(GM_SEARCH_TYPE);
 
@@ -234,6 +239,16 @@ enum {
   PRUNE_NEARMV_MAX = PRUNE_NEARMV_LEVEL3,
 } UENUM1BYTE(PRUNE_NEARMV_LEVEL);
 
+enum {
+  // Default Transform search case - used in evaluation of compound type mode
+  // and best inter candidates
+  TX_SEARCH_DEFAULT = 0,
+  // Transform search in motion mode rd
+  TX_SEARCH_MOTION_MODE,
+  // All transform search cases
+  TX_SEARCH_CASES
+} UENUM1BYTE(TX_SEARCH_CASE);
+
 typedef struct {
   TX_TYPE_PRUNE_MODE prune_2d_txfm_mode;
   int fast_intra_tx_type_search;
@@ -432,10 +447,10 @@ typedef struct HIGH_LEVEL_SPEED_FEATURES {
   int second_alt_ref_filtering;
 
   /*!
-   * Number of frames to be used in temporal filtering controlled based on noise
-   * levels and arf-q.
+   * The number of frames to be used during temporal filtering of an ARF frame
+   * is adjusted based on noise level of the current frame.
    */
-  int num_frames_used_in_tf;
+  int adjust_num_frames_for_arf_filtering;
 
   /*!
    * Decide the bit estimation approach used in qindex decision.
@@ -808,7 +823,16 @@ typedef struct MV_SPEED_FEATURES {
   int full_pixel_search_level;
 
   // Whether to downsample the rows in sad calculation during motion search.
-  // This is only active when there are at least 16 rows.
+  // This is only active when there are at least 16 rows. When this sf is
+  // active, if there is a large discrepancy in the SAD values for the final
+  // motion vector between skipping vs not skipping, motion search is redone
+  // with skip row features off.
+  // 0: Disabled (do not downsample rows)
+  // 1: Skip SAD calculation of odd rows if the SAD deviation of the even and
+  //    odd rows for the starting MV is small. Redo motion search with sf off
+  //    when SAD deviation is high for the final motion vector.
+  // 2: Skip SAD calculation of odd rows. SAD deviation is not tested for the
+  //    start MV and tested only for the final MV.
   int use_downsampled_sad;
 
   // Enable/disable extensive joint motion search.
@@ -821,6 +845,9 @@ typedef struct MV_SPEED_FEATURES {
   int disable_second_mv;
 
   // Skips full pixel search based on start mv of prior ref_mv_idx.
+  // 0: Disabled
+  // 1: Skips the full pixel search upto 4 neighbor full-pel MV positions.
+  // 2: Skips the full pixel search upto 8 neighbor full-pel MV positions.
   int skip_fullpel_search_using_startmv;
 
   // Method to use for refining WARPED_CAUSAL motion vectors
@@ -840,8 +867,11 @@ typedef struct INTER_MODE_SPEED_FEATURES {
   // 2: used with static rd model
   int inter_mode_rd_model_estimation;
 
-  // Bypass transform search based on skip rd
-  int txfm_rd_gate_level;
+  // Bypass transform search based on skip rd at following stages
+  //   i. Compound type mode search
+  //  ii. Motion mode search (mode evaluation and winner motion mode stage)
+  // iii. Transform search for best inter candidates
+  int txfm_rd_gate_level[TX_SEARCH_CASES];
 
   // Limit the inter mode tested in the RD loop
   int reduce_inter_modes;
@@ -954,14 +984,9 @@ typedef struct INTER_MODE_SPEED_FEATURES {
   int prune_comp_using_best_single_mode_ref;
 
   // Skip NEARESTMV and NEARMV using weight computed in ref mv list population
-  // This speed feature sometimes leads to severe visual artifacts for
-  // the overlay frame. It makes inter RD mode search skip NEARESTMV
-  // and NEARMV, and no valid inter mode is evaluated when the NEWMV mode
-  // is also early terminated due to the constraint that it does not handle
-  // zero mv difference. In this cases, intra modes will be chosen, leading
-  // to bad prediction and flickering artifacts.
-  // Turn off this feature for now. Be careful to check visual quality if
-  // anyone is going to turn it on.
+  //
+  // Pruning is enabled only when both the top and left neighbor blocks are
+  // available and when the current block already has a valid inter prediction.
   int prune_nearest_near_mv_using_refmv_weight;
 
   // Based on previous ref_mv_idx search result, prune the following search.
@@ -1432,8 +1457,14 @@ typedef struct LOOP_FILTER_SPEED_FEATURES {
   // Reduce the wiener filter win size for luma
   int reduce_wiener_window_size;
 
-  // Disable loop restoration filter
-  int disable_lr_filter;
+  // Flag to disable Wiener Loop restoration filter.
+  bool disable_wiener_filter;
+
+  // Flag to disable Self-guided Loop restoration filter.
+  bool disable_sgr_filter;
+
+  // Disable the refinement search around the wiener filter coefficients.
+  bool disable_wiener_coeff_refine_search;
 
   // Whether to downsample the rows in computation of wiener stats.
   int use_downsampled_wiener_stats;

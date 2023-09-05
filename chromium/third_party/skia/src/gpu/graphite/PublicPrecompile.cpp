@@ -33,7 +33,8 @@ void compile(const RendererProvider* rendererProvider,
              UniquePaintParamsID uniqueID,
              DrawTypeFlags drawTypes,
              SkSpan<RenderPassDesc> renderPassDescs,
-             bool withPrimitiveBlender) {
+             bool withPrimitiveBlender,
+             bool withCoverage) {
     for (const Renderer* r : rendererProvider->renderers()) {
         if (!(r->drawTypes() & drawTypes)) {
             continue;
@@ -41,6 +42,12 @@ void compile(const RendererProvider* rendererProvider,
 
         if (r->emitsPrimitiveColor() != withPrimitiveBlender) {
             // UniqueIDs are explicitly built either w/ or w/o primitiveBlending so must
+            // match what the Renderer requires
+            continue;
+        }
+
+        if (r->emitsCoverage() != withCoverage) {
+            // For now, UniqueIDs are explicitly built either w/ or w/o coverage so must
             // match what the Renderer requires
             continue;
         }
@@ -78,7 +85,7 @@ void Precompile(Context* context, const PaintOptions& options, DrawTypeFlags dra
     auto rtEffectDict = std::make_unique<RuntimeEffectDictionary>();
 
     SkColorInfo ci(kRGBA_8888_SkColorType, kPremul_SkAlphaType, nullptr);
-    KeyContext keyContext(dict, rtEffectDict.get(), ci);
+    KeyContext keyContext(caps, dict, rtEffectDict.get(), ci, /* dstTexture= */ nullptr);
 
     // TODO: we need iterate over a broader set of TextureInfos here. Perhaps, allow the client
     // to pass in colorType, mipmapping and protection.
@@ -126,28 +133,34 @@ void Precompile(Context* context, const PaintOptions& options, DrawTypeFlags dra
                              caps->getWriteSwizzle(ci.colorType(), info)),
     };
 
-    options.priv().buildCombinations(
-        keyContext,
-        /* addPrimitiveBlender= */ false,
-         [&](UniquePaintParamsID uniqueID) {
-             compile(context->priv().rendererProvider(),
-                     context->priv().resourceProvider(),
-                     keyContext, uniqueID,
-                     static_cast<DrawTypeFlags>(drawTypes & ~DrawTypeFlags::kDrawVertices),
-                     renderPassDescs, /* withPrimitiveBlender= */ false);
-         });
-
-    if (drawTypes & DrawTypeFlags::kDrawVertices) {
+    for (bool withCoverage : {true, false}) {
         options.priv().buildCombinations(
             keyContext,
-            /* addPrimitiveBlender= */ true,
-            [&](UniquePaintParamsID uniqueID) {
-                compile(context->priv().rendererProvider(),
-                        context->priv().resourceProvider(),
-                        keyContext, uniqueID,
-                        DrawTypeFlags::kDrawVertices,
-                        renderPassDescs, /* withPrimitiveBlender= */ true);
-            });
+            /* addPrimitiveBlender= */ false,
+            withCoverage,
+             [&](UniquePaintParamsID uniqueID) {
+                 compile(context->priv().rendererProvider(),
+                         context->priv().resourceProvider(),
+                         keyContext, uniqueID,
+                         static_cast<DrawTypeFlags>(drawTypes & ~DrawTypeFlags::kDrawVertices),
+                         renderPassDescs, /* withPrimitiveBlender= */ false, withCoverage);
+             });
+    }
+
+    if (drawTypes & DrawTypeFlags::kDrawVertices) {
+        for (bool withCoverage : {true, false}) {
+            options.priv().buildCombinations(
+                keyContext,
+                /* addPrimitiveBlender= */ true,
+                withCoverage,
+                [&](UniquePaintParamsID uniqueID) {
+                    compile(context->priv().rendererProvider(),
+                            context->priv().resourceProvider(),
+                            keyContext, uniqueID,
+                            DrawTypeFlags::kDrawVertices,
+                            renderPassDescs, /* withPrimitiveBlender= */ true, withCoverage);
+                });
+        }
     }
 }
 

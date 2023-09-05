@@ -8,10 +8,13 @@
 #include "include/gpu/GrBackendSurface.h"
 
 #include "include/core/SkTextureCompressionType.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkTo.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/gpu/MutableTextureStateRef.h"
 
 #if defined(SK_GL)
+#include "src/gpu/ganesh/gl/GrGLDefines.h"
 #include "src/gpu/ganesh/gl/GrGLUtil.h"
 #endif
 
@@ -23,10 +26,12 @@
 
 #ifdef SK_VULKAN
 #include "include/gpu/vk/GrVkTypes.h"
-#include "src/gpu/ganesh/vk/GrVkImageLayout.h"
 #include "src/gpu/ganesh/vk/GrVkUtil.h"
 #include "src/gpu/vk/VulkanUtilsPriv.h"
+
+#include <utility>
 #endif
+
 #ifdef SK_METAL
 #include "include/gpu/mtl/GrMtlTypes.h"
 #include "src/gpu/ganesh/mtl/GrMtlCppUtil.h"
@@ -36,6 +41,11 @@
 #include "src/gpu/ganesh/d3d/GrD3DResourceState.h"
 #include "src/gpu/ganesh/d3d/GrD3DUtil.h"
 #endif
+
+#include <algorithm>
+#include <new>
+
+namespace skgpu { class MutableTextureState; }
 
 GrBackendFormat::GrBackendFormat(const GrBackendFormat& that)
         : fBackend(that.fBackend)
@@ -400,14 +410,6 @@ bool GrBackendFormat::operator==(const GrBackendFormat& that) const {
 
 #if defined(SK_DEBUG) || GR_TEST_UTILS
 #include "include/core/SkString.h"
-
-#ifdef SK_GL
-#include "src/gpu/ganesh/gl/GrGLUtil.h"
-#endif
-#ifdef SK_VULKAN
-#include "src/gpu/ganesh/vk/GrVkUtil.h"
-#include "src/gpu/vk/VulkanUtilsPriv.h"
-#endif
 
 SkString GrBackendFormat::toStr() const {
     SkString str;
@@ -776,7 +778,8 @@ bool GrBackendTexture::getGLTextureInfo(GrGLTextureInfo* outInfo) const {
         // If that code ever goes away (or ideally becomes backend-agnostic), this can go away.
         *outInfo = GrGLTextureInfo{ GR_GL_TEXTURE_2D,
                                     static_cast<GrGLuint>(fMockInfo.id()),
-                                    GR_GL_RGBA8 };
+                                    GR_GL_RGBA8,
+                                    GrProtected(fMockInfo.isProtected()) };
         return true;
     }
     return false;
@@ -805,11 +808,20 @@ bool GrBackendTexture::isProtected() const {
     if (!this->isValid()) {
         return false;
     }
+#ifdef SK_GL
+    if (this->backend() == GrBackendApi::kOpenGL) {
+        return fGLInfo.isProtected();
+    }
+#endif
 #ifdef SK_VULKAN
     if (this->backend() == GrBackendApi::kVulkan) {
         return fVkInfo.isProtected();
     }
 #endif
+    if (this->backend() == GrBackendApi::kMock) {
+        return fMockInfo.isProtected();
+    }
+
     return false;
 }
 
@@ -1278,14 +1290,24 @@ void GrBackendRenderTarget::setMutableState(const skgpu::MutableTextureState& st
 }
 
 bool GrBackendRenderTarget::isProtected() const {
-    if (!this->isValid() || this->backend() != GrBackendApi::kVulkan) {
+    if (!this->isValid()) {
         return false;
     }
-#ifdef SK_VULKAN
-    return fVkInfo.isProtected();
-#else
-    return false;
+#ifdef SK_GL
+    if (this->backend() == GrBackendApi::kOpenGL) {
+        return fGLInfo.isProtected();
+    }
 #endif
+#ifdef SK_VULKAN
+    if (this->backend() == GrBackendApi::kVulkan) {
+        return fVkInfo.isProtected();
+    }
+#endif
+    if (this->backend() == GrBackendApi::kMock) {
+        return fMockInfo.isProtected();
+    }
+
+    return false;
 }
 
 #if GR_TEST_UTILS

@@ -29,11 +29,6 @@
 #include <sys/select.h>
 #endif
 
-#if defined(_WIN32)
-// WinSock2.h must be included *BEFORE* windows.h
-#include <winsock2.h>
-#endif  // _WIN32
-
 #include <assert.h>
 #include <string.h>
 #include <stdbool.h>
@@ -76,7 +71,9 @@
 
 #include "stack_allocation.h"
 
-#if defined(__GNUC__) && __GNUC__ >= 4
+#if defined(BUILD_STATIC_LOADER)
+#define LOADER_EXPORT
+#elif defined(__GNUC__) && __GNUC__ >= 4
 #define LOADER_EXPORT __attribute__((visibility("default")))
 #elif defined(__SUNPRO_C) && (__SUNPRO_C >= 0x590)
 #define LOADER_EXPORT __attribute__((visibility("default")))
@@ -113,6 +110,9 @@
 // Override layer information
 #define VK_OVERRIDE_LAYER_NAME "VK_LAYER_LUNARG_override"
 
+// Loader Settings filename
+#define VK_LOADER_SETTINGS_FILENAME "vk_loader_settings.json"
+
 #define LAYERS_PATH_ENV "VK_LAYER_PATH"
 #define ENABLED_LAYERS_ENV "VK_INSTANCE_LAYERS"
 
@@ -137,9 +137,9 @@
 #define VK_ILAYERS_INFO_RELATIVE_DIR VULKAN_DIR VULKAN_ILAYERCONF_DIR
 
 #define VK_DRIVERS_INFO_REGISTRY_LOC ""
-#define VK_SETTINGS_INFO_REGISTRY_LOC ""
 #define VK_ELAYERS_INFO_REGISTRY_LOC ""
 #define VK_ILAYERS_INFO_REGISTRY_LOC ""
+#define VK_SETTINGS_INFO_REGISTRY_LOC ""
 
 #if defined(__QNXNTO__)
 #define SYSCONFDIR "/etc"
@@ -183,9 +183,9 @@ typedef pthread_cond_t loader_platform_thread_cond;
 #define HKR_VK_DRIVER_NAME API_NAME "DriverNameWow"
 #endif
 #define VK_DRIVERS_INFO_REGISTRY_LOC "SOFTWARE\\Khronos\\" API_NAME "\\Drivers"
-#define VK_SETTINGS_INFO_REGISTRY_LOC "SOFTWARE\\Khronos\\" API_NAME "\\Settings"
 #define VK_ELAYERS_INFO_REGISTRY_LOC "SOFTWARE\\Khronos\\" API_NAME "\\ExplicitLayers"
 #define VK_ILAYERS_INFO_REGISTRY_LOC "SOFTWARE\\Khronos\\" API_NAME "\\ImplicitLayers"
+#define VK_SETTINGS_INFO_REGISTRY_LOC "SOFTWARE\\Khronos\\" API_NAME "\\LoaderSettings"
 
 #define PRINTF_SIZE_T_SPECIFIER "%Iu"
 
@@ -335,14 +335,6 @@ static inline char *loader_platform_executable_path(char *buffer, size_t size) {
 #define LOADER_ADDRESS_SANITIZER_ACTIVE  // TODO: Add proper build flag for ASAN support
 #endif
 
-// We should always unload dynamic libraries in loader_platform_close_library() unless both Address Sanitizer is active and
-// LOADER_DISABLE_DYNAMIC_LIBRARY_UNLOADING is set
-#if defined(LOADER_ADDRESS_SANITIZER_ACTIVE) && defined(LOADER_DISABLE_DYNAMIC_LIBRARY_UNLOADING)
-#define SHOULD_UNLOAD_DYNAMIC_LIBRARIES 0
-#else
-#define SHOULD_UNLOAD_DYNAMIC_LIBRARIES 1
-#endif
-
 // When loading the library, we use RTLD_LAZY so that not all symbols have to be
 // resolved at this time (which improves performance). Note that if not all symbols
 // can be resolved, this could cause crashes later. Use the LD_BIND_NOW environment
@@ -363,6 +355,7 @@ static inline loader_platform_dl_handle loader_platform_open_library(const char 
 #endif
 
 static inline const char *loader_platform_open_library_error(const char *libPath) {
+    (void)libPath;
 #if defined(__Fuchsia__)
     return dlerror_fuchsia();
 #else
@@ -370,8 +363,10 @@ static inline const char *loader_platform_open_library_error(const char *libPath
 #endif
 }
 static inline void loader_platform_close_library(loader_platform_dl_handle library) {
-// We only want to remove dlclose if both Asan is active and LOADER_DISABLE_DYNAMIC_LIBRARY_UNLOADING is set
-#if SHOULD_UNLOAD_DYNAMIC_LIBRARIES == 1
+#if defined(LOADER_DISABLE_DYNAMIC_LIBRARY_UNLOADING)
+    (void)library;
+    return;
+#else
     dlclose(library);
 #endif
 }
@@ -380,13 +375,18 @@ static inline void *loader_platform_get_proc_address(loader_platform_dl_handle l
     assert(name);
     return dlsym(library, name);
 }
-static inline const char *loader_platform_get_proc_address_error(const char *name) { return dlerror(); }
+static inline const char *loader_platform_get_proc_address_error(const char *name) {
+    (void)name;
+    return dlerror();
+}
 
 // Thread mutex:
 static inline void loader_platform_thread_create_mutex(loader_platform_thread_mutex *pMutex) { pthread_mutex_init(pMutex, NULL); }
 static inline void loader_platform_thread_lock_mutex(loader_platform_thread_mutex *pMutex) { pthread_mutex_lock(pMutex); }
 static inline void loader_platform_thread_unlock_mutex(loader_platform_thread_mutex *pMutex) { pthread_mutex_unlock(pMutex); }
 static inline void loader_platform_thread_delete_mutex(loader_platform_thread_mutex *pMutex) { pthread_mutex_destroy(pMutex); }
+
+static inline void *thread_safe_strtok(char *str, const char *delim, char **saveptr) { return strtok_r(str, delim, saveptr); }
 
 #elif defined(_WIN32)
 
@@ -430,7 +430,7 @@ static inline const wchar_t *LoaderPnpILayerRegistryWide() {
 }
 
 // File IO
-static bool loader_platform_file_exists(const char *path) {
+static inline bool loader_platform_file_exists(const char *path) {
     int path_utf16_size = MultiByteToWideChar(CP_UTF8, 0, path, -1, NULL, 0);
     if (path_utf16_size <= 0) {
         return false;
@@ -447,7 +447,7 @@ static bool loader_platform_file_exists(const char *path) {
 
 // Returns true if the given string appears to be a relative or absolute
 // path, as opposed to a bare filename.
-static bool loader_platform_is_path_absolute(const char *path) {
+static inline bool loader_platform_is_path_absolute(const char *path) {
     if (!path || !*path) {
         return false;
     }
@@ -496,7 +496,7 @@ static inline char *loader_platform_executable_path(char *buffer, size_t size) {
 }
 
 // Dynamic Loading:
-static loader_platform_dl_handle loader_platform_open_library(const char *lib_path) {
+static inline loader_platform_dl_handle loader_platform_open_library(const char *lib_path) {
     int lib_path_utf16_size = MultiByteToWideChar(CP_UTF8, 0, lib_path, -1, NULL, 0);
     if (lib_path_utf16_size <= 0) {
         return NULL;
@@ -513,28 +513,39 @@ static loader_platform_dl_handle loader_platform_open_library(const char *lib_pa
     }
     return lib_handle;
 }
-static const char *loader_platform_open_library_error(const char *libPath) {
+static inline const char *loader_platform_open_library_error(const char *libPath) {
     static char errorMsg[512];
     (void)snprintf(errorMsg, 511, "Failed to open dynamic library \"%s\" with error %lu", libPath, GetLastError());
     return errorMsg;
 }
-static void loader_platform_close_library(loader_platform_dl_handle library) { FreeLibrary(library); }
-static void *loader_platform_get_proc_address(loader_platform_dl_handle library, const char *name) {
+static inline void loader_platform_close_library(loader_platform_dl_handle library) {
+#if defined(LOADER_DISABLE_DYNAMIC_LIBRARY_UNLOADING)
+    (void)library;
+    return;
+#else
+    FreeLibrary(library);
+#endif
+}
+static inline void *loader_platform_get_proc_address(loader_platform_dl_handle library, const char *name) {
     assert(library);
     assert(name);
     return (void *)GetProcAddress(library, name);
 }
-static const char *loader_platform_get_proc_address_error(const char *name) {
+static inline const char *loader_platform_get_proc_address_error(const char *name) {
     static char errorMsg[120];
     (void)snprintf(errorMsg, 119, "Failed to find function \"%s\" in dynamic library", name);
     return errorMsg;
 }
 
 // Thread mutex:
-static void loader_platform_thread_create_mutex(loader_platform_thread_mutex *pMutex) { InitializeCriticalSection(pMutex); }
-static void loader_platform_thread_lock_mutex(loader_platform_thread_mutex *pMutex) { EnterCriticalSection(pMutex); }
-static void loader_platform_thread_unlock_mutex(loader_platform_thread_mutex *pMutex) { LeaveCriticalSection(pMutex); }
-static void loader_platform_thread_delete_mutex(loader_platform_thread_mutex *pMutex) { DeleteCriticalSection(pMutex); }
+static inline void loader_platform_thread_create_mutex(loader_platform_thread_mutex *pMutex) { InitializeCriticalSection(pMutex); }
+static inline void loader_platform_thread_lock_mutex(loader_platform_thread_mutex *pMutex) { EnterCriticalSection(pMutex); }
+static inline void loader_platform_thread_unlock_mutex(loader_platform_thread_mutex *pMutex) { LeaveCriticalSection(pMutex); }
+static inline void loader_platform_thread_delete_mutex(loader_platform_thread_mutex *pMutex) { DeleteCriticalSection(pMutex); }
+
+static inline void *thread_safe_strtok(char *str, const char *delimiters, char **context) {
+    return strtok_s(str, delimiters, context);
+}
 
 #else  // defined(_WIN32)
 

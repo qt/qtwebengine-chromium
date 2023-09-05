@@ -373,8 +373,7 @@ export class NetworkNode extends DataGrid.SortableDataGrid.SortableDataGridNode<
   backgroundColor(): string {
     const bgColors = _backgroundColors;
     const hasFocus = document.hasFocus();
-    const isSelected = this.dataGrid &&
-        (this.dataGrid.element === document.activeElement || this.dataGrid.element.contains(document.activeElement));
+    const isSelected = this.dataGrid && this.dataGrid.element === document.activeElement;
     const isFailed = this.isFailed();
 
     if (this.selected && hasFocus && isSelected && isFailed) {
@@ -999,18 +998,6 @@ export class NetworkRequestNode extends NetworkNode {
   override select(supressSelectedEvent?: boolean): void {
     super.select(supressSelectedEvent);
     this.parentView().dispatchEventToListeners(Events.RequestSelected, this.requestInternal);
-    const selectedElement = (this.dataGrid?.selectedNode?.elementInternal?.firstElementChild as HTMLElement);
-    if (selectedElement) {
-      selectedElement.tabIndex = 0;
-    }
-  }
-
-  override deselect(suppressSelectedEvent?: boolean): void {
-    super.deselect(suppressSelectedEvent);
-    const deselectedElement = (this.elementInternal?.firstElementChild as HTMLElement);
-    if (deselectedElement) {
-      deselectedElement.tabIndex = -1;
-    }
   }
 
   highlightMatchedSubstring(regexp: RegExp|null): Object[] {
@@ -1090,7 +1077,6 @@ export class NetworkRequestNode extends NetworkNode {
       iconElement.classList.add('icon');
 
       cell.appendChild(iconElement);
-      cell.tabIndex = this.selected ? 0 : -1;
     }
 
     if (columnId === 'name') {
@@ -1284,6 +1270,13 @@ export class NetworkRequestNode extends NetworkNode {
     }
   }
 
+  #getLinkifierMetric(): Host.UserMetrics.Action|undefined {
+    if (this.requestInternal.resourceType().isStyleSheet()) {
+      return Host.UserMetrics.Action.StyleSheetInitiatorLinkClicked;
+    }
+    return undefined;
+  }
+
   private renderInitiatorCell(cell: HTMLElement): void {
     this.initiatorCell = cell;
     const request = this.requestInternal;
@@ -1301,6 +1294,7 @@ export class NetworkRequestNode extends NetworkNode {
                                                         text: uiSourceCode ? uiSourceCode.displayName() : undefined,
                                                         lineNumber: initiator.lineNumber,
                                                         columnNumber: initiator.columnNumber,
+                                                        userMetric: this.#getLinkifierMetric(),
                                                       } as Components.Linkifier.LinkifyURLOptions)));
         this.appendSubtitle(cell, i18nString(UIStrings.parser));
         break;
@@ -1357,7 +1351,7 @@ export class NetworkRequestNode extends NetworkNode {
           const link = Components.Linkifier.Linkifier.linkifyRevealable(
               initiator.initiatorRequest, icon, undefined, i18nString(UIStrings.selectTheRequestThatTriggered),
               'trailing-link-icon');
-          UI.ARIAUtils.setAccessibleName(link, i18nString(UIStrings.selectTheRequestThatTriggered));
+          UI.ARIAUtils.setLabel(link, i18nString(UIStrings.selectTheRequestThatTriggered));
           cell.appendChild(link);
         }
         break;

@@ -15,6 +15,8 @@ export class Icon extends LitElement {
       :host {
         background-color: currentcolor;
         display: inline-block;
+        height: 100%;
+        width: 100%;
       }
     `;
 

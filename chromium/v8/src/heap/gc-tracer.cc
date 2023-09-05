@@ -18,6 +18,7 @@
 #include "src/heap/heap-inl.h"
 #include "src/heap/heap.h"
 #include "src/heap/incremental-marking.h"
+#include "src/heap/memory-balancer.h"
 #include "src/heap/spaces.h"
 #include "src/logging/counters.h"
 #include "src/logging/metrics.h"
@@ -407,6 +408,26 @@ void GCTracer::UpdateStatistics(GarbageCollector collector) {
     RecordGCSumCounters();
     combined_mark_compact_speed_cache_ = 0.0;
     long_task_stats->gc_full_atomic_wall_clock_duration_us += duration_us;
+    if (v8_flags.memory_balancer) {
+      size_t live_memory = current_.end_object_size;
+      double major_gc_bytes = current_.start_object_size +
+                              heap_->AllocatedExternalMemorySinceMarkCompact() +
+                              current_.incremental_marking_bytes;
+      auto blocked_time_taken =
+          duration + current_.incremental_marking_duration;
+      double major_gc_duration = blocked_time_taken + concurrent_gc_time_;
+      concurrent_gc_time_ = 0;
+      // Incremental gc may cause the difference to decrease, so we need to max.
+      double major_allocation_bytes = std::max<int64_t>(
+          0, current_.start_object_size - previous_.end_object_size +
+                 heap_->AllocatedExternalMemorySinceMarkCompact());
+      double major_allocation_duration =
+          current_.end_time - previous_.end_time - blocked_time_taken;
+      CHECK_GT(major_allocation_duration, 0);
+      heap_->mb_->TracerUpdate(live_memory, major_allocation_bytes,
+                               major_allocation_duration, major_gc_bytes,
+                               major_gc_duration);
+    }
   }
 
   heap_->UpdateTotalGCTime(duration);
@@ -658,6 +679,36 @@ void GCTracer::SampleAllocation(double current_ms,
       old_generation_allocated_bytes;
   embedder_allocation_in_bytes_since_gc_ += embedder_allocated_bytes;
 }
+
+void GCTracer::NotifyMarkingStart() {
+  const double marking_start = MonotonicallyIncreasingTimeInMs();
+  uint16_t result = 1;
+
+  if (last_marking_start_time_) {
+    const double diff_in_seconds =
+        std::round((marking_start - last_marking_start_time_) /
+                   base::Time::kMillisecondsPerSecond);
+
+    if (diff_in_seconds > UINT16_MAX) {
+      result = UINT16_MAX;
+    } else if (diff_in_seconds >= 1) {
+      result = static_cast<uint16_t>(diff_in_seconds);
+    }
+  }
+
+  DCHECK_GT(result, 0);
+  DCHECK_LE(result, UINT16_MAX);
+
+  if (v8_flags.trace_flush_code) {
+    PrintIsolate(heap_->isolate(), "code flushing time: %d second(s)\n",
+                 result);
+  }
+
+  code_flushing_increase_ = result;
+  last_marking_start_time_ = marking_start;
+}
+
+uint16_t GCTracer::CodeFlushingIncrease() { return code_flushing_increase_; }
 
 void GCTracer::AddAllocation(double current_ms) {
   allocation_time_ms_ = current_ms;
@@ -1441,6 +1492,7 @@ void GCTracer::RecordGCSumCounters() {
           .total_duration_ms +
       background_counter_[Scope::MC_BACKGROUND_MARKING].total_duration_ms +
       background_counter_[Scope::MC_BACKGROUND_SWEEPING].total_duration_ms;
+  concurrent_gc_time_ += background_duration;
   const double atomic_marking_duration =
       current_.scopes[Scope::MC_PROLOGUE] + current_.scopes[Scope::MC_MARK];
   const double marking_duration = atomic_marking_duration + incremental_marking;

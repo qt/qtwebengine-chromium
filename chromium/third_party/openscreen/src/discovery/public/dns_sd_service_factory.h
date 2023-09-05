@@ -18,7 +18,7 @@ struct Config;
 class ReportingClient;
 
 SerialDeletePtr<DnsSdService> CreateDnsSdService(
-    TaskRunner* task_runner,
+    TaskRunner& task_runner,
     ReportingClient* reporting_client,
     const Config& config);
 

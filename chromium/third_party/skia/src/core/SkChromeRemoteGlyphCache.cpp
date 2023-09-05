@@ -11,9 +11,9 @@
 #include "include/core/SkFont.h"
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypeface.h"
-#include "include/private/SkChecksum.h"
 #include "include/private/base/SkDebug.h"
 #include "src/base/SkTLazy.h"
+#include "src/core/SkChecksum.h"
 #include "src/core/SkDescriptor.h"
 #include "src/core/SkDevice.h"
 #include "src/core/SkDistanceFieldGen.h"
@@ -44,6 +44,7 @@
 
 #if defined(SK_GANESH)
 #include "include/gpu/GrContextOptions.h"
+#include "include/private/chromium/Slug.h"
 #include "src/gpu/ganesh/GrDrawOpAtlas.h"
 #include "src/text/gpu/SDFTControl.h"
 #include "src/text/gpu/SubRunAllocator.h"
@@ -432,7 +433,7 @@ void RemoteStrike::writeGlyphDrawable(const SkGlyph& glyph, Serializer* serializ
         return;
     }
 
-    sk_sp<SkPicture> picture(drawable->newPictureSnapshot());
+    sk_sp<SkPicture> picture = drawable->makePictureSnapshot();
     sk_sp<SkData> data = picture->serialize();
     serializer->write<uint64_t>(data->size());
     memcpy(serializer->allocate(data->size(), kDrawableAlignment), data->data(), data->size());
@@ -448,12 +449,12 @@ SkGlyphDigest RemoteStrike::digestFor(ActionType actionType, SkPackedGlyphID pac
     SkGlyph* glyph;
     this->ensureScalerContext();
     switch (actionType) {
-        case kPath: {
+        case skglyph::kPath: {
             fPathsToSend.emplace_back(fContext->makeGlyph(packedGlyphID, &fAlloc));
             glyph = &fPathsToSend.back();
             break;
         }
-        case kDrawable: {
+        case skglyph::kDrawable: {
             fDrawablesToSend.emplace_back(fContext->makeGlyph(packedGlyphID, &fAlloc));
             glyph = &fDrawablesToSend.back();
             break;
@@ -774,12 +775,12 @@ protected:
         positionMatrix.preTranslate(glyphRunList.origin().x(), glyphRunList.origin().y());
 
         // Use the SkStrikeServer's strike cache to generate the Slug.
-        return skgpu::ganesh::MakeSlug(this->localToDevice(),
-                                       glyphRunList,
-                                       initialPaint,
-                                       drawingPaint,
-                                       this->strikeDeviceInfo(),
-                                       fStrikeServerImpl);
+        return sktext::gpu::MakeSlug(this->localToDevice(),
+                                     glyphRunList,
+                                     initialPaint,
+                                     drawingPaint,
+                                     this->strikeDeviceInfo(),
+                                     fStrikeServerImpl);
     }
 
 private:
@@ -1094,6 +1095,8 @@ bool SkStrikeClientImpl::readStrikeData(const volatile void* memory, size_t memo
     SkASSERT(memory != nullptr);
 
     SkReadBuffer buffer{const_cast<const void*>(memory), memorySize};
+    // Limit the kinds of effects that appear in a glyph's drawable (crbug.com/1442140):
+    buffer.setAllowSkSL(false);
 
     int curTypeface = 0,
         curStrike = 0;

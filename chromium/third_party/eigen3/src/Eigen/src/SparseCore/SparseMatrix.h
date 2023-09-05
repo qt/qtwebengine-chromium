@@ -368,7 +368,7 @@ class SparseMatrix
           m_innerNonZeros[j] = innerNNZ;
         }
         if(m_outerSize>0)
-          m_outerIndex[m_outerSize] = m_outerIndex[m_outerSize-1] + m_innerNonZeros[m_outerSize-1] + reserveSizes[m_outerSize-1];
+          m_outerIndex[m_outerSize] = m_outerIndex[m_outerSize-1] + m_innerNonZeros[m_outerSize-1] + internal::convert_index<StorageIndex>(reserveSizes[m_outerSize-1]);
         
         m_data.resize(m_outerIndex[m_outerSize]);
       }
@@ -472,7 +472,65 @@ class SparseMatrix
       }
     }
 
-    //---
+    // remove outer vectors j, j+1 ... j+num-1 and resize the matrix
+    void removeOuterVectors(Index j, Index num = 1) {
+      eigen_assert(num >= 0 && j >= 0 && j + num <= m_outerSize && "Invalid parameters");
+
+      const Index newRows = IsRowMajor ? m_outerSize - num : rows();
+      const Index newCols = IsRowMajor ? cols() : m_outerSize - num;
+
+      const Index begin = j + num;
+      const Index end = m_outerSize;
+      const Index target = j;
+
+      // if the removed vectors are not empty, uncompress the matrix
+      if (m_outerIndex[j + num] > m_outerIndex[j]) uncompress();
+
+      // shift m_outerIndex and m_innerNonZeros [num] to the left
+      internal::smart_memmove(m_outerIndex + begin, m_outerIndex + end + 1, m_outerIndex + target);
+      if (!isCompressed())
+        internal::smart_memmove(m_innerNonZeros + begin, m_innerNonZeros + end, m_innerNonZeros + target);
+
+      // if m_outerIndex[0] > 0, shift the data within the first vector while it is easy to do so
+      if (m_outerIndex[0] > StorageIndex(0)) {
+        uncompress();
+        const Index from = internal::convert_index<Index>(m_outerIndex[0]);
+        const Index to = Index(0);
+        const Index chunkSize = internal::convert_index<Index>(m_innerNonZeros[0]);
+        m_data.moveChunk(from, to, chunkSize);
+        m_outerIndex[0] = StorageIndex(0);
+      }
+
+      // truncate the matrix to the smaller size
+      conservativeResize(newRows, newCols);
+    }
+
+    // insert empty outer vectors at indices j, j+1 ... j+num-1 and resize the matrix
+    void insertEmptyOuterVectors(Index j, Index num = 1) {
+      EIGEN_USING_STD(fill_n);
+      eigen_assert(num >= 0 && j >= 0 && j < m_outerSize && "Invalid parameters");
+
+      const Index newRows = IsRowMajor ? m_outerSize + num : rows();
+      const Index newCols = IsRowMajor ? cols() : m_outerSize + num;
+
+      const Index begin = j;
+      const Index end = m_outerSize;
+      const Index target = j + num;
+
+      // expand the matrix to the larger size
+      conservativeResize(newRows, newCols);
+
+      // shift m_outerIndex and m_innerNonZeros [num] to the right
+      internal::smart_memmove(m_outerIndex + begin, m_outerIndex + end + 1, m_outerIndex + target);
+      // m_outerIndex[begin] == m_outerIndex[target], set all indices in this range to same value
+      fill_n(m_outerIndex + begin, num, m_outerIndex[begin]);
+
+      if (!isCompressed()) {
+        internal::smart_memmove(m_innerNonZeros + begin, m_innerNonZeros + end, m_innerNonZeros + target);
+        // set the nonzeros of the newly inserted vectors to 0
+        fill_n(m_innerNonZeros + begin, num, StorageIndex(0));
+      }
+    }
 
     template<typename InputIterators>
     void setFromTriplets(const InputIterators& begin, const InputIterators& end);

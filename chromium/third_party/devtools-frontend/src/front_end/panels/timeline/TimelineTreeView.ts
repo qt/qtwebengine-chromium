@@ -156,7 +156,7 @@ const str_ = i18n.i18n.registerUIStrings('panels/timeline/TimelineTreeView.ts', 
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 export class TimelineTreeView extends UI.Widget.VBox implements UI.SearchableView.Searchable {
   modelInternal: PerformanceModel|null;
-  private track: TimelineModel.TimelineModel.Track|null;
+  #selectedEvents: SDK.TracingModel.CompatibleTraceEvent[]|null;
   private searchResults: TimelineModel.TimelineProfileTree.Node[];
   linkifier!: Components.Linkifier.Linkifier;
   dataGrid!: DataGrid.SortableDataGrid.SortableDataGrid<GridNode>;
@@ -176,12 +176,12 @@ export class TimelineTreeView extends UI.Widget.VBox implements UI.SearchableVie
   private currentResult?: number;
   textFilterUI?: UI.Toolbar.ToolbarInput;
 
-  #traceParseData: TraceEngine.TraceModel.PartialTraceParseDataDuringMigration|null = null;
+  #traceParseData: TraceEngine.Handlers.Migration.PartialTraceData|null = null;
 
   constructor() {
     super();
     this.modelInternal = null;
-    this.track = null;
+    this.#selectedEvents = null;
     this.element.classList.add('timeline-tree-view');
 
     this.searchResults = [];
@@ -199,15 +199,27 @@ export class TimelineTreeView extends UI.Widget.VBox implements UI.SearchableVie
     this.searchableView = searchableView;
   }
 
-  setModel(
+  setModelWithEvents(
       model: PerformanceModel|null,
-      track: TimelineModel.TimelineModel.Track|null,
-      traceParseData: TraceEngine.TraceModel.PartialTraceParseDataDuringMigration|null = null,
+      selectedEvents: SDK.TracingModel.CompatibleTraceEvent[]|null,
+      traceParseData: TraceEngine.Handlers.Migration.PartialTraceData|null = null,
       ): void {
     this.modelInternal = model;
     this.#traceParseData = traceParseData;
-    this.track = track;
+    this.#selectedEvents = selectedEvents;
     this.refreshTree();
+  }
+
+  /**
+   * This method is included only for preventing layout test failures.
+   * TODO(crbug.com/1433692): Port problematic layout tests to unit
+   * tests.
+   */
+  setModel(
+      model: PerformanceModel|null,
+      track: TimelineModel.TimelineModel.Track|null,
+      ): void {
+    this.setModelWithEvents(model, track?.eventsForTreeView() || null);
   }
 
   getToolbarInputAccessiblePlaceHolder(): string {
@@ -218,7 +230,7 @@ export class TimelineTreeView extends UI.Widget.VBox implements UI.SearchableVie
     return this.modelInternal;
   }
 
-  traceParseData(): TraceEngine.TraceModel.PartialTraceParseDataDuringMigration|null {
+  traceParseData(): TraceEngine.Handlers.Migration.PartialTraceData|null {
     return this.#traceParseData;
   }
 
@@ -309,8 +321,8 @@ export class TimelineTreeView extends UI.Widget.VBox implements UI.SearchableVie
     toolbar.appendToolbarItem(textFilterUI);
   }
 
-  modelEvents(): SDK.TracingModel.Event[] {
-    return this.track ? this.track.eventsForTreeView() : [];
+  modelEvents(): SDK.TracingModel.CompatibleTraceEvent[] {
+    return this.#selectedEvents || [];
   }
 
   onHover(_node: TimelineModel.TimelineProfileTree.Node|null): void {
@@ -375,7 +387,8 @@ export class TimelineTreeView extends UI.Widget.VBox implements UI.SearchableVie
     throw new Error('Not Implemented');
   }
 
-  buildTopDownTree(doNotAggregate: boolean, groupIdCallback: ((arg0: SDK.TracingModel.Event) => string)|null):
+  buildTopDownTree(
+      doNotAggregate: boolean, groupIdCallback: ((arg0: SDK.TracingModel.CompatibleTraceEvent) => string)|null):
       TimelineModel.TimelineProfileTree.Node {
     return new TimelineModel.TimelineProfileTree.TopDownRootNode(
         this.modelEvents(), this.filters(), this.startTime, this.endTime, doNotAggregate, groupIdCallback);
@@ -616,7 +629,7 @@ export class GridNode extends DataGrid.SortableDataGrid.SortableDataGridNode<Gri
       }
       const eventStyle = TimelineUIUtils.eventStyle(event);
       const eventCategory = eventStyle.category;
-      UI.ARIAUtils.setAccessibleName(icon, eventCategory.title);
+      UI.ARIAUtils.setLabel(icon, eventCategory.title);
       icon.style.backgroundColor = eventCategory.color;
     }
     return cell;
@@ -630,7 +643,7 @@ export class GridNode extends DataGrid.SortableDataGrid.SortableDataGridNode<Gri
     let showPercents = false;
     let value: number;
     let maxTime: number|undefined;
-    let event: SDK.TracingModel.Event|null;
+    let event: SDK.TracingModel.CompatibleTraceEvent|null;
     switch (columnId) {
       case 'startTime': {
         event = this.profileNode.event;
@@ -638,7 +651,9 @@ export class GridNode extends DataGrid.SortableDataGrid.SortableDataGridNode<Gri
         if (!model) {
           throw new Error('Unable to find model for tree view');
         }
-        value = (event ? event.startTime : 0) - model.timelineModel().minimumRecordTime();
+        const timings = event && SDK.TracingModel.timesForEventInMilliseconds(event);
+        const startTime = timings?.startTime ?? 0;
+        value = startTime - model.timelineModel().minimumRecordTime();
       } break;
       case 'self':
         value = this.profileNode.selfTime;
@@ -699,9 +714,7 @@ export class TreeGridNode extends GridNode {
 const profileNodeToTreeGridNode = new WeakMap<TimelineModel.TimelineProfileTree.Node, TreeGridNode>();
 
 export class AggregatedTimelineTreeView extends TimelineTreeView {
-  // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  protected readonly groupBySetting: Common.Settings.Setting<any>;
+  protected readonly groupBySetting: Common.Settings.Setting<AggregatedTimelineTreeView.GroupBy>;
   private readonly stackView: TimelineStackView;
   private executionContextNamesByOrigin = new Map<Platform.DevToolsPath.UrlString, string>();
 
@@ -715,12 +728,27 @@ export class AggregatedTimelineTreeView extends TimelineTreeView {
     this.stackView.addEventListener(TimelineStackView.Events.SelectionChanged, this.onStackViewSelectionChanged, this);
   }
 
+  setGroupBySettingForTests(groupBy: AggregatedTimelineTreeView.GroupBy): void {
+    this.groupBySetting.set(groupBy);
+  }
+  override setModelWithEvents(
+      model: PerformanceModel|null,
+      selectedEvents: SDK.TracingModel.CompatibleTraceEvent[]|null,
+      traceParseData: TraceEngine.Handlers.Migration.PartialTraceData|null = null,
+      ): void {
+    super.setModelWithEvents(model, selectedEvents, traceParseData);
+  }
+
+  /**
+   * This method is included only for preventing layout test failures.
+   * TODO(crbug.com/1433692): Port problematic layout tests to unit
+   * tests.
+   */
   override setModel(
       model: PerformanceModel|null,
       track: TimelineModel.TimelineModel.Track|null,
-      traceParseData: TraceEngine.TraceModel.PartialTraceParseDataDuringMigration|null = null,
       ): void {
-    super.setModel(model, track, traceParseData);
+    super.setModel(model, track);
   }
 
   override updateContents(selection: TimelineSelection): void {
@@ -866,23 +894,25 @@ export class AggregatedTimelineTreeView extends TimelineTreeView {
     return true;
   }
 
-  protected groupingFunction(groupBy: string): ((arg0: SDK.TracingModel.Event) => string)|null {
+  protected groupingFunction(groupBy: string): ((arg0: SDK.TracingModel.CompatibleTraceEvent) => string)|null {
     const GroupBy = AggregatedTimelineTreeView.GroupBy;
     switch (groupBy) {
       case GroupBy.None:
         return null;
       case GroupBy.EventName:
-        return (event: SDK.TracingModel.Event): string => TimelineUIUtils.eventStyle(event).title;
+        return (event: SDK.TracingModel.CompatibleTraceEvent): string => TimelineUIUtils.eventStyle(event).title;
       case GroupBy.Category:
-        return (event: SDK.TracingModel.Event): string => TimelineUIUtils.eventStyle(event).category.name;
+        return (event: SDK.TracingModel.CompatibleTraceEvent): string =>
+                   TimelineUIUtils.eventStyle(event).category.name;
       case GroupBy.Subdomain:
         return this.domainByEvent.bind(this, false);
       case GroupBy.Domain:
         return this.domainByEvent.bind(this, true);
       case GroupBy.URL:
-        return (event: SDK.TracingModel.Event): string => TimelineModel.TimelineProfileTree.eventURL(event) || '';
+        return (event: SDK.TracingModel.CompatibleTraceEvent): string =>
+                   TimelineModel.TimelineProfileTree.eventURL(event) || '';
       case GroupBy.Frame:
-        return (event: SDK.TracingModel.Event): string =>
+        return (event: SDK.TracingModel.CompatibleTraceEvent): string =>
                    TimelineModel.TimelineModel.EventOnTimelineData.forEvent(event).frameId || '';
       default:
         console.assert(false, `Unexpected aggregation setting: ${groupBy}`);
@@ -890,7 +920,7 @@ export class AggregatedTimelineTreeView extends TimelineTreeView {
     }
   }
 
-  private domainByEvent(groupSubdomains: boolean, event: SDK.TracingModel.Event): string {
+  private domainByEvent(groupSubdomains: boolean, event: SDK.TracingModel.CompatibleTraceEvent): string {
     const url = TimelineModel.TimelineProfileTree.eventURL(event);
     if (!url) {
       return '';

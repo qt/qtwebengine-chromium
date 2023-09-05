@@ -551,6 +551,8 @@ void av1_cyclic_refresh_setup(AV1_COMP *const cpi) {
       cr->sb_index = 0;
       cr->last_sb_index = 0;
       cr->counter_encode_maxq_scene_change = 0;
+      cr->actual_num_seg1_blocks = 0;
+      cr->actual_num_seg2_blocks = 0;
     }
     return;
   } else {

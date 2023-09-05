@@ -60,7 +60,7 @@ class LoopingFileSender final : public SimulatedAudioCapturer::Client,
 
   std::unique_ptr<StreamingVideoEncoder> CreateVideoEncoder(
       const StreamingVideoEncoder::Parameters& params,
-      TaskRunner* task_runner,
+      TaskRunner& task_runner,
       std::unique_ptr<Sender> sender);
 
   // Holds the required injected dependencies (clock, task runner) used for Cast

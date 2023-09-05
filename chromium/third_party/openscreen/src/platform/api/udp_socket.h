@@ -77,7 +77,7 @@ class UdpSocket {
   // TaskRunner and Client must exist for the duration of the created socket's
   // lifetime.
   static ErrorOr<std::unique_ptr<UdpSocket>> Create(
-      TaskRunner* task_runner,
+      TaskRunner& task_runner,
       Client* client,
       const IPEndpoint& local_endpoint);
 

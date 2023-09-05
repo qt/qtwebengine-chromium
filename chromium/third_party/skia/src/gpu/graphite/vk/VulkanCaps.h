@@ -76,6 +76,10 @@ public:
         return fShouldPersistentlyMapCpuToGpuBuffers;
     }
 
+    uint32_t maxVertexAttributes() const {
+        return fMaxVertexAttributes;
+    }
+
 private:
     enum VkVendor {
         kAMD_VkVendor             = 4098,
@@ -104,7 +108,7 @@ private:
 
     const ColorTypeInfo* getColorTypeInfo(SkColorType, const TextureInfo&) const override;
 
-    bool onIsTexturable(const TextureInfo&) const override { return false; }
+    bool onIsTexturable(const TextureInfo&) const override;
 
     bool supportsWritePixels(const TextureInfo&) const override;
     bool supportsReadPixels(const TextureInfo&) const override;
@@ -200,6 +204,8 @@ private:
 
     DepthStencilFormatInfo& getDepthStencilFormatInfo(VkFormat);
     const DepthStencilFormatInfo& getDepthStencilFormatInfo(VkFormat) const;
+
+    uint32_t fMaxVertexAttributes;
 
     // Various bools to define whether certain Vulkan features are supported.
     bool fSupportsMemorylessAttachments = false;

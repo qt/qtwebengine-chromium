@@ -12,6 +12,7 @@
 #include "src/execution/thread-local-top.h"
 #include "src/heap/linear-allocation-area.h"
 #include "src/roots/roots.h"
+#include "src/sandbox/code-pointer-table.h"
 #include "src/sandbox/external-pointer-table.h"
 #include "src/utils/utils.h"
 #include "testing/gtest/include/gtest/gtest_prod.h"  // nogncheck
@@ -53,6 +54,8 @@ class Isolate;
   V(kEmbedderDataOffset, Internals::kNumIsolateDataSlots* kSystemPointerSize, \
     embedder_data)                                                            \
   ISOLATE_DATA_FIELDS_POINTER_COMPRESSION(V)                                  \
+  V(kApiCallbackThunkArgumentOffset, kSystemPointerSize,                      \
+    api_callback_thunk_argument)                                              \
   /* Full tables (arbitrary size, potentially slower access). */              \
   V(kRootsTableOffset, RootsTable::kEntriesCount* kSystemPointerSize,         \
     roots_table)                                                              \
@@ -133,6 +136,9 @@ class IsolateData final {
   Address* builtin_tier0_entry_table() { return builtin_tier0_entry_table_; }
   Address* builtin_tier0_table() { return builtin_tier0_table_; }
   RootsTable& roots() { return roots_table_; }
+  Address api_callback_thunk_argument() const {
+    return api_callback_thunk_argument_;
+  }
   const RootsTable& roots() const { return roots_table_; }
   ExternalReferenceTable* external_reference_table() {
     return &external_reference_table_;
@@ -247,6 +253,10 @@ class IsolateData final {
   ExternalPointerTable external_pointer_table_;
   ExternalPointerTable* shared_external_pointer_table_;
 #endif
+
+  // This is a storage for an additional argument for the Api callback thunk
+  // functions, see InvokeAccessorGetterCallback and InvokeFunctionCallback.
+  Address api_callback_thunk_argument_ = kNullAddress;
 
   RootsTable roots_table_;
   ExternalReferenceTable external_reference_table_;

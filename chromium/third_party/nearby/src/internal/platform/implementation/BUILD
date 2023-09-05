@@ -31,7 +31,7 @@ cc_library(
         "log_message.h",
         "mutex.h",
         "output_file.h",
-        "preferences_repository.h",
+        "preferences_manager.h",
         "scheduled_executor.h",
         "settable_future.h",
         "submittable_executor.h",
@@ -39,6 +39,7 @@ cc_library(
         "timer.h",
     ],
     visibility = [
+        "//connections/implementation/analytics:__subpackages__",
         "//fastpair:__subpackages__",
         "//internal/crypto:__pkg__",
         "//internal/platform:__pkg__",
@@ -57,6 +58,7 @@ cc_library(
         "@com_google_absl//absl/functional:any_invocable",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
+        "@com_google_absl//absl/types:span",
         "@nlohmann_json//:json",
     ],
 )
@@ -81,6 +83,8 @@ cc_library(
     copts = ["-DNO_WEBRTC"],
     visibility = [
         "//connections/implementation:__subpackages__",
+        "//fastpair/internal:__pkg__",
+        "//fastpair/internal/mediums:__pkg__",
         "//internal/network:__subpackages__",
         "//internal/platform:__pkg__",
         "//internal/platform/implementation:__subpackages__",
@@ -93,18 +97,15 @@ cc_library(
         "//internal/platform:uuid",
         "//internal/proto:credential_cc_proto",
         "//internal/proto:local_credential_cc_proto",
+        # TODO: Support WebRTC
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/functional:any_invocable",
+        "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
-    ] + select({
-        "@platforms//cpu:arm": [],
-        "//conditions:default": [
-            # TODO: Support WebRTC
-        ],
-    }),
+    ],
 )
 
 cc_library(

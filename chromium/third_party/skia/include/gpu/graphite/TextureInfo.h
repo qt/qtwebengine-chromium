@@ -8,6 +8,7 @@
 #ifndef skgpu_graphite_TextureInfo_DEFINED
 #define skgpu_graphite_TextureInfo_DEFINED
 
+#include "include/core/SkString.h"
 #include "include/gpu/graphite/GraphiteTypes.h"
 
 #ifdef SK_DAWN
@@ -76,13 +77,7 @@ public:
     Protected isProtected() const { return fProtected; }
 
 #ifdef SK_DAWN
-    bool getDawnTextureInfo(DawnTextureInfo* info) const {
-        if (!this->isValid() || fBackend != BackendApi::kDawn) {
-            return false;
-        }
-        *info = DawnTextureSpecToTextureInfo(fDawnSpec, fSampleCount, fMipmapped);
-        return true;
-    }
+    bool getDawnTextureInfo(DawnTextureInfo* info) const;
 #endif
 
 #ifdef SK_METAL
@@ -104,6 +99,8 @@ public:
         return true;
     }
 #endif
+
+    SkString toString() const;
 
 private:
 #ifdef SK_DAWN
@@ -154,6 +151,7 @@ private:
 #ifdef SK_VULKAN
         VulkanTextureSpec fVkSpec;
 #endif
+        void* fEnsureUnionNonEmpty;
     };
 };
 

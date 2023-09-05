@@ -428,7 +428,7 @@ Controller::Controller(ClockNowFunctionPtr now_function) {
                                               ->GetProtocolConnectionClient()
                                               ->message_demuxer());
   const std::vector<ServiceInfo>& receivers =
-      NetworkServiceManager::Get()->GetMdnsServiceListener()->GetReceivers();
+      NetworkServiceManager::Get()->GetServiceListener()->GetReceivers();
   for (const auto& info : receivers) {
     // TODO(crbug.com/openscreen/33): Replace service_id with endpoint_id when
     // endpoint_id is more than just an IPEndpoint counter and actually relates
@@ -440,12 +440,12 @@ Controller::Controller(ClockNowFunctionPtr now_function) {
   }
   // TODO(btolsch): This is for |receiver_endpoints_|, but this should really be
   // tracked elsewhere so it's available to other protocols as well.
-  NetworkServiceManager::Get()->GetMdnsServiceListener()->AddObserver(this);
+  NetworkServiceManager::Get()->GetServiceListener()->AddObserver(this);
 }
 
 Controller::~Controller() {
   connection_manager_.reset();
-  NetworkServiceManager::Get()->GetMdnsServiceListener()->RemoveObserver(this);
+  NetworkServiceManager::Get()->GetServiceListener()->RemoveObserver(this);
 }
 
 Controller::ReceiverWatch Controller::RegisterReceiverWatch(
@@ -604,7 +604,7 @@ ProtocolConnection* Controller::GetConnectionRequestGroupStream(
   return nullptr;
 }
 
-void Controller::OnError(ServiceListenerError) {}
+void Controller::OnError(Error) {}
 void Controller::OnMetrics(ServiceListener::Metrics) {}
 
 class Controller::TerminationListener final

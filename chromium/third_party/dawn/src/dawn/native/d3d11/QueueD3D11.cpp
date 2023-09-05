@@ -50,6 +50,11 @@ MaybeError Queue::WriteBufferImpl(BufferBase* buffer,
                                   uint64_t bufferOffset,
                                   const void* data,
                                   size_t size) {
+    if (size == 0) {
+        // skip the empty write
+        return {};
+    }
+
     CommandRecordingContext* commandContext = ToBackend(GetDevice())->GetPendingCommandContext();
     return ToBackend(buffer)->Write(commandContext, bufferOffset, data, size);
 }
@@ -76,8 +81,8 @@ MaybeError Queue::WriteTextureImpl(const ImageCopyTexture& destination,
     Texture* texture = ToBackend(destination.texture);
 
     return texture->Write(commandContext, subresources, destination.origin, writeSizePixel,
-                          static_cast<const uint8_t*>(data), dataLayout.bytesPerRow,
-                          dataLayout.rowsPerImage);
+                          static_cast<const uint8_t*>(data) + dataLayout.offset,
+                          dataLayout.bytesPerRow, dataLayout.rowsPerImage);
 }
 
 }  // namespace dawn::native::d3d11

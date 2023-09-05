@@ -13,7 +13,7 @@
 namespace openscreen {
 namespace discovery {
 
-ServiceInstance::ServiceInstance(TaskRunner* task_runner,
+ServiceInstance::ServiceInstance(TaskRunner& task_runner,
                                  ReportingClient* reporting_client,
                                  const Config& config,
                                  const InterfaceInfo& network_info)
@@ -36,7 +36,7 @@ ServiceInstance::ServiceInstance(TaskRunner* task_runner,
 }
 
 ServiceInstance::~ServiceInstance() {
-  OSP_DCHECK(task_runner_->IsRunningOnTaskRunner());
+  OSP_DCHECK(task_runner_.IsRunningOnTaskRunner());
 }
 
 }  // namespace discovery

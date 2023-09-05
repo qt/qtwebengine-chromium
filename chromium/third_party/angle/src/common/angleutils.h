@@ -206,6 +206,7 @@ struct PerfMonitorTriplet
     FN(textureDescriptorSetCacheMisses)            \
     FN(textureDescriptorSetCacheTotalSize)         \
     FN(shaderResourcesDescriptorSetCacheHits)      \
+    FN(deviceMemoryImageAllocationFallbacks)       \
     FN(mutableTexturesUploaded)                    \
     FN(shaderResourcesDescriptorSetCacheMisses)    \
     FN(shaderResourcesDescriptorSetCacheTotalSize) \
@@ -214,7 +215,8 @@ struct PerfMonitorTriplet
     FN(allocateNewBufferBlockCalls)                \
     FN(bufferSuballocationCalls)                   \
     FN(dynamicBufferAllocations)                   \
-    FN(framebufferCacheSize)
+    FN(framebufferCacheSize)                       \
+    FN(pendingSubmissionGarbageObjects)
 
 #define ANGLE_DECLARE_PERF_COUNTER(COUNTER) uint64_t COUNTER;
 
@@ -567,6 +569,22 @@ class MsanScopedDisableInterceptorChecks final : angle::NonCopyable
 #    endif
 #else
 #    define ANGLE_FORMAT_PRINTF(fmt, args)
+#endif
+
+#if defined(__clang__) || (defined(__GNUC__) && defined(__has_attribute))
+#    define ANGLE_HAS_ATTRIBUTE_CONSTRUCTOR (__has_attribute(constructor))
+#    define ANGLE_HAS_ATTRIBUTE_DESTRUCTOR (__has_attribute(destructor))
+#else
+#    define ANGLE_HAS_ATTRIBUTE_CONSTRUCTOR 0
+#    define ANGLE_HAS_ATTRIBUTE_DESTRUCTOR 0
+#endif
+
+#if ANGLE_HAS_ATTRIBUTE_CONSTRUCTOR
+#    define ANGLE_CONSTRUCTOR __attribute__((constructor))
+#endif
+
+#if ANGLE_HAS_ATTRIBUTE_DESTRUCTOR
+#    define ANGLE_DESTRUCTOR __attribute__((destructor))
 #endif
 
 ANGLE_FORMAT_PRINTF(1, 0)

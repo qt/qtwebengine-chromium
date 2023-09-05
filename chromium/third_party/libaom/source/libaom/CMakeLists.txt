@@ -11,7 +11,7 @@
 if(CONFIG_TFLITE)
   cmake_minimum_required(VERSION 3.11)
 else()
-  cmake_minimum_required(VERSION 3.7)
+  cmake_minimum_required(VERSION 3.9)
 endif()
 
 set(AOM_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -59,7 +59,7 @@ endif()
 #
 # We set SO_FILE_VERSION = [c-a].a.r
 set(LT_CURRENT 9)
-set(LT_REVISION 0)
+set(LT_REVISION 1)
 set(LT_AGE 6)
 math(EXPR SO_VERSION "${LT_CURRENT} - ${LT_AGE}")
 set(SO_FILE_VERSION "${SO_VERSION}.${LT_AGE}.${LT_REVISION}")
@@ -273,11 +273,34 @@ if(ENABLE_EXAMPLES)
   set(AOM_LIB_TARGETS ${AOM_LIB_TARGETS} aom_encoder_stats)
 endif()
 
-add_library(aom ${AOM_SOURCES} $<TARGET_OBJECTS:aom_rtcd>)
-if(BUILD_SHARED_LIBS)
-  add_library(aom_static STATIC ${AOM_SOURCES} $<TARGET_OBJECTS:aom_rtcd>)
-  set_target_properties(aom_static PROPERTIES OUTPUT_NAME aom)
+# Xcode generator cannot take a library composed solely of objects. See
+# https://gitlab.kitware.com/cmake/cmake/-/issues/17500
+if(XCODE)
+  set(target_objs_aom ${AOM_SOURCES})
+else()
+  add_library(aom_obj OBJECT ${AOM_SOURCES})
+  set(AOM_LIB_TARGETS ${AOM_LIB_TARGETS} aom_obj)
+  set(target_objs_aom $<TARGET_OBJECTS:aom_obj>)
+endif()
+add_library(aom ${target_objs_aom} $<TARGET_OBJECTS:aom_rtcd>)
 
+if(BUILD_SHARED_LIBS)
+  add_library(aom_static STATIC ${target_objs_aom} $<TARGET_OBJECTS:aom_rtcd>)
+  if(MSVC OR (WIN32 AND NOT MINGW))
+    # Fix race condition on the export library file between the two versions.
+    # Affects MSVC in all three flavors (stock, Clang/CL, LLVM-- the latter sets
+    # MSVC and MINGW both to FALSE).
+    set_target_properties(aom PROPERTIES ARCHIVE_OUTPUT_NAME "aom_shared")
+  endif()
+  # Tests and examples rely on having unexported AV1 symbols visible. This is
+  # not the case on Windows platforms due to enforcement of the module
+  # definition file.
+  set(AOM_LIB aom_static)
+else()
+  set(AOM_LIB aom)
+endif()
+
+if(BUILD_SHARED_LIBS)
   if(NOT MSVC)
     # Extract version string and set VERSION/SOVERSION for the aom target.
     extract_version_string("${AOM_CONFIG_DIR}/config/aom_version.h"
@@ -300,19 +323,19 @@ if(BUILD_SHARED_LIBS)
   endif()
 endif()
 
-if(NOT MSVC AND NOT APPLE)
+if(NOT WIN32 AND NOT APPLE)
   target_link_libraries(aom ${AOM_LIB_LINK_TYPE} m)
   if(BUILD_SHARED_LIBS)
     target_link_libraries(aom_static ${AOM_LIB_LINK_TYPE} m)
   endif()
 endif()
 
-if(CONFIG_AV1_ENCODER AND NOT CONFIG_REALTIME_ONLY AND NOT BUILD_SHARED_LIBS)
+if(CONFIG_AV1_ENCODER AND NOT BUILD_SHARED_LIBS)
   list(APPEND AOM_AV1_RC_SOURCES "${AOM_ROOT}/av1/ratectrl_rtc.h"
               "${AOM_ROOT}/av1/ratectrl_rtc.cc")
   add_library(aom_av1_rc ${AOM_AV1_RC_SOURCES})
   target_link_libraries(aom_av1_rc ${AOM_LIB_LINK_TYPE} aom)
-  if(NOT MSVC AND NOT APPLE)
+  if(NOT WIN32 AND NOT APPLE)
     target_link_libraries(aom_av1_rc ${AOM_LIB_LINK_TYPE} m)
   endif()
   set_target_properties(aom_av1_rc PROPERTIES LINKER_LANGUAGE CXX)
@@ -320,7 +343,7 @@ endif()
 
 # List of object and static library targets.
 set(AOM_LIB_TARGETS ${AOM_LIB_TARGETS} aom_rtcd aom_mem aom_scale aom)
-if(CONFIG_AV1_ENCODER AND NOT CONFIG_REALTIME_ONLY AND NOT BUILD_SHARED_LIBS)
+if(CONFIG_AV1_ENCODER AND NOT BUILD_SHARED_LIBS)
   set(AOM_LIB_TARGETS ${AOM_LIB_TARGETS} aom_av1_rc)
 endif()
 if(BUILD_SHARED_LIBS)
@@ -339,22 +362,19 @@ setup_aom_scale_targets()
 setup_av1_targets()
 
 # Make all library targets depend on aom_rtcd to make sure it builds first.
-foreach(aom_lib ${AOM_LIB_TARGETS})
-  if(NOT "${aom_lib}" STREQUAL "aom_rtcd")
-    add_dependencies(${aom_lib} aom_rtcd)
+foreach(aom_tgt ${AOM_LIB_TARGETS})
+  if(NOT "${aom_tgt}" STREQUAL "aom_rtcd")
+    add_dependencies(${aom_tgt} aom_rtcd)
   endif()
 endforeach()
 
-# Generate C/C++ files containing the function usage_exit(). Users of the
+# Generate a C file containing the function usage_exit(). Users of the
 # aom_common_app_util library must define this function. This is a convenience
 # to allow omission of the function from applications that might want to use
 # other pieces of the util support without defining usage_exit().
 file(WRITE "${AOM_GEN_SRC_DIR}/usage_exit.c"
      "#include <stdlib.h>\n\n#include \"common/tools_common.h\"\n\n"
      "void usage_exit(void) { exit(EXIT_FAILURE); }\n")
-file(WRITE "${AOM_GEN_SRC_DIR}/usage_exit.cc"
-     "#include <stdlib.h>\n\n#include \"common/tools_common.h\"\n\n"
-     "extern \"C\" void usage_exit(void) { exit(EXIT_FAILURE); }\n")
 
 #
 # Application and application support targets.
@@ -447,7 +467,7 @@ endif()
 if(CONFIG_LIBYUV OR CONFIG_TUNE_BUTTERAUGLI)
   add_library(yuv OBJECT ${AOM_LIBYUV_SOURCES})
   if(NOT MSVC)
-    target_compile_options(yuv PRIVATE -Wno-unused-parameter)
+    target_compile_options(yuv PRIVATE -Wno-shadow)
   endif()
   include_directories("${AOM_ROOT}/third_party/libyuv/include")
 endif()
@@ -481,14 +501,18 @@ if(CONFIG_AV1_ENCODER)
                                     $<TARGET_OBJECTS:aom_common_app_util>
                                     $<TARGET_OBJECTS:aom_encoder_app_util>)
 
-    add_executable(svc_encoder_rtc "${AOM_ROOT}/examples/svc_encoder_rtc.c"
-                                   $<TARGET_OBJECTS:aom_common_app_util>
-                                   $<TARGET_OBJECTS:aom_encoder_app_util>)
-
     # Maintain a list of encoder example targets.
     list(APPEND AOM_ENCODER_EXAMPLE_TARGETS aomenc lossless_encoder noise_model
                 photon_noise_table set_maps simple_encoder scalable_encoder
-                twopass_encoder svc_encoder_rtc)
+                twopass_encoder)
+
+    if(NOT BUILD_SHARED_LIBS)
+      add_executable(svc_encoder_rtc "${AOM_ROOT}/examples/svc_encoder_rtc.cc"
+                                     $<TARGET_OBJECTS:aom_common_app_util>
+                                     $<TARGET_OBJECTS:aom_encoder_app_util>)
+      target_link_libraries(svc_encoder_rtc ${AOM_LIB_LINK_TYPE} aom_av1_rc)
+      list(APPEND AOM_ENCODER_EXAMPLE_TARGETS svc_encoder_rtc)
+    endif()
   endif()
 
   if(ENABLE_TOOLS)
@@ -651,7 +675,7 @@ endif()
 
 if(ENABLE_TOOLS)
   if(CONFIG_AV1_DECODER)
-    add_executable(dump_obu "${AOM_GEN_SRC_DIR}/usage_exit.cc"
+    add_executable(dump_obu "${AOM_GEN_SRC_DIR}/usage_exit.c"
                             "${AOM_ROOT}/tools/dump_obu.cc"
                             "${AOM_ROOT}/tools/obu_parser.cc"
                             "${AOM_ROOT}/tools/obu_parser.h"
@@ -713,7 +737,7 @@ if(ENABLE_EXAMPLES AND CONFIG_AV1_ENCODER AND CONFIG_AV1_DECODER)
 endif()
 
 foreach(aom_app ${AOM_APP_TARGETS})
-  target_link_libraries(${aom_app} ${AOM_LIB_LINK_TYPE} aom)
+  target_link_libraries(${aom_app} ${AOM_LIB_LINK_TYPE} ${AOM_LIB})
 endforeach()
 
 if(ENABLE_EXAMPLES OR ENABLE_TESTS OR ENABLE_TOOLS)
@@ -810,7 +834,15 @@ if(ENABLE_EXAMPLES AND "${CMAKE_GENERATOR}" MATCHES "Makefiles$")
 endif()
 
 if(BUILD_SHARED_LIBS)
-  if(NOT WIN32 AND NOT APPLE)
+  # Don't use -Wl,-z,defs with Clang's sanitizers.
+  #
+  # Clang's AddressSanitizer documentation says "When linking shared libraries,
+  # the AddressSanitizer run-time is not linked, so -Wl,-z,defs may cause link
+  # errors (don't use it with AddressSanitizer)." See
+  # https://clang.llvm.org/docs/AddressSanitizer.html#usage.
+  if(NOT WIN32
+     AND NOT APPLE
+     AND NOT (CMAKE_C_COMPILER_ID MATCHES "Clang" AND SANITIZE))
     # The -z defs linker option reports unresolved symbol references from object
     # files when building a shared library.
     if("${CMAKE_VERSION}" VERSION_LESS "3.13")
@@ -921,7 +953,7 @@ endif()
 get_cmake_property(all_cmake_vars VARIABLES)
 foreach(var ${all_cmake_vars})
   if("${var}" MATCHES "SOURCES$\|_INTRIN_\|_ASM_"
-     AND NOT "${var}" MATCHES "_APP_\|DOXYGEN\|LIBWEBM\|LIBYUV\|_PKG_\|TEST")
+     AND NOT "${var}" MATCHES "DOXYGEN\|LIBYUV\|_PKG_\|TEST")
     list(APPEND aom_source_vars ${var})
   endif()
 endforeach()

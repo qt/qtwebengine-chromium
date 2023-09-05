@@ -53,7 +53,7 @@
 #include "internal/platform/implementation/windows/listenable_future.h"
 #include "internal/platform/implementation/windows/log_message.h"
 #include "internal/platform/implementation/windows/mutex.h"
-#include "internal/platform/implementation/windows/preferences_repository.h"
+#include "internal/platform/implementation/windows/preferences_manager.h"
 #include "internal/platform/implementation/windows/scheduled_executor.h"
 #include "internal/platform/implementation/windows/server_sync.h"
 #include "internal/platform/implementation/windows/settable_future.h"
@@ -65,10 +65,6 @@
 #include "internal/platform/implementation/windows/wifi_hotspot.h"
 #include "internal/platform/implementation/windows/wifi_lan.h"
 #include "internal/platform/logging.h"
-
-#ifdef CreateMutex
-#undef CreateMutex
-#endif
 
 namespace nearby {
 namespace api {
@@ -183,9 +179,12 @@ std::unique_ptr<CountDownLatch> ImplementationPlatform::CreateCountDownLatch(
   return absl::make_unique<shared::CountDownLatch>(count);
 }
 
+#pragma push_macro("CreateMutex")
+#undef CreateMutex
 std::unique_ptr<Mutex> ImplementationPlatform::CreateMutex(Mutex::Mode mode) {
   return absl::make_unique<windows::Mutex>(mode);
 }
+#pragma pop_macro("CreateMutex")
 
 std::unique_ptr<ConditionVariable>
 ImplementationPlatform::CreateConditionVariable(Mutex* mutex) {
@@ -302,7 +301,7 @@ ImplementationPlatform::CreateWifiDirectMedium() {
   return nullptr;
 }
 
-// TODO(b/184975123): replace with real implementation.
+// TODO(b/261663238) replace with real implementation.
 std::unique_ptr<WebRtcMedium> ImplementationPlatform::CreateWebRtcMedium() {
   return nullptr;
 }
@@ -321,9 +320,9 @@ std::unique_ptr<DeviceInfo> ImplementationPlatform::CreateDeviceInfo() {
   return std::make_unique<windows::DeviceInfo>();
 }
 
-std::unique_ptr<nearby::api::PreferencesRepository>
-ImplementationPlatform::CreatePreferencesRepository(absl::string_view path) {
-  return std::make_unique<windows::PreferencesRepository>(path);
+std::unique_ptr<nearby::api::PreferencesManager>
+ImplementationPlatform::CreatePreferencesManager(absl::string_view path) {
+  return std::make_unique<windows::PreferencesManager>(path);
 }
 
 }  // namespace api

@@ -21,9 +21,8 @@ namespace osp {
 std::unique_ptr<ServicePublisher> ServicePublisherFactory::Create(
     const ServicePublisher::Config& config,
     ServicePublisher::Observer* observer,
-    TaskRunner* task_runner) {
-  auto dns_sd_client =
-      std::make_unique<DnsSdPublisherClient>(observer, task_runner);
+    TaskRunner& task_runner) {
+  auto dns_sd_client = std::make_unique<DnsSdPublisherClient>(task_runner);
   auto publisher_impl = std::make_unique<ServicePublisherImpl>(
       observer, std::move(dns_sd_client));
   publisher_impl->SetConfig(config);

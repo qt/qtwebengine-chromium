@@ -10,20 +10,16 @@
 
 #include "include/core/SkTypes.h"
 #include "include/private/SkSLDefines.h"
-#include "include/private/base/SkTArray.h"
-#include "src/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLLexer.h"
 #include "src/sksl/SkSLOperator.h"
 #include "src/sksl/SkSLPosition.h"
 #include "src/sksl/SkSLProgramSettings.h"
-#include "src/sksl/dsl/DSLCore.h"
 #include "src/sksl/dsl/DSLExpression.h"
-#include "src/sksl/dsl/DSLLayout.h"
 #include "src/sksl/dsl/DSLModifiers.h"
 #include "src/sksl/dsl/DSLStatement.h"
 #include "src/sksl/dsl/DSLType.h"
+#include "src/sksl/ir/SkSLLayout.h"
 
-#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -33,18 +29,15 @@
 namespace SkSL {
 
 class Compiler;
+class ErrorReporter;
+class Expression;
+class FunctionDeclaration;
 class SymbolTable;
 enum class ProgramKind : int8_t;
 struct Module;
 struct Program;
-
-namespace dsl {
-class DSLBlock;
-class DSLCase;
-class DSLGlobalVar;
-class DSLParameter;
-class DSLVarBase;
-}
+class VarDeclaration;
+class Variable;
 
 /**
  * Consumes .sksl text and invokes DSL functions to instantiate the program.
@@ -64,6 +57,7 @@ public:
 private:
     class AutoDepth;
     class AutoSymbolTable;
+    class Checkpoint;
 
     /**
      * Return the next token, including whitespace tokens, from the parse stream.
@@ -147,17 +141,25 @@ private:
 
     void directive(bool allowVersion);
 
+    void extensionDirective(Position start);
+
+    void versionDirective(Position start, bool allowVersion);
+
     bool declaration();
 
     bool functionDeclarationEnd(Position start,
                                 dsl::DSLModifiers& modifiers,
-                                dsl::DSLType type,
+                                dsl::DSLType returnType,
                                 const Token& name);
+
+    bool prototypeFunction(SkSL::FunctionDeclaration* decl);
+
+    bool defineFunction(SkSL::FunctionDeclaration* decl);
 
     struct VarDeclarationsPrefix {
         Position fPosition;
         dsl::DSLModifiers fModifiers;
-        dsl::DSLType fType = dsl::DSLType(dsl::kVoid_Type);
+        dsl::DSLType fType = dsl::DSLType::Void();
         Token fName;
     };
 
@@ -169,8 +171,7 @@ private:
 
     dsl::DSLType structDeclaration();
 
-    skia_private::TArray<dsl::DSLGlobalVar> structVarDeclaration(
-            Position start, const dsl::DSLModifiers& modifiers);
+    void structVarDeclaration(Position start, const dsl::DSLModifiers& modifiers);
 
     bool allowUnsizedArrays() {
         return ProgramConfig::IsCompute(fKind) || ProgramConfig::IsFragment(fKind) ||
@@ -181,19 +182,23 @@ private:
 
     bool parseInitializer(Position pos, dsl::DSLExpression* initializer);
 
+    void addGlobalVarDeclaration(std::unique_ptr<SkSL::VarDeclaration> decl);
+
     void globalVarDeclarationEnd(Position position, const dsl::DSLModifiers& mods,
-            dsl::DSLType baseType, Token name);
+                                 dsl::DSLType baseType, Token name);
 
     dsl::DSLStatement localVarDeclarationEnd(Position position, const dsl::DSLModifiers& mods,
-            dsl::DSLType baseType, Token name);
+                                             dsl::DSLType baseType, Token name);
 
-    std::optional<dsl::DSLParameter> parameter(size_t paramIndex);
+    bool modifiersDeclarationEnd(const dsl::DSLModifiers& mods);
+
+    bool parameter(std::unique_ptr<SkSL::Variable>* outParam);
 
     int layoutInt();
 
     std::string_view layoutIdentifier();
 
-    dsl::DSLLayout layout();
+    SkSL::Layout layout();
 
     dsl::DSLModifiers modifiers();
 
@@ -211,7 +216,11 @@ private:
 
     dsl::DSLStatement forStatement();
 
-    std::optional<dsl::DSLCase> switchCase();
+    bool switchCaseBody(ExpressionArray* values,
+                        StatementArray* caseBlocks,
+                        std::unique_ptr<Expression> value);
+
+    bool switchCase(ExpressionArray* values, StatementArray* caseBlocks);
 
     dsl::DSLStatement switchStatement();
 
@@ -223,13 +232,13 @@ private:
 
     dsl::DSLStatement discardStatement();
 
-    std::optional<dsl::DSLBlock> block();
+    std::optional<dsl::DSLStatement> block();
 
     dsl::DSLStatement expressionStatement();
 
     using BinaryParseFn = dsl::DSLExpression (Parser::*)();
     bool SK_WARN_UNUSED_RESULT operatorRight(AutoDepth& depth, Operator::Kind op,
-                                             BinaryParseFn rightFn, dsl::DSLExpression& result);
+                                             BinaryParseFn rightFn, dsl::DSLExpression& expr);
 
     dsl::DSLExpression expression();
 
@@ -264,7 +273,7 @@ private:
     dsl::DSLExpression postfixExpression();
 
     dsl::DSLExpression swizzle(Position pos, dsl::DSLExpression base,
-            std::string_view swizzleMask, Position maskPos);
+                               std::string_view swizzleMask, Position maskPos);
 
     dsl::DSLExpression call(Position pos, dsl::DSLExpression base, ExpressionArray args);
 
@@ -281,75 +290,6 @@ private:
     bool identifier(std::string_view* dest);
 
     std::shared_ptr<SymbolTable>& symbolTable();
-
-    void addToSymbolTable(dsl::DSLVarBase& var, Position pos = {});
-
-    class Checkpoint {
-    public:
-        Checkpoint(Parser* p) : fParser(p) {
-            fPushbackCheckpoint = fParser->fPushback;
-            fLexerCheckpoint = fParser->fLexer.getCheckpoint();
-            fOldErrorReporter = &dsl::GetErrorReporter();
-            fOldEncounteredFatalError = fParser->fEncounteredFatalError;
-            SkASSERT(fOldErrorReporter);
-            dsl::SetErrorReporter(&fErrorReporter);
-        }
-
-        ~Checkpoint() {
-            SkASSERTF(!fOldErrorReporter,
-                      "Checkpoint was not accepted or rewound before destruction");
-        }
-
-        void accept() {
-            this->restoreErrorReporter();
-            // Parser errors should have been fatal, but we can encounter other errors like type
-            // mismatches despite accepting the parse. Forward those messages to the actual error
-            // handler now.
-            fErrorReporter.forwardErrors();
-        }
-
-        void rewind() {
-            this->restoreErrorReporter();
-            fParser->fPushback = fPushbackCheckpoint;
-            fParser->fLexer.rewindToCheckpoint(fLexerCheckpoint);
-            fParser->fEncounteredFatalError = fOldEncounteredFatalError;
-        }
-
-    private:
-        class ForwardingErrorReporter : public ErrorReporter {
-        public:
-            void handleError(std::string_view msg, Position pos) override {
-                fErrors.push_back({std::string(msg), pos});
-            }
-
-            void forwardErrors() {
-                for (Error& error : fErrors) {
-                    dsl::GetErrorReporter().error(error.fPos, error.fMsg);
-                }
-            }
-
-        private:
-            struct Error {
-                std::string fMsg;
-                Position fPos;
-            };
-
-            skia_private::TArray<Error> fErrors;
-        };
-
-        void restoreErrorReporter() {
-            SkASSERT(fOldErrorReporter);
-            dsl::SetErrorReporter(fOldErrorReporter);
-            fOldErrorReporter = nullptr;
-        }
-
-        Parser* fParser;
-        Token fPushbackCheckpoint;
-        SkSL::Lexer::Checkpoint fLexerCheckpoint;
-        ForwardingErrorReporter fErrorReporter;
-        ErrorReporter* fOldErrorReporter;
-        bool fOldEncounteredFatalError;
-    };
 
     Compiler& fCompiler;
     ProgramSettings fSettings;

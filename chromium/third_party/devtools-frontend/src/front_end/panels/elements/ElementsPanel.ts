@@ -57,7 +57,6 @@ import {ElementsTreeElementHighlighter} from './ElementsTreeElementHighlighter.j
 import {ElementsTreeOutline} from './ElementsTreeOutline.js';
 import {type MarkerDecorator} from './MarkerDecorator.js';
 import {MetricsSidebarPane} from './MetricsSidebarPane.js';
-import {LayoutSidebarPane} from './LayoutSidebarPane.js';
 import {
   Events as StylesSidebarPaneEvents,
   StylesSidebarPane,
@@ -242,7 +241,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     stackElement.appendChild(crumbsContainer);
 
     UI.ARIAUtils.markAsMain(this.domTreeContainer);
-    UI.ARIAUtils.setAccessibleName(this.domTreeContainer, i18nString(UIStrings.domTreeExplorer));
+    UI.ARIAUtils.setLabel(this.domTreeContainer, i18nString(UIStrings.domTreeExplorer));
 
     this.splitWidget.setMainWidget(this.searchableViewInternal);
     this.splitMode = null;
@@ -551,7 +550,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
   }
 
   private documentUpdated(domModel: SDK.DOMModel.DOMModel): void {
-    this.searchableViewInternal.resetSearch();
+    this.searchableViewInternal.cancelSearch();
 
     if (!domModel.existingDocument()) {
       if (this.isShowing()) {
@@ -1030,7 +1029,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
       if (skippedInitialTabSelectedEvent) {
         // We don't log the initially selected sidebar pane to UMA because
         // it will skew the histogram heavily toward the Styles pane
-        Host.userMetrics.sidebarPaneShown(tabId);
+        Host.userMetrics.elementsSidebarTabShown(tabId);
       } else {
         skippedInitialTabSelectedEvent = true;
       }
@@ -1045,11 +1044,11 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
 
     const headerElement = tabbedPane.headerElement();
     UI.ARIAUtils.markAsNavigation(headerElement);
-    UI.ARIAUtils.setAccessibleName(headerElement, i18nString(UIStrings.sidePanelToolbar));
+    UI.ARIAUtils.setLabel(headerElement, i18nString(UIStrings.sidePanelToolbar));
 
     const contentElement = tabbedPane.tabbedPaneContentElement();
     UI.ARIAUtils.markAsComplementary(contentElement);
-    UI.ARIAUtils.setAccessibleName(contentElement, i18nString(UIStrings.sidePanelContent));
+    UI.ARIAUtils.setLabel(contentElement, i18nString(UIStrings.sidePanelContent));
 
     const stylesView =
         new UI.View.SimpleView(i18nString(UIStrings.styles), /* isWebComponent */ undefined, SidebarPaneTabId.Styles);
@@ -1151,7 +1150,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
         void treeElement.updateStyleAdorners();
       }
 
-      LayoutSidebarPane.instance().update();
+      void ElementsComponents.LayoutPane.LayoutPane.instance().render();
     }
   }
 

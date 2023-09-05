@@ -210,7 +210,7 @@ const char* LoopingFileSender::ToTrackName(SimulatedCapturer* capturer) const {
 
 std::unique_ptr<StreamingVideoEncoder> LoopingFileSender::CreateVideoEncoder(
     const StreamingVideoEncoder::Parameters& params,
-    TaskRunner* task_runner,
+    TaskRunner& task_runner,
     std::unique_ptr<Sender> sender) {
   switch (params.codec) {
     case VideoCodec::kVp8:

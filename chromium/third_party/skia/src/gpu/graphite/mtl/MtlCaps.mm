@@ -35,6 +35,9 @@ MtlCaps::MtlCaps(const id<MTLDevice> device, const ContextOptions& options)
 
 // translates from older MTLFeatureSet interface to MTLGPUFamily interface
 bool MtlCaps::GetGPUFamilyFromFeatureSet(id<MTLDevice> device, GPUFamily* gpuFamily, int* group) {
+// MTLFeatureSet is deprecated for newer versions of the SDK
+#if SKGPU_GRAPHITE_METAL_SDK_VERSION < 300
+
 #if defined(SK_BUILD_FOR_MAC)
     // Apple Silicon is only available in later OSes
     *gpuFamily = GPUFamily::kMac;
@@ -133,15 +136,17 @@ bool MtlCaps::GetGPUFamilyFromFeatureSet(id<MTLDevice> device, GPUFamily* gpuFam
     // We don't support earlier OSes
 #endif
 
+#endif // SKGPU_GRAPHITE_METAL_SDK_VERSION < 300
+
     // No supported GPU families were found
     return false;
 }
 
 bool MtlCaps::GetGPUFamily(id<MTLDevice> device, GPUFamily* gpuFamily, int* group) {
-#if GR_METAL_SDK_VERSION >= 220
+#if SKGPU_GRAPHITE_METAL_SDK_VERSION >= 220
     if (@available(macOS 10.15, iOS 13.0, tvOS 13.0, *)) {
         // Apple Silicon
-#if GR_METAL_SDK_VERSION >= 230
+#if SKGPU_GRAPHITE_METAL_SDK_VERSION >= 230
         if ([device supportsFamily:MTLGPUFamilyApple7]) {
             *gpuFamily = GPUFamily::kApple;
             *group = 7;
@@ -268,6 +273,11 @@ void MtlCaps::initCaps(const id<MTLDevice> device) {
 void MtlCaps::initShaderCaps() {
     SkSL::ShaderCaps* shaderCaps = fShaderCaps.get();
 
+    // Dual source blending requires Metal 1.2.
+    if (@available(macOS 10.12, iOS 10.0, *)) {
+        shaderCaps->fDualSourceBlendingSupport = true;
+    }
+
     // Setting this true with the assumption that this cap will eventually mean we support varying
     // precisions and not just via modifiers.
     shaderCaps->fUsesPrecisionModifiers = true;
@@ -276,14 +286,12 @@ void MtlCaps::initShaderCaps() {
     shaderCaps->fShaderDerivativeSupport = true;
     shaderCaps->fInfinitySupport = true;
 
-    // TODO(skia:8270): Re-enable this once bug 8270 is fixed
-#if 0
-    if (this->isApple()) {
-        shaderCaps->fFBFetchSupport = true;
-        shaderCaps->fFBFetchNeedsCustomOutput = true; // ??
-        shaderCaps->fFBFetchColorName = ""; // Somehow add [[color(0)]] to arguments to frag shader
+    if (@available(macOS 11.0, *)) {
+        if (this->isApple()) {
+            shaderCaps->fFBFetchSupport = true;
+            shaderCaps->fFBFetchColorName = "sk_LastFragColor";
+        }
     }
-#endif
 
     shaderCaps->fIntegerSupport = true;
     shaderCaps->fNonsquareMatrixSupport = true;
@@ -572,7 +580,7 @@ void MtlCaps::initFormatTable() {
     // Format: RG8Unorm
     {
         info = &fFormatTable[GetFormatIndex(MTLPixelFormatRG8Unorm)];
-        info->fFlags = FormatInfo::kTexturable_Flag;
+        info->fFlags = FormatInfo::kAllFlags;
         info->fColorTypeInfoCount = 1;
         info->fColorTypeInfos.reset(new ColorTypeInfo[info->fColorTypeInfoCount]());
         int ctIdx = 0;

@@ -7,6 +7,7 @@
 
 #include <chrono>
 #include <ostream>
+#include <ratio>
 #include <string>
 
 namespace openscreen {

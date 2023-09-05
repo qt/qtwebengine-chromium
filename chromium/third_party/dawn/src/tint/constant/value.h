@@ -17,9 +17,9 @@
 
 #include <variant>
 
+#include "src/tint/builtin/number.h"
 #include "src/tint/constant/clone_context.h"
 #include "src/tint/constant/node.h"
-#include "src/tint/number.h"
 #include "src/tint/type/type.h"
 #include "src/tint/utils/castable.h"
 
@@ -80,7 +80,7 @@ class Value : public utils::Castable<Value, Node> {
     /// Clones the constant into the provided context
     /// @param ctx the clone context
     /// @returns the cloned node
-    virtual Value* Clone(CloneContext& ctx) const = 0;
+    virtual const Value* Clone(CloneContext& ctx) const = 0;
 
   protected:
     /// @returns the value, if this is of a scalar value or abstract numeric, otherwise

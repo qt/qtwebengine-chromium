@@ -148,30 +148,30 @@ constexpr auto* SwizzlePtrTy(std::index_sequence<INDICES...>) {
 /// `[OFFSET..OFFSET+COUNT)`
 template <std::size_t OFFSET, std::size_t COUNT, typename TUPLE>
 constexpr auto Slice(TUPLE&& t) {
-    return detail::Swizzle<TUPLE>(std::forward<TUPLE>(t), Range<OFFSET, COUNT>());
+    return traits::detail::Swizzle<TUPLE>(std::forward<TUPLE>(t), Range<OFFSET, COUNT>());
 }
 
 /// Resolves to the slice of the tuple `t` with the tuple elements
 /// `[OFFSET..OFFSET+COUNT)`
 template <std::size_t OFFSET, std::size_t COUNT, typename TUPLE>
 using SliceTuple =
-    std::remove_pointer_t<decltype(detail::SwizzlePtrTy<TUPLE>(Range<OFFSET, COUNT>()))>;
+    std::remove_pointer_t<decltype(traits::detail::SwizzlePtrTy<TUPLE>(Range<OFFSET, COUNT>()))>;
 
 namespace detail {
 /// Base template for IsTypeIn
-template <class T, class TypeList>
+template <typename T, typename TypeList>
 struct IsTypeIn;
 
 /// Specialization for IsTypeIn
-template <class T, template <class...> class TypeContainer, class... Ts>
+template <typename T, template <typename...> typename TypeContainer, typename... Ts>
 struct IsTypeIn<T, TypeContainer<Ts...>> : std::disjunction<std::is_same<T, Ts>...> {};
 }  // namespace detail
 
 /// Evaluates to true if T is one of the types in the TypeContainer's template arguments.
-/// Works for std::variant, std::tuple, std::pair, or any class template where all parameters are
+/// Works for std::variant, std::tuple, std::pair, or any typename template where all parameters are
 /// types.
 template <typename T, typename TypeContainer>
-static constexpr bool IsTypeIn = detail::IsTypeIn<T, TypeContainer>::value;
+static constexpr bool IsTypeIn = traits::detail::IsTypeIn<T, TypeContainer>::value;
 
 /// Evaluates to the decayed pointer element type, or the decayed type T if T is not a pointer.
 template <typename T>
@@ -182,6 +182,32 @@ template <typename T>
 static constexpr bool IsStringLike =
     std::is_same_v<Decay<T>, std::string> || std::is_same_v<Decay<T>, std::string_view> ||
     std::is_same_v<Decay<T>, const char*>;
+
+namespace detail {
+/// Helper for CharArrayToCharPtr
+template <typename T>
+struct CharArrayToCharPtrImpl {
+    /// Evaluates to T
+    using type = T;
+};
+/// Specialization of CharArrayToCharPtrImpl for `char[N]`
+template <size_t N>
+struct CharArrayToCharPtrImpl<char[N]> {
+    /// Evaluates to `char*`
+    using type = char*;
+};
+/// Specialization of CharArrayToCharPtrImpl for `const char[N]`
+template <size_t N>
+struct CharArrayToCharPtrImpl<const char[N]> {
+    /// Evaluates to `const char*`
+    using type = const char*;
+};
+}  // namespace detail
+
+/// Evaluates to `char*` or `const char*` if `T` is `char[N]` or `const char[N]`, respectively,
+/// otherwise T.
+template <typename T>
+using CharArrayToCharPtr = typename traits::detail::CharArrayToCharPtrImpl<T>::type;
 
 }  // namespace tint::utils::traits
 

@@ -29,12 +29,12 @@
 #include "src/tint/ast/return_statement.h"
 #include "src/tint/ast/stage_attribute.h"
 #include "src/tint/ast/switch_statement.h"
+#include "src/tint/ast/transform/spirv_atomic.h"
 #include "src/tint/ast/unary_op_expression.h"
 #include "src/tint/ast/variable_decl_statement.h"
 #include "src/tint/builtin/builtin_value.h"
 #include "src/tint/builtin/function.h"
 #include "src/tint/switch.h"
-#include "src/tint/transform/spirv_atomic.h"
 #include "src/tint/type/depth_texture.h"
 #include "src/tint/type/sampled_texture.h"
 #include "src/tint/type/texture_dimension.h"
@@ -2512,7 +2512,7 @@ bool FunctionEmitter::EmitFunctionVariables() {
                                          Attributes{});
         auto* var_decl_stmt = create<ast::VariableDeclStatement>(Source{}, var);
         AddStatement(var_decl_stmt);
-        auto* var_type = ty_.Reference(var_store_type, builtin::AddressSpace::kUndefined);
+        auto* var_type = ty_.Reference(builtin::AddressSpace::kUndefined, var_store_type);
         identifier_types_.emplace(inst.result_id(), var_type);
     }
     return success();
@@ -2844,7 +2844,7 @@ bool FunctionEmitter::EmitIfStart(const BlockInfo& block_info) {
     const std::string guard_name = block_info.flow_guard_name;
     if (!guard_name.empty()) {
         // Declare the guard variable just before the "if", initialized to true.
-        auto* guard_var = builder_.Var(guard_name, builder_.ty.bool_(), MakeTrue(Source{}));
+        auto* guard_var = builder_.Var(guard_name, MakeTrue(Source{}));
         auto* guard_decl = create<ast::VariableDeclStatement>(Source{}, guard_var);
         AddStatement(guard_decl);
     }
@@ -3358,7 +3358,7 @@ bool FunctionEmitter::EmitStatementsInBasicBlock(const BlockInfo& block_info,
             Source{},
             parser_impl_.MakeVar(id, builtin::AddressSpace::kUndefined, builtin::Access::kUndefined,
                                  store_type, nullptr, Attributes{})));
-        auto* type = ty_.Reference(store_type, builtin::AddressSpace::kUndefined);
+        auto* type = ty_.Reference(builtin::AddressSpace::kUndefined, store_type);
         identifier_types_.emplace(id, type);
     }
 
@@ -3448,7 +3448,7 @@ bool FunctionEmitter::EmitConstDefinition(const spvtools::opt::Instruction& inst
 
     expr = AddressOfIfNeeded(expr, &inst);
     expr.type = RemapPointerProperties(expr.type, inst.result_id());
-    auto* let = parser_impl_.MakeLet(inst.result_id(), expr.type, expr.expr);
+    auto* let = parser_impl_.MakeLet(inst.result_id(), expr.expr);
     if (!let) {
         return false;
     }
@@ -3895,14 +3895,31 @@ TypedExpression FunctionEmitter::MaybeEmitCombinatorialValue(
 
     if (op == spv::Op::OpCompositeConstruct) {
         ExpressionList operands;
+        bool all_same = true;
+        uint32_t first_id = 0u;
         for (uint32_t iarg = 0; iarg < inst.NumInOperands(); ++iarg) {
             auto operand = MakeOperand(inst, iarg);
             if (!operand) {
                 return {};
             }
             operands.Push(operand.expr);
+
+            // Check if this argument is different from the others.
+            auto arg_id = inst.GetSingleWordInOperand(iarg);
+            if (first_id != 0u) {
+                if (arg_id != first_id) {
+                    all_same = false;
+                }
+            } else {
+                first_id = arg_id;
+            }
         }
-        return {ast_type, builder_.Call(ast_type->Build(builder_), std::move(operands))};
+        if (all_same && ast_type->Is<Vector>()) {
+            // We're constructing a vector and all the operands were the same, so use a splat.
+            return {ast_type, builder_.Call(ast_type->Build(builder_), operands[0])};
+        } else {
+            return {ast_type, builder_.Call(ast_type->Build(builder_), std::move(operands))};
+        }
     }
 
     if (op == spv::Op::OpCompositeExtract) {
@@ -4047,8 +4064,8 @@ TypedExpression FunctionEmitter::EmitGlslStd450ExtInst(const spvtools::opt::Inst
                     builder_.MemberAccessor(
                         builder_.Call("refract",
                                       utils::Vector{
-                                          builder_.vec2<tint::f32>(incident.expr, 0_f),
-                                          builder_.vec2<tint::f32>(normal.expr, 0_f),
+                                          builder_.Call("vec2f", incident.expr, 0_f),
+                                          builder_.Call("vec2f", normal.expr, 0_f),
                                           eta.expr,
                                       }),
                         "x"),
@@ -4075,6 +4092,12 @@ TypedExpression FunctionEmitter::EmitGlslStd450ExtInst(const spvtools::opt::Inst
     // All parameters to GLSL.std.450 extended instructions are IDs.
     for (uint32_t iarg = 2; iarg < inst.NumInOperands(); ++iarg) {
         TypedExpression operand = MakeOperand(inst, iarg);
+        if (!operand.expr) {
+            if (!failed()) {
+                Fail() << "unexpected failure to make an operand";
+            }
+            return {};
+        }
         if (first_operand_type == nullptr) {
             first_operand_type = operand.type;
         }
@@ -4130,9 +4153,9 @@ TypedExpression FunctionEmitter::EmitGlslStd450MatrixInverse(
             auto* d = idx(1, 1);
 
             // s * d, -s * b, -s * c, s * a
-            auto* r = pb.mat2x2<f32>(  //
-                pb.vec2<f32>(pb.Mul(s, d), pb.Mul(neg(s), b)),
-                pb.vec2<f32>(pb.Mul(neg(s), c), pb.Mul(s, a)));
+            auto* r = pb.Call("mat2x2f",  //
+                              pb.Call("vec2f", pb.Mul(s, d), pb.Mul(neg(s), b)),
+                              pb.Call("vec2f", pb.Mul(neg(s), c), pb.Mul(s, a)));
             return {mat.type, r};
         }
 
@@ -4150,29 +4173,29 @@ TypedExpression FunctionEmitter::EmitGlslStd450MatrixInverse(
             auto* h = idx(2, 1);
             auto* i = idx(2, 2);
 
-            auto r = pb.Mul(s,               //
-                            pb.mat3x3<f32>(  //
-                                pb.vec3<f32>(
-                                    // e * i - f * h
-                                    sub_mul2(e, i, f, h),
-                                    // c * h - b * i
-                                    sub_mul2(c, h, b, i),
-                                    // b * f - c * e
-                                    sub_mul2(b, f, c, e)),
-                                pb.vec3<f32>(
-                                    // f * g - d * i
-                                    sub_mul2(f, g, d, i),
-                                    // a * i - c * g
-                                    sub_mul2(a, i, c, g),
-                                    // c * d - a * f
-                                    sub_mul2(c, d, a, f)),
-                                pb.vec3<f32>(
-                                    // d * h - e * g
-                                    sub_mul2(d, h, e, g),
-                                    // b * g - a * h
-                                    sub_mul2(b, g, a, h),
-                                    // a * e - b * d
-                                    sub_mul2(a, e, b, d))));
+            auto r = pb.Mul(s,                  //
+                            pb.Call("mat3x3f",  //
+                                    pb.Call("vec3f",
+                                            // e * i - f * h
+                                            sub_mul2(e, i, f, h),
+                                            // c * h - b * i
+                                            sub_mul2(c, h, b, i),
+                                            // b * f - c * e
+                                            sub_mul2(b, f, c, e)),
+                                    pb.Call("vec3f",
+                                            // f * g - d * i
+                                            sub_mul2(f, g, d, i),
+                                            // a * i - c * g
+                                            sub_mul2(a, i, c, g),
+                                            // c * d - a * f
+                                            sub_mul2(c, d, a, f)),
+                                    pb.Call("vec3f",
+                                            // d * h - e * g
+                                            sub_mul2(d, h, e, g),
+                                            // b * g - a * h
+                                            sub_mul2(b, g, a, h),
+                                            // a * e - b * d
+                                            sub_mul2(a, e, b, d))));
             return {mat.type, r};
         }
 
@@ -4228,44 +4251,44 @@ TypedExpression FunctionEmitter::EmitGlslStd450MatrixInverse(
             auto* enfm = sub_mul2(e, n, f, m);
             auto* ejfi = sub_mul2(e, j, f, i);
 
-            auto r = pb.Mul(s,               //
-                            pb.mat4x4<f32>(  //
-                                pb.vec4<f32>(
-                                    // f * kplo - g * jpln + h * jokn
-                                    sub_add_mul3(f, kplo, g, jpln, h, jokn),
-                                    // -b * kplo + c * jpln - d * jokn
-                                    add_sub_mul3(neg(b), kplo, c, jpln, d, jokn),
-                                    // b * gpho - c * fphn + d * fogn
-                                    sub_add_mul3(b, gpho, c, fphn, d, fogn),
-                                    // -b * glhk + c * flhj - d * fkgj
-                                    add_sub_mul3(neg(b), glhk, c, flhj, d, fkgj)),
-                                pb.vec4<f32>(
-                                    // -e * kplo + g * iplm - h * iokm
-                                    add_sub_mul3(neg(e), kplo, g, iplm, h, iokm),
-                                    // a * kplo - c * iplm + d * iokm
-                                    sub_add_mul3(a, kplo, c, iplm, d, iokm),
-                                    // -a * gpho + c * ephm - d * eogm
-                                    add_sub_mul3(neg(a), gpho, c, ephm, d, eogm),
-                                    // a * glhk - c * elhi + d * ekgi
-                                    sub_add_mul3(a, glhk, c, elhi, d, ekgi)),
-                                pb.vec4<f32>(
-                                    // e * jpln - f * iplm + h * injm
-                                    sub_add_mul3(e, jpln, f, iplm, h, injm),
-                                    // -a * jpln + b * iplm - d * injm
-                                    add_sub_mul3(neg(a), jpln, b, iplm, d, injm),
-                                    // a * fphn - b * ephm + d * enfm
-                                    sub_add_mul3(a, fphn, b, ephm, d, enfm),
-                                    // -a * flhj + b * elhi - d * ejfi
-                                    add_sub_mul3(neg(a), flhj, b, elhi, d, ejfi)),
-                                pb.vec4<f32>(
-                                    // -e * jokn + f * iokm - g * injm
-                                    add_sub_mul3(neg(e), jokn, f, iokm, g, injm),
-                                    // a * jokn - b * iokm + c * injm
-                                    sub_add_mul3(a, jokn, b, iokm, c, injm),
-                                    // -a * fogn + b * eogm - c * enfm
-                                    add_sub_mul3(neg(a), fogn, b, eogm, c, enfm),
-                                    // a * fkgj - b * ekgi + c * ejfi
-                                    sub_add_mul3(a, fkgj, b, ekgi, c, ejfi))));
+            auto r = pb.Mul(s,                  //
+                            pb.Call("mat4x4f",  //
+                                    pb.Call("vec4f",
+                                            // f * kplo - g * jpln + h * jokn
+                                            sub_add_mul3(f, kplo, g, jpln, h, jokn),
+                                            // -b * kplo + c * jpln - d * jokn
+                                            add_sub_mul3(neg(b), kplo, c, jpln, d, jokn),
+                                            // b * gpho - c * fphn + d * fogn
+                                            sub_add_mul3(b, gpho, c, fphn, d, fogn),
+                                            // -b * glhk + c * flhj - d * fkgj
+                                            add_sub_mul3(neg(b), glhk, c, flhj, d, fkgj)),
+                                    pb.Call("vec4f",
+                                            // -e * kplo + g * iplm - h * iokm
+                                            add_sub_mul3(neg(e), kplo, g, iplm, h, iokm),
+                                            // a * kplo - c * iplm + d * iokm
+                                            sub_add_mul3(a, kplo, c, iplm, d, iokm),
+                                            // -a * gpho + c * ephm - d * eogm
+                                            add_sub_mul3(neg(a), gpho, c, ephm, d, eogm),
+                                            // a * glhk - c * elhi + d * ekgi
+                                            sub_add_mul3(a, glhk, c, elhi, d, ekgi)),
+                                    pb.Call("vec4f",
+                                            // e * jpln - f * iplm + h * injm
+                                            sub_add_mul3(e, jpln, f, iplm, h, injm),
+                                            // -a * jpln + b * iplm - d * injm
+                                            add_sub_mul3(neg(a), jpln, b, iplm, d, injm),
+                                            // a * fphn - b * ephm + d * enfm
+                                            sub_add_mul3(a, fphn, b, ephm, d, enfm),
+                                            // -a * flhj + b * elhi - d * ejfi
+                                            add_sub_mul3(neg(a), flhj, b, elhi, d, ejfi)),
+                                    pb.Call("vec4f",
+                                            // -e * jokn + f * iokm - g * injm
+                                            add_sub_mul3(neg(e), jokn, f, iokm, g, injm),
+                                            // a * jokn - b * iokm + c * injm
+                                            sub_add_mul3(a, jokn, b, iokm, c, injm),
+                                            // -a * fogn + b * eogm - c * enfm
+                                            add_sub_mul3(neg(a), fogn, b, eogm, c, enfm),
+                                            // a * fkgj - b * ekgi + c * ejfi
+                                            sub_add_mul3(a, fkgj, b, ekgi, c, ejfi))));
             return {mat.type, r};
         }
     }
@@ -4687,40 +4710,68 @@ TypedExpression FunctionEmitter::MakeVectorShuffle(const spvtools::opt::Instruct
     const auto vec0_len = type_mgr_->GetType(vec0.type_id())->AsVector()->element_count();
     const auto vec1_len = type_mgr_->GetType(vec1.type_id())->AsVector()->element_count();
 
-    // Idiomatic vector accessors.
+    // Helper to get the name for the component index `i`.
+    auto component_name = [](uint32_t i) {
+        constexpr const char* names[] = {"x", "y", "z", "w"};
+        TINT_ASSERT(Reader, i < 4);
+        return names[i];
+    };
 
-    // Generate an ast::TypeInitializer expression.
+    // Build a swizzle for each consecutive set of indices that fall within the same vector.
     // Assume the literal indices are valid, and there is a valid number of them.
     auto source = GetSourceForInst(inst);
     const Vector* result_type = As<Vector>(parser_impl_.ConvertType(inst.type_id()));
+    uint32_t last_vec_id = 0u;
+    std::string swizzle;
     ExpressionList values;
     for (uint32_t i = 2; i < inst.NumInOperands(); ++i) {
-        const auto index = inst.GetSingleWordInOperand(i);
+        // Select the source vector and determine the index within it.
+        uint32_t vec_id = 0u;
+        uint32_t index = inst.GetSingleWordInOperand(i);
         if (index < vec0_len) {
-            auto expr = MakeExpression(vec0_id);
-            if (!expr) {
-                return {};
-            }
-            values.Push(create<ast::MemberAccessorExpression>(source, expr.expr, Swizzle(index)));
+            vec_id = vec0_id;
         } else if (index < vec0_len + vec1_len) {
-            const auto sub_index = index - vec0_len;
-            TINT_ASSERT(Reader, sub_index < kMaxVectorLen);
-            auto expr = MakeExpression(vec1_id);
-            if (!expr) {
-                return {};
-            }
-            values.Push(
-                create<ast::MemberAccessorExpression>(source, expr.expr, Swizzle(sub_index)));
+            vec_id = vec1_id;
+            index -= vec0_len;
+            TINT_ASSERT(Reader, index < kMaxVectorLen);
         } else if (index == 0xFFFFFFFF) {
-            // By rule, this maps to OpUndef.  Instead, make it zero.
-            values.Push(parser_impl_.MakeNullValue(result_type->type));
+            // By rule, this maps to OpUndef. Instead, take the first component of the first vector.
+            vec_id = vec0_id;
+            index = 0u;
         } else {
             Fail() << "invalid vectorshuffle ID %" << inst.result_id()
                    << ": index too large: " << index;
             return {};
         }
+
+        if (vec_id != last_vec_id && !swizzle.empty()) {
+            // The source vector has changed, so emit the swizzle so far.
+            auto expr = MakeExpression(last_vec_id);
+            if (!expr) {
+                return {};
+            }
+            values.Push(builder_.MemberAccessor(source, expr.expr, builder_.Ident(swizzle)));
+            swizzle.clear();
+        }
+        swizzle += component_name(index);
+        last_vec_id = vec_id;
     }
-    return {result_type, builder_.Call(source, result_type->Build(builder_), std::move(values))};
+
+    // Emit the final swizzle.
+    auto expr = MakeExpression(last_vec_id);
+    if (!expr) {
+        return {};
+    }
+    values.Push(builder_.MemberAccessor(source, expr.expr, builder_.Ident(swizzle)));
+
+    if (values.Length() == 1) {
+        // There's only one swizzle, so just return it.
+        return {result_type, values[0]};
+    } else {
+        // There's multiple swizzles, so generate a type constructor expression to combine them.
+        return {result_type,
+                builder_.Call(source, result_type->Build(builder_), std::move(values))};
+    }
 }
 
 bool FunctionEmitter::RegisterSpecialBuiltInVariables() {
@@ -4886,11 +4937,11 @@ DefInfo::Pointer FunctionEmitter::GetPointerInfo(uint32_t id) {
 const Type* FunctionEmitter::RemapPointerProperties(const Type* type, uint32_t result_id) {
     if (auto* ast_ptr_type = As<Pointer>(type)) {
         const auto pi = GetPointerInfo(result_id);
-        return ty_.Pointer(ast_ptr_type->type, pi.address_space, pi.access);
+        return ty_.Pointer(pi.address_space, ast_ptr_type->type, pi.access);
     }
     if (auto* ast_ptr_type = As<Reference>(type)) {
         const auto pi = GetPointerInfo(result_id);
-        return ty_.Reference(ast_ptr_type->type, pi.address_space, pi.access);
+        return ty_.Reference(pi.address_space, ast_ptr_type->type, pi.access);
     }
     return type;
 }
@@ -5183,6 +5234,9 @@ bool FunctionEmitter::EmitFunctionCall(const spvtools::opt::Instruction& inst) {
             const auto usage = parser_impl_.GetHandleUsage(arg_id);
             const auto* mem_obj_decl =
                 parser_impl_.GetMemoryObjectDeclarationForHandle(arg_id, usage.IsTexture());
+            if (!mem_obj_decl) {
+                return Fail() << "invalid handle object passed as function parameter";
+            }
             expr = MakeExpression(mem_obj_decl->result_id());
             // Pass the handle through instead of a pointer to the handle.
             expr.type = parser_impl_.GetHandleTypeForSpirvHandle(*mem_obj_decl);
@@ -5812,7 +5866,7 @@ bool FunctionEmitter::EmitAtomicOp(const spvtools::opt::Instruction& inst) {
             std::move(params), ret_type,
             /* body */ nullptr,
             utils::Vector{
-                builder_.ASTNodes().Create<transform::SpirvAtomic::Stub>(
+                builder_.ASTNodes().Create<ast::transform::SpirvAtomic::Stub>(
                     builder_.ID(), builder_.AllocateNodeID(), builtin),
                 builder_.Disable(ast::DisabledValidation::kFunctionHasNoBody),
             });
@@ -6203,7 +6257,7 @@ bool FunctionEmitter::MakeVectorInsertDynamic(const spvtools::opt::Instruction& 
     //   variable with the %src_vector contents, then write the component,
     //   and then make a let-declaration that reads the value out:
     //
-    //    var temp : type = src_vector;
+    //    var temp = src_vector;
     //    temp[index] = component;
     //    let result : type = temp;
     //
@@ -6229,8 +6283,7 @@ bool FunctionEmitter::MakeVectorInsertDynamic(const spvtools::opt::Instruction& 
         // API in parser_impl_.
         var_name = namer_.MakeDerivedName(original_value_name);
 
-        auto* temp_var = builder_.Var(var_name, type->Build(builder_),
-                                      builtin::AddressSpace::kUndefined, src_vector.expr);
+        auto* temp_var = builder_.Var(var_name, builtin::AddressSpace::kUndefined, src_vector.expr);
 
         AddStatement(builder_.Decl({}, temp_var));
     }
@@ -6269,7 +6322,7 @@ bool FunctionEmitter::MakeCompositeInsert(const spvtools::opt::Instruction& inst
     //   variable with the %composite contents, then write the component,
     //   and then make a let-declaration that reads the value out:
     //
-    //    var temp : type = composite;
+    //    var temp = composite;
     //    temp[index].x = object;
     //    let result : type = temp;
     //
@@ -6299,8 +6352,8 @@ bool FunctionEmitter::MakeCompositeInsert(const spvtools::opt::Instruction& inst
         // It doesn't correspond to a SPIR-V ID, so we don't use the ordinary
         // API in parser_impl_.
         var_name = namer_.MakeDerivedName(original_value_name);
-        auto* temp_var = builder_.Var(var_name, type->Build(builder_),
-                                      builtin::AddressSpace::kUndefined, src_composite.expr);
+        auto* temp_var =
+            builder_.Var(var_name, builtin::AddressSpace::kUndefined, src_composite.expr);
         AddStatement(builder_.Decl({}, temp_var));
     }
 
@@ -6330,7 +6383,7 @@ TypedExpression FunctionEmitter::AddressOf(TypedExpression expr) {
         return {};
     }
     return {
-        ty_.Pointer(ref->type, ref->address_space),
+        ty_.Pointer(ref->address_space, ref->type),
         create<ast::UnaryOpExpression>(Source{}, ast::UnaryOp::kAddressOf, expr.expr),
     };
 }

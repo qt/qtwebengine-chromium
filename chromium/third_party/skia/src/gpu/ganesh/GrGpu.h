@@ -396,7 +396,7 @@ public:
     // insert any numSemaphore semaphores on the gpu and set the backendSemaphores to match the
     // inserted semaphores.
     void executeFlushInfo(SkSpan<GrSurfaceProxy*>,
-                          SkSurface::BackendSurfaceAccess access,
+                          SkSurfaces::BackendSurfaceAccess access,
                           const GrFlushInfo&,
                           const skgpu::MutableTextureState* newState);
 
@@ -619,8 +619,8 @@ public:
 
     /**
      * Creates a GrBackendRenderTarget that can be wrapped using
-     * SkSurface::MakeFromBackendRenderTarget. Ideally this is a non-textureable allocation to
-     * differentiate from testing with SkSurface::MakeFromBackendTexture. When sampleCnt > 1 this
+     * SkSurfaces::WrapBackendRenderTarget. Ideally this is a non-textureable allocation to
+     * differentiate from testing with SkSurfaces::WrapBackendTexture. When sampleCnt > 1 this
      * is used to test client wrapped allocations with MSAA where Skia does not allocate a separate
      * buffer for resolving. If the color is non-null the backing store should be cleared to the
      * passed in color.
@@ -831,7 +831,7 @@ private:
 
     virtual void prepareSurfacesForBackendAccessAndStateUpdates(
             SkSpan<GrSurfaceProxy*> proxies,
-            SkSurface::BackendSurfaceAccess access,
+            SkSurfaces::BackendSurfaceAccess access,
             const skgpu::MutableTextureState* newState) {}
 
     virtual bool onSubmitToGpu(bool syncCpu) = 0;

@@ -83,6 +83,9 @@ void TranslationArrayPrintSingleFrame(
         break;
       }
 
+#if V8_ENABLE_WEBASSEMBLY
+      case TranslationOpcode::WASM_INLINED_INTO_JS_FRAME:
+#endif
       case TranslationOpcode::CONSTRUCT_STUB_FRAME: {
         DCHECK_EQ(TranslationOpcodeOperandCount(opcode), 3);
         int bailout_id = iterator.NextOperand();
@@ -210,7 +213,7 @@ void TranslationArrayPrintSingleFrame(
         break;
       }
 
-      case TranslationOpcode::STACK_SLOT: {
+      case TranslationOpcode::TAGGED_STACK_SLOT: {
         DCHECK_EQ(TranslationOpcodeOperandCount(opcode), 1);
         int input_slot_index = iterator.NextOperand();
         os << "{input=" << input_slot_index << "}";
@@ -653,13 +656,6 @@ Handle<Object> TranslatedValue::GetValue() {
     //    pass the verifier.
     container_->EnsureObjectAllocatedAt(this);
 
-    // Finish any sweeping so that it becomes safe to overwrite the ByteArray
-    // headers.
-    // TODO(hpayer): Find a cleaner way to support a group of
-    // non-fully-initialized objects.
-    isolate()->heap()->EnsureSweepingCompleted(
-        Heap::SweepingForcedFinalizationMode::kV8Only);
-
     // 2. Initialize the objects. If we have allocated only byte arrays
     //    for some objects, we now overwrite the byte arrays with the
     //    correct object fields. Note that this phase does not allocate
@@ -799,6 +795,14 @@ TranslatedFrame TranslatedFrame::BuiltinContinuationFrame(
 }
 
 #if V8_ENABLE_WEBASSEMBLY
+TranslatedFrame TranslatedFrame::WasmInlinedIntoJSFrame(
+    BytecodeOffset bytecode_offset, SharedFunctionInfo shared_info,
+    int height) {
+  TranslatedFrame frame(kWasmInlinedIntoJS, shared_info, height);
+  frame.bytecode_offset_ = bytecode_offset;
+  return frame;
+}
+
 TranslatedFrame TranslatedFrame::JSToWasmBuiltinContinuationFrame(
     BytecodeOffset bytecode_offset, SharedFunctionInfo shared_info, int height,
     base::Optional<wasm::ValueKind> return_kind) {
@@ -854,6 +858,12 @@ int TranslatedFrame::GetValueCount() {
       static constexpr int kTheContext = 1;
       return height() + kTheContext + kTheFunction;
     }
+#if V8_ENABLE_WEBASSEMBLY
+    case kWasmInlinedIntoJS: {
+      static constexpr int kTheContext = 1;
+      return height() + kTheContext + kTheFunction;
+    }
+#endif  // V8_ENABLE_WEBASSEMBLY
 
     case kInvalid:
       UNREACHABLE();
@@ -948,6 +958,22 @@ TranslatedFrame TranslatedState::CreateNextTranslatedFrame(
     }
 
 #if V8_ENABLE_WEBASSEMBLY
+    case TranslationOpcode::WASM_INLINED_INTO_JS_FRAME: {
+      BytecodeOffset bailout_id = BytecodeOffset(iterator->NextOperand());
+      SharedFunctionInfo shared_info =
+          SharedFunctionInfo::cast(literal_array.get(iterator->NextOperand()));
+      int height = iterator->NextOperand();
+      if (trace_file != nullptr) {
+        std::unique_ptr<char[]> name = shared_info.DebugNameCStr();
+        PrintF(trace_file, "  reading Wasm inlined into JS frame %s",
+               name.get());
+        PrintF(trace_file, " => bailout_id=%d, height=%d ; inputs:\n",
+               bailout_id.ToInt(), height);
+      }
+      return TranslatedFrame::WasmInlinedIntoJSFrame(bailout_id, shared_info,
+                                                     height);
+    }
+
     case TranslationOpcode::JS_TO_WASM_BUILTIN_CONTINUATION_FRAME: {
       BytecodeOffset bailout_id = BytecodeOffset(iterator->NextOperand());
       SharedFunctionInfo shared_info =
@@ -1021,7 +1047,7 @@ TranslatedFrame TranslatedState::CreateNextTranslatedFrame(
     case TranslationOpcode::FLOAT_REGISTER:
     case TranslationOpcode::DOUBLE_REGISTER:
     case TranslationOpcode::HOLEY_DOUBLE_REGISTER:
-    case TranslationOpcode::STACK_SLOT:
+    case TranslationOpcode::TAGGED_STACK_SLOT:
     case TranslationOpcode::INT32_STACK_SLOT:
     case TranslationOpcode::INT64_STACK_SLOT:
     case TranslationOpcode::SIGNED_BIGINT64_STACK_SLOT:
@@ -1139,6 +1165,7 @@ int TranslatedState::CreateNextTranslatedValue(
     case TranslationOpcode::JAVA_SCRIPT_BUILTIN_CONTINUATION_WITH_CATCH_FRAME:
     case TranslationOpcode::BUILTIN_CONTINUATION_FRAME:
 #if V8_ENABLE_WEBASSEMBLY
+    case TranslationOpcode::WASM_INLINED_INTO_JS_FRAME:
     case TranslationOpcode::JS_TO_WASM_BUILTIN_CONTINUATION_FRAME:
 #endif  // V8_ENABLE_WEBASSEMBLY
     case TranslationOpcode::UPDATE_FEEDBACK:
@@ -1375,7 +1402,7 @@ int TranslatedState::CreateNextTranslatedValue(
       return translated_value.GetChildrenCount();
     }
 
-    case TranslationOpcode::STACK_SLOT: {
+    case TranslationOpcode::TAGGED_STACK_SLOT: {
       int slot_offset =
           OptimizedFrame::StackSlotOffsetRelativeToFp(iterator->NextOperand());
       intptr_t value = *(reinterpret_cast<intptr_t*>(fp + slot_offset));
@@ -1914,7 +1941,7 @@ void TranslatedState::EnsureCapturedObjectAllocatedAt(
       CHECK_EQ(instance_size, slot->GetChildrenCount() * kTaggedSize);
 
       // Canonicalize empty fixed array.
-      if (*map == ReadOnlyRoots(isolate()).empty_fixed_array().map() &&
+      if (*map == ReadOnlyRoots(isolate()).empty_fixed_array()->map() &&
           array_length == 0) {
         slot->set_storage(isolate()->factory()->empty_fixed_array());
       } else {
@@ -2046,8 +2073,8 @@ void TranslatedState::EnsurePropertiesAllocatedAndMarked(
   properties_slot->set_storage(object_storage);
 
   DisallowGarbageCollection no_gc;
-  auto raw_map = *map;
-  auto raw_object_storage = *object_storage;
+  Tagged<Map> raw_map = *map;
+  Tagged<ByteArray> raw_object_storage = *object_storage;
 
   // Set markers for out-of-object properties.
   DescriptorArray descriptors = map->instance_descriptors(isolate());
@@ -2058,7 +2085,7 @@ void TranslatedState::EnsurePropertiesAllocatedAndMarked(
         (representation.IsDouble() || representation.IsHeapObject())) {
       int outobject_index = index.outobject_array_index();
       int array_index = outobject_index * kTaggedSize;
-      raw_object_storage.set(array_index, kStoreHeapObject);
+      raw_object_storage->set(array_index, kStoreHeapObject);
     }
   }
 }
@@ -2071,9 +2098,9 @@ Handle<ByteArray> TranslatedState::AllocateStorageFor(TranslatedValue* slot) {
   Handle<ByteArray> object_storage =
       isolate()->factory()->NewByteArray(allocate_size, AllocationType::kOld);
   DisallowGarbageCollection no_gc;
-  auto raw_object_storage = *object_storage;
+  Tagged<ByteArray> raw_object_storage = *object_storage;
   for (int i = 0; i < object_storage->length(); i++) {
-    raw_object_storage.set(i, kStoreTagged);
+    raw_object_storage->set(i, kStoreTagged);
   }
   return object_storage;
 }
@@ -2087,19 +2114,19 @@ void TranslatedState::EnsureJSObjectAllocated(TranslatedValue* slot,
 
   // Now we handle the interesting (JSObject) case.
   DisallowGarbageCollection no_gc;
-  auto raw_map = *map;
-  auto raw_object_storage = *object_storage;
+  Tagged<Map> raw_map = *map;
+  Tagged<ByteArray> raw_object_storage = *object_storage;
   DescriptorArray descriptors = map->instance_descriptors(isolate());
 
   // Set markers for in-object properties.
-  for (InternalIndex i : raw_map.IterateOwnDescriptors()) {
+  for (InternalIndex i : raw_map->IterateOwnDescriptors()) {
     FieldIndex index = FieldIndex::ForDescriptor(raw_map, i);
     Representation representation = descriptors.GetDetails(i).representation();
     if (index.is_inobject() &&
         (representation.IsDouble() || representation.IsHeapObject())) {
       CHECK_GE(index.index(), FixedArray::kHeaderSize / kTaggedSize);
       int array_index = index.index() * kTaggedSize - FixedArray::kHeaderSize;
-      raw_object_storage.set(array_index, kStoreHeapObject);
+      raw_object_storage->set(array_index, kStoreHeapObject);
     }
   }
   slot->set_storage(object_storage);
@@ -2151,6 +2178,10 @@ void TranslatedState::InitializeJSObjectAt(
   // Notify the concurrent marker about the layout change.
   isolate()->heap()->NotifyObjectLayoutChange(*object_storage, no_gc,
                                               InvalidateRecordedSlots::kNo);
+
+  // Finish any sweeping so that it becomes safe to overwrite the ByteArray
+  // headers. See chromium:1228036.
+  isolate()->heap()->EnsureSweepingCompletedForObject(*object_storage);
 
   // Fill the property array field.
   {
@@ -2213,6 +2244,10 @@ void TranslatedState::InitializeObjectWithTaggedFieldsAt(
   // Notify the concurrent marker about the layout change.
   isolate()->heap()->NotifyObjectLayoutChange(*object_storage, no_gc,
                                               InvalidateRecordedSlots::kNo);
+
+  // Finish any sweeping so that it becomes safe to overwrite the ByteArray
+  // headers. See chromium:1228036.
+  isolate()->heap()->EnsureSweepingCompletedForObject(*object_storage);
 
   // Write the fields to the object.
   for (int i = 1; i < children_count; i++) {

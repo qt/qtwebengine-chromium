@@ -93,13 +93,8 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
    public:
     ScopedPeerAddressContext(QuicPacketCreator* creator,
                              QuicSocketAddress address,
-                             bool update_connection_id);
-
-    ScopedPeerAddressContext(QuicPacketCreator* creator,
-                             QuicSocketAddress address,
                              const QuicConnectionId& client_connection_id,
-                             const QuicConnectionId& server_connection_id,
-                             bool update_connection_id);
+                             const QuicConnectionId& server_connection_id);
     ~ScopedPeerAddressContext();
 
    private:
@@ -107,7 +102,6 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
     QuicSocketAddress old_peer_address_;
     QuicConnectionId old_client_connection_id_;
     QuicConnectionId old_server_connection_id_;
-    bool update_connection_id_;
   };
 
   QuicPacketCreator(QuicConnectionId server_connection_id, QuicFramer* framer,
@@ -118,9 +112,6 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
   QuicPacketCreator& operator=(const QuicPacketCreator&) = delete;
 
   ~QuicPacketCreator();
-
-  // Makes the framer not serialize the protocol version in sent packets.
-  void StopSendingVersion();
 
   // SetDiversificationNonce sets the nonce that will be sent in each public
   // header of packets encrypted at the initial encryption level. Should only
@@ -622,10 +613,6 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
   QuicFramer* framer_;
   QuicRandom* random_;
 
-  // Controls whether version should be included while serializing the packet.
-  // send_version_in_packet_ should never be read directly, use
-  // IncludeVersionInHeader() instead.
-  bool send_version_in_packet_;
   // If true, then |diversification_nonce_| will be included in the header of
   // all packets created at the initial encryption level.
   bool have_diversification_nonce_;

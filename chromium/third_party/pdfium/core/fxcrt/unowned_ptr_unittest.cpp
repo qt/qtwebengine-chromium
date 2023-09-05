@@ -162,7 +162,7 @@ TEST(UnownedPtr, PtrOk) {
 }
 
 TEST(UnownedPtr, PtrNotOk) {
-#if defined(ADDRESS_SANITIZER)
+#if defined(UNOWNED_PTR_DANGLING_CHECKS)
   EXPECT_DEATH(DeleteDangling(), "");
 #else
   DeleteDangling();
@@ -179,7 +179,7 @@ TEST(UnownedPtr, AssignOk) {
 }
 
 TEST(UnownedPtr, AssignNotOk) {
-#if defined(ADDRESS_SANITIZER)
+#if defined(UNOWNED_PTR_DANGLING_CHECKS)
   EXPECT_DEATH(AssignDangling(), "");
 #else
   AssignDangling();
@@ -196,7 +196,7 @@ TEST(UnownedPtr, ReleaseOk) {
 }
 
 TEST(UnownedPtr, ReleaseNotOk) {
-#if defined(ADDRESS_SANITIZER)
+#if defined(UNOWNED_PTR_DANGLING_CHECKS)
   EXPECT_DEATH(ReleaseDangling(), "");
 #else
   ReleaseDangling();
@@ -258,5 +258,15 @@ TEST(UnownedPtr, TransparentCompare) {
   EXPECT_TRUE(pdfium::Contains(holder, &foos[0]));
   EXPECT_FALSE(pdfium::Contains(holder, &foos[1]));
 }
+
+#if defined(PDF_USE_PARTITION_ALLOC)
+#if BUILDFLAG(ENABLE_BACKUP_REF_PTR_SUPPORT)
+TEST(UnownedPtr, NewOperatorResultIsBRP) {
+  auto obj = std::make_unique<Clink>();
+  EXPECT_TRUE(partition_alloc::IsManagedByPartitionAllocBRPPool(
+      reinterpret_cast<uintptr_t>(obj.get())));
+}
+#endif
+#endif
 
 }  // namespace fxcrt

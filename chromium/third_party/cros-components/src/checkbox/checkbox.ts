@@ -9,6 +9,8 @@ import '@material/web/checkbox/checkbox.js';
 import {MdCheckbox} from '@material/web/checkbox/checkbox.js';
 import {css, CSSResultGroup, html, LitElement} from 'lit';
 
+import {shouldProcessClick} from '../helpers/helpers';
+
 /**
  * A ChromeOS compliant checkbox.
  * See spec
@@ -45,43 +47,63 @@ export class Checkbox extends LitElement {
   /** @nocollapse */
   static override properties = {
     checked: {type: Boolean, reflect: true},
-    disabled: {type: Boolean},
+    disabled: {type: Boolean, reflect: true},
   };
 
-  checkedInternal: boolean;
+  /** @nocollapse */
+  static events = {
+    /** The checkbox value changed via user input. */
+    CHANGE: 'change',
+  } as const;
+
+  /** @export */
+  checked: boolean;
+  /** @export */
   disabled: boolean;
 
   get mdCheckbox(): MdCheckbox {
     return this.renderRoot.querySelector('md-checkbox') as MdCheckbox;
   }
 
-  get checked() {
-    return this.mdCheckbox?.checked || false;
-  }
-  set checked(value: boolean) {
-    // Store the value for `checked`, so that it is not lost if it is set before
-    // the first render.
-    this.checkedInternal = value;
-    this.requestUpdate();
-  }
-
   constructor() {
     super();
     this.disabled = false;
-    this.checkedInternal = false;
+    this.checked = false;
+
+    this.addEventListener('click', (event: MouseEvent) => {
+      if (shouldProcessClick(event)) {
+        this.click();
+      }
+    });
   }
 
   override render() {
     return html`
-      <md-checkbox ?disabled=${this.disabled} ?checked=${this.checkedInternal}>
+      <md-checkbox
+          ?disabled=${this.disabled}
+          ?checked=${this.checked}
+          @change=${this.onChange}>
       </md-checkbox>
     `;
+  }
+
+  private onChange() {
+    this.checked = this.mdCheckbox.checked;
+    this.dispatchEvent(new Event('change', {bubbles: true}));
+  }
+
+  override click() {
+    this.mdCheckbox.click();
   }
 }
 
 customElements.define('cros-checkbox', Checkbox);
 
 declare global {
+  interface HTMLElementEventMap {
+    [Checkbox.events.CHANGE]: Event;
+  }
+
   interface HTMLElementTagNameMap {
     'cros-checkbox': Checkbox;
   }

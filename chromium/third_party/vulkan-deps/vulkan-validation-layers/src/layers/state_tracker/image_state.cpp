@@ -90,7 +90,7 @@ VkImageSubresourceRange NormalizeSubresourceRange(const VkImageCreateInfo &image
     return NormalizeSubresourceRange(image_create_info, subres_range);
 }
 
-static VkExternalMemoryHandleTypeFlags GetExternalHandleType(const VkImageCreateInfo *pCreateInfo) {
+static VkExternalMemoryHandleTypeFlags GetExternalHandleTypes(const VkImageCreateInfo *pCreateInfo) {
     const auto *external_memory_info = LvlFindInChain<VkExternalMemoryImageCreateInfo>(pCreateInfo->pNext);
     return external_memory_info ? external_memory_info->handleTypes : 0;
 }
@@ -188,7 +188,7 @@ static bool GetMetalExport(const VkImageCreateInfo *info, VkExportMetalObjectTyp
 IMAGE_STATE::IMAGE_STATE(const ValidationStateTracker *dev_data, VkImage img, const VkImageCreateInfo *pCreateInfo,
                          VkFormatFeatureFlags2KHR ff)
     : BINDABLE(img, kVulkanObjectTypeImage, (pCreateInfo->flags & VK_IMAGE_CREATE_SPARSE_BINDING_BIT) != 0,
-               (pCreateInfo->flags & VK_IMAGE_CREATE_PROTECTED_BIT) == 0, GetExternalHandleType(pCreateInfo)),
+               (pCreateInfo->flags & VK_IMAGE_CREATE_PROTECTED_BIT) == 0, GetExternalHandleTypes(pCreateInfo)),
       safe_create_info(pCreateInfo),
       createInfo(*safe_create_info.ptr()),
       shared_presentable(false),
@@ -201,7 +201,6 @@ IMAGE_STATE::IMAGE_STATE(const ValidationStateTracker *dev_data, VkImage img, co
       format_features(ff),
       disjoint((pCreateInfo->flags & VK_IMAGE_CREATE_DISJOINT_BIT) != 0),
       requirements(GetMemoryRequirements(dev_data, img, pCreateInfo, disjoint, IsExternalAHB())),
-      memory_requirements_checked{{false, false, false}},
       sparse_residency((pCreateInfo->flags & VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT) != 0),
       sparse_requirements(GetSparseRequirements(dev_data, img, sparse_residency)),
       sparse_metadata_required(SparseMetaDataRequired(sparse_requirements)),
@@ -221,7 +220,7 @@ IMAGE_STATE::IMAGE_STATE(const ValidationStateTracker *dev_data, VkImage img, co
 IMAGE_STATE::IMAGE_STATE(const ValidationStateTracker *dev_data, VkImage img, const VkImageCreateInfo *pCreateInfo,
                          VkSwapchainKHR swapchain, uint32_t swapchain_index, VkFormatFeatureFlags2KHR ff)
     : BINDABLE(img, kVulkanObjectTypeImage, (pCreateInfo->flags & VK_IMAGE_CREATE_SPARSE_BINDING_BIT) != 0,
-               (pCreateInfo->flags & VK_IMAGE_CREATE_PROTECTED_BIT) == 0, GetExternalHandleType(pCreateInfo)),
+               (pCreateInfo->flags & VK_IMAGE_CREATE_PROTECTED_BIT) == 0, GetExternalHandleTypes(pCreateInfo)),
       safe_create_info(pCreateInfo),
       createInfo(*safe_create_info.ptr()),
       shared_presentable(false),
@@ -234,7 +233,6 @@ IMAGE_STATE::IMAGE_STATE(const ValidationStateTracker *dev_data, VkImage img, co
       format_features(ff),
       disjoint((pCreateInfo->flags & VK_IMAGE_CREATE_DISJOINT_BIT) != 0),
       requirements{},
-      memory_requirements_checked{false, false, false},
       sparse_residency(false),
       sparse_requirements{},
       sparse_metadata_required(false),
@@ -304,7 +302,7 @@ bool IMAGE_STATE::IsCreateInfoDedicatedAllocationImageAliasingCompatible(const V
     return is_compatible;
 }
 
-bool IMAGE_STATE::IsCompatibleAliasing(IMAGE_STATE *other_image_state) const {
+bool IMAGE_STATE::IsCompatibleAliasing(const IMAGE_STATE *other_image_state) const {
     if (!IsSwapchainImage() && !other_image_state->IsSwapchainImage() &&
         !(createInfo.flags & other_image_state->createInfo.flags & VK_IMAGE_CREATE_ALIAS_BIT)) {
         return false;
@@ -327,54 +325,33 @@ void IMAGE_STATE::SetInitialLayoutMap() {
     if (layout_range_map) {
         return;
     }
-    if ((createInfo.flags & VK_IMAGE_CREATE_ALIAS_BIT) != 0) {
-        // Look for another aliasing image and point at its layout state.
-        // ObjectBindings() is thread safe since returns by value, and once
-        // the weak_ptr is successfully locked, the other image state won't
-        // be freed out from under us.
-        for (auto const &memory_state : GetBoundMemoryStates()) {
-            for (auto &entry : memory_state->ObjectBindings()) {
-                if (entry.first.type == kVulkanObjectTypeImage) {
-                    auto base_node = entry.second.lock();
-                    if (base_node) {
-                        auto other_image = static_cast<IMAGE_STATE *>(base_node.get());
-                        if (other_image != this && other_image->IsCompatibleAliasing(this)) {
-                            layout_range_map = other_image->layout_range_map;
-                            break;
-                        }
-                    }
-                }
-            }
-        }
+
+    std::shared_ptr<GlobalImageLayoutRangeMap> layout_map;
+    auto get_layout_map = [&layout_map](const IMAGE_STATE &other_image) {
+        layout_map = other_image.layout_range_map;
+        return true;
+    };
+
+    // See if an alias already has a layout map
+    if (HasAliasFlag()) {
+        AnyImageAliasOf(get_layout_map);
     } else if (bind_swapchain) {
         // Swapchains can also alias if multiple images are bound (or retrieved
         // with vkGetSwapchainImages()) for a (single swapchain, index) pair.
-        // ObjectBindings() is thread safe since returns by value, and once
-        // the weak_ptr is successfully locked, the other image state won't
-        // be freed out from under us.
-        for (auto &entry : bind_swapchain->ObjectBindings()) {
-            if (entry.first.type == kVulkanObjectTypeImage) {
-                auto base_node = entry.second.lock();
-                if (base_node) {
-                    auto other_image = static_cast<IMAGE_STATE *>(base_node.get());
-                    if (other_image != this && other_image->IsCompatibleAliasing(this)) {
-                        layout_range_map = other_image->layout_range_map;
-                        break;
-                    }
-                }
-            }
-        }
+        AnyAliasBindingOf(bind_swapchain->ObjectBindings(), get_layout_map);
     }
-    // ... otherwise set up the new map.
-    if (!layout_range_map) {
+
+    if (!layout_map) {
+        // otherwise set up a new map.
         // set up the new map completely before making it available
-        auto new_map = std::make_shared<GlobalImageLayoutRangeMap>(subresource_encoder.SubresourceCount());
+        layout_map = std::make_shared<GlobalImageLayoutRangeMap>(subresource_encoder.SubresourceCount());
         auto range_gen = subresource_adapter::RangeGenerator(subresource_encoder);
         for (; range_gen->non_empty(); ++range_gen) {
-            new_map->insert(new_map->end(), std::make_pair(*range_gen, createInfo.initialLayout));
+            layout_map->insert(layout_map->end(), std::make_pair(*range_gen, createInfo.initialLayout));
         }
-        layout_range_map = std::move(new_map);
     }
+    // And store in the object
+    layout_range_map = std::move(layout_map);
 }
 
 void IMAGE_STATE::SetSwapchain(std::shared_ptr<SWAPCHAIN_NODE> &swapchain, uint32_t swapchain_index) {
@@ -382,16 +359,6 @@ void IMAGE_STATE::SetSwapchain(std::shared_ptr<SWAPCHAIN_NODE> &swapchain, uint3
     bind_swapchain = swapchain;
     swapchain_image_index = swapchain_index;
     bind_swapchain->AddParent(this);
-}
-
-VkDeviceSize IMAGE_STATE::GetFakeBaseAddress() const {
-    if (!IsSwapchainImage()) {
-        return BINDABLE::GetFakeBaseAddress();
-    }
-    if (!bind_swapchain) {
-        return 0;
-    }
-    return bind_swapchain->images[swapchain_image_index].fake_base_address;
 }
 
 static VkSamplerYcbcrConversion GetSamplerConversion(const VkImageViewCreateInfo *ci) {
@@ -574,9 +541,10 @@ SWAPCHAIN_NODE::SWAPCHAIN_NODE(ValidationStateTracker *dev_data_, const VkSwapch
 void SWAPCHAIN_NODE::PresentImage(uint32_t image_index, uint64_t present_id) {
     if (image_index >= images.size()) return;
     assert(acquired_images > 0);
-    acquired_images--;
-    images[image_index].acquired = false;
-    if (shared_presentable) {
+    if (!shared_presentable) {
+        acquired_images--;
+        images[image_index].acquired = false;
+    } else {
         IMAGE_STATE *image_state = images[image_index].image_state;
         if (image_state) {
             image_state->layout_locked = true;

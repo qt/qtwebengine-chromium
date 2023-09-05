@@ -13,7 +13,7 @@
 #include "src/api/api-inl.h"
 #include "src/base/optional.h"
 #include "src/compiler/compilation-dependencies.h"
-#include "src/compiler/js-heap-broker.h"
+#include "src/compiler/js-heap-broker-inl.h"
 #include "src/execution/protectors-inl.h"
 #include "src/objects/allocation-site-inl.h"
 #include "src/objects/descriptor-array.h"
@@ -426,7 +426,7 @@ class JSFunctionData : public JSObjectData {
     DCHECK(serialized_);
     return context_;
   }
-  MapData* initial_map() const {
+  ObjectData* initial_map() const {
     DCHECK(serialized_);
     return initial_map_;
   }
@@ -484,7 +484,8 @@ class JSFunctionData : public JSObjectData {
   bool PrototypeRequiresRuntimeLookup_ = false;
 
   ObjectData* context_ = nullptr;
-  MapData* initial_map_ = nullptr;  // Derives from prototype_or_initial_map_.
+  ObjectData* initial_map_ =
+      nullptr;  // Derives from prototype_or_initial_map_.
   ObjectData* instance_prototype_ =
       nullptr;  // Derives from prototype_or_initial_map_.
   ObjectData* shared_ = nullptr;
@@ -612,7 +613,10 @@ void JSFunctionData::Cache(JSHeapBroker* broker) {
 
     has_initial_map_ = prototype_or_initial_map_->IsMap();
     if (has_initial_map_) {
-      initial_map_ = prototype_or_initial_map_->AsMap();
+      // MapData is not used for initial_map_ because some
+      // AlwaysSharedSpaceJSObject subclass constructors (e.g. SharedArray) have
+      // initial maps in RO space, which can be accessed directly.
+      initial_map_ = prototype_or_initial_map_;
 
       MapRef initial_map_ref = TryMakeRef<Map>(broker, initial_map_).value();
       if (initial_map_ref.IsInobjectSlackTrackingInProgress()) {
@@ -1170,9 +1174,6 @@ OddballType MapRef::oddball_type(JSHeapBroker* broker) const {
   if (equals(broker->boolean_map())) {
     return OddballType::kBoolean;
   }
-  if (equals(broker->the_hole_map())) {
-    return OddballType::kHole;
-  }
   if (equals(broker->uninitialized_map())) {
     return OddballType::kUninitialized;
   }
@@ -1496,6 +1497,8 @@ HEAP_ACCESSOR_B(Map, bit_field3, NumberOfOwnDescriptors,
                 Map::Bits3::NumberOfOwnDescriptorsBits)
 HEAP_ACCESSOR_B(Map, bit_field3, is_migration_target,
                 Map::Bits3::IsMigrationTargetBit)
+BIMODAL_ACCESSOR_B(Map, bit_field3, construction_counter,
+                   Map::Bits3::ConstructionCounterBits)
 HEAP_ACCESSOR_B(Map, bit_field, has_prototype_slot,
                 Map::Bits1::HasPrototypeSlotBit)
 HEAP_ACCESSOR_B(Map, bit_field, is_access_check_needed,
@@ -1685,7 +1688,7 @@ void* JSTypedArrayRef::data_ptr() const {
 }
 
 bool MapRef::IsInobjectSlackTrackingInProgress() const {
-  return object()->IsInobjectSlackTrackingInProgress();
+  return construction_counter() != Map::kNoSlackTracking;
 }
 
 int MapRef::constructor_function_index() const {
@@ -1795,16 +1798,11 @@ OptionalJSFunctionRef NativeContextRef::GetConstructorFunction(
 
 bool ObjectRef::IsNull() const { return object()->IsNull(); }
 
-bool ObjectRef::IsNullOrUndefined(JSHeapBroker* broker) const {
-  if (IsSmi()) return false;
-  OddballType type = AsHeapObject().map(broker).oddball_type(broker);
-  return type == OddballType::kNull || type == OddballType::kUndefined;
-}
+bool ObjectRef::IsUndefined() const { return object()->IsUndefined(); }
 
-bool ObjectRef::IsTheHole(JSHeapBroker* broker) const {
-  return IsHeapObject() &&
-         AsHeapObject().map(broker).oddball_type(broker) == OddballType::kHole;
-}
+bool ObjectRef::IsTheHole() const { return object()->IsTheHole(); }
+
+bool ObjectRef::IsNullOrUndefined() const { return IsNull() || IsUndefined(); }
 
 base::Optional<bool> ObjectRef::TryGetBooleanValue(JSHeapBroker* broker) const {
   if (data_->should_access_heap()) {
@@ -2006,9 +2004,6 @@ OddballType GetOddballType(Isolate* isolate, Map map) {
   }
   if (map == roots.boolean_map()) {
     return OddballType::kBoolean;
-  }
-  if (map == roots.the_hole_map()) {
-    return OddballType::kHole;
   }
   if (map == roots.uninitialized_map()) {
     return OddballType::kUninitialized;

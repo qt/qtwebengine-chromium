@@ -80,7 +80,7 @@ std::tuple<ComponentType, CompositionType> CalculateComponentAndComposition(
     TINT_ASSERT(Inspector, type->is_numeric_scalar_or_vector());
 
     ComponentType componentType = Switch(
-        type::Type::DeepestElementOf(type),  //
+        type->DeepestElement(),  //
         [&](const type::F32*) { return ComponentType::kF32; },
         [&](const type::F16*) { return ComponentType::kF16; },
         [&](const type::I32*) { return ComponentType::kI32; },
@@ -200,7 +200,7 @@ EntryPoint Inspector::GetEntryPoint(const tint::ast::Function* func) {
             override.name = name;
             override.id = global->OverrideId();
             auto* type = var->Type();
-            TINT_ASSERT(Inspector, type->is_scalar());
+            TINT_ASSERT(Inspector, type->Is<type::Scalar>());
             if (type->is_bool_scalar_or_vector()) {
                 override.type = Override::Type::kBool;
             } else if (type->is_float_scalar()) {
@@ -621,8 +621,8 @@ void Inspector::AddEntryPointInOutVariables(std::string name,
         // Recurse into members.
         for (auto* member : struct_ty->Members()) {
             AddEntryPointInOutVariables(name + "." + member->Name().Name(), member->Type(),
-                                        member->Declaration()->attributes, member->Location(),
-                                        variables);
+                                        member->Declaration()->attributes,
+                                        member->Attributes().location, variables);
         }
         return;
     }

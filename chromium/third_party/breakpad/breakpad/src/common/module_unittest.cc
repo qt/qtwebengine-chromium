@@ -198,9 +198,7 @@ TEST(Module, WriteOmitUnusedFiles) {
   function->lines.push_back(line1);
   function->lines.push_back(line2);
   m.AddFunction(function);
-
-  std::set<Module::InlineOrigin*, Module::InlineOriginCompare> inline_origins;
-  m.AssignSourceIds(inline_origins);
+  m.AssignSourceIds();
 
   vector<Module::File*> vec;
   m.GetFiles(&vec);

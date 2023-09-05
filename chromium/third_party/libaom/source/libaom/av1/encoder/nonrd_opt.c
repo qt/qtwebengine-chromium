@@ -918,14 +918,16 @@ void av1_estimate_intra_mode(AV1_COMP *cpi, MACROBLOCK *x, BLOCK_SIZE bsize,
       best_pickmode->best_ref_frame = INTRA_FRAME;
       best_pickmode->best_second_ref_frame = NONE;
       best_pickmode->best_mode_skip_txfm = this_rdc.skip_txfm;
-      if (!this_rdc.skip_txfm) {
-        memcpy(ctx->blk_skip, x->txfm_search_info.blk_skip,
-               sizeof(x->txfm_search_info.blk_skip[0]) * ctx->num_4x4_blk);
-      }
       mi->uv_mode = this_mode;
       mi->mv[0].as_int = INVALID_MV;
       mi->mv[1].as_int = INVALID_MV;
+      if (!this_rdc.skip_txfm)
+        memset(ctx->blk_skip, 0,
+               sizeof(x->txfm_search_info.blk_skip[0]) * ctx->num_4x4_blk);
     }
   }
+  if (best_pickmode->best_ref_frame == INTRA_FRAME)
+    memset(ctx->blk_skip, 0,
+           sizeof(x->txfm_search_info.blk_skip[0]) * ctx->num_4x4_blk);
   mi->tx_size = best_pickmode->best_tx_size;
 }

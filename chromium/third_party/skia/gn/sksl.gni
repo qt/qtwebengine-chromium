@@ -12,7 +12,6 @@
 #   //src/sksl/analysis/BUILD.bazel
 #   //src/sksl/codegen/BUILD.bazel
 #   //src/sksl/dsl/BUILD.bazel
-#   //src/sksl/dsl/priv/BUILD.bazel
 #   //src/sksl/ir/BUILD.bazel
 #   //src/sksl/tracing/BUILD.bazel
 #   //src/sksl/transform/BUILD.bazel
@@ -33,8 +32,6 @@ _include = get_path_info("../include", "abspath")
 #  //src/sksl/codegen:core_srcs
 #  //src/sksl/codegen:private_hdrs
 #  //src/sksl/dsl:srcs
-#  //src/sksl/dsl/priv:private_hdrs
-#  //src/sksl/dsl/priv:srcs
 #  //src/sksl/ir:ir_hdrs
 #  //src/sksl/ir:ir_srcs
 #  //src/sksl/tracing:private_hdrs
@@ -118,29 +115,13 @@ skia_sksl_sources = [
   "$_src/sksl/codegen/SkSLRasterPipelineCodeGenerator.h",
   "$_src/sksl/codegen/SkSLVMCodeGenerator.cpp",
   "$_src/sksl/codegen/SkSLVMCodeGenerator.h",
-  "$_src/sksl/dsl/DSL.h",
-  "$_src/sksl/dsl/DSLBlock.cpp",
-  "$_src/sksl/dsl/DSLBlock.h",
-  "$_src/sksl/dsl/DSLCase.cpp",
-  "$_src/sksl/dsl/DSLCase.h",
-  "$_src/sksl/dsl/DSLCore.cpp",
-  "$_src/sksl/dsl/DSLCore.h",
   "$_src/sksl/dsl/DSLExpression.cpp",
   "$_src/sksl/dsl/DSLExpression.h",
-  "$_src/sksl/dsl/DSLFunction.cpp",
-  "$_src/sksl/dsl/DSLFunction.h",
-  "$_src/sksl/dsl/DSLLayout.cpp",
-  "$_src/sksl/dsl/DSLLayout.h",
   "$_src/sksl/dsl/DSLModifiers.h",
   "$_src/sksl/dsl/DSLStatement.cpp",
   "$_src/sksl/dsl/DSLStatement.h",
   "$_src/sksl/dsl/DSLType.cpp",
   "$_src/sksl/dsl/DSLType.h",
-  "$_src/sksl/dsl/DSLVar.cpp",
-  "$_src/sksl/dsl/DSLVar.h",
-  "$_src/sksl/dsl/priv/DSLWriter.cpp",
-  "$_src/sksl/dsl/priv/DSLWriter.h",
-  "$_src/sksl/dsl/priv/DSL_priv.h",
   "$_src/sksl/ir/SkSLBinaryExpression.cpp",
   "$_src/sksl/ir/SkSLBinaryExpression.h",
   "$_src/sksl/ir/SkSLBlock.cpp",
@@ -177,10 +158,11 @@ skia_sksl_sources = [
   "$_src/sksl/ir/SkSLExpression.h",
   "$_src/sksl/ir/SkSLExpressionStatement.cpp",
   "$_src/sksl/ir/SkSLExpressionStatement.h",
+  "$_src/sksl/ir/SkSLExtension.cpp",
   "$_src/sksl/ir/SkSLExtension.h",
-  "$_src/sksl/ir/SkSLField.h",
   "$_src/sksl/ir/SkSLFieldAccess.cpp",
   "$_src/sksl/ir/SkSLFieldAccess.h",
+  "$_src/sksl/ir/SkSLFieldSymbol.h",
   "$_src/sksl/ir/SkSLForStatement.cpp",
   "$_src/sksl/ir/SkSLForStatement.h",
   "$_src/sksl/ir/SkSLFunctionCall.cpp",
@@ -191,6 +173,7 @@ skia_sksl_sources = [
   "$_src/sksl/ir/SkSLFunctionDefinition.h",
   "$_src/sksl/ir/SkSLFunctionPrototype.h",
   "$_src/sksl/ir/SkSLFunctionReference.h",
+  "$_src/sksl/ir/SkSLIRHelpers.h",
   "$_src/sksl/ir/SkSLIRNode.h",
   "$_src/sksl/ir/SkSLIfStatement.cpp",
   "$_src/sksl/ir/SkSLIfStatement.h",
@@ -205,6 +188,7 @@ skia_sksl_sources = [
   "$_src/sksl/ir/SkSLMethodReference.h",
   "$_src/sksl/ir/SkSLModifiers.cpp",
   "$_src/sksl/ir/SkSLModifiers.h",
+  "$_src/sksl/ir/SkSLModifiersDeclaration.cpp",
   "$_src/sksl/ir/SkSLModifiersDeclaration.h",
   "$_src/sksl/ir/SkSLNop.h",
   "$_src/sksl/ir/SkSLPoison.h",
@@ -219,7 +203,9 @@ skia_sksl_sources = [
   "$_src/sksl/ir/SkSLSetting.cpp",
   "$_src/sksl/ir/SkSLSetting.h",
   "$_src/sksl/ir/SkSLStatement.h",
+  "$_src/sksl/ir/SkSLStructDefinition.cpp",
   "$_src/sksl/ir/SkSLStructDefinition.h",
+  "$_src/sksl/ir/SkSLSwitchCase.cpp",
   "$_src/sksl/ir/SkSLSwitchCase.h",
   "$_src/sksl/ir/SkSLSwitchStatement.cpp",
   "$_src/sksl/ir/SkSLSwitchStatement.h",
@@ -253,6 +239,7 @@ skia_sksl_sources = [
   "$_src/sksl/transform/SkSLEliminateUnreachableCode.cpp",
   "$_src/sksl/transform/SkSLFindAndDeclareBuiltinFunctions.cpp",
   "$_src/sksl/transform/SkSLFindAndDeclareBuiltinVariables.cpp",
+  "$_src/sksl/transform/SkSLHoistSwitchVarDeclarationsAtTopLevel.cpp",
   "$_src/sksl/transform/SkSLProgramWriter.h",
   "$_src/sksl/transform/SkSLRenamePrivateSymbols.cpp",
   "$_src/sksl/transform/SkSLReplaceConstVarsWithLiterals.cpp",
@@ -308,6 +295,7 @@ skslc_deps = [
   "$_src/base/SkThreadID.cpp",
   "$_src/base/SkUTF.cpp",
   "$_src/base/SkUtils.cpp",
+  "$_src/core/SkChecksum.cpp",
   "$_src/core/SkCpu.cpp",
   "$_src/core/SkData.cpp",
   "$_src/core/SkMatrixInvert.cpp",

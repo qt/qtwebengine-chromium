@@ -25,6 +25,7 @@ import {Engine, EngineProxy} from '../common/engine';
 import {featureFlags, PERF_SAMPLE_FLAG} from '../common/feature_flags';
 import {pluginManager} from '../common/plugins';
 import {
+  LONG_NULL,
   NUM,
   NUM_NULL,
   STR,
@@ -61,7 +62,12 @@ import {
   PROCESS_SCHEDULING_TRACK_KIND,
 } from '../tracks/process_scheduling';
 import {PROCESS_SUMMARY_TRACK} from '../tracks/process_summary';
+import {
+  ENABLE_SCROLL_JANK_PLUGIN_V2, getScrollJankTracks,
+  INPUT_LATENCY_TRACK,
+} from '../tracks/scroll_jank';
 import {THREAD_STATE_TRACK_KIND} from '../tracks/thread_state';
+import {THREAD_STATE_TRACK_V2_KIND} from '../tracks/thread_state_v2';
 
 const TRACKS_V2_FLAG = featureFlags.register({
   id: 'tracksV2.1',
@@ -69,6 +75,22 @@ const TRACKS_V2_FLAG = featureFlags.register({
   description: 'Show tracks built on top of the Track V2 API.',
   defaultValue: false,
 });
+
+const TRACKS_V2_COMPARE_FLAG = featureFlags.register({
+  id: 'tracksV2Compare',
+  name: 'Tracks V2: Also show V1 tracks',
+  description:
+      'Show V1 tracks side by side with V2 tracks. Does nothing if TracksV2 is not enabled.',
+  defaultValue: false,
+});
+
+function showV2(): boolean {
+  return TRACKS_V2_FLAG.get();
+}
+
+function showV1(): boolean {
+  return !showV2() || (showV2() && TRACKS_V2_COMPARE_FLAG.get());
+}
 
 const MEM_DMA_COUNTER_NAME = 'mem.dma_heap';
 const MEM_DMA = 'mem.dma_buffer';
@@ -191,19 +213,59 @@ class TrackDecider {
     return 'Unknown';
   }
 
+  async guessCpuSizes(): Promise<Map<number, string>> {
+    const cpuToSize = new Map<number, string>();
+    await this.engine.query(`
+      SELECT IMPORT('common.cpus');
+    `);
+    const result = await this.engine.query(`
+      SELECT cpu, GUESS_CPU_SIZE(cpu) as size FROM cpu_counter_track;
+    `);
+
+    const it = result.iter({
+      cpu: NUM,
+      size: STR_NULL,
+    });
+
+    for (; it.valid(); it.next()) {
+      const size = it.size;
+      if (size !== null) {
+        cpuToSize.set(it.cpu, size);
+      }
+    }
+
+    return cpuToSize;
+  }
+
   async addCpuSchedulingTracks(): Promise<void> {
     const cpus = await this.engine.getCpus();
+    const cpuToSize = await this.guessCpuSizes();
+
     for (const cpu of cpus) {
+      const size = cpuToSize.get(cpu);
+      const name = size === undefined ? `Cpu ${cpu}` : `Cpu ${cpu} (${size})`;
       this.tracksToAdd.push({
         engineId: this.engineId,
         kind: CPU_SLICE_TRACK_KIND,
         trackSortKey: PrimaryTrackSortKey.ORDINARY_TRACK,
-        name: `Cpu ${cpu}`,
+        name,
         trackGroup: SCROLLING_TRACK_GROUP,
         config: {
           cpu,
         },
       });
+    }
+  }
+
+  async addScrollJankTracks(engine: Engine): Promise<void> {
+    const scrollJankTracks = getScrollJankTracks(engine);
+    const scrollJankTracksResult = await scrollJankTracks;
+    const originalLength = this.tracksToAdd.length;
+    this.tracksToAdd.length += scrollJankTracksResult.tracksToAdd.length;
+
+    for (let i = 0; i < scrollJankTracksResult.tracksToAdd.length; ++i) {
+      this.tracksToAdd[i + originalLength] =
+          scrollJankTracksResult.tracksToAdd[i];
     }
   }
 
@@ -265,20 +327,21 @@ class TrackDecider {
 
   async addGlobalAsyncTracks(engine: EngineProxy): Promise<void> {
     const rawGlobalAsyncTracks = await engine.query(`
-      with global_tracks as materialized (
+      with tracks_with_slices as materialized (
+        select distinct track_id
+        from slice
+      ),
+      global_tracks as (
         select
           track.parent_id as parent_id,
           track.id as track_id,
-          track.name as name,
-          count(1) cnt
+          track.name as name
         from track
-        join slice on slice.track_id = track.id
+        join tracks_with_slices on tracks_with_slices.track_id = track.id
         where
           track.type = "track"
           or track.type = "gpu_track"
           or track.type = "cpu_track"
-        group by track_id
-        having cnt > 0
       ),
       global_tracks_grouped as (
         select
@@ -308,6 +371,7 @@ class TrackDecider {
     });
 
     const parentIdToGroupId = new Map<number, string>();
+    let scrollJankRendered = false;
 
     for (; it.valid(); it.next()) {
       const kind = ASYNC_SLICE_TRACK_KIND;
@@ -352,6 +416,13 @@ class TrackDecider {
         }
       }
 
+      if (ENABLE_SCROLL_JANK_PLUGIN_V2.get() && !scrollJankRendered &&
+          name.includes(INPUT_LATENCY_TRACK)) {
+        // This ensures that the scroll jank tracks render above the tracks
+        // for GestureScrollUpdate.
+        await this.addScrollJankTracks(this.engine);
+        scrollJankRendered = true;
+      }
       const track = {
         engineId: this.engineId,
         kind,
@@ -402,45 +473,6 @@ class TrackDecider {
           },
         });
       }
-    }
-  }
-
-  async addGlobalCounterTracks(engine: EngineProxy): Promise<void> {
-    // Add global or GPU counter tracks that are not bound to any pid/tid.
-    const globalCounters = await engine.query(`
-    select name, id
-    from (
-      select name, id
-      from counter_track
-      where type = 'counter_track'
-      union
-      select name, id
-      from gpu_counter_track
-      where name != 'gpufreq'
-    )
-    order by name
-  `);
-
-    const it = globalCounters.iter({
-      name: STR,
-      id: NUM,
-    });
-
-    for (; it.valid(); it.next()) {
-      const name = it.name;
-      const trackId = it.id;
-      this.tracksToAdd.push({
-        engineId: this.engineId,
-        kind: COUNTER_TRACK_KIND,
-        name,
-        trackSortKey: PrimaryTrackSortKey.COUNTER_TRACK,
-        trackGroup: SCROLLING_TRACK_GROUP,
-        config: {
-          name,
-          trackId,
-          scale: getCounterScale(name),
-        },
-      });
     }
   }
 
@@ -720,9 +752,7 @@ class TrackDecider {
   }
 
   async addFtraceTrack(engine: EngineProxy): Promise<void> {
-    const query = `select distinct cpu
-          from ftrace_event
-          where cpu + 1 > 1 or utid + 1 > 1`;
+    const query = 'select distinct cpu from ftrace_event';
 
     const result = await engine.query(query);
     const it = result.iter({cpu: NUM});
@@ -918,18 +948,38 @@ class TrackDecider {
         // the track creation as well.
         continue;
       }
-      const kind = THREAD_STATE_TRACK_KIND;
-      this.tracksToAdd.push({
-        engineId: this.engineId,
-        kind,
-        name: TrackDecider.getTrackName({utid, tid, threadName, kind}),
-        trackGroup: uuid,
-        trackSortKey: {
-          utid,
-          priority: InThreadTrackSortKey.THREAD_SCHEDULING_STATE_TRACK,
-        },
-        config: {utid, tid},
-      });
+
+      const priority = InThreadTrackSortKey.THREAD_SCHEDULING_STATE_TRACK;
+
+      if (showV1()) {
+        const kind = THREAD_STATE_TRACK_KIND;
+        this.tracksToAdd.push({
+          engineId: this.engineId,
+          kind: THREAD_STATE_TRACK_KIND,
+          name: TrackDecider.getTrackName({utid, tid, threadName, kind}),
+          trackGroup: uuid,
+          trackSortKey: {
+            utid,
+            priority,
+          },
+          config: {utid, tid},
+        });
+      }
+
+      if (showV2()) {
+        const kind = THREAD_STATE_TRACK_V2_KIND;
+        this.tracksToAdd.push({
+          engineId: this.engineId,
+          kind,
+          name: TrackDecider.getTrackName({utid, tid, threadName, kind}),
+          trackGroup: uuid,
+          trackSortKey: {
+            utid,
+            priority,
+          },
+          config: {utid, tid},
+        });
+      }
     }
   }
 
@@ -997,9 +1047,9 @@ class TrackDecider {
       upid: NUM_NULL,
       tid: NUM_NULL,
       threadName: STR_NULL,
-      startTs: NUM_NULL,
+      startTs: LONG_NULL,
       trackId: NUM,
-      endTs: NUM_NULL,
+      endTs: LONG_NULL,
     });
     for (; it.valid(); it.next()) {
       const utid = it.utid;
@@ -1259,25 +1309,27 @@ class TrackDecider {
       const kind = SLICE_TRACK_KIND;
       const name = TrackDecider.getTrackName(
           {name: trackName, utid, tid, threadName, kind});
-      this.tracksToAdd.push({
-        engineId: this.engineId,
-        kind,
-        name,
-        trackGroup: uuid,
-        trackSortKey: {
-          utid,
-          priority: isDefaultTrackForScope ?
-              InThreadTrackSortKey.DEFAULT_TRACK :
-              InThreadTrackSortKey.ORDINARY,
-        },
-        config: {
-          trackId,
-          maxDepth,
-          tid,
-        },
-      });
+      if (showV1()) {
+        this.tracksToAdd.push({
+          engineId: this.engineId,
+          kind,
+          name,
+          trackGroup: uuid,
+          trackSortKey: {
+            utid,
+            priority: isDefaultTrackForScope ?
+                InThreadTrackSortKey.DEFAULT_TRACK :
+                InThreadTrackSortKey.ORDINARY,
+          },
+          config: {
+            trackId,
+            maxDepth,
+            tid,
+          },
+        });
+      }
 
-      if (TRACKS_V2_FLAG.get()) {
+      if (showV2()) {
         this.tracksToAdd.push({
           engineId: this.engineId,
           kind: 'GenericSliceTrack',
@@ -1314,8 +1366,8 @@ class TrackDecider {
       upid: NUM,
       pid: NUM_NULL,
       processName: STR_NULL,
-      startTs: NUM_NULL,
-      endTs: NUM_NULL,
+      startTs: LONG_NULL,
+      endTs: LONG_NULL,
     });
     for (let i = 0; it.valid(); ++i, it.next()) {
       const pid = it.pid;

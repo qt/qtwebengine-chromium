@@ -21,7 +21,7 @@ ProtocolConnectionServerFactory::Create(
     const ServerConfig& config,
     MessageDemuxer* demuxer,
     ProtocolConnectionServer::Observer* observer,
-    TaskRunner* task_runner) {
+    TaskRunner& task_runner) {
   return std::make_unique<QuicServer>(
       config, demuxer, std::make_unique<QuicConnectionFactoryImpl>(task_runner),
       observer, &Clock::now, task_runner);

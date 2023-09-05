@@ -15,6 +15,7 @@
 #include "connections/implementation/client_proxy.h"
 
 #include <cstdio>
+#include <memory>
 #include <optional>
 #include <string>
 
@@ -28,8 +29,12 @@
 #include "absl/types/span.h"
 #include "connections/listeners.h"
 #include "connections/strategy.h"
+#include "connections/v3/bandwidth_info.h"
+#include "connections/v3/connections_device_provider.h"
 #include "internal/analytics/event_logger.h"
+#include "internal/interop/device_provider.h"
 #include "internal/platform/byte_array.h"
+#include "internal/platform/count_down_latch.h"
 #include "internal/platform/feature_flags.h"
 #include "internal/platform/medium_environment.h"
 
@@ -55,6 +60,11 @@ class FakeEventLogger : public ::nearby::analytics::EventLogger {
   explicit FakeEventLogger() = default;
 
   void Log(const ::google::protobuf::MessageLite& message) override {}
+};
+
+class MockDeviceProvider : public nearby::NearbyDeviceProvider {
+ public:
+  MOCK_METHOD((const NearbyDevice*), GetLocalDevice, (), (override));
 };
 
 class ClientProxyTest : public ::testing::TestWithParam<FeatureFlags::Flags> {
@@ -83,9 +93,9 @@ class ClientProxyTest : public ::testing::TestWithParam<FeatureFlags::Flags> {
   };
   struct MockPayloadListener {
     StrictMock<
-        MockFunction<void(const std::string& endpoint_id, Payload payload)>>
+        MockFunction<void(absl::string_view endpoint_id, Payload payload)>>
         payload_cb;
-    StrictMock<MockFunction<void(const std::string& endpoint_id,
+    StrictMock<MockFunction<void(absl::string_view endpoint_id,
                                  const PayloadProgressInfo& info)>>
         payload_progress_cb;
   };
@@ -176,7 +186,13 @@ class ClientProxyTest : public ::testing::TestWithParam<FeatureFlags::Flags> {
                                           const Endpoint& endpoint) {
     EXPECT_TRUE(client->HasPendingConnectionToEndpoint(endpoint.id));
     EXPECT_FALSE(client->HasLocalEndpointResponded(endpoint.id));
-    client->LocalEndpointAcceptedConnection(endpoint.id, payload_listener_);
+    client->LocalEndpointAcceptedConnection(
+        endpoint.id,
+        {
+            .payload_cb = mock_discovery_payload_.payload_cb.AsStdFunction(),
+            .payload_progress_cb =
+                mock_discovery_payload_.payload_progress_cb.AsStdFunction(),
+        });
     EXPECT_TRUE(client->HasLocalEndpointResponded(endpoint.id));
     EXPECT_TRUE(client->LocalConnectionIsAccepted(endpoint.id));
   }
@@ -290,16 +306,12 @@ class ClientProxyTest : public ::testing::TestWithParam<FeatureFlags::Flags> {
       .endpoint_found_cb = mock_discovery_.endpoint_found_cb.AsStdFunction(),
       .endpoint_lost_cb = mock_discovery_.endpoint_lost_cb.AsStdFunction(),
   };
-  PayloadListener payload_listener_{
-      .payload_cb = mock_discovery_payload_.payload_cb.AsStdFunction(),
-      .payload_progress_cb =
-          mock_discovery_payload_.payload_progress_cb.AsStdFunction(),
-  };
   ConnectionOptions connection_options_;
   AdvertisingOptions advertising_options_;
   DiscoveryOptions discovery_options_;
 };
 
+// Regression test for b/279962714.
 TEST_P(ClientProxyTest, CanCancelEndpoint) {
   FeatureFlags::Flags feature_flags = GetParam();
   MediumEnvironment::Instance().SetFeatureFlags(feature_flags);
@@ -310,8 +322,15 @@ TEST_P(ClientProxyTest, CanCancelEndpoint) {
   OnDiscoveryEndpointFound(&client2_, advertising_endpoint);
   OnDiscoveryConnectionInitiated(&client2_, advertising_endpoint);
 
+  // `CancellationFlag` pointers are passed to other classes in Nearby
+  // Connections, and by using the pointers directly, we test their
+  // consumption of `CancellationFlag` pointers.
+  CancellationFlag* cancellation_flag =
+      client2_.GetCancellationFlag(advertising_endpoint.id);
+
   EXPECT_FALSE(
       client2_.GetCancellationFlag(advertising_endpoint.id)->Cancelled());
+  EXPECT_FALSE(cancellation_flag->Cancelled());
 
   client2_.CancelEndpoint(advertising_endpoint.id);
 
@@ -319,13 +338,16 @@ TEST_P(ClientProxyTest, CanCancelEndpoint) {
   if (!feature_flags.enable_cancellation_flag) {
     EXPECT_FALSE(
         client2_.GetCancellationFlag(advertising_endpoint.id)->Cancelled());
+    EXPECT_FALSE(cancellation_flag->Cancelled());
   } else {
     // The Cancelled is always true as the default flag being returned.
     EXPECT_TRUE(
         client2_.GetCancellationFlag(advertising_endpoint.id)->Cancelled());
+    EXPECT_TRUE(cancellation_flag->Cancelled());
   }
 }
 
+// Regression test for b/279962714.
 TEST_P(ClientProxyTest, CanCancelAllEndpoints) {
   FeatureFlags::Flags feature_flags = GetParam();
   MediumEnvironment::Instance().SetFeatureFlags(feature_flags);
@@ -336,8 +358,15 @@ TEST_P(ClientProxyTest, CanCancelAllEndpoints) {
   OnDiscoveryEndpointFound(&client2_, advertising_endpoint);
   OnDiscoveryConnectionInitiated(&client2_, advertising_endpoint);
 
+  // `CancellationFlag` pointers are passed to other classes in Nearby
+  // Connections, and by using the pointers directly, we test their
+  // consumption of `CancellationFlag` pointers.
+  CancellationFlag* cancellation_flag =
+      client2_.GetCancellationFlag(advertising_endpoint.id);
+
   EXPECT_FALSE(
       client2_.GetCancellationFlag(advertising_endpoint.id)->Cancelled());
+  EXPECT_FALSE(cancellation_flag->Cancelled());
 
   client2_.CancelAllEndpoints();
 
@@ -345,10 +374,12 @@ TEST_P(ClientProxyTest, CanCancelAllEndpoints) {
   if (!feature_flags.enable_cancellation_flag) {
     EXPECT_FALSE(
         client2_.GetCancellationFlag(advertising_endpoint.id)->Cancelled());
+    EXPECT_FALSE(cancellation_flag->Cancelled());
   } else {
     // The Cancelled is always true as the default flag being returned.
     EXPECT_TRUE(
         client2_.GetCancellationFlag(advertising_endpoint.id)->Cancelled());
+    EXPECT_TRUE(cancellation_flag->Cancelled());
   }
 }
 
@@ -411,10 +442,10 @@ TEST_F(ClientProxyTest, DumpString) {
       "Nearby Connections State\n"
       "  Client ID: %d\n"
       "  Local Endpoint ID: %s\n"
-      "  High Visibility Mode: 0\n"
-      "  Is Advertising: 0\n"
+      "  High Visibility Mode: false\n"
+      "  Is Advertising: false\n"
+      "  Is Discovering: false\n"
       "  Advertising Service ID: \n"
-      "  Is Discovering: 0\n"
       "  Discovery Service ID: \n"
       "  Connections: \n"
       "  Discovered endpoint IDs: \n",
@@ -424,6 +455,16 @@ TEST_F(ClientProxyTest, DumpString) {
 }
 
 TEST_F(ClientProxyTest, GeneratedEndpointIdIsUnique) {
+  EXPECT_NE(client1_.GetLocalEndpointId(), client2_.GetLocalEndpointId());
+}
+
+TEST_F(ClientProxyTest, GeneratedEndpointIdIsUniqueWithDeviceProvider) {
+  client1_.RegisterDeviceProvider(
+      std::make_unique<v3::ConnectionsDeviceProvider>(
+          v3::ConnectionsDeviceProvider("", {})));
+  client2_.RegisterDeviceProvider(
+      std::make_unique<v3::ConnectionsDeviceProvider>(
+          v3::ConnectionsDeviceProvider("", {})));
   EXPECT_NE(client1_.GetLocalEndpointId(), client2_.GetLocalEndpointId());
 }
 
@@ -924,6 +965,102 @@ TEST_F(ClientProxyTest, SetRemoteInfoCorrect) {
   ASSERT_TRUE(client1_.GetRemoteOsInfo(advertising_endpoint.id).has_value());
   EXPECT_EQ(client1_.GetRemoteOsInfo(advertising_endpoint.id).value().type(),
             OsInfo::ANDROID);
+}
+
+// Test ClientProxy::AddCancellationFlag, where if a flag is already in the map,
+// uncancel it. This addresses the case when users use NS to share/receive a
+// file, then cancel in the middle because the wrong file was selected, and then
+// re-do right after. Without the ability to uncancel a flag in
+// `AddCancelationFlag`, the second share/receive process will
+// be seen as cancelled with cancellation flags enabled. However this tests that
+// it will uncancel the flag which is added in RequestConnection and
+// OnConnectionInitiated in the NS flow, and allow another attempt with the
+// same endpoint.
+TEST_F(ClientProxyTest, UncancelCancellationFlags) {
+  // Enable cancellation flags.
+  MediumEnvironment::Instance().SetFeatureFlags(kTestCases[0]);
+  Endpoint advertising_endpoint =
+      StartAdvertising(&client1_, advertising_connection_listener_);
+
+  // Add a cancellation flag to the client proxy.
+  client1_.AddCancellationFlag(advertising_endpoint.id);
+  auto flag = client1_.GetCancellationFlag(advertising_endpoint.id);
+  EXPECT_FALSE(flag->Cancelled());
+  EXPECT_FALSE(
+      client1_.GetCancellationFlag(advertising_endpoint.id)->Cancelled());
+
+  // Cancel the flag.
+  flag->Cancel();
+  EXPECT_TRUE(flag->Cancelled());
+  EXPECT_TRUE(
+      client1_.GetCancellationFlag(advertising_endpoint.id)->Cancelled());
+
+  // On subsequent calls to add a new cancellation flag, expect an the flag to
+  // be uncancelled.
+  client1_.AddCancellationFlag(advertising_endpoint.id);
+  flag = client1_.GetCancellationFlag(advertising_endpoint.id);
+  EXPECT_FALSE(flag->Cancelled());
+  EXPECT_FALSE(
+      client1_.GetCancellationFlag(advertising_endpoint.id)->Cancelled());
+}
+
+TEST_F(ClientProxyTest, GetLocalDeviceWorksWithoutDeviceProvider) {
+  auto device = client1_.GetLocalDevice();
+  EXPECT_NE(device, nullptr);
+  EXPECT_EQ(device->GetEndpointId().length(), 4);
+  EXPECT_NE(client1_.GetLocalDeviceProvider(), nullptr);
+}
+
+TEST_F(ClientProxyTest, GetLocalDeviceWorksWithDeviceProvider) {
+  client1_.RegisterDeviceProvider(std::make_unique<MockDeviceProvider>());
+  ASSERT_NE(client1_.GetLocalDeviceProvider(), nullptr);
+  EXPECT_CALL(
+      *(down_cast<MockDeviceProvider*>(client1_.GetLocalDeviceProvider())),
+      GetLocalDevice);
+  client1_.GetLocalDevice();
+}
+
+TEST_F(ClientProxyTest, TestGetSetLocalEndpointInfo) {
+  client1_.UpdateLocalEndpointInfo("endpoint_info");
+  EXPECT_EQ(client1_.GetLocalEndpointInfo(), "endpoint_info");
+}
+
+TEST_F(ClientProxyTest, TestGetIncomingConnectionListener) {
+  CountDownLatch result_latch(2);
+  CountDownLatch bwu_latch(1);
+  CountDownLatch disconnect_latch(1);
+  CountDownLatch init_latch(1);
+  client1_.StartedListeningForIncomingConnections(
+      service_id_, Strategy::kP2pCluster,
+      {
+          .initiated_cb =
+              [&init_latch](const NearbyDevice&,
+                            const v3::InitialConnectionInfo&) {
+                init_latch.CountDown();
+              },
+          .result_cb = [&result_latch](
+                           const NearbyDevice&,
+                           v3::ConnectionResult) { result_latch.CountDown(); },
+          .disconnected_cb =
+              [&disconnect_latch](const NearbyDevice&) {
+                disconnect_latch.CountDown();
+              },
+          .bandwidth_changed_cb =
+              [&bwu_latch](const NearbyDevice&, v3::BandwidthInfo) {
+                bwu_latch.CountDown();
+              },
+      },
+      {});
+  auto listener = client1_.GetAdvertisingOrIncomingConnectionListener();
+  listener.accepted_cb("endpoint-id");
+  listener.initiated_cb("endpoint-id", {.is_incoming_connection = false});
+  listener.disconnected_cb("endpoint-id");
+  listener.rejected_cb("endpoint-id", {Status::Value::kConnectionRejected});
+  listener.bandwidth_changed_cb("endpoint-id", Medium::WIFI_LAN);
+  EXPECT_TRUE(result_latch.Await().Ok());
+  EXPECT_TRUE(init_latch.Await().Ok());
+  EXPECT_TRUE(bwu_latch.Await().Ok());
+  EXPECT_TRUE(disconnect_latch.Await().Ok());
 }
 
 }  // namespace

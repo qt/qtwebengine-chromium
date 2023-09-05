@@ -895,7 +895,7 @@ uint32_t WasmScript::GetFunctionHash(int function_index) {
   DCHECK_GT(module->functions.size(), function_index);
   const i::wasm::WasmFunction& func = module->functions[function_index];
   i::wasm::ModuleWireBytes wire_bytes(native_module->wire_bytes());
-  base::Vector<const i::byte> function_bytes =
+  base::Vector<const uint8_t> function_bytes =
       wire_bytes.GetFunctionBytes(&func);
   // TODO(herhut): Maybe also take module, name and signature into account.
   return i::StringHasher::HashSequentialString(function_bytes.begin(),
@@ -1216,8 +1216,7 @@ void GlobalLexicalScopeNames(v8::Local<v8::Context> v8_context,
   i::Handle<i::Context> context = Utils::OpenHandle(*v8_context);
   i::Isolate* isolate = context->GetIsolate();
   i::Handle<i::ScriptContextTable> table(
-      context->global_object().native_context().script_context_table(),
-      isolate);
+      context->native_context().script_context_table(), isolate);
   for (int i = 0; i < table->used(kAcquireLoad); i++) {
     i::Handle<i::Context> script_context =
         i::ScriptContextTable::GetContext(isolate, table, i);
@@ -1450,7 +1449,7 @@ Maybe<bool> DebugPropertyIterator::Advance() {
     return Nothing<bool>();
   }
   Local<v8::Context> context =
-      Utils::ToLocal(handle(isolate_->context(), isolate_));
+      Utils::ToLocal(handle(isolate_->context().native_context(), isolate_));
   CallDepthScope<false> call_depth_scope(isolate_, context);
 
   if (!AdvanceInternal()) {

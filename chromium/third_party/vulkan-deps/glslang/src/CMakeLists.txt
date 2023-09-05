@@ -35,9 +35,6 @@ project(glslang)
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
-# Enable compile commands database
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
 # Adhere to GNU filesystem layout conventions
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
@@ -107,18 +104,6 @@ else()
 endif()
 option(ENABLE_CTEST "Enables testing" ON)
 
-if(ENABLE_GLSLANG_INSTALL AND CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT AND WIN32)
-    set(CMAKE_INSTALL_PREFIX "install" CACHE STRING "..." FORCE)
-endif()
-
-option(USE_CCACHE "Use ccache" OFF)
-if(USE_CCACHE)
-    find_program(CCACHE_FOUND ccache)
-    if(CCACHE_FOUND)
-        set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE ccache)
-    endif()
-endif()
-
 if(ENABLE_CTEST)
     include(CTest)
 endif()
@@ -150,7 +135,6 @@ endif()
 if(${CMAKE_CXX_COMPILER_ID} MATCHES "GNU")
     add_compile_options(-Wall -Wmaybe-uninitialized -Wuninitialized -Wunused -Wunused-local-typedefs
                         -Wunused-parameter -Wunused-value  -Wunused-variable -Wunused-but-set-parameter -Wunused-but-set-variable -fno-exceptions)
-    add_compile_options(-Wno-reorder)  # disable this from -Wall, since it happens all over.
     if(NOT ENABLE_RTTI)
         add_compile_options(-fno-rtti)
     endif()
@@ -168,7 +152,6 @@ if(${CMAKE_CXX_COMPILER_ID} MATCHES "GNU")
 elseif(${CMAKE_CXX_COMPILER_ID} MATCHES "Clang" AND NOT MSVC)
     add_compile_options(-Wall -Wuninitialized -Wunused -Wunused-local-typedefs
                         -Wunused-parameter -Wunused-value  -Wunused-variable)
-    add_compile_options(-Wno-reorder)  # disable this from -Wall, since it happens all over.
     if(NOT ENABLE_RTTI)
         add_compile_options(-fno-rtti)
     endif()
@@ -180,7 +163,7 @@ elseif(${CMAKE_CXX_COMPILER_ID} MATCHES "Clang" AND NOT MSVC)
         # Error if there's symbols that are not found at link time.
         if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
             add_link_options("-Wl,-undefined,error")
-        else()
+        elseif(NOT APPLE)
             add_link_options("-Wl,--no-undefined")
         endif()
     endif()
@@ -293,7 +276,7 @@ else()
 endif()
 
 if(BUILD_EXTERNAL AND IS_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/External)
-    find_host_package(PythonInterp 3 REQUIRED)
+    find_host_package(Python3 REQUIRED)
 
     # We depend on these for later projects, so they should come first.
     add_subdirectory(External)

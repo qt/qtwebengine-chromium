@@ -113,7 +113,7 @@ void OverrideRtpTimestamp(int frame_count, EncodedFrame* frame, int fps) {
 // Receiver→Sender), with a settable amount of delay.
 class SimulatedNetworkPipe {
  public:
-  SimulatedNetworkPipe(TaskRunner* task_runner,
+  SimulatedNetworkPipe(TaskRunner& task_runner,
                        Environment::PacketConsumer* remote)
       : task_runner_(task_runner), remote_(remote) {
     // Create a fake IPv6 address using the "documentative purposes" prefix
@@ -135,7 +135,7 @@ class SimulatedNetworkPipe {
   // The caller needs to spin the task runner before |packet| will reach the
   // other side.
   void StartPacketTransmission(std::vector<uint8_t> packet) {
-    task_runner_->PostTaskWithDelay(
+    task_runner_.PostTaskWithDelay(
         [this, pkt = std::move(packet)]() mutable {
           remote_->OnReceivedPacket(local_endpoint_, FakeClock::now(),
                                     std::move(pkt));
@@ -144,7 +144,7 @@ class SimulatedNetworkPipe {
   }
 
  private:
-  TaskRunner* const task_runner_;
+  TaskRunner& task_runner_;
   Environment::PacketConsumer* const remote_;
 
   IPEndpoint local_endpoint_;
@@ -334,7 +334,7 @@ class SenderTest : public testing::Test {
   SenderTest()
       : fake_clock_(Clock::now()),
         task_runner_(&fake_clock_),
-        sender_environment_(&FakeClock::now, &task_runner_),
+        sender_environment_(&FakeClock::now, task_runner_),
         sender_packet_router_(&sender_environment_,
                               kNumPacketsPerBurst,
                               kBurstInterval),
@@ -349,9 +349,9 @@ class SenderTest : public testing::Test {
                  /* .aes_iv_mask = */ kCastIvMask,
                  /* .is_pli_enabled = */ true},
                 kRtpPayloadType),
-        receiver_to_sender_pipe_(&task_runner_, &sender_packet_router_),
+        receiver_to_sender_pipe_(task_runner_, &sender_packet_router_),
         receiver_(&receiver_to_sender_pipe_),
-        sender_to_receiver_pipe_(&task_runner_, &receiver_) {
+        sender_to_receiver_pipe_(task_runner_, &receiver_) {
     sender_environment_.SetSocketSubscriber(&socket_subscriber_);
     sender_environment_.set_remote_endpoint(
         receiver_to_sender_pipe_.local_endpoint());

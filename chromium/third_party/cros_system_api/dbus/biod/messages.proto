@@ -8,6 +8,8 @@ option optimize_for = LITE_RUNTIME;
 
 package biod;
 
+option go_package = "chromiumos/system_api/biod_messages_proto";
+
 import "constants.proto";
 
 // Included in biod's AuthScanDone signal

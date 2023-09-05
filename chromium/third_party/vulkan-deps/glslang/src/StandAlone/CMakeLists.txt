@@ -1,4 +1,4 @@
-# Copyright (C) 2020 The Khronos Group Inc.
+# Copyright (C) 2020-2023 The Khronos Group Inc.
 #
 # All rights reserved.
 #
@@ -31,7 +31,7 @@
 # ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-find_host_package(PythonInterp 3 REQUIRED)
+find_host_package(Python3 REQUIRED)
 
 set(GLSLANG_INTRINSIC_H          "${GLSLANG_GENERATED_INCLUDEDIR}/glslang/glsl_intrinsic_header.h")
 set(GLSLANG_INTRINSIC_PY         "${CMAKE_CURRENT_SOURCE_DIR}/../gen_extension_headers.py")
@@ -39,7 +39,7 @@ set(GLSLANG_INTRINSIC_HEADER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../glslang/Extensi
 
 add_custom_command(
     OUTPUT  ${GLSLANG_INTRINSIC_H}
-    COMMAND ${PYTHON_EXECUTABLE} "${GLSLANG_INTRINSIC_PY}"
+    COMMAND Python3::Interpreter "${GLSLANG_INTRINSIC_PY}"
             "-i" ${GLSLANG_INTRINSIC_HEADER_DIR}
             "-o" ${GLSLANG_INTRINSIC_H}
     DEPENDS ${GLSLANG_INTRINSIC_PY}
@@ -65,7 +65,7 @@ endif()
 if(WIN32)
     set(LIBRARIES ${LIBRARIES} psapi)
 elseif(UNIX)
-    if(NOT ANDROID)
+    if(NOT ANDROID AND NOT QNX)
         set(LIBRARIES ${LIBRARIES} pthread)
     endif()
 endif()
@@ -101,7 +101,7 @@ if(ENABLE_GLSLANG_INSTALL)
         message(WARNING \"Using `glslangValidatorTargets.cmake` is deprecated: use `find_package(glslang)` to find glslang CMake targets.\")
 
         if (NOT TARGET glslang::glslangValidator)
-            include(\"\${CMAKE_CURRENT_LIST_DIR}/../../${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}/glslang-targets.cmake\")
+            include(\"${CMAKE_INSTALL_FULL_LIBDIR}/cmake/${PROJECT_NAME}/glslang-targets.cmake\")
         endif()
 
         add_library(glslangValidator ALIAS glslang::glslangValidator)
@@ -116,7 +116,7 @@ if(ENABLE_GLSLANG_INSTALL)
             message(WARNING \"Using `spirv-remapTargets.cmake` is deprecated: use `find_package(glslang)` to find glslang CMake targets.\")
 
             if (NOT TARGET glslang::spirv-remap)
-                include(\"\${CMAKE_CURRENT_LIST_DIR}/../../${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}/glslang-targets.cmake\")
+                include(\"${CMAKE_INSTALL_FULL_LIBDIR}/cmake/${PROJECT_NAME}/glslang-targets.cmake\")
             endif()
 
             add_library(spirv-remap ALIAS glslang::spirv-remap)

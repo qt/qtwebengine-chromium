@@ -7,8 +7,9 @@ exports_files_legacy()
 skia_filegroup(
     name = "public_hdrs",
     srcs = [
-        "GrTextureGenerator.h",
+        "GrExternalTextureGenerator.h",
         "SkImageGanesh.h",
+        "SkSurfaceGanesh.h",
     ],
     visibility = ["//include/gpu:__pkg__"],
 )

@@ -16,31 +16,21 @@
 #define SRC_TINT_IR_CONSTRUCT_H_
 
 #include "src/tint/ir/call.h"
-#include "src/tint/symbol_table.h"
-#include "src/tint/type/type.h"
 #include "src/tint/utils/castable.h"
-#include "src/tint/utils/string_stream.h"
 
 namespace tint::ir {
 
 /// A constructor instruction in the IR.
 class Construct : public utils::Castable<Construct, Call> {
   public:
+    /// The base offset in Operands() for the args
+    static constexpr size_t kArgsOperandOffset = 0;
+
     /// Constructor
     /// @param result the result value
     /// @param args the constructor arguments
-    Construct(Value* result, utils::VectorRef<Value*> args);
-    Construct(const Construct& instr) = delete;
-    Construct(Construct&& instr) = delete;
+    explicit Construct(InstructionResult* result, utils::VectorRef<Value*> args = utils::Empty);
     ~Construct() override;
-
-    Construct& operator=(const Construct& instr) = delete;
-    Construct& operator=(Construct&& instr) = delete;
-
-    /// Write the instruction to the given stream
-    /// @param out the stream to write to
-    /// @returns the stream
-    utils::StringStream& ToString(utils::StringStream& out) const override;
 };
 
 }  // namespace tint::ir

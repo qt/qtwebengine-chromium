@@ -31,7 +31,7 @@ class ReceiverSession;
 class MirroringApplication final : public ApplicationAgent::Application,
                                    public StreamingPlaybackController::Client {
  public:
-  MirroringApplication(TaskRunner* task_runner,
+  MirroringApplication(TaskRunner& task_runner,
                        const IPAddress& interface_address,
                        ApplicationAgent* agent);
 
@@ -52,7 +52,7 @@ class MirroringApplication final : public ApplicationAgent::Application,
                        Error error) final;
 
  private:
-  TaskRunner* const task_runner_;
+  TaskRunner& task_runner_;
   const IPAddress interface_address_;
   const std::vector<std::string> app_ids_;
   ApplicationAgent* const agent_;

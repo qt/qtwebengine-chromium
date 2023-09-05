@@ -10,7 +10,7 @@
 #include <chrono>
 
 #include "discovery/dnssd/impl/constants.h"
-#include "discovery/mdns/mdns_records.h"
+#include "discovery/mdns/public/mdns_records.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 

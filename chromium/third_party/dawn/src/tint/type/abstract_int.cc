@@ -25,10 +25,6 @@ AbstractInt::AbstractInt() : Base(utils::Hash(utils::TypeInfo::Of<AbstractInt>()
 
 AbstractInt::~AbstractInt() = default;
 
-bool AbstractInt::Equals(const UniqueNode& other) const {
-    return other.Is<AbstractInt>();
-}
-
 std::string AbstractInt::FriendlyName() const {
     return "abstract-int";
 }

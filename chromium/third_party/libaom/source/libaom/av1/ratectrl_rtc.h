@@ -32,6 +32,8 @@ struct AV1RateControlRtcConfig {
 
   int width;
   int height;
+  // Flag indicating if the content is screen or not.
+  bool is_screen;
   // 0-63
   int max_quantizer;
   int min_quantizer;
@@ -69,6 +71,12 @@ struct AV1LoopfilterLevel {
   int filter_level_v;
 };
 
+struct AV1CdefInfo {
+  int cdef_strength_y;
+  int cdef_strength_uv;
+  int damping;
+};
+
 class AV1RateControlRTC {
  public:
   static std::unique_ptr<AV1RateControlRTC> Create(
@@ -80,6 +88,8 @@ class AV1RateControlRTC {
   int GetQP() const;
   // GetLoopfilterLevel() needs to be called after ComputeQP()
   AV1LoopfilterLevel GetLoopfilterLevel() const;
+  // GetCdefInfo() needs to be called after ComputeQP()
+  AV1CdefInfo GetCdefInfo() const;
   signed char *GetCyclicRefreshMap() const;
   int *GetDeltaQ() const;
   void ComputeQP(const AV1FrameParamsRTC &frame_params);

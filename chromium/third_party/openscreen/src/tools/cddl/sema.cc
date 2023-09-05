@@ -350,7 +350,8 @@ CddlGroup* AnalyzeGroup(CddlSymbolTable* table, const AstNode& group) {
 // Parses a string into an optional uint64_t, with the value being that
 // represented by the string if it is present and nullopt if it cannot
 // be parsed.
-// TODO(rwkeane): Add support for hex and binary options.
+// TODO(issuetracker.google.com/281741443): Add support for hex and binary
+// options.
 absl::optional<uint64_t> ParseOptionalUint(const std::string& text) {
   if (text == "0") {
     return 0;

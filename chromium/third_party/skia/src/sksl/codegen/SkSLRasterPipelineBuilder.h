@@ -8,6 +8,10 @@
 #ifndef SKSL_RASTERPIPELINEBUILDER
 #define SKSL_RASTERPIPELINEBUILDER
 
+#include "include/core/SkTypes.h"
+
+#ifdef SK_ENABLE_SKSL_IN_RASTER_PIPELINE
+
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
 #include "include/private/base/SkTArray.h"
@@ -96,6 +100,7 @@ enum class BuilderOp {
     copy_stack_to_slots_unmasked,
     copy_stack_to_slots_indirect,
     copy_uniform_to_slots_unmasked,
+    store_immutable_value,
     swizzle_copy_stack_to_slots,
     swizzle_copy_stack_to_slots_indirect,
     discard_stack,
@@ -111,7 +116,6 @@ enum class BuilderOp {
     push_src_rgba,
     push_dst_rgba,
     push_device_xy01,
-    pop_src_rg,
     pop_src_rgba,
     pop_dst_rgba,
     set_current_stack,
@@ -151,8 +155,8 @@ public:
     virtual bool appendColorFilter(int index) = 0;
     virtual bool appendBlender(int index) = 0;
 
-    virtual void toLinearSrgb() = 0;
-    virtual void fromLinearSrgb() = 0;
+    virtual void toLinearSrgb(const void* color) = 0;
+    virtual void fromLinearSrgb(const void* color) = 0;
 };
 
 class Program {
@@ -164,12 +168,10 @@ public:
             DebugTracePriv* debugTrace);
     ~Program();
 
-#if !defined(SKSL_STANDALONE)
     bool appendStages(SkRasterPipeline* pipeline,
                       SkArenaAlloc* alloc,
                       Callbacks* callbacks,
                       SkSpan<const float> uniforms) const;
-#endif
 
     void dump(SkWStream* out) const;
 
@@ -220,12 +222,23 @@ private:
                                  float* dst, int numSlots) const;
 
     // Appends a multi-slot single-input math operation to the pipeline. `baseStage` must refer to
-    // an single-slot "apply_op" stage, which must be immediately followed by specializations for
+    // a single-slot "apply_op" stage, which must be immediately followed by specializations for
     // 2-4 slots. For instance, {`ceil_float`, `ceil_2_floats`, `ceil_3_floats`, `ceil_4_floats`}
     // must be contiguous ops in the stage list, listed in that order; pass `ceil_float` and we
     // pick the appropriate op based on `numSlots`.
     void appendMultiSlotUnaryOp(skia_private::TArray<Stage>* pipeline, ProgramOp baseStage,
                                 float* dst, int numSlots) const;
+
+    // Appends an immediate-mode binary operation to the pipeline. `baseStage` must refer to
+    // a single-slot, immediate-mode "apply-imm" stage, which must be immediately preceded by
+    // specializations for 2-4 slots if numSlots is greater than 1. For instance, {`add_imm_4_ints`,
+    // `add_imm_3_ints`, `add_imm_2_ints`, `add_imm_int`} must be contiguous ops in the stage list,
+    // listed in that order; pass `add_imm_int` and we pick the appropriate op based on `numSlots`.
+    // Some immediate-mode binary ops are single-slot only in the interest of code size; in this
+    // case, the multi-slot ops can be absent, but numSlots must be 1.
+    void appendImmediateBinaryOp(skia_private::TArray<Stage>* pipeline, SkArenaAlloc* alloc,
+                                 ProgramOp baseStage,
+                                 SkRPOffset dst, float value, int numSlots) const;
 
     // Appends a two-input math operation to the pipeline. `src` must be _immediately_ after `dst`
     // in memory. `baseStage` must refer to an unbounded "apply_to_n_slots" stage. A BinaryOpCtx
@@ -250,20 +263,23 @@ private:
     // must refer to an unbounded "apply_to_n_slots" stage, which must be immediately followed by
     // specializations for 1-4 slots.
     void appendAdjacentMultiSlotTernaryOp(skia_private::TArray<Stage>* pipeline,
-                                          SkArenaAlloc* alloc,
-                                          ProgramOp stage, float* dst,
-                                          const float* src0, const float* src1, int numSlots) const;
+                                          SkArenaAlloc* alloc, ProgramOp baseStage,
+                                          std::byte* basePtr, SkRPOffset dst, SkRPOffset src0,
+                                          SkRPOffset src1, int numSlots) const;
 
     // Appends a math operation having three inputs (dst, src0, src1) and one output (dst) to the
     // pipeline. The three inputs must be _immediately_ adjacent in memory. `baseStage` must refer
     // to an unbounded "apply_to_n_slots" stage. A TernaryOpCtx will be used to pass pointers to the
     // destination and sources; the delta between the each pointer implicitly gives the slot count.
     void appendAdjacentNWayTernaryOp(skia_private::TArray<Stage>* pipeline, SkArenaAlloc* alloc,
-                                     ProgramOp stage, float* dst,
-                                     const float* src0, const float* src1, int numSlots) const;
+                                     ProgramOp stage, std::byte* basePtr, SkRPOffset dst,
+                                     SkRPOffset src0, SkRPOffset src1, int numSlots) const;
 
     // Appends a stack_rewind op on platforms where it is needed (when SK_HAS_MUSTTAIL is not set).
     void appendStackRewind(skia_private::TArray<Stage>* pipeline) const;
+
+    class Dumper;
+    friend class Dumper;
 
     skia_private::TArray<Instruction> fInstructions;
     int fNumValueSlots = 0;
@@ -376,12 +392,28 @@ public:
         this->push_constant_i(sk_bit_cast<int32_t>(val), /*count=*/1);
     }
 
-    void push_constant_u(uint32_t val) {
-        this->push_constant_i(sk_bit_cast<int32_t>(val), /*count=*/1);
+    void push_constant_u(uint32_t val, int count = 1) {
+        this->push_constant_i(sk_bit_cast<int32_t>(val), count);
     }
 
     // Translates into copy_uniforms (from uniforms into temp stack) in Raster Pipeline.
     void push_uniform(SlotRange src);
+
+    // Initializes the Raster Pipeline slot with a constant value when the program is first created.
+    // Does not add any instructions to the program.
+    void store_immutable_value_i(Slot slot, int32_t val) {
+        fInstructions.push_back({BuilderOp::store_immutable_value, {slot}, val});
+    }
+
+    void store_immutable_value_f(Slot slot, float val) {
+        fInstructions.push_back({BuilderOp::store_immutable_value,
+                                 {slot}, sk_bit_cast<int32_t>(val)});
+    }
+
+    void store_immutable_value_u(Slot slot, uint32_t val) {
+        fInstructions.push_back({BuilderOp::store_immutable_value,
+                                 {slot}, sk_bit_cast<int32_t>(val)});
+    }
 
     // Translates into copy_uniforms (from uniforms into value-slots) in Raster Pipeline.
     void copy_uniform_to_slots_unmasked(SlotRange dst, SlotRange src);
@@ -500,6 +532,11 @@ public:
         fInstructions.push_back({BuilderOp::case_op, {}, value});
     }
 
+    // Performs a `continue` in a loop.
+    void continue_op(int continueMaskStackID) {
+        fInstructions.push_back({BuilderOp::continue_op, {}, continueMaskStackID});
+    }
+
     void select(int slots) {
         // Overlays the top two entries on the stack, making one hybrid entry. The execution mask
         // is used to select which lanes are preserved.
@@ -555,6 +592,11 @@ public:
         fInstructions.push_back({BuilderOp::merge_condition_mask, {}});
     }
 
+    void merge_inv_condition_mask() {
+        SkASSERT(this->executionMaskWritesAreEnabled());
+        fInstructions.push_back({BuilderOp::merge_inv_condition_mask, {}});
+    }
+
     void push_loop_mask() {
         SkASSERT(this->executionMaskWritesAreEnabled());
         fInstructions.push_back({BuilderOp::push_loop_mask, {}});
@@ -566,9 +608,7 @@ public:
     }
 
     // Exchanges src.rgba with the four values at the top of the stack.
-    void exchange_src() {
-        fInstructions.push_back({BuilderOp::exchange_src, {}});
-    }
+    void exchange_src();
 
     void push_src_rgba() {
         fInstructions.push_back({BuilderOp::push_src_rgba, {}});
@@ -580,10 +620,6 @@ public:
 
     void push_device_xy01() {
         fInstructions.push_back({BuilderOp::push_device_xy01, {}});
-    }
-
-    void pop_src_rg() {
-        fInstructions.push_back({BuilderOp::pop_src_rg, {}});
     }
 
     void pop_src_rgba();
@@ -638,11 +674,19 @@ public:
     }
 
     void invoke_to_linear_srgb() {
+        // The intrinsics accept a three-component value; add a fourth padding element (which
+        // will be ignored) since our RP ops deal in RGBA colors.
+        this->pad_stack(1);
         fInstructions.push_back({BuilderOp::invoke_to_linear_srgb, {}});
+        this->discard_stack(1);
     }
 
     void invoke_from_linear_srgb() {
+        // The intrinsics accept a three-component value; add a fourth padding element (which
+        // will be ignored) since our RP ops deal in RGBA colors.
+        this->pad_stack(1);
         fInstructions.push_back({BuilderOp::invoke_from_linear_srgb, {}});
+        this->discard_stack(1);
     }
 
     // Writes the current line number to the debug trace.
@@ -676,6 +720,7 @@ public:
 
 private:
     void simplifyPopSlotsUnmasked(SlotRange* dst);
+    bool simplifyImmediateUnmaskedOp();
 
     skia_private::TArray<Instruction> fInstructions;
     int fNumLabels = 0;
@@ -685,4 +730,13 @@ private:
 }  // namespace RP
 }  // namespace SkSL
 
+#else   // !defined(SK_ENABLE_SKSL_IN_RASTER_PIPELINE)
+
+namespace SkSL::RP {
+
+class Program {};
+
+}  // namespace SkSL::RP
+
+#endif  // SK_ENABLE_SKSL_IN_RASTER_PIPELINE
 #endif  // SKSL_RASTERPIPELINEBUILDER

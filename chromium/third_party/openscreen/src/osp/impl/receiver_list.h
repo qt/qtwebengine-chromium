@@ -17,13 +17,16 @@ class ReceiverList {
  public:
   ReceiverList();
   ~ReceiverList();
-  ReceiverList(ReceiverList&&) = delete;
+  ReceiverList(ReceiverList&&) noexcept = delete;
   ReceiverList& operator=(ReceiverList&&) = delete;
 
   void OnReceiverAdded(const ServiceInfo& info);
 
   Error OnReceiverChanged(const ServiceInfo& info);
-  Error OnReceiverRemoved(const ServiceInfo& info);
+  // If successfully removed, returns the service info that was removed. If
+  // `info` is a reference to an entry in `receivers`, it is immediately
+  // invalid after calling this method.
+  ErrorOr<ServiceInfo> OnReceiverRemoved(const ServiceInfo& info);
   Error OnAllReceiversRemoved();
 
   const std::vector<ServiceInfo>& receivers() const { return receivers_; }

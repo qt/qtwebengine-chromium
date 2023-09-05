@@ -17,7 +17,6 @@
 #include "quiche/balsa/framer_interface.h"
 #include "quiche/balsa/http_validation_policy.h"
 #include "quiche/balsa/noop_balsa_visitor.h"
-#include "quiche/common/platform/api/quiche_bug_tracker.h"
 #include "quiche/common/platform/api/quiche_export.h"
 #include "quiche/common/platform/api/quiche_flag_utils.h"
 
@@ -54,8 +53,6 @@ class QUICHE_EXPORT BalsaFrame : public FramerInterface {
         visitor_(&do_nothing_visitor_),
         chunk_length_remaining_(0),
         content_length_remaining_(0),
-        last_slash_n_loc_(nullptr),
-        last_recorded_slash_n_loc_(nullptr),
         last_slash_n_idx_(0),
         term_chars_(0),
         parse_state_(BalsaFrameEnums::READING_HEADER_AND_FIRSTLINE),
@@ -141,10 +138,10 @@ class QUICHE_EXPORT BalsaFrame : public FramerInterface {
     return invalid_chars_level_ == InvalidCharsLevel::kError;
   }
 
-  void set_http_validation_policy(const quiche::HttpValidationPolicy& policy) {
+  void set_http_validation_policy(const HttpValidationPolicy& policy) {
     http_validation_policy_ = policy;
   }
-  const quiche::HttpValidationPolicy& http_validation_policy() const {
+  const HttpValidationPolicy& http_validation_policy() const {
     return http_validation_policy_;
   }
 
@@ -288,8 +285,6 @@ class QUICHE_EXPORT BalsaFrame : public FramerInterface {
   BalsaVisitorInterface* visitor_;
   size_t chunk_length_remaining_;
   size_t content_length_remaining_;
-  const char* last_slash_n_loc_;
-  const char* last_recorded_slash_n_loc_;
   size_t last_slash_n_idx_;
   uint32_t term_chars_;
   BalsaFrameEnums::ParseState parse_state_;
@@ -309,7 +304,7 @@ class QUICHE_EXPORT BalsaFrame : public FramerInterface {
                            // in Reset().
   InvalidCharsLevel invalid_chars_level_;  // This is not reset in Reset().
 
-  quiche::HttpValidationPolicy http_validation_policy_;
+  HttpValidationPolicy http_validation_policy_;
 
   // This is not reset in Reset().
   // TODO(b/68801833): Default-enable and then deprecate this field, along with

@@ -103,14 +103,13 @@ if(${CMAKE_CXX_COMPILER_ID} MATCHES "(GNU|Clang)")
         )
     endif()
 elseif(MSVC)
-    add_compile_options("/W3") # TODO: Update to /W4   
-    add_compile_options("/w34456") # Warn about nested declarations
-    add_compile_options("/w34701") # Warn about potentially uninitialized variables
-    add_compile_options("/w34703") # Warn about potentially uninitialized variables    
-    add_compile_options("/w34057") # Warn about different indirection types.
-    add_compile_options("/w34245") # Warn about signed/unsigned mismatch.
-    add_compile_options("/we4189") # Warn about unused variables
-    add_compile_options("/we5038") # Warn about MIL ordering in constructors
+    add_compile_options(
+        /W4
+        /we5038 # Enable warning about MIL ordering in constructors
+    )
+
+    # Enforce stricter ISO C++
+    add_compile_options(/permissive-)
 
     # PDBs aren't generated on Release builds by default.
     add_compile_options("$<$<CONFIG:Release>:/Zi>")
@@ -129,7 +128,7 @@ elseif(MSVC)
     add_compile_options($<$<BOOL:${MSVC_IDE}>:/MP>) # Speed up Visual Studio builds
 endif()
 
-option(BUILD_LAYERS "Build VkLayer_khronos_validation" ON)
+option(BUILD_LAYERS "Build validation layers" ON)
 option(BUILD_LAYER_SUPPORT_FILES "Install VkLayer_utils")
 
 if(BUILD_LAYERS OR BUILD_LAYER_SUPPORT_FILES)

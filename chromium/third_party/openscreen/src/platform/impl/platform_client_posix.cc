@@ -51,8 +51,8 @@ UdpSocketReaderPosix* PlatformClientPosix::udp_socket_reader() {
   return udp_socket_reader_.get();
 }
 
-TaskRunner* PlatformClientPosix::GetTaskRunner() {
-  return task_runner_.get();
+TaskRunner& PlatformClientPosix::GetTaskRunner() {
+  return *task_runner_;
 }
 
 PlatformClientPosix::~PlatformClientPosix() {

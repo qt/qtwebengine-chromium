@@ -82,7 +82,7 @@ class ApplicationAgent final
   };
 
   ApplicationAgent(
-      TaskRunner* task_runner,
+      TaskRunner& task_runner,
       DeviceAuthNamespaceHandler::CredentialsProvider* credentials_provider);
 
   ~ApplicationAgent() final;
@@ -153,7 +153,7 @@ class ApplicationAgent final
   // Application LAUNCH or STOP.
   void BroadcastReceiverStatus();
 
-  TaskRunner* const task_runner_;
+  TaskRunner& task_runner_;
   DeviceAuthNamespaceHandler auth_handler_;
   VirtualConnectionRouter router_;
   ConnectionNamespaceHandler connection_handler_;

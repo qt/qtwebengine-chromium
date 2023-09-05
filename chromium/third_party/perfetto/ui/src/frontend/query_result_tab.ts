@@ -56,7 +56,7 @@ interface QueryResultTabConfig {
 }
 
 export class QueryResultTab extends BottomTab<QueryResultTabConfig> {
-  static readonly kind = 'org.perfetto.QueryResultTab';
+  static readonly kind = 'dev.perfetto.QueryResultTab';
 
   queryResponse?: QueryResponse;
   sqlViewName?: string;
@@ -105,6 +105,7 @@ export class QueryResultTab extends BottomTab<QueryResultTabConfig> {
     return m(QueryTable, {
       query: this.config.query,
       resp: this.queryResponse,
+      fillParent: true,
       onClose: () => closeTab(this.uuid),
       contextButtons: [
         this.sqlViewName === undefined ?

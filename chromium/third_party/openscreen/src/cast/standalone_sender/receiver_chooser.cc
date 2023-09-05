@@ -23,7 +23,7 @@ constexpr decltype(ReceiverChooser::kWaitForStragglersDelay)
     ReceiverChooser::kWaitForStragglersDelay;
 
 ReceiverChooser::ReceiverChooser(const InterfaceInfo& interface,
-                                 TaskRunner* task_runner,
+                                 TaskRunner& task_runner,
                                  ResultCallback result_callback)
     : result_callback_(std::move(result_callback)),
       menu_alarm_(&Clock::now, task_runner) {
@@ -41,7 +41,7 @@ ReceiverChooser::ReceiverChooser(const InterfaceInfo& interface,
 
   OSP_LOG_INFO << "Starting discovery. Note that it can take dozens of seconds "
                   "to detect anything on some networks!";
-  task_runner->PostTask([this] { watcher_->StartDiscovery(); });
+  task_runner.PostTask([this] { watcher_->StartDiscovery(); });
 }
 
 ReceiverChooser::~ReceiverChooser() = default;

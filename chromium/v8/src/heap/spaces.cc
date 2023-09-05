@@ -17,7 +17,6 @@
 #include "src/heap/concurrent-marking.h"
 #include "src/heap/heap.h"
 #include "src/heap/incremental-marking-inl.h"
-#include "src/heap/invalidated-slots-inl.h"
 #include "src/heap/large-spaces.h"
 #include "src/heap/mark-compact.h"
 #include "src/heap/memory-chunk-layout.h"
@@ -88,6 +87,7 @@ void Page::ReleaseFreeListCategories() {
 Page* Page::ConvertNewToOld(Page* old_page) {
   DCHECK(old_page);
   DCHECK(old_page->InNewSpace());
+  old_page->ResetAgeInNewSpace();
   OldSpace* old_space = old_page->heap()->old_space();
   old_page->set_owner(old_space);
   old_page->ClearFlags(Page::kAllFlagsMask);
@@ -141,6 +141,7 @@ size_t Page::ShrinkToHighWaterMark() {
   // Ensure that slot sets are empty. Otherwise the buckets for the shrunk
   // area would not be freed when deallocating this page.
   DCHECK_NULL(slot_set<OLD_TO_NEW>());
+  DCHECK_NULL(slot_set<OLD_TO_NEW_BACKGROUND>());
   DCHECK_NULL(slot_set<OLD_TO_OLD>());
 
   size_t unused = RoundDown(static_cast<size_t>(area_end() - filler.address()),
@@ -399,11 +400,6 @@ void SpaceWithLinearArea::InvokeAllocationObservers(
               allocation_info_.limit());
 
     // Ensure that there is a valid object
-    if (identity() == CODE_SPACE) {
-      MemoryChunk* chunk = MemoryChunk::FromAddress(soon_object);
-      heap()->UnprotectAndRegisterMemoryChunk(
-          chunk, UnprotectMemoryOrigin::kMainThread);
-    }
     heap_->CreateFillerObjectAt(soon_object, static_cast<int>(size_in_bytes));
 
 #if DEBUG

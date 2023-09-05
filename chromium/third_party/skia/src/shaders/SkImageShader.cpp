@@ -7,33 +7,47 @@
 
 #include "src/shaders/SkImageShader.h"
 
+#include "include/core/SkAlphaType.h"
+#include "include/core/SkBitmap.h"
+#include "include/core/SkBlendMode.h"
+#include "include/core/SkColorType.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkPixmap.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkShader.h"
+#include "include/core/SkTileMode.h"
+#include "include/private/base/SkMath.h"
+#include "modules/skcms/skcms.h"
 #include "src/base/SkArenaAlloc.h"
-#include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkColorSpaceXformSteps.h"
+#include "src/core/SkEffectPriv.h"
 #include "src/core/SkImageInfoPriv.h"
-#include "src/core/SkMatrixPriv.h"
-#include "src/core/SkMatrixProvider.h"
+#include "src/core/SkImagePriv.h"
 #include "src/core/SkMipmapAccessor.h"
-#include "src/core/SkOpts.h"
+#include "src/core/SkPicturePriv.h"
 #include "src/core/SkRasterPipeline.h"
+#include "src/core/SkRasterPipelineOpContexts.h"
+#include "src/core/SkRasterPipelineOpList.h"
 #include "src/core/SkReadBuffer.h"
-#include "src/core/SkVM.h"
+#include "src/core/SkSamplingPriv.h"
 #include "src/core/SkWriteBuffer.h"
 #include "src/image/SkImage_Base.h"
-#include "src/shaders/SkBitmapProcShader.h"
 #include "src/shaders/SkLocalMatrixShader.h"
-#include "src/shaders/SkTransformShader.h"
 
 #if defined(SK_GRAPHITE)
+#include "src/core/SkYUVMath.h"
+#include "src/gpu/Blend.h"
 #include "src/gpu/graphite/ImageUtils.h"
 #include "src/gpu/graphite/Image_Graphite.h"
+#include "src/gpu/graphite/Image_YUVA_Graphite.h"
 #include "src/gpu/graphite/KeyContext.h"
 #include "src/gpu/graphite/KeyHelpers.h"
 #include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/PaintParamsKey.h"
 #include "src/gpu/graphite/ReadSwizzle.h"
 #include "src/gpu/graphite/TextureProxyView.h"
-
+#include "src/gpu/graphite/YUVATextureProxies.h"
 
 static skgpu::graphite::ReadSwizzle swizzle_class_to_read_enum(const skgpu::Swizzle& swizzle) {
     if (swizzle == skgpu::Swizzle::RGBA()) {
@@ -53,6 +67,20 @@ static skgpu::graphite::ReadSwizzle swizzle_class_to_read_enum(const skgpu::Swiz
     }
 }
 #endif
+
+#if defined(SK_ENABLE_SKVM)
+#include "src/core/SkVM.h"
+#endif
+
+#ifdef SK_ENABLE_LEGACY_SHADERCONTEXT
+#include "src/shaders/SkBitmapProcShader.h"
+#endif
+
+#include <optional>
+#include <tuple>
+#include <utility>
+
+class SkColorSpace;
 
 SkM44 SkImageShader::CubicResamplerMatrix(float B, float C) {
 #if 0
@@ -95,12 +123,11 @@ static SkTileMode optimize(SkTileMode tm, int dimension) {
 #endif
 }
 
-// TODO: currently this only *always* used in asFragmentProcessor(), which is excluded on no-gpu
-// builds. No-gpu builds only use needs_subset() in asserts, so release+no-gpu doesn't use it, which
-// can cause builds to fail if unused warnings are treated as errors.
-[[maybe_unused]] static bool needs_subset(SkImage* img, const SkRect& subset) {
+#if defined(SK_DEBUG)
+static bool needs_subset(SkImage* img, const SkRect& subset) {
     return subset != SkRect::Make(img->dimensions());
 }
+#endif
 
 SkImageShader::SkImageShader(sk_sp<SkImage> img,
                              const SkRect& subset,
@@ -202,8 +229,8 @@ bool SkImageShader::isOpaque() const {
 static bool legacy_shader_can_handle(const SkMatrix& inv) {
     SkASSERT(!inv.hasPerspective());
 
-    // Scale+translate methods are always present, but affine might not be.
-    if (!SkOpts::S32_alpha_D32_filter_DXDY && !inv.isScaleTranslate()) {
+    // We only have methods for scale+translate
+    if (!inv.isScaleTranslate()) {
         return false;
     }
 
@@ -364,86 +391,54 @@ sk_sp<SkShader> SkImageShader::MakeSubset(sk_sp<SkImage> image,
                                                            clampAsIfUnpremul);
 }
 
-///////////////////////////////////////////////////////////////////////////////////////////////////
-
-#if defined(SK_GANESH)
-
-#include "src/gpu/ganesh/GrColorInfo.h"
-#include "src/gpu/ganesh/GrFPArgs.h"
-#include "src/gpu/ganesh/effects/GrBlendFragmentProcessor.h"
-#include "src/gpu/ganesh/image/GrImageUtils.h"
-
-std::unique_ptr<GrFragmentProcessor>
-SkImageShader::asFragmentProcessor(const GrFPArgs& args, const MatrixRec& mRec) const {
-    SkTileMode tileModes[2] = {fTileModeX, fTileModeY};
-    const SkRect* subset = needs_subset(fImage.get(), fSubset) ? &fSubset : nullptr;
-    auto fp = skgpu::ganesh::AsFragmentProcessor(
-            args.fContext, fImage, fSampling, tileModes, SkMatrix::I(), subset);
-    if (!fp) {
-        return nullptr;
-    }
-
-    bool success;
-    std::tie(success, fp) = mRec.apply(std::move(fp));
-    if (!success) {
-        return nullptr;
-    }
-
-    if (!fRaw) {
-        fp = GrColorSpaceXformEffect::Make(std::move(fp),
-                                           fImage->colorSpace(),
-                                           fImage->alphaType(),
-                                           args.fDstColorInfo->colorSpace(),
-                                           kPremul_SkAlphaType);
-
-        if (fImage->isAlphaOnly()) {
-            fp = GrBlendFragmentProcessor::Make<SkBlendMode::kDstIn>(std::move(fp), nullptr);
-        }
-    }
-
-    return fp;
-}
-
-#endif
-
 #if defined(SK_GRAPHITE)
-
-#include "src/gpu/Blend.h"
 
 void SkImageShader::addToKey(const skgpu::graphite::KeyContext& keyContext,
                              skgpu::graphite::PaintParamsKeyBuilder* builder,
                              skgpu::graphite::PipelineDataGatherer* gatherer) const {
     using namespace skgpu::graphite;
 
-    ImageShaderBlock::ImageData imgData(fSampling, fTileModeX, fTileModeY, fSubset,
-                                        ReadSwizzle::kRGBA);
-
     auto [ imageToDraw, newSampling ] = skgpu::graphite::GetGraphiteBacked(keyContext.recorder(),
                                                                            fImage.get(),
                                                                            fSampling);
-
-    if (imageToDraw) {
-        imgData.fSampling = newSampling;
-        skgpu::Mipmapped mipmapped = (newSampling.mipmap != SkMipmapMode::kNone)
-                                         ? skgpu::Mipmapped::kYes : skgpu::Mipmapped::kNo;
-
-        auto [view, _] = as_IB(imageToDraw)->asView(keyContext.recorder(), mipmapped);
-        imgData.fTextureProxy = view.refProxy();
-        skgpu::Swizzle readSwizzle = view.swizzle();
-        // If the color type is alpha-only, propagate the alpha value to the other channels.
-        if (imageToDraw->isAlphaOnly()) {
-            readSwizzle = skgpu::Swizzle::Concat(readSwizzle, skgpu::Swizzle("aaaa"));
-        }
-        imgData.fReadSwizzle = swizzle_class_to_read_enum(readSwizzle);
+    if (!imageToDraw) {
+        constexpr SkPMColor4f kErrorColor = { 1, 0, 0, 1 };
+        SolidColorShaderBlock::BeginBlock(keyContext, builder, gatherer,
+                                          kErrorColor);
+        builder->endBlock();
+        return;
+    }
+    if (as_IB(imageToDraw)->isYUVA()) {
+        return this->addYUVImageToKey(keyContext,
+                                      builder,
+                                      gatherer,
+                                      std::move(imageToDraw),
+                                      newSampling);
     }
 
+    skgpu::Mipmapped mipmapped = (newSampling.mipmap != SkMipmapMode::kNone)
+                                     ? skgpu::Mipmapped::kYes : skgpu::Mipmapped::kNo;
+
+    auto [view, _] = skgpu::graphite::AsView(keyContext.recorder(), imageToDraw.get(), mipmapped);
+
+    ImageShaderBlock::ImageData imgData(fSampling, fTileModeX, fTileModeY, fSubset,
+                                        ReadSwizzle::kRGBA);
+    imgData.fSampling = newSampling;
+    imgData.fTextureProxy = view.refProxy();
+    skgpu::Swizzle readSwizzle = view.swizzle();
+    // If the color type is alpha-only, propagate the alpha value to the other channels.
+    if (imageToDraw->isAlphaOnly()) {
+        readSwizzle = skgpu::Swizzle::Concat(readSwizzle, skgpu::Swizzle("aaaa"));
+    }
+    imgData.fReadSwizzle = swizzle_class_to_read_enum(readSwizzle);
+
     if (!fRaw) {
-        imgData.fSteps = SkColorSpaceXformSteps(fImage->colorSpace(),
-                                                fImage->alphaType(),
+        imgData.fSteps = SkColorSpaceXformSteps(imageToDraw->colorSpace(),
+                                                imageToDraw->alphaType(),
                                                 keyContext.dstColorInfo().colorSpace(),
                                                 keyContext.dstColorInfo().alphaType());
 
-        if (fImage->isAlphaOnly()) {
+        if (imageToDraw->isAlphaOnly()) {
             SkSpan<const float> constants = skgpu::GetPorterDuffBlendConstants(SkBlendMode::kDstIn);
             BlendShaderBlock::BeginBlock(keyContext, builder, gatherer);
 
@@ -467,10 +462,80 @@ void SkImageShader::addToKey(const skgpu::graphite::KeyContext& keyContext,
     ImageShaderBlock::BeginBlock(keyContext, builder, gatherer, &imgData);
     builder->endBlock();
 }
+
+void SkImageShader::addYUVImageToKey(const skgpu::graphite::KeyContext& keyContext,
+                                     skgpu::graphite::PaintParamsKeyBuilder* builder,
+                                     skgpu::graphite::PipelineDataGatherer* gatherer,
+                                     sk_sp<SkImage> imageToDraw,
+                                     SkSamplingOptions sampling) const {
+    using namespace skgpu::graphite;
+
+    SkASSERT(!imageToDraw->isAlphaOnly());
+    const YUVATextureProxies& yuvaProxies =
+            static_cast<Image_YUVA*>(imageToDraw.get())->yuvaProxies();
+    const SkYUVAInfo& yuvaInfo = yuvaProxies.yuvaInfo();
+
+    YUVImageShaderBlock::ImageData imgData(sampling, fTileModeX, fTileModeY, fSubset);
+    imgData.fImgSize = { (float)imageToDraw->width(), (float)imageToDraw->height() };
+    for (int i = 0; i < SkYUVAInfo::kYUVAChannelCount; ++i) {
+        memset(&imgData.fChannelSelect[i], 0, sizeof(SkColor4f));
+    }
+    int textureCount = 0;
+    SkYUVAInfo::YUVALocations yuvaLocations = yuvaProxies.yuvaLocations();
+    for (int locIndex = 0; locIndex < SkYUVAInfo::kYUVAChannelCount; ++locIndex) {
+        auto [yuvPlane, yuvChannel] = yuvaLocations[locIndex];
+        if (yuvPlane >= 0) {
+            SkASSERT(locIndex == textureCount);
+            TextureProxyView view = yuvaProxies.makeView(yuvPlane);
+            imgData.fTextureProxies[locIndex] = view.refProxy();
+            imgData.fChannelSelect[locIndex][static_cast<int>(yuvChannel)] = 1.0f;
+            ++textureCount;
+        }
+    }
+    SkASSERT(textureCount == 3 || textureCount == 4);
+    // If the format has no alpha, we still need to set the proxy to something
+    if (textureCount == 3) {
+        imgData.fTextureProxies[3] = imgData.fTextureProxies[0];
+    }
+    float yuvM[20];
+    SkColorMatrix_YUV2RGB(yuvaInfo.yuvColorSpace(), yuvM);
+    // We drop the fourth column entirely since the transformation
+    // should not depend on alpha. The fifth column is sent as a separate
+    // vector. The fourth row is also dropped entirely because alpha should
+    // never be modified.
+    SkASSERT(yuvM[3] == 0 && yuvM[8] == 0 && yuvM[13] == 0 && yuvM[18] == 1);
+    SkASSERT(yuvM[15] == 0 && yuvM[16] == 0 && yuvM[17] == 0 && yuvM[19] == 0);
+    imgData.fYUVtoRGBMatrix.setAll(
+        yuvM[ 0], yuvM[ 1], yuvM[ 2],
+        yuvM[ 5], yuvM[ 6], yuvM[ 7],
+        yuvM[10], yuvM[11], yuvM[12]
+    );
+    imgData.fYUVtoRGBTranslate = {yuvM[4], yuvM[9], yuvM[14]};
+
+    if (!fRaw) {
+        imgData.fSteps = SkColorSpaceXformSteps(imageToDraw->colorSpace(),
+                                                imageToDraw->alphaType(),
+                                                keyContext.dstColorInfo().colorSpace(),
+                                                keyContext.dstColorInfo().alphaType());
+    }
+
+    // The YUV formats can encode their own origin including reflection and rotation,
+    // so we need to wrap our block in an additional local matrix transform.
+    SkMatrix originMatrix = yuvaInfo.originMatrix();
+    LocalMatrixShaderBlock::LMShaderData lmShaderData(originMatrix);
+
+    KeyContextWithLocalMatrix newContext(keyContext, originMatrix);
+
+    LocalMatrixShaderBlock::BeginBlock(newContext, builder, gatherer, &lmShaderData);
+
+        YUVImageShaderBlock::BeginBlock(newContext, builder, gatherer, &imgData);
+        builder->endBlock();
+
+    builder->endBlock();
+}
 #endif
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-#include "src/core/SkImagePriv.h"
 
 sk_sp<SkShader> SkMakeBitmapShaderForPaint(const SkPaint& paint, const SkBitmap& src,
                                            SkTileMode tmx, SkTileMode tmy,
@@ -574,7 +639,7 @@ static SkSamplingOptions tweak_sampling(SkSamplingOptions sampling, const SkMatr
     return SkSamplingOptions(filter, sampling.mipmap);
 }
 
-bool SkImageShader::appendStages(const SkStageRec& rec, const MatrixRec& mRec) const {
+bool SkImageShader::appendStages(const SkStageRec& rec, const SkShaders::MatrixRec& mRec) const {
     SkASSERT(!needs_subset(fImage.get(), fSubset));  // TODO(skbug.com/12784)
 
     // We only support certain sampling options in stages so far
@@ -710,7 +775,9 @@ bool SkImageShader::appendStages(const SkStageRec& rec, const MatrixRec& mRec) c
                 break;
 
             case kBGR_101010x_XR_SkColorType:
-                SkASSERT(false);
+                p->append(SkRasterPipelineOp::gather_1010102_xr, ctx);
+                p->append(SkRasterPipelineOp::force_opaque);
+                p->append(SkRasterPipelineOp::swap_rb);
                 break;
 
             case kBGR_101010x_SkColorType:
@@ -859,7 +926,7 @@ skvm::Color SkImageShader::program(skvm::Builder* p,
                                    skvm::Coord device,
                                    skvm::Coord origLocal,
                                    skvm::Color paint,
-                                   const MatrixRec& mRec,
+                                   const SkShaders::MatrixRec& mRec,
                                    const SkColorInfo& dst,
                                    skvm::Uniforms* uniforms,
                                    SkArenaAlloc* alloc) const {

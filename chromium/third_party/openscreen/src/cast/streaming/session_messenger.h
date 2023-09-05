@@ -65,7 +65,7 @@ class SenderSessionMessenger final : public SessionMessenger {
                          std::string source_id,
                          std::string receiver_id,
                          ErrorCallback cb,
-                         TaskRunner* task_runner);
+                         TaskRunner& task_runner);
 
   // Set receiver message handler. Note that this should only be
   // applied for messages that don't have sequence numbers, like RPC
@@ -91,7 +91,7 @@ class SenderSessionMessenger final : public SessionMessenger {
   void OnError(Error error) override;
 
  private:
-  TaskRunner* const task_runner_;
+  TaskRunner& task_runner_;
 
   // This messenger should only be connected to one receiver, so |receiver_id_|
   // should not change.

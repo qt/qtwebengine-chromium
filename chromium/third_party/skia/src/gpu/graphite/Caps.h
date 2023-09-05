@@ -8,6 +8,8 @@
 #ifndef skgpu_graphite_Caps_DEFINED
 #define skgpu_graphite_Caps_DEFINED
 
+#include <optional>
+
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkRefCnt.h"
 #include "include/private/base/SkAlign.h"
@@ -17,6 +19,7 @@
 #include "src/gpu/graphite/ResourceTypes.h"
 #include "src/text/gpu/SDFTControl.h"
 
+enum class SkBlendMode;
 class SkCapabilities;
 
 namespace SkSL { struct ShaderCaps; }
@@ -48,6 +51,13 @@ struct ResourceBindingRequirements {
 
     // Whether buffer, texture, and sampler resource bindings use distinct index ranges.
     bool fDistinctIndexRanges = false;
+};
+
+enum class DstReadRequirement {
+    kNone,
+    kTextureCopy,
+    kTextureSample,
+    kFramebufferFetch,
 };
 
 class Caps {
@@ -153,6 +163,9 @@ public:
 
     bool protectedSupport() const { return fProtectedSupport; }
 
+    // Supports BackendSemaphores
+    bool semaphoreSupport() const { return fSemaphoreSupport; }
+
     // Returns whether storage buffers are supported.
     bool storageBufferSupport() const { return fStorageBufferSupport; }
 
@@ -172,6 +185,9 @@ public:
     skgpu::Swizzle getWriteSwizzle(SkColorType, const TextureInfo&) const;
 
     skgpu::ShaderErrorHandler* shaderErrorHandler() const { return fShaderErrorHandler; }
+
+    // Returns what method of dst read is required for a draw using the dst color.
+    DstReadRequirement getDstReadRequirement() const;
 
     float minDistanceFieldFontSize() const { return fMinDistanceFieldFontSize; }
     float glyphsAsPathsFontSize() const { return fGlyphsAsPathsFontSize; }
@@ -239,6 +255,7 @@ protected:
 
     bool fClampToBorderSupport = true;
     bool fProtectedSupport = false;
+    bool fSemaphoreSupport = false;
     bool fStorageBufferSupport = false;
     bool fStorageBufferPreferred = false;
     bool fDrawBufferCanBeMapped = true;

@@ -166,6 +166,11 @@ typedef struct VkLayerInstanceDispatchTable_ {
     // ---- VK_KHR_fragment_shading_rate extension commands
     PFN_vkGetPhysicalDeviceFragmentShadingRatesKHR GetPhysicalDeviceFragmentShadingRatesKHR;
 
+    // ---- VK_KHR_video_encode_queue extension commands
+#if defined(VK_ENABLE_BETA_EXTENSIONS)
+    PFN_vkGetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR GetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR;
+#endif // VK_ENABLE_BETA_EXTENSIONS
+
     // ---- VK_EXT_debug_report extension commands
     PFN_vkCreateDebugReportCallbackEXT CreateDebugReportCallbackEXT;
     PFN_vkDestroyDebugReportCallbackEXT DestroyDebugReportCallbackEXT;
@@ -629,6 +634,9 @@ typedef struct VkLayerDispatchTable_ {
 
     // ---- VK_KHR_video_encode_queue extension commands
 #if defined(VK_ENABLE_BETA_EXTENSIONS)
+    PFN_vkGetEncodedVideoSessionParametersKHR GetEncodedVideoSessionParametersKHR;
+#endif // VK_ENABLE_BETA_EXTENSIONS
+#if defined(VK_ENABLE_BETA_EXTENSIONS)
     PFN_vkCmdEncodeVideoKHR CmdEncodeVideoKHR;
 #endif // VK_ENABLE_BETA_EXTENSIONS
 
@@ -852,6 +860,9 @@ typedef struct VkLayerDispatchTable_ {
     PFN_vkCreateIndirectCommandsLayoutNV CreateIndirectCommandsLayoutNV;
     PFN_vkDestroyIndirectCommandsLayoutNV DestroyIndirectCommandsLayoutNV;
 
+    // ---- VK_EXT_depth_bias_control extension commands
+    PFN_vkCmdSetDepthBias2EXT CmdSetDepthBias2EXT;
+
     // ---- VK_EXT_private_data extension commands
     PFN_vkCreatePrivateDataSlotEXT CreatePrivateDataSlotEXT;
     PFN_vkDestroyPrivateDataSlotEXT DestroyPrivateDataSlotEXT;
@@ -1035,6 +1046,14 @@ typedef struct VkLayerDispatchTable_ {
     // ---- VK_QCOM_tile_properties extension commands
     PFN_vkGetFramebufferTilePropertiesQCOM GetFramebufferTilePropertiesQCOM;
     PFN_vkGetDynamicRenderingTilePropertiesQCOM GetDynamicRenderingTilePropertiesQCOM;
+
+    // ---- VK_EXT_attachment_feedback_loop_dynamic_state extension commands
+    PFN_vkCmdSetAttachmentFeedbackLoopEnableEXT CmdSetAttachmentFeedbackLoopEnableEXT;
+
+    // ---- VK_QNX_external_memory_screen_buffer extension commands
+#if defined(VK_USE_PLATFORM_SCREEN_QNX)
+    PFN_vkGetScreenBufferPropertiesQNX GetScreenBufferPropertiesQNX;
+#endif // VK_USE_PLATFORM_SCREEN_QNX
 
     // ---- VK_KHR_acceleration_structure extension commands
     PFN_vkCreateAccelerationStructureKHR CreateAccelerationStructureKHR;

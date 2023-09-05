@@ -24,14 +24,14 @@ class TlsConnectionFactoryPosix : public TlsConnectionFactory,
                                   public TlsDataRouterPosix::SocketObserver {
  public:
   TlsConnectionFactoryPosix(Client* client,
-                            TaskRunner* task_runner,
+                            TaskRunner& task_runner,
                             PlatformClientPosix* platform_client =
                                 PlatformClientPosix::GetInstance());
   ~TlsConnectionFactoryPosix() override;
 
   // TlsConnectionFactory overrides.
   //
-  // TODO(jophba, rwkeane): Determine how to handle multiple connection attempts
+  // TODO(jophba): Determine how to handle multiple connection attempts
   // to the same remote_address, and how to distinguish errors.
   void Connect(const IPEndpoint& remote_address,
                const TlsConnectOptions& options) override;
@@ -79,7 +79,7 @@ class TlsConnectionFactoryPosix : public TlsConnectionFactory,
   bool listen_credentials_set_ = false;
 
   Client* const client_;
-  TaskRunner* const task_runner_;
+  TaskRunner& task_runner_;
   PlatformClientPosix* const platform_client_;
 
   // SSL context, for creating SSL Connections via BoringSSL.

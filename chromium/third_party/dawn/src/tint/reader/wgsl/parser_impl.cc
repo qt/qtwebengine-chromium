@@ -579,7 +579,7 @@ Maybe<Void> ParserImpl::global_decl() {
         errored = true;
     }
     if (decl.matched) {
-        if (!expect_attributes_consumed(attrs.value)) {
+        if (expect_attributes_consumed(attrs.value).errored) {
             return Failure::kErrored;
         }
         return kSuccess;
@@ -590,7 +590,7 @@ Maybe<Void> ParserImpl::global_decl() {
         errored = true;
     }
     if (str.matched) {
-        if (!expect_attributes_consumed(attrs.value)) {
+        if (expect_attributes_consumed(attrs.value).errored) {
             return Failure::kErrored;
         }
         return kSuccess;
@@ -902,7 +902,7 @@ Expect<ENUM> ParserImpl::expect_enum(std::string_view name,
         if (val != ENUM::kUndefined) {
             synchronized_ = true;
             next();
-            return {val, t.source()};
+            return val;
         }
     }
 
@@ -2115,10 +2115,10 @@ Maybe<const ast::Expression*> ParserImpl::primary_expression() {
 //   | PERIOD swizzle_name component_or_swizzle_specifier?
 Maybe<const ast::Expression*> ParserImpl::component_or_swizzle_specifier(
     const ast::Expression* prefix) {
-    Source source;
+    MultiTokenSource source(this, prefix->source);
 
     while (continue_parsing()) {
-        if (match(Token::Type::kBracketLeft, &source)) {
+        if (match(Token::Type::kBracketLeft)) {
             auto res = sync(Token::Type::kBracketRight, [&]() -> Maybe<const ast::Expression*> {
                 auto param = expression();
                 if (param.errored) {
@@ -2132,7 +2132,7 @@ Maybe<const ast::Expression*> ParserImpl::component_or_swizzle_specifier(
                     return Failure::kErrored;
                 }
 
-                return create<ast::IndexAccessorExpression>(source, prefix, param.value);
+                return create<ast::IndexAccessorExpression>(source.Source(), prefix, param.value);
             });
 
             if (res.errored) {
@@ -2148,7 +2148,7 @@ Maybe<const ast::Expression*> ParserImpl::component_or_swizzle_specifier(
                 return Failure::kErrored;
             }
 
-            prefix = builder_.MemberAccessor(ident.source, prefix, ident.value);
+            prefix = builder_.MemberAccessor(source.Source(), prefix, ident.value);
             continue;
         }
 
@@ -2162,22 +2162,12 @@ Maybe<const ast::Expression*> ParserImpl::component_or_swizzle_specifier(
 //   : PAREN_LEFT ((expression COMMA)* expression COMMA?)? PAREN_RIGHT
 Expect<ParserImpl::ExpressionList> ParserImpl::expect_argument_expression_list(
     std::string_view use) {
-    return expect_paren_block(use, [&]() -> Expect<ExpressionList> {
-        ExpressionList ret;
-        while (continue_parsing()) {
-            auto arg = expression();
-            if (arg.errored) {
-                return Failure::kErrored;
-            } else if (!arg.matched) {
-                break;
-            }
-            ret.Push(arg.value);
-
-            if (!match(Token::Type::kComma)) {
-                break;
-            }
+    return expect_paren_block(use, [&]() -> Expect<ParserImpl::ExpressionList> {  //
+        auto list = expression_list(use, Token::Type::kParenRight);
+        if (list.errored) {
+            return Failure::kErrored;
         }
-        return ret;
+        return list.value;
     });
 }
 
@@ -2482,10 +2472,21 @@ Expect<const ast::Expression*> ParserImpl::expect_expression(std::string_view us
     return add_error(t, "expected expression for " + std::string(use));
 }
 
-Expect<utils::Vector<const ast::Expression*, 3>> ParserImpl::expect_expression_list(
-    std::string_view use,
-    Token::Type terminator) {
-    utils::Vector<const ast::Expression*, 3> exprs;
+Maybe<ParserImpl::ExpressionList> ParserImpl::expression_list(std::string_view use,
+                                                              Token::Type terminator) {
+    if (peek_is(terminator)) {
+        return Failure::kNoMatch;
+    }
+    auto list = expect_expression_list(use, terminator);
+    if (list.errored) {
+        return Failure::kErrored;
+    }
+    return list.value;
+}
+
+Expect<ParserImpl::ExpressionList> ParserImpl::expect_expression_list(std::string_view use,
+                                                                      Token::Type terminator) {
+    ParserImpl::ExpressionList exprs;
     while (continue_parsing()) {
         auto expr = expect_expression(use);
         if (expr.errored) {
@@ -2495,7 +2496,22 @@ Expect<utils::Vector<const ast::Expression*, 3>> ParserImpl::expect_expression_l
         if (peek_is(terminator)) {
             break;
         }
-        if (!expect(use, Token::Type::kComma)) {
+
+        // Check if the next token is a template start, which was likely intended as a less-than.
+        if (expect_next_not_template_list(expr->source).errored) {
+            return Failure::kErrored;  // expect_next_not_template_list() raised an error.
+        }
+        if (!match(Token::Type::kComma)) {
+            // Next expression is not a terminator or comma, so this is a parse error.
+
+            // Check if last parsed expression was a templated identifier, which was likely indented
+            // as a less-than / greater-than.
+            if (expect_not_templated_ident_expr(expr.value).errored) {
+                return Failure::kErrored;  // expect_not_templated_ident_expr() raised an error.
+            }
+
+            // Emit the expected ',' error
+            expect(use, Token::Type::kComma);
             return Failure::kErrored;
         }
         if (peek_is(terminator)) {
@@ -3073,12 +3089,58 @@ Maybe<const ast::Attribute*> ParserImpl::attribute() {
     }
 }
 
-bool ParserImpl::expect_attributes_consumed(utils::VectorRef<const ast::Attribute*> in) {
+Expect<Void> ParserImpl::expect_attributes_consumed(utils::VectorRef<const ast::Attribute*> in) {
     if (in.IsEmpty()) {
-        return true;
+        return kSuccess;
     }
     add_error(in[0]->source, "unexpected attributes");
-    return false;
+    return Failure::kErrored;
+}
+
+Expect<Void> ParserImpl::expect_next_not_template_list(const Source& lhs_source) {
+    Source end;
+    if (!match(Token::Type::kTemplateArgsLeft, &end)) {
+        return kSuccess;
+    }
+
+    // Try to find end of template
+    for (size_t i = 0; i < 32; i++) {
+        if (auto& t = peek(i); t.type() == Token::Type::kTemplateArgsRight) {
+            end = t.source();
+        }
+    }
+    Source template_source = lhs_source;
+    template_source.range.end = end.range.end;
+    add_error(template_source, "parsed as template list");
+
+    if (auto rhs = expression(); rhs.matched) {
+        Source lt_source = lhs_source;
+        lt_source.range.end = rhs->source.range.end;
+        add_note(lt_source,
+                 "if this is intended to be a less-than expression then wrap in parentheses");
+    }
+    return Failure::kErrored;
+}
+
+Expect<Void> ParserImpl::expect_not_templated_ident_expr(const ast::Expression* expr) {
+    auto* ident_expr = expr->As<ast::IdentifierExpression>();
+    if (!ident_expr) {
+        return kSuccess;
+    }
+    auto* ident = ident_expr->identifier->As<ast::TemplatedIdentifier>();
+    if (!ident) {
+        return kSuccess;
+    }
+
+    add_error(ident->source, "parsed as template list");
+
+    if (auto rhs = expression(); rhs.matched) {
+        Source gt_source = ident->arguments.Back()->source;
+        gt_source.range.end = rhs->source.range.end;
+        add_note(gt_source,
+                 "if this is intended to be a greater-than expression then wrap in parentheses");
+    }
+    return Failure::kErrored;
 }
 
 // severity_control_name
@@ -3196,8 +3258,11 @@ bool ParserImpl::expect(std::string_view use, Token::Type tok) {
     return false;
 }
 
-Expect<int32_t> ParserImpl::expect_sint(std::string_view use) {
+Expect<int32_t> ParserImpl::expect_sint(std::string_view use, Source* source /* = nullptr */) {
     auto& t = peek();
+    if (source) {
+        *source = t.source();
+    }
     if (!t.Is(Token::Type::kIntLiteral) && !t.Is(Token::Type::kIntLiteral_I)) {
         return add_error(t.source(), "expected signed integer literal", use);
     }
@@ -3210,33 +3275,35 @@ Expect<int32_t> ParserImpl::expect_sint(std::string_view use) {
     }
 
     next();
-    return {static_cast<int32_t>(t.to_i64()), t.source()};
+    return static_cast<int32_t>(t.to_i64());
 }
 
 Expect<uint32_t> ParserImpl::expect_positive_sint(std::string_view use) {
-    auto sint = expect_sint(use);
+    Source source;
+    auto sint = expect_sint(use, &source);
     if (sint.errored) {
         return Failure::kErrored;
     }
 
     if (sint.value < 0) {
-        return add_error(sint.source, std::string(use) + " must be positive");
+        return add_error(source, std::string(use) + " must be positive");
     }
 
-    return {static_cast<uint32_t>(sint.value), sint.source};
+    return static_cast<uint32_t>(sint.value);
 }
 
 Expect<uint32_t> ParserImpl::expect_nonzero_positive_sint(std::string_view use) {
-    auto sint = expect_sint(use);
+    Source source;
+    auto sint = expect_sint(use, &source);
     if (sint.errored) {
         return Failure::kErrored;
     }
 
     if (sint.value <= 0) {
-        return add_error(sint.source, std::string(use) + " must be greater than 0");
+        return add_error(source, std::string(use) + " must be greater than 0");
     }
 
-    return {static_cast<uint32_t>(sint.value), sint.source};
+    return static_cast<uint32_t>(sint.value);
 }
 
 Expect<const ast::Identifier*> ParserImpl::expect_ident(

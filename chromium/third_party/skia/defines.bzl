@@ -40,6 +40,8 @@ GENERAL_DEFINES = [
     "//src/sksl:enable_skslc_true": [
         "SKSL_STANDALONE",
         "SK_DISABLE_TRACING",
+        "SK_ENABLE_SKSL_IN_RASTER_PIPELINE",
+        "SK_ENABLE_SKVM",
         "SK_ENABLE_SPIRV_CROSS",
         "SK_ENABLE_SPIRV_VALIDATION",
         "SK_ENABLE_WGSL_VALIDATION",
@@ -124,6 +126,10 @@ PLATFORM_DEFINES = select({
         "SK_FORCE_8_BYTE_ALIGNMENT",
         "SK_FORCE_AAA",
     ],
+    "//conditions:default": [],
+}) + select({
+    "//bazel/platform:trivial_abi": ["SK_TRIVIAL_ABI=[[clang::trivial_abi]]"],
+    "//bazel/common_config_settings:cpu_wasm": ["SK_TRIVIAL_ABI=[[clang::trivial_abi]]"],
     "//conditions:default": [],
 })
 

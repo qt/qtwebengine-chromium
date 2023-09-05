@@ -930,6 +930,36 @@ struct type_sew_t<128> {
   RVV_VI_VFP_LOOP_END                                     \
   rvv_trace_vd();
 
+#define RVV_VFSGNJ_VV_VF_LOOP(BODY16, BODY32, BODY64)         \
+  RVV_VI_VFP_LOOP_BASE                                        \
+  switch (rvv_vsew()) {                                       \
+    case E16: {                                               \
+      UNIMPLEMENTED();                                        \
+      break;                                                  \
+    }                                                         \
+    case E32: {                                               \
+      uint32_t& vd = Rvvelt<uint32_t>(rvv_vd_reg(), i, true); \
+      uint32_t vs1 = Rvvelt<uint32_t>(rvv_vs1_reg(), i);      \
+      uint32_t vs2 = Rvvelt<uint32_t>(rvv_vs2_reg(), i);      \
+      Float32 fs1 = get_fpu_register_Float32(rs1_reg());      \
+      BODY32;                                                 \
+      break;                                                  \
+    }                                                         \
+    case E64: {                                               \
+      uint64_t& vd = Rvvelt<uint64_t>(rvv_vd_reg(), i, true); \
+      uint64_t vs1 = Rvvelt<uint64_t>(rvv_vs1_reg(), i);      \
+      uint64_t vs2 = Rvvelt<uint64_t>(rvv_vs2_reg(), i);      \
+      Float64 fs1 = get_fpu_register_Float64(rs1_reg());      \
+      BODY64;                                                 \
+      break;                                                  \
+    }                                                         \
+    default:                                                  \
+      require(0);                                             \
+      break;                                                  \
+  }                                                           \
+  RVV_VI_VFP_LOOP_END                                         \
+  rvv_trace_vd();
+
 #define RVV_VI_VFP_VF_LOOP_WIDEN(BODY32, vs2_is_widen)                         \
   RVV_VI_VFP_LOOP_BASE                                                         \
   switch (rvv_vsew()) {                                                        \
@@ -1262,11 +1292,11 @@ struct type_sew_t<128> {
   if (v8_flags.trace_sim) {                                                    \
     __int128_t value = Vregister_[rvv_vd_reg()];                               \
     SNPrintF(trace_buf_,                                                       \
-             "%016" REGIx_FORMAT "%016" REGIx_FORMAT                           \
-             " <-- 0x%016" REGIx_FORMAT,                                       \
+             "%016" PRIx64 "%016" PRIx64 "    (%" PRId64 ")    vlen:%" PRId64  \
+             " <-- [addr: %" REGIx_FORMAT "]",                                 \
              *(reinterpret_cast<int64_t*>(&value) + 1),                        \
-             *reinterpret_cast<int64_t*>(&value),                              \
-             (uint64_t)(get_register(rs1_reg())));                             \
+             *reinterpret_cast<int64_t*>(&value), icount_, rvv_vlen(),         \
+             (sreg_t)(get_register(rs1_reg())));                               \
   }
 
 #define RVV_VI_ST(stride, offset, elt_width, is_mask_ldst)                     \
@@ -1288,11 +1318,11 @@ struct type_sew_t<128> {
   if (v8_flags.trace_sim) {                                                    \
     __int128_t value = Vregister_[rvv_vd_reg()];                               \
     SNPrintF(trace_buf_,                                                       \
-             "%016" REGIx_FORMAT "%016" REGIx_FORMAT                           \
-             " --> 0x%016" REGIx_FORMAT,                                       \
+             "%016" PRIx64 "%016" PRIx64 "    (%" PRId64 ")    vlen:%" PRId64  \
+             " --> [addr: %" REGIx_FORMAT "]",                                 \
              *(reinterpret_cast<int64_t*>(&value) + 1),                        \
-             *reinterpret_cast<int64_t*>(&value),                              \
-             (uint64_t)(get_register(rs1_reg())));                             \
+             *reinterpret_cast<int64_t*>(&value), icount_, rvv_vlen(),         \
+             (sreg_t)(get_register(rs1_reg())));                               \
   }
 
 #define VI_VFP_LOOP_SCALE_BASE                      \
@@ -1362,14 +1392,14 @@ static inline uint8_t get_round(int vxrm, uint64_t v, uint8_t shift) {
 
 template <typename Src, typename Dst>
 inline Dst signed_saturation(Src v, uint n) {
-  Dst smax = (Dst)(INTPTR_MAX >> (64 - n));
-  Dst smin = (Dst)(INTPTR_MIN >> (64 - n));
+  Dst smax = (Dst)(INTPTR_MAX >> (sizeof(intptr_t) * 8 - n));
+  Dst smin = (Dst)(INTPTR_MIN >> (sizeof(intptr_t) * 8 - n));
   return (v > smax) ? smax : ((v < smin) ? smin : (Dst)v);
 }
 
 template <typename Src, typename Dst>
 inline Dst unsigned_saturation(Src v, uint n) {
-  Dst umax = (Dst)(UINTPTR_MAX >> (64 - n));
+  Dst umax = (Dst)(UINTPTR_MAX >> (sizeof(uintptr_t) * 8 - n));
   return (v > umax) ? umax : ((v < 0) ? 0 : (Dst)v);
 }
 
@@ -1544,7 +1574,7 @@ uint32_t get_fcsr_condition_bit(uint32_t cc) {
 // field of a subsequent LUI instruction; otherwise returns -1
 static inline int32_t get_ebreak_code(Instruction* instr) {
   DCHECK(instr->InstructionBits() == kBreakInstr);
-  byte* cur = reinterpret_cast<byte*>(instr);
+  uint8_t* cur = reinterpret_cast<uint8_t*>(instr);
   Instruction* next_instr = reinterpret_cast<Instruction*>(cur + kInstrSize);
   if (next_instr->BaseOpcodeFieldRaw() == LUI)
     return (next_instr->Imm20UValue());
@@ -1589,7 +1619,7 @@ class RiscvDebugger {
   v8::base::EmbeddedVector<char, 256> buffer;                          \
   disasm::NameConverter converter;                                     \
   disasm::Disassembler dasm(converter);                                \
-  dasm.InstructionDecode(buffer, reinterpret_cast<byte*>(&instr_));    \
+  dasm.InstructionDecode(buffer, reinterpret_cast<uint8_t*>(&instr_)); \
   printf("Sim: Unsupported inst. Func:%s Line:%d PC:0x%" REGIx_FORMAT, \
          __FUNCTION__, __LINE__, get_pc());                            \
   PrintF(" %-44s\n", buffer.begin());                                  \
@@ -1755,7 +1785,8 @@ void RiscvDebugger::Debug() {
       if (name != nullptr) {
         PrintF("Call builtin:  %s\n", name);
       }
-      dasm.InstructionDecode(buffer, reinterpret_cast<byte*>(sim_->get_pc()));
+      dasm.InstructionDecode(buffer,
+                             reinterpret_cast<uint8_t*>(sim_->get_pc()));
       PrintF("  0x%016" REGIx_FORMAT "   %s\n", sim_->get_pc(), buffer.begin());
       last_pc = sim_->get_pc();
     }
@@ -1822,7 +1853,7 @@ void RiscvDebugger::Debug() {
 #ifdef CAN_USE_RVV_INSTRUCTIONS
             } else if (vregnum != kInvalidVRegister) {
               __int128_t v = GetVRegisterValue(vregnum);
-              PrintF("\t%s:0x%016" REGIx_FORMAT "%016" REGIx_FORMAT "\n",
+              PrintF("\t%s:0x%016" PRIx64 "%016" PRIx64 "\n",
                      VRegisters::Name(vregnum), (uint64_t)(v >> 64),
                      (uint64_t)v);
 #endif
@@ -1974,11 +2005,11 @@ void RiscvDebugger::Debug() {
         // Use a reasonably large buffer.
         v8::base::EmbeddedVector<char, 256> buffer;
 
-        byte* cur = nullptr;
-        byte* end = nullptr;
+        uint8_t* cur = nullptr;
+        uint8_t* end = nullptr;
 
         if (argc == 1) {
-          cur = reinterpret_cast<byte*>(sim_->get_pc());
+          cur = reinterpret_cast<uint8_t*>(sim_->get_pc());
           end = cur + (10 * kInstrSize);
         } else if (argc == 2) {
           int regnum = Registers::Number(arg1);
@@ -1986,7 +2017,7 @@ void RiscvDebugger::Debug() {
             // The argument is an address or a register name.
             sreg_t value;
             if (GetValue(arg1, &value)) {
-              cur = reinterpret_cast<byte*>(value);
+              cur = reinterpret_cast<uint8_t*>(value);
               // Disassemble 10 instructions at <arg1>.
               end = cur + (10 * kInstrSize);
             }
@@ -1994,7 +2025,7 @@ void RiscvDebugger::Debug() {
             // The argument is the number of instructions.
             sreg_t value;
             if (GetValue(arg1, &value)) {
-              cur = reinterpret_cast<byte*>(sim_->get_pc());
+              cur = reinterpret_cast<uint8_t*>(sim_->get_pc());
               // Disassemble <arg1> instructions.
               end = cur + (value * kInstrSize);
             }
@@ -2003,7 +2034,7 @@ void RiscvDebugger::Debug() {
           sreg_t value1;
           sreg_t value2;
           if (GetValue(arg1, &value1) && GetValue(arg2, &value2)) {
-            cur = reinterpret_cast<byte*>(value1);
+            cur = reinterpret_cast<uint8_t*>(value1);
             end = cur + (value2 * kInstrSize);
           }
         }
@@ -2095,16 +2126,16 @@ void RiscvDebugger::Debug() {
         // Use a reasonably large buffer.
         v8::base::EmbeddedVector<char, 256> buffer;
 
-        byte* cur = nullptr;
-        byte* end = nullptr;
+        uint8_t* cur = nullptr;
+        uint8_t* end = nullptr;
 
         if (argc == 1) {
-          cur = reinterpret_cast<byte*>(sim_->get_pc());
+          cur = reinterpret_cast<uint8_t*>(sim_->get_pc());
           end = cur + (10 * kInstrSize);
         } else if (argc == 2) {
           sreg_t value;
           if (GetValue(arg1, &value)) {
-            cur = reinterpret_cast<byte*>(value);
+            cur = reinterpret_cast<uint8_t*>(value);
             // no length parameter passed, assume 10 instructions
             end = cur + (10 * kInstrSize);
           }
@@ -2112,7 +2143,7 @@ void RiscvDebugger::Debug() {
           sreg_t value1;
           sreg_t value2;
           if (GetValue(arg1, &value1) && GetValue(arg2, &value2)) {
-            cur = reinterpret_cast<byte*>(value1);
+            cur = reinterpret_cast<uint8_t*>(value1);
             end = cur + (value2 * kInstrSize);
           }
         }
@@ -3048,12 +3079,14 @@ using SimulatorRuntimeFPIntCall = double (*)(double darg0, int32_t arg0);
 // This signature supports direct call in to API function native callback
 // (refer to InvocationCallback in v8.h).
 using SimulatorRuntimeDirectApiCall = void (*)(sreg_t arg0);
-using SimulatorRuntimeProfilingApiCall = void (*)(sreg_t arg0, void* arg1);
 
 // This signature supports direct call to accessor getter callback.
 using SimulatorRuntimeDirectGetterCall = void (*)(sreg_t arg0, sreg_t arg1);
-using SimulatorRuntimeProfilingGetterCall = void (*)(sreg_t arg0, sreg_t arg1,
-                                                     void* arg2);
+
+// Define four args for future flexibility; at the time of this writing only
+// one is ever used.
+using SimulatorRuntimeFPTaggedCall = double (*)(int64_t arg0, int64_t arg1,
+                                                int64_t arg2, int64_t arg3);
 
 // Software interrupt instructions are used by the simulator to call into the
 // C-based V8 runtime. They are also used for debugging with simulator.
@@ -3185,7 +3218,23 @@ void Simulator::SoftwareInterrupt() {
             UNREACHABLE();
         }
       }
+    } else if (redirection->type() ==
+               ExternalReference::BUILTIN_FP_POINTER_CALL) {
+      if (v8_flags.trace_sim) {
+        PrintF("Call to host function at %p args %08" REGIx_FORMAT " \n",
+               reinterpret_cast<void*>(external), arg0);
+      }
+      SimulatorRuntimeFPTaggedCall target =
+          reinterpret_cast<SimulatorRuntimeFPTaggedCall>(external);
+      double dresult = target(arg0, arg1, arg2, arg3);
+      SetFpResult(dresult);
+      if (v8_flags.trace_sim) {
+        PrintF("Returned %f\n", dresult);
+      }
     } else if (redirection->type() == ExternalReference::DIRECT_API_CALL) {
+      // See callers of MacroAssembler::CallApiFunctionAndReturn for
+      // explanation of register usage.
+      // void f(v8::FunctionCallbackInfo&)
       if (v8_flags.trace_sim) {
         PrintF("Call to host function %s at %p args %08" REGIx_FORMAT " \n",
                ExternalReferenceTable::NameOfIsolateIndependentAddress(pc),
@@ -3194,37 +3243,18 @@ void Simulator::SoftwareInterrupt() {
       SimulatorRuntimeDirectApiCall target =
           reinterpret_cast<SimulatorRuntimeDirectApiCall>(external);
       target(arg0);
-    } else if (redirection->type() == ExternalReference::PROFILING_API_CALL) {
-      if (v8_flags.trace_sim) {
-        PrintF("Call to host function %s at %p args %08" REGIx_FORMAT
-               "  %08" REGIx_FORMAT " \n",
-               ExternalReferenceTable::NameOfIsolateIndependentAddress(pc),
-               reinterpret_cast<void*>(external), arg0, arg1);
-      }
-      SimulatorRuntimeProfilingApiCall target =
-          reinterpret_cast<SimulatorRuntimeProfilingApiCall>(external);
-      target(arg0, Redirection::UnwrapRedirection(arg1));
     } else if (redirection->type() == ExternalReference::DIRECT_GETTER_CALL) {
+      // See callers of MacroAssembler::CallApiFunctionAndReturn for
+      // explanation of register usage.
+      // void f(v8::Local<String> property, v8::PropertyCallbackInfo& info)
       if (v8_flags.trace_sim) {
-        PrintF("Call to host function %s at %p args %08" REGIx_FORMAT
+        PrintF("Call to host function at %p args %08" REGIx_FORMAT
                "  %08" REGIx_FORMAT " \n",
-               ExternalReferenceTable::NameOfIsolateIndependentAddress(pc),
                reinterpret_cast<void*>(external), arg0, arg1);
       }
       SimulatorRuntimeDirectGetterCall target =
           reinterpret_cast<SimulatorRuntimeDirectGetterCall>(external);
       target(arg0, arg1);
-    } else if (redirection->type() ==
-               ExternalReference::PROFILING_GETTER_CALL) {
-      if (v8_flags.trace_sim) {
-        PrintF("Call to host function %s at %p args %08" REGIx_FORMAT
-               "  %08" REGIx_FORMAT "  %08" REGIx_FORMAT " \n",
-               ExternalReferenceTable::NameOfIsolateIndependentAddress(pc),
-               reinterpret_cast<void*>(external), arg0, arg1, arg2);
-      }
-      SimulatorRuntimeProfilingGetterCall target =
-          reinterpret_cast<SimulatorRuntimeProfilingGetterCall>(external);
-      target(arg0, arg1, Redirection::UnwrapRedirection(arg2));
     } else {
       DCHECK(
           redirection->type() == ExternalReference::BUILTIN_CALL ||
@@ -5770,7 +5800,7 @@ void Simulator::DecodeRvvIVV() {
       // disasm::NameConverter converter;
       // disasm::Disassembler dasm(converter);
       // // Use a reasonably large buffer.
-      // dasm.InstructionDecode(buffer, reinterpret_cast<byte*>(&instr_));
+      // dasm.InstructionDecode(buffer, reinterpret_cast<uint8_t*>(&instr_));
 
       // PrintF("EXECUTING  0x%08" PRIxPTR "   %-44s\n",
       //        reinterpret_cast<intptr_t>(&instr_), buffer.begin());
@@ -6298,6 +6328,7 @@ void Simulator::DecodeRvvMVV() {
     }
     case RO_V_VWXUNARY0: {
       if (rvv_vs1_reg() == 0) {
+        // vmv.x.s
         switch (rvv_vsew()) {
           case E8:
             set_rd(Rvvelt<type_sew_t<8>::type>(rvv_vs2_reg(), 0));
@@ -6317,7 +6348,8 @@ void Simulator::DecodeRvvMVV() {
         set_rvv_vstart(0);
         rvv_trace_vd();
       } else if (rvv_vs1_reg() == 0b10000) {
-        uint64_t cnt = 0;
+        // vpopc
+        reg_t cnt = 0;
         RVV_VI_GENERAL_LOOP_BASE
         RVV_VI_LOOP_MASK_SKIP()
         const uint8_t idx = i / 64;
@@ -6328,7 +6360,8 @@ void Simulator::DecodeRvvMVV() {
         set_register(rd_reg(), cnt);
         rvv_trace_vd();
       } else if (rvv_vs1_reg() == 0b10001) {
-        int64_t index = -1;
+        // vfirst
+        sreg_t index = -1;
         RVV_VI_GENERAL_LOOP_BASE
         RVV_VI_LOOP_MASK_SKIP()
         const uint8_t idx = i / 64;
@@ -6345,7 +6378,7 @@ void Simulator::DecodeRvvMVV() {
         v8::base::EmbeddedVector<char, 256> buffer;
         disasm::NameConverter converter;
         disasm::Disassembler dasm(converter);
-        dasm.InstructionDecode(buffer, reinterpret_cast<byte*>(&instr_));
+        dasm.InstructionDecode(buffer, reinterpret_cast<uint8_t*>(&instr_));
         PrintF("EXECUTING  0x%08" PRIxPTR "   %-44s\n",
                reinterpret_cast<intptr_t>(&instr_), buffer.begin());
         UNIMPLEMENTED_RISCV();
@@ -6441,7 +6474,7 @@ void Simulator::DecodeRvvMVV() {
       v8::base::EmbeddedVector<char, 256> buffer;
       disasm::NameConverter converter;
       disasm::Disassembler dasm(converter);
-      dasm.InstructionDecode(buffer, reinterpret_cast<byte*>(&instr_));
+      dasm.InstructionDecode(buffer, reinterpret_cast<uint8_t*>(&instr_));
       PrintF("EXECUTING  0x%08" PRIxPTR "   %-44s\n",
              reinterpret_cast<intptr_t>(&instr_), buffer.begin());
       UNIMPLEMENTED_RISCV();
@@ -6549,7 +6582,7 @@ void Simulator::DecodeRvvMVX() {
       v8::base::EmbeddedVector<char, 256> buffer;
       disasm::NameConverter converter;
       disasm::Disassembler dasm(converter);
-      dasm.InstructionDecode(buffer, reinterpret_cast<byte*>(&instr_));
+      dasm.InstructionDecode(buffer, reinterpret_cast<uint8_t*>(&instr_));
       PrintF("EXECUTING  0x%08" PRIxPTR "   %-44s\n",
              reinterpret_cast<intptr_t>(&instr_), buffer.begin());
       UNIMPLEMENTED_RISCV();
@@ -6912,19 +6945,49 @@ void Simulator::DecodeRvvFVV() {
       break;
     }
     case RO_V_VFSGNJ_VV:
-      RVV_VI_VFP_VV_LOOP({ UNIMPLEMENTED(); },
-                         { vd = fsgnj32(vs2, vs1, false, false); },
-                         { vd = fsgnj64(vs2, vs1, false, false); })
+      RVV_VFSGNJ_VV_VF_LOOP({ UNIMPLEMENTED(); },
+                            {
+                              vd = fsgnj32(Float32::FromBits(vs2),
+                                           Float32::FromBits(vs1), false, false)
+                                       .get_bits();
+                              USE(fs1);
+                            },
+                            {
+                              vd = fsgnj64(Float64::FromBits(vs2),
+                                           Float64::FromBits(vs1), false, false)
+                                       .get_bits();
+                              USE(fs1);
+                            })
       break;
     case RO_V_VFSGNJN_VV:
-      RVV_VI_VFP_VV_LOOP({ UNIMPLEMENTED(); },
-                         { vd = fsgnj32(vs2, vs1, true, false); },
-                         { vd = fsgnj64(vs2, vs1, true, false); })
+      RVV_VFSGNJ_VV_VF_LOOP({ UNIMPLEMENTED(); },
+                            {
+                              vd = fsgnj32(Float32::FromBits(vs2),
+                                           Float32::FromBits(vs1), true, false)
+                                       .get_bits();
+                              USE(fs1);
+                            },
+                            {
+                              vd = fsgnj64(Float64::FromBits(vs2),
+                                           Float64::FromBits(vs1), true, false)
+                                       .get_bits();
+                              USE(fs1);
+                            })
       break;
     case RO_V_VFSGNJX_VV:
-      RVV_VI_VFP_VV_LOOP({ UNIMPLEMENTED(); },
-                         { vd = fsgnj32(vs2, vs1, false, true); },
-                         { vd = fsgnj64(vs2, vs1, false, true); })
+      RVV_VFSGNJ_VV_VF_LOOP({ UNIMPLEMENTED(); },
+                            {
+                              vd = fsgnj32(Float32::FromBits(vs2),
+                                           Float32::FromBits(vs1), false, true)
+                                       .get_bits();
+                              USE(fs1);
+                            },
+                            {
+                              vd = fsgnj64(Float64::FromBits(vs2),
+                                           Float64::FromBits(vs1), false, true)
+                                       .get_bits();
+                              USE(fs1);
+                            })
       break;
     case RO_V_VFADD_VV:
       RVV_VI_VFP_VV_LOOP(
@@ -7056,8 +7119,8 @@ void Simulator::DecodeRvvFVV() {
           },
           false)
       break;
-    case RO_V_VFWREDUSUM_VV:
-    case RO_V_VFWREDOSUM_VV:
+    case RO_V_VFWREDUSUM_VS:
+    case RO_V_VFWREDOSUM_VS:
       RVV_VI_CHECK_DSS(true);
       switch (rvv_vsew()) {
         case E16:
@@ -7090,7 +7153,7 @@ void Simulator::DecodeRvvFVV() {
           require(false);
           break;
       }
-
+      rvv_trace_vd();
       break;
     case RO_V_VFMADD_VV:
       RVV_VI_VFP_FMA_VV_LOOP({RVV_VI_VFP_FMA(float, vd, vs1, vs2)},
@@ -7146,20 +7209,19 @@ void Simulator::DecodeRvvFVV() {
           UNIMPLEMENTED();
         }
         case E32: {
-          float fs2 = Rvvelt<float>(rvv_vs2_reg(), 0);
-          set_fpu_register_float(rd_reg(), fs2);
+          uint32_t fs2 = Rvvelt<uint32_t>(rvv_vs2_reg(), 0);
+          set_frd(Float32::FromBits(fs2));
           break;
         }
         case E64: {
-          double fs2 = Rvvelt<double>(rvv_vs2_reg(), 0);
-          set_fpu_register_double(rd_reg(), fs2);
+          uint64_t fs2 = Rvvelt<uint64_t>(rvv_vs2_reg(), 0);
+          set_drd(Float64::FromBits(fs2));
           break;
         }
         default:
           require(0);
           break;
       }
-      rvv_trace_vd();
       break;
     default:
       UNSUPPORTED_RISCV();
@@ -7170,19 +7232,40 @@ void Simulator::DecodeRvvFVF() {
   DCHECK_EQ(instr_.InstructionBits() & (kBaseOpcodeMask | kFunct3Mask), OP_FVF);
   switch (instr_.InstructionBits() & kVTypeMask) {
     case RO_V_VFSGNJ_VF:
-      RVV_VI_VFP_VF_LOOP(
-          {}, { vd = fsgnj32(vs2, fs1, false, false); },
-          { vd = fsgnj64(vs2, fs1, false, false); })
+      RVV_VFSGNJ_VV_VF_LOOP(
+          {},
+          {
+            vd = fsgnj32(Float32::FromBits(vs2), fs1, false, false).get_bits();
+            USE(vs1);
+          },
+          {
+            vd = fsgnj64(Float64::FromBits(vs2), fs1, false, false).get_bits();
+            USE(vs1);
+          })
       break;
     case RO_V_VFSGNJN_VF:
-      RVV_VI_VFP_VF_LOOP(
-          {}, { vd = fsgnj32(vs2, fs1, true, false); },
-          { vd = fsgnj64(vs2, fs1, true, false); })
+      RVV_VFSGNJ_VV_VF_LOOP(
+          {},
+          {
+            vd = fsgnj32(Float32::FromBits(vs2), fs1, true, false).get_bits();
+            USE(vs1);
+          },
+          {
+            vd = fsgnj64(Float64::FromBits(vs2), fs1, true, false).get_bits();
+            USE(vs1);
+          })
       break;
     case RO_V_VFSGNJX_VF:
-      RVV_VI_VFP_VF_LOOP(
-          {}, { vd = fsgnj32(vs2, fs1, false, true); },
-          { vd = fsgnj64(vs2, fs1, false, true); })
+      RVV_VFSGNJ_VV_VF_LOOP(
+          {},
+          {
+            vd = fsgnj32(Float32::FromBits(vs2), fs1, false, true).get_bits();
+            USE(vs1);
+          },
+          {
+            vd = fsgnj64(Float64::FromBits(vs2), fs1, false, true).get_bits();
+            USE(vs1);
+          })
       break;
     case RO_V_VFMV_VF:
       if (instr_.RvvVM()) {
@@ -7517,7 +7600,7 @@ void Simulator::InstructionDecode(Instruction* instr) {
     disasm::NameConverter converter;
     disasm::Disassembler dasm(converter);
     // Use a reasonably large buffer.
-    dasm.InstructionDecode(buffer, reinterpret_cast<byte*>(instr));
+    dasm.InstructionDecode(buffer, reinterpret_cast<uint8_t*>(instr));
 
     // PrintF("EXECUTING  0x%08" PRIxPTR "   %-44s\n",
     //        reinterpret_cast<intptr_t>(instr), buffer.begin());
@@ -7602,17 +7685,18 @@ void Simulator::InstructionDecode(Instruction* instr) {
            " ",
            reinterpret_cast<intptr_t>(watch_address_), *watch_address_,
            *watch_address_);
-    Object obj(*watch_address_);
-    Heap* current_heap = isolate_->heap();
-    if (obj.IsSmi() || IsValidHeapObject(current_heap, HeapObject::cast(obj))) {
-      PrintF(" (");
-      if (obj.IsSmi()) {
-        PrintF("smi %d", Smi::ToInt(obj));
-      } else {
-        obj.ShortPrint();
-      }
-      PrintF(")");
-    }
+    // Object obj(*watch_address_);
+    // Heap* current_heap = isolate_->heap();
+    // if (obj.IsSmi() || IsValidHeapObject(current_heap,
+    // HeapObject::cast(obj))) {
+    //   PrintF(" (");
+    //   if (obj.IsSmi()) {
+    //     PrintF("smi %d", Smi::ToInt(obj));
+    //   } else {
+    //     obj.ShortPrint();
+    //   }
+    //   PrintF(")");
+    // }
     PrintF("\n");
     if (watch_value_ != *watch_address_) {
       RiscvDebugger dbg(this);

@@ -5,17 +5,20 @@
  * found in the LICENSE file.
  */
 
+#include "tools/sk_app/MetalWindowContext.h"
+
 #include "include/core/SkCanvas.h"
 #include "include/core/SkSurface.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
+#include "include/gpu/ganesh/mtl/SkSurfaceMetal.h"
 #include "include/gpu/mtl/GrMtlBackendContext.h"
 #include "include/gpu/mtl/GrMtlTypes.h"
 #include "src/base/SkMathPriv.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/image/SkImage_Base.h"
-#include "tools/sk_app/MetalWindowContext.h"
 
 using sk_app::DisplayParams;
 using sk_app::MetalWindowContext;
@@ -56,7 +59,7 @@ void MetalWindowContext::initializeContext() {
 
     fValid = this->onInitializeContext();
 
-#if GR_METAL_SDK_VERSION >= 230
+#if SKGPU_GRAPHITE_METAL_SDK_VERSION >= 230
     if (fDisplayParams.fEnableBinaryArchive) {
         if (@available(macOS 11.0, iOS 14.0, *)) {
             sk_cfp<MTLBinaryArchiveDescriptor*> desc([MTLBinaryArchiveDescriptor new]);
@@ -82,7 +85,7 @@ void MetalWindowContext::initializeContext() {
     GrMtlBackendContext backendContext = {};
     backendContext.fDevice.retain((GrMTLHandle)fDevice.get());
     backendContext.fQueue.retain((GrMTLHandle)fQueue.get());
-#if GR_METAL_SDK_VERSION >= 230
+#if SKGPU_GRAPHITE_METAL_SDK_VERSION >= 230
     if (@available(macOS 11.0, iOS 14.0, *)) {
         backendContext.fBinaryArchive.retain((__bridge GrMTLHandle)fPipelineArchive);
     }
@@ -107,7 +110,7 @@ void MetalWindowContext::destroyContext() {
     fMetalLayer = nil;
     fValid = false;
 
-#if GR_METAL_SDK_VERSION >= 230
+#if SKGPU_GRAPHITE_METAL_SDK_VERSION >= 230
     if (@available(macOS 11.0, iOS 14.0, *)) {
         [fPipelineArchive release];
     }
@@ -120,13 +123,14 @@ sk_sp<SkSurface> MetalWindowContext::getBackbufferSurface() {
     sk_sp<SkSurface> surface;
     if (fContext) {
         if (fDisplayParams.fDelayDrawableAcquisition) {
-            surface = SkSurface::MakeFromCAMetalLayer(fContext.get(),
-                                                      (__bridge GrMTLHandle)fMetalLayer,
-                                                      kTopLeft_GrSurfaceOrigin, fSampleCount,
-                                                      kBGRA_8888_SkColorType,
-                                                      fDisplayParams.fColorSpace,
-                                                      &fDisplayParams.fSurfaceProps,
-                                                      &fDrawableHandle);
+            surface = SkSurfaces::WrapCAMetalLayer(fContext.get(),
+                                                   (__bridge GrMTLHandle)fMetalLayer,
+                                                   kTopLeft_GrSurfaceOrigin,
+                                                   fSampleCount,
+                                                   kBGRA_8888_SkColorType,
+                                                   fDisplayParams.fColorSpace,
+                                                   &fDisplayParams.fSurfaceProps,
+                                                   &fDrawableHandle);
         } else {
             id<CAMetalDrawable> currentDrawable = [fMetalLayer nextDrawable];
 
@@ -138,11 +142,12 @@ sk_sp<SkSurface> MetalWindowContext::getBackbufferSurface() {
                                             fSampleCount,
                                             fbInfo);
 
-            surface = SkSurface::MakeFromBackendRenderTarget(fContext.get(), backendRT,
-                                                             kTopLeft_GrSurfaceOrigin,
-                                                             kBGRA_8888_SkColorType,
-                                                             fDisplayParams.fColorSpace,
-                                                             &fDisplayParams.fSurfaceProps);
+            surface = SkSurfaces::WrapBackendRenderTarget(fContext.get(),
+                                                          backendRT,
+                                                          kTopLeft_GrSurfaceOrigin,
+                                                          kBGRA_8888_SkColorType,
+                                                          fDisplayParams.fColorSpace,
+                                                          &fDisplayParams.fSurfaceProps);
 
             fDrawableHandle = CFRetain((GrMTLHandle) currentDrawable);
         }
@@ -173,7 +178,7 @@ void MetalWindowContext::setDisplayParams(const DisplayParams& params) {
 void MetalWindowContext::activate(bool isActive) {
     // serialize pipeline archive
     if (!isActive) {
-#if GR_METAL_SDK_VERSION >= 230
+#if SKGPU_GRAPHITE_METAL_SDK_VERSION >= 230
         if (@available(macOS 11.0, iOS 14.0, *)) {
             if (fPipelineArchive) {
                 NSError* error;

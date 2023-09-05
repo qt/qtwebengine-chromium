@@ -43,6 +43,7 @@
 #include <vector>
 
 #include "common/byte_cursor.h"
+#include "common/dwarf/dwarf2reader.h"
 #include "common/mac/arch_utilities.h"
 #include "common/mac/macho_reader.h"
 #include "common/mac/super_fat_arch.h"
@@ -142,6 +143,13 @@ class DumpSymbols {
 
   // Creates an empty module object.
   bool CreateEmptyModule(scoped_ptr<Module>& module);
+
+  // Process the split dwarf file referenced by reader.
+  void StartProcessSplitDwarf(google_breakpad::CompilationUnit* reader,
+                              Module* module,
+                              google_breakpad::Endianness endianness,
+                              bool handle_inter_cu_refs,
+                              bool handle_inline) const;
 
   // Read debugging information from |dwarf_sections|, which was taken from
   // |macho_reader|, and add it to |module|.

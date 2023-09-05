@@ -32,6 +32,8 @@
 #include <cstddef>
 #include <utility>
 
+using namespace skia_private;
+
 namespace SkSL {
 
 static bool check_modifiers(const Context& context,
@@ -70,7 +72,7 @@ static bool check_return_type(const Context& context, Position pos, const Type& 
 }
 
 static bool check_parameters(const Context& context,
-                             std::vector<std::unique_ptr<Variable>>& parameters,
+                             TArray<std::unique_ptr<Variable>>& parameters,
                              bool isMain) {
     auto typeIsValidForColor = [&](const Type& type) {
         return type.matches(*context.fTypes.fHalf4) || type.matches(*context.fTypes.fFloat4);
@@ -147,7 +149,7 @@ static bool check_parameters(const Context& context,
 }
 
 static bool check_main_signature(const Context& context, Position pos, const Type& returnType,
-                                 std::vector<std::unique_ptr<Variable>>& parameters) {
+                                 TArray<std::unique_ptr<Variable>>& parameters) {
     ErrorReporter& errors = *context.fErrors;
     ProgramKind kind = context.fConfig->fKind;
 
@@ -319,8 +321,8 @@ static bool type_generically_matches(const Type& concreteType, const Type& maybe
  * (otherParams). Returns true if they match, even if the parameters in `otherParams` contain
  * generic types.
  */
-static bool parameters_match(const std::vector<std::unique_ptr<Variable>>& params,
-                             const std::vector<Variable*>& otherParams) {
+static bool parameters_match(SkSpan<const std::unique_ptr<Variable>> params,
+                             SkSpan<Variable* const> otherParams) {
     // If the param lists are different lengths, they're definitely not a match.
     if (params.size() != otherParams.size()) {
         return false;
@@ -372,17 +374,16 @@ static bool parameters_match(const std::vector<std::unique_ptr<Variable>>& param
  * (or null if none) on success, returns false on error.
  */
 static bool find_existing_declaration(const Context& context,
-                                      SymbolTable& symbols,
                                       Position pos,
                                       const Modifiers* modifiers,
                                       std::string_view name,
-                                      std::vector<std::unique_ptr<Variable>>& parameters,
+                                      TArray<std::unique_ptr<Variable>>& parameters,
                                       Position returnTypePos,
                                       const Type* returnType,
                                       FunctionDeclaration** outExistingDecl) {
     auto invalidDeclDescription = [&]() -> std::string {
-        std::vector<Variable*> paramPtrs;
-        paramPtrs.reserve(parameters.size());
+        TArray<Variable*> paramPtrs;
+        paramPtrs.reserve_exact(parameters.size());
         for (std::unique_ptr<Variable>& param : parameters) {
             paramPtrs.push_back(param.get());
         }
@@ -396,7 +397,7 @@ static bool find_existing_declaration(const Context& context,
     };
 
     ErrorReporter& errors = *context.fErrors;
-    Symbol* entry = symbols.findMutable(name);
+    Symbol* entry = context.fSymbolTable->findMutable(name);
     *outExistingDecl = nullptr;
     if (entry) {
         if (!entry->is<FunctionDeclaration>()) {
@@ -415,7 +416,7 @@ static bool find_existing_declaration(const Context& context,
                              other->description() + "' differ only in return type");
                 return false;
             }
-            for (size_t i = 0; i < parameters.size(); i++) {
+            for (int i = 0; i < parameters.size(); i++) {
                 if (parameters[i]->modifiers() != other->parameters()[i]->modifiers()) {
                     errors.error(parameters[i]->fPosition,
                                  "modifiers on parameter " + std::to_string(i + 1) +
@@ -441,7 +442,7 @@ static bool find_existing_declaration(const Context& context,
 FunctionDeclaration::FunctionDeclaration(Position pos,
                                          const Modifiers* modifiers,
                                          std::string_view name,
-                                         std::vector<Variable*> parameters,
+                                         TArray<Variable*> parameters,
                                          const Type* returnType,
                                          bool builtin)
         : INHERITED(pos, kIRNodeKind, name, /*type=*/nullptr)
@@ -457,14 +458,23 @@ FunctionDeclaration::FunctionDeclaration(Position pos,
 }
 
 FunctionDeclaration* FunctionDeclaration::Convert(const Context& context,
-                                                  SymbolTable& symbols,
                                                   Position pos,
                                                   Position modifiersPosition,
                                                   const Modifiers* modifiers,
                                                   std::string_view name,
-                                                  std::vector<std::unique_ptr<Variable>> parameters,
+                                                  TArray<std::unique_ptr<Variable>> parameters,
                                                   Position returnTypePos,
                                                   const Type* returnType) {
+    // If requested, apply the `noinline` modifier to every function. This allows us to test Runtime
+    // Effects without any inlining, even when the code is later added to a paint.
+    Modifiers updatedModifiers;
+    if (context.fConfig->fSettings.fForceNoInline) {
+        updatedModifiers = *modifiers;
+        updatedModifiers.fFlags &= ~Modifiers::kInline_Flag;
+        updatedModifiers.fFlags |= Modifiers::kNoInline_Flag;
+        modifiers = &updatedModifiers;
+    }
+
     bool isMain = (name == "main");
 
     FunctionDeclaration* decl = nullptr;
@@ -472,25 +482,31 @@ FunctionDeclaration* FunctionDeclaration::Convert(const Context& context,
         !check_return_type(context, returnTypePos, *returnType) ||
         !check_parameters(context, parameters, isMain) ||
         (isMain && !check_main_signature(context, pos, *returnType, parameters)) ||
-        !find_existing_declaration(context, symbols, pos, modifiers, name, parameters,
+        !find_existing_declaration(context, pos, modifiers, name, parameters,
                                    returnTypePos, returnType, &decl)) {
         return nullptr;
     }
-    std::vector<Variable*> finalParameters;
-    finalParameters.reserve(parameters.size());
+    TArray<Variable*> finalParameters;
+    finalParameters.reserve_exact(parameters.size());
     for (std::unique_ptr<Variable>& param : parameters) {
-        finalParameters.push_back(symbols.takeOwnershipOfSymbol(std::move(param)));
+        finalParameters.push_back(context.fSymbolTable->takeOwnershipOfSymbol(std::move(param)));
     }
     if (decl) {
         return decl;
     }
-    auto result = std::make_unique<FunctionDeclaration>(pos,
-                                                        modifiers,
-                                                        name,
-                                                        std::move(finalParameters),
-                                                        returnType,
-                                                        context.fConfig->fIsBuiltinCode);
-    return symbols.add(std::move(result));
+    return context.fSymbolTable->add(
+            std::make_unique<FunctionDeclaration>(pos,
+                                                  context.fModifiersPool->add(*modifiers),
+                                                  name,
+                                                  std::move(finalParameters),
+                                                  returnType,
+                                                  context.fConfig->fIsBuiltinCode));
+}
+
+void FunctionDeclaration::addParametersToSymbolTable(const Context& context) {
+    for (Variable* param : fParameters) {
+        context.fSymbolTable->addWithoutOwnership(param);
+    }
 }
 
 std::string FunctionDeclaration::mangledName() const {
@@ -540,8 +556,8 @@ bool FunctionDeclaration::matches(const FunctionDeclaration& f) const {
     if (this->name() != f.name()) {
         return false;
     }
-    const std::vector<Variable*>& parameters = this->parameters();
-    const std::vector<Variable*>& otherParameters = f.parameters();
+    SkSpan<Variable* const> parameters = this->parameters();
+    SkSpan<Variable* const> otherParameters = f.parameters();
     if (parameters.size() != otherParameters.size()) {
         return false;
     }
@@ -556,10 +572,10 @@ bool FunctionDeclaration::matches(const FunctionDeclaration& f) const {
 bool FunctionDeclaration::determineFinalTypes(const ExpressionArray& arguments,
                                               ParamTypes* outParameterTypes,
                                               const Type** outReturnType) const {
-    const std::vector<Variable*>& parameters = this->parameters();
+    SkSpan<Variable* const> parameters = this->parameters();
     SkASSERT(SkToSizeT(arguments.size()) == parameters.size());
 
-    outParameterTypes->reserve_back(arguments.size());
+    outParameterTypes->reserve_exact(arguments.size());
     int genericIndex = -1;
     for (int i = 0; i < arguments.size(); i++) {
         // Non-generic parameters are final as-is.

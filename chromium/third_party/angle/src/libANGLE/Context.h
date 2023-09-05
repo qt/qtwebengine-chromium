@@ -37,6 +37,7 @@
 #include "libANGLE/RefCountObject.h"
 #include "libANGLE/ResourceManager.h"
 #include "libANGLE/ResourceMap.h"
+#include "libANGLE/SharedContextMutex.h"
 #include "libANGLE/State.h"
 #include "libANGLE/VertexAttribute.h"
 #include "libANGLE/angletypes.h"
@@ -373,6 +374,7 @@ class Context final : public egl::LabeledObject, angle::NonCopyable, public angl
             const Context *shareContext,
             TextureManager *shareTextures,
             SemaphoreManager *shareSemaphores,
+            egl::ContextMutex *sharedContextMutex,
             MemoryProgramCache *memoryProgramCache,
             MemoryShaderCache *memoryShaderCache,
             const EGLenum clientType,
@@ -662,6 +664,29 @@ class Context final : public egl::LabeledObject, angle::NonCopyable, public angl
 
     egl::ShareGroup *getShareGroup() const { return mState.getShareGroup(); }
 
+    // Note: mutex may be changed during the API call, including from other thread.
+    egl::ContextMutex *getContextMutex() const
+    {
+        return mState.mContextMutex.load(std::memory_order_relaxed);
+    }
+
+    // For debugging purposes. "ContextMutex" MUST be locked during this call.
+    bool isSharedContextMutexActive() const;
+    // For debugging purposes. "ContextMutex" MUST be locked during this call.
+    bool isContextMutexStateConsistent() const;
+
+    // Important note:
+    //   It is possible that this Context will continue to use "SingleContextMutex" in its current
+    //   thread after this call. Probability of that is controlled by the "kActivationDelayMicro"
+    //   constant. If problem happens or extra safety is critical - increase the
+    //   "kActivationDelayMicro".
+    //   For absolute 100% safety "SingleContextMutex" should not be used.
+    egl::ScopedContextMutexLock lockAndActivateSharedContextMutex();
+
+    // "SharedContextMutex" MUST be locked and active during this call.
+    // Merges "SharedContextMutex" of the Context with other "ShareContextMutex".
+    void mergeSharedContextMutexes(egl::ContextMutex *otherMutex);
+
     bool supportsGeometryOrTesselation() const;
     void dirtyAllState();
 
@@ -690,6 +715,9 @@ class Context final : public egl::LabeledObject, angle::NonCopyable, public angl
     // The implementation's ShPixelLocalStorageType must be "PixelLocalStorageEXT".
     void drawPixelLocalStorageEXTDisable(const PixelLocalStoragePlane[], const GLenum storeops[]);
 
+    // Ends the currently active pixel local storage session with GL_STORE_OP_STORE on all planes.
+    void endPixelLocalStorageWithStoreOpsStore();
+
   private:
     void initializeDefaultResources();
 
@@ -700,7 +728,7 @@ class Context final : public egl::LabeledObject, angle::NonCopyable, public angl
                             const State::ExtendedDirtyBits &extendedBitMask,
                             const State::DirtyObjects &objectMask,
                             Command command);
-    angle::Result syncDirtyBits(Command command);
+    angle::Result syncAllDirtyBits(Command command);
     angle::Result syncDirtyBits(const State::DirtyBits &bitMask,
                                 const State::ExtendedDirtyBits &extendedBitMask,
                                 Command command);

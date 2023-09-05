@@ -183,7 +183,7 @@ class SenderSessionTest : public ::testing::Test {
 
   std::unique_ptr<MockEnvironment> MakeEnvironment() {
     auto environment = std::make_unique<NiceMock<MockEnvironment>>(
-        &FakeClock::now, &task_runner_);
+        &FakeClock::now, task_runner_);
     ON_CALL(*environment, GetBoundLocalEndpoint())
         .WillByDefault(
             Return(IPEndpoint{IPAddress::Parse("127.0.0.1").value(), 12345}));

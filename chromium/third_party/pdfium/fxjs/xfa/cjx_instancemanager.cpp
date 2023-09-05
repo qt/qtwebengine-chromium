@@ -250,8 +250,7 @@ CJS_Result CJX_InstanceManager::addInstance(
   }
 
   return CJS_Result::Success(
-      GetDocument()->GetScriptContext()->GetOrCreateJSBindingFromMap(
-          pNewInstance));
+      runtime->GetOrCreateJSBindingFromMap(pNewInstance));
 }
 
 CJS_Result CJX_InstanceManager::insertInstance(
@@ -291,8 +290,7 @@ CJS_Result CJX_InstanceManager::insertInstance(
   }
 
   return CJS_Result::Success(
-      GetDocument()->GetScriptContext()->GetOrCreateJSBindingFromMap(
-          pNewInstance));
+      runtime->GetOrCreateJSBindingFromMap(pNewInstance));
 }
 
 void CJX_InstanceManager::max(v8::Isolate* pIsolate,

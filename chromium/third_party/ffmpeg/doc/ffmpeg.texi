@@ -17,9 +17,9 @@ ffmpeg [@var{global_options}] @{[@var{input_file_options}] -i @file{input_url}@}
 @chapter Description
 @c man begin DESCRIPTION
 
-@command{ffmpeg} is a very fast video and audio converter that can also grab from
-a live audio/video source. It can also convert between arbitrary sample
-rates and resize video on the fly with a high quality polyphase filter.
+@command{ffmpeg} is a universal media converter. It can read a wide variety of
+inputs - including live grabbing/recording devices - filter, and transcode them
+into a plethora of output formats.
 
 @command{ffmpeg} reads from an arbitrary number of input "files" (which can be regular
 files, pipes, network streams, grabbing devices, etc.), specified by the
@@ -49,24 +49,32 @@ Do not mix input and output files -- first specify all input files, then all
 output files. Also do not mix options which belong to different files. All
 options apply ONLY to the next input or output file and are reset between files.
 
+Some simple examples follow.
+
 @itemize
 @item
-To set the video bitrate of the output file to 64 kbit/s:
+Convert an input media file to a different format, by re-encoding media streams:
 @example
-ffmpeg -i input.avi -b:v 64k -bufsize 64k output.avi
+ffmpeg -i input.avi output.mp4
 @end example
 
 @item
-To force the frame rate of the output file to 24 fps:
+Set the video bitrate of the output file to 64 kbit/s:
 @example
-ffmpeg -i input.avi -r 24 output.avi
+ffmpeg -i input.avi -b:v 64k -bufsize 64k output.mp4
 @end example
 
 @item
-To force the frame rate of the input file (valid for raw formats only)
-to 1 fps and the frame rate of the output file to 24 fps:
+Force the frame rate of the output file to 24 fps:
 @example
-ffmpeg -r 1 -i input.m2v -r 24 output.avi
+ffmpeg -i input.avi -r 24 output.mp4
+@end example
+
+@item
+Force the frame rate of the input file (valid for raw formats only) to 1 fps and
+the frame rate of the output file to 24 fps:
+@example
+ffmpeg -r 1 -i input.m2v -r 24 output.mp4
 @end example
 @end itemize
 
@@ -1015,7 +1023,12 @@ If @var{pix_fmt} is a single @code{+}, ffmpeg selects the same pixel format
 as the input (or graph output) and automatic conversions are disabled.
 
 @item -sws_flags @var{flags} (@emph{input/output})
-Set SwScaler flags.
+Set default flags for the libswscale library. These flags are used by
+automatically inserted @code{scale} filters and those within simple
+filtergraphs, if not overridden within the filtergraph definition.
+
+See the @ref{scaler_options,,ffmpeg-scaler manual,ffmpeg-scaler} for a list
+of scaler options.
 
 @item -rc_override[:@var{stream_specifier}] @var{override} (@emph{output,per-stream})
 Rate control override for specific intervals, formatted as "int,int,int"
@@ -1043,8 +1056,6 @@ Specify which version of the vstats format to use. Default is @code{2}. See the
 top=1/bottom=0/auto=-1 field first
 @item -vtag @var{fourcc/tag} (@emph{output})
 Force video tag/fourcc. This is an alias for @code{-tag:v}.
-@item -qphist (@emph{global})
-Show QP histogram
 @item -vbsf @var{bitstream_filter}
 Deprecated see -bsf
 
@@ -1163,9 +1174,10 @@ Choose the first device and use the primary device context.
 @var{device} is the number of the Direct3D 11 display adapter.
 
 @item vaapi
-@var{device} is either an X11 display name or a DRM render node.
+@var{device} is either an X11 display name, a DRM render node or a DirectX adapter index.
 If not specified, it will attempt to open the default X11 display (@emph{$DISPLAY})
-and then the first DRM render node (@emph{/dev/dri/renderD128}).
+and then the first DRM render node (@emph{/dev/dri/renderD128}), or the default
+DirectX adapter on Windows.
 
 @item vdpau
 @var{device} is an X11 display name.
@@ -1701,6 +1713,9 @@ it may cause packet loss.
 It is useful for when flow speed of output packets is important, such as live streaming.
 @item -re (@emph{input})
 Read input at native frame rate. This is equivalent to setting @code{-readrate 1}.
+@item -readrate_initial_burst @var{seconds}
+Set an initial read burst time, in seconds, after which @option{-re/-readrate}
+will be enforced.
 @item -vsync @var{parameter} (@emph{global})
 @itemx -fps_mode[:@var{stream_specifier}] @var{parameter} (@emph{output,per-stream})
 Set video sync method / framerate mode. vsync is applied to all output video streams
@@ -1741,12 +1756,6 @@ be before they are dropped. In frame rate units, so 1.0 is one frame.
 The default is -1.1. One possible usecase is to avoid framedrops in case
 of noisy timestamps or to increase frame drop precision in case of exact
 timestamps.
-
-@item -adrift_threshold @var{time}
-Set the minimum difference between timestamps and audio data (in seconds) to trigger
-adding/dropping samples to make it match the timestamps. This option effectively is
-a threshold to select between hard (add/drop) and soft (squeeze/stretch) compensation.
-@code{-async} must be set to a positive value.
 
 @item -apad @var{parameters} (@emph{output,per-stream})
 Pad the output audio stream(s). This is the same as applying @code{-af apad}.
@@ -2576,7 +2585,7 @@ ffmpeg-devices(1), ffmpeg-protocols(1), ffmpeg-filters(1)
 @ignore
 
 @setfilename ffmpeg
-@settitle ffmpeg video converter
+@settitle ffmpeg media converter
 
 @end ignore
 

@@ -133,7 +133,7 @@ void StartFrameCapture(id<MTLDevice> metalDevice, id<MTLCommandQueue> metalCmdQu
     }
 
 #    ifdef __MAC_10_15
-    if (ANGLE_APPLE_AVAILABLE_XCI(10.15, 13.0, 13))
+    if (ANGLE_APPLE_AVAILABLE_XCI(10.15, 13.1, 13))
     {
         auto captureDescriptor = mtl::adoptObjCObj([[MTLCaptureDescriptor alloc] init]);
         captureDescriptor.get().captureObject = metalDevice;
@@ -161,7 +161,7 @@ void StartFrameCapture(id<MTLDevice> metalDevice, id<MTLCommandQueue> metalCmdQu
     }
     else
 #    endif  // __MAC_10_15
-        if (ANGLE_APPLE_AVAILABLE_XCI(10.15, 13.0, 13))
+        if (ANGLE_APPLE_AVAILABLE_XCI(10.15, 13.1, 13))
         {
             auto captureDescriptor = mtl::adoptObjCObj([[MTLCaptureDescriptor alloc] init]);
             captureDescriptor.get().captureObject = metalDevice;
@@ -734,7 +734,7 @@ uint32_t GetDeviceVendorId(id<MTLDevice> metalDevice)
 {
     uint32_t vendorId = 0;
 #if TARGET_OS_OSX || TARGET_OS_MACCATALYST
-    if (ANGLE_APPLE_AVAILABLE_XC(10.13, 13.0))
+    if (ANGLE_APPLE_AVAILABLE_XC(10.13, 13.1))
     {
         vendorId = GetDeviceVendorIdFromIOKit(metalDevice);
     }
@@ -856,16 +856,19 @@ AutoObjCPtr<id<MTLLibrary>> CreateShaderLibrary(
                                                      encoding:NSUTF8StringEncoding
                                                  freeWhenDone:NO];
         auto options     = [[[MTLCompileOptions alloc] init] ANGLE_MTL_AUTORELEASE];
+
         // Mark all positions in VS with attribute invariant as non-optimizable
-#if (defined(__MAC_11_0) && __MAC_OS_X_VERSION_MIN_REQUIRED >= __MAC_11_0) ||        \
-    (defined(__IPHONE_14_0) && __IPHONE_OS_VERSION_MIN_REQUIRED >= __IPHONE_14_0) || \
-    (defined(__TVOS_14_0) && __TV_OS_VERSION_MIN_REQUIRED >= __TVOS_14_0)
-        options.preserveInvariance = true;
-#else
-        // No preserveInvariance available compiling from source, so just disable fastmath.
-        options.fastMathEnabled = false;
+        bool canPerserveInvariance = false;
+#if defined(__MAC_11_0) || defined(__IPHONE_14_0) || defined(__TVOS_14_0)
+        if (ANGLE_APPLE_AVAILABLE_XCI(11.0, 14.0, 14.0))
+        {
+            canPerserveInvariance      = true;
+            options.preserveInvariance = true;
+        }
 #endif
-        options.fastMathEnabled &= enableFastMath;
+
+        // If preserveInvariance is not available when compiling from source, disable fastmath.
+        options.fastMathEnabled = enableFastMath && canPerserveInvariance;
         options.languageVersion = GetUserSetOrHighestMSLVersion(options.languageVersion);
 
         if (!substitutionMacros.empty())
@@ -1420,7 +1423,7 @@ bool SupportsAppleGPUFamily(id<MTLDevice> device, uint8_t appleFamily)
 #if (__MAC_OS_X_VERSION_MAX_ALLOWED >= 101500 || __IPHONE_OS_VERSION_MAX_ALLOWED >= 130000) || \
     (__TV_OS_VERSION_MAX_ALLOWED >= 130000)
     // If device supports [MTLDevice supportsFamily:], then use it.
-    if (ANGLE_APPLE_AVAILABLE_XC(10.15, 13.0))
+    if (ANGLE_APPLE_AVAILABLE_XCI(10.15, 13.1, 13))
     {
         MTLGPUFamily family;
         switch (appleFamily)
@@ -1497,7 +1500,7 @@ bool SupportsMacGPUFamily(id<MTLDevice> device, uint8_t macFamily)
 #if TARGET_OS_OSX || TARGET_OS_MACCATALYST
 #    if defined(__MAC_10_15)
     // If device supports [MTLDevice supportsFamily:], then use it.
-    if (ANGLE_APPLE_AVAILABLE_XC(10.15, 13.0))
+    if (ANGLE_APPLE_AVAILABLE_XCI(10.15, 13.1, 13))
     {
         MTLGPUFamily family;
 

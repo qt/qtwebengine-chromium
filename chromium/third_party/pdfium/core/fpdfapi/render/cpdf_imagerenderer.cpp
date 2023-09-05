@@ -42,10 +42,6 @@
 #include "third_party/base/check.h"
 #include "third_party/base/cxx17_backports.h"
 
-#if defined(_SKIA_SUPPORT_)
-#include "core/fxge/skia/fx_skia_device.h"
-#endif
-
 namespace {
 
 bool IsImageValueTooBig(int val) {
@@ -65,19 +61,6 @@ void ClearBitmap(CFX_DefaultRenderDevice& bitmap_device, uint32_t color) {
   }
 #endif
   bitmap_device.GetBitmap()->Clear(color);
-}
-
-RetainPtr<CFX_DIBBase> PreMultiplyBitmapIfAlpha(
-    RetainPtr<CFX_DIBBase> base_bitmap) {
-#if defined(_SKIA_SUPPORT_)
-  if (CFX_DefaultRenderDevice::SkiaIsDefaultRenderer()) {
-    RetainPtr<CFX_DIBitmap> premultiplied = base_bitmap->Realize();
-    if (base_bitmap->IsAlphaFormat())
-      premultiplied->PreMultiply();
-    return premultiplied;
-  }
-#endif  // defined(_SKIA_SUPPORT_)
-  return base_bitmap;
 }
 
 }  // namespace
@@ -381,6 +364,8 @@ bool CPDF_ImageRenderer::DrawMaskedImage() {
   }
   CalculateDrawImage(&bitmap_device1, &bitmap_device2, m_pLoader->GetMask(),
                      new_matrix, rect);
+  DCHECK(!bitmap_device2.GetBitmap()->HasPalette());
+  bitmap_device2.GetBitmap()->ConvertFormat(FXDIB_Format::k8bppMask);
 #if defined(_SKIA_SUPPORT_)
   if (CFX_DefaultRenderDevice::SkiaIsDefaultRenderer()) {
     m_pRenderStatus->GetRenderDevice()->SetBitsWithMask(
@@ -389,7 +374,6 @@ bool CPDF_ImageRenderer::DrawMaskedImage() {
     return false;
   }
 #endif
-  bitmap_device2.GetBitmap()->ConvertFormat(FXDIB_Format::k8bppMask);
   bitmap_device1.GetBitmap()->MultiplyAlpha(bitmap_device2.GetBitmap());
   if (m_BitmapAlpha < 255)
     bitmap_device1.GetBitmap()->MultiplyAlpha(m_BitmapAlpha);
@@ -412,10 +396,9 @@ bool CPDF_ImageRenderer::StartDIBBase() {
       m_ResampleOptions.bInterpolateBilinear = true;
     }
   }
-  RetainPtr<CFX_DIBBase> bitmap = PreMultiplyBitmapIfAlpha(m_pDIBBase);
   if (m_pRenderStatus->GetRenderDevice()->StartDIBitsWithBlend(
-          bitmap, m_BitmapAlpha, m_FillArgb, m_ImageMatrix, m_ResampleOptions,
-          &m_DeviceHandle, m_BlendType)) {
+          m_pDIBBase, m_BitmapAlpha, m_FillArgb, m_ImageMatrix,
+          m_ResampleOptions, &m_DeviceHandle, m_BlendType)) {
     if (m_DeviceHandle) {
       m_Mode = Mode::kBlend;
       return true;

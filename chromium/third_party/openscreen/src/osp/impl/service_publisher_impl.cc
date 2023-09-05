@@ -90,6 +90,16 @@ bool ServicePublisherImpl::Resume() {
   return true;
 }
 
+void ServicePublisherImpl::OnFatalError(Error error) {
+  last_error_ = error;
+  observer_->OnError(error);
+}
+
+void ServicePublisherImpl::OnRecoverableError(Error error) {
+  last_error_ = error;
+  observer_->OnError(error);
+}
+
 void ServicePublisherImpl::SetState(State state) {
   OSP_DCHECK(IsTransitionValid(state_, state));
   state_ = state;

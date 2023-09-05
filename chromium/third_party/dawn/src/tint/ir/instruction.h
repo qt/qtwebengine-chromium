@@ -15,39 +15,91 @@
 #ifndef SRC_TINT_IR_INSTRUCTION_H_
 #define SRC_TINT_IR_INSTRUCTION_H_
 
+#include "src/tint/ir/instruction_result.h"
 #include "src/tint/ir/value.h"
-#include "src/tint/symbol_table.h"
 #include "src/tint/utils/castable.h"
-#include "src/tint/utils/string_stream.h"
+
+// Forward declarations
+namespace tint::ir {
+class Block;
+}  // namespace tint::ir
 
 namespace tint::ir {
 
 /// An instruction in the IR.
 class Instruction : public utils::Castable<Instruction> {
   public:
-    Instruction(const Instruction& instr) = delete;
-    Instruction(Instruction&& instr) = delete;
     /// Destructor
     ~Instruction() override;
 
-    Instruction& operator=(const Instruction& instr) = delete;
-    Instruction& operator=(Instruction&& instr) = delete;
+    /// Set an operand at a given index.
+    /// @param index the operand index
+    /// @param value the value to use
+    virtual void SetOperand(size_t index, ir::Value* value) = 0;
 
-    /// @returns the result value for the instruction
-    Value* Result() const { return result_; }
+    /// @returns the operands of the instruction
+    virtual utils::VectorRef<ir::Value*> Operands() = 0;
 
-    /// Write the instruction to the given stream
-    /// @param out the stream to write to
-    /// @returns the stream
-    virtual utils::StringStream& ToString(utils::StringStream& out) const = 0;
+    /// @returns true if the instruction has result values
+    virtual bool HasResults() { return false; }
+    /// @returns true if the instruction has multiple values
+    virtual bool HasMultiResults() { return false; }
+
+    /// @returns the first result. Returns `nullptr` if there are no results, or if ther are
+    /// multi-results
+    virtual InstructionResult* Result() { return nullptr; }
+
+    /// @returns the result values for this instruction
+    virtual utils::VectorRef<InstructionResult*> Results() { return utils::Empty; }
+
+    /// Removes the instruction from the block, and destroys all the result values.
+    /// The result values must not be in use.
+    virtual void Destroy();
+
+    /// @returns true if the Instruction has not been destroyed with Destroy()
+    bool Alive() const { return alive_; }
+
+    /// Sets the block that owns this instruction
+    /// @param block the new owner block
+    void SetBlock(ir::Block* block) { block_ = block; }
+
+    /// @returns the block that owns this instruction
+    ir::Block* Block() { return block_; }
+
+    /// Adds the new instruction before the given instruction in the owning block
+    /// @param before the instruction to insert before
+    void InsertBefore(Instruction* before);
+    /// Adds the new instruction after the given instruction in the owning block
+    /// @param after the instruction to insert after
+    void InsertAfter(Instruction* after);
+    /// Replaces this instruction with @p replacement in the owning block owning this instruction
+    /// @param replacement the instruction to replace with
+    void ReplaceWith(Instruction* replacement);
+    /// Removes this instruction from the owning block
+    void Remove();
+
+    /// @param idx the index of the result
+    /// @returns the result with index @p idx, or `nullptr` if there are no results or the index is
+    /// out of bounds.
+    Value* Result(size_t idx) {
+        auto res = Results();
+        return idx < res.Length() ? res[idx] : nullptr;
+    }
+
+    /// Pointer to the next instruction in the list
+    Instruction* next = nullptr;
+    /// Pointer to the previous instruction in the list
+    Instruction* prev = nullptr;
 
   protected:
     /// Constructor
-    /// @param result the result value
-    explicit Instruction(Value* result);
+    Instruction();
+
+    /// The block that owns this instruction
+    ir::Block* block_ = nullptr;
 
   private:
-    Value* result_ = nullptr;
+    bool alive_ = true;
 };
 
 }  // namespace tint::ir

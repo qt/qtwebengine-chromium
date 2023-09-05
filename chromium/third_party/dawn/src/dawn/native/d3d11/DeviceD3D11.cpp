@@ -24,15 +24,19 @@
 #include "dawn/native/DynamicUploader.h"
 #include "dawn/native/Instance.h"
 #include "dawn/native/d3d/D3DError.h"
-#include "dawn/native/d3d11/AdapterD3D11.h"
+#include "dawn/native/d3d/ExternalImageDXGIImpl.h"
+#include "dawn/native/d3d/UtilsD3D.h"
 #include "dawn/native/d3d11/BackendD3D11.h"
 #include "dawn/native/d3d11/BindGroupD3D11.h"
 #include "dawn/native/d3d11/BindGroupLayoutD3D11.h"
 #include "dawn/native/d3d11/BufferD3D11.h"
 #include "dawn/native/d3d11/CommandBufferD3D11.h"
 #include "dawn/native/d3d11/ComputePipelineD3D11.h"
+#include "dawn/native/d3d11/FenceD3D11.h"
+#include "dawn/native/d3d11/PhysicalDeviceD3D11.h"
 #include "dawn/native/d3d11/PipelineLayoutD3D11.h"
 #include "dawn/native/d3d11/PlatformFunctionsD3D11.h"
+#include "dawn/native/d3d11/QuerySetD3D11.h"
 #include "dawn/native/d3d11/QueueD3D11.h"
 #include "dawn/native/d3d11/RenderPipelineD3D11.h"
 #include "dawn/native/d3d11/SamplerD3D11.h"
@@ -89,7 +93,7 @@ void AppendDebugLayerMessagesToError(ID3D11InfoQueue* infoQueue,
 }  // namespace
 
 // static
-ResultOrError<Ref<Device>> Device::Create(Adapter* adapter,
+ResultOrError<Ref<Device>> Device::Create(AdapterBase* adapter,
                                           const DeviceDescriptor* descriptor,
                                           const TogglesState& deviceToggles) {
     Ref<Device> device = AcquireRef(new Device(adapter, descriptor, deviceToggles));
@@ -98,7 +102,7 @@ ResultOrError<Ref<Device>> Device::Create(Adapter* adapter,
 }
 
 MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
-    DAWN_TRY_ASSIGN(mD3d11Device, ToBackend(GetAdapter())->CreateD3D11Device());
+    DAWN_TRY_ASSIGN(mD3d11Device, ToBackend(GetPhysicalDevice())->CreateD3D11Device());
     ASSERT(mD3d11Device != nullptr);
 
     DAWN_TRY(DeviceBase::Initialize(Queue::Create(this, &descriptor->defaultQueue)));
@@ -118,24 +122,14 @@ MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
     // Create the fence event.
     mFenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
 
-    DAWN_TRY(PreparePendingCommandContext());
+    DAWN_TRY(mPendingCommands.Intialize(this));
 
     SetLabelImpl();
 
     return {};
 }
 
-Device::~Device() {
-    Destroy();
-
-    // Close the handle here instead of in DestroyImpl. The handle is returned from
-    // ExternalImageDXGI, so it needs to live as long as the Device ref does, even if the device
-    // state is destroyed.
-    if (mFenceHandle != nullptr) {
-        ::CloseHandle(mFenceHandle);
-        mFenceHandle = nullptr;
-    }
-}
+Device::~Device() = default;
 
 ID3D11Device* Device::GetD3D11Device() const {
     return mD3d11Device.Get();
@@ -154,13 +148,6 @@ CommandRecordingContext* Device::GetPendingCommandContext(Device::SubmitMode sub
         mPendingCommands.SetNeedsSubmit();
     }
     return &mPendingCommands;
-}
-
-MaybeError Device::PreparePendingCommandContext() {
-    if (!mPendingCommands.IsOpen()) {
-        DAWN_TRY(mPendingCommands.Open(this));
-    }
-    return {};
 }
 
 MaybeError Device::TickImpl() {
@@ -267,7 +254,7 @@ ResultOrError<Ref<PipelineLayoutBase>> Device::CreatePipelineLayoutImpl(
 }
 
 ResultOrError<Ref<QuerySetBase>> Device::CreateQuerySetImpl(const QuerySetDescriptor* descriptor) {
-    return DAWN_UNIMPLEMENTED_ERROR("CreateQuerySetImpl");
+    return QuerySet::Create(this, descriptor);
 }
 
 Ref<RenderPipelineBase> Device::CreateUninitializedRenderPipelineImpl(
@@ -333,7 +320,7 @@ MaybeError Device::CopyFromStagingToTextureImpl(const BufferBase* source,
 }
 
 const DeviceInfo& Device::GetDeviceInfo() const {
-    return ToBackend(GetAdapter())->GetDeviceInfo();
+    return ToBackend(GetPhysicalDevice())->GetDeviceInfo();
 }
 
 MaybeError Device::WaitForIdleForDestruction() {
@@ -345,7 +332,7 @@ MaybeError Device::WaitForIdleForDestruction() {
 }
 
 MaybeError Device::CheckDebugLayerAndGenerateErrors() {
-    if (!GetAdapter()->GetInstance()->IsBackendValidationEnabled()) {
+    if (!GetPhysicalDevice()->GetInstance()->IsBackendValidationEnabled()) {
         return {};
     }
 
@@ -369,7 +356,7 @@ MaybeError Device::CheckDebugLayerAndGenerateErrors() {
 }
 
 void Device::AppendDebugLayerMessages(ErrorData* error) {
-    if (!GetAdapter()->GetInstance()->IsBackendValidationEnabled()) {
+    if (!GetPhysicalDevice()->GetInstance()->IsBackendValidationEnabled()) {
         return;
     }
 
@@ -388,6 +375,8 @@ void Device::AppendDebugLayerMessages(ErrorData* error) {
 
 void Device::DestroyImpl() {
     ASSERT(GetState() == State::Disconnected);
+
+    Base::DestroyImpl();
 
     if (mFenceEvent != nullptr) {
         ::CloseHandle(mFenceEvent);
@@ -411,6 +400,46 @@ float Device::GetTimestampPeriodInNS() const {
 
 void Device::SetLabelImpl() {}
 
+ResultOrError<Ref<d3d::Fence>> Device::CreateFence(
+    const d3d::ExternalImageDXGIFenceDescriptor* descriptor) {
+    return Fence::CreateFromHandle(mD3d11Device5.Get(), descriptor->fenceHandle,
+                                   descriptor->fenceValue);
+}
+
+ResultOrError<std::unique_ptr<d3d::ExternalImageDXGIImpl>> Device::CreateExternalImageDXGIImplImpl(
+    const d3d::ExternalImageDescriptorDXGISharedHandle* descriptor) {
+    // ExternalImageDXGIImpl holds a weak reference to the device. If the device is destroyed before
+    // the image is created, the image will have a dangling reference to the device which can cause
+    // a use-after-free.
+    DAWN_TRY(ValidateIsAlive());
+
+    ComPtr<ID3D11Resource> d3d11Resource;
+    DAWN_TRY(CheckHRESULT(
+        mD3d11Device5->OpenSharedResource1(descriptor->sharedHandle, IID_PPV_ARGS(&d3d11Resource)),
+        "D3D11 OpenSharedResource1"));
+
+    const TextureDescriptor* textureDescriptor = FromAPI(descriptor->cTextureDescriptor);
+    DAWN_TRY(
+        ValidateTextureDescriptor(this, textureDescriptor, AllowMultiPlanarTextureFormat::Yes));
+
+    DAWN_TRY_CONTEXT(d3d::ValidateTextureDescriptorCanBeWrapped(textureDescriptor),
+                     "validating that a D3D11 external image can be wrapped with %s",
+                     textureDescriptor);
+
+    DAWN_TRY(ValidateTextureCanBeWrapped(d3d11Resource.Get(), textureDescriptor));
+
+    // Shared handle is assumed to support resource sharing capability. The resource
+    // shared capability tier must agree to share resources between D3D devices.
+    const Format* format = GetInternalFormat(textureDescriptor->format).AcquireSuccess();
+    if (format->IsMultiPlanar()) {
+        DAWN_TRY(ValidateVideoTextureCanBeShared(
+            this, d3d::DXGITextureFormat(textureDescriptor->format)));
+    }
+
+    return std::make_unique<d3d::ExternalImageDXGIImpl>(this, std::move(d3d11Resource),
+                                                        textureDescriptor);
+}
+
 bool Device::MayRequireDuplicationOfIndirectParameters() const {
     return true;
 }
@@ -419,8 +448,23 @@ uint64_t Device::GetBufferCopyOffsetAlignmentForDepthStencil() const {
     return DeviceBase::GetBufferCopyOffsetAlignmentForDepthStencil();
 }
 
-HANDLE Device::GetFenceHandle() const {
-    return mFenceHandle;
+Ref<TextureBase> Device::CreateD3DExternalTexture(const TextureDescriptor* descriptor,
+                                                  ComPtr<IUnknown> d3dTexture,
+                                                  std::vector<Ref<d3d::Fence>> waitFences,
+                                                  bool isSwapChainTexture,
+                                                  bool isInitialized) {
+    Ref<Texture> dawnTexture;
+    if (ConsumedError(
+            Texture::CreateExternalImage(this, descriptor, std::move(d3dTexture),
+                                         std::move(waitFences), isSwapChainTexture, isInitialized),
+            &dawnTexture)) {
+        return nullptr;
+    }
+    return {dawnTexture};
+}
+
+uint32_t Device::GetUAVSlotCount() const {
+    return ToBackend(GetPhysicalDevice())->GetUAVSlotCount();
 }
 
 }  // namespace dawn::native::d3d11

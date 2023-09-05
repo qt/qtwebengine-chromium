@@ -247,7 +247,7 @@ class ApplicationAgentTest : public ::testing::Test {
   FakeCastSocketPair socket_pair_;
   StrictMock<FakeApplication> idle_app_{"E8C28D3C", "Backdrop"};
   TestCredentialsProvider creds_;
-  ApplicationAgent agent_{&task_runner_, &creds_};
+  ApplicationAgent agent_{task_runner_, &creds_};
 };
 
 TEST_F(ApplicationAgentTest, JustConnectsWithoutDoingAnything) {}

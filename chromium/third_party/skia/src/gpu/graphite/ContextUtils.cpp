@@ -9,6 +9,7 @@
 
 #include <string>
 #include "src/core/SkBlenderBase.h"
+#include "src/gpu/BlendFormula.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/GraphicsPipelineDesc.h"
 #include "src/gpu/graphite/KeyContext.h"
@@ -21,6 +22,7 @@
 #include "src/gpu/graphite/UniformManager.h"
 #include "src/gpu/graphite/UniquePaintParamsID.h"
 #include "src/sksl/SkSLString.h"
+#include "src/sksl/SkSLUtil.h"
 
 namespace skgpu::graphite {
 
@@ -31,12 +33,13 @@ ExtractPaintData(Recorder* recorder,
                  const Layout layout,
                  const SkM44& local2Dev,
                  const PaintParams& p,
+                 sk_sp<TextureProxy> dstTexture,
                  const SkColorInfo& targetColorInfo) {
     SkDEBUGCODE(builder->checkReset());
 
     gatherer->resetWithNewLayout(layout);
 
-    KeyContext keyContext(recorder, local2Dev, targetColorInfo, p.color());
+    KeyContext keyContext(recorder, local2Dev, targetColorInfo, p.color(), std::move(dstTexture));
     p.toKey(keyContext, builder, gatherer);
 
     UniquePaintParamsID paintID = recorder->priv().shaderCodeDictionary()->findOrCreate(builder);
@@ -74,6 +77,22 @@ std::tuple<const UniformDataBlock*, const TextureDataBlock*> ExtractRenderStepDa
                                     : nullptr;
 
     return { uniforms, textures };
+}
+
+DstReadRequirement GetDstReadRequirement(const Caps* caps,
+                                         std::optional<SkBlendMode> blendMode,
+                                         bool hasCoverage) {
+    // If the blend mode is absent, this is assumed to be for a runtime blender, for which we always
+    // do a dst read.
+    if (!blendMode || *blendMode > SkBlendMode::kLastCoeffMode) {
+        return caps->getDstReadRequirement();
+    }
+
+    BlendFormula blendFormula = skgpu::GetBlendFormula(false, hasCoverage, *blendMode);
+    if (blendFormula.hasSecondaryOutput() && !caps->shaderCaps()->fDualSourceBlendingSupport) {
+        return caps->getDstReadRequirement();
+    }
+    return DstReadRequirement::kNone;
 }
 
 namespace {
@@ -385,7 +404,7 @@ std::string GetSkSLVS(const ResourceBindingRequirements& bindingReqs,
     return sksl;
 }
 
-FragSkSLInfo GetSkSLFS(const ResourceBindingRequirements& bindingReqs,
+FragSkSLInfo GetSkSLFS(const Caps* caps,
                        const ShaderCodeDictionary* dict,
                        const RuntimeEffectDictionary* rteDict,
                        const RenderStep* step,
@@ -404,12 +423,11 @@ FragSkSLInfo GetSkSLFS(const ResourceBindingRequirements& bindingReqs,
 
     // Extra RenderStep uniforms are always backed by a UBO. Uniforms for the PaintParams are either
     // UBO or SSBO backed based on `useStorageBuffers`.
-    result.fSkSL =
-            shaderInfo.toSkSL(bindingReqs,
-                              step,
-                              useStorageBuffers,
-                              /*numTexturesAndSamplersUsed=*/&result.fNumTexturesAndSamplers,
-                              writeSwizzle);
+    result.fSkSL = shaderInfo.toSkSL(caps,
+                                     step,
+                                     useStorageBuffers,
+                                     /*numTexturesAndSamplersUsed=*/&result.fNumTexturesAndSamplers,
+                                     writeSwizzle);
 
     // Extract blend info after integrating the RenderStep into the final fragment shader in case
     // that changes the HW blending choice to handle analytic coverage.

@@ -71,7 +71,11 @@ class BleV2Medium : public api::ble_v2::BleMedium {
       CancellationFlag* cancellation_flag) override;
   bool IsExtendedAdvertisementsAvailable() override;
 
-  BluetoothAdapter& GetAdapter() { return *adapter_; }
+  bool GetRemotePeripheral(const std::string& mac_address,
+                           GetRemotePeripheralCallback callback) override;
+
+  bool GetRemotePeripheral(api::ble_v2::BlePeripheral::UniqueId id,
+                           GetRemotePeripheralCallback callback) override;
 
  private:
   bool StartBleAdvertising(
@@ -96,21 +100,35 @@ class BleV2Medium : public api::ble_v2::BleMedium {
       winrt::Windows::Devices::Bluetooth::Advertisement::
           BluetoothLEAdvertisementReceivedEventArgs args);
 
+  void AdvertisementFoundHandler(
+      winrt::Windows::Devices::Bluetooth::Advertisement::
+          BluetoothLEAdvertisementWatcher watcher,
+      winrt::Windows::Devices::Bluetooth::Advertisement::
+          BluetoothLEAdvertisementReceivedEventArgs args);
+
   void WatcherHandler(winrt::Windows::Devices::Bluetooth::Advertisement::
                           BluetoothLEAdvertisementWatcher watcher,
                       winrt::Windows::Devices::Bluetooth::Advertisement::
                           BluetoothLEAdvertisementWatcherStoppedEventArgs args);
+
+  uint64_t GenerateSessionId();
+  // Returns nullptr if `address` is invalid.
+  BleV2Peripheral* GetOrCreatePeripheral(absl::string_view address);
+  // Returns nullptr if `id` does not match a known peripheral.
+  BleV2Peripheral* GetPeripheral(BleV2Peripheral::UniqueId id);
+
+  void RemoveExpiredPeripherals()
+      ABSL_EXCLUSIVE_LOCKS_REQUIRED(peripheral_map_mutex_);
 
   BluetoothAdapter* adapter_;
   Uuid service_uuid_;
   api::ble_v2::TxPowerLevel tx_power_level_;
   ScanCallback scan_callback_;
 
-  // Map to protect the pointer for BlePeripheral because
-  // DiscoveredPeripheralCallback only keeps the pointer to the object
-  absl::Mutex peripheral_map_mutex_;
-  absl::flat_hash_map<std::string, std::unique_ptr<BleV2Peripheral>>
-      peripheral_map_ ABSL_GUARDED_BY(peripheral_map_mutex_);
+  absl::Mutex map_mutex_;
+  // std::map<Uuid, std::map<uint64_t, ScanningCallback>>
+  absl::flat_hash_map<Uuid, absl::flat_hash_map<uint64_t, ScanningCallback>>
+      service_uuid_to_session_map_ ABSL_GUARDED_BY(map_mutex_);
 
   // WinRT objects
   ::winrt::Windows::Devices::Bluetooth::Advertisement::
@@ -127,6 +145,16 @@ class BleV2Medium : public api::ble_v2::BleMedium {
   ::winrt::event_token advertisement_received_token_;
 
   BleGattServer* ble_gatt_server_ = nullptr;
+  // Map to protect the pointer for BlePeripheral because
+  // DiscoveredPeripheralCallback only keeps the pointer to the object
+  absl::Mutex peripheral_map_mutex_;
+  struct PeripheralInfo {
+    absl::Time last_access_time;
+    std::unique_ptr<BleV2Peripheral> peripheral;
+  };
+  absl::flat_hash_map<BleV2Peripheral::UniqueId, PeripheralInfo> peripheral_map_
+      ABSL_GUARDED_BY(peripheral_map_mutex_);
+  absl::Time cleanup_time_ ABSL_GUARDED_BY(peripheral_map_mutex_) = absl::Now();
 };
 
 }  // namespace windows

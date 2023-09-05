@@ -246,6 +246,41 @@ const char* Builtins::name(Builtin builtin) {
   return builtin_metadata[index].name;
 }
 
+// static
+const char* Builtins::NameForStackTrace(Builtin builtin) {
+#if V8_ENABLE_WEBASSEMBLY
+  // Most builtins are never shown in stack traces. Those that are exposed
+  // to JavaScript get their name from the object referring to them. Here
+  // we only support a few internal builtins that have special reasons for
+  // being shown on stack traces:
+  // - builtins that are allowlisted in {StubFrame::Summarize}.
+  // - builtins that throw the same error as one of those above, but would
+  //   lose information and e.g. print "indexOf" instead of "String.indexOf".
+  switch (builtin) {
+    case Builtin::kStringPrototypeToLocaleLowerCase:
+      return "String.toLocaleLowerCase";
+    case Builtin::kStringPrototypeIndexOf:
+    case Builtin::kThrowIndexOfCalledOnNull:
+      return "String.indexOf";
+#if V8_INTL_SUPPORT
+    case Builtin::kStringPrototypeToLowerCaseIntl:
+#endif
+    case Builtin::kThrowToLowerCaseCalledOnNull:
+      return "String.toLowerCase";
+    case Builtin::kWasmIntToString:
+      return "Number.toString";
+    default:
+      // Callers getting this might well crash, which might be desirable
+      // because it's similar to {UNREACHABLE()}, but contrary to that a
+      // careful caller can also check the value and use it as an "is a
+      // name available for this builtin?" check.
+      return nullptr;
+  }
+#else
+  return nullptr;
+#endif  // V8_ENABLE_WEBASSEMBLY
+}
+
 void Builtins::PrintBuiltinCode() {
   DCHECK(v8_flags.print_builtin_code);
 #ifdef ENABLE_DISASSEMBLER
@@ -366,7 +401,7 @@ Handle<Code> Builtins::CreateInterpreterEntryTrampolineForProfiling(
       Builtin::kInterpreterEntryTrampolineForProfiling);
 
   CodeDesc desc;
-  desc.buffer = reinterpret_cast<byte*>(code.instruction_start());
+  desc.buffer = reinterpret_cast<uint8_t*>(code.instruction_start());
 
   int instruction_size = code.instruction_size();
   desc.buffer_size = instruction_size;
@@ -429,7 +464,8 @@ bool Builtins::AllowDynamicFunction(Isolate* isolate, Handle<JSFunction> target,
                                     Handle<JSObject> target_global_proxy) {
   if (v8_flags.allow_unsafe_function_constructor) return true;
   HandleScopeImplementer* impl = isolate->handle_scope_implementer();
-  Handle<Context> responsible_context = impl->LastEnteredOrMicrotaskContext();
+  Handle<NativeContext> responsible_context =
+      impl->LastEnteredOrMicrotaskContext();
   // TODO(verwaest): Remove this.
   if (responsible_context.is_null()) {
     return true;

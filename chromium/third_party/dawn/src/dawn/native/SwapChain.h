@@ -32,7 +32,7 @@ class SwapChainBase : public ApiObjectBase {
   public:
     SwapChainBase(DeviceBase* device, Surface* surface, const SwapChainDescriptor* descriptor);
 
-    static SwapChainBase* MakeError(DeviceBase* device);
+    static SwapChainBase* MakeError(DeviceBase* device, const SwapChainDescriptor* descriptor);
     ObjectType GetType() const override;
 
     // This is called when the swapchain is detached when one of the following happens:
@@ -59,6 +59,7 @@ class SwapChainBase : public ApiObjectBase {
                       wgpu::TextureUsage allowedUsage,
                       uint32_t width,
                       uint32_t height);
+    TextureBase* APIGetCurrentTexture();
     TextureViewBase* APIGetCurrentTextureView();
     void APIPresent();
 
@@ -72,11 +73,13 @@ class SwapChainBase : public ApiObjectBase {
     wgpu::BackendType GetBackendType() const;
 
   protected:
-    SwapChainBase(DeviceBase* device, ObjectBase::ErrorTag tag);
+    SwapChainBase(DeviceBase* device, const SwapChainDescriptor* desc, ObjectBase::ErrorTag tag);
     ~SwapChainBase() override;
     void DestroyImpl() override;
 
   private:
+    void SetChildLabel(ApiObjectBase* child) const;
+
     bool mAttached = false;
     uint32_t mWidth;
     uint32_t mHeight;
@@ -87,19 +90,21 @@ class SwapChainBase : public ApiObjectBase {
     // This is a weak reference to the surface. If the surface is destroyed it will call
     // DetachFromSurface and mSurface will be updated to nullptr.
     Surface* mSurface = nullptr;
-    Ref<TextureViewBase> mCurrentTextureView;
+    Ref<TextureBase> mCurrentTexture;
 
     MaybeError ValidatePresent() const;
-    MaybeError ValidateGetCurrentTextureView() const;
+    MaybeError ValidateGetCurrentTexture() const;
 
-    // GetCurrentTextureViewImpl and PresentImpl are guaranteed to be called in an interleaved
-    // manner, starting with GetCurrentTextureViewImpl.
+    // GetCurrentTextureImpl and PresentImpl are guaranteed to be called in an interleaved manner,
+    // starting with GetCurrentTextureImpl.
 
-    // The returned texture view must match the swapchain descriptor exactly.
+    // The returned texture must match the swapchain descriptor exactly.
+    ResultOrError<Ref<TextureBase>> GetCurrentTexture();
+    virtual ResultOrError<Ref<TextureBase>> GetCurrentTextureImpl() = 0;
+
     ResultOrError<Ref<TextureViewBase>> GetCurrentTextureView();
-    virtual ResultOrError<Ref<TextureViewBase>> GetCurrentTextureViewImpl() = 0;
-    // The call to present must destroy the current view's texture so further access to it are
-    // invalid.
+
+    // The call to present must destroy the current texture so further access to it are invalid.
     virtual MaybeError PresentImpl() = 0;
 
     // Guaranteed to be called exactly once during the lifetime of the SwapChain. After it is

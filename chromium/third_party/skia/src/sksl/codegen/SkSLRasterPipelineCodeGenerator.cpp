@@ -5,6 +5,10 @@
  * found in the LICENSE file.
  */
 
+#include "src/sksl/codegen/SkSLRasterPipelineCodeGenerator.h"
+
+#ifdef SK_ENABLE_SKSL_IN_RASTER_PIPELINE
+
 #include "include/core/SkPoint.h"
 #include "include/core/SkSpan.h"
 #include "include/private/SkSLDefines.h"
@@ -20,8 +24,8 @@
 #include "src/sksl/SkSLModifiersPool.h"
 #include "src/sksl/SkSLOperator.h"
 #include "src/sksl/SkSLPosition.h"
+#include "src/sksl/analysis/SkSLProgramUsage.h"
 #include "src/sksl/codegen/SkSLRasterPipelineBuilder.h"
-#include "src/sksl/codegen/SkSLRasterPipelineCodeGenerator.h"
 #include "src/sksl/ir/SkSLBinaryExpression.h"
 #include "src/sksl/ir/SkSLBlock.h"
 #include "src/sksl/ir/SkSLBreakStatement.h"
@@ -270,6 +274,7 @@ public:
     [[nodiscard]] bool writeReturnStatement(const ReturnStatement& r);
     [[nodiscard]] bool writeSwitchStatement(const SwitchStatement& s);
     [[nodiscard]] bool writeVarDeclaration(const VarDeclaration& v);
+    [[nodiscard]] bool writeImmutableVarDeclaration(const VarDeclaration& d);
 
     /** Pushes an expression to the value stack. */
     [[nodiscard]] bool pushBinaryExpression(const BinaryExpression& e);
@@ -376,6 +381,7 @@ public:
     [[nodiscard]] bool pushIntrinsic(BuilderOp builderOp,
                                      const Expression& arg0,
                                      const Expression& arg1);
+    [[nodiscard]] bool pushAbsFloatIntrinsic(int slots);
     [[nodiscard]] bool pushLengthIntrinsic(int slotCount);
     [[nodiscard]] bool pushVectorizedExpression(const Expression& expr, const Type& vectorType);
     [[nodiscard]] bool pushVariableReferencePartial(const VariableReference& v, SlotRange subset);
@@ -458,10 +464,6 @@ private:
     // beginning, and the total source length at the end, as sentinels.
     TArray<int> fLineOffsets;
 
-    static constexpr auto kAbsOps = TypedOps{BuilderOp::abs_float,
-                                             BuilderOp::abs_int,
-                                             BuilderOp::unsupported,
-                                             BuilderOp::unsupported};
     static constexpr auto kAddOps = TypedOps{BuilderOp::add_n_floats,
                                              BuilderOp::add_n_ints,
                                              BuilderOp::add_n_ints,
@@ -590,6 +592,11 @@ public:
             fGenerator->builder()->pop_and_reenable_loop_mask();
             fContinueMaskStack->exit();
         }
+    }
+
+    int stackID() {
+        SkASSERT(fContinueMaskStack.has_value());
+        return fContinueMaskStack->stackID();
     }
 
 private:
@@ -1030,7 +1037,7 @@ void SlotManager::addSlotDebugInfoForGroup(const std::string& varName,
             break;
         }
         case Type::TypeKind::kStruct: {
-            for (const Type::Field& field : type.fields()) {
+            for (const Field& field : type.fields()) {
                 this->addSlotDebugInfoForGroup(varName + "." + std::string(field.fName),
                                                *field.fType, pos, groupIndex,
                                                isFunctionReturnValue);
@@ -1576,18 +1583,7 @@ bool Generator::writeBreakStatement(const BreakStatement&) {
 }
 
 bool Generator::writeContinueStatement(const ContinueStatement&) {
-    // This could be written as one hand-tuned RasterPipeline op, but for now, we reuse existing ops
-    // to assemble a continue op.
-
-    // Set any currently-executing lanes in the continue-mask to true via `select.`
-    fCurrentContinueMask->enter();
-    fBuilder.push_constant_i(~0);
-    fBuilder.select(/*slots=*/1);
-
-    // Disable any currently-executing lanes from the loop mask.
-    fBuilder.mask_off_loop_mask();
-    fCurrentContinueMask->exit();
-
+    fBuilder.continue_op(fCurrentContinueMask->stackID());
     return true;
 }
 
@@ -1885,10 +1881,8 @@ bool Generator::writeIfStatement(const IfStatement& i) {
     }
 
     if (i.ifFalse()) {
-        // Negate the test-condition, then reapply it to the condition-mask.
-        // Then, run the if-false branch.
-        fBuilder.unary_op(BuilderOp::bitwise_not_int, /*slots=*/1);
-        fBuilder.merge_condition_mask();
+        // Apply the inverse condition-mask. Then run the if-false branch.
+        fBuilder.merge_inv_condition_mask();
         if (!this->writeStatement(*i.ifFalse())) {
             return unsupported();
         }
@@ -1985,8 +1979,83 @@ bool Generator::writeSwitchStatement(const SwitchStatement& s) {
     return true;
 }
 
+bool Generator::writeImmutableVarDeclaration(const VarDeclaration& d) {
+    // Find the constant value for this variable.
+    const Expression* initialValue = ConstantFolder::GetConstantValueForVariable(*d.value());
+    SkASSERT(initialValue);
+
+    // For a variable to be immutable, it cannot be written-to besides its initial declaration.
+    ProgramUsage::VariableCounts counts = fProgram.fUsage->get(*d.var());
+    if (counts.fWrite != 1) {
+        return false;
+    }
+
+    SlotRange varSlots = this->getVariableSlots(*d.var());
+    size_t numSlots = varSlots.count;
+
+    STArray<16, Type::NumberKind> kinds;
+    kinds.reserve_exact(numSlots);
+
+    STArray<16, double> values;
+    values.reserve_exact(numSlots);
+
+    for (size_t index = 0; index < numSlots; ++index) {
+        // Determine the number-kind of the slot; bail if it's non-numeric.
+        Type::NumberKind kind = initialValue->type().slotType(index).numberKind();
+        switch (kind) {
+            case Type::NumberKind::kFloat:
+            case Type::NumberKind::kSigned:
+            case Type::NumberKind::kUnsigned:
+            case Type::NumberKind::kBoolean:
+                kinds.push_back(kind);
+                break;
+            default:
+                return false;
+        }
+
+        // Determine the constant-value of the slot.
+        std::optional<double> v = initialValue->getConstantValue(index);
+        if (!v.has_value()) {
+            return false;
+        }
+        values.push_back(*v);
+    }
+
+    // Write out the constant value back to slots immutably. (This generates no runtime code.)
+    for (int index = 0; index < varSlots.count; ++index) {
+        switch (kinds[index]) {
+            case Type::NumberKind::kFloat:
+                fBuilder.store_immutable_value_f(varSlots.index + index, values[index]);
+                break;
+            case Type::NumberKind::kSigned:
+                fBuilder.store_immutable_value_i(varSlots.index + index, values[index]);
+                break;
+            case Type::NumberKind::kUnsigned:
+                fBuilder.store_immutable_value_u(varSlots.index + index, values[index]);
+                break;
+            case Type::NumberKind::kBoolean:
+                fBuilder.store_immutable_value_u(varSlots.index + index, values[index] ? ~0 : 0);
+                break;
+            default:
+                SkUNREACHABLE;
+        }
+    }
+
+    // In a debugging session, we still expect debug traces for this variable declaration to appear.
+    if (this->shouldWriteTraceOps()) {
+        fBuilder.trace_var(fTraceMask->stackID(), varSlots);
+    }
+
+    return true;
+}
+
 bool Generator::writeVarDeclaration(const VarDeclaration& v) {
     if (v.value()) {
+        // If a variable never actually changes, we can make it immutable.
+        if (this->writeImmutableVarDeclaration(v)) {
+            return true;
+        }
+        // This is a real variable which can change over the course of execution.
         if (!this->pushExpression(*v.value())) {
             return unsupported();
         }
@@ -2165,7 +2234,7 @@ bool Generator::pushStructuredComparison(LValue* left,
                                          const Type& type) {
     if (type.isStruct()) {
         // Compare every field in the struct.
-        SkSpan<const Type::Field> fields = type.fields();
+        SkSpan<const Field> fields = type.fields();
         int currentSlot = 0;
         for (size_t index = 0; index < fields.size(); ++index) {
             const Type& fieldType = *fields[index].fType;
@@ -2257,11 +2326,16 @@ bool Generator::pushBinaryExpression(const Expression& left, Operator op, const 
         // Builder more opportunities to use immediate-mode ops.
         case OperatorKind::PLUS:
         case OperatorKind::STAR:
-            if (left.is<Literal>() && !right.is<Literal>()) {
+        case OperatorKind::BITWISEAND:
+        case OperatorKind::BITWISEXOR:
+        case OperatorKind::LOGICALXOR: {
+            double unused;
+            if (ConstantFolder::GetConstantValue(left, &unused) &&
+                !ConstantFolder::GetConstantValue(right, &unused)) {
                 return this->pushBinaryExpression(right, op, left);
             }
             break;
-
+        }
         // Emit comma expressions.
         case OperatorKind::COMMA:
             if (Analysis::HasSideEffects(left)) {
@@ -2479,10 +2553,6 @@ bool Generator::pushChildCall(const ChildCall& c) {
     SkASSERT(childIdx != nullptr);
     SkASSERT(!c.arguments().empty());
 
-    // Save the src.rgba fields; these hold our execution masks, but are also used to pass colors
-    // and coordinates to the child effect.
-    fBuilder.push_src_rgba();
-
     // All child calls have at least one argument.
     const Expression* arg = c.arguments()[0].get();
     if (!this->pushExpression(*arg)) {
@@ -2495,7 +2565,13 @@ bool Generator::pushChildCall(const ChildCall& c) {
             // The argument must be a float2.
             SkASSERT(c.arguments().size() == 1);
             SkASSERT(arg->type().matches(*fContext.fTypes.fFloat2));
-            fBuilder.pop_src_rg();
+
+            // `exchange_src` will use the top four values on the stack, but we don't care what goes
+            // into the blue/alpha components. We inject padding here to balance the stack.
+            fBuilder.pad_stack(2);
+
+            // Move the argument into src.rgba while also preserving the execution mask.
+            fBuilder.exchange_src();
             fBuilder.invoke_shader(*childIdx);
             break;
         }
@@ -2504,27 +2580,27 @@ bool Generator::pushChildCall(const ChildCall& c) {
             SkASSERT(c.arguments().size() == 1);
             SkASSERT(arg->type().matches(*fContext.fTypes.fHalf4) ||
                      arg->type().matches(*fContext.fTypes.fFloat4));
-            fBuilder.pop_src_rgba();
+
+            // Move the argument into src.rgba while also preserving the execution mask.
+            fBuilder.exchange_src();
             fBuilder.invoke_color_filter(*childIdx);
             break;
         }
         case Type::TypeKind::kBlender: {
-            // The first argument must be a half4/float4.
+            // Both arguments must be half4/float4.
             SkASSERT(c.arguments().size() == 2);
-            SkASSERT(arg->type().matches(*fContext.fTypes.fHalf4) ||
-                     arg->type().matches(*fContext.fTypes.fFloat4));
+            SkASSERT(c.arguments()[0]->type().matches(*fContext.fTypes.fHalf4) ||
+                     c.arguments()[0]->type().matches(*fContext.fTypes.fFloat4));
+            SkASSERT(c.arguments()[1]->type().matches(*fContext.fTypes.fHalf4) ||
+                     c.arguments()[1]->type().matches(*fContext.fTypes.fFloat4));
 
-            // The second argument must also be a half4/float4.
-            arg = c.arguments()[1].get();
-            SkASSERT(arg->type().matches(*fContext.fTypes.fHalf4) ||
-                     arg->type().matches(*fContext.fTypes.fFloat4));
-
-            if (!this->pushExpression(*arg)) {
+            // Move the second argument into dst.rgba, and the first argument into src.rgba, while
+            // simultaneously preserving the execution mask.
+            if (!this->pushExpression(*c.arguments()[1])) {
                 return unsupported();
             }
-
             fBuilder.pop_dst_rgba();
-            fBuilder.pop_src_rgba();
+            fBuilder.exchange_src();
             fBuilder.invoke_blender(*childIdx);
             break;
         }
@@ -2714,15 +2790,21 @@ bool Generator::pushIntrinsic(const FunctionCall& c) {
 }
 
 bool Generator::pushLengthIntrinsic(int slotCount) {
-    if (slotCount > 1) {
-        // Implement `length(vec)` as `sqrt(dot(x, x))`.
-        fBuilder.push_clone(slotCount);
-        fBuilder.dot_floats(slotCount);
-        fBuilder.unary_op(BuilderOp::sqrt_float, 1);
-    } else {
+    if (slotCount == 1) {
         // `length(scalar)` is `sqrt(x^2)`, which is equivalent to `abs(x)`.
-        fBuilder.unary_op(BuilderOp::abs_float, 1);
+        return this->pushAbsFloatIntrinsic(/*slots=*/1);
     }
+    // Implement `length(vec)` as `sqrt(dot(x, x))`.
+    fBuilder.push_clone(slotCount);
+    fBuilder.dot_floats(slotCount);
+    fBuilder.unary_op(BuilderOp::sqrt_float, 1);
+    return true;
+}
+
+bool Generator::pushAbsFloatIntrinsic(int slots) {
+    // Perform abs(float) by masking off the sign bit.
+    fBuilder.push_constant_u(0x7FFFFFFF, slots);
+    fBuilder.binary_op(BuilderOp::bitwise_and_n_ints, slots);
     return true;
 }
 
@@ -2755,7 +2837,15 @@ bool Generator::pushIntrinsic(BuilderOp builderOp, const Expression& arg0) {
 bool Generator::pushIntrinsic(IntrinsicKind intrinsic, const Expression& arg0) {
     switch (intrinsic) {
         case IntrinsicKind::k_abs_IntrinsicKind:
-            return this->pushIntrinsic(kAbsOps, arg0);
+            if (arg0.type().componentType().isFloat()) {
+                // Perform abs(float) by masking off the sign bit.
+                if (!this->pushExpression(arg0)) {
+                    return unsupported();
+                }
+                return this->pushAbsFloatIntrinsic(arg0.type().slotCount());
+            }
+            // We have a dedicated op for abs(int).
+            return this->pushIntrinsic(BuilderOp::abs_int, arg0);
 
         case IntrinsicKind::k_any_IntrinsicKind:
             if (!this->pushExpression(arg0)) {
@@ -2866,8 +2956,8 @@ bool Generator::pushIntrinsic(IntrinsicKind intrinsic, const Expression& arg0) {
             } else {
                 // For single-slot normalization, we can simplify `sqrt(x * x)` into `abs(x)`.
                 fBuilder.push_clone(slotCount);
-                fBuilder.unary_op(BuilderOp::abs_float, 1);
-                return this->binaryOp(arg0.type(), kDivideOps);
+                return this->pushAbsFloatIntrinsic(/*slots=*/1) &&
+                       this->binaryOp(arg0.type(), kDivideOps);
             }
         }
         case IntrinsicKind::k_not_IntrinsicKind:
@@ -2941,35 +3031,19 @@ bool Generator::pushIntrinsic(IntrinsicKind intrinsic, const Expression& arg0) {
             return true;
 
         case IntrinsicKind::k_fromLinearSrgb_IntrinsicKind:
-        case IntrinsicKind::k_toLinearSrgb_IntrinsicKind: {
-            // Save the src.rgba fields; these hold our execution masks, but are also used to pass
-            // colors and coordinates to the color transform function.
-            fBuilder.push_src_rgba();
-
+        case IntrinsicKind::k_toLinearSrgb_IntrinsicKind:
             // The argument must be a half3.
             SkASSERT(arg0.type().matches(*fContext.fTypes.fHalf3));
             if (!this->pushExpression(arg0)) {
                 return unsupported();
             }
-            // The intrinsics accept a three-component value; add alpha for the push/pop_src_rgba.
-            fBuilder.push_constant_f(1.0f);
-            // Copy arguments from the stack into src.
-            fBuilder.pop_src_rgba();
 
             if (intrinsic == IntrinsicKind::k_fromLinearSrgb_IntrinsicKind) {
                 fBuilder.invoke_from_linear_srgb();
             } else {
                 fBuilder.invoke_to_linear_srgb();
             }
-
-            // The xform has left the result color in src.rgba; exchange it with the execution masks
-            // on the top of the stack.
-            fBuilder.exchange_src();
-
-            // The intrinsic returns a three-component value; discard alpha.
-            this->discardExpression(/*slots=*/1);
             return true;
-        }
 
         default:
             break;
@@ -3200,7 +3274,7 @@ bool Generator::pushIntrinsic(IntrinsicKind intrinsic,
             // Stack: N, (0 <= dot(I,NRef))
             fBuilder.binary_op(BuilderOp::cmple_n_floats, 1);
             // Stack: N, (0 <= dot(I,NRef)), 0x80000000
-            fBuilder.push_constant_i(0x80000000);
+            fBuilder.push_constant_u(0x80000000);
             // Stack: N, (0 <= dot(I,NRef)) & 0x80000000)
             fBuilder.binary_op(BuilderOp::bitwise_and_n_ints, 1);
             // Stack: N, vec(0 <= dot(I,NRef)) & 0x80000000)
@@ -3362,26 +3436,34 @@ bool Generator::pushPrefixExpression(Operator op, const Expression& expr) {
             if (!this->pushExpression(expr)) {
                 return unsupported();
             }
-            fBuilder.unary_op(BuilderOp::bitwise_not_int, expr.type().slotCount());
+            fBuilder.push_constant_u(~0, expr.type().slotCount());
+            fBuilder.binary_op(BuilderOp::bitwise_xor_n_ints, expr.type().slotCount());
             return true;
 
-        case OperatorKind::MINUS:
-            // Handle negation as a componentwise `0 - expr`.
-            fBuilder.push_zeros(expr.type().slotCount());
+        case OperatorKind::MINUS: {
             if (!this->pushExpression(expr)) {
                 return unsupported();
             }
-            return this->binaryOp(expr.type(), kSubtractOps);
-
+            if (expr.type().componentType().isFloat()) {
+                // Handle float negation as an integer `x ^ 0x80000000`. This toggles the sign bit.
+                fBuilder.push_constant_u(0x80000000, expr.type().slotCount());
+                fBuilder.binary_op(BuilderOp::bitwise_xor_n_ints, expr.type().slotCount());
+            } else {
+                // Handle integer negation as a componentwise `expr * -1`.
+                fBuilder.push_constant_i(-1, expr.type().slotCount());
+                fBuilder.binary_op(BuilderOp::mul_n_ints, expr.type().slotCount());
+            }
+            return true;
+        }
         case OperatorKind::PLUSPLUS: {
             // Rewrite as `expr += 1`.
             Literal oneLiteral{Position{}, 1.0, &expr.type().componentType()};
             return this->pushBinaryExpression(expr, OperatorKind::PLUSEQ, oneLiteral);
         }
         case OperatorKind::MINUSMINUS: {
-            // Rewrite as `expr -= 1`.
-            Literal oneLiteral{Position{}, 1.0, &expr.type().componentType()};
-            return this->pushBinaryExpression(expr, OperatorKind::MINUSEQ, oneLiteral);
+            // Rewrite as `expr += -1`.
+            Literal minusOneLiteral{expr.fPosition, -1.0, &expr.type().componentType()};
+            return this->pushBinaryExpression(expr, OperatorKind::PLUSEQ, minusOneLiteral);
         }
         default:
             break;
@@ -3553,10 +3635,9 @@ bool Generator::pushTernaryExpression(const Expression& test,
             return unsupported();
         }
 
-        // Switch back to the test-expression stack temporarily, and negate the test condition.
+        // Switch back to the test-expression stack and apply the inverted test condition.
         testStack.enter();
-        fBuilder.unary_op(BuilderOp::bitwise_not_int, /*slots=*/1);
-        fBuilder.merge_condition_mask();
+        fBuilder.merge_inv_condition_mask();
         testStack.exit();
 
         // Push the false-expression onto the primary stack, immediately after the true-expression.
@@ -3579,8 +3660,18 @@ bool Generator::pushTernaryExpression(const Expression& test,
     return true;
 }
 
-bool Generator::pushVariableReference(const VariableReference& v) {
-    return this->pushVariableReferencePartial(v, SlotRange{0, (int)v.type().slotCount()});
+bool Generator::pushVariableReference(const VariableReference& var) {
+    // If we are pushing a constant-value variable, and it's a scalar or splat-vector, just push
+    // the value directly. This shouldn't consume extra ops, and literal values are more amenable to
+    // optimization.
+    if (var.type().isScalar() || var.type().isVector()) {
+        if (const Expression* expr = ConstantFolder::GetConstantValueOrNullForVariable(var)) {
+            if (ConstantFolder::IsConstantSplat(*expr, *expr->getConstantValue(0))) {
+                return this->pushExpression(*expr);
+            }
+        }
+    }
+    return this->pushVariableReferencePartial(var, SlotRange{0, (int)var.type().slotCount()});
 }
 
 bool Generator::pushVariableReferencePartial(const VariableReference& v, SlotRange subset) {
@@ -3710,3 +3801,5 @@ std::unique_ptr<RP::Program> MakeRasterPipelineProgram(const SkSL::Program& prog
 }
 
 }  // namespace SkSL
+
+#endif  // SK_ENABLE_SKSL_IN_RASTER_PIPELINE

@@ -1273,7 +1273,7 @@ angle::Result ContextMtl::syncState(const gl::Context *context,
                 break;
             case gl::State::DIRTY_BIT_POLYGON_OFFSET_FILL_ENABLED:
             case gl::State::DIRTY_BIT_POLYGON_OFFSET:
-                updateDepthBias(glState);
+                mDirtyBits.set(DIRTY_BIT_DEPTH_BIAS);
                 break;
             case gl::State::DIRTY_BIT_RASTERIZER_DISCARD_ENABLED:
                 mDirtyBits.set(DIRTY_BIT_RASTERIZER_DISCARD);
@@ -1402,6 +1402,13 @@ void ContextMtl::updateExtendedState(const gl::State &glState,
             case gl::State::EXTENDED_DIRTY_BIT_DEPTH_CLAMP_ENABLED:
                 mDirtyBits.set(DIRTY_BIT_DEPTH_CLIP_MODE);
                 break;
+            case gl::State::EXTENDED_DIRTY_BIT_POLYGON_MODE:
+                mDirtyBits.set(DIRTY_BIT_FILL_MODE);
+                mDirtyBits.set(DIRTY_BIT_DEPTH_BIAS);
+                break;
+            case gl::State::EXTENDED_DIRTY_BIT_POLYGON_OFFSET_LINE_ENABLED:
+                mDirtyBits.set(DIRTY_BIT_DEPTH_BIAS);
+                break;
             default:
                 break;
         }
@@ -1432,6 +1439,7 @@ angle::Result ContextMtl::onMakeCurrent(const gl::Context *context)
     {
         GetImplAs<QueryMtl>(query)->onContextMakeCurrent(context);
     }
+    mBufferManager.incrementNumContextSwitches();
     return angle::Result::Continue;
 }
 angle::Result ContextMtl::onUnMakeCurrent(const gl::Context *context)
@@ -1790,6 +1798,11 @@ void ContextMtl::endRenderEncoding(mtl::RenderCommandEncoder *encoder)
         disableActiveOcclusionQueryInRenderPass();
     }
 
+    if (mBlitEncoder.valid())
+    {
+        mBlitEncoder.endEncoding();
+    }
+
     encoder->endEncoding();
 
     // Resolve visibility results
@@ -1832,6 +1845,7 @@ void ContextMtl::flushCommandBuffer(mtl::CommandBufferFinishOperation operation)
     {
         endEncoding(true);
         mCmdBuffer.commit(operation);
+        mBufferManager.incrementNumCommandBufferCommits();
         mRenderPassesSinceFlush = 0;
     }
     else
@@ -1882,6 +1896,16 @@ bool ContextMtl::hasStartedRenderPass(const mtl::RenderPassDesc &desc)
 {
     return mRenderEncoder.valid() &&
            mRenderEncoder.renderPassDesc().equalIgnoreLoadStoreOptions(desc);
+}
+
+bool ContextMtl::isCurrentRenderEncoderSerial(uint64_t serial)
+{
+    if (!mRenderEncoder.valid())
+    {
+        return false;
+    }
+
+    return serial == mRenderEncoder.getSerial();
 }
 
 // Get current render encoder
@@ -1985,6 +2009,11 @@ mtl::RenderCommandEncoder *ContextMtl::getRenderTargetCommandEncoder(
 
 mtl::BlitCommandEncoder *ContextMtl::getBlitCommandEncoder()
 {
+    if (mRenderEncoder.valid() || mComputeEncoder.valid())
+    {
+        endEncoding(true);
+    }
+
     if (mBlitEncoder.valid())
     {
         return &mBlitEncoder;
@@ -2011,6 +2040,11 @@ mtl::BlitCommandEncoder *ContextMtl::getBlitCommandEncoderWithoutEndingRenderEnc
 
 mtl::ComputeCommandEncoder *ContextMtl::getComputeCommandEncoder()
 {
+    if (mRenderEncoder.valid() || mBlitEncoder.valid())
+    {
+        endEncoding(true);
+    }
+
     if (mComputeEncoder.valid())
     {
         return &mComputeEncoder;
@@ -2176,11 +2210,6 @@ void ContextMtl::updateFrontFace(const gl::State &glState)
     mWinding = mtl::GetFrontfaceWinding(glState.getRasterizerState().frontFace,
                                         framebufferMtl->flipY() == upperLeftOrigin);
     mDirtyBits.set(DIRTY_BIT_WINDING);
-}
-
-void ContextMtl::updateDepthBias(const gl::State &glState)
-{
-    mDirtyBits.set(DIRTY_BIT_DEPTH_BIAS);
 }
 
 // Index rewrite is required if:
@@ -2583,6 +2612,11 @@ angle::Result ContextMtl::setupDrawImpl(const gl::Context *context,
             case DIRTY_BIT_CULL_MODE:
                 mRenderEncoder.setCullMode(mCullMode);
                 break;
+            case DIRTY_BIT_FILL_MODE:
+                mRenderEncoder.setTriangleFillMode(mState.getPolygonMode() == gl::PolygonMode::Fill
+                                                       ? MTLTriangleFillModeFill
+                                                       : MTLTriangleFillModeLines);
+                break;
             case DIRTY_BIT_WINDING:
                 mRenderEncoder.setFrontFacingWinding(mWinding);
                 break;
@@ -2638,7 +2672,7 @@ void ContextMtl::filterOutXFBOnlyDirtyBits(const gl::Context *context)
         angle::Bit<size_t>(DIRTY_BIT_DEPTH_BIAS) | angle::Bit<size_t>(DIRTY_BIT_STENCIL_REF) |
         angle::Bit<size_t>(DIRTY_BIT_BLEND_COLOR) | angle::Bit<size_t>(DIRTY_BIT_VIEWPORT) |
         angle::Bit<size_t>(DIRTY_BIT_SCISSOR) | angle::Bit<size_t>(DIRTY_BIT_CULL_MODE) |
-        angle::Bit<size_t>(DIRTY_BIT_WINDING);
+        angle::Bit<size_t>(DIRTY_BIT_FILL_MODE) | angle::Bit<size_t>(DIRTY_BIT_WINDING);
 
     mDirtyBits &= ~kUnneededBits;
 }
@@ -2843,7 +2877,7 @@ angle::Result ContextMtl::handleDirtyDepthBias(const gl::Context *context)
 {
     const gl::RasterizerState &rasterState = mState.getRasterizerState();
     ASSERT(mRenderEncoder.valid());
-    if (!mState.isPolygonOffsetFillEnabled())
+    if (!mState.isPolygonOffsetEnabled())
     {
         mRenderEncoder.setDepthBias(0, 0, 0);
     }
@@ -2898,6 +2932,7 @@ angle::Result ContextMtl::checkIfPipelineChanged(const gl::Context *context,
         mRenderPipelineDesc.inputPrimitiveTopology = topologyClass;
         mRenderPipelineDesc.alphaToCoverageEnabled =
             mState.isSampleAlphaToCoverageEnabled() &&
+            mRenderPipelineDesc.outputDescriptor.sampleCount > 1 &&
             !getDisplay()->getFeatures().emulateAlphaToCoverage.enabled;
 
         mRenderPipelineDesc.outputDescriptor.updateEnabledDrawBuffers(
@@ -2950,7 +2985,9 @@ angle::Result ContextMtl::copyTextureSliceLevelToWorkBuffer(
     // Expand the buffer if it is not big enough.
     if (!mWorkBuffer || mWorkBuffer->size() < sizeInBytes)
     {
-        ANGLE_TRY(mtl::Buffer::MakeBuffer(this, sizeInBytes, nullptr, &mWorkBuffer));
+        ANGLE_TRY(mtl::Buffer::MakeBufferWithStorageMode(
+            this, mtl::Buffer::getStorageModeForSharedBuffer(this), sizeInBytes, nullptr,
+            &mWorkBuffer));
     }
 
     gl::Rectangle region(0, 0, width, height);

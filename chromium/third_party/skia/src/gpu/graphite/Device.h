@@ -21,17 +21,13 @@
 
 class SkStrokeRec;
 
-namespace sktext::gpu {
-class AtlasSubRun;
-enum class Budgeted : bool;
-}  // namespace sktext::gpu
-
 namespace skgpu::graphite {
 
 class BoundsManager;
 class Clip;
 class Context;
 class DrawContext;
+enum class DstReadRequirement;
 class Geometry;
 class PaintParams;
 class Recorder;
@@ -177,6 +173,8 @@ private:
     sk_sp<SkSpecialImage> makeSpecial(const SkImage*) override;
     sk_sp<SkSpecialImage> snapSpecial(const SkIRect& subset, bool forceCopy = false) override;
 
+    skif::Context createContext(const skif::ContextInfo&) const override;
+
     // DrawFlags alters the effects used by drawShape.
     enum class DrawFlags : unsigned {
         kNone             = 0b000,
@@ -210,11 +208,18 @@ private:
     // the transform, clip, and DrawOrder (although Device still tracks stencil buffer usage).
     void drawClipShape(const Transform&, const Shape&, const Clip&, DrawOrder);
 
+    sktext::gpu::AtlasDrawDelegate atlasDelegate();
     // Handles primitive processing for atlas-based text
     void drawAtlasSubRun(const sktext::gpu::AtlasSubRun*,
                          SkPoint drawOrigin,
                          const SkPaint& paint,
                          sk_sp<SkRefCnt> subRunStorage);
+
+    sk_sp<sktext::gpu::Slug> convertGlyphRunListToSlug(const sktext::GlyphRunList& glyphRunList,
+                                                       const SkPaint& initialPaint,
+                                                       const SkPaint& drawingPaint) override;
+
+    void drawSlug(SkCanvas*, const sktext::gpu::Slug* slug, const SkPaint& drawingPaint) override;
 
     // Returns the Renderer to draw the shape in the given style. If SkStrokeRec is a
     // stroke-and-fill, this returns the Renderer used for the fill portion and it can be assumed
@@ -225,12 +230,12 @@ private:
     // return a retry error code? or does drawGeometry() handle all the fallbacks, knowing that
     // a particular shape type needs to be pre-chopped?
     // TODO: Move this into a RendererSelector object provided by the Context.
-    const Renderer* chooseRenderer(const Geometry&,
-                                   const Clip&,
+    const Renderer* chooseRenderer(const Transform& localToDevice,
+                                   const Geometry&,
                                    const SkStrokeRec&,
                                    bool requireMSAA) const;
 
-    bool needsFlushBeforeDraw(int numNewDraws) const;
+    bool needsFlushBeforeDraw(int numNewDraws, DstReadRequirement) const;
 
     Recorder* fRecorder;
     sk_sp<DrawContext> fDC;
@@ -254,7 +259,6 @@ private:
     bool fDrawsOverlap;
 
     friend class ClipStack; // for recordDraw
-    friend class sktext::gpu::AtlasSubRun; // for drawAtlasSubRun
 };
 
 SK_MAKE_BITMASK_OPS(Device::DrawFlags)

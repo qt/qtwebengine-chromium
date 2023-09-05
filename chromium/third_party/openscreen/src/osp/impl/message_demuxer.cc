@@ -237,7 +237,8 @@ MessageDemuxer::HandleStreamBufferResult MessageDemuxer::HandleStreamBufferLoop(
   return result;
 }
 
-// TODO(rwkeane) Use absl::Span for the buffer
+// TODO(issuetracker.google.com/281741443): Use openscreen::Span for the
+// |buffer|.
 MessageDemuxer::HandleStreamBufferResult MessageDemuxer::HandleStreamBuffer(
     uint64_t endpoint_id,
     uint64_t connection_id,

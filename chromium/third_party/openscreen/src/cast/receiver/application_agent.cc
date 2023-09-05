@@ -29,7 +29,7 @@ std::string GetFirstAppId(ApplicationAgent::Application* app) {
 }  // namespace
 
 ApplicationAgent::ApplicationAgent(
-    TaskRunner* task_runner,
+    TaskRunner& task_runner,
     DeviceAuthNamespaceHandler::CredentialsProvider* credentials_provider)
     : task_runner_(task_runner),
       auth_handler_(credentials_provider),
@@ -39,7 +39,7 @@ ApplicationAgent::ApplicationAgent(
 }
 
 ApplicationAgent::~ApplicationAgent() {
-  OSP_DCHECK(task_runner_->IsRunningOnTaskRunner());
+  OSP_DCHECK(task_runner_.IsRunningOnTaskRunner());
 
   idle_screen_app_ = nullptr;  // Prevent re-launching the idle screen app.
   SwitchToApplication({}, {}, nullptr);

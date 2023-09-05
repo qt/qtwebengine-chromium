@@ -15,24 +15,23 @@ namespace openscreen {
 ScopedWakeLockMac::LockState ScopedWakeLockMac::lock_state_{};
 
 SerialDeletePtr<ScopedWakeLock> ScopedWakeLock::Create(
-    TaskRunner* task_runner) {
-  return SerialDeletePtr<ScopedWakeLock>(task_runner, new ScopedWakeLockMac());
+    TaskRunner& task_runner) {
+  return SerialDeletePtr<ScopedWakeLock>(&task_runner, new ScopedWakeLockMac());
 }
 
 namespace {
 
-TaskRunner* GetTaskRunner() {
+TaskRunner& GetTaskRunner() {
   auto* const platform_client = PlatformClientPosix::GetInstance();
   OSP_DCHECK(platform_client);
-  auto* const task_runner = platform_client->GetTaskRunner();
-  OSP_DCHECK(task_runner);
+  auto& task_runner = platform_client->GetTaskRunner();
   return task_runner;
 }
 
 }  // namespace
 
 ScopedWakeLockMac::ScopedWakeLockMac() : ScopedWakeLock() {
-  GetTaskRunner()->PostTask([] {
+  GetTaskRunner().PostTask([] {
     if (lock_state_.reference_count++ == 0) {
       AcquireWakeLock();
     }
@@ -40,7 +39,7 @@ ScopedWakeLockMac::ScopedWakeLockMac() : ScopedWakeLock() {
 }
 
 ScopedWakeLockMac::~ScopedWakeLockMac() {
-  GetTaskRunner()->PostTask([] {
+  GetTaskRunner().PostTask([] {
     if (--lock_state_.reference_count == 0) {
       ReleaseWakeLock();
     }

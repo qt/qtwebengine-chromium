@@ -68,7 +68,7 @@ export class TimelineFlameChartView extends UI.Widget.VBox implements PerfUI.Fla
   private readonly onMainEntrySelected: (event: Common.EventTarget.EventTargetEvent<number>) => void;
   private readonly onNetworkEntrySelected: (event: Common.EventTarget.EventTargetEvent<number>) => void;
   private readonly boundRefresh: () => void;
-  private selectedTrack: TimelineModel.TimelineModel.Track|null;
+  #selectedEvents: SDK.TracingModel.CompatibleTraceEvent[]|null;
   // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private readonly groupBySetting: Common.Settings.Setting<any>;
@@ -76,7 +76,8 @@ export class TimelineFlameChartView extends UI.Widget.VBox implements PerfUI.Fla
   private needsResizeToPreferredHeights?: boolean;
   private selectedSearchResult?: number;
   private searchRegex?: RegExp;
-  #traceEngineData: TraceEngine.TraceModel.PartialTraceParseDataDuringMigration|null;
+  #traceEngineData: TraceEngine.Handlers.Migration.PartialTraceData|null;
+  #filmStripModel: SDK.FilmStripModel.FilmStripModel|null = null;
 
   constructor(delegate: TimelineModeViewDelegate) {
     super();
@@ -146,13 +147,17 @@ export class TimelineFlameChartView extends UI.Widget.VBox implements PerfUI.Fla
     this.mainFlameChart.addEventListener(PerfUI.FlameChart.Events.EntryHighlighted, this.onEntryHighlighted, this);
 
     this.boundRefresh = this.refresh.bind(this);
-    this.selectedTrack = null;
+    this.#selectedEvents = null;
 
     this.mainDataProvider.setEventColorMapping(TimelineUIUtils.eventColor);
     this.groupBySetting = Common.Settings.Settings.instance().createSetting(
         'timelineTreeGroupBy', AggregatedTimelineTreeView.GroupBy.None);
     this.groupBySetting.addChangeListener(this.updateColorMapper, this);
     this.updateColorMapper();
+  }
+
+  isNetworkTrackShownForTests(): boolean {
+    return this.networkSplitWidget.showMode() !== UI.SplitWidget.ShowMode.OnlyMain;
   }
 
   updateColorMapper(): void {
@@ -185,23 +190,23 @@ export class TimelineFlameChartView extends UI.Widget.VBox implements PerfUI.Fla
     if (flameChart !== this.mainFlameChart) {
       return;
     }
-    const track = group ? this.mainDataProvider.groupTrack(group) : null;
-    this.selectedTrack = track;
+    this.#selectedEvents = group ? this.mainDataProvider.groupTreeEvents(group) : null;
     this.updateTrack();
   }
 
   setModel(
-      model: PerformanceModel|null,
-      newTraceEngineData: TraceEngine.TraceModel.PartialTraceParseDataDuringMigration|null): void {
+      model: PerformanceModel|null, newTraceEngineData: TraceEngine.Handlers.Migration.PartialTraceData|null,
+      filmStripModel: SDK.FilmStripModel.FilmStripModel|null): void {
     if (model === this.model) {
       return;
     }
+    this.#filmStripModel = filmStripModel;
     this.#traceEngineData = newTraceEngineData;
     Common.EventTarget.removeEventListeners(this.eventListeners);
     this.model = model;
-    this.selectedTrack = null;
-    this.mainDataProvider.setModel(this.model, newTraceEngineData);
-    this.networkDataProvider.setModel(this.model);
+    this.#selectedEvents = null;
+    this.mainDataProvider.setModel(this.model, newTraceEngineData, filmStripModel);
+    this.networkDataProvider.setModel(this.model, newTraceEngineData);
     if (this.model) {
       this.eventListeners = [
         this.model.addEventListener(PerformanceModelEvents.WindowChanged, this.onWindowChanged, this),
@@ -218,8 +223,8 @@ export class TimelineFlameChartView extends UI.Widget.VBox implements PerfUI.Fla
   }
 
   private updateTrack(): void {
-    this.countersView.setModel(this.model, this.selectedTrack);
-    this.detailsView.setModel(this.model, this.#traceEngineData, this.selectedTrack);
+    this.countersView.setModel(this.model, this.#selectedEvents);
+    this.detailsView.setModel(this.model, this.#traceEngineData, this.#filmStripModel, this.#selectedEvents);
   }
 
   private refresh(): void {

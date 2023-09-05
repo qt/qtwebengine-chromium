@@ -6,7 +6,10 @@
 
 import '@material/web/switch/switch.js';
 
+import {MdSwitch} from '@material/web/switch/switch.js';
 import {css, CSSResultGroup, html, LitElement} from 'lit';
+
+import {shouldProcessClick} from '../helpers/helpers';
 
 /** A chromeOS switch component. */
 export class Switch extends LitElement {
@@ -62,39 +65,76 @@ export class Switch extends LitElement {
     md-switch[disabled] {
       opacity: 0.38;
       --md-switch-disabled-unselected-handle-color: var(--cros-sys-on_secondary);
+      --md-switch-disabled-unselected-handle-opacity: 1;
       --md-switch-disabled-unselected-track-color: var(--cros-sys-secondary);
+      --md-switch-disabled-track-opacity: 1;
 
       --md-switch-disabled-selected-handle-color: var(--cros-sys-on_primary);
+      --md-switch-disabled-selected-handle-opacity: 1;
       --md-switch-disabled-selected-track-color: var(--cros-sys-primary);
     }
   `;
 
   /** @nocollapse */
   static override properties = {
-    selected: {type: Boolean},
-    disabled: {type: Boolean},
+    selected: {type: Boolean, reflect: true},
+    disabled: {type: Boolean, reflect: true},
   };
 
+  /** @nocollapse */
+  static events = {
+    /** The switch value changed via user input. */
+    CHANGE: 'change',
+  } as const;
+
+  /** @export */
   disabled: boolean;
+  /** @export */
   selected: boolean;
+
+  get mdSwitch(): MdSwitch|undefined|null {
+    return this.shadowRoot!.querySelector('md-switch');
+  }
 
   constructor() {
     super();
     this.disabled = false;
     this.selected = false;
+
+    this.addEventListener('click', (event: MouseEvent) => {
+      if (shouldProcessClick(event)) {
+        this.click();
+      }
+    });
   }
 
   override render() {
     return html`
-    <md-switch ?disabled=${this.disabled} ?selected=${
-        this.selected}></md-switch>
+      <md-switch
+          ?disabled=${this.disabled}
+          ?selected=${this.selected}
+          @change=${this.onChange}>
+      </md-switch>
     `;
+  }
+
+  private onChange() {
+    this.selected = this.mdSwitch!.selected;
+    this.dispatchEvent(new Event('change', {bubbles: true}));
+  }
+
+  override click() {
+    this.mdSwitch?.click();
   }
 }
 
 customElements.define('cros-switch', Switch);
 
 declare global {
+  interface HTMLElementEventMap {
+    [Switch.events.CHANGE]: Event;
+  }
+
   interface HTMLElementTagNameMap {
     'cros-switch': Switch;
   }

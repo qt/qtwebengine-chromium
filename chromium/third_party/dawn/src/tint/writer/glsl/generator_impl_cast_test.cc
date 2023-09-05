@@ -17,10 +17,11 @@
 
 #include "gmock/gmock.h"
 
-using namespace tint::number_suffixes;  // NOLINT
-
 namespace tint::writer::glsl {
 namespace {
+
+using namespace tint::builtin::fluent_types;  // NOLINT
+using namespace tint::number_suffixes;        // NOLINT
 
 using GlslGeneratorImplTest_Cast = TestHelper;
 
@@ -37,7 +38,7 @@ TEST_F(GlslGeneratorImplTest_Cast, EmitExpression_Cast_Scalar) {
 }
 
 TEST_F(GlslGeneratorImplTest_Cast, EmitExpression_Cast_Vector) {
-    auto* cast = vec3<f32>(vec3<i32>(1_i, 2_i, 3_i));
+    auto* cast = Call<vec3<f32>>(Call<vec3<i32>>(1_i, 2_i, 3_i));
     WrapInFunction(cast);
 
     GeneratorImpl& gen = Build();

@@ -49,6 +49,10 @@ static inline float sk_float_pow(float base, float exp) {
 #define sk_float_exp(x)         expf(x)
 #define sk_float_log(x)         logf(x)
 
+constexpr int sk_float_sgn(float x) {
+    return (0.0f < x) - (x < 0.0f);
+}
+
 constexpr float sk_float_degrees_to_radians(float degrees) {
     return degrees * (SK_FloatPI / 180);
 }
@@ -222,10 +226,12 @@ static inline float sk_fmaf(float f, float m, float a) {
 // Returns true iff the provided number is within a small epsilon of 0.
 bool sk_double_nearly_zero(double a);
 
-// Comparing floating point numbers is complicated. This helper only works if one or none
-// of the two inputs is not very close to zero. It also does not work if both inputs could be NaN.
-// The term "ulps" stands for "units of least precision". Read the following for more nuance:
-//   https://randomascii.wordpress.com/2012/02/25/comparing-floating-point-numbers-2012-edition/
-bool sk_doubles_nearly_equal_ulps(double a, double b, uint8_t max_ulps_diff=16);
+// Compare two doubles and return true if they are within maxUlpsDiff of each other.
+// * nan as a or b - returns false.
+// * infinity, infinity or -infinity, -infinity - returns true.
+// * infinity and any other number - returns false.
+//
+// ulp is an initialism for Units in the Last Place.
+bool sk_doubles_nearly_equal_ulps(double a, double b, uint8_t maxUlpsDiff=16);
 
 #endif

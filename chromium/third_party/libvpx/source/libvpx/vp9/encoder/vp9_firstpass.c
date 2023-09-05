@@ -437,6 +437,7 @@ static void first_pass_motion_search(VP9_COMP *cpi, MACROBLOCK *x,
   const int new_mv_mode_penalty = NEW_MV_MODE_PENALTY;
   MV center_mv_full = ref_mv_full;
   unsigned int start_mv_sad;
+  vp9_sad_fn_ptr_t sad_fn_ptr;
 
   int step_param = 3;
   int further_steps = (MAX_MVSEARCH_STEPS - 1) - step_param;
@@ -462,11 +463,13 @@ static void first_pass_motion_search(VP9_COMP *cpi, MACROBLOCK *x,
            x->mv_limits.row_min, x->mv_limits.row_max);
   start_mv_sad = get_start_mv_sad(x, &ref_mv_full, &center_mv_full,
                                   cpi->fn_ptr[bsize].sdf, x->sadperbit16);
+  sad_fn_ptr.sdf = cpi->fn_ptr[bsize].sdf;
+  sad_fn_ptr.sdx4df = cpi->fn_ptr[bsize].sdx4df;
 
   // Center the initial step/diamond search on best mv.
   tmp_err = cpi->diamond_search_sad(x, &cpi->ss_cfg, &ref_mv_full, start_mv_sad,
                                     &tmp_mv, step_param, x->sadperbit16, &num00,
-                                    &v_fn_ptr, ref_mv);
+                                    &sad_fn_ptr, ref_mv);
   if (tmp_err < INT_MAX)
     tmp_err = vp9_get_mvpred_var(x, &tmp_mv, ref_mv, &v_fn_ptr, 1);
   if (tmp_err < INT_MAX - new_mv_mode_penalty) tmp_err += new_mv_mode_penalty;
@@ -488,7 +491,7 @@ static void first_pass_motion_search(VP9_COMP *cpi, MACROBLOCK *x,
     } else {
       tmp_err = cpi->diamond_search_sad(
           x, &cpi->ss_cfg, &ref_mv_full, start_mv_sad, &tmp_mv, step_param + n,
-          x->sadperbit16, &num00, &v_fn_ptr, ref_mv);
+          x->sadperbit16, &num00, &sad_fn_ptr, ref_mv);
       if (tmp_err < INT_MAX)
         tmp_err = vp9_get_mvpred_var(x, &tmp_mv, ref_mv, &v_fn_ptr, 1);
       if (tmp_err < INT_MAX - new_mv_mode_penalty)
@@ -603,11 +606,11 @@ static int get_smooth_intra_threshold(VP9_COMMON *cm) {
 #define FP_MAX_DN_THRESH 24
 #define KERNEL_SIZE 3
 
-// Baseline Kernal weights for first pass noise metric
-static uint8_t fp_dn_kernal_3[KERNEL_SIZE * KERNEL_SIZE] = { 1, 2, 1, 2, 4,
+// Baseline Kernel weights for first pass noise metric
+static uint8_t fp_dn_kernel_3[KERNEL_SIZE * KERNEL_SIZE] = { 1, 2, 1, 2, 4,
                                                              2, 1, 2, 1 };
 
-// Estimate noise at a single point based on the impace of a spatial kernal
+// Estimate noise at a single point based on the impact of a spatial kernel
 // on the point value
 static int fp_estimate_point_noise(uint8_t *src_ptr, const int stride) {
   int sum_weight = 0;
@@ -617,23 +620,23 @@ static int fp_estimate_point_noise(uint8_t *src_ptr, const int stride) {
   int diff;
   int dn_diff;
   uint8_t *tmp_ptr;
-  uint8_t *kernal_ptr;
+  uint8_t *kernel_ptr;
   uint8_t dn_val;
   uint8_t centre_val = *src_ptr;
 
-  kernal_ptr = fp_dn_kernal_3;
+  kernel_ptr = fp_dn_kernel_3;
 
-  // Apply the kernal
+  // Apply the kernel
   tmp_ptr = src_ptr - stride - 1;
   for (i = 0; i < KERNEL_SIZE; ++i) {
     for (j = 0; j < KERNEL_SIZE; ++j) {
       diff = abs((int)centre_val - (int)tmp_ptr[j]);
       max_diff = VPXMAX(max_diff, diff);
       if (diff <= FP_DN_THRESH) {
-        sum_weight += *kernal_ptr;
-        sum_val += (int)tmp_ptr[j] * (int)*kernal_ptr;
+        sum_weight += *kernel_ptr;
+        sum_val += (int)tmp_ptr[j] * (int)*kernel_ptr;
       }
-      ++kernal_ptr;
+      ++kernel_ptr;
     }
     tmp_ptr += stride;
   }
@@ -659,13 +662,13 @@ static int fp_highbd_estimate_point_noise(uint8_t *src_ptr, const int stride) {
   int dn_diff;
   uint8_t *tmp_ptr;
   uint16_t *tmp_ptr16;
-  uint8_t *kernal_ptr;
+  uint8_t *kernel_ptr;
   uint16_t dn_val;
   uint16_t centre_val = *CONVERT_TO_SHORTPTR(src_ptr);
 
-  kernal_ptr = fp_dn_kernal_3;
+  kernel_ptr = fp_dn_kernel_3;
 
-  // Apply the kernal
+  // Apply the kernel
   tmp_ptr = src_ptr - stride - 1;
   for (i = 0; i < KERNEL_SIZE; ++i) {
     tmp_ptr16 = CONVERT_TO_SHORTPTR(tmp_ptr);
@@ -673,10 +676,10 @@ static int fp_highbd_estimate_point_noise(uint8_t *src_ptr, const int stride) {
       diff = abs((int)centre_val - (int)tmp_ptr16[j]);
       max_diff = VPXMAX(max_diff, diff);
       if (diff <= FP_DN_THRESH) {
-        sum_weight += *kernal_ptr;
-        sum_val += (int)tmp_ptr16[j] * (int)*kernal_ptr;
+        sum_weight += *kernel_ptr;
+        sum_val += (int)tmp_ptr16[j] * (int)*kernel_ptr;
       }
-      ++kernal_ptr;
+      ++kernel_ptr;
     }
     tmp_ptr += stride;
   }
@@ -1261,7 +1264,7 @@ void vp9_first_pass_encode_tile_mb_row(VP9_COMP *cpi, ThreadData *td,
         xd->mi[0]->mv[0].as_mv = mv;
         xd->mi[0]->tx_size = TX_4X4;
         xd->mi[0]->ref_frame[0] = LAST_FRAME;
-        xd->mi[0]->ref_frame[1] = NONE;
+        xd->mi[0]->ref_frame[1] = NO_REF_FRAME;
         vp9_build_inter_predictors_sby(xd, mb_row << 1, mb_col << 1, bsize);
         vp9_encode_sby_pass1(x, bsize);
         fp_acc_data->sum_mvr += mv.row;
@@ -1419,7 +1422,7 @@ void vp9_first_pass(VP9_COMP *cpi, const struct lookahead_entry *source) {
 
   if (cpi->row_mt_bit_exact && cpi->twopass.fp_mb_float_stats == NULL)
     CHECK_MEM_ERROR(
-        cm, cpi->twopass.fp_mb_float_stats,
+        &cm->error, cpi->twopass.fp_mb_float_stats,
         vpx_calloc(cm->MBs * sizeof(*cpi->twopass.fp_mb_float_stats), 1));
 
   {
@@ -1445,7 +1448,7 @@ void vp9_first_pass(VP9_COMP *cpi, const struct lookahead_entry *source) {
       first_pass_stat_calc(cpi, &fps, &(first_tile_col->fp_data));
     }
 
-    // Dont allow a value of 0 for duration.
+    // Don't allow a value of 0 for duration.
     // (Section duration is also defaulted to minimum of 1.0).
     fps.duration = VPXMAX(1.0, (double)(source->ts_end - source->ts_start));
 
@@ -1455,7 +1458,7 @@ void vp9_first_pass(VP9_COMP *cpi, const struct lookahead_entry *source) {
     accumulate_stats(&twopass->total_stats, &fps);
   }
 
-  // Copy the previous Last Frame back into gf and and arf buffers if
+  // Copy the previous Last Frame back into gf and arf buffers if
   // the prediction is good enough... but also don't allow it to lag too far.
   if ((twopass->sr_update_lag > 3) ||
       ((cm->current_video_frame > 0) &&
@@ -1672,7 +1675,7 @@ void vp9_init_second_pass(VP9_COMP *cpi) {
 
   // Scan the first pass file and calculate a modified score for each
   // frame that is used to distribute bits. The modified score is assumed
-  // to provide a linear basis for bit allocation. I.e a frame A with a score
+  // to provide a linear basis for bit allocation. I.e., a frame A with a score
   // that is double that of frame B will be allocated 2x as many bits.
   {
     double modified_score_total = 0.0;
@@ -1697,8 +1700,8 @@ void vp9_init_second_pass(VP9_COMP *cpi) {
     }
 
     // Second scan using clamps based on the previous cycle average.
-    // This may modify the total and average somewhat but we dont bother with
-    // further itterations.
+    // This may modify the total and average somewhat but we don't bother with
+    // further iterations.
     modified_score_total = 0.0;
     s = twopass->stats_in;
     while (s < twopass->stats_in_end) {
@@ -1855,7 +1858,7 @@ static int detect_flash_from_frame_stats(const FIRSTPASS_STATS *frame_stats) {
   // brief break in prediction (such as a flash) but subsequent frames
   // are reasonably well predicted by an earlier (pre flash) frame.
   // The recovery after a flash is indicated by a high pcnt_second_ref
-  // useage or a second ref coded error notabley lower than the last
+  // usage or a second ref coded error notabley lower than the last
   // frame coded error.
   if (frame_stats == NULL) {
     return 0;
@@ -2035,7 +2038,7 @@ static int compute_arf_boost(const FRAME_INFO *frame_info,
         this_frame, &this_frame_mv_in_out, &mv_in_out_accumulator,
         &abs_mv_in_out_accumulator, &mv_ratio_accumulator);
 
-    // We want to discount the the flash frame itself and the recovery
+    // We want to discount the flash frame itself and the recovery
     // frame that follows as both will have poor scores.
     flash_detected = detect_flash_from_frame_stats(this_frame) ||
                      detect_flash_from_frame_stats(next_frame);
@@ -2166,7 +2169,7 @@ static double calculate_group_score(VP9_COMP *cpi, double av_score,
   double score_total = 0.0;
   int i = 0;
 
-  // We dont ever want to return a 0 score here.
+  // We don't ever want to return a 0 score here.
   if (frame_count == 0) return 1.0;
 
   while ((i < frame_count) && (s < twopass->stats_in_end)) {
@@ -2594,7 +2597,7 @@ static int get_gop_coding_frame_num(
     if (
         // Don't break out with a very short interval.
         (gop_coding_frames >= active_gf_interval->min) &&
-        // If possible dont break very close to a kf
+        // If possible don't break very close to a kf
         ((rc->frames_to_key - gop_coding_frames) >= rc->min_gf_interval) &&
         (gop_coding_frames & 0x01) && (!flash_detected) &&
         ((mv_ratio_accumulator > mv_ratio_accumulator_thresh) ||
@@ -3028,7 +3031,7 @@ static int intra_step_transition(const FIRSTPASS_STATS *this_frame,
       next_frame->intra_error / DOUBLE_DIVIDE_CHECK(next_frame->coded_error);
 
   // Return true the intra/inter ratio for the current frame is
-  // low but better in the next and previous frame and the relative useage of
+  // low but better in the next and previous frame and the relative usage of
   // intra in the current frame is markedly higher than the last and next frame.
   if ((this_ii_ratio < 2.0) && (last_ii_ratio > 2.25) &&
       (next_ii_ratio > 2.25) && (this_pcnt_intra > (3 * last_pcnt_intra)) &&
@@ -3049,8 +3052,8 @@ static int intra_step_transition(const FIRSTPASS_STATS *this_frame,
 // Minimum % intra coding observed in first pass (1.0 = 100%)
 #define MIN_INTRA_LEVEL 0.25
 // Threshold for use of the lagging second reference frame. Scene cuts do not
-// usually have a high second ref useage.
-#define SECOND_REF_USEAGE_THRESH 0.2
+// usually have a high second ref usage.
+#define SECOND_REF_USAGE_THRESH 0.2
 // Hard threshold where the first pass chooses intra for almost all blocks.
 // In such a case even if the frame is not a scene cut coding a key frame
 // may be a good option.
@@ -3080,7 +3083,7 @@ static int test_candidate_kf(const FIRST_PASS_INFO *first_pass_info,
   detect_flash_from_frame_stats(next_frame);
   if (!detect_flash_from_frame_stats(this_frame) &&
       !detect_flash_from_frame_stats(next_frame) &&
-      (this_frame->pcnt_second_ref < SECOND_REF_USEAGE_THRESH) &&
+      (this_frame->pcnt_second_ref < SECOND_REF_USAGE_THRESH) &&
       ((this_frame->pcnt_inter < VERY_LOW_INTER_THRESH) ||
        (slide_transition(this_frame, last_frame, next_frame)) ||
        (intra_step_transition(this_frame, last_frame, next_frame)) ||
@@ -3358,7 +3361,7 @@ static void find_next_key_frame(VP9_COMP *cpi, int kf_show_idx) {
 
       // The second (lagging) ref error is not valid immediately after
       // a key frame because either the lag has not built up (in the case of
-      // the first key frame or it points to a refernce before the new key
+      // the first key frame or it points to a reference before the new key
       // frame.
       if (i < 2) sr_accumulator = 0.0;
       frame_boost =
@@ -3388,7 +3391,7 @@ static void find_next_key_frame(VP9_COMP *cpi, int kf_show_idx) {
   twopass->key_frame_section_intra_rating = calculate_section_intra_ratio(
       start_position, twopass->stats_in_end, rc->frames_to_key);
 
-  // Special case for static / slide show content but dont apply
+  // Special case for static / slide show content but don't apply
   // if the kf group is very short.
   if ((zero_motion_accumulator > 0.99) && (rc->frames_to_key > 8)) {
     rc->kf_boost = (int)(twopass->kf_max_total_boost);
@@ -3520,7 +3523,7 @@ void vp9_rc_get_second_pass_params(VP9_COMP *cpi) {
     vp9_init_vizier_params(twopass, screen_area);
   }
 
-  // If this is an arf frame then we dont want to read the stats file or
+  // If this is an arf frame then we don't want to read the stats file or
   // advance the input pointer as we already have what we need.
   if (gf_group->update_type[gf_group->index] == ARF_UPDATE) {
     int target_rate;

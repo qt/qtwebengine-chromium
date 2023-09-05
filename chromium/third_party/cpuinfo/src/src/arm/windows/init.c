@@ -30,6 +30,21 @@ static struct vendor_info vendors[] = {
 	{
 		"Qualcomm",
 		cpuinfo_vendor_qualcomm
+	},
+	{
+		"Ampere(R)",
+		cpuinfo_vendor_ampere
+	}
+};
+
+static struct woa_chip_info woa_chip_unknown = {
+	"Unknown",
+	woa_chip_name_unknown,
+	{
+		{
+			cpuinfo_uarch_unknown,
+			0
+		}
 	}
 };
 
@@ -64,6 +79,32 @@ static struct woa_chip_info woa_chips[] = {
 				3150000000
 			}
 		}
+	},
+	/* Microsoft Windows Dev Kit 2023 */
+	{
+		"Snapdragon (TM) 8cx Gen 3 @ 3.0 GHz",
+		woa_chip_name_microsoft_sq_3,
+		{
+			{
+				cpuinfo_uarch_cortex_a78,
+				2420000000,
+			},
+			{
+				cpuinfo_uarch_cortex_x1,
+				3000000000
+			}
+		}
+	},
+	/* Ampere Altra */
+	{
+		"Ampere(R) Altra(R) Processor",
+		woa_chip_name_ampere_altra,
+		{
+			{
+				cpuinfo_uarch_neoverse_n1,
+				3000000000
+			}
+		}
 	}
 };
 
@@ -72,13 +113,17 @@ BOOL CALLBACK cpuinfo_arm_windows_init(
 {
 	struct woa_chip_info *chip_info = NULL;
 	enum cpuinfo_vendor vendor = cpuinfo_vendor_unknown;
-	bool result = false;
 	
 	set_cpuinfo_isa_fields();
-	result = get_system_info_from_registry(&chip_info, &vendor);	
-	result &= cpu_info_init_by_logical_sys_info(chip_info, vendor);
-	cpuinfo_is_initialized = result;
-	return ((result == true) ? TRUE : FALSE);
+
+	const bool system_result = get_system_info_from_registry(&chip_info, &vendor);
+	if (!system_result) {
+		chip_info = &woa_chip_unknown;
+	}
+
+	cpuinfo_is_initialized = cpu_info_init_by_logical_sys_info(chip_info, vendor);
+
+	return (system_result && cpuinfo_is_initialized ? TRUE : FALSE);
 }
 
 bool get_core_uarch_for_efficiency(

@@ -39,6 +39,7 @@ import * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
+import * as LegacyWrapper from '../../ui/components/legacy_wrapper/legacy_wrapper.js';
 import * as SourceFrame from '../../ui/legacy/components/source_frame/source_frame.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
@@ -47,7 +48,9 @@ import {AppManifestView} from './AppManifestView.js';
 import {BackForwardCacheTreeElement} from './BackForwardCacheTreeElement.js';
 import {BackgroundServiceModel} from './BackgroundServiceModel.js';
 import {BackgroundServiceView} from './BackgroundServiceView.js';
+import {BounceTrackingMitigationsTreeElement} from './BounceTrackingMitigationsTreeElement.js';
 import * as ApplicationComponents from './components/components.js';
+import {type PreloadingResultView, type PreloadingView} from './preloading/PreloadingView.js';
 import {PreloadingTreeElement} from './PreloadingTreeElement.js';
 import resourcesSidebarStyles from './resourcesSidebar.css.js';
 import {ServiceWorkerCacheTreeElement} from './ServiceWorkerCacheTreeElement.js';
@@ -256,12 +259,14 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
   private backForwardCacheListTreeElement?: BackForwardCacheTreeElement;
   backgroundFetchTreeElement: BackgroundServiceTreeElement;
   backgroundSyncTreeElement: BackgroundServiceTreeElement;
+  bounceTrackingMitigationsTreeElement: BounceTrackingMitigationsTreeElement;
   notificationsTreeElement: BackgroundServiceTreeElement;
   paymentHandlerTreeElement: BackgroundServiceTreeElement;
   periodicBackgroundSyncTreeElement: BackgroundServiceTreeElement;
   pushMessagingTreeElement: BackgroundServiceTreeElement;
   reportingApiTreeElement: ReportingApiTreeElement;
-  preloadingTreeElement: PreloadingTreeElement|undefined;
+  preloadingTreeElement: PreloadingTreeElement<PreloadingView>|undefined;
+  preloadingResultTreeElement: PreloadingTreeElement<PreloadingResultView>|undefined;
   private readonly resourcesSection: ResourcesSection;
   private readonly databaseTableViews: Map<DatabaseModelDatabase, {
     [x: string]: DatabaseTableView,
@@ -375,6 +380,9 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
         new BackgroundServiceTreeElement(panel, Protocol.BackgroundService.ServiceName.BackgroundSync);
     backgroundServiceTreeElement.appendChild(this.backgroundSyncTreeElement);
 
+    this.bounceTrackingMitigationsTreeElement = new BounceTrackingMitigationsTreeElement(panel);
+    backgroundServiceTreeElement.appendChild(this.bounceTrackingMitigationsTreeElement);
+
     this.notificationsTreeElement =
         new BackgroundServiceTreeElement(panel, Protocol.BackgroundService.ServiceName.Notifications);
     backgroundServiceTreeElement.appendChild(this.notificationsTreeElement);
@@ -394,8 +402,10 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
       const preloadingSectionTitle = i18nString(UIStrings.preloading);
       const preloadingSectionTreeElement = this.addSidebarSection(preloadingSectionTitle);
 
-      this.preloadingTreeElement = new PreloadingTreeElement(panel);
+      this.preloadingTreeElement = PreloadingTreeElement.newForPreloadingView(panel);
+      this.preloadingResultTreeElement = PreloadingTreeElement.newForPreloadingResultView(panel);
       preloadingSectionTreeElement.appendChild(this.preloadingTreeElement);
+      preloadingSectionTreeElement.appendChild(this.preloadingResultTreeElement);
     }
 
     const resourcesSectionTitle = i18nString(UIStrings.frames);
@@ -448,6 +458,9 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
           modelRemoved: (model: SharedStorageModel): void => this.sharedStorageModelRemoved(model),
         },
         {scoped: true});
+    SDK.TargetManager.TargetManager.instance().observeModels(
+        SDK.StorageBucketsModel.StorageBucketsModel, {modelAdded: model => model.enable(), modelRemoved: () => {}},
+        {scoped: true});
 
     this.sharedStorageTreeElementDispatcher =
         new Common.ObjectWrapper.ObjectWrapper<SharedStorageTreeElementDispatcher.EventTypes>();
@@ -464,7 +477,7 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
     treeElement.selectable = false;
     this.sidebarTree.appendChild(treeElement);
     UI.ARIAUtils.markAsHeading(treeElement.listItemElement, 3);
-    UI.ARIAUtils.setAccessibleName(treeElement.childrenListElement, title);
+    UI.ARIAUtils.setLabel(treeElement.childrenListElement, title);
     return treeElement;
   }
 
@@ -552,12 +565,11 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
     this.periodicBackgroundSyncTreeElement.initialize(backgroundServiceModel);
     this.pushMessagingTreeElement.initialize(backgroundServiceModel);
 
-    // The condition is equivalent to
-    // `Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.PRELOADING_STATUS_PANEL)`.
-    if (this.preloadingTreeElement) {
+    if (Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.PRELOADING_STATUS_PANEL)) {
       const preloadingModel = this.target?.model(SDK.PreloadingModel.PreloadingModel);
       if (preloadingModel) {
-        this.preloadingTreeElement.initialize(preloadingModel);
+        this.preloadingTreeElement?.initialize(preloadingModel);
+        this.preloadingResultTreeElement?.initialize(preloadingModel);
       }
     }
   }
@@ -973,6 +985,13 @@ export class BackgroundServiceTreeElement extends ApplicationPanelTreeElement {
     return `background-service://${this.serviceName}` as Platform.DevToolsPath.UrlString;
   }
 
+  override get selectable(): boolean {
+    if (!this.model) {
+      return false;
+    }
+    return super.selectable;
+  }
+
   override onselect(selectedByUser?: boolean): boolean {
     super.onselect(selectedByUser);
     this.selectedInternal = true;
@@ -1089,7 +1108,7 @@ export class AppManifestTreeElement extends ApplicationPanelTreeElement {
     // TODO(crbug.com/1156978): Replace UI.ReportView.ReportView with ReportView.ts web component.
     const reportView = new UI.ReportView.ReportView(i18nString(UIStrings.appManifest));
     this.view = new AppManifestView(emptyView, reportView, new Common.Throttler.Throttler(1000));
-    UI.ARIAUtils.setAccessibleName(this.listItemElement, i18nString(UIStrings.onInvokeManifestAlert));
+    UI.ARIAUtils.setLabel(this.listItemElement, i18nString(UIStrings.onInvokeManifestAlert));
     const handleExpansion = (evt: Event): void => {
       this.setExpandable((evt as CustomEvent).detail);
     };
@@ -1139,7 +1158,7 @@ export class ManifestChildTreeElement extends ApplicationPanelTreeElement {
     this.#sectionFieldElement = fieldElement;
     self.onInvokeElement(this.listItemElement, this.onInvoke.bind(this));
     this.listItemElement.addEventListener('keydown', this.onInvokeElementKeydown.bind(this));
-    UI.ARIAUtils.setAccessibleName(
+    UI.ARIAUtils.setLabel(
         this.listItemElement, i18nString(UIStrings.beforeInvokeAlert, {PH1: this.listItemElement.title}));
   }
 
@@ -1320,10 +1339,10 @@ export class IDBDatabaseTreeElement extends ApplicationPanelTreeElement {
   databaseId: DatabaseId;
   private readonly idbObjectStoreTreeElements: Map<string, IDBObjectStoreTreeElement>;
   private database?: IndexedDBModelDatabase;
-  private view?: IDBDatabaseView;
+  private view?: LegacyWrapper.LegacyWrapper.LegacyWrapper<UI.Widget.VBox, IDBDatabaseView>;
 
   constructor(storagePanel: ResourcesPanel, model: IndexedDBModel, databaseId: DatabaseId) {
-    super(storagePanel, databaseId.name + ' - ' + databaseId.storageKey, false);
+    super(storagePanel, databaseId.name, false);
     this.model = model;
     this.databaseId = databaseId;
     this.idbObjectStoreTreeElements = new Map();
@@ -1333,7 +1352,8 @@ export class IDBDatabaseTreeElement extends ApplicationPanelTreeElement {
   }
 
   override get itemURL(): Platform.DevToolsPath.UrlString {
-    return 'indexedDB://' + this.databaseId.storageKey + '/' + this.databaseId.name as Platform.DevToolsPath.UrlString;
+    return 'indexedDB://' + this.databaseId.storageBucket.storageKey + '/' +
+        (this.databaseId.storageBucket.name ?? '') + '/' + this.databaseId.name as Platform.DevToolsPath.UrlString;
   }
 
   override onattach(): void {
@@ -1382,7 +1402,7 @@ export class IDBDatabaseTreeElement extends ApplicationPanelTreeElement {
     }
 
     if (this.view) {
-      this.view.update(database);
+      this.view.getComponent().update(database);
     }
 
     this.updateTooltip();
@@ -1397,13 +1417,21 @@ export class IDBDatabaseTreeElement extends ApplicationPanelTreeElement {
     }
   }
 
+  override get selectable(): boolean {
+    if (!this.database) {
+      return false;
+    }
+    return super.selectable;
+  }
+
   override onselect(selectedByUser?: boolean): boolean {
     super.onselect(selectedByUser);
     if (!this.database) {
       return false;
     }
     if (!this.view) {
-      this.view = new IDBDatabaseView(this.model, this.database);
+      this.view =
+          LegacyWrapper.LegacyWrapper.legacyWrapper(UI.Widget.VBox, new IDBDatabaseView(this.model, this.database));
     }
 
     this.showView(this.view);
@@ -1447,8 +1475,9 @@ export class IDBObjectStoreTreeElement extends ApplicationPanelTreeElement {
   }
 
   override get itemURL(): Platform.DevToolsPath.UrlString {
-    return 'indexedDB://' + this.databaseId.storageKey + '/' + this.databaseId.name + '/' + this.objectStore.name as
-        Platform.DevToolsPath.UrlString;
+    return 'indexedDB://' + this.databaseId.storageBucket.storageKey + '/' +
+        (this.databaseId.storageBucket.name ?? '') + '/' + this.databaseId.name + '/' +
+        this.objectStore.name as Platform.DevToolsPath.UrlString;
   }
 
   override onattach(): void {
@@ -1584,8 +1613,9 @@ export class IDBIndexTreeElement extends ApplicationPanelTreeElement {
   }
 
   override get itemURL(): Platform.DevToolsPath.UrlString {
-    return 'indexedDB://' + this.databaseId.storageKey + '/' + this.databaseId.name + '/' + this.objectStore.name +
-        '/' + this.index.name as Platform.DevToolsPath.UrlString;
+    return 'indexedDB://' + this.databaseId.storageBucket.storageKey + '/' +
+        (this.databaseId.storageBucket.name ?? '') + '/' + this.databaseId.name + '/' + this.objectStore.name + '/' +
+        this.index.name as Platform.DevToolsPath.UrlString;
   }
 
   markNeedsRefresh(): void {
@@ -1645,7 +1675,11 @@ export class IDBIndexTreeElement extends ApplicationPanelTreeElement {
 export class DOMStorageTreeElement extends ApplicationPanelTreeElement {
   private readonly domStorage: DOMStorage;
   constructor(storagePanel: ResourcesPanel, domStorage: DOMStorage) {
-    super(storagePanel, domStorage.storageKey ? domStorage.storageKey : i18nString(UIStrings.localFiles), false);
+    super(
+        storagePanel,
+        domStorage.storageKey ? SDK.StorageKeyManager.parseStorageKey(domStorage.storageKey).origin :
+                                i18nString(UIStrings.localFiles),
+        false);
     this.domStorage = domStorage;
     const icon = UI.Icon.Icon.create('table', 'resource-tree-item');
     this.setLeadingIcons([icon]);
@@ -1756,7 +1790,7 @@ export class ResourcesSection implements SDK.TargetManager.Observer {
   constructor(storagePanel: ResourcesPanel, treeElement: UI.TreeOutline.TreeElement) {
     this.panel = storagePanel;
     this.treeElement = treeElement;
-    UI.ARIAUtils.setAccessibleName(this.treeElement.listItemNode, 'Resources Section');
+    UI.ARIAUtils.setLabel(this.treeElement.listItemNode, 'Resources Section');
     this.treeElementForFrameId = new Map();
     this.treeElementForTargetId = new Map();
 
@@ -1984,7 +2018,8 @@ export class FrameTreeElement extends ApplicationPanelTreeElement {
   private readonly treeElementForResource: Map<string, FrameResourceTreeElement>;
   private treeElementForWindow: Map<Protocol.Target.TargetID, FrameWindowTreeElement>;
   private treeElementForWorker: Map<Protocol.Target.TargetID, WorkerTreeElement>;
-  private view: ApplicationComponents.FrameDetailsView.FrameDetailsView|null;
+  private view: LegacyWrapper.LegacyWrapper
+      .LegacyWrapper<UI.Widget.Widget, ApplicationComponents.FrameDetailsView.FrameDetailsReportView>|null;
 
   constructor(section: ResourcesSection, frame: SDK.ResourceTreeModel.ResourceTreeFrame) {
     super(section.panel, '', false);
@@ -2018,7 +2053,7 @@ export class FrameTreeElement extends ApplicationPanelTreeElement {
     this.frameId = frame.id;
     if (this.title !== frame.displayName()) {
       this.title = frame.displayName();
-      UI.ARIAUtils.setAccessibleName(this.listItemElement, this.title);
+      UI.ARIAUtils.setLabel(this.listItemElement, this.title);
       if (this.parent) {
         const parent = this.parent;
         // Insert frame at new position to preserve correct alphabetical order
@@ -2031,7 +2066,8 @@ export class FrameTreeElement extends ApplicationPanelTreeElement {
     this.treeElementForWorker.clear();
 
     if (this.selected) {
-      this.view = new ApplicationComponents.FrameDetailsView.FrameDetailsView(this.frame);
+      this.view = LegacyWrapper.LegacyWrapper.legacyWrapper(
+          UI.Widget.Widget, new ApplicationComponents.FrameDetailsView.FrameDetailsReportView(this.frame));
       this.showView(this.view);
     } else {
       this.view = null;
@@ -2068,9 +2104,8 @@ export class FrameTreeElement extends ApplicationPanelTreeElement {
   override onselect(selectedByUser?: boolean): boolean {
     super.onselect(selectedByUser);
     if (!this.view) {
-      this.view = new ApplicationComponents.FrameDetailsView.FrameDetailsView(this.frame);
-    } else {
-      this.view.update();
+      this.view = LegacyWrapper.LegacyWrapper.legacyWrapper(
+          UI.Widget.Widget, new ApplicationComponents.FrameDetailsView.FrameDetailsReportView(this.frame));
     }
     Host.userMetrics.panelShown(Host.UserMetrics.PanelCodes[Host.UserMetrics.PanelCodes.frame_details]);
     this.showView(this.view);

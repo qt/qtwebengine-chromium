@@ -356,7 +356,10 @@ protected:
    * Default constructor of SVDBase
    */
   SVDBase()
-      : m_info(Success),
+      : m_matrixU(MatrixUType()),
+        m_matrixV(MatrixVType()),
+        m_singularValues(SingularValuesType()),
+        m_info(Success),
         m_isInitialized(false),
         m_isAllocated(false),
         m_usePrescribedThreshold(false),

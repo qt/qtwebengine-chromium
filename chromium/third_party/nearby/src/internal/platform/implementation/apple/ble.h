@@ -145,12 +145,23 @@ class BleMedium : public api::ble_v2::BleMedium {
                                                   CancellationFlag *cancellation_flag) override;
   bool IsExtendedAdvertisementsAvailable() override;
 
+  bool GetRemotePeripheral(const std::string& mac_address,
+                           GetRemotePeripheralCallback callback) override {
+    return false;
+  }
+
+  bool GetRemotePeripheral(api::ble_v2::BlePeripheral::UniqueId id,
+                           GetRemotePeripheralCallback callback) override {
+    return false;
+  }
+
  private:
   // A concrete implemenation for GattServer.
   class GattServer : public api::ble_v2::GattServer {
    public:
     GattServer() = default;
-    explicit GattServer(GNCMBlePeripheral *peripheral) : peripheral_(peripheral) {}
+    GattServer(BluetoothAdapter *adapter, GNCMBlePeripheral *peripheral)
+        : adapter_(adapter), peripheral_(peripheral) {}
 
     absl::optional<api::ble_v2::GattCharacteristic> CreateCharacteristic(
         const Uuid &service_uuid, const Uuid &characteristic_uuid,
@@ -162,8 +173,10 @@ class BleMedium : public api::ble_v2::BleMedium {
     absl::Status NotifyCharacteristicChanged(const api::ble_v2::GattCharacteristic &characteristic,
                                              bool confirm, const ByteArray &new_value) override;
     void Stop() override;
+    BlePeripheral &GetBlePeripheral() override { return adapter_->GetPeripheral(); }
 
    private:
+    BluetoothAdapter *adapter_ = nullptr;
     GNCMBlePeripheral *peripheral_;
   };
 

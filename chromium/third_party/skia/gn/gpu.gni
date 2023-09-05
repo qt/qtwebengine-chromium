@@ -41,9 +41,7 @@
 #   //src/gpu/ganesh/tessellate/BUILD.bazel
 #   //src/gpu/ganesh/text/BUILD.bazel
 #   //src/gpu/ganesh/vk/BUILD.bazel
-#   //src/gpu/gl/BUILD.bazel
 #   //src/gpu/mtl/BUILD.bazel
-#   //src/gpu/piet/BUILD.bazel
 #   //src/gpu/tessellate/BUILD.bazel
 #   //src/gpu/vk/BUILD.bazel
 #   //src/image/BUILD.bazel
@@ -76,8 +74,9 @@ skia_gpu_public = [
   "$_include/gpu/GrYUVABackendTextures.h",
   "$_include/gpu/MutableTextureState.h",
   "$_include/gpu/ShaderErrorHandler.h",
-  "$_include/gpu/ganesh/GrTextureGenerator.h",
+  "$_include/gpu/ganesh/GrExternalTextureGenerator.h",
   "$_include/gpu/ganesh/SkImageGanesh.h",
+  "$_include/gpu/ganesh/SkSurfaceGanesh.h",
   "$_include/gpu/mock/GrMockTypes.h",
 ]
 
@@ -99,6 +98,7 @@ skia_gpu_public = [
 #  //src/gpu/ganesh/ops:ops_srcs
 #  //src/gpu/ganesh/surface:surface_srcs
 #  //src/gpu/ganesh/surface:surface_srcs
+#  //src/gpu/ganesh/surface:android_srcs
 #  //src/gpu/ganesh/tessellate:tessellate_hdrs
 #  //src/gpu/ganesh/tessellate:tessellate_srcs
 #  //src/gpu/ganesh/text:private_hdrs
@@ -114,12 +114,13 @@ skia_ganesh_private = [
   "$_include/private/gpu/ganesh/GrImageContext.h",
   "$_include/private/gpu/ganesh/GrMockTypesPriv.h",
   "$_include/private/gpu/ganesh/GrMtlTypesPriv.h",
+  "$_include/private/gpu/ganesh/GrTextureGenerator.h",
   "$_include/private/gpu/ganesh/GrTypesPriv.h",
   "$_src/gpu/ganesh/ClipStack.cpp",
   "$_src/gpu/ganesh/ClipStack.h",
   "$_src/gpu/ganesh/Device.cpp",
+  "$_src/gpu/ganesh/Device.h",
   "$_src/gpu/ganesh/Device_drawTexture.cpp",
-  "$_src/gpu/ganesh/Device_v1.h",
   "$_src/gpu/ganesh/GrAHardwareBufferImageGenerator.cpp",
   "$_src/gpu/ganesh/GrAHardwareBufferImageGenerator.h",
   "$_src/gpu/ganesh/GrAHardwareBufferUtils.cpp",
@@ -146,6 +147,8 @@ skia_ganesh_private = [
   "$_src/gpu/ganesh/GrBufferTransferRenderTask.h",
   "$_src/gpu/ganesh/GrBufferUpdateRenderTask.cpp",
   "$_src/gpu/ganesh/GrBufferUpdateRenderTask.h",
+  "$_src/gpu/ganesh/GrCanvas.cpp",
+  "$_src/gpu/ganesh/GrCanvas.h",
   "$_src/gpu/ganesh/GrCaps.cpp",
   "$_src/gpu/ganesh/GrCaps.h",
   "$_src/gpu/ganesh/GrClientMappedBufferManager.cpp",
@@ -169,6 +172,9 @@ skia_ganesh_private = [
   "$_src/gpu/ganesh/GrDataUtils.h",
   "$_src/gpu/ganesh/GrDefaultGeoProcFactory.cpp",
   "$_src/gpu/ganesh/GrDefaultGeoProcFactory.h",
+  "$_src/gpu/ganesh/GrDeferredDisplayList.cpp",
+  "$_src/gpu/ganesh/GrDeferredDisplayListPriv.h",
+  "$_src/gpu/ganesh/GrDeferredDisplayListRecorder.cpp",
   "$_src/gpu/ganesh/GrDeferredProxyUploader.h",
   "$_src/gpu/ganesh/GrDeferredUpload.h",
   "$_src/gpu/ganesh/GrDirectContext.cpp",
@@ -196,6 +202,8 @@ skia_ganesh_private = [
   "$_src/gpu/ganesh/GrFixedClip.h",
   "$_src/gpu/ganesh/GrFragmentProcessor.cpp",
   "$_src/gpu/ganesh/GrFragmentProcessor.h",
+  "$_src/gpu/ganesh/GrFragmentProcessors.cpp",
+  "$_src/gpu/ganesh/GrFragmentProcessors.h",
   "$_src/gpu/ganesh/GrGeometryProcessor.cpp",
   "$_src/gpu/ganesh/GrGeometryProcessor.h",
   "$_src/gpu/ganesh/GrGpu.cpp",
@@ -245,6 +253,7 @@ skia_ganesh_private = [
   "$_src/gpu/ganesh/GrProgramDesc.h",
   "$_src/gpu/ganesh/GrProgramInfo.cpp",
   "$_src/gpu/ganesh/GrProgramInfo.h",
+  "$_src/gpu/ganesh/GrPromiseImageTexture.cpp",
   "$_src/gpu/ganesh/GrProxyProvider.cpp",
   "$_src/gpu/ganesh/GrProxyProvider.h",
   "$_src/gpu/ganesh/GrRecordingContext.cpp",
@@ -291,6 +300,7 @@ skia_ganesh_private = [
   "$_src/gpu/ganesh/GrStyle.h",
   "$_src/gpu/ganesh/GrSurface.cpp",
   "$_src/gpu/ganesh/GrSurface.h",
+  "$_src/gpu/ganesh/GrSurfaceCharacterization.cpp",
   "$_src/gpu/ganesh/GrSurfaceInfo.cpp",
   "$_src/gpu/ganesh/GrSurfaceProxy.cpp",
   "$_src/gpu/ganesh/GrSurfaceProxy.h",
@@ -361,6 +371,8 @@ skia_ganesh_private = [
   "$_src/gpu/ganesh/effects/GrBitmapTextGeoProc.h",
   "$_src/gpu/ganesh/effects/GrBlendFragmentProcessor.cpp",
   "$_src/gpu/ganesh/effects/GrBlendFragmentProcessor.h",
+  "$_src/gpu/ganesh/effects/GrColorTableEffect.cpp",
+  "$_src/gpu/ganesh/effects/GrColorTableEffect.h",
   "$_src/gpu/ganesh/effects/GrConvexPolyEffect.cpp",
   "$_src/gpu/ganesh/effects/GrConvexPolyEffect.h",
   "$_src/gpu/ganesh/effects/GrCoverageSetOpXP.cpp",
@@ -381,6 +393,8 @@ skia_ganesh_private = [
   "$_src/gpu/ganesh/effects/GrModulateAtlasCoverageEffect.h",
   "$_src/gpu/ganesh/effects/GrOvalEffect.cpp",
   "$_src/gpu/ganesh/effects/GrOvalEffect.h",
+  "$_src/gpu/ganesh/effects/GrPerlinNoise2Effect.cpp",
+  "$_src/gpu/ganesh/effects/GrPerlinNoise2Effect.h",
   "$_src/gpu/ganesh/effects/GrPorterDuffXferProcessor.cpp",
   "$_src/gpu/ganesh/effects/GrPorterDuffXferProcessor.h",
   "$_src/gpu/ganesh/effects/GrRRectEffect.cpp",
@@ -539,6 +553,7 @@ skia_ganesh_private = [
   "$_src/gpu/ganesh/ops/TextureOp.h",
   "$_src/gpu/ganesh/ops/TriangulatingPathRenderer.cpp",
   "$_src/gpu/ganesh/ops/TriangulatingPathRenderer.h",
+  "$_src/gpu/ganesh/surface/SkSurface_AndroidFactories.cpp",
   "$_src/gpu/ganesh/surface/SkSurface_Ganesh.cpp",
   "$_src/gpu/ganesh/tessellate/GrPathTessellationShader.cpp",
   "$_src/gpu/ganesh/tessellate/GrPathTessellationShader.h",
@@ -557,7 +572,13 @@ skia_ganesh_private = [
 ]
 
 # Generated by Bazel rule //include/private/chromium:gpu_private_hdrs
-skia_gpu_chromium_public = [ "$_include/private/chromium/GrSlug.h" ]
+skia_gpu_chromium_public = [
+  "$_include/private/chromium/GrDeferredDisplayList.h",
+  "$_include/private/chromium/GrDeferredDisplayListRecorder.h",
+  "$_include/private/chromium/GrPromiseImageTexture.h",
+  "$_include/private/chromium/GrSurfaceCharacterization.h",
+  "$_include/private/chromium/SkImageChromium.h",
+]
 
 # Generated by Bazel rule //include/gpu/gl:public_hdrs
 skia_gpu_gl_public = [
@@ -575,7 +596,6 @@ skia_gpu_gl_public = [
 #  //src/gpu/ganesh/gl:core_srcs
 #  //src/gpu/ganesh/gl/builders:builder_hdrs
 #  //src/gpu/ganesh/gl/builders:builder_srcs
-#  //src/gpu/gl:gl_hdrs
 skia_gpu_gl_private = [
   "$_src/gpu/ganesh/gl/GrGLAssembleGLESInterfaceAutogen.cpp",
   "$_src/gpu/ganesh/gl/GrGLAssembleGLInterfaceAutogen.cpp",
@@ -590,7 +610,7 @@ skia_gpu_gl_private = [
   "$_src/gpu/ganesh/gl/GrGLCaps.h",
   "$_src/gpu/ganesh/gl/GrGLContext.cpp",
   "$_src/gpu/ganesh/gl/GrGLContext.h",
-  "$_src/gpu/ganesh/gl/GrGLDefines_impl.h",
+  "$_src/gpu/ganesh/gl/GrGLDefines.h",
   "$_src/gpu/ganesh/gl/GrGLExtensions.cpp",
   "$_src/gpu/ganesh/gl/GrGLGLSL.cpp",
   "$_src/gpu/ganesh/gl/GrGLGLSL.h",
@@ -624,7 +644,6 @@ skia_gpu_gl_private = [
   "$_src/gpu/ganesh/gl/builders/GrGLProgramBuilder.h",
   "$_src/gpu/ganesh/gl/builders/GrGLShaderStringBuilder.cpp",
   "$_src/gpu/ganesh/gl/builders/GrGLShaderStringBuilder.h",
-  "$_src/gpu/gl/GrGLDefines.h",
 ]
 
 # Generated by Bazel rule //src/gpu/ganesh/gl:native_interface_none
@@ -1016,14 +1035,17 @@ skia_shared_gpu_sources = [
   "$_src/gpu/AtlasTypes.h",
   "$_src/gpu/Blend.cpp",
   "$_src/gpu/Blend.h",
+  "$_src/gpu/BlendFormula.cpp",
+  "$_src/gpu/BlendFormula.h",
   "$_src/gpu/BufferWriter.h",
   "$_src/gpu/DitherUtils.cpp",
   "$_src/gpu/DitherUtils.h",
   "$_src/gpu/GpuTypesPriv.h",
   "$_src/gpu/GrAHardwareBufferUtils.h",
-  "$_src/gpu/GrRectanizer.h",
   "$_src/gpu/KeyBuilder.h",
   "$_src/gpu/MutableTextureStateRef.h",
+  "$_src/gpu/PipelineUtils.cpp",
+  "$_src/gpu/PipelineUtils.h",
   "$_src/gpu/Rectanizer.h",
   "$_src/gpu/RectanizerPow2.cpp",
   "$_src/gpu/RectanizerPow2.h",
@@ -1037,6 +1059,8 @@ skia_shared_gpu_sources = [
   "$_src/gpu/SkRenderEngineAbortf.h",
   "$_src/gpu/Swizzle.cpp",
   "$_src/gpu/Swizzle.h",
+  "$_src/gpu/TiledTextureUtils.cpp",
+  "$_src/gpu/TiledTextureUtils.h",
   "$_src/gpu/tessellate/AffineMatrix.h",
   "$_src/gpu/tessellate/CullTest.h",
   "$_src/gpu/tessellate/FixedCountBufferUtils.cpp",
@@ -1059,6 +1083,8 @@ skia_shared_gpu_sources = [
   "$_src/text/gpu/SDFTControl.cpp",
   "$_src/text/gpu/SDFTControl.h",
   "$_src/text/gpu/Slug.cpp",
+  "$_src/text/gpu/SlugImpl.cpp",
+  "$_src/text/gpu/SlugImpl.h",
   "$_src/text/gpu/StrikeCache.cpp",
   "$_src/text/gpu/StrikeCache.h",
   "$_src/text/gpu/SubRunAllocator.cpp",
@@ -1069,6 +1095,8 @@ skia_shared_gpu_sources = [
   "$_src/text/gpu/TextBlob.h",
   "$_src/text/gpu/TextBlobRedrawCoordinator.cpp",
   "$_src/text/gpu/TextBlobRedrawCoordinator.h",
+  "$_src/text/gpu/VertexFiller.cpp",
+  "$_src/text/gpu/VertexFiller.h",
 ]
 
 # List generated by Bazel rules:
@@ -1112,17 +1140,3 @@ skia_shared_mtl_sources = [
   "$_src/gpu/mtl/MtlUtils.mm",
   "$_src/gpu/mtl/MtlUtilsPriv.h",
 ]
-
-# List generated by Bazel rules:
-#  //src/gpu/piet:piet_hdrs
-#  //src/gpu/piet:piet_srcs
-skia_piet_gpu_sources = [
-  "$_src/gpu/piet/PietTypes.h",
-  "$_src/gpu/piet/Render.cpp",
-  "$_src/gpu/piet/Render.h",
-  "$_src/gpu/piet/Scene.cpp",
-  "$_src/gpu/piet/Scene.h",
-]
-
-# TODO(kjlubick) Update clients to use the targets with updated names
-skia_gpu_private = skia_ganesh_private

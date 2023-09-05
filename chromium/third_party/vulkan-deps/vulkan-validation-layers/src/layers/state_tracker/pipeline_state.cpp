@@ -145,7 +145,7 @@ PIPELINE_STATE::ActiveSlotMap PIPELINE_STATE::GetActiveSlots(const StageStateVec
             if (variable.is_sampler_bias_offset) reqs |= DESCRIPTOR_REQ_SAMPLER_BIAS_OFFSET;
             if (variable.is_read_without_format) reqs |= DESCRIPTOR_REQ_IMAGE_READ_WITHOUT_FORMAT;
             if (variable.is_write_without_format) reqs |= DESCRIPTOR_REQ_IMAGE_WRITE_WITHOUT_FORMAT;
-            if (variable.is_dref_operation) reqs |= DESCRIPTOR_REQ_IMAGE_DREF;
+            if (variable.is_dref) reqs |= DESCRIPTOR_REQ_IMAGE_DREF;
 
             if (variable.image_format_type == NumericTypeFloat) reqs |= DESCRIPTOR_REQ_COMPONENT_TYPE_FLOAT;
             if (variable.image_format_type == NumericTypeSint) reqs |= DESCRIPTOR_REQ_COMPONENT_TYPE_SINT;
@@ -202,6 +202,174 @@ static uint32_t GetLinkingShaders(const VkPipelineLibraryCreateInfoKHR *link_inf
     return result;
 }
 
+static CBDynamicFlags GetGraphicsDynamicState(PIPELINE_STATE &pipe_state) {
+    CBDynamicFlags flags = 0;
+
+    // "Dynamic state values set via pDynamicState must be ignored if the state they correspond to is not otherwise statically set
+    // by one of the state subsets used to create the pipeline."
+    //
+    // we only care here if the pipeline was created with the subset, not linked
+    const bool has_vertex_input_state = pipe_state.OwnsSubState(pipe_state.vertex_input_state);
+    const bool has_pre_raster_state = pipe_state.OwnsSubState(pipe_state.pre_raster_state);
+    const bool has_fragment_shader_state = pipe_state.OwnsSubState(pipe_state.fragment_shader_state);
+    const bool has_fragment_output_state = pipe_state.OwnsSubState(pipe_state.fragment_output_state);
+
+    const auto *dynamic_state_ci = pipe_state.DynamicState();
+    if (dynamic_state_ci) {
+        for (uint32_t i = 0; i < dynamic_state_ci->dynamicStateCount; i++) {
+            const VkDynamicState vk_dynamic_state = dynamic_state_ci->pDynamicStates[i];
+            // Check if should ignore or not before converting and adding
+            switch (vk_dynamic_state) {
+                // VkPipelineVertexInputStateCreateInfo
+                case VK_DYNAMIC_STATE_VERTEX_INPUT_EXT:
+                case VK_DYNAMIC_STATE_VERTEX_INPUT_BINDING_STRIDE:
+                // VkPipelineInputAssemblyStateCreateInfo
+                case VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY:
+                case VK_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE: {
+                    if (has_vertex_input_state) {
+                        flags.set(ConvertToCBDynamicState(vk_dynamic_state));
+                    }
+                    break;
+                }
+
+                // VkPipelineViewportStateCreateInfo
+                case VK_DYNAMIC_STATE_VIEWPORT:
+                case VK_DYNAMIC_STATE_SCISSOR:
+                case VK_DYNAMIC_STATE_VIEWPORT_WITH_COUNT:
+                case VK_DYNAMIC_STATE_SCISSOR_WITH_COUNT:
+                case VK_DYNAMIC_STATE_VIEWPORT_W_SCALING_NV:
+                case VK_DYNAMIC_STATE_VIEWPORT_SHADING_RATE_PALETTE_NV:
+                case VK_DYNAMIC_STATE_SHADING_RATE_IMAGE_ENABLE_NV:
+                case VK_DYNAMIC_STATE_VIEWPORT_COARSE_SAMPLE_ORDER_NV:
+                case VK_DYNAMIC_STATE_VIEWPORT_W_SCALING_ENABLE_NV:
+                case VK_DYNAMIC_STATE_VIEWPORT_SWIZZLE_NV:
+                case VK_DYNAMIC_STATE_DEPTH_CLIP_NEGATIVE_ONE_TO_ONE_EXT:
+                case VK_DYNAMIC_STATE_EXCLUSIVE_SCISSOR_ENABLE_NV:
+                case VK_DYNAMIC_STATE_EXCLUSIVE_SCISSOR_NV:
+                // VkPipelineRasterizationStateCreateInfo
+                case VK_DYNAMIC_STATE_LINE_WIDTH:
+                case VK_DYNAMIC_STATE_DEPTH_BIAS:
+                case VK_DYNAMIC_STATE_CULL_MODE:
+                case VK_DYNAMIC_STATE_FRONT_FACE:
+                case VK_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE:
+                case VK_DYNAMIC_STATE_DEPTH_BIAS_ENABLE:
+                case VK_DYNAMIC_STATE_DEPTH_CLAMP_ENABLE_EXT:
+                case VK_DYNAMIC_STATE_POLYGON_MODE_EXT:
+                case VK_DYNAMIC_STATE_LINE_STIPPLE_EXT:
+                case VK_DYNAMIC_STATE_LINE_RASTERIZATION_MODE_EXT:
+                case VK_DYNAMIC_STATE_LINE_STIPPLE_ENABLE_EXT:
+                case VK_DYNAMIC_STATE_RASTERIZATION_STREAM_EXT:
+                case VK_DYNAMIC_STATE_CONSERVATIVE_RASTERIZATION_MODE_EXT:
+                case VK_DYNAMIC_STATE_EXTRA_PRIMITIVE_OVERESTIMATION_SIZE_EXT:
+                case VK_DYNAMIC_STATE_DEPTH_CLIP_ENABLE_EXT:
+                case VK_DYNAMIC_STATE_PROVOKING_VERTEX_MODE_EXT:
+                // VkPipelineTessellationStateCreateInfo
+                case VK_DYNAMIC_STATE_PATCH_CONTROL_POINTS_EXT:
+                case VK_DYNAMIC_STATE_TESSELLATION_DOMAIN_ORIGIN_EXT:
+                // VkPipelineDiscardRectangleStateCreateInfoEXT
+                case VK_DYNAMIC_STATE_DISCARD_RECTANGLE_EXT:
+                case VK_DYNAMIC_STATE_DISCARD_RECTANGLE_ENABLE_EXT:
+                case VK_DYNAMIC_STATE_DISCARD_RECTANGLE_MODE_EXT: {
+                    if (has_pre_raster_state) {
+                        flags.set(ConvertToCBDynamicState(vk_dynamic_state));
+                    }
+                    break;
+                }
+
+                // VkPipelineFragmentShadingRateStateCreateInfoKHR
+                case VK_DYNAMIC_STATE_FRAGMENT_SHADING_RATE_KHR: {
+                    if (has_pre_raster_state || has_fragment_shader_state) {
+                        flags.set(ConvertToCBDynamicState(vk_dynamic_state));
+                    }
+                    break;
+                }
+
+                // VkPipelineDepthStencilStateCreateInfo
+                case VK_DYNAMIC_STATE_DEPTH_BOUNDS:
+                case VK_DYNAMIC_STATE_DEPTH_BOUNDS_TEST_ENABLE:
+                case VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK:
+                case VK_DYNAMIC_STATE_STENCIL_WRITE_MASK:
+                case VK_DYNAMIC_STATE_STENCIL_REFERENCE:
+                case VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE:
+                case VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE:
+                case VK_DYNAMIC_STATE_DEPTH_COMPARE_OP:
+                case VK_DYNAMIC_STATE_STENCIL_TEST_ENABLE:
+                case VK_DYNAMIC_STATE_STENCIL_OP:
+                // VkPipelineRepresentativeFragmentTestStateCreateInfoNV
+                case VK_DYNAMIC_STATE_REPRESENTATIVE_FRAGMENT_TEST_ENABLE_NV: {
+                    if (has_fragment_shader_state) {
+                        flags.set(ConvertToCBDynamicState(vk_dynamic_state));
+                    }
+                    break;
+                }
+
+                /// VkPipelineColorBlendStateCreateInfo
+                case VK_DYNAMIC_STATE_BLEND_CONSTANTS:
+                case VK_DYNAMIC_STATE_LOGIC_OP_EXT:
+                case VK_DYNAMIC_STATE_LOGIC_OP_ENABLE_EXT:
+                case VK_DYNAMIC_STATE_COLOR_WRITE_ENABLE_EXT:
+                case VK_DYNAMIC_STATE_COLOR_BLEND_ENABLE_EXT:
+                case VK_DYNAMIC_STATE_COLOR_BLEND_EQUATION_EXT:
+                case VK_DYNAMIC_STATE_COLOR_BLEND_ADVANCED_EXT:
+                case VK_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT: {
+                    if (has_fragment_output_state) {
+                        flags.set(ConvertToCBDynamicState(vk_dynamic_state));
+                    }
+                    break;
+                }
+
+                // VkPipelineMultisampleStateCreateInfo
+                case VK_DYNAMIC_STATE_RASTERIZATION_SAMPLES_EXT:
+                case VK_DYNAMIC_STATE_SAMPLE_MASK_EXT:
+                case VK_DYNAMIC_STATE_ALPHA_TO_COVERAGE_ENABLE_EXT:
+                case VK_DYNAMIC_STATE_ALPHA_TO_ONE_ENABLE_EXT:
+                case VK_DYNAMIC_STATE_SAMPLE_LOCATIONS_EXT:
+                case VK_DYNAMIC_STATE_SAMPLE_LOCATIONS_ENABLE_EXT:
+                case VK_DYNAMIC_STATE_COVERAGE_TO_COLOR_ENABLE_NV:
+                case VK_DYNAMIC_STATE_COVERAGE_TO_COLOR_LOCATION_NV:
+                case VK_DYNAMIC_STATE_COVERAGE_MODULATION_MODE_NV:
+                case VK_DYNAMIC_STATE_COVERAGE_MODULATION_TABLE_ENABLE_NV:
+                case VK_DYNAMIC_STATE_COVERAGE_MODULATION_TABLE_NV:
+                case VK_DYNAMIC_STATE_COVERAGE_REDUCTION_MODE_NV: {
+                    if (has_fragment_shader_state || has_fragment_output_state) {
+                        flags.set(ConvertToCBDynamicState(vk_dynamic_state));
+                    }
+                    break;
+                }
+
+                // VkRenderPass and subpass parameter
+                case VK_DYNAMIC_STATE_ATTACHMENT_FEEDBACK_LOOP_ENABLE_EXT: {
+                    if (has_pre_raster_state || has_fragment_shader_state || has_fragment_output_state) {
+                        flags.set(ConvertToCBDynamicState(vk_dynamic_state));
+                    }
+                    break;
+                }
+
+                // not valid and shouldn't see
+                case VK_DYNAMIC_STATE_RAY_TRACING_PIPELINE_STACK_SIZE_KHR:
+                case VK_DYNAMIC_STATE_MAX_ENUM:
+                    assert(false);
+                    break;
+            }
+        }
+    }
+
+    // apply linked library's dynamic state
+    if (!has_vertex_input_state && pipe_state.vertex_input_state) {
+        flags |= pipe_state.vertex_input_state->parent.dynamic_state;
+    }
+    if (!has_pre_raster_state && pipe_state.pre_raster_state) {
+        flags |= pipe_state.pre_raster_state->parent.dynamic_state;
+    }
+    if (!has_fragment_shader_state && pipe_state.fragment_shader_state) {
+        flags |= pipe_state.fragment_shader_state->parent.dynamic_state;
+    }
+    if (!has_fragment_output_state && pipe_state.fragment_output_state) {
+        flags |= pipe_state.fragment_output_state->parent.dynamic_state;
+    }
+    return flags;
+}
+
 static bool UsesPipelineRobustness(const void *pNext, const PIPELINE_STATE &pipe_state) {
     bool result = false;
     const auto robustness_info = LvlFindInChain<VkPipelineRobustnessCreateInfoEXT>(pNext);
@@ -226,6 +394,27 @@ static bool UsesPipelineRobustness(const void *pNext, const PIPELINE_STATE &pipe
         }
     }
     return result;
+}
+
+static bool IgnoreColorAttachments(const ValidationStateTracker *state_data, PIPELINE_STATE &pipe_state) {
+    bool ignore = false;
+    // If the libraries used to create this pipeline are ignoring color attachments, this pipeline should as well
+    if (pipe_state.library_create_info) {
+        for (uint32_t i = 0; i < pipe_state.library_create_info->libraryCount; i++) {
+            const auto lib = state_data->Get<PIPELINE_STATE>(pipe_state.library_create_info->pLibraries[i]);
+            if (lib->ignore_color_attachments) return true;
+        }
+    }
+    // According to the spec, pAttachments is to be ignored if the pipeline is created with
+    // VK_DYNAMIC_STATE_COLOR_BLEND_ENABLE_EXT, VK_DYNAMIC_STATE_COLOR_BLEND_EQUATION_EXT, VK_DYNAMIC_STATE_COLOR_BLEND_ADVANCED_EXT
+    // and VK_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT dynamic states set
+    if (pipe_state.ColorBlendState() && pipe_state.DynamicState()) {
+        ignore = (pipe_state.IsDynamic(VK_DYNAMIC_STATE_COLOR_BLEND_ENABLE_EXT) &&
+                  pipe_state.IsDynamic(VK_DYNAMIC_STATE_COLOR_BLEND_EQUATION_EXT) &&
+                  pipe_state.IsDynamic(VK_DYNAMIC_STATE_COLOR_BLEND_ADVANCED_EXT) &&
+                  pipe_state.IsDynamic(VK_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT));
+    }
+    return ignore;
 }
 
 static bool UsesShaderModuleId(const PIPELINE_STATE &pipe_state) {
@@ -385,23 +574,6 @@ std::shared_ptr<FragmentOutputState> PIPELINE_STATE::CreateFragmentOutputState(
     return {};
 }
 
-template <typename Substate>
-void AppendDynamicStateFromSubstate(const Substate &substate, std::vector<VkDynamicState> &dyn_states,
-                                    VkPipelineDynamicStateCreateFlags &flags) {
-    if (substate) {
-        const auto *dyn_state = substate->parent.DynamicState();
-        if (dyn_state) {
-            flags |= dyn_state->flags;
-            for (uint32_t i = 0; i < dyn_state->dynamicStateCount; ++i) {
-                const auto itr = std::find(dyn_states.cbegin(), dyn_states.cend(), dyn_state->pDynamicStates[i]);
-                if (itr == dyn_states.cend()) {
-                    dyn_states.emplace_back(dyn_state->pDynamicStates[i]);
-                }
-            }
-        }
-    }
-}
-
 std::vector<std::shared_ptr<const PIPELINE_LAYOUT_STATE>> PIPELINE_STATE::PipelineLayoutStateUnion() const {
     std::vector<std::shared_ptr<const PIPELINE_LAYOUT_STATE>> ret;
     ret.reserve(2);
@@ -534,7 +706,7 @@ PIPELINE_STATE::PIPELINE_STATE(const ValidationStateTracker *state_data, const V
                                std::shared_ptr<const PIPELINE_LAYOUT_STATE> &&layout, CreateShaderModuleStates *csm_states)
     : BASE_NODE(static_cast<VkPipeline>(VK_NULL_HANDLE), kVulkanObjectTypePipeline),
       rp_state(rpstate),
-      create_info(pCreateInfo, rpstate),
+      create_info(*pCreateInfo, rpstate, state_data),
       create_index(create_index),
       rendering_create_info(LvlFindInChain<VkPipelineRenderingCreateInfo>(PNext())),
       library_create_info(LvlFindInChain<VkPipelineLibraryCreateInfoKHR>(PNext())),
@@ -554,44 +726,13 @@ PIPELINE_STATE::PIPELINE_STATE(const ValidationStateTracker *state_data, const V
       fragmentShader_writable_output_location_list(GetFSOutputLocations(stage_states)),
       active_slots(GetActiveSlots(stage_states)),
       max_active_slot(GetMaxActiveSlot(active_slots)),
+      dynamic_state(GetGraphicsDynamicState(*this)),
       topology_at_rasterizer(GetTopologyAtRasterizer(*this)),
       descriptor_buffer_mode((create_info.graphics.flags & VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT) != 0),
       uses_pipeline_robustness(UsesPipelineRobustness(PNext(), *this)),
+      ignore_color_attachments(IgnoreColorAttachments(state_data, *this)),
       csm_states(csm_states) {
     if (library_create_info) {
-        // accumulate dynamic state
-        // TODO is this correct?
-        auto *dyn_state_ci = const_cast<safe_VkPipelineDynamicStateCreateInfo *>(create_info.graphics.pDynamicState);
-        std::vector<VkDynamicState> dyn_states;
-        VkPipelineDynamicStateCreateFlags dyn_flags = 0;
-        if (create_info.graphics.pDynamicState) {
-            std::copy(dyn_state_ci->pDynamicStates, dyn_state_ci->pDynamicStates + dyn_state_ci->dynamicStateCount,
-                      std::back_inserter(dyn_states));
-            dyn_flags = dyn_state_ci->flags;
-        }
-        AppendDynamicStateFromSubstate(vertex_input_state, dyn_states, dyn_flags);
-        AppendDynamicStateFromSubstate(pre_raster_state, dyn_states, dyn_flags);
-        AppendDynamicStateFromSubstate(fragment_shader_state, dyn_states, dyn_flags);
-        AppendDynamicStateFromSubstate(fragment_output_state, dyn_states, dyn_flags);
-        if (dyn_states.size() > 0) {
-            // We have dynamic state
-            if (!dyn_state_ci || (dyn_state_ci->dynamicStateCount < dyn_states.size())) {
-                // There is dynamic state defined in libraries that the is not included in this pipeline's create info
-                if (!dyn_state_ci) {
-                    // *All* dynamic state defined is coming from graphics libraries
-                    // NOTE: heap allocation cleaned up in ~safe_VkGraphicsPipelineCreateInfo
-                    dyn_state_ci = new safe_VkPipelineDynamicStateCreateInfo;
-                    const_cast<safe_VkGraphicsPipelineCreateInfo *>(&create_info.graphics)->pDynamicState = dyn_state_ci;
-                }
-                dyn_state_ci->flags = dyn_flags;
-                dyn_state_ci->dynamicStateCount = static_cast<uint32_t>(dyn_states.size());
-                // NOTE: heap allocation cleaned up in ~safe_VkPipelineDynamicStateCreateInfo
-                dyn_state_ci->pDynamicStates = new VkDynamicState[dyn_states.size()];
-                std::copy(&dyn_states.front(), &dyn_states.front() + dyn_states.size(),
-                          const_cast<VkDynamicState *>(dyn_state_ci->pDynamicStates));
-            }
-        }
-
         const auto &exe_layout_state = state_data->Get<PIPELINE_LAYOUT_STATE>(create_info.graphics.layout);
         const auto *exe_layout = exe_layout_state.get();
         const auto *pre_raster_layout =
@@ -631,8 +772,10 @@ PIPELINE_STATE::PIPELINE_STATE(const ValidationStateTracker *state_data, const V
       active_shaders(create_info_shaders),  // compute has no linking shaders
       active_slots(GetActiveSlots(stage_states)),
       max_active_slot(GetMaxActiveSlot(active_slots)),
+      dynamic_state(0),  // compute has no dynamic state
       descriptor_buffer_mode((create_info.compute.flags & VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT) != 0),
       uses_pipeline_robustness(UsesPipelineRobustness(PNext(), *this)),
+      ignore_color_attachments(IgnoreColorAttachments(state_data, *this)),
       csm_states(csm_states),
       merged_graphics_layout(layout) {
     assert(active_shaders == VK_SHADER_STAGE_COMPUTE_BIT);
@@ -654,8 +797,10 @@ PIPELINE_STATE::PIPELINE_STATE(const ValidationStateTracker *state_data, const V
       active_shaders(create_info_shaders),  // RTX has no linking shaders
       active_slots(GetActiveSlots(stage_states)),
       max_active_slot(GetMaxActiveSlot(active_slots)),
+      dynamic_state(0),  // RTX has no dynamic states being validated
       descriptor_buffer_mode((create_info.raytracing.flags & VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT) != 0),
       uses_pipeline_robustness(UsesPipelineRobustness(PNext(), *this)),
+      ignore_color_attachments(IgnoreColorAttachments(state_data, *this)),
       csm_states(csm_states),
       merged_graphics_layout(std::move(layout)) {
     assert(0 == (active_shaders &
@@ -679,8 +824,10 @@ PIPELINE_STATE::PIPELINE_STATE(const ValidationStateTracker *state_data, const V
       active_shaders(create_info_shaders),  // RTX has no linking shaders
       active_slots(GetActiveSlots(stage_states)),
       max_active_slot(GetMaxActiveSlot(active_slots)),
+      dynamic_state(0),  // RTX has no dynamic states being validated
       descriptor_buffer_mode((create_info.graphics.flags & VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT) != 0),
       uses_pipeline_robustness(UsesPipelineRobustness(PNext(), *this)),
+      ignore_color_attachments(IgnoreColorAttachments(state_data, *this)),
       csm_states(csm_states),
       merged_graphics_layout(std::move(layout)) {
     assert(0 == (active_shaders &
@@ -710,4 +857,69 @@ void LAST_BOUND_STATE::Reset() {
     }
     push_descriptor_set.reset();
     per_set.clear();
+}
+
+bool LAST_BOUND_STATE::IsDepthTestEnable() const {
+    return pipeline_state->IsDynamic(VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE) ? cb_state.dynamic_state_value.depth_test_enable
+                                                                         : pipeline_state->DepthStencilState()->depthTestEnable;
+}
+
+bool LAST_BOUND_STATE::IsDepthWriteEnable() const {
+    // "Depth writes are always disabled when depthTestEnable is VK_FALSE"
+    if (!IsDepthTestEnable()) {
+        return false;
+    }
+    return pipeline_state->IsDynamic(VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE) ? cb_state.dynamic_state_value.depth_write_enable
+                                                                          : pipeline_state->DepthStencilState()->depthWriteEnable;
+}
+
+bool LAST_BOUND_STATE::IsStencilTestEnable() const {
+    return pipeline_state->IsDynamic(VK_DYNAMIC_STATE_STENCIL_TEST_ENABLE) ? cb_state.dynamic_state_value.stencil_test_enable
+                                                                           : pipeline_state->DepthStencilState()->stencilTestEnable;
+}
+
+VkStencilOpState LAST_BOUND_STATE::GetStencilOpStateFront() const {
+    VkStencilOpState front = pipeline_state->DepthStencilState()->front;
+    if (pipeline_state->IsDynamic(VK_DYNAMIC_STATE_STENCIL_WRITE_MASK)) {
+        front.writeMask = cb_state.dynamic_state_value.write_mask_front;
+    }
+    if (pipeline_state->IsDynamic(VK_DYNAMIC_STATE_STENCIL_OP)) {
+        front.failOp = cb_state.dynamic_state_value.fail_op_front;
+        front.passOp = cb_state.dynamic_state_value.pass_op_front;
+        front.depthFailOp = cb_state.dynamic_state_value.depth_fail_op_front;
+    }
+    return front;
+}
+
+VkStencilOpState LAST_BOUND_STATE::GetStencilOpStateBack() const {
+    VkStencilOpState back = pipeline_state->DepthStencilState()->back;
+    if (pipeline_state->IsDynamic(VK_DYNAMIC_STATE_STENCIL_WRITE_MASK)) {
+        back.writeMask = cb_state.dynamic_state_value.write_mask_back;
+    }
+    if (pipeline_state->IsDynamic(VK_DYNAMIC_STATE_STENCIL_OP)) {
+        back.failOp = cb_state.dynamic_state_value.fail_op_back;
+        back.passOp = cb_state.dynamic_state_value.pass_op_back;
+        back.depthFailOp = cb_state.dynamic_state_value.depth_fail_op_back;
+    }
+    return back;
+}
+
+VkSampleCountFlagBits LAST_BOUND_STATE::GetRasterizationSamples() const {
+    // For given pipeline, return number of MSAA samples, or one if MSAA disabled
+    VkSampleCountFlagBits rasterization_samples = VK_SAMPLE_COUNT_1_BIT;
+    if (pipeline_state->IsDynamic(VK_DYNAMIC_STATE_RASTERIZATION_SAMPLES_EXT)) {
+        rasterization_samples = cb_state.dynamic_state_value.rasterization_samples;
+    } else {
+        const auto ms_state = pipeline_state->MultisampleState();
+        if (ms_state) {
+            rasterization_samples = ms_state->rasterizationSamples;
+        }
+    }
+    return rasterization_samples;
+}
+
+bool LAST_BOUND_STATE::IsRasterizationDisabled() const {
+    return pipeline_state->IsDynamic(VK_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE_EXT)
+               ? cb_state.dynamic_state_value.rasterizer_discard_enable
+               : pipeline_state->RasterizationDisabled();
 }

@@ -1226,9 +1226,9 @@ const Type* ParserImpl::ConvertType(uint32_t type_id,
     }
     switch (ptr_as) {
         case PtrAs::Ref:
-            return ty_.Reference(ast_elem_ty, ast_address_space);
+            return ty_.Reference(ast_address_space, ast_elem_ty);
         case PtrAs::Ptr:
-            return ty_.Pointer(ast_elem_ty, ast_address_space);
+            return ty_.Pointer(ast_address_space, ast_elem_ty);
     }
     Fail() << "invalid value for ptr_as: " << static_cast<int>(ptr_as);
     return nullptr;
@@ -1610,16 +1610,15 @@ const ast::Var* ParserImpl::MakeVar(uint32_t id,
         return nullptr;
     }
 
+    // Use type inference if there is an initializer.
     auto sym = builder_.Symbols().Register(namer_.Name(id));
-    return builder_.Var(Source{}, sym, storage_type->Build(builder_), address_space, access,
-                        initializer, std::move(attrs.list));
+    return builder_.Var(Source{}, sym, initializer ? ast::Type{} : storage_type->Build(builder_),
+                        address_space, access, initializer, std::move(attrs.list));
 }
 
-const ast::Let* ParserImpl::MakeLet(uint32_t id,
-                                    const Type* type,
-                                    const ast::Expression* initializer) {
+const ast::Let* ParserImpl::MakeLet(uint32_t id, const ast::Expression* initializer) {
     auto sym = builder_.Symbols().Register(namer_.Name(id));
-    return builder_.Let(Source{}, sym, type->Build(builder_), initializer, utils::Empty);
+    return builder_.Let(Source{}, sym, initializer, utils::Empty);
 }
 
 const ast::Override* ParserImpl::MakeOverride(uint32_t id,
@@ -1891,8 +1890,6 @@ TypedExpression ParserImpl::MakeConstantExpression(uint32_t id) {
     }
     auto source = GetSourceForInst(inst);
 
-    // TODO(dneto): Handle spec constants too?
-
     auto* original_ast_type = ConvertType(inst->type_id());
     if (original_ast_type == nullptr) {
         return {};
@@ -1916,7 +1913,23 @@ TypedExpression ParserImpl::MakeConstantExpression(uint32_t id) {
         case spv::Op::OpConstantComposite: {
             // Handle vector, matrix, array, and struct
 
+            auto itr = declared_constant_composites_.find(id);
+            if (itr != declared_constant_composites_.end()) {
+                // We've already declared this constant value as a module-scope const, so just
+                // reference that identifier.
+                return {original_ast_type, builder_.Expr(itr->second)};
+            }
+
+            const auto* spirv_const = constant_mgr_->FindDeclaredConstant(id);
+            if (spirv_const->IsZero()) {
+                // All zeros, so just use a zero value constructor and always inline it.
+                return {original_ast_type,
+                        builder_.Call(source, original_ast_type->Build(builder_))};
+            }
+
             // Generate a composite from explicit components.
+            bool all_same = true;
+            uint32_t first_id = 0u;
             ExpressionList ast_components;
             if (!inst->WhileEachInId([&](const uint32_t* id_ref) -> bool {
                     auto component = MakeConstantExpression(*id_ref);
@@ -1925,13 +1938,47 @@ TypedExpression ParserImpl::MakeConstantExpression(uint32_t id) {
                         return false;
                     }
                     ast_components.Push(component.expr);
+
+                    // Check if this argument is different from the others.
+                    if (first_id != 0u) {
+                        if (*id_ref != first_id) {
+                            all_same = false;
+                        }
+                    } else {
+                        first_id = *id_ref;
+                    }
+
                     return true;
                 })) {
                 // We've already emitted a diagnostic.
                 return {};
             }
-            return {original_ast_type, builder_.Call(source, original_ast_type->Build(builder_),
-                                                     std::move(ast_components))};
+
+            const ast::Expression* expr = nullptr;
+            if (all_same && original_ast_type->Is<Vector>()) {
+                // We're constructing a vector and all the operands were the same, so use a splat.
+                expr = builder_.Call(source, original_ast_type->Build(builder_), ast_components[0]);
+            } else {
+                expr = builder_.Call(source, original_ast_type->Build(builder_),
+                                     std::move(ast_components));
+            }
+
+            if (def_use_mgr_->NumUses(id) == 1) {
+                // The constant is only used once, so just inline its use.
+                return {original_ast_type, expr};
+            }
+
+            // Create a module-scope const declaration for the constant.
+            auto name = namer_.Name(id);
+            auto* decl = builder_.GlobalConst(name, expr);
+            declared_constant_composites_.insert({id, decl->name->symbol});
+            return {original_ast_type, builder_.Expr(name)};
+        }
+        case spv::Op::OpSpecConstantComposite:
+        case spv::Op::OpSpecConstantOp: {
+            // TODO(crbug.com/tint/111): Handle OpSpecConstantOp and OpSpecConstantComposite here.
+            Fail() << "unimplemented: OpSpecConstantOp and OpSpecConstantComposite";
+            return {};
         }
         default:
             break;

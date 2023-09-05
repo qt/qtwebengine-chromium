@@ -21,12 +21,17 @@
 #include "core/fpdfdoc/cpdf_formfield.h"
 #include "core/fpdfdoc/cpdf_interactiveform.h"
 #include "core/fxge/cfx_defaultrenderdevice.h"
+#include "core/fxge/dib/cfx_dibitmap.h"
 #include "fpdfsdk/cpdfsdk_annot.h"
 #include "fpdfsdk/cpdfsdk_formfillenvironment.h"
 #include "fpdfsdk/cpdfsdk_helpers.h"
 #include "fpdfsdk/cpdfsdk_interactiveform.h"
 #include "fpdfsdk/cpdfsdk_pageview.h"
 #include "public/fpdfview.h"
+
+#if defined(_SKIA_SUPPORT_)
+#include "third_party/skia/include/core/SkPictureRecorder.h"  // nogncheck
+#endif  // defined(_SKIA_SUPPORT_)
 
 #ifdef PDF_ENABLE_XFA
 #include "fpdfsdk/fpdfxfa/cpdfxfa_context.h"
@@ -194,8 +199,10 @@ void FFLCommon(FPDF_FORMHANDLE hHandle,
 
   auto pDevice = std::make_unique<CFX_DefaultRenderDevice>();
 #if defined(_SKIA_SUPPORT_)
-  if (CFX_DefaultRenderDevice::SkiaIsDefaultRenderer())
-    pDevice->AttachRecorder(static_cast<SkPictureRecorder*>(recorder));
+  if (CFX_DefaultRenderDevice::SkiaIsDefaultRenderer() && recorder) {
+    pDevice->AttachCanvas(
+        static_cast<SkPictureRecorder*>(recorder)->getRecordingCanvas());
+  }
 #endif
 
   RetainPtr<CFX_DIBitmap> holder(CFXDIBitmapFromFPDFBitmap(bitmap));

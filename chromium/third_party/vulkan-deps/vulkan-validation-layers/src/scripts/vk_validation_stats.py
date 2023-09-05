@@ -3,6 +3,7 @@
 # Copyright (c) 2015-2023 Valve Corporation
 # Copyright (c) 2015-2023 LunarG, Inc.
 # Copyright (c) 2015-2023 Google Inc.
+# Copyright (c) 2023-2023 RasterGrid Kft.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -240,12 +241,10 @@ class ValidationSource:
 
 # Class to parse the validation layer test source and store testnames
 class ValidationTests:
-    def __init__(self, test_file_list, unassigned_vuid_files, test_group_name=['VkLayerTest', 'VkPositiveLayerTest', 'VkBestPracticesLayerTest']):
+    def __init__(self, test_file_list, unassigned_vuid_files):
         self.test_files = test_file_list
         self.unassigned_vuid_files = unassigned_vuid_files
-        self.test_trigger_txt_list = []
-        for tg in test_group_name:
-            self.test_trigger_txt_list.append('TEST_F(%s' % tg)
+        self.test_trigger_txt_list = ['TEST_F(']
         self.explicit_vuids = set()
         self.implicit_vuids = set()
         self.unassigned_vuids = set()
@@ -290,6 +289,8 @@ class ValidationTests:
                         if ('' == testname):
                             grab_next_line = True
                             continue
+                        testgroup = line.split(',')[0][line.index('(') + 1:]
+                        testname = testgroup + '.' + testname
                         #self.test_to_vuids[testname] = []
                     if grab_next_line: # test name on its own line
                         grab_next_line = False
@@ -586,10 +587,11 @@ static const vuid_spec_text_pair vuid_spec_text[] = {
                 def isDefined(feature, edition):
                     def getVersion(f): return int(f.replace('VK_VERSION_1_', '', 1))
                     def isVersion(f): return f.startswith('VK_VERSION_') and feature != 'VK_VERSION_1_0' and getVersion(feature) < 1024
+                    def isScVersion(f): return f.startswith('VKSC_VERSION_')
                     def isExtension(f): return f.startswith('VK_') and not isVersion(f)
                     def isKhr(f): return f.startswith('VK_KHR_')
 
-                    assert isExtension(feature) or isVersion(feature)
+                    assert isExtension(feature) or isVersion(feature) or isScVersion(feature)
 
                     if isVersion(feature) and getVersion(feature) <= edition['version']: return True
                     elif isExtension(feature) and edition['ext']: return True
@@ -692,6 +694,10 @@ def main(argv):
 
     parser = argparse.ArgumentParser()
     parser.add_argument('json_file', help="registry file 'validusage.json'")
+    parser.add_argument('-api',
+                        default='vulkan',
+                        choices=['vulkan'],
+                        help='Specify API name to use')
     parser.add_argument('-c', action='store_true',
                         help='report consistency warnings')
     parser.add_argument('-todo', action='store_true',
@@ -725,60 +731,24 @@ def main(argv):
     import common_codegen
 
     layer_source_files = [common_codegen.repo_relative(path) for path in [
-        'layers/core_checks/cc_android.cpp',
-        'layers/core_checks/cc_buffer.cpp',
+        'layers/error_message/unimplementable_validation.h',
         'layers/state_tracker/cmd_buffer_state.cpp', # some Video VUIDs are in here
-        'layers/core_checks/cc_cmd_buffer_dynamic.cpp',
-        'layers/core_checks/cc_cmd_buffer.cpp',
-        'layers/core_checks/cc_copy_blit_resolve.cpp',
         'layers/state_tracker/descriptor_sets.cpp',
-        'layers/core_checks/cc_descriptor.cpp',
-        'layers/core_checks/cc_device.cpp',
-        'layers/core_checks/cc_device_memory.cpp',
-        'layers/core_checks/cc_drawdispatch.cpp',
-        'layers/core_checks/cc_external_object.cpp',
-        'layers/gpu_validation/gpu_vuids.h',
-        'layers/stateless/sl_buffer.cpp',
-        'layers/stateless/sl_cmd_buffer_dynamic.cpp',
-        'layers/stateless/sl_cmd_buffer.cpp',
-        'layers/stateless/sl_descriptor.cpp',
-        'layers/stateless/sl_device_memory.cpp',
-        'layers/stateless/sl_external_object.cpp',
-        'layers/stateless/sl_framebuffer.cpp',
-        'layers/stateless/sl_image.cpp',
-        'layers/stateless/sl_instance_device.cpp',
-        'layers/stateless/sl_pipeline.cpp',
-        'layers/stateless/sl_ray_tracing.cpp',
-        'layers/stateless/sl_render_pass.cpp',
-        'layers/stateless/sl_synchronization.cpp',
-        'layers/stateless/sl_wsi.cpp',
-        'layers/core_checks/cc_image.cpp',
-        'layers/core_checks/cc_image_layout.cpp',
-        'layers/core_checks/cc_pipeline_compute.cpp',
-        'layers/core_checks/cc_pipeline_graphics.cpp',
-        'layers/core_checks/cc_pipeline_ray_tracing.cpp',
-        'layers/core_checks/cc_pipeline.cpp',
-        'layers/object_tracker/object_tracker_utils.cpp',
-        'layers/core_checks/cc_query.cpp',
-        'layers/core_checks/cc_queue.cpp',
-        'layers/core_checks/cc_ray_tracing.cpp',
-        'layers/core_checks/cc_render_pass.cpp',
         'layers/state_tracker/shader_module.cpp',
-        'layers/core_checks/cc_shader.cpp',
-        'layers/core_checks/cc_synchronization.cpp',
+        'layers/gpu_validation/gpu_vuids.h',
         'layers/stateless/stateless_validation.h',
-        'layers/sync/sync_validation.cpp',
-        'layers/sync/sync_vuid_maps.cpp',
-        'layers/core_checks/cc_video.cpp',
-        'layers/core_checks/cc_wsi.cpp',
-        'layers/core_checks/cc_ycbcr.cpp',
-        'layers/generated/parameter_validation.cpp',
-        'layers/generated/object_tracker.cpp',
-        'layers/generated/spirv_validation_helper.cpp',
-        'layers/generated/command_validation.cpp',
+        f'layers/{args.api}/generated/parameter_validation.cpp',
+        f'layers/{args.api}/generated/object_tracker.cpp',
+        f'layers/{args.api}/generated/spirv_validation_helper.cpp',
+        f'layers/{args.api}/generated/command_validation.cpp',
     ]]
+    # Be careful not to add vk_validation_error_messages.h or it will show 100% test coverage
+    layer_source_files.extend(glob.glob(os.path.join(common_codegen.repo_relative('layers/core_checks/'), '*.cpp')))
+    layer_source_files.extend(glob.glob(os.path.join(common_codegen.repo_relative('layers/stateless/'), '*.cpp')))
+    layer_source_files.extend(glob.glob(os.path.join(common_codegen.repo_relative('layers/sync/'), '*.cpp')))
+    layer_source_files.extend(glob.glob(os.path.join(common_codegen.repo_relative('layers/object_tracker/'), '*.cpp')))
 
-    test_source_files = glob.glob(os.path.join(common_codegen.repo_relative('tests'), '*.cpp'))
+    test_source_files = glob.glob(os.path.join(common_codegen.repo_relative('tests/negative'), '*.cpp'))
 
     unassigned_vuid_files = [common_codegen.repo_relative(path) for path in [
         'layers/best_practices/best_practices_error_enums.h',

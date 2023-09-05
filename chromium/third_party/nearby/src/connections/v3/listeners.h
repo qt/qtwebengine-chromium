@@ -15,10 +15,12 @@
 #ifndef THIRD_PARTY_NEARBY_CONNECTIONS_V3_LISTENERS_H_
 #define THIRD_PARTY_NEARBY_CONNECTIONS_V3_LISTENERS_H_
 
+#include <functional>
+
 #include "absl/functional/any_invocable.h"
 #include "connections/listeners.h"
 #include "connections/v3/bandwidth_info.h"
-#include "connections/v3/connection_resolution.h"
+#include "connections/v3/connection_result.h"
 #include "internal/interop/device.h"
 
 namespace nearby {
@@ -44,19 +46,22 @@ struct ConnectionListener {
   // remote_device - The identifier for the remote endpoint.
   // info -  Other relevant information about the connection.
   absl::AnyInvocable<void(const NearbyDevice& remote_device,
-                          const ConnectionResponseInfo& info)>
-      initiated_cb = [](const NearbyDevice&, const ConnectionResponseInfo&) {};
+                          const v3::InitialConnectionInfo& info)>
+      initiated_cb =
+          [](const NearbyDevice&, const v3::InitialConnectionInfo&) {};
 
   // Called when both sides have accepted or either side has rejected the
   // connection. If the {@link ConnectionResolution}'s status is {@link
   // ConnectionsStatusCodes#SUCCESS}, both sides have accepted the
   // connection and may now send {@link Payload}s to each other.
   // Otherwise, the connection was rejected.
+  // We use std::function here as both rejection and acceptance callbacks call
+  // this function now.
 
   // remote_device - The identifier for the remote endpoint.
   // resolution    - The resolution of the connection (accepted or rejected).
-  absl::AnyInvocable<void(const NearbyDevice& remote_device,
-                          ConnectionResult resolution)>
+  std::function<void(const NearbyDevice& remote_device,
+                     ConnectionResult resolution)>
       result_cb = [](const NearbyDevice&, ConnectionResult) {};
 
   // Called when a remote endpoint is disconnected or has become unreachable.
@@ -110,7 +115,8 @@ struct PayloadListener {
   // remote_device - The identifier for the remote endpoint that sent the
   //               payload.
   // payload     - The Payload object received.
-  absl::AnyInvocable<void(const NearbyDevice& remote_device, Payload payload)>
+  absl::AnyInvocable<void(const NearbyDevice& remote_device, Payload payload)
+                         const>
       payload_received_cb = [](const NearbyDevice&, Payload) {};
 
   // Called with progress information about an active Payload transfer, either

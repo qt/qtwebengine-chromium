@@ -14,6 +14,7 @@
 
 #include "internal/platform/implementation/g3/ble_v2.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <iostream>
 #include <memory>
@@ -26,7 +27,9 @@
 #include "absl/strings/escaping.h"
 #include "absl/synchronization/mutex.h"
 #include "internal/platform/cancellation_flag_listener.h"
+#include "internal/platform/count_down_latch.h"
 #include "internal/platform/implementation/ble_v2.h"
+#include "internal/platform/implementation/g3/bluetooth_adapter.h"
 #include "internal/platform/logging.h"
 #include "internal/platform/medium_environment.h"
 
@@ -54,6 +57,17 @@ std::string TxPowerLevelToName(TxPowerLevel power_mode) {
 }
 
 }  // namespace
+
+BleV2Peripheral::BleV2Peripheral(BluetoothAdapter* adapter)
+    : adapter_(*adapter) {}
+
+std::string BleV2Peripheral::GetAddress() const {
+  return adapter_.GetMacAddress();
+}
+
+api::ble_v2::BlePeripheral::UniqueId BleV2Peripheral::GetUniqueId() const {
+  return adapter_.GetUniqueId();
+}
 
 BleV2Socket::~BleV2Socket() {
   absl::MutexLock lock(&mutex_);
@@ -104,7 +118,10 @@ BleV2Peripheral* BleV2Socket::GetRemotePeripheral() {
     }
     remote_adapter = remote_socket_->adapter_;
   }
-  return remote_adapter ? &remote_adapter->GetPeripheralV2() : nullptr;
+  if (remote_adapter == nullptr || remote_adapter->GetBleV2Medium() == nullptr)
+    return nullptr;
+  return &(static_cast<BleV2Medium*>(remote_adapter->GetBleV2Medium())
+               ->GetPeripheral());
 }
 
 void BleV2Socket::DoClose() {
@@ -201,7 +218,8 @@ Exception BleV2ServerSocket::DoClose() {
 BleV2Medium::BleV2Medium(api::BluetoothAdapter& adapter)
     : adapter_(static_cast<BluetoothAdapter*>(&adapter)) {
   adapter_->SetBleV2Medium(this);
-  MediumEnvironment::Instance().RegisterBleV2Medium(*this);
+
+  MediumEnvironment::Instance().RegisterBleV2Medium(*this, &peripheral_);
 }
 
 BleV2Medium::~BleV2Medium() {
@@ -228,7 +246,7 @@ bool BleV2Medium::StartAdvertising(
 
   absl::MutexLock lock(&mutex_);
   MediumEnvironment::Instance().UpdateBleV2MediumForAdvertising(
-      /*enabled=*/true, *this, adapter_->GetPeripheralV2(), advertising_data);
+      /*enabled=*/true, *this, GetPeripheral(), advertising_data);
   return true;
 }
 
@@ -238,7 +256,7 @@ bool BleV2Medium::StopAdvertising() {
 
   BleAdvertisementData empty_advertisement_data = {};
   MediumEnvironment::Instance().UpdateBleV2MediumForAdvertising(
-      /*enabled=*/false, *this, /*mutable=*/adapter_->GetPeripheralV2(),
+      /*enabled=*/false, *this, /*mutable=*/GetPeripheral(),
       empty_advertisement_data);
   return true;
 }
@@ -266,7 +284,7 @@ std::unique_ptr<BleV2Medium::AdvertisingSession> BleV2Medium::StartAdvertising(
   }
   absl::MutexLock lock(&mutex_);
   MediumEnvironment::Instance().UpdateBleV2MediumForAdvertising(
-      /*enabled=*/true, *this, adapter_->GetPeripheralV2(), advertising_data);
+      /*enabled=*/true, *this, GetPeripheral(), advertising_data);
   return std::make_unique<AdvertisingSession>(
       AdvertisingSession{.stop_advertising = [this] {
         return StopAdvertising()
@@ -295,7 +313,8 @@ bool BleV2Medium::StopScanning() {
   for (auto element : scanning_internal_session_ids_) {
     MediumEnvironment::Instance().UpdateBleV2MediumForScanning(
         /*enabled=*/false,
-        /*service_uuid=*/element.first, /*internal_session_id*/ element.second,
+        /*service_uuid=*/element.first,
+        /*internal_session_id*/ element.second,
         /*callback=*/{}, *this);
   }
   return true;
@@ -339,19 +358,93 @@ std::unique_ptr<BleV2Medium::ScanningSession> BleV2Medium::StartScanning(
 
 std::unique_ptr<api::ble_v2::GattServer> BleV2Medium::StartGattServer(
     api::ble_v2::ServerGattConnectionCallback callback) {
-  return std::make_unique<GattServer>();
+  return std::make_unique<GattServer>(*this, std::move(callback));
+}
+
+bool BleV2Medium::IsStopped(Borrowable<api::ble_v2::GattServer*>* server) {
+  auto borrowed = server->Borrow();
+  if (!borrowed) {
+    return true;
+  }
+  BleV2Medium::GattServer* gatt_server = static_cast<GattServer*>(*borrowed);
+  return gatt_server->IsStopped();
 }
 
 std::unique_ptr<api::ble_v2::GattClient> BleV2Medium::ConnectToGattServer(
     api::ble_v2::BlePeripheral& peripheral, TxPowerLevel tx_power_level,
     api::ble_v2::ClientGattConnectionCallback callback) {
-  return std::make_unique<GattClient>();
+  Borrowable<api::ble_v2::GattServer*>* server =
+      MediumEnvironment::Instance().GetGattServer(peripheral);
+  if (server == nullptr || IsStopped(server)) {
+    NEARBY_LOGS(WARNING) << "No GATT server found for "
+                         << peripheral.GetAddress();
+    return nullptr;
+  }
+  return std::make_unique<GattClient>(peripheral, *server, std::move(callback));
 }
 
 bool BleV2Medium::IsExtendedAdvertisementsAvailable() {
   return is_support_extended_advertisement_;
 }
 
+bool BleV2Medium::GetRemotePeripheral(const std::string& mac_address,
+                                      GetRemotePeripheralCallback callback) {
+  NEARBY_LOGS(INFO) << "GetRemotePeripheral, address= " << mac_address;
+  absl::MutexLock lock(&mutex_);
+  for (auto& item : remote_peripherals_) {
+    auto* peripheral = item.second.get();
+    if (peripheral->GetAddress() == mac_address) {
+      callback(*peripheral);
+      return true;
+    }
+  }
+  BleV2Medium* remote_medium = static_cast<BleV2Medium*>(
+      MediumEnvironment::Instance().FindBleV2Medium(mac_address));
+  if (remote_medium == nullptr) {
+    return false;
+  }
+  auto id = remote_medium->GetPeripheral().GetUniqueId();
+  remote_peripherals_[id] =
+      std::make_unique<BleV2Peripheral>(&remote_medium->GetAdapter());
+  callback(*remote_peripherals_[id]);
+  return true;
+}
+
+bool BleV2Medium::GetRemotePeripheral(api::ble_v2::BlePeripheral::UniqueId id,
+                                      GetRemotePeripheralCallback callback) {
+  absl::MutexLock lock(&mutex_);
+  auto it = remote_peripherals_.find(id);
+  if (it != remote_peripherals_.end()) {
+    callback(*it->second);
+    return true;
+  }
+
+  BleV2Medium* remote_medium = static_cast<BleV2Medium*>(
+      MediumEnvironment::Instance().FindBleV2Medium(id));
+  if (remote_medium == nullptr) {
+    NEARBY_LOGS(INFO) << "Peripheral not found, id= " << id;
+    return false;
+  }
+  remote_peripherals_[id] =
+      std::make_unique<BleV2Peripheral>(&remote_medium->GetAdapter());
+  callback(*remote_peripherals_[id]);
+  return true;
+}
+
+BleV2Medium::GattServer::GattServer(
+    BleV2Medium& medium, api::ble_v2::ServerGattConnectionCallback callback)
+    : medium_(medium),
+      callback_(std::move(callback)),
+      ble_peripheral_(&medium.GetAdapter()) {
+  MediumEnvironment::Instance().RegisterGattServer(medium_, &ble_peripheral_,
+                                                   lender_.GetBorrowable());
+}
+
+BleV2Medium::GattServer::~GattServer() {
+  Stop();
+  lender_.Release();
+  MediumEnvironment::Instance().UnregisterGattServer(medium_);
+}
 std::optional<api::ble_v2::GattCharacteristic>
 BleV2Medium::GattServer::CreateCharacteristic(
     const Uuid& service_uuid, const Uuid& characteristic_uuid,
@@ -359,7 +452,24 @@ BleV2Medium::GattServer::CreateCharacteristic(
     api::ble_v2::GattCharacteristic::Property property) {
   api::ble_v2::GattCharacteristic characteristic = {
       .uuid = characteristic_uuid, .service_uuid = service_uuid};
+  characteristics_[characteristic] = absl::NotFoundError("value not set");
   return characteristic;
+}
+
+bool BleV2Medium::GattServer::DiscoverBleV2MediumGattCharacteristics(
+    const Uuid& service_uuid, const std::vector<Uuid>& characteristic_uuids) {
+  auto contains = [&](const Uuid& characteristic_uuid) {
+    return std::find(characteristic_uuids.begin(), characteristic_uuids.end(),
+                     characteristic_uuid) != characteristic_uuids.end();
+  };
+  for (const auto& it : characteristics_) {
+    const api::ble_v2::GattCharacteristic& characteristic = it.first;
+    if (characteristic.service_uuid == service_uuid &&
+        contains(characteristic.uuid)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 bool BleV2Medium::GattServer::UpdateCharacteristic(
@@ -370,42 +480,156 @@ bool BleV2Medium::GattServer::UpdateCharacteristic(
       << characteristic.service_uuid.Get16BitAsString() << ","
       << std::string(characteristic.uuid)
       << "), value = " << absl::BytesToHexString(value.data());
-  MediumEnvironment::Instance().InsertBleV2MediumGattCharacteristics(
-      characteristic, value);
+  characteristics_[characteristic] = value;
   return true;
 }
 
 absl::Status BleV2Medium::GattServer::NotifyCharacteristicChanged(
     const api::ble_v2::GattCharacteristic& characteristic, bool confirm,
     const ByteArray& new_value) {
-  // check if client has requested notifications.
-  // no-op for now because client cannot request notifications.
   NEARBY_LOGS(INFO)
       << "G3 Ble GattServer NotifyCharacteristicChanged, characteristic=("
       << characteristic.service_uuid.Get16BitAsString() << ","
       << std::string(characteristic.uuid)
       << "), new_value = " << absl::BytesToHexString(new_value.data());
-  return MediumEnvironment::Instance()
-      .NotifyBleV2MediumGattCharacteristicChanged(characteristic, confirm,
-                                                  new_value);
+  absl::Status status = absl::NotFoundError(
+      "Characteristic not subscribed to receive notification.");
+  for (auto& it : subscribers_) {
+    const SubscriberKey& key = it.first;
+    if (key.second == characteristic) {
+      it.second(new_value.AsStringView());
+      status = absl::OkStatus();
+    }
+  }
+  return status;
+}
+
+absl::StatusOr<ByteArray> BleV2Medium::GattServer::ReadCharacteristic(
+    const BleV2Peripheral& remote_device,
+    const api::ble_v2::GattCharacteristic& characteristic, int offset) {
+  const auto it = characteristics_.find(characteristic);
+  if (it != characteristics_.end()) {
+    if (it->second.ok()) {
+      return it->second;
+    }
+    absl::StatusOr<ByteArray> result;
+    CountDownLatch latch(1);
+    callback_.on_characteristic_read_cb(
+        remote_device, characteristic, offset,
+        [&](absl::StatusOr<absl::string_view> data) {
+          if (data.ok()) {
+            result = ByteArray(std::string(*data));
+          } else {
+            result = data.status();
+          }
+          latch.CountDown();
+        });
+    latch.Await();
+    return result;
+  }
+  return absl::FailedPreconditionError(
+      absl::StrCat(characteristic, " not found"));
+}
+
+absl::Status BleV2Medium::GattServer::WriteCharacteristic(
+    const BleV2Peripheral& remote_device,
+    const api::ble_v2::GattCharacteristic& characteristic, int offset,
+    absl::string_view data) {
+  const auto it = characteristics_.find(characteristic);
+  if (it != characteristics_.end()) {
+    absl::Status result;
+    CountDownLatch latch(1);
+    callback_.on_characteristic_write_cb(remote_device, characteristic, offset,
+                                         data, [&](absl::Status status) {
+                                           result = status;
+                                           latch.CountDown();
+                                         });
+    latch.Await();
+    return result;
+  }
+  return absl::FailedPreconditionError(
+      absl::StrCat(characteristic, " not found"));
+}
+
+bool BleV2Medium::GattServer::AddCharacteristicSubscription(
+    const BleV2Peripheral& remote_device,
+    const api::ble_v2::GattCharacteristic& characteristic,
+    absl::AnyInvocable<void(absl::string_view value)> callback) {
+  const auto it = characteristics_.find(characteristic);
+  if (it != characteristics_.end()) {
+    subscribers_[SubscriberKey(&remote_device, characteristic)] =
+        std::move(callback);
+    return true;
+  }
+  return false;
+}
+
+bool BleV2Medium::GattServer::RemoveCharacteristicSubscription(
+    const BleV2Peripheral& remote_device,
+    const api::ble_v2::GattCharacteristic& characteristic) {
+  const auto it = characteristics_.find(characteristic);
+  if (it != characteristics_.end()) {
+    subscribers_.erase(SubscriberKey(&remote_device, characteristic));
+    return true;
+  }
+  return false;
+}
+
+bool BleV2Medium::GattServer::HasCharacteristic(
+    const api::ble_v2::GattCharacteristic& characteristic) {
+  return characteristics_.find(characteristic) != characteristics_.end();
 }
 
 void BleV2Medium::GattServer::Stop() {
+  if (stopped_) return;
   NEARBY_LOGS(INFO) << "G3 Ble GattServer Stop";
-  MediumEnvironment::Instance().ClearBleV2MediumGattCharacteristics();
+  stopped_ = true;
+  characteristics_.clear();
+  for (auto& client : connected_clients_) {
+    client->OnServerDisconnected();
+  }
+}
+
+BleV2Medium::GattClient::GattClient(
+    api::ble_v2::BlePeripheral& peripheral,
+    Borrowable<api::ble_v2::GattServer*> gatt_server,
+    api::ble_v2::ClientGattConnectionCallback callback)
+    : peripheral_(static_cast<BleV2Peripheral&>(peripheral)),
+      gatt_server_(gatt_server),
+      callback_(std::move(callback)) {
+  Borrowed<api::ble_v2::GattServer*> borrowed = gatt_server_.Borrow();
+  if (borrowed) {
+    BleV2Medium::GattServer* gatt_server =
+        static_cast<BleV2Medium::GattServer*>(*borrowed);
+    gatt_server->Connect(this);
+  }
+}
+
+BleV2Medium::GattClient::~GattClient() {
+  Borrowed<api::ble_v2::GattServer*> borrowed = gatt_server_.Borrow();
+  if (borrowed) {
+    BleV2Medium::GattServer* gatt_server =
+        static_cast<BleV2Medium::GattServer*>(*borrowed);
+    gatt_server->Disconnect(this);
+  }
 }
 
 bool BleV2Medium::GattClient::DiscoverServiceAndCharacteristics(
     const Uuid& service_uuid, const std::vector<Uuid>& characteristic_uuids) {
-  absl::MutexLock lock(&mutex_);
   NEARBY_LOGS(INFO)
       << "G3 Ble GattClient DiscoverServiceAndCharacteristics, service_uuid="
       << service_uuid.Get16BitAsString();
+  absl::MutexLock lock(&mutex_);
   if (!is_connection_alive_) {
     return false;
   }
-
-  return MediumEnvironment::Instance().DiscoverBleV2MediumGattCharacteristics(
+  Borrowed<api::ble_v2::GattServer*> borrowed = gatt_server_.Borrow();
+  if (!borrowed) {
+    return false;
+  }
+  BleV2Medium::GattServer* gatt_server =
+      static_cast<BleV2Medium::GattServer*>(*borrowed);
+  return gatt_server->DiscoverBleV2MediumGattCharacteristics(
       service_uuid, characteristic_uuids);
 }
 
@@ -420,20 +644,23 @@ BleV2Medium::GattClient::GetCharacteristic(const Uuid& service_uuid,
   if (!is_connection_alive_) {
     return std::nullopt;
   }
-
   // clang-format off
   api::ble_v2::GattCharacteristic characteristic = {
       .uuid = characteristic_uuid,
       .service_uuid = service_uuid};
   // clang-format on
-  ByteArray value =
-      MediumEnvironment::Instance().ReadBleV2MediumGattCharacteristics(
-          characteristic);
-  if (value.Empty()) {
+  Borrowed<api::ble_v2::GattServer*> borrowed = gatt_server_.Borrow();
+  if (!borrowed) {
+    return std::nullopt;
+  }
+  BleV2Medium::GattServer* gatt_server =
+      static_cast<BleV2Medium::GattServer*>(*borrowed);
+  if (!gatt_server->HasCharacteristic(characteristic)) {
     NEARBY_LOGS(WARNING)
-        << "G3 Ble GattClient GetCharacteristic, can't find characteristic=("
+        << "G3 Ble GattClient GetCharacteristic, characteristic=("
         << characteristic.service_uuid.Get16BitAsString() << ","
-        << std::string(characteristic.uuid) << ")";
+        << std::string(characteristic.uuid)
+        << ") not registered on GATT server";
     return std::nullopt;
   }
   NEARBY_LOGS(INFO)
@@ -450,15 +677,27 @@ std::optional<std::string> BleV2Medium::GattClient::ReadCharacteristic(
   if (!is_connection_alive_) {
     return std::nullopt;
   }
-
-  ByteArray value =
-      MediumEnvironment::Instance().ReadBleV2MediumGattCharacteristics(
-          characteristic);
+  Borrowed<api::ble_v2::GattServer*> borrowed = gatt_server_.Borrow();
+  if (!borrowed) {
+    return std::nullopt;
+  }
+  BleV2Medium::GattServer* gatt_server =
+      static_cast<BleV2Medium::GattServer*>(*borrowed);
+  absl::StatusOr<ByteArray> value =
+      gatt_server->ReadCharacteristic(peripheral_, characteristic,
+                                      /*offset=*/0);
+  if (!value.ok()) {
+    NEARBY_LOGS(INFO) << "G3 Ble ReadCharacteristic failed, characteristic=("
+                      << characteristic.service_uuid.Get16BitAsString() << ","
+                      << std::string(characteristic.uuid) << "), "
+                      << value.status();
+    return std::nullopt;
+  }
   NEARBY_LOGS(INFO) << "G3 Ble ReadCharacteristic, characteristic=("
                     << characteristic.service_uuid.Get16BitAsString() << ","
                     << std::string(characteristic.uuid)
-                    << "), value = " << absl::BytesToHexString(value.data());
-  return value.string_data();
+                    << "), value = " << absl::BytesToHexString(value->data());
+  return value->string_data();
 }
 
 bool BleV2Medium::GattClient::WriteCharacteristic(
@@ -468,12 +707,23 @@ bool BleV2Medium::GattClient::WriteCharacteristic(
   if (!is_connection_alive_) {
     return false;
   }
+  Borrowed<api::ble_v2::GattServer*> borrowed = gatt_server_.Borrow();
+  if (!borrowed) {
+    return false;
+  }
+  BleV2Medium::GattServer* gatt_server =
+      static_cast<BleV2Medium::GattServer*>(*borrowed);
   NEARBY_LOGS(INFO) << "G3 Ble WriteCharacteristic, characteristic=("
                     << characteristic.service_uuid.Get16BitAsString() << ","
                     << std::string(characteristic.uuid)
                     << "), value = " << absl::BytesToHexString(value);
-  return MediumEnvironment::Instance().WriteBleV2MediumGattCharacteristic(
-      characteristic, value);
+  absl::Status status =
+      gatt_server->WriteCharacteristic(peripheral_, characteristic,
+                                       /*offset=*/0, value);
+  if (!status.ok()) {
+    NEARBY_LOGS(WARNING) << "WriteCharacteristic failed with " << status;
+  }
+  return status.ok();
 }
 
 bool BleV2Medium::GattClient::SetCharacteristicSubscription(
@@ -484,21 +734,46 @@ bool BleV2Medium::GattClient::SetCharacteristicSubscription(
   if (!is_connection_alive_) {
     return false;
   }
+  Borrowed<api::ble_v2::GattServer*> borrowed = gatt_server_.Borrow();
+  if (!borrowed) {
+    return false;
+  }
+  BleV2Medium::GattServer* gatt_server =
+      static_cast<BleV2Medium::GattServer*>(*borrowed);
   NEARBY_LOGS(INFO) << "G3 Ble SetCharacteristicSubscription, characteristic=("
                     << characteristic.service_uuid.Get16BitAsString() << ","
                     << std::string(characteristic.uuid)
                     << "), enable = " << enable;
-  return MediumEnvironment::Instance()
-      .SetBleV2MediumGattCharacteristicSubscription(
-          characteristic, enable, std::move(on_characteristic_changed_cb));
+  if (enable) {
+    return gatt_server->AddCharacteristicSubscription(
+        peripheral_, characteristic, std::move(on_characteristic_changed_cb));
+  } else {
+    return gatt_server->RemoveCharacteristicSubscription(peripheral_,
+                                                         characteristic);
+  }
 }
 
 void BleV2Medium::GattClient::Disconnect() {
   absl::MutexLock lock(&mutex_);
   NEARBY_LOGS(INFO) << "G3 Ble GattClient Disconnect";
   is_connection_alive_ = false;
-  MediumEnvironment::Instance()
-      .ClearBleV2MediumGattCharacteristicsForDiscovery();
+  Borrowed<api::ble_v2::GattServer*> borrowed = gatt_server_.Borrow();
+  if (borrowed) {
+    BleV2Medium::GattServer* gatt_server =
+        static_cast<BleV2Medium::GattServer*>(*borrowed);
+    gatt_server->Disconnect(this);
+  }
+}
+
+void BleV2Medium::GattClient::OnServerDisconnected() {
+  {
+    absl::MutexLock lock(&mutex_);
+    NEARBY_LOGS(INFO) << "G3 Ble GattServer disconnected";
+    is_connection_alive_ = false;
+  }
+  if (callback_.disconnected_cb != nullptr) {
+    callback_.disconnected_cb();
+  }
 }
 
 std::unique_ptr<api::ble_v2::BleServerSocket> BleV2Medium::OpenServerSocket(
@@ -521,7 +796,7 @@ std::unique_ptr<api::ble_v2::BleSocket> BleV2Medium::Connect(
     CancellationFlag* cancellation_flag) {
   NEARBY_LOGS(INFO) << "G3 Ble Connect [self]: medium=" << this
                     << ", adapter=" << &GetAdapter()
-                    << ", peripheral=" << &GetAdapter().GetPeripheralV2()
+                    << ", peripheral=" << &GetPeripheral()
                     << ", service_id=" << service_id;
   // First, find an instance of remote medium, that exposed this peripheral.
   auto& remote_adapter =

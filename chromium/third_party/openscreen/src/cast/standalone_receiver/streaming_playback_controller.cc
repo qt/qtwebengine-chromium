@@ -23,16 +23,15 @@ StreamingPlaybackController::Client::~Client() = default;
 
 #if defined(CAST_STANDALONE_RECEIVER_HAVE_EXTERNAL_LIBS)
 StreamingPlaybackController::StreamingPlaybackController(
-    TaskRunner* task_runner,
+    TaskRunner& task_runner,
     StreamingPlaybackController::Client* client)
-    : task_runner_(task_runner),
-      client_(client),
+    : client_(client),
+      task_runner_(task_runner),
       sdl_event_loop_(task_runner_, [this] {
         client_->OnPlaybackError(this,
                                  Error{Error::Code::kOperationCancelled,
                                        std::string("SDL event loop closed.")});
       }) {
-  OSP_DCHECK(task_runner_ != nullptr);
   OSP_DCHECK(client_ != nullptr);
   constexpr int kDefaultWindowWidth = 1280;
   constexpr int kDefaultWindowHeight = 720;
@@ -52,10 +51,8 @@ StreamingPlaybackController::StreamingPlaybackController(
 }
 #else
 StreamingPlaybackController::StreamingPlaybackController(
-    TaskRunner* task_runner,
     StreamingPlaybackController::Client* client)
-    : task_runner_(task_runner), client_(client) {
-  OSP_DCHECK(task_runner_ != nullptr);
+    : client_(client) {
   OSP_DCHECK(client_ != nullptr);
 }
 #endif  // defined(CAST_STANDALONE_RECEIVER_HAVE_EXTERNAL_LIBS)

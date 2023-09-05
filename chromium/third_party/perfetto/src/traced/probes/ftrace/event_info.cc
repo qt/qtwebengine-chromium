@@ -19,6 +19,7 @@
 // Do not edit.
 
 #include "src/traced/probes/ftrace/event_info.h"
+
 #include "perfetto/protozero/proto_utils.h"
 
 namespace perfetto {
@@ -4266,9 +4267,6 @@ std::vector<Event> GetStaticEventInfo() {
             "ino", 2, ProtoSchemaType::kUint64,
             TranslationStrategy::kInvalidTranslationStrategy},
            {kUnsetOffset, kUnsetSize, FtraceFieldType::kInvalidFtraceFieldType,
-            "nid", 3, ProtoSchemaType::kUint32,
-            TranslationStrategy::kInvalidTranslationStrategy},
-           {kUnsetOffset, kUnsetSize, FtraceFieldType::kInvalidFtraceFieldType,
             "depth", 4, ProtoSchemaType::kInt32,
             TranslationStrategy::kInvalidTranslationStrategy},
            {kUnsetOffset, kUnsetSize, FtraceFieldType::kInvalidFtraceFieldType,
@@ -6652,6 +6650,38 @@ std::vector<Event> GetStaticEventInfo() {
        },
        kUnsetFtraceId,
        475,
+       kUnsetSize},
+      {"mali_CSF_INTERRUPT_START",
+       "mali",
+       {
+           {kUnsetOffset, kUnsetSize, FtraceFieldType::kInvalidFtraceFieldType,
+            "kctx_tgid", 1, ProtoSchemaType::kInt32,
+            TranslationStrategy::kInvalidTranslationStrategy},
+           {kUnsetOffset, kUnsetSize, FtraceFieldType::kInvalidFtraceFieldType,
+            "kctx_id", 2, ProtoSchemaType::kUint32,
+            TranslationStrategy::kInvalidTranslationStrategy},
+           {kUnsetOffset, kUnsetSize, FtraceFieldType::kInvalidFtraceFieldType,
+            "info_val", 3, ProtoSchemaType::kUint64,
+            TranslationStrategy::kInvalidTranslationStrategy},
+       },
+       kUnsetFtraceId,
+       482,
+       kUnsetSize},
+      {"mali_CSF_INTERRUPT_END",
+       "mali",
+       {
+           {kUnsetOffset, kUnsetSize, FtraceFieldType::kInvalidFtraceFieldType,
+            "kctx_tgid", 1, ProtoSchemaType::kInt32,
+            TranslationStrategy::kInvalidTranslationStrategy},
+           {kUnsetOffset, kUnsetSize, FtraceFieldType::kInvalidFtraceFieldType,
+            "kctx_id", 2, ProtoSchemaType::kUint32,
+            TranslationStrategy::kInvalidTranslationStrategy},
+           {kUnsetOffset, kUnsetSize, FtraceFieldType::kInvalidFtraceFieldType,
+            "info_val", 3, ProtoSchemaType::kUint64,
+            TranslationStrategy::kInvalidTranslationStrategy},
+       },
+       kUnsetFtraceId,
+       483,
        kUnsetSize},
       {"mdp_cmd_kickoff",
        "mdss",

@@ -15,6 +15,7 @@ interface LottieComponentParams {
   assetUrl: string;
   autoplay: boolean;
   loop: boolean;
+  dynamic: boolean;
 }
 
 const ASSET_URL = '/assets/oobe_pin.json';
@@ -30,6 +31,10 @@ export function createLottieRenderer(
   renderer.assetUrl = ASSET_URL;
   renderer.autoplay = params.autoplay || false;
   renderer.loop = params.loop || false;
+
+  // The component itself defaults to the GM2 palette, but for tests we can set
+  // this to true.
+  renderer.dynamic = params.dynamic || true;
   return renderer;
 }
 

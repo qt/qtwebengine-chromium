@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
-load("//third_party/bazel_skylib/lib:selects.bzl", "selects")
+load("@bazel_skylib//lib:selects.bzl", "selects")
 
 licenses(["notice"])
 
@@ -36,8 +36,8 @@ selects.config_setting_group(
     name = "norust_or_windows_or_android",
     match_any = [
         ":no_link_with_rust",
-        "//tools/cc_target_os:windows",
-        "//tools/cc_target_os:android",
+        "@platforms//os:windows",
+        "@platforms//os:android",
     ],
 )
 
@@ -55,6 +55,7 @@ cc_library(
         "advertisement_factory.cc",
         "base_broadcast_request.cc",
         "broadcast_manager.cc",
+        "connection_authenticator.cc",
         "credential_manager_impl.cc",
         "ldt.cc",
         "scan_manager.cc",
@@ -66,6 +67,7 @@ cc_library(
         "advertisement_factory.h",
         "base_broadcast_request.h",
         "broadcast_manager.h",
+        "connection_authenticator.h",
         "credential_manager.h",
         "credential_manager_impl.h",
         "ldt.h",
@@ -74,7 +76,7 @@ cc_library(
         "service_controller_impl.h",
     ],
     defines = select({
-        ":norust_or_windows_or_android": ["USE_RUST_LDT=0"],
+        ":norust_or_windows_or_android": [],
         "//conditions:default": ["USE_RUST_LDT=1"],
     }),
     visibility = [
@@ -94,6 +96,7 @@ cc_library(
         "//internal/proto:metadata_cc_proto",
         "//presence:types",
         "//presence/implementation/mediums",
+        "//presence/proto:presence_frame_cc_proto",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
@@ -111,7 +114,7 @@ cc_library(
         "@com_google_absl//absl/types:variant",
     ] + select({
         ":norust_or_windows_or_android": [":ldt_stub"],
-        "//conditions:default": ["//third_party/nearby_rust/presence/ldt_np_adv_ffi"],
+        "//conditions:default": ["//third_party/beto_core/nearby/presence/ldt_np_adv_ffi"],
     }),
 )
 
@@ -159,7 +162,7 @@ cc_test(
         "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
     ] + select({
-        "//tools/cc_target_os:windows": [
+        "@platforms//os:windows": [
             "//internal/platform/implementation/windows",
         ],
         "//conditions:default": [
@@ -183,7 +186,7 @@ cc_test(
         "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
     ] + select({
-        "//tools/cc_target_os:windows": [
+        "@platforms//os:windows": [
             "//internal/platform/implementation/windows",
         ],
         "//conditions:default": [
@@ -206,7 +209,7 @@ cc_test(
         "@com_github_protobuf_matchers//protobuf-matchers",
         "@com_google_googletest//:gtest_main",
     ] + select({
-        "//tools/cc_target_os:windows": [
+        "@platforms//os:windows": [
             "//internal/platform/implementation/windows",
         ],
         "//conditions:default": [
@@ -227,7 +230,7 @@ cc_test(
         "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
     ] + select({
-        "//tools/cc_target_os:windows": [
+        "@platforms//os:windows": [
             "//internal/platform/implementation/windows",
         ],
         "//conditions:default": [
@@ -247,7 +250,7 @@ cc_test(
         "@com_google_absl//absl/types:variant",
         "@com_google_googletest//:gtest_main",
     ] + select({
-        "//tools/cc_target_os:windows": [
+        "@platforms//os:windows": [
             "//internal/platform/implementation/windows",
         ],
         "//conditions:default": [
@@ -267,7 +270,29 @@ cc_test(
         "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
     ] + select({
-        "//tools/cc_target_os:windows": [
+        "@platforms//os:windows": [
+            "//internal/platform/implementation/windows",
+        ],
+        "//conditions:default": [
+            "//internal/platform/implementation/g3",
+        ],
+    }),
+)
+
+cc_test(
+    name = "connection_authenticator_test",
+    size = "small",
+    srcs = ["connection_authenticator_test.cc"],
+    deps = [
+        ":internal",
+        "//internal/crypto",
+        "//internal/proto:credential_cc_proto",
+        "//internal/proto:local_credential_cc_proto",
+        "//presence/proto:presence_frame_cc_proto",
+        "@com_github_protobuf_matchers//protobuf-matchers",
+        "@com_google_googletest//:gtest_main",
+    ] + select({
+        "@platforms//os:windows": [
             "//internal/platform/implementation/windows",
         ],
         "//conditions:default": [
@@ -294,7 +319,7 @@ cc_test(
         "@com_google_absl//absl/time",
         "@com_google_googletest//:gtest_main",
     ] + select({
-        "//tools/cc_target_os:windows": [
+        "@platforms//os:windows": [
             "//internal/platform/implementation/windows",
         ],
         "//conditions:default": [
@@ -317,7 +342,7 @@ cc_test(
         "@com_google_absl//absl/time",
         "@com_google_googletest//:gtest_main",
     ] + select({
-        "//tools/cc_target_os:windows": [
+        "@platforms//os:windows": [
             "//internal/platform/implementation/windows",
         ],
         "//conditions:default": [

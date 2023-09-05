@@ -8,13 +8,17 @@
 #ifndef SkAAClip_DEFINED
 #define SkAAClip_DEFINED
 
-#include "include/core/SkClipOp.h"
+#include "include/core/SkColor.h"
 #include "include/core/SkRect.h"
+#include "include/private/base/SkAssert.h"
 #include "src/base/SkAutoMalloc.h"
 #include "src/core/SkBlitter.h"
+#include <cstdint>
 
 class SkPath;
 class SkRegion;
+enum class SkClipOp;
+struct SkMask;
 
 class SkAAClip {
 public:
@@ -100,7 +104,6 @@ public:
     void blitV(int x, int y, int height, SkAlpha alpha) override;
     void blitRect(int x, int y, int width, int height) override;
     void blitMask(const SkMask&, const SkIRect& clip) override;
-    const SkPixmap* justAnOpaqueColor(uint32_t* value) override;
 
 private:
     SkBlitter*      fBlitter;

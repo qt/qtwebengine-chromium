@@ -11,7 +11,6 @@
 #include "src/base/SkStringView.h"
 #include "src/core/SkCpu.h"
 #include "src/core/SkOpts.h"
-#include "src/opts/SkChecksum_opts.h"
 #include "src/opts/SkVM_opts.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLFileOutputStream.h"
@@ -45,7 +44,6 @@ void SkDebugf(const char format[], ...) {
 }
 
 namespace SkOpts {
-    decltype(hash_fn) hash_fn = SK_OPTS_NS::hash_fn;
     size_t raster_pipeline_highp_stride = 1;
 #if defined(SK_ENABLE_SKVM)
     decltype(interpret_skvm) interpret_skvm = SK_OPTS_NS::interpret_skvm;
@@ -586,6 +584,7 @@ static ResultCode process_command(SkSpan<std::string> args) {
         return ResultCode::kSuccess;
     };
 
+#if defined(SK_ENABLE_SKVM) || defined(SK_ENABLE_SKSL_IN_RASTER_PIPELINE)
     auto compileProgramAsRuntimeShader = [&](const auto& writeFn) -> ResultCode {
         if (kind == SkSL::ProgramKind::kVertex) {
             emitCompileError("Runtime shaders do not support vertex programs\n");
@@ -597,6 +596,7 @@ static ResultCode process_command(SkSpan<std::string> args) {
         }
         return compileProgram(writeFn);
     };
+#endif
 
     if (skstd::ends_with(outputPath, ".spirv")) {
         return compileProgram(
@@ -644,24 +644,7 @@ static ResultCode process_command(SkSpan<std::string> args) {
                 [](SkSL::Compiler& compiler, SkSL::Program& program, SkSL::OutputStream& out) {
                     return compiler.toWGSL(program, out);
                 });
-#if defined(SK_ENABLE_SKVM)
-    } else if (skstd::ends_with(outputPath, ".skvm")) {
-        return compileProgramAsRuntimeShader(
-                [&](SkSL::Compiler& compiler, SkSL::Program& program, SkSL::OutputStream& out) {
-                    skvm::Builder builder{skvm::Features{}};
-                    if (!SkSL::testingOnly_ProgramToSkVMShader(program, &builder,
-                                                               debugTrace.get())) {
-                        return false;
-                    }
-
-                    std::unique_ptr<SkWStream> redirect = as_SkWStream(out);
-                    if (debugTrace) {
-                        debugTrace->dump(redirect.get());
-                    }
-                    builder.done().dump(redirect.get());
-                    return true;
-                });
-#endif
+#if defined(SK_ENABLE_SKSL_IN_RASTER_PIPELINE)
     } else if (skstd::ends_with(outputPath, ".skrp")) {
         settings.fMaxVersionAllowed = SkSL::Version::k300;
         return compileProgramAsRuntimeShader(
@@ -682,6 +665,7 @@ static ResultCode process_command(SkSpan<std::string> args) {
                     rasterProg->dump(as_SkWStream(out).get());
                     return true;
                 });
+#endif
     } else if (skstd::ends_with(outputPath, ".stage")) {
         return compileProgram(
                 [](SkSL::Compiler&, SkSL::Program& program, SkSL::OutputStream& out) {
@@ -757,7 +741,7 @@ static ResultCode process_command(SkSpan<std::string> args) {
                 });
     } else {
         printf("expected output path to end with one of: .glsl, .html, .metal, .hlsl, .wgsl, "
-               ".spirv, .asm.vert, .asm.frag, .skrp, .skvm, .stage (got '%s')\n",
+               ".spirv, .asm.vert, .asm.frag, .skrp, .stage (got '%s')\n",
                outputPath.c_str());
         return ResultCode::kConfigurationError;
     }

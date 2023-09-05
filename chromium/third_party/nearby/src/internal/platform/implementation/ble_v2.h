@@ -27,12 +27,13 @@
 #include "absl/container/flat_hash_map.h"
 #include "absl/functional/any_invocable.h"
 #include "absl/status/status.h"
+#include "absl/status/statusor.h"
+#include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
 #include "internal/platform/byte_array.h"
 #include "internal/platform/cancellation_flag.h"
 #include "internal/platform/exception.h"
 #include "internal/platform/input_stream.h"
-#include "internal/platform/listeners.h"
 #include "internal/platform/output_stream.h"
 #include "internal/platform/uuid.h"
 
@@ -85,13 +86,17 @@ struct BleAdvertisementData {
 // peripheral so that we can connect to its GATT server.
 class BlePeripheral {
  public:
+  using UniqueId = std::uint64_t;
   virtual ~BlePeripheral() = default;
 
   // https://developer.android.com/reference/android/bluetooth/BluetoothDevice#getAddress()
   //
-  // This should be the MAC address when possible. If the implementation is
-  // unable to retrieve that, any unique identifier should suffice.
+  // Returns the current address.
   virtual std::string GetAddress() const = 0;
+
+  // Returns an immutable unique identifier. The identifier must not change when
+  // the BLE address is rotated.
+  virtual UniqueId GetUniqueId() const = 0;
 };
 
 // https://developer.android.com/reference/android/bluetooth/BluetoothGattCharacteristic
@@ -159,6 +164,12 @@ struct GattCharacteristic {
   bool operator==(const GattCharacteristic& rhs) const {
     return this->uuid == rhs.uuid && this->service_uuid == rhs.service_uuid &&
            this->permission == rhs.permission && this->property == rhs.property;
+  }
+  template <typename Sink>
+  friend void AbslStringify(Sink& sink, const GattCharacteristic& c) {
+    absl::Format(&sink, "(service:%s, uuid:%s, permission:%v, property%v)",
+                 std::string(c.service_uuid), std::string(c.uuid), c.permission,
+                 c.property);
   }
 };
 
@@ -233,6 +244,9 @@ class GattServer {
  public:
   virtual ~GattServer() = default;
 
+  // Returns the local BlePeripheral.
+  virtual BlePeripheral& GetBlePeripheral() = 0;
+
   // Creates a characteristic and adds it to the GATT server under the given
   // characteristic and service UUIDs. Returns no value upon error.
   //
@@ -284,6 +298,9 @@ struct ClientGattConnectionCallback {
 
 // Callback for asynchronous events on the server side of a GATT connection.
 struct ServerGattConnectionCallback {
+  using ReadValueCallback =
+      absl::AnyInvocable<void(absl::StatusOr<absl::string_view> data)>;
+  using WriteValueCallback = absl::AnyInvocable<void(absl::Status result)>;
   // Called when a remote peripheral connected to us and subscribed to one of
   // our characteristics.
   absl::AnyInvocable<void(const GattCharacteristic& characteristic)>
@@ -293,6 +310,24 @@ struct ServerGattConnectionCallback {
   // characteristics.
   absl::AnyInvocable<void(const GattCharacteristic& characteristic)>
       characteristic_unsubscription_cb;
+
+  // Called when a gatt client is reading from the characteristic.
+  // Must call `callback` with the read result.
+  // When a characteristic has a static value set with
+  // `GattServer::UpdateCharacteristic()`, then reading from the characteristic
+  // yields that static value. The read callback is not called.
+  // Otherwise, the gatt server calls the read callback to get the value.
+  absl::AnyInvocable<void(const BlePeripheral& remote_device,
+                          const GattCharacteristic& characteristic, int offset,
+                          ReadValueCallback callback)>
+      on_characteristic_read_cb;
+
+  // Called when a gatt client is writing to the characteristic.
+  // Must call `callback` with the write result.
+  absl::AnyInvocable<void(const BlePeripheral& remote_device,
+                          const GattCharacteristic& characteristic, int offset,
+                          absl::string_view data, WriteValueCallback callback)>
+      on_characteristic_write_cb;
 };
 
 // A BLE GATT client socket for requesting GATT socket.
@@ -343,6 +378,7 @@ class BleServerSocket {
 // for all BLE and GATT related operations.
 class BleMedium {
  public:
+  using GetRemotePeripheralCallback = absl::AnyInvocable<void(BlePeripheral&)>;
   virtual ~BleMedium() = default;
 
   // https://developer.android.com/reference/android/bluetooth/le/BluetoothLeAdvertiser.html#startAdvertising(android.bluetooth.le.AdvertiseSettings,%20android.bluetooth.le.AdvertiseData,%20android.bluetooth.le.AdvertiseData,%20android.bluetooth.le.AdvertiseCallback)
@@ -471,6 +507,16 @@ class BleMedium {
 
   // Requests if support extended advertisement.
   virtual bool IsExtendedAdvertisementsAvailable() = 0;
+
+  // Calls `callback` and returns true if `mac_address` is a valid BLE address.
+  // Otherwise, does not call the callback and returns false.
+  virtual bool GetRemotePeripheral(const std::string& mac_address,
+                                   GetRemotePeripheralCallback callback) = 0;
+
+  // Calls `callback` and returns true if `id` refers to a known BLE peripheral.
+  // Otherwise, does not call the callback and returns false.
+  virtual bool GetRemotePeripheral(BlePeripheral::UniqueId id,
+                                   GetRemotePeripheralCallback callback) = 0;
 };
 
 }  // namespace ble_v2

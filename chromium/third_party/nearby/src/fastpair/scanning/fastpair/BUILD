@@ -33,9 +33,10 @@ cc_library(
     deps = [
         "//fastpair/common",
         "//fastpair/dataparser",
-        "//fastpair/internal/ble",
+        "//fastpair/internal/mediums",
         "//fastpair/proto:fastpair_cc_proto",
         "//fastpair/repository",
+        "//fastpair/repository:device_repository",
         "//fastpair/server_access",
         "//internal/base",
         "//internal/platform:base",
@@ -45,7 +46,7 @@ cc_library(
         "@com_google_absl//absl/functional:any_invocable",
         "@com_google_absl//absl/functional:bind_front",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/synchronization",
+        "@com_google_absl//absl/time",
     ],
 )
 
@@ -79,6 +80,7 @@ cc_test(
     deps = [
         ":scanning",
         "//fastpair/common",
+        "//fastpair/internal/mediums",
         "//internal/platform:base",
         "//internal/platform:comm",
         "//internal/platform:test_util",
@@ -101,11 +103,10 @@ cc_test(
     deps = [
         ":scanning",
         ":test_support",
-        "//fastpair/dataparser",
+        "//fastpair/repository:device_repository",
         "//fastpair/server_access:test_support",
         "//fastpair/testing",
         "//internal/platform:comm",
-        "//internal/platform:test_util",
         "//internal/platform/implementation/g3",  # build_cleaner: keep
         "@com_github_protobuf_matchers//protobuf-matchers",
         "@com_google_absl//absl/synchronization",

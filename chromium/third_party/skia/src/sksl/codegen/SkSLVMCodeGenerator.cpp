@@ -5,14 +5,16 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkTypes.h"
 #include "src/sksl/codegen/SkSLVMCodeGenerator.h"
+
+#if defined(SK_ENABLE_SKVM)
 
 #include "include/core/SkBlendMode.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkColorType.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkSpan.h"
-#include "include/core/SkTypes.h"
 #include "include/private/SkSLDefines.h"
 #include "include/private/base/SkFloatingPoint.h"
 #include "include/private/base/SkTArray.h"
@@ -71,8 +73,6 @@
 #include <string_view>
 #include <utility>
 #include <vector>
-
-#if defined(SK_ENABLE_SKVM)
 
 using namespace skia_private;
 
@@ -619,7 +619,7 @@ void SkVMGenerator::addDebugSlotInfoForGroup(const std::string& varName, const T
             break;
         }
         case Type::TypeKind::kStruct: {
-            for (const Type::Field& field : type.fields()) {
+            for (const Field& field : type.fields()) {
                 this->addDebugSlotInfoForGroup(varName + "." + std::string(field.fName),
                                                *field.fType, line, groupIndex, fnReturnValue);
             }
@@ -741,8 +741,8 @@ void SkVMGenerator::recursiveBinaryCompare(
             SkASSERT(rType.typeKind() == Type::TypeKind::kStruct);
             // Go through all the fields
             for (size_t f = 0; f < lType.fields().size(); ++f) {
-                const Type::Field& lField = lType.fields()[f];
-                const Type::Field& rField = rType.fields()[f];
+                const Field& lField = lType.fields()[f];
+                const Field& rField = rType.fields()[f];
                 this->recursiveBinaryCompare(lVal,
                                              *lField.fType,
                                              rVal,

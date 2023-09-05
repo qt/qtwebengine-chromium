@@ -87,16 +87,7 @@ cc_defaults {
         },
 
         arm64: {
-            srcs: [
-                $arm64_srcs
-            ],
-        },
-
-        riscv64: {
-            // TODO(b/254713216): Re-enable thinlto for targets failing the build
-            lto: {
-                thin: false,
-            },
+            srcs: [],
         },
 
         x86: {
@@ -790,9 +781,7 @@ with open('Android.bp', 'w') as Android_bp:
     'cflags':          bpfmt(8, cflags, False),
     'cflags_cc':       bpfmt(8, cflags_cc),
 
-    'arm64_srcs':    bpfmt(16, strip_headers(defs['crc32'])),
     'x86_srcs':      bpfmt(16, strip_headers(defs['ssse3'] +
-                                             defs['sse42'] +
                                              defs['avx'  ] +
                                              defs['hsw'  ] +
                                              defs['skx'  ])),

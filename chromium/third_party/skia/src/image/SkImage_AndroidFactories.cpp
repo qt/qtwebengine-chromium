@@ -68,6 +68,8 @@
 #include <cstddef>
 #include <utility>
 
+#include <android/hardware_buffer.h>
+
 namespace SkImages {
 
 sk_sp<SkImage> DeferredFromAHardwareBuffer(AHardwareBuffer* graphicBuffer, SkAlphaType at) {
@@ -161,35 +163,11 @@ sk_sp<SkImage> TextureFromAHardwareBufferWithData(GrDirectContext* dContext,
     surfaceContext.writePixels(dContext, pixmap, {0, 0});
 
     GrSurfaceProxy* p[1] = {surfaceContext.asSurfaceProxy()};
-    drawingManager->flush(p, SkSurface::BackendSurfaceAccess::kNoAccess, {}, nullptr);
+    drawingManager->flush(p, SkSurfaces::BackendSurfaceAccess::kNoAccess, {}, nullptr);
 
     return image;
 }
 
 }  // namespace SkImages
-
-#if !defined(SK_DISABLE_LEGACY_IMAGE_FACTORIES)
-
-sk_sp<SkImage> MakeFromAHardwareBuffer(AHardwareBuffer* hardwareBuffer, SkAlphaType alphaType) {
-    return SkImages::DeferredFromAHardwareBuffer(hardwareBuffer, alphaType);
-}
-
-sk_sp<SkImage> MakeFromAHardwareBuffer(AHardwareBuffer* hardwareBuffer,
-                                       SkAlphaType alphaType,
-                                       sk_sp<SkColorSpace> colorSpace,
-                                       GrSurfaceOrigin surfaceOrigin) {
-    return SkImages::DeferredFromAHardwareBuffer(
-            hardwareBuffer, alphaType, colorSpace, surfaceOrigin);
-}
-
-sk_sp<SkImage> MakeFromAHardwareBufferWithData(GrDirectContext* context,
-                                               const SkPixmap& pixmap,
-                                               AHardwareBuffer* hardwareBuffer,
-                                               GrSurfaceOrigin surfaceOrigin) {
-    return SkImages::TextureFromAHardwareBufferWithData(
-            context, pixmap, hardwareBuffer, surfaceOrigin);
-}
-
-#endif // SK_DISABLE_LEGACY_IMAGE_FACTORIES
 
 #endif // defined(SK_BUILD_FOR_ANDROID) && __ANDROID_API__ >= 26

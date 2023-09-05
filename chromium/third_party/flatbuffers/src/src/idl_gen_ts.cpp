@@ -255,7 +255,6 @@ class TsGenerator : public BaseGenerator {
 
     for (const auto &it : ns_defs_) {
       code = "// " + std::string(FlatBuffersGeneratedWarning()) + "\n\n";
-
       // export all definitions in ns entry point module
       int export_counter = 0;
       for (const auto &def : it.second.definitions) {
@@ -281,7 +280,14 @@ class TsGenerator : public BaseGenerator {
         base_name_rel += base_file_name;
         auto ts_file_path_rel = base_name_rel + ".ts";
         auto type_name = def.first;
-        code += "export { " + type_name + " } from '";
+        auto fully_qualified_type_name =
+            it.second.ns->GetFullyQualifiedName(type_name);
+        auto is_struct = parser_.structs_.Lookup(fully_qualified_type_name);
+        code += "export { " + type_name;
+        if (parser_.opts.generate_object_based_api && is_struct) {
+          code += ", " + type_name + parser_.opts.object_suffix;
+        }
+        code += " } from '";
         std::string import_extension =
             parser_.opts.ts_no_import_ext ? "" : ".js";
         code += base_name_rel + import_extension + "';\n";
@@ -468,14 +474,13 @@ class TsGenerator : public BaseGenerator {
           return "BigInt('" + value.constant + "')";
         }
         default: {
-          if (auto val = value.type.enum_def->FindByValue(value.constant)) {
-            return AddImport(imports, *value.type.enum_def,
-                             *value.type.enum_def)
-                       .name +
-                   "." + namer_.Variant(*val);
-          } else {
-            return value.constant;
-          }
+          EnumVal *val = value.type.enum_def->FindByValue(value.constant);
+          if (val == nullptr)
+            val = const_cast<EnumVal *>(value.type.enum_def->MinValue());
+          return AddImport(imports, *value.type.enum_def,
+                            *value.type.enum_def)
+                      .name +
+                  "." + namer_.Variant(*val);
         }
       }
     }

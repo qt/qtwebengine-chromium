@@ -23,6 +23,8 @@
 #include "bench/SkSLBench.h"
 #include "include/codec/SkAndroidCodec.h"
 #include "include/codec/SkCodec.h"
+#include "include/codec/SkJpegDecoder.h"
+#include "include/codec/SkPngDecoder.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkData.h"
 #include "include/core/SkGraphics.h"
@@ -67,6 +69,7 @@
 #include "include/gpu/graphite/Context.h"
 #include "include/gpu/graphite/Recorder.h"
 #include "include/gpu/graphite/Recording.h"
+#include "include/gpu/graphite/Surface.h"
 #include "tools/graphite/ContextFactory.h"
 #include "tools/graphite/GraphiteTestContext.h"
 #endif
@@ -86,6 +89,7 @@ extern bool gForceHighPrecisionRasterPipeline;
 #endif
 
 #include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/SkGr.h"
@@ -212,7 +216,7 @@ static SkString humanize(double ms) {
 
 bool Target::init(SkImageInfo info, Benchmark* bench) {
     if (Benchmark::kRaster_Backend == config.backend) {
-        this->surface = SkSurface::MakeRaster(info);
+        this->surface = SkSurfaces::Raster(info);
         if (!this->surface) {
             return false;
         }
@@ -268,7 +272,7 @@ struct GPUTarget : public Target {
         bench->modifyGrContextOptions(&options);
         this->factory = std::make_unique<GrContextFactory>(options);
         SkSurfaceProps props(this->config.surfaceFlags, kRGB_H_SkPixelGeometry);
-        this->surface = SkSurface::MakeRenderTarget(
+        this->surface = SkSurfaces::RenderTarget(
                 this->factory->get(this->config.ctxType, this->config.ctxOverrides),
                 skgpu::Budgeted::kNo,
                 info,
@@ -357,7 +361,7 @@ struct GraphiteTarget : public Target {
             return false;
         }
 
-        this->surface = SkSurface::MakeGraphite(this->recorder.get(), info);
+        this->surface = SkSurfaces::RenderTarget(this->recorder.get(), info);
         if (!this->surface) {
             return false;
         }
@@ -700,8 +704,8 @@ static Target* is_enabled(Benchmark* bench, const Config& config) {
         return nullptr;
     }
 
-    SkImageInfo info = SkImageInfo::Make(bench->getSize().fX, bench->getSize().fY,
-                                         config.color, config.alpha, config.colorSpace);
+    SkImageInfo info =
+            SkImageInfo::Make(bench->getSize(), config.color, config.alpha, config.colorSpace);
 
     Target* target = nullptr;
 
@@ -1330,6 +1334,11 @@ int main(int argc, char** argv) {
 #endif
     SetupCrashHandler();
     SkAutoGraphics ag;
+
+    // Our benchmarks only currently decode .png or .jpg files
+    SkCodecs::Register(SkPngDecoder::Decoder());
+    SkCodecs::Register(SkJpegDecoder::Decoder());
+
     SkTaskGroup::Enabler enabled(FLAGS_threads);
 
     CommonFlags::SetCtxOptions(&grContextOpts);
@@ -1434,7 +1443,8 @@ int main(int argc, char** argv) {
         }
 
         if (!configs.empty()) {
-            log.beginBench(bench->getUniqueName(), bench->getSize().fX, bench->getSize().fY);
+            log.beginBench(
+                    bench->getUniqueName(), bench->getSize().width(), bench->getSize().height());
             bench->delayedSetup();
         }
         for (int i = 0; i < configs.size(); ++i) {

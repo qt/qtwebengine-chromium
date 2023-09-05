@@ -14,6 +14,7 @@
 #include "discovery/mdns/testing/mdns_test_util.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "util/span_util.h"
 #include "util/std_util.h"
 
 namespace openscreen {
@@ -40,14 +41,9 @@ TEST(DnsSdConversionLayerTest, TestCreateTxtValidKeyValue) {
   ASSERT_TRUE(record.is_value());
   ASSERT_TRUE(record.value().GetValue("name").is_value());
 
-  // EXPECT_STREQ is causing memory leaks
-  std::string expected = "value";
   ASSERT_TRUE(record.value().GetValue("name").is_value());
-  const std::vector<uint8_t>& value = record.value().GetValue("name").value();
-  ASSERT_EQ(value.size(), expected.size());
-  for (size_t i = 0; i < expected.size(); i++) {
-    EXPECT_EQ(expected[i], value[i]);
-  }
+  ByteView value = record.value().GetValue("name").value();
+  EXPECT_EQ(ByteViewToString(value), "value");
 }
 
 TEST(DnsSdConversionLayerTest, TestCreateTxtInvalidKeyValue) {
@@ -282,8 +278,11 @@ TEST(DnsSdConversionLayerTest, GetDnsRecordsTxt) {
 
   const auto& rdata = absl::get<TxtRecordRdata>(it->rdata());
   EXPECT_EQ(rdata.texts().size(), size_t{2});
-  EXPECT_TRUE(Contains(rdata.texts(), "name=value"));
-  EXPECT_TRUE(Contains(rdata.texts(), "boolean"));
+  EXPECT_TRUE(Contains(
+      rdata.texts(),
+      std::vector<uint8_t>{'n', 'a', 'm', 'e', '=', 'v', 'a', 'l', 'u', 'e'}));
+  EXPECT_TRUE(Contains(
+      rdata.texts(), std::vector<uint8_t>{'b', 'o', 'o', 'l', 'e', 'a', 'n'}));
 }
 
 }  // namespace discovery

@@ -21,14 +21,14 @@ namespace internal {
 
 TQ_OBJECT_CONSTRUCTORS_IMPL(BytecodeArray)
 
-byte BytecodeArray::get(int index) const {
+uint8_t BytecodeArray::get(int index) const {
   DCHECK(index >= 0 && index < this->length());
-  return ReadField<byte>(kHeaderSize + index * kCharSize);
+  return ReadField<uint8_t>(kHeaderSize + index * kCharSize);
 }
 
-void BytecodeArray::set(int index, byte value) {
+void BytecodeArray::set(int index, uint8_t value) {
   DCHECK(index >= 0 && index < this->length());
-  WriteField<byte>(kHeaderSize + index * kCharSize, value);
+  WriteField<uint8_t>(kHeaderSize + index * kCharSize, value);
 }
 
 void BytecodeArray::set_frame_size(int32_t frame_size) {
@@ -75,16 +75,6 @@ void BytecodeArray::set_incoming_new_target_or_generator_register(
     WriteField<int32_t>(kIncomingNewTargetOrGeneratorRegisterOffset,
                         incoming_new_target_or_generator_register.ToOperand());
   }
-}
-
-uint16_t BytecodeArray::bytecode_age() const {
-  // Bytecode is aged by the concurrent marker.
-  return RELAXED_READ_UINT16_FIELD(*this, kBytecodeAgeOffset);
-}
-
-void BytecodeArray::set_bytecode_age(uint16_t age) {
-  // Bytecode is aged by the concurrent marker.
-  RELAXED_WRITE_UINT16_FIELD(*this, kBytecodeAgeOffset, age);
 }
 
 int32_t BytecodeArray::parameter_count() const {

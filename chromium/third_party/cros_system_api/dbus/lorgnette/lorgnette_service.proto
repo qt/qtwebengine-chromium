@@ -259,3 +259,101 @@ message ScanStatusChangedSignal {
   // The failure mode of the scan job.
   ScanFailureMode scan_failure_mode = 7;
 }
+
+message SetDebugConfigRequest {
+  // True if debugging should be enabled, or false if it should be disabled.
+  bool enabled = 1;
+}
+
+message SetDebugConfigResponse {
+  // True if changing the debug setup succeeded.
+  bool success = 1;
+
+  // The previous value of debugging.
+  bool old_enabled = 2;
+}
+
+// Policy for downloading additional backends with DLC.
+enum BackendDownloadPolicy {
+  // Download DLC if a scanner that needs additional backends is detected.
+  DOWNLOAD_IF_NEEDED = 0;
+
+  // Never download DLC even if a scanner that needs it is detected.
+  DOWNLOAD_NEVER = 1;
+
+  // Always download backends DLC even if no detected scanner needs it.
+  DOWNLOAD_ALWAYS = 2;
+}
+
+// Input parameter for the StartScannerDiscovery d-bus method.
+message StartScannerDiscoveryRequest {
+  // Identifier of this client.  If a new discovery session is requested for the
+  // same client, existing open handles will be invalidated.
+  string client_id = 1;
+
+  // Policy for downloading DLC containing additional backends.
+  BackendDownloadPolicy download_policy = 2;
+
+  // If true, only check for directly-connected scanners.  Note that signals
+  // may still be sent for network scanners if other discovery sessions are
+  // active.
+  bool local_only = 3;
+}
+
+// Response from the StartScannerDiscovery d-bus method.
+message StartScannerDiscoveryResponse {
+  // True if the session was successfully started.
+  bool started = 1;
+
+  // If started is true, an identifier for this session.  It will be included in
+  // signals and can be passed to StopScannerDiscovery.
+  string session_id = 2;
+}
+
+// Info sent with the ScannerListChanged signal when a discovery session
+// is active.
+message ScannerListChangedSignal {
+  enum ScannerListEvent {
+    // Placeholder for proto.  Should never be sent in normal operation.
+    UNKNOWN_EVENT = 0;
+
+    // A new scanner was added to the list.
+    SCANNER_ADDED = 1;
+
+    // Local enumeration is complete.  Additional events could still come later
+    // if devices are plugged or unplugged.
+    ENUM_COMPLETE = 2;
+
+    // A scanner was removed from the list.
+    SCANNER_REMOVED = 3;
+
+    // The discovery session is ending due to a timeout, a StopScannerDiscovery
+    // call, or a lorgnette restart.  No further signals should be expected for
+    // this session.  If a client wants to continue receiving device updates,
+    // it must start a new discovery session.
+    SESSION_ENDING = 4;
+  }
+
+  // The session this event belongs to.
+  string session_id = 1;
+
+  // What type of event this signal is reporting.
+  ScannerListEvent event_type = 2;
+
+  // For added/removed events, information about the affected scanner.
+  ScannerInfo scanner = 3;
+}
+
+// Input parameter for the StopScannerDiscovery d-bus method.
+message StopScannerDiscoveryRequest {
+  // Session identifier previously returned from StartScannerDiscovery.
+  string session_id = 1;
+}
+
+// Response from the StopScannerDiscovery d-bus method.
+message StopScannerDiscoveryResponse {
+  // True if the session was successfully stopped.  False if the session was not
+  // found or an error happened.  No further signals will be sent for the
+  // stopped session even if this returns false.
+  bool stopped = 1;
+}

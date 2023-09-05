@@ -94,10 +94,12 @@ void av1_init_obmc_buffer(OBMCBuffer *obmc_buffer) {
 
 void av1_make_default_fullpel_ms_params(
     FULLPEL_MOTION_SEARCH_PARAMS *ms_params, const struct AV1_COMP *cpi,
-    MACROBLOCK *x, BLOCK_SIZE bsize, const MV *ref_mv,
+    MACROBLOCK *x, BLOCK_SIZE bsize, const MV *ref_mv, FULLPEL_MV start_mv,
     const search_site_config search_sites[NUM_DISTINCT_SEARCH_METHODS],
     int fine_search_interval) {
   const MV_SPEED_FEATURES *mv_sf = &cpi->sf.mv_sf;
+  const int is_key_frame =
+      cpi->ppi->gf_group.update_type[cpi->gf_frame_index] == KF_UPDATE;
 
   // High level params
   ms_params->bsize = bsize;
@@ -129,19 +131,6 @@ void av1_make_default_fullpel_ms_params(
 
   av1_set_mv_search_method(ms_params, search_sites, search_method);
 
-  const int use_downsampled_sad =
-      mv_sf->use_downsampled_sad && block_size_high[bsize] >= 16;
-  if (use_downsampled_sad) {
-    ms_params->sdf = ms_params->vfp->sdsf;
-    ms_params->sdx4df = ms_params->vfp->sdsx4df;
-    // Skip version of sadx3 is not is not available yet
-    ms_params->sdx3df = ms_params->vfp->sdsx4df;
-  } else {
-    ms_params->sdf = ms_params->vfp->sdf;
-    ms_params->sdx4df = ms_params->vfp->sdx4df;
-    ms_params->sdx3df = ms_params->vfp->sdx3df;
-  }
-
   ms_params->mesh_patterns[0] = mv_sf->mesh_patterns;
   ms_params->mesh_patterns[1] = mv_sf->intrabc_mesh_patterns;
   ms_params->force_mesh_thresh = mv_sf->exhaustive_searches_thresh;
@@ -161,6 +150,47 @@ void av1_make_default_fullpel_ms_params(
   // Mvcost params
   init_mv_cost_params(&ms_params->mv_cost_params, x->mv_costs, ref_mv,
                       x->errorperbit, x->sadperbit);
+
+  ms_params->sdf = ms_params->vfp->sdf;
+  ms_params->sdx4df = ms_params->vfp->sdx4df;
+  ms_params->sdx3df = ms_params->vfp->sdx3df;
+
+  if (mv_sf->use_downsampled_sad == 2 && block_size_high[bsize] >= 16) {
+    ms_params->sdf = ms_params->vfp->sdsf;
+    ms_params->sdx4df = ms_params->vfp->sdsx4df;
+    // Skip version of sadx3 is not available yet
+    ms_params->sdx3df = ms_params->vfp->sdsx4df;
+  } else if (mv_sf->use_downsampled_sad == 1 && block_size_high[bsize] >= 16 &&
+             !is_key_frame) {
+    FULLPEL_MV start_mv_clamped = start_mv;
+    // adjust start_mv to make sure it is within MV range
+    clamp_fullmv(&start_mv_clamped, &ms_params->mv_limits);
+
+    const struct buf_2d *const ref = ms_params->ms_buffers.ref;
+    const int ref_stride = ref->stride;
+    const uint8_t *best_address = get_buf_from_fullmv(ref, &start_mv_clamped);
+    const struct buf_2d *const src = ms_params->ms_buffers.src;
+    const uint8_t *src_buf = src->buf;
+    const int src_stride = src->stride;
+
+    unsigned int start_mv_sad_even_rows, start_mv_sad_odd_rows;
+    start_mv_sad_even_rows =
+        ms_params->vfp->sdsf(src_buf, src_stride, best_address, ref_stride);
+    start_mv_sad_odd_rows =
+        ms_params->vfp->sdsf(src_buf + src_stride, src_stride,
+                             best_address + ref_stride, ref_stride);
+
+    // If the absolute SAD difference computed between the pred-to-src of even
+    // and odd rows is small, skip every other row in sad computation.
+    const int odd_to_even_diff_sad =
+        abs((int)start_mv_sad_even_rows - (int)start_mv_sad_odd_rows);
+    const int mult_thresh = 4;
+    if (odd_to_even_diff_sad * mult_thresh < (int)start_mv_sad_even_rows) {
+      ms_params->sdf = ms_params->vfp->sdsf;
+      ms_params->sdx4df = ms_params->vfp->sdsx4df;
+      ms_params->sdx3df = ms_params->vfp->sdsx4df;
+    }
+  }
 }
 
 void av1_set_ms_to_intra_mode(FULLPEL_MOTION_SEARCH_PARAMS *ms_params,
@@ -662,7 +692,8 @@ static INLINE int check_bounds(const FullMvLimits *mv_limits, int row, int col,
 }
 
 static INLINE int get_mvpred_var_cost(
-    const FULLPEL_MOTION_SEARCH_PARAMS *ms_params, const FULLPEL_MV *this_mv) {
+    const FULLPEL_MOTION_SEARCH_PARAMS *ms_params, const FULLPEL_MV *this_mv,
+    FULLPEL_MV_STATS *mv_stats) {
   const aom_variance_fn_ptr_t *vfp = ms_params->vfp;
   const MV sub_this_mv = get_mv_from_fullmv(this_mv);
   const struct buf_2d *const src = ms_params->ms_buffers.src;
@@ -671,13 +702,14 @@ static INLINE int get_mvpred_var_cost(
   const int src_stride = src->stride;
   const int ref_stride = ref->stride;
 
-  unsigned unused;
   int bestsme;
 
   bestsme = vfp->vf(src_buf, src_stride, get_buf_from_fullmv(ref, this_mv),
-                    ref_stride, &unused);
+                    ref_stride, &mv_stats->sse);
+  mv_stats->distortion = bestsme;
 
-  bestsme += mv_err_cost_(&sub_this_mv, &ms_params->mv_cost_params);
+  mv_stats->err_cost = mv_err_cost_(&sub_this_mv, &ms_params->mv_cost_params);
+  bestsme += mv_stats->err_cost;
 
   return bestsme;
 }
@@ -693,7 +725,8 @@ static INLINE int get_mvpred_sad(const FULLPEL_MOTION_SEARCH_PARAMS *ms_params,
 }
 
 static INLINE int get_mvpred_compound_var_cost(
-    const FULLPEL_MOTION_SEARCH_PARAMS *ms_params, const FULLPEL_MV *this_mv) {
+    const FULLPEL_MOTION_SEARCH_PARAMS *ms_params, const FULLPEL_MV *this_mv,
+    FULLPEL_MV_STATS *mv_stats) {
   const aom_variance_fn_ptr_t *vfp = ms_params->vfp;
   const struct buf_2d *const src = ms_params->ms_buffers.src;
   const struct buf_2d *const ref = ms_params->ms_buffers.ref;
@@ -705,23 +738,24 @@ static INLINE int get_mvpred_compound_var_cost(
   const uint8_t *second_pred = ms_params->ms_buffers.second_pred;
   const int mask_stride = ms_params->ms_buffers.mask_stride;
   const int invert_mask = ms_params->ms_buffers.inv_mask;
-  unsigned unused;
   int bestsme;
 
   if (mask) {
     bestsme = vfp->msvf(get_buf_from_fullmv(ref, this_mv), ref_stride, 0, 0,
                         src_buf, src_stride, second_pred, mask, mask_stride,
-                        invert_mask, &unused);
+                        invert_mask, &mv_stats->sse);
   } else if (second_pred) {
     bestsme = vfp->svaf(get_buf_from_fullmv(ref, this_mv), ref_stride, 0, 0,
-                        src_buf, src_stride, &unused, second_pred);
+                        src_buf, src_stride, &mv_stats->sse, second_pred);
   } else {
     bestsme = vfp->vf(src_buf, src_stride, get_buf_from_fullmv(ref, this_mv),
-                      ref_stride, &unused);
+                      ref_stride, &mv_stats->sse);
   }
+  mv_stats->distortion = bestsme;
 
   const MV sub_this_mv = get_mv_from_fullmv(this_mv);
-  bestsme += mv_err_cost_(&sub_this_mv, &ms_params->mv_cost_params);
+  mv_stats->err_cost = mv_err_cost_(&sub_this_mv, &ms_params->mv_cost_params);
+  bestsme += mv_stats->err_cost;
 
   return bestsme;
 }
@@ -765,13 +799,15 @@ static AOM_FORCE_INLINE void calc_int_cost_list(
   const int br = best_mv.row;
   const int bc = best_mv.col;
 
-  cost_list[0] = get_mvpred_var_cost(ms_params, &best_mv);
+  FULLPEL_MV_STATS mv_stats;
+  cost_list[0] = get_mvpred_var_cost(ms_params, &best_mv, &mv_stats);
 
   if (check_bounds(&ms_params->mv_limits, br, bc, 1)) {
     for (int i = 0; i < 4; i++) {
       const FULLPEL_MV neighbor_mv = { br + neighbors[i].row,
                                        bc + neighbors[i].col };
-      cost_list[i + 1] = get_mvpred_var_cost(ms_params, &neighbor_mv);
+      cost_list[i + 1] =
+          get_mvpred_var_cost(ms_params, &neighbor_mv, &mv_stats);
     }
   } else {
     for (int i = 0; i < 4; i++) {
@@ -780,7 +816,8 @@ static AOM_FORCE_INLINE void calc_int_cost_list(
       if (!av1_is_fullmv_in_range(&ms_params->mv_limits, neighbor_mv)) {
         cost_list[i + 1] = INT_MAX;
       } else {
-        cost_list[i + 1] = get_mvpred_var_cost(ms_params, &neighbor_mv);
+        cost_list[i + 1] =
+            get_mvpred_var_cost(ms_params, &neighbor_mv, &mv_stats);
       }
     }
   }
@@ -1017,7 +1054,8 @@ static AOM_INLINE void calc_sad_update_bestmv_with_indices(
 static int pattern_search(FULLPEL_MV start_mv,
                           const FULLPEL_MOTION_SEARCH_PARAMS *ms_params,
                           int search_step, const int do_init_search,
-                          int *cost_list, FULLPEL_MV *best_mv) {
+                          int *cost_list, FULLPEL_MV *best_mv,
+                          FULLPEL_MV_STATS *best_mv_stats) {
   static const int search_steps[MAX_MVSEARCH_STEPS] = {
     10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0,
   };
@@ -1240,7 +1278,7 @@ static int pattern_search(FULLPEL_MV start_mv,
     }
   }
 
-  const int var_cost = get_mvpred_var_cost(ms_params, best_mv);
+  const int var_cost = get_mvpred_var_cost(ms_params, best_mv, best_mv_stats);
   return var_cost;
 }
 
@@ -1258,64 +1296,71 @@ static int pattern_search(FULLPEL_MV start_mv,
 static int hex_search(const FULLPEL_MV start_mv,
                       const FULLPEL_MOTION_SEARCH_PARAMS *ms_params,
                       const int search_step, const int do_init_search,
-                      int *cost_list, FULLPEL_MV *best_mv) {
+                      int *cost_list, FULLPEL_MV *best_mv,
+                      FULLPEL_MV_STATS *best_mv_stats) {
   return pattern_search(start_mv, ms_params, search_step, do_init_search,
-                        cost_list, best_mv);
+                        cost_list, best_mv, best_mv_stats);
 }
 
 static int bigdia_search(const FULLPEL_MV start_mv,
                          const FULLPEL_MOTION_SEARCH_PARAMS *ms_params,
                          const int search_step, const int do_init_search,
-                         int *cost_list, FULLPEL_MV *best_mv) {
+                         int *cost_list, FULLPEL_MV *best_mv,
+                         FULLPEL_MV_STATS *best_mv_stats) {
   return pattern_search(start_mv, ms_params, search_step, do_init_search,
-                        cost_list, best_mv);
+                        cost_list, best_mv, best_mv_stats);
 }
 
 static int square_search(const FULLPEL_MV start_mv,
                          const FULLPEL_MOTION_SEARCH_PARAMS *ms_params,
                          const int search_step, const int do_init_search,
-                         int *cost_list, FULLPEL_MV *best_mv) {
+                         int *cost_list, FULLPEL_MV *best_mv,
+                         FULLPEL_MV_STATS *best_mv_stats) {
   return pattern_search(start_mv, ms_params, search_step, do_init_search,
-                        cost_list, best_mv);
+                        cost_list, best_mv, best_mv_stats);
 }
 
 static int fast_hex_search(const FULLPEL_MV start_mv,
                            const FULLPEL_MOTION_SEARCH_PARAMS *ms_params,
                            const int search_step, const int do_init_search,
-                           int *cost_list, FULLPEL_MV *best_mv) {
+                           int *cost_list, FULLPEL_MV *best_mv,
+                           FULLPEL_MV_STATS *best_mv_stats) {
   return hex_search(start_mv, ms_params,
                     AOMMAX(MAX_MVSEARCH_STEPS - 2, search_step), do_init_search,
-                    cost_list, best_mv);
+                    cost_list, best_mv, best_mv_stats);
 }
 
 static int vfast_dia_search(const FULLPEL_MV start_mv,
                             const FULLPEL_MOTION_SEARCH_PARAMS *ms_params,
                             const int search_step, const int do_init_search,
-                            int *cost_list, FULLPEL_MV *best_mv) {
+                            int *cost_list, FULLPEL_MV *best_mv,
+                            FULLPEL_MV_STATS *best_mv_stats) {
   return bigdia_search(start_mv, ms_params,
                        AOMMAX(MAX_MVSEARCH_STEPS - 1, search_step),
-                       do_init_search, cost_list, best_mv);
+                       do_init_search, cost_list, best_mv, best_mv_stats);
 }
 
 static int fast_dia_search(const FULLPEL_MV start_mv,
                            const FULLPEL_MOTION_SEARCH_PARAMS *ms_params,
                            const int search_step, const int do_init_search,
-                           int *cost_list, FULLPEL_MV *best_mv) {
+                           int *cost_list, FULLPEL_MV *best_mv,
+                           FULLPEL_MV_STATS *best_mv_stats) {
   return bigdia_search(start_mv, ms_params,
                        AOMMAX(MAX_MVSEARCH_STEPS - 2, search_step),
-                       do_init_search, cost_list, best_mv);
+                       do_init_search, cost_list, best_mv, best_mv_stats);
 }
 
 static int fast_bigdia_search(const FULLPEL_MV start_mv,
                               const FULLPEL_MOTION_SEARCH_PARAMS *ms_params,
                               const int search_step, const int do_init_search,
-                              int *cost_list, FULLPEL_MV *best_mv) {
+                              int *cost_list, FULLPEL_MV *best_mv,
+                              FULLPEL_MV_STATS *best_mv_stats) {
   return bigdia_search(start_mv, ms_params,
                        AOMMAX(MAX_MVSEARCH_STEPS - 3, search_step),
-                       do_init_search, cost_list, best_mv);
+                       do_init_search, cost_list, best_mv, best_mv_stats);
 }
 
-static int diamond_search_sad(FULLPEL_MV start_mv,
+static int diamond_search_sad(FULLPEL_MV start_mv, unsigned int start_mv_sad,
                               const FULLPEL_MOTION_SEARCH_PARAMS *ms_params,
                               const int search_step, int *num00,
                               FULLPEL_MV *best_mv, FULLPEL_MV *second_best_mv) {
@@ -1357,8 +1402,6 @@ static int diamond_search_sad(FULLPEL_MV start_mv,
   // search steps in the future if diamond_search_sad is called again.
   int num_center_steps = 0;
 
-  clamp_fullmv(&start_mv, &ms_params->mv_limits);
-
   // search_step determines the length of the initial step and hence the number
   // of iterations.
   const int tot_steps = cfg->num_search_steps - search_step;
@@ -1371,13 +1414,10 @@ static int diamond_search_sad(FULLPEL_MV start_mv,
 
   // Check the starting position
   const uint8_t *best_address = get_buf_from_fullmv(ref, &start_mv);
-  unsigned int bestsad = mvsad_err_cost_(best_mv, &ms_params->mv_cost_params);
+  unsigned int bestsad = start_mv_sad;
 
   // TODO(chiyotsai@google.com): Implement 4 points search for msdf&sdaf
   if (ms_params->ms_buffers.second_pred) {
-    bestsad +=
-        get_mvpred_compound_sad(ms_params, src, best_address, ref_stride);
-
     for (int step = tot_steps - 1; step >= 0; --step) {
       const search_site *site = cfg->site[step];
       const int num_searches = cfg->searches_per_step[step];
@@ -1404,8 +1444,6 @@ static int diamond_search_sad(FULLPEL_MV start_mv,
       UPDATE_SEARCH_STEP;
     }
   } else {
-    bestsad += get_mvpred_sad(ms_params, src, best_address, ref_stride);
-
     for (int step = tot_steps - 1; step >= 0; --step) {
       const search_site *site = cfg->site[step];
       const int num_searches = cfg->searches_per_step[step];
@@ -1476,16 +1514,41 @@ static int diamond_search_sad(FULLPEL_MV start_mv,
 #undef UPDATE_SEARCH_STEP
 }
 
-static int full_pixel_diamond(const FULLPEL_MV start_mv,
+static INLINE unsigned int get_start_mvpred_sad_cost(
+    const FULLPEL_MOTION_SEARCH_PARAMS *ms_params, FULLPEL_MV start_mv) {
+  const struct buf_2d *const src = ms_params->ms_buffers.src;
+  const struct buf_2d *const ref = ms_params->ms_buffers.ref;
+  const uint8_t *best_address = get_buf_from_fullmv(ref, &start_mv);
+
+  unsigned int start_mv_sad =
+      mvsad_err_cost_(&start_mv, &ms_params->mv_cost_params);
+
+  if (ms_params->ms_buffers.second_pred)
+    start_mv_sad +=
+        get_mvpred_compound_sad(ms_params, src, best_address, ref->stride);
+  else
+    start_mv_sad += get_mvpred_sad(ms_params, src, best_address, ref->stride);
+
+  return start_mv_sad;
+}
+
+static int full_pixel_diamond(FULLPEL_MV start_mv,
                               const FULLPEL_MOTION_SEARCH_PARAMS *ms_params,
                               const int step_param, int *cost_list,
-                              FULLPEL_MV *best_mv, FULLPEL_MV *second_best_mv) {
+                              FULLPEL_MV *best_mv,
+                              FULLPEL_MV_STATS *best_mv_stats,
+                              FULLPEL_MV *second_best_mv) {
   const search_site_config *cfg = ms_params->search_sites;
   int thissme, n, num00 = 0;
-  diamond_search_sad(start_mv, ms_params, step_param, &n, best_mv,
+
+  // Clamp start mv and calculate the cost
+  clamp_fullmv(&start_mv, &ms_params->mv_limits);
+  unsigned int start_mv_sad = get_start_mvpred_sad_cost(ms_params, start_mv);
+
+  diamond_search_sad(start_mv, start_mv_sad, ms_params, step_param, &n, best_mv,
                      second_best_mv);
 
-  int bestsme = get_mvpred_compound_var_cost(ms_params, best_mv);
+  int bestsme = get_mvpred_compound_var_cost(ms_params, best_mv, best_mv_stats);
 
   // If there won't be more n-step search, check to see if refining search is
   // needed.
@@ -1496,14 +1559,17 @@ static int full_pixel_diamond(const FULLPEL_MV start_mv,
     // TODO(chiyotsai@google.com): There is another bug here where the second
     // best mv gets incorrectly overwritten. Fix it later.
     FULLPEL_MV tmp_best_mv;
-    diamond_search_sad(start_mv, ms_params, step_param + n, &num00,
-                       &tmp_best_mv, second_best_mv);
+    FULLPEL_MV_STATS tmp_best_mv_stats;
+    diamond_search_sad(start_mv, start_mv_sad, ms_params, step_param + n,
+                       &num00, &tmp_best_mv, second_best_mv);
 
-    thissme = get_mvpred_compound_var_cost(ms_params, &tmp_best_mv);
+    thissme = get_mvpred_compound_var_cost(ms_params, &tmp_best_mv,
+                                           &tmp_best_mv_stats);
 
     if (thissme < bestsme) {
       bestsme = thissme;
       *best_mv = tmp_best_mv;
+      *best_mv_stats = tmp_best_mv_stats;
     }
 
     if (num00) {
@@ -1604,6 +1670,7 @@ static int full_pixel_exhaustive(const FULLPEL_MV start_mv,
                                  const FULLPEL_MOTION_SEARCH_PARAMS *ms_params,
                                  const struct MESH_PATTERN *const mesh_patterns,
                                  int *cost_list, FULLPEL_MV *best_mv,
+                                 FULLPEL_MV_STATS *mv_stats,
                                  FULLPEL_MV *second_best_mv) {
   const int kMinRange = 7;
   const int kMaxRange = 256;
@@ -1663,7 +1730,7 @@ static int full_pixel_exhaustive(const FULLPEL_MV start_mv,
   }
 
   if (bestsme < INT_MAX) {
-    bestsme = get_mvpred_var_cost(ms_params, best_mv);
+    bestsme = get_mvpred_var_cost(ms_params, best_mv, mv_stats);
   }
 
   // Return cost list.
@@ -1755,7 +1822,8 @@ int av1_refining_search_8p_c(const FULLPEL_MOTION_SEARCH_PARAMS *ms_params,
 int av1_full_pixel_search(const FULLPEL_MV start_mv,
                           const FULLPEL_MOTION_SEARCH_PARAMS *ms_params,
                           const int step_param, int *cost_list,
-                          FULLPEL_MV *best_mv, FULLPEL_MV *second_best_mv) {
+                          FULLPEL_MV *best_mv, FULLPEL_MV_STATS *best_mv_stats,
+                          FULLPEL_MV *second_best_mv) {
   const BLOCK_SIZE bsize = ms_params->bsize;
   const SEARCH_METHODS search_method = ms_params->search_method;
 
@@ -1781,37 +1849,38 @@ int av1_full_pixel_search(const FULLPEL_MV start_mv,
   switch (search_method) {
     case FAST_BIGDIA:
       var = fast_bigdia_search(start_mv, ms_params, step_param, 0, cost_list,
-                               best_mv);
+                               best_mv, best_mv_stats);
       break;
     case VFAST_DIAMOND:
       var = vfast_dia_search(start_mv, ms_params, step_param, 0, cost_list,
-                             best_mv);
+                             best_mv, best_mv_stats);
       break;
     case FAST_DIAMOND:
       var = fast_dia_search(start_mv, ms_params, step_param, 0, cost_list,
-                            best_mv);
+                            best_mv, best_mv_stats);
       break;
     case FAST_HEX:
       var = fast_hex_search(start_mv, ms_params, step_param, 0, cost_list,
-                            best_mv);
+                            best_mv, best_mv_stats);
       break;
     case HEX:
-      var = hex_search(start_mv, ms_params, step_param, 1, cost_list, best_mv);
+      var = hex_search(start_mv, ms_params, step_param, 1, cost_list, best_mv,
+                       best_mv_stats);
       break;
     case SQUARE:
-      var =
-          square_search(start_mv, ms_params, step_param, 1, cost_list, best_mv);
+      var = square_search(start_mv, ms_params, step_param, 1, cost_list,
+                          best_mv, best_mv_stats);
       break;
     case BIGDIA:
-      var =
-          bigdia_search(start_mv, ms_params, step_param, 1, cost_list, best_mv);
+      var = bigdia_search(start_mv, ms_params, step_param, 1, cost_list,
+                          best_mv, best_mv_stats);
       break;
     case NSTEP:
     case NSTEP_8PT:
     case DIAMOND:
     case CLAMPED_DIAMOND:
       var = full_pixel_diamond(start_mv, ms_params, step_param, cost_list,
-                               best_mv, second_best_mv);
+                               best_mv, best_mv_stats, second_best_mv);
       break;
     default: assert(0 && "Invalid search method.");
   }
@@ -1868,13 +1937,15 @@ int av1_full_pixel_search(const FULLPEL_MV start_mv,
       new_ms_params.sdx3df = new_ms_params.vfp->sdx3df;
 
       return av1_full_pixel_search(start_mv, &new_ms_params, step_param,
-                                   cost_list, best_mv, second_best_mv);
+                                   cost_list, best_mv, best_mv_stats,
+                                   second_best_mv);
     }
   }
 
   if (run_mesh_search) {
     int var_ex;
     FULLPEL_MV tmp_mv_ex;
+    FULLPEL_MV_STATS tmp_mv_stats;
     // Pick the mesh pattern for exhaustive search based on the toolset (intraBC
     // or non-intraBC)
     // TODO(chiyotsai@google.com):  There is a bug here where the second best mv
@@ -1883,10 +1954,12 @@ int av1_full_pixel_search(const FULLPEL_MV start_mv,
         ms_params->mesh_patterns[is_intra_mode];
     // TODO(chiyotsai@google.com): the second best mv is not set correctly by
     // full_pixel_exhaustive, which can incorrectly override it.
-    var_ex = full_pixel_exhaustive(*best_mv, ms_params, mesh_patterns,
-                                   cost_list, &tmp_mv_ex, second_best_mv);
+    var_ex =
+        full_pixel_exhaustive(*best_mv, ms_params, mesh_patterns, cost_list,
+                              &tmp_mv_ex, &tmp_mv_stats, second_best_mv);
     if (var_ex < var) {
       var = var_ex;
+      *best_mv_stats = tmp_mv_stats;
       *best_mv = tmp_mv_ex;
     }
   }
@@ -1946,7 +2019,8 @@ int av1_intrabc_hash_search(const AV1_COMP *cpi, const MACROBLOCKD *xd,
       hash_mv.col = ref_block_hash.x - x_pos;
       hash_mv.row = ref_block_hash.y - y_pos;
       if (!av1_is_fullmv_in_range(mv_limits, hash_mv)) continue;
-      const int refCost = get_mvpred_var_cost(ms_params, &hash_mv);
+      FULLPEL_MV_STATS mv_stats;
+      const int refCost = get_mvpred_var_cost(ms_params, &hash_mv, &mv_stats);
       if (refCost < best_hash_cost) {
         best_hash_cost = refCost;
         *best_mv = hash_mv;
@@ -2906,8 +2980,9 @@ static AOM_INLINE int setup_center_error_facade(
 
 int av1_find_best_sub_pixel_tree_pruned_more(
     MACROBLOCKD *xd, const AV1_COMMON *const cm,
-    const SUBPEL_MOTION_SEARCH_PARAMS *ms_params, MV start_mv, MV *bestmv,
-    int *distortion, unsigned int *sse1, int_mv *last_mv_search_list) {
+    const SUBPEL_MOTION_SEARCH_PARAMS *ms_params, MV start_mv,
+    const FULLPEL_MV_STATS *start_mv_stats, MV *bestmv, int *distortion,
+    unsigned int *sse1, int_mv *last_mv_search_list) {
   (void)cm;
   const int allow_hp = ms_params->allow_hp;
   const int forced_stop = ms_params->forced_stop;
@@ -2928,8 +3003,16 @@ int av1_find_best_sub_pixel_tree_pruned_more(
                                              ? &cm->sf_identity
                                              : xd->block_ref_scale_factors[0];
   const int is_scaled = av1_is_scaled(sf);
-  besterr = setup_center_error_facade(
-      xd, cm, bestmv, var_params, mv_cost_params, sse1, distortion, is_scaled);
+
+  if (start_mv_stats != NULL && !is_scaled) {
+    besterr = start_mv_stats->distortion + start_mv_stats->err_cost;
+    *distortion = start_mv_stats->distortion;
+    *sse1 = start_mv_stats->sse;
+  } else {
+    besterr =
+        setup_center_error_facade(xd, cm, bestmv, var_params, mv_cost_params,
+                                  sse1, distortion, is_scaled);
+  }
 
   // If forced_stop is FULL_PEL, return.
   if (forced_stop == FULL_PEL) return besterr;
@@ -2991,9 +3074,11 @@ int av1_find_best_sub_pixel_tree_pruned_more(
 
 int av1_find_best_sub_pixel_tree_pruned(
     MACROBLOCKD *xd, const AV1_COMMON *const cm,
-    const SUBPEL_MOTION_SEARCH_PARAMS *ms_params, MV start_mv, MV *bestmv,
-    int *distortion, unsigned int *sse1, int_mv *last_mv_search_list) {
+    const SUBPEL_MOTION_SEARCH_PARAMS *ms_params, MV start_mv,
+    const FULLPEL_MV_STATS *start_mv_stats, MV *bestmv, int *distortion,
+    unsigned int *sse1, int_mv *last_mv_search_list) {
   (void)cm;
+  (void)start_mv_stats;
   const int allow_hp = ms_params->allow_hp;
   const int forced_stop = ms_params->forced_stop;
   const int iters_per_step = ms_params->iters_per_step;
@@ -3013,8 +3098,16 @@ int av1_find_best_sub_pixel_tree_pruned(
                                              ? &cm->sf_identity
                                              : xd->block_ref_scale_factors[0];
   const int is_scaled = av1_is_scaled(sf);
-  besterr = setup_center_error_facade(
-      xd, cm, bestmv, var_params, mv_cost_params, sse1, distortion, is_scaled);
+
+  if (start_mv_stats != NULL && !is_scaled) {
+    besterr = start_mv_stats->distortion + start_mv_stats->err_cost;
+    *distortion = start_mv_stats->distortion;
+    *sse1 = start_mv_stats->sse;
+  } else {
+    besterr =
+        setup_center_error_facade(xd, cm, bestmv, var_params, mv_cost_params,
+                                  sse1, distortion, is_scaled);
+  }
 
   // If forced_stop is FULL_PEL, return.
   if (forced_stop == FULL_PEL) return besterr;
@@ -3127,9 +3220,12 @@ int av1_find_best_sub_pixel_tree_pruned(
 
 int av1_find_best_sub_pixel_tree(MACROBLOCKD *xd, const AV1_COMMON *const cm,
                                  const SUBPEL_MOTION_SEARCH_PARAMS *ms_params,
-                                 MV start_mv, MV *bestmv, int *distortion,
+                                 MV start_mv,
+                                 const FULLPEL_MV_STATS *start_mv_stats,
+                                 MV *bestmv, int *distortion,
                                  unsigned int *sse1,
                                  int_mv *last_mv_search_list) {
+  (void)start_mv_stats;
   const int allow_hp = ms_params->allow_hp;
   const int forced_stop = ms_params->forced_stop;
   const int iters_per_step = ms_params->iters_per_step;
@@ -3153,12 +3249,18 @@ int av1_find_best_sub_pixel_tree(MACROBLOCKD *xd, const AV1_COMMON *const cm,
                                              : xd->block_ref_scale_factors[0];
   const int is_scaled = av1_is_scaled(sf);
 
-  if (subpel_search_type != USE_2_TAPS_ORIG) {
-    besterr = upsampled_setup_center_error(xd, cm, bestmv, var_params,
-                                           mv_cost_params, sse1, distortion);
+  if (start_mv_stats != NULL && !is_scaled) {
+    besterr = start_mv_stats->distortion + start_mv_stats->err_cost;
+    *distortion = start_mv_stats->distortion;
+    *sse1 = start_mv_stats->sse;
   } else {
-    besterr = setup_center_error(xd, bestmv, var_params, mv_cost_params, sse1,
-                                 distortion);
+    if (subpel_search_type != USE_2_TAPS_ORIG) {
+      besterr = upsampled_setup_center_error(xd, cm, bestmv, var_params,
+                                             mv_cost_params, sse1, distortion);
+    } else {
+      besterr = setup_center_error(xd, bestmv, var_params, mv_cost_params, sse1,
+                                   distortion);
+    }
   }
 
   // If forced_stop is FULL_PEL, return.
@@ -3201,12 +3303,14 @@ int av1_find_best_sub_pixel_tree(MACROBLOCKD *xd, const AV1_COMMON *const cm,
 // Returns the maximum MV.
 int av1_return_max_sub_pixel_mv(MACROBLOCKD *xd, const AV1_COMMON *const cm,
                                 const SUBPEL_MOTION_SEARCH_PARAMS *ms_params,
-                                MV start_mv, MV *bestmv, int *distortion,
-                                unsigned int *sse1,
+                                MV start_mv,
+                                const FULLPEL_MV_STATS *start_mv_stats,
+                                MV *bestmv, int *distortion, unsigned int *sse1,
                                 int_mv *last_mv_search_list) {
   (void)xd;
   (void)cm;
   (void)start_mv;
+  (void)start_mv_stats;
   (void)sse1;
   (void)distortion;
   (void)last_mv_search_list;
@@ -3228,12 +3332,14 @@ int av1_return_max_sub_pixel_mv(MACROBLOCKD *xd, const AV1_COMMON *const cm,
 // Returns the minimum MV.
 int av1_return_min_sub_pixel_mv(MACROBLOCKD *xd, const AV1_COMMON *const cm,
                                 const SUBPEL_MOTION_SEARCH_PARAMS *ms_params,
-                                MV start_mv, MV *bestmv, int *distortion,
-                                unsigned int *sse1,
+                                MV start_mv,
+                                const FULLPEL_MV_STATS *start_mv_stats,
+                                MV *bestmv, int *distortion, unsigned int *sse1,
                                 int_mv *last_mv_search_list) {
   (void)xd;
   (void)cm;
   (void)start_mv;
+  (void)start_mv_stats;
   (void)sse1;
   (void)distortion;
   (void)last_mv_search_list;
@@ -3760,9 +3866,11 @@ static AOM_FORCE_INLINE void obmc_second_level_check_v2(
 
 int av1_find_best_obmc_sub_pixel_tree_up(
     MACROBLOCKD *xd, const AV1_COMMON *const cm,
-    const SUBPEL_MOTION_SEARCH_PARAMS *ms_params, MV start_mv, MV *bestmv,
-    int *distortion, unsigned int *sse1, int_mv *last_mv_search_list) {
+    const SUBPEL_MOTION_SEARCH_PARAMS *ms_params, MV start_mv,
+    const FULLPEL_MV_STATS *start_mv_stats, MV *bestmv, int *distortion,
+    unsigned int *sse1, int_mv *last_mv_search_list) {
   (void)last_mv_search_list;
+  (void)start_mv_stats;
   const int allow_hp = ms_params->allow_hp;
   const int forced_stop = ms_params->forced_stop;
   const int iters_per_step = ms_params->iters_per_step;

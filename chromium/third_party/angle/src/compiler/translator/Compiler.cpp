@@ -29,6 +29,7 @@
 #include "compiler/translator/ValidateTypeSizeLimitations.h"
 #include "compiler/translator/ValidateVaryingLocations.h"
 #include "compiler/translator/VariablePacker.h"
+#include "compiler/translator/tree_ops/ClampFragDepth.h"
 #include "compiler/translator/tree_ops/ClampIndirectIndices.h"
 #include "compiler/translator/tree_ops/ClampPointSize.h"
 #include "compiler/translator/tree_ops/DeclareAndInitBuiltinsForInstancedMultiview.h"
@@ -52,7 +53,6 @@
 #include "compiler/translator/tree_ops/apple/AddAndTrueToLoopCondition.h"
 #include "compiler/translator/tree_ops/apple/RewriteDoWhile.h"
 #include "compiler/translator/tree_ops/apple/UnfoldShortCircuitAST.h"
-#include "compiler/translator/tree_ops/gl/ClampFragDepth.h"
 #include "compiler/translator/tree_ops/gl/RegenerateStructNames.h"
 #include "compiler/translator/tree_ops/gl/RewriteRepeatedAssignToSwizzled.h"
 #include "compiler/translator/tree_ops/gl/ScalarizeVecAndMatConstructorArgs.h"
@@ -397,9 +397,10 @@ bool TCompiler::shouldRunLoopAndIndexingValidation(const ShCompileOptions &compi
 
 bool TCompiler::shouldLimitTypeSizes() const
 {
-    // WebGL shaders limit the size of variables' types in shaders,
-    // including arrays, structs and interface blocks.
-    return IsWebGLBasedSpec(mShaderSpec);
+    // Prevent unrealistically large variable sizes in shaders.  This works around driver bugs
+    // around int-size limits (such as 2GB).  The limits are generously large enough that no real
+    // shader should ever hit it.
+    return true;
 }
 
 bool TCompiler::Init(const ShBuiltInResources &resources)
@@ -884,7 +885,8 @@ bool TCompiler::checkAndSimplifyAST(TIntermBlock *root,
     }
 
     if (mShaderVersion >= 300 && mShaderType == GL_FRAGMENT_SHADER &&
-        !ValidateOutputs(root, getExtensionBehavior(), mResources.MaxDrawBuffers, &mDiagnostics))
+        !ValidateOutputs(root, getExtensionBehavior(), mResources.MaxDrawBuffers,
+                         hasPixelLocalStorageUniforms(), &mDiagnostics))
     {
         return false;
     }
@@ -966,8 +968,7 @@ bool TCompiler::checkAndSimplifyAST(TIntermBlock *root,
     {
         if (compileOptions.emulateGLDrawID)
         {
-            if (!EmulateGLDrawID(this, root, &mSymbolTable, &mUniforms,
-                                 shouldCollectVariables(compileOptions)))
+            if (!EmulateGLDrawID(this, root, &mSymbolTable, &mUniforms))
             {
                 return false;
             }
@@ -981,7 +982,6 @@ bool TCompiler::checkAndSimplifyAST(TIntermBlock *root,
         if (compileOptions.emulateGLBaseVertexBaseInstance)
         {
             if (!EmulateGLBaseVertexBaseInstance(this, root, &mSymbolTable, &mUniforms,
-                                                 shouldCollectVariables(compileOptions),
                                                  compileOptions.addBaseVertexToVertexID))
             {
                 return false;
@@ -1068,43 +1068,40 @@ bool TCompiler::checkAndSimplifyAST(TIntermBlock *root,
         }
     }
 
-    if (shouldCollectVariables(compileOptions))
+    ASSERT(!mVariablesCollected);
+    CollectVariables(root, &mAttributes, &mOutputVariables, &mUniforms, &mInputVaryings,
+                     &mOutputVaryings, &mSharedVariables, &mUniformBlocks, &mShaderStorageBlocks,
+                     mResources.HashFunction, &mSymbolTable, mShaderType, mExtensionBehavior,
+                     mResources, mTessControlShaderOutputVertices);
+    collectInterfaceBlocks();
+    mVariablesCollected = true;
+    if (compileOptions.useUnusedStandardSharedBlocks)
     {
-        ASSERT(!mVariablesCollected);
-        CollectVariables(root, &mAttributes, &mOutputVariables, &mUniforms, &mInputVaryings,
-                         &mOutputVaryings, &mSharedVariables, &mUniformBlocks,
-                         &mShaderStorageBlocks, mResources.HashFunction, &mSymbolTable, mShaderType,
-                         mExtensionBehavior, mResources, mTessControlShaderOutputVertices);
-        collectInterfaceBlocks();
-        mVariablesCollected = true;
-        if (compileOptions.useUnusedStandardSharedBlocks)
+        if (!useAllMembersInUnusedStandardAndSharedBlocks(root))
         {
-            if (!useAllMembersInUnusedStandardAndSharedBlocks(root))
-            {
-                return false;
-            }
+            return false;
         }
-        if (compileOptions.enforcePackingRestrictions)
+    }
+    if (compileOptions.enforcePackingRestrictions)
+    {
+        int maxUniformVectors = GetMaxUniformVectorsForShaderType(mShaderType, mResources);
+        // Returns true if, after applying the packing rules in the GLSL ES 1.00.17 spec
+        // Appendix A, section 7, the shader does not use too many uniforms.
+        if (!CheckVariablesInPackingLimits(maxUniformVectors, mUniforms))
         {
-            int maxUniformVectors = GetMaxUniformVectorsForShaderType(mShaderType, mResources);
-            // Returns true if, after applying the packing rules in the GLSL ES 1.00.17 spec
-            // Appendix A, section 7, the shader does not use too many uniforms.
-            if (!CheckVariablesInPackingLimits(maxUniformVectors, mUniforms))
-            {
-                mDiagnostics.globalError("too many uniforms");
-                return false;
-            }
+            mDiagnostics.globalError("too many uniforms");
+            return false;
         }
-        bool needInitializeOutputVariables =
-            compileOptions.initOutputVariables && mShaderType != GL_COMPUTE_SHADER;
-        needInitializeOutputVariables |=
-            compileOptions.initFragmentOutputVariables && mShaderType == GL_FRAGMENT_SHADER;
-        if (needInitializeOutputVariables)
+    }
+    bool needInitializeOutputVariables =
+        compileOptions.initOutputVariables && mShaderType != GL_COMPUTE_SHADER;
+    needInitializeOutputVariables |=
+        compileOptions.initFragmentOutputVariables && mShaderType == GL_FRAGMENT_SHADER;
+    if (needInitializeOutputVariables)
+    {
+        if (!initializeOutputVariables(root))
         {
-            if (!initializeOutputVariables(root))
-            {
-                return false;
-            }
+            return false;
         }
     }
 
@@ -1714,16 +1711,6 @@ bool TCompiler::limitExpressionComplexity(TIntermBlock *root)
     }
 
     return true;
-}
-
-bool TCompiler::shouldCollectVariables(const ShCompileOptions &compileOptions)
-{
-    return compileOptions.variables;
-}
-
-bool TCompiler::wereVariablesCollected() const
-{
-    return mVariablesCollected;
 }
 
 bool TCompiler::initializeGLPosition(TIntermBlock *root)

@@ -15,6 +15,7 @@
 #include "internal/platform/implementation/g3/bluetooth_classic.h"
 
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "absl/synchronization/mutex.h"
@@ -176,6 +177,36 @@ Exception BluetoothServerSocket::DoClose() {
   return {Exception::kSuccess};
 }
 
+BluetoothPairing::BluetoothPairing(api::BluetoothDevice& remote_device)
+    : remote_device_(remote_device) {}
+
+BluetoothPairing::~BluetoothPairing() {
+  MediumEnvironment::Instance().ClearBluetoothDevicesForPairing();
+}
+
+bool BluetoothPairing::InitiatePairing(
+    api::BluetoothPairingCallback pairing_cb) {
+  return MediumEnvironment::Instance().InitiatePairing(&remote_device_,
+                                                       std::move(pairing_cb));
+}
+
+bool BluetoothPairing::FinishPairing(
+    std::optional<absl::string_view> pin_code) {
+  return MediumEnvironment::Instance().FinishPairing(&remote_device_);
+}
+
+bool BluetoothPairing::CancelPairing() {
+  return MediumEnvironment::Instance().CancelPairing(&remote_device_);
+}
+
+bool BluetoothPairing::Unpair() {
+  return MediumEnvironment::Instance().SetPairingState(&remote_device_, false);
+}
+
+bool BluetoothPairing::IsPaired() {
+  return MediumEnvironment::Instance().IsPaired(&remote_device_);
+}
+
 BluetoothClassicMedium::BluetoothClassicMedium(api::BluetoothAdapter& adapter)
     // TODO(apolyudov): implement and use downcast<> with static assertions.
     : adapter_(static_cast<BluetoothAdapter*>(&adapter)) {
@@ -271,19 +302,24 @@ BluetoothClassicMedium::ListenForService(const std::string& service_name,
   return socket;
 }
 
+std::unique_ptr<api::BluetoothPairing> BluetoothClassicMedium::CreatePairing(
+    api::BluetoothDevice& remote_device) {
+  return std::make_unique<BluetoothPairing>(remote_device);
+}
+
 api::BluetoothDevice* BluetoothClassicMedium::GetRemoteDevice(
     const std::string& mac_address) {
-  auto& env = MediumEnvironment::Instance();
-  return env.FindBluetoothDevice(mac_address);
+  return MediumEnvironment::Instance().FindBluetoothDevice(mac_address);
 }
 
 void BluetoothClassicMedium::AddObserver(
     api::BluetoothClassicMedium::Observer* observer) {
-  // TODO(b/269521993): Implement observer callbacks.
+  MediumEnvironment::Instance().AddObserver(observer);
 }
+
 void BluetoothClassicMedium::RemoveObserver(
     api::BluetoothClassicMedium::Observer* observer) {
-  // TODO(b/269521993): Implement observer callbacks.
+  MediumEnvironment::Instance().RemoveObserver(observer);
 }
 
 }  // namespace g3

@@ -507,13 +507,6 @@ struct TensorEvaluator<const TensorScanOp<Op, ArgType>, Device> {
     m_impl.cleanup();
   }
 
-#ifdef EIGEN_USE_SYCL
- // binding placeholder accessors to a command group handler for SYCL
-  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void bind(cl::sycl::handler &cgh) const {
-    m_impl.bind(cgh);
-    m_output.bind(cgh);
-  }
-#endif
 protected:
   TensorEvaluator<ArgType, Device> m_impl;
   const Device EIGEN_DEVICE_REF m_device;

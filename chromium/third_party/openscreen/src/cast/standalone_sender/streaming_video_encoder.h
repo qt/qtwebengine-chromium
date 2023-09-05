@@ -161,7 +161,7 @@ class StreamingVideoEncoder {
 
  protected:
   StreamingVideoEncoder(const Parameters& params,
-                        TaskRunner* task_runner,
+                        TaskRunner& task_runner,
                         std::unique_ptr<Sender> sender);
 
   // This is the equivalent change in encoding speed per one quantizer step.
@@ -173,7 +173,7 @@ class StreamingVideoEncoder {
   void UpdateSpeedSettingForNextFrame(const Stats& stats);
 
   const Parameters params_;
-  TaskRunner* const main_task_runner_;
+  TaskRunner& main_task_runner_;
   std::unique_ptr<Sender> sender_;
 
   // These represent the magnitude of the AV1 speed setting, where larger values

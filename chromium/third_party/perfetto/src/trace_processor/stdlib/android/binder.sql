@@ -90,6 +90,7 @@ WITH
       thread.name AS thread_name,
       thread.utid AS utid,
       thread.tid AS tid,
+      process.pid AS pid,
       process.upid AS upid,
       slice.ts,
       slice.dur,
@@ -112,6 +113,7 @@ WITH
       reply_process.name AS server_process,
       reply_thread.utid AS server_utid,
       reply_thread.tid AS server_tid,
+      reply_process.pid AS server_pid,
       reply_process.upid AS server_upid,
       aidl.name AS aidl_name
     FROM binder_txn
@@ -122,7 +124,7 @@ WITH
     JOIN thread reply_thread ON reply_thread.utid = reply_thread_track.utid
     JOIN process reply_process ON reply_process.upid = reply_thread.upid
     LEFT JOIN slice aidl
-      ON aidl.parent_id = binder_reply.id AND aidl.name LIKE 'AIDL::%'
+      ON aidl.parent_id = binder_reply.id AND (aidl.name GLOB 'AIDL::*' OR aidl.name GLOB 'HIDL::*')
   )
 SELECT
   MIN(aidl_name) AS aidl_name,
@@ -132,6 +134,7 @@ SELECT
   upid AS client_upid,
   utid AS client_utid,
   tid AS client_tid,
+  pid AS client_pid,
   is_main_thread,
   ts AS client_ts,
   dur AS client_dur,
@@ -141,6 +144,7 @@ SELECT
   server_upid,
   server_utid,
   server_tid,
+  server_pid,
   server_ts,
   server_dur
 FROM binder_reply

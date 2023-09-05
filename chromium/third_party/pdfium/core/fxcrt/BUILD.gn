@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build_overrides/build.gni")
 import("../../pdfium.gni")
 import("../../testing/test.gni")
 
@@ -9,6 +10,16 @@ source_set("unowned_ptr") {
   sources = [ "unowned_ptr.h" ]
   deps = [ "../../third_party:pdfium_compiler_specific" ]
   configs += [ "../../:pdfium_strict_config" ]
+  if (pdf_use_partition_alloc) {
+    if (build_with_chromium) {
+      deps += [ "//base" ]
+    } else {
+      deps += [
+        "//base/allocator/partition_allocator:partition_alloc_buildflags",
+        "//base/allocator/partition_allocator:raw_ptr",
+      ]
+    }
+  }
 }
 
 source_set("fxcrt") {
@@ -34,10 +45,7 @@ source_set("fxcrt") {
     "cfx_seekablestreamproxy.h",
     "cfx_timer.cpp",
     "cfx_timer.h",
-    "cfx_utf8decoder.cpp",
-    "cfx_utf8decoder.h",
-    "cfx_utf8encoder.cpp",
-    "cfx_utf8encoder.h",
+    "code_point_view.h",
     "data_vector.h",
     "fileaccess_iface.h",
     "fixed_size_data_vector.h",
@@ -89,6 +97,7 @@ source_set("fxcrt") {
     "string_pool_template.h",
     "string_view_template.h",
     "tree_node.h",
+    "utf16.h",
     "weak_ptr.h",
     "widestring.cpp",
     "widestring.h",
@@ -136,7 +145,15 @@ source_set("fxcrt") {
   ]
   if (pdf_use_partition_alloc) {
     sources += [ "fx_memory_pa.cpp" ]
-    deps += [ "//base/allocator/partition_allocator:partition_alloc" ]
+    if (build_with_chromium) {
+      deps += [ "//base" ]
+    } else {
+      deps += [
+        "//base/allocator/partition_allocator:partition_alloc",
+        "//base/allocator/partition_allocator:partition_alloc_buildflags",
+        "//base/allocator/partition_allocator:raw_ptr",
+      ]
+    }
   } else {
     sources += [ "fx_memory_malloc.cpp" ]
   }
@@ -162,6 +179,13 @@ source_set("fxcrt") {
   }
 }
 
+source_set("test_support") {
+  testonly = true
+  sources = [ "string_test_support.cpp" ]
+  configs += [ "../../:pdfium_strict_config" ]
+  deps = [ ":fxcrt" ]
+}
+
 source_set("unit_test_support") {
   testonly = true
   sources = [
@@ -171,6 +195,7 @@ source_set("unit_test_support") {
   configs += [ "../../:pdfium_strict_config" ]
   deps = [
     ":fxcrt",
+    ":test_support",
     "//testing/gtest",
   ]
 }
@@ -186,6 +211,7 @@ pdfium_unittest_source_set("unittests") {
     "cfx_datetime_unittest.cpp",
     "cfx_seekablestreamproxy_unittest.cpp",
     "cfx_timer_unittest.cpp",
+    "code_point_view_unittest.cpp",
     "fixed_try_alloc_zeroed_data_vector_unittest.cpp",
     "fixed_uninit_data_vector_unittest.cpp",
     "fixed_zeroed_data_vector_unittest.cpp",
@@ -212,6 +238,7 @@ pdfium_unittest_source_set("unittests") {
     "string_pool_template_unittest.cpp",
     "tree_node_unittest.cpp",
     "unowned_ptr_unittest.cpp",
+    "utf16_unittest.cpp",
     "weak_ptr_unittest.cpp",
     "widestring_unittest.cpp",
     "widetext_buffer_unittest.cpp",

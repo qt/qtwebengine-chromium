@@ -158,7 +158,7 @@ const UIStrings = {
   /**
    *@description Tooltip text that appears when hovering over the css changes button in the Styles Sidebar Pane of the Elements panel
    */
-  copyAllCSSChanges: 'Copy all the CSS changes',
+  copyAllCSSChanges: 'Copy CSS changes',
   /**
    *@description Tooltip text that appears after clicking on the copy CSS changes button
    */
@@ -171,6 +171,11 @@ const UIStrings = {
    *@description Tooltip text for the link in the sidebar pane layer separators that reveals the layer in the layer tree view.
    */
   clickToRevealLayer: 'Click to reveal layer in layer tree',
+  /**
+   *@description Text displayed in tooltip that shows specificity information.
+   *@example {(0,0,1)} PH1
+   */
+  specificity: 'Specificity: {PH1}',
 };
 
 const str_ = i18n.i18n.registerUIStrings('panels/elements/StylesSidebarPane.ts', UIStrings);
@@ -233,6 +238,8 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
   private readonly imagePreviewPopover: ImagePreviewPopover;
   #webCustomData?: WebCustomData;
   #hintPopoverHelper: UI.PopoverHelper.PopoverHelper;
+  #evaluatedCSSVarPopoverHelper: UI.PopoverHelper.PopoverHelper;
+
   activeCSSAngle: InlineEditor.CSSAngle.CSSAngle|null;
   #urlToChangeTracker: Map<Platform.DevToolsPath.UrlString, ChangeTracker> = new Map();
   #copyChangesButton?: UI.Toolbar.ToolbarButton;
@@ -314,9 +321,6 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
                                                Host.UserMetrics.CSSPropertyDocumentation.ToggledOff;
       Host.userMetrics.cssPropertyDocumentation(metricType);
     });
-    if (showDocumentationSetting.get()) {
-      this.#webCustomData = WebCustomData.create();
-    }
 
     this.#hintPopoverHelper = new UI.PopoverHelper.PopoverHelper(this.contentElement, event => {
       const hoveredNode = event.composedPath()[0];
@@ -380,12 +384,54 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
         };
       }
 
+      if (hoveredNode.matches('.simple-selector')) {
+        const specificity = StylePropertiesSection.getSpecificityStoredForNodeElement(hoveredNode);
+        return {
+          box: hoveredNode.boxInWindow(),
+          show: async(popover: UI.GlassPane.GlassPane): Promise<boolean> => {
+            popover.setIgnoreLeftMargin(true);
+            const element = document.createElement('span');
+            element.textContent = i18nString(
+                UIStrings.specificity,
+                {PH1: specificity ? `(${specificity.a},${specificity.b},${specificity.c})` : '(?,?,?)'});
+            popover.contentElement.appendChild(element);
+            return true;
+          },
+        };
+      }
+
       return null;
     });
 
     this.#hintPopoverHelper.setDisableOnClick(true);
     this.#hintPopoverHelper.setTimeout(300);
     this.#hintPopoverHelper.setHasPadding(true);
+
+    // Bind cssVarSwatch Popover.
+    this.#evaluatedCSSVarPopoverHelper = new UI.PopoverHelper.PopoverHelper(this.contentElement, event => {
+      const link = event.composedPath()[0];
+      if (!link || !(link instanceof Element) || !link.matches('.link-swatch-link')) {
+        return null;
+      }
+
+      const linkContainer = event.composedPath()[2];
+      if (!linkContainer || !(linkContainer instanceof Element) || !linkContainer.matches('.css-var-link')) {
+        return null;
+      }
+
+      const variableValue = link.getAttribute('data-title') || '';
+
+      return {
+        box: link.boxInWindow(),
+        show: async(popover: UI.GlassPane.GlassPane): Promise<boolean> => {
+          const popupElement = new ElementsComponents.CSSVariableValueView.CSSVariableValueView(variableValue);
+          popover.contentElement.appendChild(popupElement);
+          return true;
+        },
+      };
+    });
+    this.#evaluatedCSSVarPopoverHelper.setDisableOnClick(true);
+    this.#evaluatedCSSVarPopoverHelper.setTimeout(500, 200);
   }
 
   private onScroll(_event: Event): void {
@@ -1297,9 +1343,8 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
       this.activeCSSAngle = null;
     }
 
-    if (this.#hintPopoverHelper) {
-      this.#hintPopoverHelper.hidePopover();
-    }
+    this.#hintPopoverHelper?.hidePopover();
+    this.#evaluatedCSSVarPopoverHelper?.hidePopover();
   }
 
   getSectionBlockByName(name: string): SectionBlock|undefined {
@@ -1426,7 +1471,7 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     const filterContainerElement = hbox.createChild('div', 'styles-sidebar-pane-filter-box');
     const filterInput = StylesSidebarPane.createPropertyFilterElement(
         i18nString(UIStrings.filter), hbox, this.onFilterChanged.bind(this));
-    UI.ARIAUtils.setAccessibleName(filterInput, i18nString(UIStrings.filterStyles));
+    UI.ARIAUtils.setLabel(filterInput, i18nString(UIStrings.filterStyles));
     filterContainerElement.appendChild(filterInput);
     const toolbar = new UI.Toolbar.Toolbar('styles-pane-toolbar', hbox);
     toolbar.makeToggledGray();
@@ -2203,7 +2248,7 @@ export class StylesSidebarPropertyRenderer {
 
   renderName(): Element {
     const nameElement = document.createElement('span');
-    UI.ARIAUtils.setAccessibleName(nameElement, i18nString(UIStrings.cssPropertyName, {PH1: this.propertyName}));
+    UI.ARIAUtils.setLabel(nameElement, i18nString(UIStrings.cssPropertyName, {PH1: this.propertyName}));
     nameElement.className = 'webkit-css-property';
     nameElement.textContent = this.propertyName;
     nameElement.normalize();
@@ -2212,7 +2257,7 @@ export class StylesSidebarPropertyRenderer {
 
   renderValue(): Element {
     const valueElement = document.createElement('span');
-    UI.ARIAUtils.setAccessibleName(valueElement, i18nString(UIStrings.cssPropertyValue, {PH1: this.propertyValue}));
+    UI.ARIAUtils.setLabel(valueElement, i18nString(UIStrings.cssPropertyValue, {PH1: this.propertyValue}));
     valueElement.className = 'value';
     if (!this.propertyValue) {
       return valueElement;

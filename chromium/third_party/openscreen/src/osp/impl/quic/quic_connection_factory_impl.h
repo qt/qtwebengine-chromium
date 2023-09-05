@@ -23,7 +23,7 @@ class QuicTaskRunner;
 
 class QuicConnectionFactoryImpl final : public QuicConnectionFactory {
  public:
-  explicit QuicConnectionFactoryImpl(TaskRunner* task_runner);
+  explicit QuicConnectionFactoryImpl(TaskRunner& task_runner);
   ~QuicConnectionFactoryImpl() override;
 
   // UdpSocket::Client overrides.
@@ -59,7 +59,7 @@ class QuicConnectionFactoryImpl final : public QuicConnectionFactory {
   // NOTE: Must be provided in constructor and stored as an instance variable
   // rather than using the static accessor method to allow for UTs to mock this
   // layer.
-  TaskRunner* const task_runner_;
+  TaskRunner& task_runner_;
 };
 
 }  // namespace osp

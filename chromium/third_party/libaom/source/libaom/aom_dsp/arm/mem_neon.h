@@ -12,7 +12,6 @@
 #define AOM_AOM_DSP_ARM_MEM_NEON_H_
 
 #include <arm_neon.h>
-#include <assert.h>
 #include <string.h>
 #include "aom_dsp/aom_dsp_common.h"
 
@@ -94,17 +93,11 @@ static INLINE uint8x16_t load_u8_8x2(const uint8_t *s, ptrdiff_t p) {
         vld1_lane_u32((uint32_t *)(s), vreinterpret_u32_u8(*(s0)), lane)); \
   } while (0)
 
-// Load 2 sets of 4 bytes when alignment is guaranteed.
-static INLINE uint8x8_t load_u8(const uint8_t *buf, ptrdiff_t stride) {
-  uint32x2_t a = vdup_n_u32(0);
-
-  assert(!((intptr_t)buf % sizeof(uint32_t)));
-  assert(!(stride % sizeof(uint32_t)));
-
-  a = vld1_lane_u32((const uint32_t *)buf, a, 0);
-  buf += stride;
-  a = vld1_lane_u32((const uint32_t *)buf, a, 1);
-  return vreinterpret_u8_u32(a);
+// Load four bytes into the low half of a uint8x8_t, zero the upper half.
+static INLINE uint8x8_t load_u8_4x1_lane0(const uint8_t *p) {
+  uint8x8_t ret = vdup_n_u8(0);
+  load_u8_4x1(p, &ret, 0);
+  return ret;
 }
 
 static INLINE void load_u8_8x8(const uint8_t *s, ptrdiff_t p,
@@ -192,6 +185,20 @@ static INLINE void load_u16_4x7(const uint16_t *s, ptrdiff_t p,
   *s5 = vld1_u16(s);
   s += p;
   *s6 = vld1_u16(s);
+}
+
+static INLINE void load_s16_8x2(const int16_t *s, const ptrdiff_t p,
+                                int16x8_t *const s0, int16x8_t *const s1) {
+  *s0 = vld1q_s16(s);
+  s += p;
+  *s1 = vld1q_s16(s);
+}
+
+static INLINE void load_u16_8x2(const uint16_t *s, const ptrdiff_t p,
+                                uint16x8_t *const s0, uint16x8_t *const s1) {
+  *s0 = vld1q_u16(s);
+  s += p;
+  *s1 = vld1q_u16(s);
 }
 
 static INLINE void load_u16_8x4(const uint16_t *s, const ptrdiff_t p,
@@ -871,8 +878,55 @@ static INLINE void load_u8_16x4(const uint8_t *s, ptrdiff_t p,
   *s3 = vld1q_u8(s);
 }
 
-static INLINE void load_unaligned_u16_4x4(const uint16_t *buf, uint32_t stride,
-                                          uint16x8_t *tu0, uint16x8_t *tu1) {
+static INLINE void load_u16_8x8(const uint16_t *s, const ptrdiff_t p,
+                                uint16x8_t *s0, uint16x8_t *s1, uint16x8_t *s2,
+                                uint16x8_t *s3, uint16x8_t *s4, uint16x8_t *s5,
+                                uint16x8_t *s6, uint16x8_t *s7) {
+  *s0 = vld1q_u16(s);
+  s += p;
+  *s1 = vld1q_u16(s);
+  s += p;
+  *s2 = vld1q_u16(s);
+  s += p;
+  *s3 = vld1q_u16(s);
+  s += p;
+  *s4 = vld1q_u16(s);
+  s += p;
+  *s5 = vld1q_u16(s);
+  s += p;
+  *s6 = vld1q_u16(s);
+  s += p;
+  *s7 = vld1q_u16(s);
+}
+
+static INLINE void load_u16_16x4(const uint16_t *s, ptrdiff_t p,
+                                 uint16x8_t *const s0, uint16x8_t *const s1,
+                                 uint16x8_t *const s2, uint16x8_t *const s3,
+                                 uint16x8_t *const s4, uint16x8_t *const s5,
+                                 uint16x8_t *const s6, uint16x8_t *const s7) {
+  *s0 = vld1q_u16(s);
+  *s1 = vld1q_u16(s + 8);
+  s += p;
+  *s2 = vld1q_u16(s);
+  *s3 = vld1q_u16(s + 8);
+  s += p;
+  *s4 = vld1q_u16(s);
+  *s5 = vld1q_u16(s + 8);
+  s += p;
+  *s6 = vld1q_u16(s);
+  *s7 = vld1q_u16(s + 8);
+}
+
+static INLINE uint16x4_t load_unaligned_u16_4x1(const uint16_t *buf) {
+  uint64_t a;
+  uint64x1_t a_u64 = vdup_n_u64(0);
+  memcpy(&a, buf, 8);
+  a_u64 = vset_lane_u64(a, a_u64, 0);
+  return vreinterpret_u16_u64(a_u64);
+}
+
+static INLINE uint16x8_t load_unaligned_u16_4x2(const uint16_t *buf,
+                                                uint32_t stride) {
   uint64_t a;
   uint64x2_t a_u64;
 
@@ -883,13 +937,14 @@ static INLINE void load_unaligned_u16_4x4(const uint16_t *buf, uint32_t stride,
   memcpy(&a, buf, 8);
   buf += stride;
   a_u64 = vsetq_lane_u64(a, a_u64, 1);
-  *tu0 = vreinterpretq_u16_u64(a_u64);
-  memcpy(&a, buf, 8);
-  buf += stride;
-  a_u64 = vdupq_n_u64(a);
-  memcpy(&a, buf, 8);
-  a_u64 = vsetq_lane_u64(a, a_u64, 1);
-  *tu1 = vreinterpretq_u16_u64(a_u64);
+  return vreinterpretq_u16_u64(a_u64);
+}
+
+static INLINE void load_unaligned_u16_4x4(const uint16_t *buf, uint32_t stride,
+                                          uint16x8_t *tu0, uint16x8_t *tu1) {
+  *tu0 = load_unaligned_u16_4x2(buf, stride);
+  buf += 2 * stride;
+  *tu1 = load_unaligned_u16_4x2(buf, stride);
 }
 
 static INLINE void load_s32_4x4(int32_t *s, int32_t p, int32x4_t *s1,

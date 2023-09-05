@@ -18,6 +18,7 @@
 #define {{DIR}}_CHAIN_UTILS_H_
 
 {% set impl_dir = metadata.impl_dir + "/" if metadata.impl_dir else "" %}
+{% set namespace = metadata.namespace %}
 {% set namespace_name = Name(metadata.native_namespace) %}
 {% set native_namespace = namespace_name.namespace_case() %}
 {% set native_dir = impl_dir + namespace_name.Dirs() %}
@@ -26,13 +27,36 @@
 #include "{{native_dir}}/Error.h"
 
 namespace {{native_namespace}} {
+
+    template <typename T>
+    inline {{namespace}}::SType STypeFor;
+
+    // Specialize STypeFor to map from native struct types to their SType.
     {% for value in types["s type"].values %}
-        {% if value.valid %}
-            {% set const_qualifier = "const " if types[value.name.get()].chained == "in" else "" %}
-            {% set chained_struct_type = "ChainedStruct" if types[value.name.get()].chained == "in" else "ChainedStructOut" %}
-            void FindInChain({{const_qualifier}}{{chained_struct_type}}* chain, {{const_qualifier}}{{as_cppEnum(value.name)}}** out);
+        {% if value.valid and value.name.get() in types %}
+            template <>
+            inline {{namespace}}::SType STypeFor<{{as_cppEnum(value.name)}}> = {{namespace}}::SType::{{as_cppEnum(value.name)}};
         {% endif %}
     {% endfor %}
+
+    template <typename T>
+    void FindInChain(const ChainedStruct* chain, const T** out) {
+        for (; chain; chain = chain->nextInChain) {
+            if (chain->sType == STypeFor<T>) {
+                *out = static_cast<const T*>(chain);
+                break;
+            }
+        }
+    }
+    template <typename T>
+    void FindInChain(ChainedStructOut* chain, T** out) {
+        for (; chain; chain = chain->nextInChain) {
+            if (chain->sType == STypeFor<T>) {
+                *out = static_cast<T*>(chain);
+                break;
+            }
+        }
+    }
 
     // Verifies that |chain| only contains ChainedStructs of types enumerated in
     // |oneOfConstraints| and contains no duplicate sTypes. Each vector in
@@ -40,7 +64,6 @@ namespace {{native_namespace}} {
     // For example:
     //   ValidateSTypes(chain, { { ShaderModuleSPIRVDescriptor, ShaderModuleWGSLDescriptor } }))
     //   ValidateSTypes(chain, { { Extension1 }, { Extension2 } })
-    {% set namespace = metadata.namespace %}
     MaybeError ValidateSTypes(const ChainedStruct* chain,
                               std::vector<std::vector<{{namespace}}::SType>> oneOfConstraints);
     MaybeError ValidateSTypes(const ChainedStructOut* chain,

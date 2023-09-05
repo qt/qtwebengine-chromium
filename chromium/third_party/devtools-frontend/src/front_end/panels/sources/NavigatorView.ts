@@ -556,14 +556,14 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
     if (!fileSystemProjects.length) {
       return;
     }
-    const encoder = new Persistence.Persistence.PathEncoder();
-    const reversedPaths = fileSystemProjects.map(project => {
+
+    const reversedIndex = Common.Trie.Trie.newArrayTrie<string[]>();
+    const reversedPaths = [];
+    for (const project of fileSystemProjects) {
       const fileSystem = (project as Persistence.FileSystemWorkspaceBinding.FileSystem);
-      return Platform.StringUtilities.reverse(encoder.encode(fileSystem.fileSystemPath()));
-    });
-    const reversedIndex = new Common.Trie.Trie();
-    for (const reversedPath of reversedPaths) {
-      reversedIndex.add(reversedPath);
+      const reversedPathParts = fileSystem.fileSystemPath().split('/').reverse();
+      reversedPaths.push(reversedPathParts);
+      reversedIndex.add(reversedPathParts);
     }
 
     const rootOrDeployed = this.rootOrDeployedNode();
@@ -574,9 +574,9 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
       reversedIndex.remove(reversedPath);
       const commonPrefix = reversedIndex.longestPrefix(reversedPath, false /* fullWordOnly */);
       reversedIndex.add(reversedPath);
-      const prefixPath = reversedPath.substring(0, commonPrefix.length + 1);
+      const prefixPath = reversedPath.slice(0, commonPrefix.length + 1);
       const path = Common.ParsedURL.ParsedURL.encodedPathToRawPathString(
-          encoder.decode(Platform.StringUtilities.reverse(prefixPath)) as Platform.DevToolsPath.EncodedPathString);
+          prefixPath.reverse().join('/') as Platform.DevToolsPath.EncodedPathString);
 
       const fileSystemNode = rootOrDeployed.child(project.id());
       if (fileSystemNode) {
@@ -585,7 +585,7 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
     }
   }
 
-  private removeProject(project: Workspace.Workspace.Project): void {
+  removeProject(project: Workspace.Workspace.Project): void {
     this.removeUISourceCodes(project.uiSourceCodes());
     if (project.type() !== Workspace.Workspace.projectTypes.FileSystem) {
       return;
@@ -1014,7 +1014,7 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
           this.handleContextMenuCreate(project, path, undefined);
         });
       }
-    } else {
+    } else if (node.origin && node.folderPath) {
       const url = Common.ParsedURL.ParsedURL.concatenate(node.origin, '/', node.folderPath);
       for (const {text, callback} of Bindings.IgnoreListManager.IgnoreListManager.instance()
                .getIgnoreListFolderContextMenuItems(url)) {
@@ -1168,7 +1168,7 @@ export class NavigatorFolderTreeElement extends UI.TreeOutline.TreeElement {
   constructor(navigatorView: NavigatorView, type: string, title: string, hoverCallback?: ((arg0: boolean) => void)) {
     super('', true);
     this.listItemElement.classList.add('navigator-' + type + '-tree-item', 'navigator-folder-tree-item');
-    UI.ARIAUtils.setAccessibleName(this.listItemElement, `${title}, ${type}`);
+    UI.ARIAUtils.setLabel(this.listItemElement, `${title}, ${type}`);
     this.nodeType = type;
     this.title = title;
     this.tooltip = title;
@@ -1218,7 +1218,7 @@ export class NavigatorFolderTreeElement extends UI.TreeOutline.TreeElement {
   setNode(node: NavigatorTreeNode): void {
     this.node = node;
     this.updateTooltip();
-    UI.ARIAUtils.setAccessibleName(this.listItemElement, `${this.title}, ${this.nodeType}`);
+    UI.ARIAUtils.setLabel(this.listItemElement, `${this.title}, ${this.nodeType}`);
   }
 
   private updateTooltip(): void {
@@ -1281,7 +1281,7 @@ export class NavigatorSourceTreeElement extends UI.TreeOutline.TreeElement {
     this.listItemElement.classList.add(
         'navigator-' + uiSourceCode.contentType().name() + '-tree-item', 'navigator-file-tree-item');
     this.tooltip = uiSourceCode.url();
-    UI.ARIAUtils.setAccessibleName(this.listItemElement, `${uiSourceCode.name()}, ${this.nodeType}`);
+    UI.ARIAUtils.setLabel(this.listItemElement, `${uiSourceCode.name()}, ${this.nodeType}`);
     Common.EventTarget.fireEvent('source-tree-file-added', uiSourceCode.fullDisplayName());
     this.navigatorView = navigatorView;
     this.uiSourceCodeInternal = uiSourceCode;
@@ -1324,7 +1324,7 @@ export class NavigatorSourceTreeElement extends UI.TreeOutline.TreeElement {
   }
 
   updateAccessibleName(): void {
-    UI.ARIAUtils.setAccessibleName(this.listItemElement, `${this.uiSourceCodeInternal.name()}, ${this.nodeType}`);
+    UI.ARIAUtils.setLabel(this.listItemElement, `${this.uiSourceCodeInternal.name()}, ${this.nodeType}`);
   }
 
   get uiSourceCode(): Workspace.UISourceCode.UISourceCode {

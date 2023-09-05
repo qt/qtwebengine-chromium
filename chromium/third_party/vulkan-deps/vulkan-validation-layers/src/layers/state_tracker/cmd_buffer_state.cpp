@@ -134,8 +134,8 @@ void CMD_BUFFER_STATE::ResetCBState() {
     command_count = 0;
     submitCount = 0;
     image_layout_change_count = 1;  // Start at 1. 0 is insert value for validation cache versions, s.t. new == dirty
-    status.reset();
-    static_status.reset();
+    dynamic_state_status.cb.reset();
+    dynamic_state_status.pipeline.reset();
     dynamic_state_value.reset();
     inheritedViewportDepths.clear();
     usedViewportScissorCount = 0;
@@ -143,17 +143,14 @@ void CMD_BUFFER_STATE::ResetCBState() {
     pipelineStaticScissorCount = 0;
     viewportMask = 0;
     viewportWithCountMask = 0;
-    viewportWithCountCount = 0;
     scissorMask = 0;
     scissorWithCountMask = 0;
-    scissorWithCountCount = 0;
     trashedViewportMask = 0;
     trashedScissorMask = 0;
     trashedViewportCount = false;
     trashedScissorCount = false;
     usedDynamicViewportCount = false;
     usedDynamicScissorCount = false;
-    dynamicColorWriteEnableAttachmentCount = 0;
 
     activeRenderPassBeginInfo = safe_VkRenderPassBeginInfo();
     activeRenderPass = nullptr;
@@ -245,36 +242,10 @@ void CMD_BUFFER_STATE::ResetPushConstantDataIfIncompatible(const PIPELINE_LAYOUT
 
     push_constant_data_ranges = pipeline_layout_state->push_constant_ranges;
     push_constant_data.clear();
-    push_constant_data_update.clear();
     uint32_t size_needed = 0;
     for (const auto &push_constant_range : *push_constant_data_ranges) {
         auto size = push_constant_range.offset + push_constant_range.size;
         size_needed = std::max(size_needed, size);
-
-        auto stage_flags = push_constant_range.stageFlags;
-        uint32_t bit_shift = 0;
-        while (stage_flags) {
-            if (stage_flags & 1) {
-                VkShaderStageFlagBits flag = static_cast<VkShaderStageFlagBits>(1 << bit_shift);
-                const auto it = push_constant_data_update.find(flag);
-
-                if (it != push_constant_data_update.end()) {
-                    if (it->second.size() < push_constant_range.offset) {
-                        it->second.resize(push_constant_range.offset, PC_Byte_Not_Set);
-                    }
-                    if (it->second.size() < size) {
-                        it->second.resize(size, PC_Byte_Not_Updated);
-                    }
-                } else {
-                    std::vector<uint8_t> bytes;
-                    bytes.resize(push_constant_range.offset, PC_Byte_Not_Set);
-                    bytes.resize(size, PC_Byte_Not_Updated);
-                    push_constant_data_update[flag] = bytes;
-                }
-            }
-            stage_flags = stage_flags >> 1;
-            ++bit_shift;
-        }
     }
     push_constant_data.resize(size_needed, 0);
 }
@@ -420,17 +391,17 @@ bool CMD_BUFFER_STATE::UpdatesQuery(const QueryObject &query_obj) const {
 static bool SetQueryStateMulti(VkQueryPool queryPool, uint32_t firstQuery, uint32_t queryCount, uint32_t perfPass, QueryState value,
                                QueryMap *localQueryToStateMap) {
     for (uint32_t i = 0; i < queryCount; i++) {
-        QueryObject object = QueryObject(QueryObject(queryPool, firstQuery + i), perfPass);
-        (*localQueryToStateMap)[object] = value;
+        QueryObject query_obj = {queryPool, firstQuery + i, perfPass};
+        (*localQueryToStateMap)[query_obj] = value;
     }
     return false;
 }
 
 void CMD_BUFFER_STATE::EndQueries(VkQueryPool queryPool, uint32_t firstQuery, uint32_t queryCount) {
     for (uint32_t slot = firstQuery; slot < (firstQuery + queryCount); slot++) {
-        QueryObject query = {queryPool, slot};
-        activeQueries.erase(query);
-        updatedQueries.insert(query);
+        QueryObject query_obj = {queryPool, slot};
+        activeQueries.erase(query_obj);
+        updatedQueries.insert(query_obj);
     }
     queryUpdates.emplace_back([queryPool, firstQuery, queryCount](CMD_BUFFER_STATE &cb_state_arg, bool do_validate,
                                                                   VkQueryPool &firstPerfQueryPool, uint32_t perfQueryPass,
@@ -441,9 +412,9 @@ void CMD_BUFFER_STATE::EndQueries(VkQueryPool queryPool, uint32_t firstQuery, ui
 
 void CMD_BUFFER_STATE::ResetQueryPool(VkQueryPool queryPool, uint32_t firstQuery, uint32_t queryCount) {
     for (uint32_t slot = firstQuery; slot < (firstQuery + queryCount); slot++) {
-        QueryObject query = {queryPool, slot};
-        resetQueries.insert(query);
-        updatedQueries.insert(query);
+        QueryObject query_obj = {queryPool, slot};
+        resetQueries.insert(query_obj);
+        updatedQueries.insert(query_obj);
     }
 
     queryUpdates.emplace_back([queryPool, firstQuery, queryCount](CMD_BUFFER_STATE &cb_state_arg, bool do_validate,
@@ -1035,28 +1006,20 @@ void CMD_BUFFER_STATE::PushDescriptorSetState(VkPipelineBindPoint pipelineBindPo
     auto &push_descriptor_set = last_bound.push_descriptor_set;
     // If we are disturbing the current push_desriptor_set clear it
     if (!push_descriptor_set || !IsBoundSetCompat(set, last_bound, pipeline_layout)) {
-        last_bound.UnbindAndResetPushDescriptorSet(
-            std::make_shared<cvdescriptorset::DescriptorSet>(VK_NULL_HANDLE, nullptr, dsl, 0, dev_data));
+        last_bound.UnbindAndResetPushDescriptorSet(dev_data->CreateDescriptorSet(VK_NULL_HANDLE, nullptr, dsl, 0));
     }
 
     UpdateLastBoundDescriptorSets(pipelineBindPoint, pipeline_layout, set, 1, nullptr, push_descriptor_set, 0, nullptr);
     last_bound.pipeline_layout = pipeline_layout.layout();
 
     // Now that we have either the new or extant push_descriptor set ... do the write updates against it
-    push_descriptor_set->PerformPushDescriptorsUpdate(dev_data, descriptorWriteCount, pDescriptorWrites);
+    push_descriptor_set->PerformPushDescriptorsUpdate(descriptorWriteCount, pDescriptorWrites);
 }
 
 // Generic function to handle state update for all CmdDraw* type functions
 void CMD_BUFFER_STATE::UpdateDrawCmd(CMD_TYPE cmd_type) {
     has_draw_cmd = true;
     UpdatePipelineState(cmd_type, VK_PIPELINE_BIND_POINT_GRAPHICS);
-
-    // Update the consumed viewport/scissor count.
-    uint32_t &used = usedViewportScissorCount;
-    used = std::max(used, pipelineStaticViewportCount);
-    used = std::max(used, pipelineStaticScissorCount);
-    usedDynamicViewportCount |= dynamic_status[CB_DYNAMIC_VIEWPORT_WITH_COUNT_SET];
-    usedDynamicScissorCount |= dynamic_status[CB_DYNAMIC_SCISSOR_WITH_COUNT_SET];
 }
 
 // Generic function to handle state update for all CmdDispatch* type functions
@@ -1078,7 +1041,21 @@ void CMD_BUFFER_STATE::UpdatePipelineState(CMD_TYPE cmd_type, const VkPipelineBi
     const auto lv_bind_point = ConvertToLvlBindPoint(bind_point);
     auto &last_bound = lastBound[lv_bind_point];
     PIPELINE_STATE *pipe = last_bound.pipeline_state;
-    if (pipe && VK_NULL_HANDLE != last_bound.pipeline_layout) {
+    if (!pipe) {
+        return;
+    }
+    if (pipe->vertex_input_state && !pipe->vertex_input_state->binding_descriptions.empty()) {
+        vertex_buffer_used = true;
+    }
+
+    // Update the consumed viewport/scissor count.
+    {
+        usedViewportScissorCount = std::max({usedViewportScissorCount, pipelineStaticViewportCount, pipelineStaticScissorCount});
+        usedDynamicViewportCount |= pipe->IsDynamic(VK_DYNAMIC_STATE_VIEWPORT_WITH_COUNT);
+        usedDynamicScissorCount |= pipe->IsDynamic(VK_DYNAMIC_STATE_SCISSOR_WITH_COUNT);
+    }
+
+    if (last_bound.pipeline_layout != VK_NULL_HANDLE) {
         for (const auto &set_binding_pair : pipe->active_slots) {
             uint32_t set_index = set_binding_pair.first;
             if (set_index >= last_bound.per_set.size()) {
@@ -1149,9 +1126,6 @@ void CMD_BUFFER_STATE::UpdatePipelineState(CMD_TYPE cmd_type, const VkPipelineBi
                 }
             }
         }
-    }
-    if (pipe && pipe->vertex_input_state && !pipe->vertex_input_state->binding_descriptions.empty()) {
-        vertex_buffer_used = true;
     }
 }
 
@@ -1372,7 +1346,7 @@ void CMD_BUFFER_STATE::SetImageViewLayout(const IMAGE_VIEW_STATE &view_state, Vk
 
 void CMD_BUFFER_STATE::RecordCmd(CMD_TYPE cmd_type) { command_count++; }
 
-void CMD_BUFFER_STATE::RecordStateCmd(CMD_TYPE cmd_type, CBDynamicStatus state) {
+void CMD_BUFFER_STATE::RecordStateCmd(CMD_TYPE cmd_type, CBDynamicState state) {
     CBDynamicFlags state_bits;
     state_bits.set(state);
     RecordStateCmd(cmd_type, state_bits);
@@ -1380,13 +1354,8 @@ void CMD_BUFFER_STATE::RecordStateCmd(CMD_TYPE cmd_type, CBDynamicStatus state) 
 
 void CMD_BUFFER_STATE::RecordStateCmd(CMD_TYPE cmd_type, CBDynamicFlags const &state_bits) {
     RecordCmd(cmd_type);
-    status |= state_bits;
-    static_status &= ~state_bits;
-}
-
-void CMD_BUFFER_STATE::RecordColorWriteEnableStateCmd(CMD_TYPE cmd_type, CBDynamicStatus state, uint32_t attachment_count) {
-    RecordStateCmd(cmd_type, state);
-    dynamicColorWriteEnableAttachmentCount = std::max(dynamicColorWriteEnableAttachmentCount, attachment_count);
+    dynamic_state_status.cb |= state_bits;
+    dynamic_state_status.pipeline |= state_bits;
 }
 
 void CMD_BUFFER_STATE::RecordTransferCmd(CMD_TYPE cmd_type, std::shared_ptr<BINDABLE> &&buf1, std::shared_ptr<BINDABLE> &&buf2) {
@@ -1499,8 +1468,8 @@ void CMD_BUFFER_STATE::RecordWriteTimestamp(CMD_TYPE cmd_type, VkPipelineStageFl
         auto pool_state = dev_data->Get<QUERY_POOL_STATE>(queryPool);
         AddChild(pool_state);
     }
-    QueryObject query = {queryPool, slot};
-    EndQuery(query);
+    QueryObject query_obj = {queryPool, slot};
+    EndQuery(query_obj);
 }
 
 void CMD_BUFFER_STATE::Submit(uint32_t perf_submit_pass) {
@@ -1513,7 +1482,7 @@ void CMD_BUFFER_STATE::Submit(uint32_t perf_submit_pass) {
 
     for (const auto &query_state_pair : local_query_to_state_map) {
         auto query_pool_state = dev_data->Get<QUERY_POOL_STATE>(query_state_pair.first.pool);
-        query_pool_state->SetQueryState(query_state_pair.first.query, query_state_pair.first.perf_pass, query_state_pair.second);
+        query_pool_state->SetQueryState(query_state_pair.first.slot, query_state_pair.first.perf_pass, query_state_pair.second);
     }
 
     for (const auto &function : eventUpdates) {
@@ -1552,7 +1521,7 @@ void CMD_BUFFER_STATE::Retire(uint32_t perf_submit_pass, const std::function<boo
         if (query_state_pair.second == QUERYSTATE_ENDED && !is_query_updated_after(query_state_pair.first)) {
             auto query_pool_state = dev_data->Get<QUERY_POOL_STATE>(query_state_pair.first.pool);
             if (query_pool_state) {
-                query_pool_state->SetQueryState(query_state_pair.first.query, query_state_pair.first.perf_pass,
+                query_pool_state->SetQueryState(query_state_pair.first.slot, query_state_pair.first.perf_pass,
                                                 QUERYSTATE_AVAILABLE);
             }
         }
@@ -1568,26 +1537,12 @@ void CMD_BUFFER_STATE::UnbindResources() {
     // Push constants
     push_constant_data.clear();
     push_constant_data_ranges.reset();
-    push_constant_data_update.clear();
 
     // Reset status of cb to force rebinding of all resources
     // Index buffer included
-    status.reset();
+    dynamic_state_status.cb.reset();
+    dynamic_state_status.pipeline.reset();
 
     // Pipeline and descriptor sets
     lastBound[BindPoint_Graphics].Reset();
-}
-
-// Need to think about dynamic state when grabbing state
-bool CMD_BUFFER_STATE::RasterizationDisabled() const {
-    auto pipeline = lastBound[BindPoint_Graphics].pipeline_state;
-    if (pipeline) {
-        if (pipeline->IsDynamic(VK_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE_EXT)) {
-            return rasterization_disabled;
-        } else {
-            return pipeline->RasterizationDisabled();
-        }
-    }
-
-    return false;
 }

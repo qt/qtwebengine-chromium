@@ -52,7 +52,6 @@ import * as DataGrid from '../../ui/legacy/components/data_grid/data_grid.js';
 import * as PerfUI from '../../ui/legacy/components/perf_ui/perf_ui.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
-import * as ThemeSupport from '../../ui/legacy/theme_support/theme_support.js';
 
 import networkLogViewStyles from './networkLogView.css.js';
 
@@ -505,8 +504,7 @@ export class NetworkLogView extends Common.ObjectWrapper.eventMixin<EventTypes, 
                     ({name: category.title(), label: (): string => category.shortTitle(), title: category.title()}));
     this.resourceCategoryFilterUI =
         new UI.FilterBar.NamedBitSetFilterUI(filterItems, this.networkResourceTypeFiltersSetting);
-    UI.ARIAUtils.setAccessibleName(
-        this.resourceCategoryFilterUI.element(), i18nString(UIStrings.resourceTypesToInclude));
+    UI.ARIAUtils.setLabel(this.resourceCategoryFilterUI.element(), i18nString(UIStrings.resourceTypesToInclude));
     this.resourceCategoryFilterUI.addEventListener(
         UI.FilterBar.FilterUIEvents.FilterChanged, this.filterChanged.bind(this), this);
     filterBar.addFilter(this.resourceCategoryFilterUI);
@@ -846,9 +844,8 @@ export class NetworkLogView extends Common.ObjectWrapper.eventMixin<EventTypes, 
       resourceTreeModel.addEventListener(
           SDK.ResourceTreeModel.Events.DOMContentLoaded, this.domContentLoadedEventFired, this);
     }
-    const targetManager = SDK.TargetManager.TargetManager.instance();
     for (const request of Logs.NetworkLog.NetworkLog.instance().requests()) {
-      if (targetManager.isInScope(SDK.NetworkManager.NetworkManager.forRequest(request))) {
+      if (this.isInScope(request)) {
         this.refreshRequest(request);
       }
     }
@@ -1139,13 +1136,13 @@ export class NetworkLogView extends Common.ObjectWrapper.eventMixin<EventTypes, 
         const domContentLoadedText = i18nString(
             UIStrings.domcontentloadedS,
             {PH1: i18n.TimeUtilities.secondsToString(this.mainRequestDOMContentLoadedTime - baseTime)});
-        appendChunk(domContentLoadedText).style.color = NetworkLogView.getDCLEventColor();
+        appendChunk(domContentLoadedText).style.color = `var(${NetworkLogView.getDCLEventColor()})`;
       }
       if (this.mainRequestLoadTime !== -1) {
         this.summaryToolbarInternal.appendSeparator();
         const loadText =
             i18nString(UIStrings.loadS, {PH1: i18n.TimeUtilities.secondsToString(this.mainRequestLoadTime - baseTime)});
-        appendChunk(loadText).style.color = NetworkLogView.getLoadEventColor();
+        appendChunk(loadText).style.color = `var(${NetworkLogView.getLoadEventColor()})`;
       }
     }
   }
@@ -1158,7 +1155,7 @@ export class NetworkLogView extends Common.ObjectWrapper.eventMixin<EventTypes, 
     this.needsRefresh = true;
 
     if (this.isShowing()) {
-      void coordinator.write(this.refresh.bind(this));
+      void coordinator.write('NetworkLogView.render', this.refresh.bind(this));
     }
   }
 
@@ -1181,9 +1178,7 @@ export class NetworkLogView extends Common.ObjectWrapper.eventMixin<EventTypes, 
   }
 
   private invalidateAllItems(deferUpdate?: boolean): void {
-    const targetManager = SDK.TargetManager.TargetManager.instance();
-    this.staleRequests = new Set(Logs.NetworkLog.NetworkLog.instance().requests().filter(
-        r => targetManager.isInScope(SDK.NetworkManager.NetworkManager.forRequest(r))));
+    this.staleRequests = new Set(Logs.NetworkLog.NetworkLog.instance().requests().filter(this.isInScope));
     if (deferUpdate) {
       this.scheduleRefresh();
     } else {
@@ -1451,9 +1446,14 @@ export class NetworkLogView extends Common.ObjectWrapper.eventMixin<EventTypes, 
     return node;
   }
 
+  private isInScope(request: SDK.NetworkRequest.NetworkRequest): boolean {
+    const networkManager = SDK.NetworkManager.NetworkManager.forRequest(request);
+    return !networkManager || SDK.TargetManager.TargetManager.instance().isInScope(networkManager);
+  }
+
   private onRequestUpdated(event: Common.EventTarget.EventTargetEvent<SDK.NetworkRequest.NetworkRequest>): void {
     const request = event.data;
-    if (SDK.TargetManager.TargetManager.instance().isInScope(SDK.NetworkManager.NetworkManager.forRequest(request))) {
+    if (this.isInScope(request)) {
       this.refreshRequest(request);
     }
   }
@@ -2334,11 +2334,11 @@ export class NetworkLogView extends Common.ObjectWrapper.eventMixin<EventTypes, 
   }
 
   static getDCLEventColor(): string {
-    return ThemeSupport.ThemeSupport.instance().getComputedValue('--color-syntax-3');
+    return '--color-syntax-3';
   }
 
   static getLoadEventColor(): string {
-    return ThemeSupport.ThemeSupport.instance().getComputedValue('--color-syntax-1');
+    return '--color-syntax-1';
   }
 }
 

@@ -15,42 +15,51 @@
 #ifndef SRC_DAWN_NATIVE_D3D11_TEXTURED3D11_H_
 #define SRC_DAWN_NATIVE_D3D11_TEXTURED3D11_H_
 
+#include <vector>
+
 #include "dawn/native/DawnNative.h"
 #include "dawn/native/Error.h"
 #include "dawn/native/IntegerTypes.h"
 #include "dawn/native/PassResourceUsage.h"
-#include "dawn/native/Texture.h"
+#include "dawn/native/d3d/TextureD3D.h"
 #include "dawn/native/d3d/d3d_platform.h"
 
 namespace dawn::native {
 struct CopyTextureToTextureCmd;
 }  // namespace dawn::native
 
+namespace dawn::native::d3d {
+class Fence;
+}  // namespace dawn::native::d3d
+
 namespace dawn::native::d3d11 {
 
 class CommandRecordingContext;
 class Device;
 
-class Texture final : public TextureBase {
+MaybeError ValidateTextureCanBeWrapped(ID3D11Resource* d3d11Resource,
+                                       const TextureDescriptor* descriptor);
+MaybeError ValidateVideoTextureCanBeShared(Device* device, DXGI_FORMAT textureFormat);
+
+class Texture final : public d3d::Texture {
   public:
     static ResultOrError<Ref<Texture>> Create(Device* device, const TextureDescriptor* descriptor);
     static ResultOrError<Ref<Texture>> Create(Device* device,
                                               const TextureDescriptor* descriptor,
                                               ComPtr<ID3D11Resource> d3d11Texture);
-    static ResultOrError<Ref<Texture>> CreateStaging(Device* device,
-                                                     const TextureDescriptor* descriptor);
-
-    DXGI_FORMAT GetD3D11Format() const;
+    static ResultOrError<Ref<Texture>> CreateExternalImage(Device* device,
+                                                           const TextureDescriptor* descriptor,
+                                                           ComPtr<IUnknown> d3dTexture,
+                                                           std::vector<Ref<d3d::Fence>> waitFences,
+                                                           bool isSwapChainTexture,
+                                                           bool isInitialized);
     ID3D11Resource* GetD3D11Resource() const;
 
-    DXGI_FORMAT GetD3D11CopyableSubresourceFormat(Aspect aspect) const;
-
     D3D11_RENDER_TARGET_VIEW_DESC GetRTVDescriptor(const Format& format,
-                                                   const SubresourceRange& range) const;
-    D3D11_DEPTH_STENCIL_VIEW_DESC GetDSVDescriptor(const SubresourceRange& range,
+                                                   const SubresourceRange& singleLevelRange) const;
+    D3D11_DEPTH_STENCIL_VIEW_DESC GetDSVDescriptor(const SubresourceRange& singleLevelRange,
                                                    bool depthReadOnly,
                                                    bool stencilReadOnly) const;
-
     MaybeError EnsureSubresourceContentInitialized(CommandRecordingContext* commandContext,
                                                    const SubresourceRange& range);
 
@@ -61,9 +70,24 @@ class Texture final : public TextureBase {
                      const uint8_t* data,
                      uint32_t bytesPerRow,
                      uint32_t rowsPerImage);
+    using ReadCallback = std::function<MaybeError(const uint8_t* data, size_t offset, size_t size)>;
+    MaybeError Read(CommandRecordingContext* commandContext,
+                    const SubresourceRange& subresources,
+                    const Origin3D& origin,
+                    Extent3D size,
+                    uint32_t bytesPerRow,
+                    uint32_t rowsPerImage,
+                    ReadCallback callback);
     static MaybeError Copy(CommandRecordingContext* commandContext, CopyTextureToTextureCmd* copy);
 
+    ResultOrError<ExecutionSerial> EndAccess() override;
+
   private:
+    using Base = d3d::Texture;
+
+    static ResultOrError<Ref<Texture>> CreateStaging(Device* device,
+                                                     const TextureDescriptor* descriptor);
+
     Texture(Device* device,
             const TextureDescriptor* descriptor,
             TextureState state,
@@ -75,7 +99,9 @@ class Texture final : public TextureBase {
 
     MaybeError InitializeAsInternalTexture();
     MaybeError InitializeAsSwapChainTexture(ComPtr<ID3D11Resource> d3d11Texture);
-
+    MaybeError InitializeAsExternalTexture(ComPtr<IUnknown> d3dTexture,
+                                           std::vector<Ref<d3d::Fence>> waitFences,
+                                           bool isSwapChainTexture);
     void SetLabelHelper(const char* prefix);
 
     // Dawn API
@@ -85,6 +111,13 @@ class Texture final : public TextureBase {
     MaybeError Clear(CommandRecordingContext* commandContext,
                      const SubresourceRange& range,
                      TextureBase::ClearValue clearValue);
+    MaybeError ReadStaging(CommandRecordingContext* commandContext,
+                           const SubresourceRange& subresources,
+                           const Origin3D& origin,
+                           Extent3D size,
+                           uint32_t bytesPerRow,
+                           uint32_t rowsPerImage,
+                           ReadCallback callback);
 
     const bool mIsStaging = false;
     ComPtr<ID3D11Resource> mD3d11Resource;
@@ -94,12 +127,13 @@ class TextureView final : public TextureViewBase {
   public:
     static Ref<TextureView> Create(TextureBase* texture, const TextureViewDescriptor* descriptor);
 
-    DXGI_FORMAT GetD3D11Format() const;
     ResultOrError<ComPtr<ID3D11ShaderResourceView>> CreateD3D11ShaderResourceView() const;
-    ResultOrError<ComPtr<ID3D11RenderTargetView>> CreateD3D11RenderTargetView() const;
+    ResultOrError<ComPtr<ID3D11RenderTargetView>> CreateD3D11RenderTargetView(
+        uint32_t mipLevel = 0u) const;
     ResultOrError<ComPtr<ID3D11DepthStencilView>> CreateD3D11DepthStencilView(
         bool depthReadOnly,
-        bool stencilReadOnly) const;
+        bool stencilReadOnly,
+        uint32_t mipLevel = 0u) const;
     ResultOrError<ComPtr<ID3D11UnorderedAccessView>> CreateD3D11UnorderedAccessView() const;
 
   private:

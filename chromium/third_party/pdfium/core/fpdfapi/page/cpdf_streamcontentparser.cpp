@@ -49,13 +49,16 @@
 
 namespace {
 
-const int kMaxFormLevel = 40;
+constexpr int kMaxFormLevel = 40;
 
-const int kSingleCoordinatePair = 1;
-const int kTensorCoordinatePairs = 16;
-const int kCoonsCoordinatePairs = 12;
-const int kSingleColorPerPatch = 1;
-const int kQuadColorsPerPatch = 4;
+// Upper limit for the number of form XObjects within a form XObject.
+constexpr int kFormCountLimit = 4096;
+
+constexpr int kSingleCoordinatePair = 1;
+constexpr int kTensorCoordinatePairs = 16;
+constexpr int kCoonsCoordinatePairs = 12;
+constexpr int kSingleColorPerPatch = 1;
+constexpr int kQuadColorsPerPatch = 4;
 
 const char kPathOperatorSubpath = 'm';
 const char kPathOperatorLine = 'l';
@@ -250,7 +253,7 @@ CPDF_StreamContentParser::CPDF_StreamContentParser(
     RetainPtr<CPDF_Dictionary> pResources,
     const CFX_FloatRect& rcBBox,
     const CPDF_AllStates* pStates,
-    std::set<const uint8_t*>* pParsedSet)
+    CPDF_Form::RecursionState* recursion_state)
     : m_pDocument(pDocument),
       m_pPageResources(pPageResources),
       m_pParentResources(pParentResources),
@@ -258,7 +261,7 @@ CPDF_StreamContentParser::CPDF_StreamContentParser(
                                                   pParentResources.Get(),
                                                   pPageResources.Get())),
       m_pObjectHolder(pObjHolder),
-      m_ParsedSet(pParsedSet),
+      m_RecursionState(recursion_state),
       m_BBox(rcBBox),
       m_pCurStates(std::make_unique<CPDF_AllStates>()) {
   if (pmtContentToUser)
@@ -426,7 +429,7 @@ void CPDF_StreamContentParser::SetGraphicStates(CPDF_PageObject* pObj,
   if (bText) {
     pObj->m_TextState = m_pCurStates->m_TextState;
   }
-  pObj->SetGraphicsResourceName(m_pCurStates->m_GraphicsResourceName);
+  pObj->SetGraphicsResourceNames(m_pCurStates->m_GraphicsResourceNames);
 }
 
 // static
@@ -744,7 +747,16 @@ void CPDF_StreamContentParser::Handle_ExecuteXObject() {
     type = pXObject->GetDict()->GetByteStringFor("Subtype");
 
   if (type == "Form") {
+    if (m_RecursionState->form_count > kFormCountLimit) {
+      return;
+    }
+
+    const bool is_first = m_RecursionState->form_count == 0;
+    ++m_RecursionState->form_count;
     AddForm(std::move(pXObject), name);
+    if (is_first) {
+      m_RecursionState->form_count = 0;
+    }
     return;
   }
 
@@ -772,13 +784,13 @@ void CPDF_StreamContentParser::AddForm(RetainPtr<CPDF_Stream> pStream,
   status.m_TextState = m_pCurStates->m_TextState;
   auto form = std::make_unique<CPDF_Form>(
       m_pDocument, m_pPageResources, std::move(pStream), m_pResources.Get());
-  form->ParseContent(&status, nullptr, m_ParsedSet);
+  form->ParseContent(&status, nullptr, m_RecursionState);
 
   CFX_Matrix matrix = m_pCurStates->m_CTM * m_mtContentToUser;
   auto pFormObj = std::make_unique<CPDF_FormObject>(GetCurrentStreamIndex(),
                                                     std::move(form), matrix);
   pFormObj->SetResourceName(name);
-  pFormObj->SetGraphicsResourceName(m_pCurStates->m_GraphicsResourceName);
+  pFormObj->SetGraphicsResourceNames(m_pCurStates->m_GraphicsResourceNames);
   if (!m_pObjectHolder->BackgroundAlphaNeeded() &&
       pFormObj->form()->BackgroundAlphaNeeded()) {
     m_pObjectHolder->SetBackgroundAlphaNeeded(true);
@@ -903,7 +915,8 @@ void CPDF_StreamContentParser::Handle_SetExtendGraphState() {
   if (!pGS)
     return;
 
-  m_pCurStates->m_GraphicsResourceName = name;
+  CHECK(!name.IsEmpty());
+  m_pCurStates->m_GraphicsResourceNames.push_back(std::move(name));
   m_pCurStates->ProcessExtGS(pGS.Get(), this);
 }
 
@@ -1535,15 +1548,15 @@ uint32_t CPDF_StreamContentParser::Parse(
   // Parsing will be done from within |pDataStart|.
   pdfium::span<const uint8_t> pDataStart = pData.subspan(start_offset);
   m_StartParseOffset = start_offset;
-  if (m_ParsedSet->size() > kMaxFormLevel ||
-      pdfium::Contains(*m_ParsedSet, pDataStart.data())) {
+  if (m_RecursionState->parsed_set.size() > kMaxFormLevel ||
+      pdfium::Contains(m_RecursionState->parsed_set, pDataStart.data())) {
     return fxcrt::CollectionSize<uint32_t>(pDataStart);
   }
 
   m_StreamStartOffsets = stream_start_offsets;
 
-  ScopedSetInsertion<const uint8_t*> scopedInsert(m_ParsedSet,
-                                                  pDataStart.data());
+  ScopedSetInsertion<const uint8_t*> scoped_insert(
+      &m_RecursionState->parsed_set, pDataStart.data());
 
   uint32_t init_obj_count = m_pObjectHolder->GetPageObjectCount();
   AutoNuller<std::unique_ptr<CPDF_StreamParser>> auto_clearer(&m_pSyntax);

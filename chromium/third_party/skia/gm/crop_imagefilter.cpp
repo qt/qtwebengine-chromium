@@ -122,7 +122,7 @@ sk_sp<SkImage> make_image(SkCanvas* canvas, const SkRect* contentBounds) {
 
     const auto srcII = SkImageInfo::Make(SkISize::Make(SkScalarCeilToInt(w), SkScalarCeilToInt(h)),
                                          kRGBA_8888_SkColorType, kPremul_SkAlphaType);
-    auto surf = SkSurface::MakeRaster(srcII);
+    auto surf = SkSurfaces::Raster(srcII);
 
     surf->getCanvas()->drawColor(SK_ColorDKGRAY);
     SkPaint paint;
@@ -182,7 +182,7 @@ void draw_example(
         SkRect clippedContentBounds;
         if (clippedContentBounds.intersect(contentBounds, kExampleBounds)) {
             auto contentImage = ToolUtils::MakeTextureImage(
-                    canvas, image->makeSubset(clippedContentBounds.roundOut()));
+                    canvas, image->makeSubset(nullptr, clippedContentBounds.roundOut()));
             if (contentImage) {
                 SkPaint tiledPaint;
                 tiledPaint.setShader(contentImage->makeShader(

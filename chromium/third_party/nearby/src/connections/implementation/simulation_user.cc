@@ -63,13 +63,12 @@ void SimulationUser::OnEndpointLost(const std::string& endpoint_id) {
   if (lost_latch_) lost_latch_->CountDown();
 }
 
-void SimulationUser::OnPayload(const std::string& endpoint_id,
-                               Payload payload) {
+void SimulationUser::OnPayload(absl::string_view endpoint_id, Payload payload) {
   payload_ = std::move(payload);
   if (payload_latch_) payload_latch_->CountDown();
 }
 
-void SimulationUser::OnPayloadProgress(const std::string& endpoint_id,
+void SimulationUser::OnPayloadProgress(absl::string_view endpoint_id,
                                        const PayloadProgressInfo& info) {
   MutexLock lock(&progress_mutex_);
   progress_info_ = info;
@@ -173,6 +172,16 @@ void SimulationUser::AcceptConnection(CountDownLatch* latch) {
 void SimulationUser::RejectConnection(CountDownLatch* latch) {
   reject_latch_ = latch;
   EXPECT_TRUE(mgr_.RejectConnection(&client_, discovered_.endpoint_id).Ok());
+}
+
+void SimulationUser::StartListeningForIncomingConnections(
+    CountDownLatch* latch, absl::string_view service_id,
+    const v3::ConnectionListeningOptions& options, Status expected_status) {
+  auto result = mgr_.StartListeningForIncomingConnections(
+      &client_, service_id, /*listener=*/{}, options);
+  latch->CountDown();
+  NEARBY_LOGS(INFO) << "status: " << result.first.ToString();
+  EXPECT_EQ(expected_status, result.first);
 }
 
 }  // namespace connections

@@ -123,6 +123,7 @@ static const struct {
     { "mtlf16norm",            "gpu", "api=metal,color=f16norm" },
     { "mtlsrgba",              "gpu", "api=metal,color=srgba"},
     { "mtl1010102",            "gpu", "api=metal,color=1010102" },
+    { "mtl_dmsaa",             "gpu", "api=metal,dmsaa=true" },
     { "mtlmsaa4",              "gpu", "api=metal,samples=4" },
     { "mtlmsaa8",              "gpu", "api=metal,samples=8" },
     { "mtlddl",                "gpu", "api=metal,useDDLSink=true" },
@@ -141,6 +142,12 @@ static const struct {
 #endif
 #ifdef SK_DAWN
     { "grdawn",                "graphite", "api=dawn" },
+    { "grdawn_d3d11",          "graphite", "api=dawn_d3d11" },
+    { "grdawn_d3d12",          "graphite", "api=dawn_d3d12" },
+    { "grdawn_mtl",            "graphite", "api=dawn_mtl" },
+    { "grdawn_vk",             "graphite", "api=dawn_vk" },
+    { "grdawn_gl",             "graphite", "api=dawn_gl" },
+    { "grdawn_gles",           "graphite", "api=dawn_gles" },
 #endif
 #ifdef SK_METAL
     { "grmtl",                 "graphite", "api=metal" },
@@ -484,6 +491,30 @@ public:
             *outContextType = sk_gpu_test::GrContextFactory::kDawn_ContextType;
             return true;
         }
+        if (optionValue->equals("dawn_d3d11")) {
+            *outContextType = sk_gpu_test::GrContextFactory::kDawn_D3D11_ContextType;
+            return true;
+        }
+        if (optionValue->equals("dawn_d3d12")) {
+            *outContextType = sk_gpu_test::GrContextFactory::kDawn_D3D12_ContextType;
+            return true;
+        }
+        if (optionValue->equals("dawn_mtl")) {
+            *outContextType = sk_gpu_test::GrContextFactory::kDawn_Metal_ContextType;
+            return true;
+        }
+        if (optionValue->equals("dawn_vk")) {
+            *outContextType = sk_gpu_test::GrContextFactory::kDawn_Vulkan_ContextType;
+            return true;
+        }
+        if (optionValue->equals("dawn_gl")) {
+            *outContextType = sk_gpu_test::GrContextFactory::kDawn_OpenGL_ContextType;
+            return true;
+        }
+        if (optionValue->equals("dawn_gles")) {
+            *outContextType = sk_gpu_test::GrContextFactory::kDawn_OpenGLES_ContextType;
+            return true;
+        }
 #endif
 #ifdef SK_DIRECT3D
         if (optionValue->equals("direct3d")) {
@@ -538,24 +569,24 @@ private:
     THashMap<SkString, SkString> fOptionsMap;
 };
 
-SkCommandLineConfigGpu::SkCommandLineConfigGpu(const SkString&           tag,
+SkCommandLineConfigGpu::SkCommandLineConfigGpu(const SkString&         tag,
                                                const TArray<SkString>& viaParts,
-                                               ContextType               contextType,
-                                               bool                      fakeGLESVersion2,
-                                               uint32_t                  surfaceFlags,
-                                               int                       samples,
-                                               SkColorType               colorType,
-                                               SkAlphaType               alphaType,
-                                               bool                      useStencilBuffers,
-                                               bool                      testThreading,
-                                               int                       testPersistentCache,
-                                               bool                      testPrecompile,
-                                               bool                      useDDLSink,
-                                               bool                      slug,
-                                               bool                      serializeSlug,
-                                               bool                      remoteSlug,
-                                               bool                      reducedShaders,
-                                               SurfType                  surfType)
+                                               ContextType             contextType,
+                                               bool                    fakeGLESVersion2,
+                                               uint32_t                surfaceFlags,
+                                               int                     samples,
+                                               SkColorType             colorType,
+                                               SkAlphaType             alphaType,
+                                               bool                    useStencilBuffers,
+                                               bool                    testThreading,
+                                               int                     testPersistentCache,
+                                               bool                    testPrecompile,
+                                               bool                    useDDLSink,
+                                               bool                    slug,
+                                               bool                    serializeSlug,
+                                               bool                    remoteSlug,
+                                               bool                    reducedShaders,
+                                               SurfType                surfType)
         : SkCommandLineConfig(tag, SkString("gpu"), viaParts)
         , fContextType(contextType)
         , fContextOverrides(ContextOverrides::kNone)
@@ -579,13 +610,13 @@ SkCommandLineConfigGpu::SkCommandLineConfigGpu(const SkString&           tag,
         fContextOverrides |= ContextOverrides::kFakeGLESVersionAs2;
     }
     if (reducedShaders) {
-        fContextOverrides |= ContextOverrides ::kReducedShaders;
+        fContextOverrides |= ContextOverrides::kReducedShaders;
     }
 }
 
-SkCommandLineConfigGpu* parse_command_line_config_gpu(const SkString&           tag,
+SkCommandLineConfigGpu* parse_command_line_config_gpu(const SkString&         tag,
                                                       const TArray<SkString>& vias,
-                                                      const SkString&           options) {
+                                                      const SkString&         options) {
     // Defaults for GPU backend.
     SkCommandLineConfigGpu::ContextType contextType         = GrContextFactory::kGL_ContextType;
     bool                                useDIText           = false;

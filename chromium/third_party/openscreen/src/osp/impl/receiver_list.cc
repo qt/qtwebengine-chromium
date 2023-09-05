@@ -28,13 +28,16 @@ Error ReceiverList::OnReceiverChanged(const ServiceInfo& info) {
   return Error::None();
 }
 
-Error ReceiverList::OnReceiverRemoved(const ServiceInfo& info) {
+ErrorOr<ServiceInfo> ReceiverList::OnReceiverRemoved(const ServiceInfo& info) {
+  // All of the removed service infos should be equivalent, so just return the
+  // first one.
+  ServiceInfo out = info;
   const auto it = std::remove(receivers_.begin(), receivers_.end(), info);
   if (it == receivers_.end())
     return Error::Code::kItemNotFound;
 
   receivers_.erase(it, receivers_.end());
-  return Error::None();
+  return out;
 }
 
 Error ReceiverList::OnAllReceiversRemoved() {

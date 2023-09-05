@@ -77,6 +77,37 @@ egl::ShareGroup *AllocateOrGetShareGroup(egl::Display *display, const gl::Contex
     }
 }
 
+egl::ContextMutex *TryAllocateOrUseSharedContextMutex(egl::Display *display,
+                                                      egl::ContextMutex *sharedContextMutex)
+{
+    if (egl::kIsSharedContextMutexEnabled)
+    {
+        if (sharedContextMutex == nullptr)
+        {
+            ASSERT(display->getSharedContextMutexManager() != nullptr);
+            sharedContextMutex = display->getSharedContextMutexManager()->create();
+        }
+        sharedContextMutex->addRef();
+    }
+    else
+    {
+        ASSERT(sharedContextMutex == nullptr);
+    }
+    return sharedContextMutex;
+}
+
+egl::SingleContextMutex *TryAllocateSingleContextMutex(egl::ContextMutex *sharedContextMutex)
+{
+    egl::SingleContextMutex *singleContextMutex = nullptr;
+    if (!egl::kIsSharedContextMutexEnabled || sharedContextMutex == nullptr)
+    {
+        ASSERT(sharedContextMutex == nullptr);
+        singleContextMutex = new egl::SingleContextMutex();
+        singleContextMutex->addRef();
+    }
+    return singleContextMutex;
+}
+
 template <typename T>
 angle::Result GetQueryObjectParameter(const Context *context, Query *query, GLenum pname, T *params)
 {
@@ -470,6 +501,7 @@ Context::Context(egl::Display *display,
                  const Context *shareContext,
                  TextureManager *shareTextures,
                  SemaphoreManager *shareSemaphores,
+                 egl::ContextMutex *sharedContextMutex,
                  MemoryProgramCache *memoryProgramCache,
                  MemoryShaderCache *memoryShaderCache,
                  const EGLenum clientType,
@@ -480,6 +512,8 @@ Context::Context(egl::Display *display,
              AllocateOrGetShareGroup(display, shareContext),
              shareTextures,
              shareSemaphores,
+             TryAllocateOrUseSharedContextMutex(display, sharedContextMutex),
+             TryAllocateSingleContextMutex(sharedContextMutex),
              &mOverlay,
              clientType,
              GetClientVersion(display, attribs, clientType),
@@ -527,6 +561,8 @@ Context::Context(egl::Display *display,
       mSaveAndRestoreState(GetSaveAndRestoreState(attribs)),
       mIsDestroyed(false)
 {
+    ASSERT(mState.mSharedContextMutex != nullptr || mState.mSingleContextMutex != nullptr);
+
     for (angle::SubjectIndex uboIndex = kUniformBuffer0SubjectIndex;
          uboIndex < kUniformBufferMaxSubjectIndex; ++uboIndex)
     {
@@ -876,6 +912,15 @@ egl::Error Context::onDestroy(const egl::Display *display)
     // Backend requires implementation to be destroyed first to close down all the objects
     mState.mShareGroup->release(display);
 
+    if (mState.mSharedContextMutex != nullptr)
+    {
+        mState.mSharedContextMutex->release();
+    }
+    if (mState.mSingleContextMutex != nullptr)
+    {
+        mState.mSingleContextMutex->release();
+    }
+
     mOverlay.destroy(this);
 
     return egl::NoError();
@@ -1094,14 +1139,38 @@ void Context::deleteProgram(ShaderProgramID program)
     mState.mShaderProgramManager->deleteProgram(this, program);
 }
 
-void Context::deleteTexture(TextureID texture)
+void Context::deleteTexture(TextureID textureID)
 {
-    if (mState.mTextureManager->getTexture(texture))
+    // If a texture object is deleted while its image is bound to a pixel local storage plane on the
+    // currently bound draw framebuffer, and pixel local storage is active, then it is as if
+    // EndPixelLocalStorageANGLE() had been called with <n>=PIXEL_LOCAL_STORAGE_ACTIVE_PLANES_ANGLE
+    // and <storeops> of STORE_OP_STORE_ANGLE.
+    if (mState.getPixelLocalStorageActivePlanes() != 0)
     {
-        detachTexture(texture);
+        PixelLocalStorage *pls = mState.getDrawFramebuffer()->peekPixelLocalStorage();
+        // Even though there is a nonzero number of active PLS planes, peekPixelLocalStorage() may
+        // still return null if we are in the middle of deleting the active framebuffer.
+        if (pls != nullptr)
+        {
+            for (GLuint i = 0; i < mState.mCaps.maxPixelLocalStoragePlanes; ++i)
+            {
+                if (pls->getPlane(i).getTextureID() == textureID)
+                {
+                    endPixelLocalStorageWithStoreOpsStore();
+                    break;
+                }
+            }
+        }
     }
 
-    mState.mTextureManager->deleteObject(this, texture);
+    Texture *texture = mState.mTextureManager->getTexture(textureID);
+    if (texture != nullptr)
+    {
+        texture->onStateChange(angle::SubjectMessage::TextureIDDeleted);
+        detachTexture(textureID);
+    }
+
+    mState.mTextureManager->deleteObject(this, textureID);
 }
 
 void Context::deleteRenderbuffer(RenderbufferID renderbuffer)
@@ -3806,6 +3875,12 @@ Extensions Context::generateSupportedExtensions() const
         supportedExtensions.colorBufferFloatRgbaCHROMIUM = false;
     }
 
+    if (getClientVersion() >= ES_3_0)
+    {
+        // Enable this extension for GLES3+.
+        supportedExtensions.renderabilityValidationANGLE = true;
+    }
+
     if (getFrontendFeatures().disableDrawBuffersIndexed.enabled)
     {
         supportedExtensions.drawBuffersIndexedEXT = false;
@@ -4220,6 +4295,10 @@ void Context::initCaps()
         INFO() << "Disabling GL_NV_framebuffer_blit during capture, which is not "
                   "supported on some native drivers";
         mState.mExtensions.framebufferBlitNV = false;
+
+        INFO() << "Disabling GL_EXT_texture_mirror_clamp_to_edge during capture, which is not "
+                  "supported on some native drivers";
+        mState.mExtensions.textureMirrorClampToEdgeEXT = false;
 
         // NVIDIA's Vulkan driver only supports 4 draw buffers
         constexpr GLint maxDrawBuffers = 4;
@@ -6106,6 +6185,17 @@ void Context::pixelStorei(GLenum pname, GLint param)
             UNREACHABLE();
             return;
     }
+}
+
+void Context::polygonMode(GLenum face, PolygonMode modePacked)
+{
+    ASSERT(face == GL_FRONT_AND_BACK);
+    mState.setPolygonMode(modePacked);
+}
+
+void Context::polygonModeNV(GLenum face, PolygonMode modePacked)
+{
+    polygonMode(face, modePacked);
 }
 
 void Context::polygonOffset(GLfloat factor, GLfloat units)
@@ -9386,6 +9476,15 @@ void Context::endPixelLocalStorage(GLsizei n, const GLenum storeops[])
     mState.setPixelLocalStorageActivePlanes(0);
 }
 
+void Context::endPixelLocalStorageWithStoreOpsStore()
+{
+    GLsizei n = mState.getPixelLocalStorageActivePlanes();
+    ASSERT(n >= 1);
+    angle::FixedVector<GLenum, IMPLEMENTATION_MAX_PIXEL_LOCAL_STORAGE_PLANES> storeops(
+        n, GL_STORE_OP_STORE_ANGLE);
+    endPixelLocalStorage(n, storeops.data());
+}
+
 void Context::pixelLocalStorageBarrier()
 {
     if (getExtensions().shaderPixelLocalStorageCoherentANGLE)
@@ -9477,7 +9576,7 @@ void Context::getFramebufferPixelLocalStorageParameterivRobust(GLint plane,
             {
                 *length = 1;
             }
-            *params = pls.getPlane(plane).getIntegeri(this, pname);
+            *params = pls.getPlane(plane).getIntegeri(pname);
             break;
         case GL_PIXEL_LOCAL_CLEAR_VALUE_INT_ANGLE:
             if (length != nullptr)
@@ -9498,6 +9597,89 @@ void Context::getFramebufferPixelLocalStorageParameterivRobust(GLint plane,
             break;
         }
     }
+}
+
+bool Context::isSharedContextMutexActive() const
+{
+    if (!mState.mIsSharedContextMutexActive)
+    {
+        return false;
+    }
+    ASSERT(mState.mSharedContextMutex != nullptr);
+    ASSERT(getContextMutex() == mState.mSharedContextMutex);
+    return true;
+}
+
+bool Context::isContextMutexStateConsistent() const
+{
+    if (!mState.mIsSharedContextMutexActive)
+    {
+        ASSERT(mState.mSingleContextMutex != nullptr);
+        // "SharedContextMutex" may be nullptr. "ContextMutex" may be "SharedContextMutex".
+        return true;
+    }
+    ASSERT(mState.mSharedContextMutex != nullptr);
+    ASSERT(getContextMutex() == mState.mSharedContextMutex);
+
+    if (mState.mSingleContextMutex != nullptr &&
+        mState.mSingleContextMutex->isLocked(std::memory_order_acquire))
+    {
+        ERR() << "SingleContextMutex is locked while SharedContextMutex is active!";
+        return false;
+    }
+
+    return true;
+}
+
+egl::ScopedContextMutexLock Context::lockAndActivateSharedContextMutex()
+{
+    constexpr uint32_t kActivationDelayMicro = 100;
+
+    ASSERT(mState.mSharedContextMutex != nullptr);
+
+    // All state updates must be protected by "SharedContextMutex".
+    egl::ScopedContextMutexLock lock(mState.mSharedContextMutex, this);
+
+    if (!mState.mIsSharedContextMutexActive)
+    {
+        ASSERT(mState.mSingleContextMutex != nullptr);
+
+        // First, start using "SharedContextMutex".
+        mState.mContextMutex.store(mState.mSharedContextMutex);
+
+        // Second, sleep some time so that currently active Context thread start using new mutex.
+        // Logic assumes that there will be no new "SingleContextMutex" locks after this.
+        // In very rare cases when this happens, new Context may start executing commands using the
+        // "SharedContextMutex", while existing Context will continue execute a command (or few) in
+        // parallel, because it is still using the "SingleContextMutex". Commands from new and old
+        // Contexts may access same shared state and cause undefined behaviour. So for a problem to
+        // happened, not only mutex replacement should fail (from the the point of view of existing
+        // Context), but also current and new Contexts must execute commands (right after mutex
+        // replacement) that both access shared state in a way that may cause undefined behaviour.
+        std::this_thread::sleep_for(std::chrono::microseconds(kActivationDelayMicro));
+
+        // Next, wait while "SingleContextMutex" is locked (until unlocked).
+        // In real-world applications this condition will almost always be "false"
+        while (mState.mSingleContextMutex->isLocked(std::memory_order_acquire))
+        {
+            std::this_thread::sleep_for(std::chrono::microseconds(100));
+        }
+
+        // Finally, activate "SharedContextMutex".
+        mState.mIsSharedContextMutexActive = true;
+    }
+
+    ASSERT(getContextMutex() == mState.mSharedContextMutex);
+
+    return lock;
+}
+
+void Context::mergeSharedContextMutexes(egl::ContextMutex *otherMutex)
+{
+    ASSERT(otherMutex != nullptr);
+    ASSERT(isSharedContextMutexActive());
+    egl::ContextMutexManager *mutexManager = mDisplay->getSharedContextMutexManager();
+    mutexManager->merge(mState.mSharedContextMutex, otherMutex);
 }
 
 void Context::eGLImageTargetTexStorage(GLenum target, egl::ImageID image, const GLint *attrib_list)
@@ -10270,13 +10452,10 @@ void ErrorSet::validationError(angle::EntryPoint entryPoint, GLenum errorCode, c
 {
     ASSERT(errorCode != GL_NO_ERROR);
     mErrors.insert(errorCode);
-    gl::LogSeverity severity = gl::LOG_INFO;
-#if defined(ANGLE_ENABLE_ASSERTS)
-    severity = gl::LOG_WARN;
-#endif  // defined(ANGLE_ENABLE_ASSERTS)
+
     mContext->getState().getDebug().insertMessage(GL_DEBUG_SOURCE_API, GL_DEBUG_TYPE_ERROR,
                                                   errorCode, GL_DEBUG_SEVERITY_HIGH, message,
-                                                  severity, entryPoint);
+                                                  gl::LOG_INFO, entryPoint);
 }
 
 bool ErrorSet::empty() const
@@ -10609,10 +10788,13 @@ void StateCache::updateValidDrawModes(Context *context)
 
     if (!programExecutable || !programExecutable->hasLinkedShaderStage(ShaderType::Geometry))
     {
+        bool adjacencyOK =
+            (context->getExtensions().geometryShaderAny() || context->getClientVersion() >= ES_3_2);
+
         // All draw modes are valid, since drawing without a program does not generate an error and
-        // and operations requiring a GS will trigger other validation errors.
+        // operations requiring a GS will trigger other validation errors.
         // `patchOK = false` due to checking above already enabling it if a TS is present.
-        setValidDrawModes(true, true, true, true, true, false);
+        setValidDrawModes(true, true, true, adjacencyOK, adjacencyOK, false);
         return;
     }
 

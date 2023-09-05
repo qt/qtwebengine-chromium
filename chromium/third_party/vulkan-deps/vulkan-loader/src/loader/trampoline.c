@@ -32,6 +32,7 @@
 #include "gpa_helper.h"
 #include "loader.h"
 #include "log.h"
+#include "settings.h"
 #include "vk_loader_extensions.h"
 #include "vk_loader_platform.h"
 #include "wsi.h"
@@ -144,6 +145,8 @@ LOADER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceExtensionPropert
                                                                                     VkExtensionProperties *pProperties) {
     LOADER_PLATFORM_THREAD_ONCE(&once_init, loader_initialize);
 
+    update_global_loader_settings();
+
     // We know we need to call at least the terminator
     VkResult res = VK_SUCCESS;
     VkEnumerateInstanceExtensionPropertiesChain chain_tail = {
@@ -159,12 +162,17 @@ LOADER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceExtensionPropert
     VkEnumerateInstanceExtensionPropertiesChain *chain_head = &chain_tail;
 
     // Get the implicit layers
-    struct loader_layer_list layers;
+    struct loader_layer_list layers = {0};
     loader_platform_dl_handle *libs = NULL;
     size_t lib_count = 0;
     memset(&layers, 0, sizeof(layers));
 
-    res = loader_scan_for_implicit_layers(NULL, &layers, &libs);
+    res = loader_scan_for_implicit_layers(NULL, &layers);
+    if (VK_SUCCESS != res) {
+        return res;
+    }
+
+    res = loader_init_library_list(&layers, &libs);
     if (VK_SUCCESS != res) {
         return res;
     }
@@ -172,7 +180,7 @@ LOADER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceExtensionPropert
     // Prepend layers onto the chain if they implement this entry point
     for (uint32_t i = 0; i < layers.count; ++i) {
         // Skip this layer if it doesn't expose the entry-point
-        if (layers.list[i].pre_instance_functions.enumerate_instance_extension_properties[0] == '\0') {
+        if (NULL == layers.list[i].pre_instance_functions.enumerate_instance_extension_properties) {
             continue;
         }
 
@@ -237,6 +245,8 @@ LOADER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceLayerProperties(
                                                                                 VkLayerProperties *pProperties) {
     LOADER_PLATFORM_THREAD_ONCE(&once_init, loader_initialize);
 
+    update_global_loader_settings();
+
     // We know we need to call at least the terminator
     VkResult res = VK_SUCCESS;
     VkEnumerateInstanceLayerPropertiesChain chain_tail = {
@@ -257,7 +267,12 @@ LOADER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceLayerProperties(
     size_t lib_count = 0;
     memset(&layers, 0, sizeof(layers));
 
-    res = loader_scan_for_implicit_layers(NULL, &layers, &libs);
+    res = loader_scan_for_implicit_layers(NULL, &layers);
+    if (VK_SUCCESS != res) {
+        return res;
+    }
+
+    res = loader_init_library_list(&layers, &libs);
     if (VK_SUCCESS != res) {
         return res;
     }
@@ -265,7 +280,7 @@ LOADER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceLayerProperties(
     // Prepend layers onto the chain if they implement this entry point
     for (uint32_t i = 0; i < layers.count; ++i) {
         // Skip this layer if it doesn't expose the entry-point
-        if (layers.list[i].pre_instance_functions.enumerate_instance_layer_properties[0] == '\0') {
+        if (NULL == layers.list[i].pre_instance_functions.enumerate_instance_layer_properties) {
             continue;
         }
 
@@ -329,6 +344,8 @@ LOADER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceLayerProperties(
 LOADER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceVersion(uint32_t *pApiVersion) {
     LOADER_PLATFORM_THREAD_ONCE(&once_init, loader_initialize);
 
+    update_global_loader_settings();
+
     if (NULL == pApiVersion) {
         loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
                    "vkEnumerateInstanceVersion: \'pApiVersion\' must not be NULL "
@@ -357,7 +374,12 @@ LOADER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceVersion(uint32_t
     size_t lib_count = 0;
     memset(&layers, 0, sizeof(layers));
 
-    res = loader_scan_for_implicit_layers(NULL, &layers, &libs);
+    res = loader_scan_for_implicit_layers(NULL, &layers);
+    if (VK_SUCCESS != res) {
+        return res;
+    }
+
+    res = loader_init_library_list(&layers, &libs);
     if (VK_SUCCESS != res) {
         return res;
     }
@@ -365,7 +387,7 @@ LOADER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceVersion(uint32_t
     // Prepend layers onto the chain if they implement this entry point
     for (uint32_t i = 0; i < layers.count; ++i) {
         // Skip this layer if it doesn't expose the entry-point
-        if (layers.list[i].pre_instance_functions.enumerate_instance_version[0] == '\0') {
+        if (NULL == layers.list[i].pre_instance_functions.enumerate_instance_version) {
             continue;
         }
 
@@ -429,6 +451,7 @@ LOADER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(const VkInstanceCr
     struct loader_instance *ptr_instance = NULL;
     VkInstance created_instance = VK_NULL_HANDLE;
     VkResult res = VK_ERROR_INITIALIZATION_FAILED;
+    VkInstanceCreateInfo ici = *pCreateInfo;
 
     LOADER_PLATFORM_THREAD_ONCE(&once_init, loader_initialize);
 
@@ -445,8 +468,6 @@ LOADER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(const VkInstanceCr
 
     ptr_instance =
         (struct loader_instance *)loader_calloc(pAllocator, sizeof(struct loader_instance), VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE);
-
-    VkInstanceCreateInfo ici = *pCreateInfo;
 
     if (ptr_instance == NULL) {
         res = VK_ERROR_OUT_OF_HOST_MEMORY;
@@ -483,6 +504,15 @@ LOADER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(const VkInstanceCr
     if (VK_ERROR_OUT_OF_HOST_MEMORY == res) {
         // Failure of setting up one or more of the callback.
         goto out;
+    }
+
+    VkResult settings_file_res = get_loader_settings(ptr_instance, &ptr_instance->settings);
+    if (settings_file_res == VK_ERROR_OUT_OF_HOST_MEMORY) {
+        res = settings_file_res;
+        goto out;
+    }
+    if (ptr_instance->settings.settings_active) {
+        log_settings(ptr_instance, &ptr_instance->settings);
     }
 
     // Check the VkInstanceCreateInfoFlags wether to allow the portability enumeration flag
@@ -600,6 +630,7 @@ LOADER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(const VkInstanceCr
         // GetInstanceProcAddr functions to return valid extension functions
         // if enabled.
         loader_activate_instance_layer_extensions(ptr_instance, created_instance);
+        ptr_instance->instance_finished_creation = true;
     } else if (VK_ERROR_EXTENSION_NOT_PRESENT == res && !ptr_instance->create_terminator_invalid_extension) {
         loader_log(ptr_instance, VULKAN_LOADER_WARN_BIT, 0,
                    "vkCreateInstance: Layer returning invalid extension error not triggered by ICD/Loader (Policy #LLP_LAYER_17).");
@@ -616,16 +647,14 @@ out:
             }
             loader_platform_thread_unlock_mutex(&loader_global_instance_list_lock);
 
+            free_loader_settings(ptr_instance, &ptr_instance->settings);
+
             loader_instance_heap_free(ptr_instance, ptr_instance->disp);
             // Remove any created VK_EXT_debug_report or VK_EXT_debug_utils items
             destroy_debug_callbacks_chain(ptr_instance, pAllocator);
 
-            if (NULL != ptr_instance->expanded_activated_layer_list.list) {
-                loader_deactivate_layers(ptr_instance, NULL, &ptr_instance->expanded_activated_layer_list);
-            }
-            if (NULL != ptr_instance->app_activated_layer_list.list) {
-                loader_destroy_layer_list(ptr_instance, NULL, &ptr_instance->app_activated_layer_list);
-            }
+            loader_destroy_pointer_layer_list(ptr_instance, &ptr_instance->expanded_activated_layer_list);
+            loader_destroy_pointer_layer_list(ptr_instance, &ptr_instance->app_activated_layer_list);
 
             loader_delete_layer_list_and_properties(ptr_instance, &ptr_instance->instance_layer_list);
             loader_scanned_icd_clear(ptr_instance, &ptr_instance->icd_tramp_list);
@@ -647,14 +676,7 @@ out:
                 loader_icd_destroy(ptr_instance, icd_term, pAllocator);
             }
 
-            for (uint32_t i = 0, n = ptr_instance->enabled_layer_count; i < n; ++i) {
-                loader_instance_heap_free(ptr_instance, ptr_instance->enabled_layer_names[i]);
-            }
-
-            if (ptr_instance->enabled_layer_count > 0) {
-                loader_instance_heap_free(ptr_instance, ptr_instance->enabled_layer_names);
-                memset(&ptr_instance->enabled_layer_names, 0, sizeof(ptr_instance->enabled_layer_names));
-            }
+            free_string_list(ptr_instance, &ptr_instance->enabled_layer_names);
 
             loader_instance_heap_free(ptr_instance, ptr_instance);
         } else {
@@ -700,12 +722,14 @@ LOADER_EXPORT VKAPI_ATTR void VKAPI_CALL vkDestroyInstance(VkInstance instance, 
     disp = loader_get_instance_layer_dispatch(instance);
     disp->DestroyInstance(ptr_instance->instance, pAllocator);
 
-    if (NULL != ptr_instance->expanded_activated_layer_list.list) {
-        loader_deactivate_layers(ptr_instance, NULL, &ptr_instance->expanded_activated_layer_list);
-    }
-    if (NULL != ptr_instance->app_activated_layer_list.list) {
-        loader_destroy_layer_list(ptr_instance, NULL, &ptr_instance->app_activated_layer_list);
-    }
+    free_loader_settings(ptr_instance, &ptr_instance->settings);
+
+    loader_destroy_pointer_layer_list(ptr_instance, &ptr_instance->expanded_activated_layer_list);
+    loader_destroy_pointer_layer_list(ptr_instance, &ptr_instance->app_activated_layer_list);
+
+    loader_delete_layer_list_and_properties(ptr_instance, &ptr_instance->instance_layer_list);
+
+    free_string_list(ptr_instance, &ptr_instance->enabled_layer_names);
 
     if (ptr_instance->phys_devs_tramp) {
         for (uint32_t i = 0; i < ptr_instance->phys_dev_count_tramp; i++) {
@@ -917,8 +941,6 @@ LOADER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceLayerProperties(Vk
                                                                               VkLayerProperties *pProperties) {
     uint32_t copy_size;
     struct loader_physical_device_tramp *phys_dev;
-    struct loader_layer_list *enabled_layers, layers_list;
-    memset(&layers_list, 0, sizeof(layers_list));
     loader_platform_thread_lock_mutex(&loader_lock);
 
     // Don't dispatch this call down the instance chain, want all device layers
@@ -943,11 +965,10 @@ LOADER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceLayerProperties(Vk
         loader_platform_thread_unlock_mutex(&loader_lock);
         return VK_SUCCESS;
     }
-    enabled_layers = (struct loader_layer_list *)&inst->app_activated_layer_list;
 
     copy_size = (*pPropertyCount < count) ? *pPropertyCount : count;
     for (uint32_t i = 0; i < copy_size; i++) {
-        memcpy(&pProperties[i], &(enabled_layers->list[i].info), sizeof(VkLayerProperties));
+        memcpy(&pProperties[i], &(inst->app_activated_layer_list.list[i]->info), sizeof(VkLayerProperties));
     }
     *pPropertyCount = copy_size;
 

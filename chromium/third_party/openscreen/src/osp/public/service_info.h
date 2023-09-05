@@ -27,6 +27,8 @@ struct ServiceInfo {
               const IPEndpoint& v4_endpoint,
               const IPEndpoint& v6_endpoint);
 
+  std::string ToString() const;
+
   // Identifier uniquely identifying the Open Screen service.
   std::string service_id;
 

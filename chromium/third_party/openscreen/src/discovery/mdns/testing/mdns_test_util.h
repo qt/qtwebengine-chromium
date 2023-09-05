@@ -6,9 +6,10 @@
 #define DISCOVERY_MDNS_TESTING_MDNS_TEST_UTIL_H_
 
 #include <initializer_list>
+#include <vector>
 
 #include "absl/strings/string_view.h"
-#include "discovery/mdns/mdns_records.h"
+#include "discovery/mdns/public/mdns_records.h"
 
 namespace openscreen {
 namespace discovery {
@@ -18,6 +19,8 @@ const IPAddress kFakeAAAARecordAddress = IPAddress(1, 2, 3, 4, 5, 6, 7, 8);
 constexpr uint16_t kFakeSrvRecordPort = 80;
 
 TxtRecordRdata MakeTxtRecord(std::initializer_list<absl::string_view> strings);
+std::vector<TxtRecordRdata::Entry> MakeTxtEntries(
+    std::initializer_list<absl::string_view> strings);
 
 // Methods to create fake MdnsRecord entities for use in UnitTests.
 MdnsRecord GetFakePtrRecord(const DomainName& target,

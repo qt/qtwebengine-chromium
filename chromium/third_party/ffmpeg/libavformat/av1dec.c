@@ -80,7 +80,7 @@ static int av1_read_header(AVFormatContext *s)
     st->codecpar->codec_id = AV_CODEC_ID_AV1;
     sti->need_parsing = AVSTREAM_PARSE_HEADERS;
 
-    sti->avctx->framerate = c->framerate;
+    st->avg_frame_rate = c->framerate;
     // taken from rawvideo demuxers
     avpriv_set_pts_info(st, 64, 1, 1200000);
 
@@ -287,7 +287,7 @@ const AVInputFormat ff_av1_demuxer = {
     .read_packet    = annexb_read_packet,
     .read_close     = av1_read_close,
     .extensions     = "obu",
-    .flags          = AVFMT_GENERIC_INDEX,
+    .flags          = AVFMT_GENERIC_INDEX | AVFMT_NOTIMESTAMPS,
     .priv_class     = &av1_demuxer_class,
 };
 #endif
@@ -432,7 +432,7 @@ const AVInputFormat ff_obu_demuxer = {
     .read_packet    = obu_read_packet,
     .read_close     = av1_read_close,
     .extensions     = "obu",
-    .flags          = AVFMT_GENERIC_INDEX | AVFMT_NO_BYTE_SEEK,
+    .flags          = AVFMT_GENERIC_INDEX | AVFMT_NO_BYTE_SEEK | AVFMT_NOTIMESTAMPS,
     .priv_class     = &av1_demuxer_class,
 };
 #endif

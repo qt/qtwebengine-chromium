@@ -559,7 +559,7 @@ export class DataGridImpl<T> extends Common.ObjectWrapper.ObjectWrapper<EventTyp
     const column = this.visibleColumnsArray[cellIndex];
     if (column.dataType === DataType.Boolean) {
       const checkboxLabel = UI.UIUtils.CheckboxLabel.create(undefined, (node.data[column.id] as boolean));
-      UI.ARIAUtils.setAccessibleName(checkboxLabel, column.title || '');
+      UI.ARIAUtils.setLabel(checkboxLabel, column.title || '');
 
       let hasChanged = false;
       checkboxLabel.style.height = '100%';
@@ -1647,7 +1647,7 @@ export class DataGridNode<T> {
   parent: DataGridNode<T>|null;
   previousSibling: DataGridNode<T>|null;
   nextSibling: DataGridNode<T>|null;
-  disclosureToggleWidth: number;
+  #disclosureToggleWidth: number = 15;
   selectable: boolean;
   isRoot: boolean;
   nodeAccessibleText: string;
@@ -1670,7 +1670,6 @@ export class DataGridNode<T> {
     this.parent = null;
     this.previousSibling = null;
     this.nextSibling = null;
-    this.disclosureToggleWidth = 10;
 
     this.selectable = true;
 
@@ -1729,12 +1728,6 @@ export class DataGridNode<T> {
   }
 
   protected createCells(element: Element): void {
-    // Keep track of the focused cell before removing child elements.
-    let focusedCellClassName: string|undefined;
-    if (element.contains(document.activeElement)) {
-      focusedCellClassName = document.activeElement?.className;
-    }
-
     element.removeChildren();
     if (!this.dataGrid || !this.parent) {
       return;
@@ -1748,11 +1741,6 @@ export class DataGridNode<T> {
     for (let i = 0; i < columnsArray.length; ++i) {
       const column = columnsArray[i];
       const cell = element.appendChild(this.createCell(column.id));
-      // Restore focus back to active cell to avoid losing focus
-      // when the datagrid is resized and cells are recreated.
-      if (cell.className === focusedCellClassName) {
-        cell.focus();
-      }
       // Add each visibile cell to the node's accessible text by gathering 'Column Title: content'
 
       if (column.dataType === DataType.Boolean && this.data[column.id] === true) {
@@ -1988,7 +1976,7 @@ export class DataGridNode<T> {
     for (let i = 0; i < cell.children.length; i++) {
       UI.ARIAUtils.markAsHidden(cell.children[i]);
     }
-    UI.ARIAUtils.setAccessibleName(cell, name);
+    UI.ARIAUtils.setLabel(cell, name);
   }
 
   nodeSelfHeight(): number {
@@ -2350,7 +2338,7 @@ export class DataGridNode<T> {
     }
 
     const left = cell.getBoundingClientRect().left + this.leftPadding;
-    return event.pageX >= left && event.pageX <= left + this.disclosureToggleWidth;
+    return event.pageX >= left && event.pageX <= left + this.#disclosureToggleWidth;
   }
 
   private attach(): void {

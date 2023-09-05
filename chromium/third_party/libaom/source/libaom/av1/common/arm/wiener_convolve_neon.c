@@ -153,7 +153,7 @@ void av1_wiener_convolve_add_src_neon(const uint8_t *src, ptrdiff_t src_stride,
   height = intermediate_height;
 
   // For aarch_64.
-#if defined(__aarch64__)
+#if AOM_ARCH_AARCH64
   int processed_height = 0;
   uint16_t *d_tmp;
   int width, remaining_height;

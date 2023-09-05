@@ -88,7 +88,7 @@ SenderSessionMessenger::SenderSessionMessenger(MessagePort* message_port,
                                                std::string source_id,
                                                std::string receiver_id,
                                                ErrorCallback cb,
-                                               TaskRunner* task_runner)
+                                               TaskRunner& task_runner)
     : SessionMessenger(message_port, std::move(source_id), std::move(cb)),
       task_runner_(task_runner),
       receiver_id_(std::move(receiver_id)) {}
@@ -142,7 +142,7 @@ Error SenderSessionMessenger::SendRequest(SenderMessage message,
   OSP_DCHECK(awaiting_replies_.find(message.sequence_number) ==
              awaiting_replies_.end());
   awaiting_replies_.emplace_back(message.sequence_number, std::move(cb));
-  task_runner_->PostTaskWithDelay(
+  task_runner_.PostTaskWithDelay(
       [self = weak_factory_.GetWeakPtr(), seq_num = message.sequence_number] {
         if (self) {
           ReplyIfTimedOut(seq_num, &self->awaiting_replies_);

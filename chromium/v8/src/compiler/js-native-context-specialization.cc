@@ -1089,9 +1089,7 @@ Reduction JSNativeContextSpecialization::ReduceGlobalAccess(
   }
 
   ObjectRef property_cell_value = property_cell.value(broker());
-  if (property_cell_value.IsHeapObject() &&
-      property_cell_value.AsHeapObject().map(broker()).oddball_type(broker()) ==
-          OddballType::kHole) {
+  if (property_cell_value.IsTheHole()) {
     // The property cell is no longer valid.
     return NoChange();
   }
@@ -1174,8 +1172,7 @@ Reduction JSNativeContextSpecialization::ReduceGlobalAccess(
                     ? jsgraph()->TrueConstant()
                     : jsgraph()->Constant(property_cell_value, broker());
         DCHECK(!property_cell_value.IsHeapObject() ||
-               property_cell_value.AsHeapObject().map(broker()).oddball_type(
-                   broker()) != OddballType::kHole);
+               !property_cell_value.IsTheHole());
       } else {
         DCHECK_NE(AccessMode::kHas, access_mode);
 
@@ -2389,10 +2386,7 @@ Reduction JSNativeContextSpecialization::ReduceElementLoadFromHeapConstant(
 
   HeapObjectMatcher mreceiver(receiver);
   HeapObjectRef receiver_ref = mreceiver.Ref(broker());
-  if (receiver_ref.map(broker()).oddball_type(broker()) == OddballType::kHole ||
-      receiver_ref.map(broker()).oddball_type(broker()) == OddballType::kNull ||
-      receiver_ref.map(broker()).oddball_type(broker()) ==
-          OddballType::kUndefined ||
+  if (receiver_ref.IsNull() || receiver_ref.IsUndefined() ||
       // The 'in' operator throws a TypeError on primitive values.
       (receiver_ref.IsString() && access_mode == AccessMode::kHas)) {
     return NoChange();
@@ -2774,7 +2768,10 @@ Node* JSNativeContextSpecialization::InlineApiCall(
   // Only setters have a value.
   int const argc = value == nullptr ? 0 : 1;
   // The stub always expects the receiver as the first param on the stack.
-  Callable call_api_callback = CodeFactory::CallApiCallback(isolate());
+  Callable call_api_callback = Builtins::CallableFor(
+      isolate(), call_handler_info.object()->IsSideEffectCallHandlerInfo()
+                     ? Builtin::kCallApiCallbackWithSideEffects
+                     : Builtin::kCallApiCallbackNoSideEffects);
   CallInterfaceDescriptor call_interface_descriptor =
       call_api_callback.descriptor();
   auto call_descriptor = Linkage::GetStubCallDescriptor(
@@ -3058,6 +3055,16 @@ JSNativeContextSpecialization::BuildPropertyStore(
       // with this transitioning store.
       MapRef transition_map_ref = transition_map.value();
       MapRef original_map = transition_map_ref.GetBackPointer(broker()).AsMap();
+      if (!field_index.is_inobject()) {
+        // If slack tracking ends after this compilation started but before it's
+        // finished, then we could {original_map} could be out-of-sync with
+        // {transition_map_ref}. In particular, its UnusedPropertyFields could
+        // be non-zero, which would lead us to not extend the property backing
+        // store, while the underlying Map has actually zero
+        // UnusedPropertyFields. Thus, we install a dependency on {orininal_map}
+        // now, so that if such a situation happens, we'll throw away the code.
+        dependencies()->DependOnNoSlackTrackingChange(original_map);
+      }
       if (original_map.UnusedPropertyFields() == 0) {
         DCHECK(!field_index.is_inobject());
 
@@ -3266,11 +3273,14 @@ JSNativeContextSpecialization::BuildElementAccess(
         // Do a real bounds check against {length}. This is in order to
         // protect against a potential typer bug leading to the elimination of
         // the NumberLessThan above.
-        index = etrue = graph()->NewNode(
-            simplified()->CheckBounds(
-                FeedbackSource(), CheckBoundsFlag::kConvertStringAndMinusZero |
-                                      CheckBoundsFlag::kAbortOnOutOfBounds),
-            index, length, etrue, if_true);
+        if (v8_flags.turbo_typer_hardening) {
+          index = etrue =
+              graph()->NewNode(simplified()->CheckBounds(
+                                   FeedbackSource(),
+                                   CheckBoundsFlag::kConvertStringAndMinusZero |
+                                       CheckBoundsFlag::kAbortOnOutOfBounds),
+                               index, length, etrue, if_true);
+        }
 
         // Perform the actual load
         vtrue = etrue =
@@ -3446,15 +3456,21 @@ JSNativeContextSpecialization::BuildElementAccess(
       // the (potential) backing store growth would normalize and thus
       // the elements kind of the {receiver} would change to slow mode.
       //
-      // For PACKED_*_ELEMENTS the {index} must be within the range
+      // For JSArray PACKED_*_ELEMENTS the {index} must be within the range
       // [0,length+1[ to be valid. In case {index} equals {length},
       // the {receiver} will be extended, but kept packed.
+      //
+      // Non-JSArray PACKED_*_ELEMENTS always grow by adding holes because they
+      // lack the magical length property, which requires a map transition.
+      // So we can assume that this did not happen if we did not see this map.
       Node* limit =
           IsHoleyElementsKind(elements_kind)
               ? graph()->NewNode(simplified()->NumberAdd(), elements_length,
                                  jsgraph()->Constant(JSObject::kMaxGap))
-              : graph()->NewNode(simplified()->NumberAdd(), length,
-                                 jsgraph()->OneConstant());
+          : receiver_is_jsarray
+              ? graph()->NewNode(simplified()->NumberAdd(), length,
+                                 jsgraph()->OneConstant())
+              : elements_length;
       index = effect = graph()->NewNode(
           simplified()->CheckBounds(
               FeedbackSource(), CheckBoundsFlag::kConvertStringAndMinusZero),
@@ -3685,12 +3701,14 @@ JSNativeContextSpecialization::
           // Do a real bounds check against {length}. This is in order to
           // protect against a potential typer bug leading to the elimination
           // of the NumberLessThan above.
-          index = etrue =
-              graph()->NewNode(simplified()->CheckBounds(
-                                   FeedbackSource(),
-                                   CheckBoundsFlag::kConvertStringAndMinusZero |
-                                       CheckBoundsFlag::kAbortOnOutOfBounds),
-                               index, length, etrue, if_true);
+          if (v8_flags.turbo_typer_hardening) {
+            index = etrue = graph()->NewNode(
+                simplified()->CheckBounds(
+                    FeedbackSource(),
+                    CheckBoundsFlag::kConvertStringAndMinusZero |
+                        CheckBoundsFlag::kAbortOnOutOfBounds),
+                index, length, etrue, if_true);
+          }
 
           // Perform the actual load
           vtrue = etrue = graph()->NewNode(
@@ -3765,12 +3783,14 @@ JSNativeContextSpecialization::
           // Do a real bounds check against {length}. This is in order to
           // protect against a potential typer bug leading to the elimination
           // of the NumberLessThan above.
-          index = etrue =
-              graph()->NewNode(simplified()->CheckBounds(
-                                   FeedbackSource(),
-                                   CheckBoundsFlag::kConvertStringAndMinusZero |
-                                       CheckBoundsFlag::kAbortOnOutOfBounds),
-                               index, length, etrue, if_true);
+          if (v8_flags.turbo_typer_hardening) {
+            index = etrue = graph()->NewNode(
+                simplified()->CheckBounds(
+                    FeedbackSource(),
+                    CheckBoundsFlag::kConvertStringAndMinusZero |
+                        CheckBoundsFlag::kAbortOnOutOfBounds),
+                index, length, etrue, if_true);
+          }
 
           // Perform the actual store.
           etrue = graph()->NewNode(
@@ -3845,11 +3865,14 @@ Node* JSNativeContextSpecialization::BuildIndexedStringLoad(
     // Do a real bounds check against {length}. This is in order to protect
     // against a potential typer bug leading to the elimination of the
     // NumberLessThan above.
-    Node* etrue = index = graph()->NewNode(
-        simplified()->CheckBounds(FeedbackSource(),
-                                  CheckBoundsFlag::kConvertStringAndMinusZero |
-                                      CheckBoundsFlag::kAbortOnOutOfBounds),
-        index, length, *effect, if_true);
+    Node* etrue = *effect;
+    if (v8_flags.turbo_typer_hardening) {
+      etrue = index = graph()->NewNode(
+          simplified()->CheckBounds(
+              FeedbackSource(), CheckBoundsFlag::kConvertStringAndMinusZero |
+                                    CheckBoundsFlag::kAbortOnOutOfBounds),
+          index, length, etrue, if_true);
+    }
     Node* vtrue = etrue = graph()->NewNode(simplified()->StringCharCodeAt(),
                                            receiver, index, etrue, if_true);
     vtrue = graph()->NewNode(simplified()->StringFromSingleCharCode(), vtrue);
@@ -3888,8 +3911,7 @@ Node* JSNativeContextSpecialization::BuildExtendPropertiesBackingStore(
   // difficult for escape analysis to get rid of the backing stores used
   // for intermediate states of chains of property additions. That makes
   // it unclear what the best approach is here.
-  DCHECK_EQ(0, map.UnusedPropertyFields());
-  // Compute the length of the old {properties} and the new properties.
+  DCHECK_EQ(map.UnusedPropertyFields(), 0);
   int length = map.NextFreePropertyIndex() - map.GetInObjectProperties();
   int new_length = length + JSObject::kFieldsAdded;
   // Collect the field values from the {properties}.

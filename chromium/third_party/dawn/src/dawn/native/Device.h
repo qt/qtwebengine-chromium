@@ -155,6 +155,7 @@ class DeviceBase : public RefCountedWithExternalCount {
     MaybeError ValidateObject(const ApiObjectBase* object) const;
 
     AdapterBase* GetAdapter() const;
+    PhysicalDeviceBase* GetPhysicalDevice() const;
     virtual dawn::platform::Platform* GetPlatform() const;
 
     // Returns the Format corresponding to the wgpu::TextureFormat or an error if the format
@@ -196,6 +197,7 @@ class DeviceBase : public RefCountedWithExternalCount {
     void UncacheBindGroupLayout(BindGroupLayoutBase* obj);
 
     BindGroupLayoutBase* GetEmptyBindGroupLayout();
+    PipelineLayoutBase* GetEmptyPipelineLayout();
 
     void UncacheComputePipeline(ComputePipelineBase* obj);
 
@@ -237,10 +239,8 @@ class DeviceBase : public RefCountedWithExternalCount {
         const CommandEncoderDescriptor* descriptor = nullptr);
     ResultOrError<Ref<ComputePipelineBase>> CreateComputePipeline(
         const ComputePipelineDescriptor* descriptor);
-    MaybeError CreateComputePipelineAsync(const ComputePipelineDescriptor* descriptor,
-                                          WGPUCreateComputePipelineAsyncCallback callback,
-                                          void* userdata);
-
+    ResultOrError<Ref<ComputePipelineBase>> CreateUninitializedComputePipeline(
+        const ComputePipelineDescriptor* descriptor);
     ResultOrError<Ref<PipelineLayoutBase>> CreatePipelineLayout(
         const PipelineLayoutDescriptor* descriptor);
     ResultOrError<Ref<QuerySetBase>> CreateQuerySet(const QuerySetDescriptor* descriptor);
@@ -248,9 +248,8 @@ class DeviceBase : public RefCountedWithExternalCount {
         const RenderBundleEncoderDescriptor* descriptor);
     ResultOrError<Ref<RenderPipelineBase>> CreateRenderPipeline(
         const RenderPipelineDescriptor* descriptor);
-    MaybeError CreateRenderPipelineAsync(const RenderPipelineDescriptor* descriptor,
-                                         WGPUCreateRenderPipelineAsyncCallback callback,
-                                         void* userdata);
+    ResultOrError<Ref<RenderPipelineBase>> CreateUninitializedRenderPipeline(
+        const RenderPipelineDescriptor* descriptor);
     ResultOrError<Ref<SamplerBase>> CreateSampler(const SamplerDescriptor* descriptor = nullptr);
     ResultOrError<Ref<ShaderModuleBase>> CreateShaderModule(
         const ShaderModuleDescriptor* descriptor,
@@ -283,6 +282,8 @@ class DeviceBase : public RefCountedWithExternalCount {
     ExternalTextureBase* APICreateExternalTexture(const ExternalTextureDescriptor* descriptor);
     SamplerBase* APICreateSampler(const SamplerDescriptor* descriptor);
     ShaderModuleBase* APICreateShaderModule(const ShaderModuleDescriptor* descriptor);
+    ShaderModuleBase* APICreateErrorShaderModule(const ShaderModuleDescriptor* descriptor,
+                                                 const char* errorMessage);
     SwapChainBase* APICreateSwapChain(Surface* surface, const SwapChainDescriptor* descriptor);
     TextureBase* APICreateTexture(const TextureDescriptor* descriptor);
 
@@ -309,7 +310,7 @@ class DeviceBase : public RefCountedWithExternalCount {
     void APISetUncapturedErrorCallback(wgpu::ErrorCallback callback, void* userdata);
     void APISetLoggingCallback(wgpu::LoggingCallback callback, void* userdata);
     void APIPushErrorScope(wgpu::ErrorFilter filter);
-    bool APIPopErrorScope(wgpu::ErrorCallback callback, void* userdata);
+    void APIPopErrorScope(wgpu::ErrorCallback callback, void* userdata);
 
     MaybeError ValidateIsAlive() const;
 
@@ -358,10 +359,13 @@ class DeviceBase : public RefCountedWithExternalCount {
     bool IsToggleEnabled(Toggle toggle) const;
     bool IsValidationEnabled() const;
     bool IsRobustnessEnabled() const;
+    bool IsCompatibilityMode() const;
+
     size_t GetLazyClearCountForTesting();
     void IncrementLazyClearCountForTesting();
     size_t GetDeprecationWarningCountForTesting();
     void EmitDeprecationWarning(const std::string& warning);
+    void EmitWarningOnce(const std::string& message);
     void EmitLog(const char* message);
     void EmitLog(WGPULoggingType loggingType, const char* message);
     void APIForceLoss(wgpu::DeviceLostReason reason, const char* message);
@@ -398,10 +402,10 @@ class DeviceBase : public RefCountedWithExternalCount {
     CallbackTaskManager* GetCallbackTaskManager() const;
     dawn::platform::WorkerTaskPool* GetWorkerTaskPool() const;
 
-    void AddComputePipelineAsyncCallbackTask(Ref<ComputePipelineBase> pipeline,
+    void AddComputePipelineAsyncCallbackTask(ResultOrError<Ref<ComputePipelineBase>> result,
                                              WGPUCreateComputePipelineAsyncCallback callback,
                                              void* userdata);
-    void AddRenderPipelineAsyncCallbackTask(Ref<RenderPipelineBase> pipeline,
+    void AddRenderPipelineAsyncCallbackTask(ResultOrError<Ref<RenderPipelineBase>> result,
                                             WGPUCreateRenderPipelineAsyncCallback callback,
                                             void* userdata);
 
@@ -503,6 +507,7 @@ class DeviceBase : public RefCountedWithExternalCount {
     void FlushCallbackTaskQueue();
 
     ResultOrError<Ref<BindGroupLayoutBase>> CreateEmptyBindGroupLayout();
+    ResultOrError<Ref<PipelineLayoutBase>> CreateEmptyPipelineLayout();
 
     Ref<ComputePipelineBase> GetCachedComputePipeline(
         ComputePipelineBase* uninitializedComputePipeline);
@@ -585,6 +590,7 @@ class DeviceBase : public RefCountedWithExternalCount {
     std::unique_ptr<Caches> mCaches;
 
     Ref<BindGroupLayoutBase> mEmptyBindGroupLayout;
+    Ref<PipelineLayoutBase> mEmptyPipelineLayout;
 
     Ref<TextureViewBase> mExternalTexturePlaceholderView;
 
@@ -594,6 +600,8 @@ class DeviceBase : public RefCountedWithExternalCount {
 
     struct DeprecationWarnings;
     std::unique_ptr<DeprecationWarnings> mDeprecationWarnings;
+
+    std::unordered_set<std::string> mWarnings;
 
     State mState = State::BeingCreated;
 

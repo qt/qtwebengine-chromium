@@ -15,13 +15,16 @@
 #include "src/compiler/globals.h"
 #include "src/compiler/linkage.h"
 #include "src/compiler/node-matchers.h"
+#include "src/compiler/operator.h"
 #include "src/compiler/simplified-operator.h"
 #include "src/compiler/turboshaft/assembler.h"
 #include "src/compiler/turboshaft/index.h"
 #include "src/compiler/turboshaft/operations.h"
 #include "src/compiler/turboshaft/optimization-phase.h"
+#include "src/compiler/turboshaft/phase.h"
 #include "src/compiler/turboshaft/reducer-traits.h"
 #include "src/compiler/turboshaft/representations.h"
+#include "src/compiler/write-barrier-kind.h"
 #include "src/deoptimizer/deoptimize-reason.h"
 #include "src/execution/frame-constants.h"
 #include "src/objects/bigint.h"
@@ -35,26 +38,12 @@ namespace v8::internal::compiler::turboshaft {
 
 #include "src/compiler/turboshaft/define-assembler-macros.inc"
 
-struct MachineLoweringReducerArgs {
-  Factory* factory;
-  Isolate* isolate;
-};
-
 // MachineLoweringReducer, formerly known as EffectControlLinearizer, lowers
 // simplified operations to machine operations.
 template <typename Next>
 class MachineLoweringReducer : public Next {
  public:
   TURBOSHAFT_REDUCER_BOILERPLATE()
-
-  using ArgT =
-      base::append_tuple_type<typename Next::ArgT, MachineLoweringReducerArgs>;
-
-  template <typename... Args>
-  explicit MachineLoweringReducer(const std::tuple<Args...>& args)
-      : Next(args),
-        factory_(std::get<MachineLoweringReducerArgs>(args).factory),
-        isolate_(std::get<MachineLoweringReducerArgs>(args).isolate) {}
 
   bool NeedsHeapObjectCheck(ObjectIsOp::InputAssumptions input_assumptions) {
     // TODO(nicohartmann@): Consider type information once we have that.
@@ -121,7 +110,7 @@ class MachineLoweringReducer : public Next {
         return i32;
       }
       case ChangeOrDeoptOp::Kind::kFloat64ToInt64: {
-        V<Word64> i64 = __ TruncateFloat64ToInt64OverflowUndefined(input);
+        V<Word64> i64 = __ TruncateFloat64ToInt64OverflowToMin(input);
         __ DeoptimizeIfNot(__ Float64Equal(__ ChangeInt64ToFloat64(i64), input),
                            frame_state, DeoptimizeReason::kLostPrecisionOrNaN,
                            feedback);
@@ -141,8 +130,50 @@ class MachineLoweringReducer : public Next {
 
         return i64;
       }
+      case ChangeOrDeoptOp::Kind::kFloat64NotHole: {
+        // First check whether {value} is a NaN at all...
+        IF_NOT (LIKELY(__ Float64Equal(input, input))) {
+          // ...and only if {value} is a NaN, perform the expensive bit
+          // check. See http://crbug.com/v8/8264 for details.
+          __ DeoptimizeIf(__ Word32Equal(__ Float64ExtractHighWord32(input),
+                                         kHoleNanUpper32),
+                          frame_state, DeoptimizeReason::kHole, feedback);
+        }
+        END_IF
+        return input;
+      }
     }
     UNREACHABLE();
+  }
+
+  OpIndex REDUCE(DeoptimizeIf)(OpIndex condition, OpIndex frame_state,
+                               bool negated,
+                               const DeoptimizeParameters* parameters) {
+    LABEL_BLOCK(no_change) {
+      return Next::ReduceDeoptimizeIf(condition, frame_state, negated,
+                                      parameters);
+    }
+    if (ShouldSkipOptimizationStep()) goto no_change;
+    // Block cloning only works for branches, but not for `DeoptimizeIf`. On the
+    // other hand, explicit control flow makes the overall pipeline and
+    // escpecially the register allocator slower. So we only switch a
+    // `DeoptiomizeIf` to a branch if it has a phi input, which indicates that
+    // block cloning could be helpful.
+    if (__ Get(condition).template Is<PhiOp>()) {
+      if (negated) {
+        IF_NOT (LIKELY(condition)) {
+          __ Deoptimize(frame_state, parameters);
+        }
+        END_IF
+      } else {
+        IF (UNLIKELY(condition)) {
+          __ Deoptimize(frame_state, parameters);
+        }
+        END_IF
+      }
+      return OpIndex::Invalid();
+    }
+    goto no_change;
   }
 
   V<Word32> REDUCE(ObjectIs)(V<Tagged> input, ObjectIsOp::Kind kind,
@@ -218,7 +249,7 @@ class MachineLoweringReducer : public Next {
 
         // Check for Smi if necessary.
         if (NeedsHeapObjectCheck(input_assumptions)) {
-          GOTO_IF(IsSmi(input), done, 0);
+          GOTO_IF(UNLIKELY(IsSmi(input)), done, 0);
         }
 
         // Load bitfield from map.
@@ -487,13 +518,13 @@ class MachineLoweringReducer : public Next {
       case ConvertOp::Kind::kSmi: {
         DCHECK_EQ(from, ConvertOp::Kind::kNumberOrOddball);
         Label<Smi> done(this);
-        GOTO_IF(__ ObjectIsSmi(input), done, V<Smi>::Cast(input));
+        GOTO_IF(LIKELY(__ ObjectIsSmi(input)), done, V<Smi>::Cast(input));
 
         STATIC_ASSERT_FIELD_OFFSETS_EQUAL(HeapNumber::kValueOffset,
                                           Oddball::kToNumberRawOffset);
         V<Float64> value = __ template LoadField<Float64>(
             input, AccessBuilder::ForHeapNumberValue());
-        GOTO(done, __ SmiTag(__ ReversibleFloat64ToInt32(value)));
+        GOTO(done, __ TagSmi(__ ReversibleFloat64ToInt32(value)));
 
         BIND(done, result);
         return result;
@@ -503,31 +534,13 @@ class MachineLoweringReducer : public Next {
     }
   }
 
-  V<Object> REDUCE(ConvertOrDeopt)(V<Object> input, OpIndex frame_state,
-                                   ConvertOrDeoptOp::Kind from,
-                                   ConvertOrDeoptOp::Kind to,
-                                   const FeedbackSource& feedback) {
-    if (to == ConvertOrDeoptOp::Kind::kSmi) {
-      DCHECK_EQ(from, ConvertOrDeoptOp::Kind::kObject);
-      __ DeoptimizeIfNot(__ ObjectIsSmi(input), frame_state,
-                         DeoptimizeReason::kNotASmi, feedback);
-      return input;
-    } else {
-      DCHECK_EQ(to, ConvertOrDeoptOp::Kind::kHeapObject);
-      DCHECK_EQ(from, ConvertOrDeoptOp::Kind::kObject);
-      __ DeoptimizeIf(__ ObjectIsSmi(input), frame_state,
-                      DeoptimizeReason::kSmi, feedback);
-      return input;
-    }
-  }
-
-  V<Object> REDUCE(ConvertPrimitiveToObject)(
-      OpIndex input, ConvertPrimitiveToObjectOp::Kind kind,
+  V<Object> REDUCE(ConvertUntaggedToJSPrimitive)(
+      OpIndex input, ConvertUntaggedToJSPrimitiveOp::JSPrimitiveKind kind,
       RegisterRepresentation input_rep,
-      ConvertPrimitiveToObjectOp::InputInterpretation input_interpretation,
+      ConvertUntaggedToJSPrimitiveOp::InputInterpretation input_interpretation,
       CheckForMinusZeroMode minus_zero_mode) {
     switch (kind) {
-      case ConvertPrimitiveToObjectOp::Kind::kBigInt: {
+      case ConvertUntaggedToJSPrimitiveOp::JSPrimitiveKind::kBigInt: {
         DCHECK(Is64());
         DCHECK_EQ(input_rep, RegisterRepresentation::Word64());
         Label<Tagged> done(this);
@@ -537,7 +550,7 @@ class MachineLoweringReducer : public Next {
                 AllocateBigInt(OpIndex::Invalid(), OpIndex::Invalid()));
 
         if (input_interpretation ==
-            ConvertPrimitiveToObjectOp::InputInterpretation::kSigned) {
+            ConvertUntaggedToJSPrimitiveOp::InputInterpretation::kSigned) {
           // Shift sign bit into BigInt's sign bit position.
           V<Word32> bitfield = __ Word32BitwiseOr(
               BigInt::LengthBits::encode(1),
@@ -552,27 +565,28 @@ class MachineLoweringReducer : public Next {
               __ Word64Sub(__ Word64BitwiseXor(input, sign_mask), sign_mask);
           GOTO(done, AllocateBigInt(bitfield, absolute_value));
         } else {
-          DCHECK_EQ(input_interpretation,
-                    ConvertPrimitiveToObjectOp::InputInterpretation::kUnsigned);
+          DCHECK_EQ(
+              input_interpretation,
+              ConvertUntaggedToJSPrimitiveOp::InputInterpretation::kUnsigned);
           const auto bitfield = BigInt::LengthBits::encode(1);
           GOTO(done, AllocateBigInt(__ Word32Constant(bitfield), input));
         }
         BIND(done, result);
         return result;
       }
-      case ConvertPrimitiveToObjectOp::Kind::kNumber: {
+      case ConvertUntaggedToJSPrimitiveOp::JSPrimitiveKind::kNumber: {
         if (input_rep == RegisterRepresentation::Word32()) {
           switch (input_interpretation) {
-            case ConvertPrimitiveToObjectOp::InputInterpretation::kSigned: {
+            case ConvertUntaggedToJSPrimitiveOp::InputInterpretation::kSigned: {
               if (SmiValuesAre32Bits()) {
-                return __ SmiTag(input);
+                return __ TagSmi(input);
               }
               DCHECK(SmiValuesAre31Bits());
 
               Label<Tagged> done(this);
               Label<> overflow(this);
 
-              SmiTagOrOverflow(input, &overflow, &done);
+              TagSmiOrOverflow(input, &overflow, &done);
 
               if (BIND(overflow)) {
                 GOTO(done, AllocateHeapNumberWithValue(
@@ -582,24 +596,26 @@ class MachineLoweringReducer : public Next {
               BIND(done, result);
               return result;
             }
-            case ConvertPrimitiveToObjectOp::InputInterpretation::kUnsigned: {
+            case ConvertUntaggedToJSPrimitiveOp::InputInterpretation::
+                kUnsigned: {
               Label<Tagged> done(this);
 
               GOTO_IF(__ Uint32LessThanOrEqual(input, Smi::kMaxValue), done,
-                      __ SmiTag(input));
+                      __ TagSmi(input));
               GOTO(done, AllocateHeapNumberWithValue(
                              __ ChangeUint32ToFloat64(input)));
 
               BIND(done, result);
               return result;
             }
-            case ConvertPrimitiveToObjectOp::InputInterpretation::kCharCode:
-            case ConvertPrimitiveToObjectOp::InputInterpretation::kCodePoint:
+            case ConvertUntaggedToJSPrimitiveOp::InputInterpretation::kCharCode:
+            case ConvertUntaggedToJSPrimitiveOp::InputInterpretation::
+                kCodePoint:
               UNREACHABLE();
           }
         } else if (input_rep == RegisterRepresentation::Word64()) {
           switch (input_interpretation) {
-            case ConvertPrimitiveToObjectOp::InputInterpretation::kSigned: {
+            case ConvertUntaggedToJSPrimitiveOp::InputInterpretation::kSigned: {
               Label<Tagged> done(this);
               Label<> outside_smi_range(this);
 
@@ -608,9 +624,9 @@ class MachineLoweringReducer : public Next {
               GOTO_IF_NOT(__ Word64Equal(v64, input), outside_smi_range);
 
               if constexpr (SmiValuesAre32Bits()) {
-                GOTO(done, __ SmiTag(input));
+                GOTO(done, __ TagSmi(input));
               } else {
-                SmiTagOrOverflow(v32, &outside_smi_range, &done);
+                TagSmiOrOverflow(v32, &outside_smi_range, &done);
               }
 
               if (BIND(outside_smi_range)) {
@@ -621,19 +637,21 @@ class MachineLoweringReducer : public Next {
               BIND(done, result);
               return result;
             }
-            case ConvertPrimitiveToObjectOp::InputInterpretation::kUnsigned: {
+            case ConvertUntaggedToJSPrimitiveOp::InputInterpretation::
+                kUnsigned: {
               Label<Tagged> done(this);
 
               GOTO_IF(__ Uint64LessThanOrEqual(input, Smi::kMaxValue), done,
-                      __ SmiTag(input));
+                      __ TagSmi(input));
               GOTO(done,
                    AllocateHeapNumberWithValue(__ ChangeInt64ToFloat64(input)));
 
               BIND(done, result);
               return result;
             }
-            case ConvertPrimitiveToObjectOp::InputInterpretation::kCharCode:
-            case ConvertPrimitiveToObjectOp::InputInterpretation::kCodePoint:
+            case ConvertUntaggedToJSPrimitiveOp::InputInterpretation::kCharCode:
+            case ConvertUntaggedToJSPrimitiveOp::InputInterpretation::
+                kCodePoint:
               UNREACHABLE();
           }
         } else {
@@ -656,9 +674,9 @@ class MachineLoweringReducer : public Next {
           }
 
           if constexpr (SmiValuesAre32Bits()) {
-            GOTO(done, __ SmiTag(v32));
+            GOTO(done, __ TagSmi(v32));
           } else {
-            SmiTagOrOverflow(v32, &outside_smi_range, &done);
+            TagSmiOrOverflow(v32, &outside_smi_range, &done);
           }
 
           if (BIND(outside_smi_range)) {
@@ -671,22 +689,22 @@ class MachineLoweringReducer : public Next {
         UNREACHABLE();
         break;
       }
-      case ConvertPrimitiveToObjectOp::Kind::kHeapNumber: {
+      case ConvertUntaggedToJSPrimitiveOp::JSPrimitiveKind::kHeapNumber: {
         DCHECK_EQ(input_rep, RegisterRepresentation::Float64());
         DCHECK_EQ(input_interpretation,
-                  ConvertPrimitiveToObjectOp::InputInterpretation::kSigned);
+                  ConvertUntaggedToJSPrimitiveOp::InputInterpretation::kSigned);
         return AllocateHeapNumberWithValue(input);
       }
-      case ConvertPrimitiveToObjectOp::Kind::kSmi: {
+      case ConvertUntaggedToJSPrimitiveOp::JSPrimitiveKind::kSmi: {
         DCHECK_EQ(input_rep, RegisterRepresentation::Word32());
         DCHECK_EQ(input_interpretation,
-                  ConvertPrimitiveToObjectOp::InputInterpretation::kSigned);
-        return __ SmiTag(input);
+                  ConvertUntaggedToJSPrimitiveOp::InputInterpretation::kSigned);
+        return __ TagSmi(input);
       }
-      case ConvertPrimitiveToObjectOp::Kind::kBoolean: {
+      case ConvertUntaggedToJSPrimitiveOp::JSPrimitiveKind::kBoolean: {
         DCHECK_EQ(input_rep, RegisterRepresentation::Word32());
         DCHECK_EQ(input_interpretation,
-                  ConvertPrimitiveToObjectOp::InputInterpretation::kSigned);
+                  ConvertUntaggedToJSPrimitiveOp::InputInterpretation::kSigned);
         Label<Tagged> done(this);
 
         IF(input) { GOTO(done, __ HeapConstant(factory_->true_value())); }
@@ -696,17 +714,17 @@ class MachineLoweringReducer : public Next {
         BIND(done, result);
         return result;
       }
-      case ConvertPrimitiveToObjectOp::Kind::kString: {
+      case ConvertUntaggedToJSPrimitiveOp::JSPrimitiveKind::kString: {
         Label<Word32> single_code(this);
         Label<Tagged> done(this);
 
         if (input_interpretation ==
-            ConvertPrimitiveToObjectOp::InputInterpretation::kCharCode) {
+            ConvertUntaggedToJSPrimitiveOp::InputInterpretation::kCharCode) {
           GOTO(single_code, __ Word32BitwiseAnd(input, 0xFFFF));
         } else {
           DCHECK_EQ(
               input_interpretation,
-              ConvertPrimitiveToObjectOp::InputInterpretation::kCodePoint);
+              ConvertUntaggedToJSPrimitiveOp::InputInterpretation::kCodePoint);
           // Check if the input is a single code unit.
           GOTO_IF(LIKELY(__ Uint32LessThanOrEqual(input, 0xFFFF)), single_code,
                   input);
@@ -734,25 +752,24 @@ class MachineLoweringReducer : public Next {
 #endif
 
           // Allocate a new SeqTwoByteString for {code}.
-          V<Tagged> string =
-              __ Allocate(__ IntPtrConstant(SeqTwoByteString::SizeFor(2)),
-                          AllocationType::kYoung);
+          auto string = __ template Allocate<String>(
+              __ IntPtrConstant(SeqTwoByteString::SizeFor(2)),
+              AllocationType::kYoung);
           // Set padding to 0.
-          __ Store(string, __ IntPtrConstant(0),
-                   StoreOp::Kind::Aligned(BaseTaggedness::kTaggedBase),
-                   MemoryRepresentation::TaggedSigned(), kNoWriteBarrier,
-                   SeqTwoByteString::SizeFor(2) - kObjectAlignment);
-          __ StoreField(string, AccessBuilder::ForMap(),
-                        __ HeapConstant(factory_->string_map()));
-          __ StoreField(string, AccessBuilder::ForNameRawHashField(),
-                        __ Word32Constant(Name::kEmptyHashField));
-          __ StoreField(string, AccessBuilder::ForStringLength(),
-                        __ Word32Constant(2));
-          __ Store(string, code,
-                   StoreOp::Kind::Aligned(BaseTaggedness::kTaggedBase),
-                   MemoryRepresentation::Uint32(), kNoWriteBarrier,
-                   SeqTwoByteString::kHeaderSize);
-          GOTO(done, string);
+          __ Initialize(string, __ IntPtrConstant(0),
+                        MemoryRepresentation::TaggedSigned(),
+                        WriteBarrierKind::kNoWriteBarrier,
+                        SeqTwoByteString::SizeFor(2) - kObjectAlignment);
+          __ InitializeField(string, AccessBuilder::ForMap(),
+                             __ HeapConstant(factory_->string_map()));
+          __ InitializeField(string, AccessBuilder::ForNameRawHashField(),
+                             __ Word32Constant(Name::kEmptyHashField));
+          __ InitializeField(string, AccessBuilder::ForStringLength(),
+                             __ Word32Constant(2));
+          __ Initialize(string, code, MemoryRepresentation::Uint32(),
+                        WriteBarrierKind::kNoWriteBarrier,
+                        SeqTwoByteString::kHeaderSize);
+          GOTO(done, __ FinishInitialization(std::move(string)));
         }
 
         if (BIND(single_code, code)) {
@@ -776,26 +793,25 @@ class MachineLoweringReducer : public Next {
           }
           ELSE {
             // Allocate a new SeqTwoBytesString for {code}.
-            V<Tagged> string =
-                __ Allocate(__ IntPtrConstant(SeqTwoByteString::SizeFor(1)),
-                            AllocationType::kYoung);
+            auto string = __ template Allocate<String>(
+                __ IntPtrConstant(SeqTwoByteString::SizeFor(1)),
+                AllocationType::kYoung);
 
             // Set padding to 0.
-            __ Store(string, __ IntPtrConstant(0),
-                     StoreOp::Kind::Aligned(BaseTaggedness::kTaggedBase),
-                     MemoryRepresentation::TaggedSigned(), kNoWriteBarrier,
-                     SeqTwoByteString::SizeFor(1) - kObjectAlignment);
-            __ StoreField(string, AccessBuilder::ForMap(),
-                          __ HeapConstant(factory_->string_map()));
-            __ StoreField(string, AccessBuilder::ForNameRawHashField(),
-                          __ Word32Constant(Name::kEmptyHashField));
-            __ StoreField(string, AccessBuilder::ForStringLength(),
-                          __ Word32Constant(1));
-            __ Store(string, code,
-                     StoreOp::Kind::Aligned(BaseTaggedness::kTaggedBase),
-                     MemoryRepresentation::Uint16(), kNoWriteBarrier,
-                     SeqTwoByteString::kHeaderSize);
-            GOTO(done, string);
+            __ Initialize(string, __ IntPtrConstant(0),
+                          MemoryRepresentation::TaggedSigned(),
+                          WriteBarrierKind::kNoWriteBarrier,
+                          SeqTwoByteString::SizeFor(1) - kObjectAlignment);
+            __ InitializeField(string, AccessBuilder::ForMap(),
+                               __ HeapConstant(factory_->string_map()));
+            __ InitializeField(string, AccessBuilder::ForNameRawHashField(),
+                               __ Word32Constant(Name::kEmptyHashField));
+            __ InitializeField(string, AccessBuilder::ForStringLength(),
+                               __ Word32Constant(1));
+            __ Initialize(string, code, MemoryRepresentation::Uint16(),
+                          WriteBarrierKind::kNoWriteBarrier,
+                          SeqTwoByteString::kHeaderSize);
+            GOTO(done, __ FinishInitialization(std::move(string)));
           }
           END_IF
         }
@@ -808,80 +824,83 @@ class MachineLoweringReducer : public Next {
     UNREACHABLE();
   }
 
-  OpIndex REDUCE(ConvertPrimitiveToObjectOrDeopt)(
+  OpIndex REDUCE(ConvertUntaggedToJSPrimitiveOrDeopt)(
       OpIndex input, OpIndex frame_state,
-      ConvertPrimitiveToObjectOrDeoptOp::Kind kind,
+      ConvertUntaggedToJSPrimitiveOrDeoptOp::JSPrimitiveKind kind,
       RegisterRepresentation input_rep,
-      ConvertPrimitiveToObjectOrDeoptOp::InputInterpretation
+      ConvertUntaggedToJSPrimitiveOrDeoptOp::InputInterpretation
           input_interpretation,
       const FeedbackSource& feedback) {
-    DCHECK_EQ(kind, ConvertPrimitiveToObjectOrDeoptOp::Kind::kSmi);
+    DCHECK_EQ(kind,
+              ConvertUntaggedToJSPrimitiveOrDeoptOp::JSPrimitiveKind::kSmi);
     if (input_rep == RegisterRepresentation::Word32()) {
       if (input_interpretation ==
-          ConvertPrimitiveToObjectOrDeoptOp::InputInterpretation::kSigned) {
+          ConvertUntaggedToJSPrimitiveOrDeoptOp::InputInterpretation::kSigned) {
         if constexpr (SmiValuesAre32Bits()) {
-          return __ SmiTag(input);
+          return __ TagSmi(input);
         } else {
           OpIndex test = __ Int32AddCheckOverflow(input, input);
           __ DeoptimizeIf(__ template Projection<Word32>(test, 1), frame_state,
                           DeoptimizeReason::kLostPrecision, feedback);
-          return __ SmiTag(input);
+          return __ BitcastWord32ToTagged(
+              __ template Projection<Word32>(test, 0));
         }
       } else {
-        DCHECK_EQ(
-            input_interpretation,
-            ConvertPrimitiveToObjectOrDeoptOp::InputInterpretation::kUnsigned);
+        DCHECK_EQ(input_interpretation, ConvertUntaggedToJSPrimitiveOrDeoptOp::
+                                            InputInterpretation::kUnsigned);
         V<Word32> check = __ Uint32LessThanOrEqual(input, Smi::kMaxValue);
         __ DeoptimizeIfNot(check, frame_state, DeoptimizeReason::kLostPrecision,
                            feedback);
-        return __ SmiTag(input);
+        return __ TagSmi(input);
       }
     } else {
       DCHECK_EQ(input_rep, RegisterRepresentation::Word64());
       if (input_interpretation ==
-          ConvertPrimitiveToObjectOrDeoptOp::InputInterpretation::kSigned) {
+          ConvertUntaggedToJSPrimitiveOrDeoptOp::InputInterpretation::kSigned) {
         // Word32 truncation is implicit.
         V<Word32> i32 = input;
         V<Word32> check = __ Word64Equal(__ ChangeInt32ToInt64(i32), input);
         __ DeoptimizeIfNot(check, frame_state, DeoptimizeReason::kLostPrecision,
                            feedback);
         if constexpr (SmiValuesAre32Bits()) {
-          return __ SmiTag(input);
+          return __ TagSmi(input);
         } else {
           OpIndex test = __ Int32AddCheckOverflow(i32, i32);
           __ DeoptimizeIf(__ template Projection<Word32>(test, 1), frame_state,
                           DeoptimizeReason::kLostPrecision, feedback);
-          return __ SmiTag(i32);
+          return __ BitcastWord32ToTagged(
+              __ template Projection<Word32>(test, 0));
         }
       } else {
-        DCHECK_EQ(
-            input_interpretation,
-            ConvertPrimitiveToObjectOrDeoptOp::InputInterpretation::kUnsigned);
+        DCHECK_EQ(input_interpretation, ConvertUntaggedToJSPrimitiveOrDeoptOp::
+                                            InputInterpretation::kUnsigned);
         V<Word32> check = __ Uint64LessThanOrEqual(
             input, static_cast<uint64_t>(Smi::kMaxValue));
         __ DeoptimizeIfNot(check, frame_state, DeoptimizeReason::kLostPrecision,
                            feedback);
-        return __ SmiTag(input);
+        return __ TagSmi(input);
       }
     }
 
     UNREACHABLE();
   }
 
-  OpIndex REDUCE(ConvertObjectToPrimitive)(
-      V<Object> object, ConvertObjectToPrimitiveOp::Kind kind,
-      ConvertObjectToPrimitiveOp::InputAssumptions input_assumptions) {
+  OpIndex REDUCE(ConvertJSPrimitiveToUntagged)(
+      V<Object> object, ConvertJSPrimitiveToUntaggedOp::UntaggedKind kind,
+      ConvertJSPrimitiveToUntaggedOp::InputAssumptions input_assumptions) {
     switch (kind) {
-      case ConvertObjectToPrimitiveOp::Kind::kInt32:
+      case ConvertJSPrimitiveToUntaggedOp::UntaggedKind::kInt32:
         if (input_assumptions ==
-            ConvertObjectToPrimitiveOp::InputAssumptions::kSmi) {
-          return __ SmiUntag(object);
+            ConvertJSPrimitiveToUntaggedOp::InputAssumptions::kSmi) {
+          return __ UntagSmi(object);
         } else if (input_assumptions ==
-                   ConvertObjectToPrimitiveOp::InputAssumptions::
+                   ConvertJSPrimitiveToUntaggedOp::InputAssumptions::
                        kNumberOrOddball) {
           Label<Word32> done(this);
 
-          IF(__ ObjectIsSmi(object)) { GOTO(done, __ SmiUntag(object)); }
+          IF (LIKELY(__ ObjectIsSmi(object))) {
+            GOTO(done, __ UntagSmi(object));
+          }
           ELSE {
             STATIC_ASSERT_FIELD_OFFSETS_EQUAL(HeapNumber::kValueOffset,
                                               Oddball::kToNumberRawOffset);
@@ -894,14 +913,13 @@ class MachineLoweringReducer : public Next {
           BIND(done, result);
           return result;
         } else {
-          DCHECK_EQ(
-              input_assumptions,
-              ConvertObjectToPrimitiveOp::InputAssumptions::kPlainPrimitive);
+          DCHECK_EQ(input_assumptions, ConvertJSPrimitiveToUntaggedOp::
+                                           InputAssumptions::kPlainPrimitive);
           Label<Word32> done(this);
-          GOTO_IF(LIKELY(__ ObjectIsSmi(object)), done, __ SmiUntag(object));
+          GOTO_IF(LIKELY(__ ObjectIsSmi(object)), done, __ UntagSmi(object));
           V<Number> number =
               __ ConvertPlainPrimitiveToNumber(V<PlainPrimitive>::Cast(object));
-          GOTO_IF(__ ObjectIsSmi(number), done, __ SmiUntag(number));
+          GOTO_IF(__ ObjectIsSmi(number), done, __ UntagSmi(number));
           V<Float64> f64 = __ template LoadField<Float64>(
               V<HeapNumber>::Cast(number), AccessBuilder::ForHeapNumberValue());
           GOTO(done, __ JSTruncateFloat64ToWord32(f64));
@@ -909,18 +927,17 @@ class MachineLoweringReducer : public Next {
           return result;
         }
         UNREACHABLE();
-      case ConvertObjectToPrimitiveOp::Kind::kInt64:
+      case ConvertJSPrimitiveToUntaggedOp::UntaggedKind::kInt64:
         if (input_assumptions ==
-            ConvertObjectToPrimitiveOp::InputAssumptions::kSmi) {
-          return __ ChangeInt32ToInt64(__ SmiUntag(object));
+            ConvertJSPrimitiveToUntaggedOp::InputAssumptions::kSmi) {
+          return __ ChangeInt32ToInt64(__ UntagSmi(object));
         } else {
-          DCHECK_EQ(
-              input_assumptions,
-              ConvertObjectToPrimitiveOp::InputAssumptions::kNumberOrOddball);
+          DCHECK_EQ(input_assumptions, ConvertJSPrimitiveToUntaggedOp::
+                                           InputAssumptions::kNumberOrOddball);
           Label<Word64> done(this);
 
-          IF(__ ObjectIsSmi(object)) {
-            GOTO(done, __ ChangeInt32ToInt64(__ SmiUntag(object)));
+          IF (LIKELY(__ ObjectIsSmi(object))) {
+            GOTO(done, __ ChangeInt32ToInt64(__ UntagSmi(object)));
           }
           ELSE {
             STATIC_ASSERT_FIELD_OFFSETS_EQUAL(HeapNumber::kValueOffset,
@@ -935,13 +952,15 @@ class MachineLoweringReducer : public Next {
           return result;
         }
         UNREACHABLE();
-      case ConvertObjectToPrimitiveOp::Kind::kUint32: {
+      case ConvertJSPrimitiveToUntaggedOp::UntaggedKind::kUint32: {
         DCHECK_EQ(
             input_assumptions,
-            ConvertObjectToPrimitiveOp::InputAssumptions::kNumberOrOddball);
+            ConvertJSPrimitiveToUntaggedOp::InputAssumptions::kNumberOrOddball);
         Label<Word32> done(this);
 
-        IF(__ ObjectIsSmi(object)) { GOTO(done, __ SmiUntag(object)); }
+        IF (LIKELY(__ ObjectIsSmi(object))) {
+          GOTO(done, __ UntagSmi(object));
+        }
         ELSE {
           STATIC_ASSERT_FIELD_OFFSETS_EQUAL(HeapNumber::kValueOffset,
                                             Oddball::kToNumberRawOffset);
@@ -954,17 +973,17 @@ class MachineLoweringReducer : public Next {
         BIND(done, result);
         return result;
       }
-      case ConvertObjectToPrimitiveOp::Kind::kBit:
+      case ConvertJSPrimitiveToUntaggedOp::UntaggedKind::kBit:
         DCHECK_EQ(input_assumptions,
-                  ConvertObjectToPrimitiveOp::InputAssumptions::kObject);
+                  ConvertJSPrimitiveToUntaggedOp::InputAssumptions::kBoolean);
         return __ TaggedEqual(object, __ HeapConstant(factory_->true_value()));
-      case ConvertObjectToPrimitiveOp::Kind::kFloat64: {
-        if (input_assumptions ==
-            ConvertObjectToPrimitiveOp::InputAssumptions::kNumberOrOddball) {
+      case ConvertJSPrimitiveToUntaggedOp::UntaggedKind::kFloat64: {
+        if (input_assumptions == ConvertJSPrimitiveToUntaggedOp::
+                                     InputAssumptions::kNumberOrOddball) {
           Label<Float64> done(this);
 
-          IF(__ ObjectIsSmi(object)) {
-            GOTO(done, __ ChangeInt32ToFloat64(__ SmiUntag(object)));
+          IF (LIKELY(__ ObjectIsSmi(object))) {
+            GOTO(done, __ ChangeInt32ToFloat64(__ UntagSmi(object)));
           }
           ELSE {
             STATIC_ASSERT_FIELD_OFFSETS_EQUAL(HeapNumber::kValueOffset,
@@ -978,16 +997,15 @@ class MachineLoweringReducer : public Next {
           BIND(done, result);
           return result;
         } else {
-          DCHECK_EQ(
-              input_assumptions,
-              ConvertObjectToPrimitiveOp::InputAssumptions::kPlainPrimitive);
+          DCHECK_EQ(input_assumptions, ConvertJSPrimitiveToUntaggedOp::
+                                           InputAssumptions::kPlainPrimitive);
           Label<Float64> done(this);
           GOTO_IF(LIKELY(__ ObjectIsSmi(object)), done,
-                  __ ChangeInt32ToFloat64(__ SmiUntag(object)));
+                  __ ChangeInt32ToFloat64(__ UntagSmi(object)));
           V<Number> number =
               __ ConvertPlainPrimitiveToNumber(V<PlainPrimitive>::Cast(object));
           GOTO_IF(__ ObjectIsSmi(number), done,
-                  __ ChangeInt32ToFloat64(__ SmiUntag(number)));
+                  __ ChangeInt32ToFloat64(__ UntagSmi(number)));
           V<Float64> f64 = __ template LoadField<Float64>(
               V<HeapNumber>::Cast(number), AccessBuilder::ForHeapNumberValue());
           GOTO(done, f64);
@@ -999,24 +1017,26 @@ class MachineLoweringReducer : public Next {
     UNREACHABLE();
   }
 
-  OpIndex REDUCE(ConvertObjectToPrimitiveOrDeopt)(
+  OpIndex REDUCE(ConvertJSPrimitiveToUntaggedOrDeopt)(
       V<Tagged> object, OpIndex frame_state,
-      ConvertObjectToPrimitiveOrDeoptOp::ObjectKind from_kind,
-      ConvertObjectToPrimitiveOrDeoptOp::PrimitiveKind to_kind,
+      ConvertJSPrimitiveToUntaggedOrDeoptOp::JSPrimitiveKind from_kind,
+      ConvertJSPrimitiveToUntaggedOrDeoptOp::UntaggedKind to_kind,
       CheckForMinusZeroMode minus_zero_mode, const FeedbackSource& feedback) {
     switch (to_kind) {
-      case ConvertObjectToPrimitiveOrDeoptOp::PrimitiveKind::kInt32: {
-        if (from_kind == ConvertObjectToPrimitiveOrDeoptOp::ObjectKind::kSmi) {
+      case ConvertJSPrimitiveToUntaggedOrDeoptOp::UntaggedKind::kInt32: {
+        if (from_kind ==
+            ConvertJSPrimitiveToUntaggedOrDeoptOp::JSPrimitiveKind::kSmi) {
           __ DeoptimizeIfNot(__ ObjectIsSmi(object), frame_state,
                              DeoptimizeReason::kNotASmi, feedback);
-          return __ SmiUntag(object);
+          return __ UntagSmi(object);
         } else {
-          DCHECK_EQ(from_kind,
-                    ConvertObjectToPrimitiveOrDeoptOp::ObjectKind::kNumber);
+          DCHECK_EQ(
+              from_kind,
+              ConvertJSPrimitiveToUntaggedOrDeoptOp::JSPrimitiveKind::kNumber);
           Label<Word32> done(this);
 
           IF(LIKELY(__ ObjectIsSmi(object))) {
-            GOTO(done, __ SmiUntag(object));
+            GOTO(done, __ UntagSmi(object));
           }
           ELSE {
             V<Map> map = __ LoadMapField(object);
@@ -1037,13 +1057,14 @@ class MachineLoweringReducer : public Next {
           return result;
         }
       }
-      case ConvertObjectToPrimitiveOrDeoptOp::PrimitiveKind::kInt64: {
-        DCHECK_EQ(from_kind,
-                  ConvertObjectToPrimitiveOrDeoptOp::ObjectKind::kNumber);
+      case ConvertJSPrimitiveToUntaggedOrDeoptOp::UntaggedKind::kInt64: {
+        DCHECK_EQ(
+            from_kind,
+            ConvertJSPrimitiveToUntaggedOrDeoptOp::JSPrimitiveKind::kNumber);
         Label<Word64> done(this);
 
         IF(LIKELY(__ ObjectIsSmi(object))) {
-          GOTO(done, __ ChangeInt32ToInt64(__ SmiUntag(object)));
+          GOTO(done, __ ChangeInt32ToInt64(__ UntagSmi(object)));
         }
         ELSE {
           V<Map> map = __ LoadMapField(object);
@@ -1061,13 +1082,13 @@ class MachineLoweringReducer : public Next {
         BIND(done, result);
         return result;
       }
-      case ConvertObjectToPrimitiveOrDeoptOp::PrimitiveKind::kFloat64: {
+      case ConvertJSPrimitiveToUntaggedOrDeoptOp::UntaggedKind::kFloat64: {
         Label<Float64> done(this);
 
         // In the Smi case, just convert to int32 and then float64.
         // Otherwise, check heap numberness and load the number.
         IF(__ ObjectIsSmi(object)) {
-          GOTO(done, __ ChangeInt32ToFloat64(__ SmiUntag(object)));
+          GOTO(done, __ ChangeInt32ToFloat64(__ UntagSmi(object)));
         }
         ELSE {
           GOTO(done, ConvertHeapObjectToFloat64OrDeopt(object, frame_state,
@@ -1078,15 +1099,14 @@ class MachineLoweringReducer : public Next {
         BIND(done, result);
         return result;
       }
-      case ConvertObjectToPrimitiveOrDeoptOp::PrimitiveKind::kArrayIndex: {
-        DCHECK_EQ(
-            from_kind,
-            ConvertObjectToPrimitiveOrDeoptOp::ObjectKind::kNumberOrString);
+      case ConvertJSPrimitiveToUntaggedOrDeoptOp::UntaggedKind::kArrayIndex: {
+        DCHECK_EQ(from_kind, ConvertJSPrimitiveToUntaggedOrDeoptOp::
+                                 JSPrimitiveKind::kNumberOrString);
         Label<WordPtr> done(this);
 
         IF(LIKELY(__ ObjectIsSmi(object))) {
           // In the Smi case, just convert to intptr_t.
-          GOTO(done, __ ChangeInt32ToIntPtr(__ SmiUntag(object)));
+          GOTO(done, __ ChangeInt32ToIntPtr(__ UntagSmi(object)));
         }
         ELSE {
           V<Map> map = __ LoadMapField(object);
@@ -1162,17 +1182,18 @@ class MachineLoweringReducer : public Next {
     UNREACHABLE();
   }
 
-  OpIndex REDUCE(TruncateObjectToPrimitive)(
-      V<Object> object, TruncateObjectToPrimitiveOp::Kind kind,
-      TruncateObjectToPrimitiveOp::InputAssumptions input_assumptions) {
+  OpIndex REDUCE(TruncateJSPrimitiveToUntagged)(
+      V<Object> object, TruncateJSPrimitiveToUntaggedOp::UntaggedKind kind,
+      TruncateJSPrimitiveToUntaggedOp::InputAssumptions input_assumptions) {
     switch (kind) {
-      case TruncateObjectToPrimitiveOp::Kind::kInt32: {
-        DCHECK_EQ(
-            input_assumptions,
-            TruncateObjectToPrimitiveOp::InputAssumptions::kNumberOrOddball);
+      case TruncateJSPrimitiveToUntaggedOp::UntaggedKind::kInt32: {
+        DCHECK_EQ(input_assumptions, TruncateJSPrimitiveToUntaggedOp::
+                                         InputAssumptions::kNumberOrOddball);
         Label<Word32> done(this);
 
-        IF(__ ObjectIsSmi(object)) { GOTO(done, __ SmiUntag(object)); }
+        IF (LIKELY(__ ObjectIsSmi(object))) {
+          GOTO(done, __ UntagSmi(object));
+        }
         ELSE {
           STATIC_ASSERT_FIELD_OFFSETS_EQUAL(HeapNumber::kValueOffset,
                                             Oddball::kToNumberRawOffset);
@@ -1185,9 +1206,9 @@ class MachineLoweringReducer : public Next {
         BIND(done, result);
         return result;
       }
-      case TruncateObjectToPrimitiveOp::Kind::kInt64: {
+      case TruncateJSPrimitiveToUntaggedOp::UntaggedKind::kInt64: {
         DCHECK_EQ(input_assumptions,
-                  TruncateObjectToPrimitiveOp::InputAssumptions::kBigInt);
+                  TruncateJSPrimitiveToUntaggedOp::InputAssumptions::kBigInt);
         DCHECK(Is64());
         Label<Word64> done(this);
 
@@ -1208,20 +1229,21 @@ class MachineLoweringReducer : public Next {
         BIND(done, result);
         return result;
       }
-      case TruncateObjectToPrimitiveOp::Kind::kBit: {
+      case TruncateJSPrimitiveToUntaggedOp::UntaggedKind::kBit: {
         Label<Word32> done(this);
 
         if (input_assumptions ==
-            TruncateObjectToPrimitiveOp::InputAssumptions::kObject) {
+            TruncateJSPrimitiveToUntaggedOp::InputAssumptions::kObject) {
           // Perform Smi check.
           IF(UNLIKELY(__ ObjectIsSmi(object))) {
-            GOTO(done, __ Word32Equal(__ TaggedEqual(object, __ SmiTag(0)), 0));
+            GOTO(done, __ Word32Equal(__ TaggedEqual(object, __ TagSmi(0)), 0));
           }
           END_IF
           // Otherwise fall through into HeapObject case.
         } else {
-          DCHECK_EQ(input_assumptions,
-                    TruncateObjectToPrimitiveOp::InputAssumptions::kHeapObject);
+          DCHECK_EQ(
+              input_assumptions,
+              TruncateJSPrimitiveToUntaggedOp::InputAssumptions::kHeapObject);
         }
 
         // Check if {object} is false.
@@ -1276,15 +1298,17 @@ class MachineLoweringReducer : public Next {
     UNREACHABLE();
   }
 
-  OpIndex REDUCE(TruncateObjectToPrimitiveOrDeopt)(
+  OpIndex REDUCE(TruncateJSPrimitiveToUntaggedOrDeopt)(
       V<Object> input, OpIndex frame_state,
-      TruncateObjectToPrimitiveOrDeoptOp::Kind kind,
-      TruncateObjectToPrimitiveOrDeoptOp::InputRequirement input_requirement,
+      TruncateJSPrimitiveToUntaggedOrDeoptOp::UntaggedKind kind,
+      TruncateJSPrimitiveToUntaggedOrDeoptOp::InputRequirement
+          input_requirement,
       const FeedbackSource& feedback) {
-    DCHECK_EQ(kind, TruncateObjectToPrimitiveOrDeoptOp::Kind::kInt32);
+    DCHECK_EQ(kind,
+              TruncateJSPrimitiveToUntaggedOrDeoptOp::UntaggedKind::kInt32);
     Label<Word32> done(this);
     // In the Smi case, just convert to int32.
-    GOTO_IF(__ ObjectIsSmi(input), done, __ SmiUntag(input));
+    GOTO_IF(LIKELY(__ ObjectIsSmi(input)), done, __ UntagSmi(input));
 
     // Otherwise, check that it's a heap number or oddball and truncate the
     // value to int32.
@@ -1302,9 +1326,9 @@ class MachineLoweringReducer : public Next {
       value_map = __ LoadMapField(value);
     }
 #if V8_STATIC_ROOTS_BOOL
-    // Assumes only primitive objects and JS_RECEIVER's are passed here.
-    // All primitive object's maps are allocated at the start of the read only
-    // heap. Thus JS_RECEIVER's must have maps with larger (compressed)
+    // Assumes only primitive objects and JS_RECEIVER's are passed here. All
+    // primitive object's maps are in RO space and are allocated before all
+    // JS_RECEIVER maps. Thus primitive object maps have smaller (compressed)
     // addresses.
     return __ Uint32LessThan(InstanceTypeChecker::kNonJsReceiverMapLimit,
                              __ BitcastTaggedToWord(value_map));
@@ -1316,8 +1340,9 @@ class MachineLoweringReducer : public Next {
 #endif
   }
 
-  OpIndex REDUCE(ConvertReceiver)(V<Object> value, V<Object> global_proxy,
-                                  ConvertReceiverMode mode) {
+  OpIndex REDUCE(ConvertJSPrimitiveToObject)(V<Object> value,
+                                             V<Object> global_proxy,
+                                             ConvertReceiverMode mode) {
     switch (mode) {
       case ConvertReceiverMode::kNullOrUndefined:
         return global_proxy;
@@ -1383,15 +1408,15 @@ class MachineLoweringReducer : public Next {
 
     // Allocate the resulting ConsString.
     BIND(allocate_string, map);
-    V<Tagged> string = __ Allocate(__ IntPtrConstant(ConsString::kSize),
-                                   AllocationType::kYoung);
-    __ StoreField(string, AccessBuilder::ForMap(), map);
-    __ StoreField(string, AccessBuilder::ForNameRawHashField(),
-                  __ Word32Constant(Name::kEmptyHashField));
-    __ StoreField(string, AccessBuilder::ForStringLength(), length);
-    __ StoreField(string, AccessBuilder::ForConsStringFirst(), first);
-    __ StoreField(string, AccessBuilder::ForConsStringSecond(), second);
-    return string;
+    auto string = __ template Allocate<String>(
+        __ IntPtrConstant(ConsString::kSize), AllocationType::kYoung);
+    __ InitializeField(string, AccessBuilder::ForMap(), map);
+    __ InitializeField(string, AccessBuilder::ForNameRawHashField(),
+                       __ Word32Constant(Name::kEmptyHashField));
+    __ InitializeField(string, AccessBuilder::ForStringLength(), length);
+    __ InitializeField(string, AccessBuilder::ForConsStringFirst(), first);
+    __ InitializeField(string, AccessBuilder::ForConsStringSecond(), second);
+    return __ FinishInitialization(std::move(string));
   }
 
   OpIndex REDUCE(NewArray)(V<WordPtr> length, NewArrayOp::Kind kind,
@@ -1434,10 +1459,15 @@ class MachineLoweringReducer : public Next {
                                     access.header_size);
 
     // Allocate the result and initialize the header.
-    V<Tagged> array = __ Allocate(size, allocation_type);
-    __ StoreField(array, AccessBuilder::ForMap(), __ HeapConstant(array_map));
-    __ StoreField(array, AccessBuilder::ForFixedArrayLength(),
-                  __ SmiTag(length));
+    auto uninitialized_array =
+        __ template Allocate<FixedArray>(size, allocation_type);
+    __ InitializeField(uninitialized_array, AccessBuilder::ForMap(),
+                       __ HeapConstant(array_map));
+    __ InitializeField(uninitialized_array,
+                       AccessBuilder::ForFixedArrayLength(), __ TagSmi(length));
+    // TODO(nicohartmann@): Should finish initialization only after all elements
+    // have been initialized.
+    auto array = __ FinishInitialization(std::move(uninitialized_array));
 
     // Initialize the backing store with holes.
     LoopLabel<WordPtr> loop(this);
@@ -1466,7 +1496,7 @@ class MachineLoweringReducer : public Next {
     V<Float64> empty_value =
         __ Float64Constant(is_max ? -V8_INFINITY : V8_INFINITY);
     V<WordPtr> array_length =
-        __ ChangeInt32ToIntPtr(__ SmiUntag(__ template LoadField<Tagged>(
+        __ ChangeInt32ToIntPtr(__ UntagSmi(__ template LoadField<Tagged>(
             array, AccessBuilder::ForJSArrayLength(
                        ElementsKind::PACKED_DOUBLE_ELEMENTS))));
     V<Tagged> elements = __ template LoadField<Tagged>(
@@ -1615,7 +1645,7 @@ class MachineLoweringReducer : public Next {
 
         // Check for exception sentinel: Smi 1 is returned to signal
         // TerminationRequested.
-        IF(UNLIKELY(__ TaggedEqual(result, __ SmiTag(1)))) {
+        IF (UNLIKELY(__ TaggedEqual(result, __ TagSmi(1)))) {
           __ CallRuntime_TerminateExecution(isolate_, frame_state,
                                             __ NoContextConstant());
         }
@@ -1751,7 +1781,7 @@ class MachineLoweringReducer : public Next {
                   receiver, AccessBuilder::ForSlicedStringParent());
               GOTO(loop, parent,
                    __ WordPtrAdd(position,
-                                 __ ChangeInt32ToIntPtr(__ SmiUntag(offset))));
+                                 __ ChangeInt32ToIntPtr(__ UntagSmi(offset))));
             }
             ELSE { GOTO(runtime); }
             END_IF
@@ -1760,8 +1790,8 @@ class MachineLoweringReducer : public Next {
         END_IF
 
         if (BIND(runtime)) {
-          V<Word32> value = __ SmiUntag(__ CallRuntime_StringCharCodeAt(
-              isolate_, __ NoContextConstant(), receiver, __ SmiTag(position)));
+          V<Word32> value = __ UntagSmi(__ CallRuntime_StringCharCodeAt(
+              isolate_, __ NoContextConstant(), receiver, __ TagSmi(position)));
           GOTO(done, value);
         }
       }
@@ -1877,7 +1907,7 @@ class MachineLoweringReducer : public Next {
     V<WordPtr> arguments_length = __ WordPtrSub(count, kJSArgcReceiverSlots);
 
     if (kind == ArgumentsLengthOp::Kind::kArguments) {
-      return __ SmiTag(arguments_length);
+      return __ TagSmi(arguments_length);
     } else {
       DCHECK_EQ(kind, ArgumentsLengthOp::Kind::kRest);
       V<WordPtr> rest_length =
@@ -1888,7 +1918,7 @@ class MachineLoweringReducer : public Next {
       END_IF
 
       BIND(done, value);
-      return __ SmiTag(value);
+      return __ TagSmi(value);
     }
   }
 
@@ -1913,26 +1943,22 @@ class MachineLoweringReducer : public Next {
   OpIndex REDUCE(LoadTypedElement)(OpIndex buffer, V<Object> base,
                                    V<WordPtr> external, V<WordPtr> index,
                                    ExternalArrayType array_type) {
-    // We need to keep the {buffer} alive so that the GC will not release the
-    // ArrayBuffer (if there's any) as long as we are still operating on it.
-    __ Retain(buffer);
-
     V<WordPtr> data_ptr = BuildTypedArrayDataPointer(base, external);
 
     // Perform the actual typed element access.
-    return __ LoadElement(
+    OpIndex result = __ LoadElement(
         data_ptr, AccessBuilder::ForTypedArrayElement(array_type, true), index);
+
+    // We need to keep the {buffer} alive so that the GC will not release the
+    // ArrayBuffer (if there's any) as long as we are still operating on it.
+    __ Retain(buffer);
+    return result;
   }
 
   OpIndex REDUCE(LoadDataViewElement)(V<Object> object, V<Object> storage,
                                       V<WordPtr> index,
                                       V<Word32> is_little_endian,
                                       ExternalArrayType element_type) {
-    // We need to keep the {object} (either the JSArrayBuffer or the JSDataView)
-    // alive so that the GC will not release the JSArrayBuffer (if there's any)
-    // as long as we are still operating on it.
-    __ Retain(object);
-
     const MachineType machine_type =
         AccessBuilder::ForTypedArrayElement(element_type, true).machine_type;
 
@@ -1963,30 +1989,36 @@ class MachineLoweringReducer : public Next {
     END_IF
 
     __ Bind(done);
-    return __ Phi({little_value, big_value},
-                  RegisterRepresentationForArrayType(element_type));
+    OpIndex result = __ Phi({little_value, big_value},
+                            RegisterRepresentationForArrayType(element_type));
+
+    // We need to keep the {object} (either the JSArrayBuffer or the JSDataView)
+    // alive so that the GC will not release the JSArrayBuffer (if there's any)
+    // as long as we are still operating on it.
+    __ Retain(object);
+    return result;
   }
 
   V<Object> REDUCE(LoadStackArgument)(V<WordPtr> base, V<WordPtr> index) {
     V<WordPtr> argument = __ template LoadElement<WordPtr>(
         base, AccessBuilder::ForStackArgument(), index);
-    return __ BitcastWordToTagged(argument);
+    return __ BitcastWordPtrToTagged(argument);
   }
 
   OpIndex REDUCE(StoreTypedElement)(OpIndex buffer, V<Object> base,
                                     V<WordPtr> external, V<WordPtr> index,
                                     OpIndex value,
                                     ExternalArrayType array_type) {
-    // We need to keep the {buffer} alive so that the GC will not release the
-    // ArrayBuffer (if there's any) as long as we are still operating on it.
-    __ Retain(buffer);
-
     V<WordPtr> data_ptr = BuildTypedArrayDataPointer(base, external);
 
     // Perform the actual typed element access.
     __ StoreElement(data_ptr,
                     AccessBuilder::ForTypedArrayElement(array_type, true),
                     index, value);
+
+    // We need to keep the {buffer} alive so that the GC will not release the
+    // ArrayBuffer (if there's any) as long as we are still operating on it.
+    __ Retain(buffer);
     return {};
   }
 
@@ -1994,11 +2026,6 @@ class MachineLoweringReducer : public Next {
                                        V<WordPtr> index, OpIndex value,
                                        V<Word32> is_little_endian,
                                        ExternalArrayType element_type) {
-    // We need to keep the {object} (either the JSArrayBuffer or the JSDataView)
-    // alive so that the GC will not release the JSArrayBuffer (if there's any)
-    // as long as we are still operating on it.
-    __ Retain(object);
-
     const MachineType machine_type =
         AccessBuilder::ForTypedArrayElement(element_type, true).machine_type;
 
@@ -2031,13 +2058,18 @@ class MachineLoweringReducer : public Next {
     __ Store(storage, index, value_to_store, StoreOp::Kind::RawUnaligned(),
              MemoryRepresentation::FromMachineType(machine_type),
              WriteBarrierKind::kNoWriteBarrier);
+
+    // We need to keep the {object} (either the JSArrayBuffer or the JSDataView)
+    // alive so that the GC will not release the JSArrayBuffer (if there's any)
+    // as long as we are still operating on it.
+    __ Retain(object);
     return {};
   }
 
   OpIndex REDUCE(TransitionAndStoreArrayElement)(
       V<JSArray> array, V<WordPtr> index, OpIndex value,
-      TransitionAndStoreArrayElementOp::Kind kind, Handle<Map> fast_map,
-      Handle<Map> double_map) {
+      TransitionAndStoreArrayElementOp::Kind kind, MaybeHandle<Map> fast_map,
+      MaybeHandle<Map> double_map) {
     V<Map> map = __ LoadMapField(array);
     V<Word32> bitfield2 =
         __ template LoadField<Word32>(map, AccessBuilder::ForMapBitField2());
@@ -2096,12 +2128,13 @@ class MachineLoweringReducer : public Next {
                              __ HeapConstant(factory_->heap_number_map()))) {
             // {value} is a HeapNumber.
             TransitionElementsTo(array, HOLEY_SMI_ELEMENTS,
-                                 HOLEY_DOUBLE_ELEMENTS, double_map);
+                                 HOLEY_DOUBLE_ELEMENTS,
+                                 double_map.ToHandleChecked());
             GOTO(do_store, HOLEY_DOUBLE_ELEMENTS);
           }
           ELSE {
             TransitionElementsTo(array, HOLEY_SMI_ELEMENTS, HOLEY_ELEMENTS,
-                                 fast_map);
+                                 fast_map.ToHandleChecked());
             GOTO(do_store, HOLEY_ELEMENTS);
           }
           END_IF
@@ -2117,7 +2150,7 @@ class MachineLoweringReducer : public Next {
         IF_NOT (UNLIKELY(__ TaggedEqual(
                     value_map, __ HeapConstant(factory_->heap_number_map())))) {
           TransitionElementsTo(array, HOLEY_DOUBLE_ELEMENTS, HOLEY_ELEMENTS,
-                               fast_map);
+                               fast_map.ToHandleChecked());
           GOTO(do_store, HOLEY_ELEMENTS);
         }
         END_IF
@@ -2131,7 +2164,7 @@ class MachineLoweringReducer : public Next {
           // Our ElementsKind is HOLEY_DOUBLE_ELEMENTS.
           IF (__ ObjectIsSmi(value)) {
             V<Float64> float_value =
-                __ ChangeInt32ToFloat64(__ SmiUntag(value));
+                __ ChangeInt32ToFloat64(__ UntagSmi(value));
             __ StoreElement(elements,
                             AccessBuilder::ForFixedDoubleArrayElement(), index,
                             float_value);
@@ -2174,7 +2207,7 @@ class MachineLoweringReducer : public Next {
           // Transition {array} from HOLEY_SMI_ELEMENTS to
           // HOLEY_DOUBLE_ELEMENTS.
           TransitionElementsTo(array, HOLEY_SMI_ELEMENTS, HOLEY_DOUBLE_ELEMENTS,
-                               double_map);
+                               double_map.ToHandleChecked());
         }
         ELSE {
           // We expect that our input array started at HOLEY_SMI_ELEMENTS, and
@@ -2214,11 +2247,11 @@ class MachineLoweringReducer : public Next {
         IF_NOT (LIKELY(__ Int32LessThan(HOLEY_SMI_ELEMENTS, elements_kind))) {
           // Transition {array} from HOLEY_SMI_ELEMENTS to HOLEY_ELEMENTS.
           TransitionElementsTo(array, HOLEY_SMI_ELEMENTS, HOLEY_ELEMENTS,
-                               fast_map);
+                               fast_map.ToHandleChecked());
         }
         ELSE_IF (UNLIKELY(__ Int32LessThan(HOLEY_ELEMENTS, elements_kind))) {
           TransitionElementsTo(array, HOLEY_DOUBLE_ELEMENTS, HOLEY_ELEMENTS,
-                               fast_map);
+                               fast_map.ToHandleChecked());
         }
         END_IF
 
@@ -2264,7 +2297,7 @@ class MachineLoweringReducer : public Next {
           access.type = compiler::Type::SignedSmall();
           access.machine_type = MachineType::TaggedSigned();
           access.write_barrier_kind = kNoWriteBarrier;
-          __ StoreElement(elements, access, index, __ SmiTag(value));
+          __ StoreElement(elements, access, index, __ TagSmi(value));
         }
         END_IF
         break;
@@ -2276,58 +2309,32 @@ class MachineLoweringReducer : public Next {
 
   V<Word32> REDUCE(CompareMaps)(V<HeapObject> heap_object,
                                 const ZoneRefSet<Map>& maps) {
-    Label<Word32> done(this);
-
-    V<Map> heap_object_map = __ LoadMapField(heap_object);
-
-    for (size_t i = 0; i < maps.size(); ++i) {
-      V<Map> map = __ HeapConstant(maps[i].object());
-      GOTO_IF(__ TaggedEqual(heap_object_map, map), done, 1);
-    }
-    GOTO(done, 0);
-
-    BIND(done, result);
-    return result;
+    return CompareMapAgainstMultipleMaps(__ LoadMapField(heap_object), maps);
   }
 
   OpIndex REDUCE(CheckMaps)(V<HeapObject> heap_object, OpIndex frame_state,
                             const ZoneRefSet<Map>& maps, CheckMapsFlags flags,
                             const FeedbackSource& feedback) {
-    Label<> done(this);
-    // If we need to migrate maps, we generate the same chain of map checks
-    // twice, with map migration in between the two. In this case we perform two
-    // runs of the below loop. Otherwise we just generate a single sequence of
-    // checks after which we deopt in case no map matches.
-    enum class Run { kTryMigrate, kDeopt };
-    base::SmallVector<Run, 2> runs;
+    if (maps.is_empty()) {
+      __ Deoptimize(frame_state, DeoptimizeReason::kWrongMap, feedback);
+      return OpIndex::Invalid();
+    }
+
     if (flags & CheckMapsFlag::kTryMigrateInstance) {
-      runs.push_back(Run::kTryMigrate);
-    }
-    runs.push_back(Run::kDeopt);
-
-    for (Run run : runs) {
-      // Load the current map of the {heap_object}.
       V<Map> heap_object_map = __ LoadMapField(heap_object);
-
-      // Perform the map checks.
-      for (size_t i = 0; i < maps.size(); ++i) {
-        V<Map> map = __ HeapConstant(maps[i].object());
-        GOTO_IF(__ TaggedEqual(heap_object_map, map), done);
+      IF_NOT (LIKELY(CompareMapAgainstMultipleMaps(heap_object_map, maps))) {
+        // Reloading the map slightly reduces register pressure, and we are on a
+        // slow path here anyway.
+        MigrateInstanceOrDeopt(heap_object, __ LoadMapField(heap_object),
+                               frame_state, feedback);
+        __ DeoptimizeIfNot(__ CompareMaps(heap_object, maps), frame_state,
+                           DeoptimizeReason::kWrongMap, feedback);
       }
-
-      if (run == Run::kTryMigrate) {
-        // If we didn't find a matching map in the `kTryMigrate` run, we migrate
-        // the maps.
-        MigrateInstanceOrDeopt(heap_object, heap_object_map, frame_state,
-                               feedback);
-      } else {
-        DCHECK_EQ(run, Run::kDeopt);
-        // If we didn't find a matching map in the `kDeopt` run, we deoptimize.
-        __ Deoptimize(frame_state, DeoptimizeReason::kWrongMap, feedback);
-      }
+      END_IF
+    } else {
+      __ DeoptimizeIfNot(__ CompareMaps(heap_object, maps), frame_state,
+                         DeoptimizeReason::kWrongMap, feedback);
     }
-
-    BIND(done);
     return OpIndex::Invalid();
   }
 
@@ -2626,7 +2633,7 @@ class MachineLoweringReducer : public Next {
   }
 
   V<Object> REDUCE(LoadMessage)(V<WordPtr> offset) {
-    return __ BitcastWordToTagged(__ template LoadField<WordPtr>(
+    return __ BitcastWordPtrToTagged(__ template LoadField<WordPtr>(
         offset, AccessBuilder::ForExternalIntPtr()));
   }
 
@@ -2670,7 +2677,7 @@ class MachineLoweringReducer : public Next {
 
   OpIndex REDUCE(RuntimeAbort)(AbortReason reason) {
     __ CallRuntime_Abort(isolate_, __ NoContextConstant(),
-                         __ SmiTag(static_cast<int>(reason)));
+                         __ TagSmi(static_cast<int>(reason)));
     return OpIndex::Invalid();
   }
 
@@ -2687,8 +2694,8 @@ class MachineLoweringReducer : public Next {
             done, elements);
 
     // We need to take a copy of the {elements} and set them up for {object}.
-    V<Object> copy = __ CallBuiltin_CopyFastSmiOrObjectElements(
-        isolate_, __ NoContextConstant(), object);
+    V<Object> copy =
+        __ CallBuiltin_CopyFastSmiOrObjectElements(isolate_, object);
     GOTO(done, copy);
 
     BIND(done, result);
@@ -2708,12 +2715,12 @@ class MachineLoweringReducer : public Next {
     V<Object> new_elements;
     switch (mode) {
       case GrowFastElementsMode::kDoubleElements:
-        new_elements = __ CallBuiltin_GrowFastDoubleElements(
-            isolate_, __ NoContextConstant(), object, __ SmiTag(index));
+        new_elements = __ CallBuiltin_GrowFastDoubleElements(isolate_, object,
+                                                             __ TagSmi(index));
         break;
       case GrowFastElementsMode::kSmiOrObjectElements:
         new_elements = __ CallBuiltin_GrowFastSmiOrObjectElements(
-            isolate_, __ NoContextConstant(), object, __ SmiTag(index));
+            isolate_, object, __ TagSmi(index));
         break;
     }
 
@@ -2764,11 +2771,11 @@ class MachineLoweringReducer : public Next {
         V<WordPtr> hash = __ ChangeUint32ToUintPtr(ComputeUnseededHash(key));
 
         V<WordPtr> number_of_buckets =
-            __ ChangeInt32ToIntPtr(__ SmiUntag(__ template LoadField<Smi>(
+            __ ChangeInt32ToIntPtr(__ UntagSmi(__ template LoadField<Smi>(
                 data_structure,
                 AccessBuilder::ForOrderedHashMapOrSetNumberOfBuckets())));
         hash = __ WordPtrBitwiseAnd(hash, __ WordPtrSub(number_of_buckets, 1));
-        V<WordPtr> first_entry = __ ChangeInt32ToIntPtr(__ SmiUntag(__ Load(
+        V<WordPtr> first_entry = __ ChangeInt32ToIntPtr(__ UntagSmi(__ Load(
             data_structure,
             __ WordPtrAdd(__ WordPtrShiftLeft(hash, kTaggedSizeLog2),
                           OrderedHashMap::HashTableStartOffset()),
@@ -2791,7 +2798,7 @@ class MachineLoweringReducer : public Next {
               LoadOp::Kind::TaggedBase(), MemoryRepresentation::AnyTagged());
 
           IF (LIKELY(__ ObjectIsSmi(candidate_key))) {
-            GOTO_IF(__ Word32Equal(__ SmiUntag(candidate_key), key), done,
+            GOTO_IF(__ Word32Equal(__ UntagSmi(candidate_key), key), done,
                     candidate);
           }
           ELSE_IF (__ TaggedEqual(
@@ -2805,7 +2812,7 @@ class MachineLoweringReducer : public Next {
           }
           END_IF
 
-          V<WordPtr> next_entry = __ ChangeInt32ToIntPtr(__ SmiUntag(__ Load(
+          V<WordPtr> next_entry = __ ChangeInt32ToIntPtr(__ UntagSmi(__ Load(
               data_structure,
               __ WordPtrAdd(__ WordPtrShiftLeft(candidate, kTaggedSizeLog2),
                             (OrderedHashMap::HashTableStartOffset() +
@@ -2834,24 +2841,24 @@ class MachineLoweringReducer : public Next {
         BigInt::SignBits::update(BigInt::LengthBits::encode(0), false);
 
     V<Map> map = __ HeapConstant(factory_->bigint_map());
-    auto bigint = V<FreshlyAllocatedBigInt>::Cast(
-        __ Allocate(__ IntPtrConstant(BigInt::SizeFor(digit.valid() ? 1 : 0)),
-                    AllocationType::kYoung));
-    __ StoreField(bigint, AccessBuilder::ForMap(), map);
-    __ StoreField(
+    auto bigint = __ template Allocate<FreshlyAllocatedBigInt>(
+        __ IntPtrConstant(BigInt::SizeFor(digit.valid() ? 1 : 0)),
+        AllocationType::kYoung);
+    __ InitializeField(bigint, AccessBuilder::ForMap(), map);
+    __ InitializeField(
         bigint, AccessBuilder::ForBigIntBitfield(),
         bitfield.valid() ? bitfield : __ Word32Constant(zero_bitfield));
 
     // BigInts have no padding on 64 bit architectures with pointer compression.
     if (BigInt::HasOptionalPadding()) {
-      __ StoreField(bigint, AccessBuilder::ForBigIntOptionalPadding(),
-                    __ IntPtrConstant(0));
+      __ InitializeField(bigint, AccessBuilder::ForBigIntOptionalPadding(),
+                         __ IntPtrConstant(0));
     }
     if (digit.valid()) {
-      __ StoreField(bigint, AccessBuilder::ForBigIntLeastSignificantDigit64(),
-                    digit);
+      __ InitializeField(
+          bigint, AccessBuilder::ForBigIntLeastSignificantDigit64(), digit);
     }
-    return V<BigInt>::Cast(bigint);
+    return V<BigInt>::Cast(__ FinishInitialization(std::move(bigint)));
   }
 
   // TODO(nicohartmann@): Should also make this an operation and lower in
@@ -2863,7 +2870,7 @@ class MachineLoweringReducer : public Next {
         static_cast<uint32_t>(kSmiTag));
   }
 
-  void SmiTagOrOverflow(V<Word32> input, Label<>* overflow,
+  void TagSmiOrOverflow(V<Word32> input, Label<>* overflow,
                         Label<Tagged>* done) {
     DCHECK(SmiValuesAre31Bits());
 
@@ -2871,9 +2878,10 @@ class MachineLoweringReducer : public Next {
     // Since smi tagging shifts left by one, it's the same as adding value
     // twice.
     OpIndex add = __ Int32AddCheckOverflow(input, input);
-    V<Word32> check = __ Projection(add, 1, WordRepresentation::Word32());
-    GOTO_IF(check, *overflow);
-    GOTO(*done, __ SmiTag(input));
+    V<Word32> check = __ template Projection<Word32>(add, 1);
+    GOTO_IF(UNLIKELY(check), *overflow);
+    GOTO(*done,
+         __ BitcastWord32ToTagged(__ template Projection<Word32>(add, 0)));
   }
 
   // `IsNonZero` converts any non-0 value into 1.
@@ -2882,31 +2890,33 @@ class MachineLoweringReducer : public Next {
   }
 
   V<Tagged> AllocateHeapNumberWithValue(V<Float64> value) {
-    V<Tagged> result = __ Allocate(__ IntPtrConstant(HeapNumber::kSize),
-                                   AllocationType::kYoung);
-    __ StoreField(result, AccessBuilder::ForMap(),
-                  __ HeapConstant(factory_->heap_number_map()));
-    __ StoreField(result, AccessBuilder::ForHeapNumberValue(), value);
-    return result;
+    auto result = __ template Allocate<HeapNumber>(
+        __ IntPtrConstant(HeapNumber::kSize), AllocationType::kYoung);
+    __ InitializeField(result, AccessBuilder::ForMap(),
+                       __ HeapConstant(factory_->heap_number_map()));
+    __ InitializeField(result, AccessBuilder::ForHeapNumberValue(), value);
+    return __ FinishInitialization(std::move(result));
   }
 
   V<Float64> ConvertHeapObjectToFloat64OrDeopt(
       V<Tagged> heap_object, OpIndex frame_state,
-      ConvertObjectToPrimitiveOrDeoptOp::ObjectKind input_kind,
+      ConvertJSPrimitiveToUntaggedOrDeoptOp::JSPrimitiveKind input_kind,
       const FeedbackSource& feedback) {
     V<Map> map = __ LoadMapField(heap_object);
     V<Word32> check_number =
         __ TaggedEqual(map, __ HeapConstant(factory_->heap_number_map()));
     switch (input_kind) {
-      case ConvertObjectToPrimitiveOrDeoptOp::ObjectKind::kSmi:
-      case ConvertObjectToPrimitiveOrDeoptOp::ObjectKind::kNumberOrString:
+      case ConvertJSPrimitiveToUntaggedOrDeoptOp::JSPrimitiveKind::kSmi:
+      case ConvertJSPrimitiveToUntaggedOrDeoptOp::JSPrimitiveKind::
+          kNumberOrString:
         UNREACHABLE();
-      case ConvertObjectToPrimitiveOrDeoptOp::ObjectKind::kNumber: {
+      case ConvertJSPrimitiveToUntaggedOrDeoptOp::JSPrimitiveKind::kNumber: {
         __ DeoptimizeIfNot(check_number, frame_state,
                            DeoptimizeReason::kNotAHeapNumber, feedback);
         break;
       }
-      case ConvertObjectToPrimitiveOrDeoptOp::ObjectKind::kNumberOrBoolean: {
+      case ConvertJSPrimitiveToUntaggedOrDeoptOp::JSPrimitiveKind::
+          kNumberOrBoolean: {
         IF_NOT(check_number) {
           STATIC_ASSERT_FIELD_OFFSETS_EQUAL(HeapNumber::kValueOffset,
                                             Oddball::kToNumberRawOffset);
@@ -2917,7 +2927,8 @@ class MachineLoweringReducer : public Next {
         END_IF
         break;
       }
-      case ConvertObjectToPrimitiveOrDeoptOp::ObjectKind::kNumberOrOddball: {
+      case ConvertJSPrimitiveToUntaggedOrDeoptOp::JSPrimitiveKind::
+          kNumberOrOddball: {
         IF_NOT(check_number) {
           // For oddballs also contain the numeric value, let us just check that
           // we have an oddball here.
@@ -3061,10 +3072,7 @@ class MachineLoweringReducer : public Next {
               __ Word32ReverseBytes(__ Float64ExtractLowWord32(value));
           V<Word32> reversed_hi =
               __ Word32ReverseBytes(__ Float64ExtractHighWord32(value));
-          V<Float64> temp = __ Float64InsertWord32(
-              0.0, reversed_hi, Float64InsertWord32Op::Kind::kLowHalf);
-          return __ Float64InsertWord32(temp, reversed_lo,
-                                        Float64InsertWord32Op::Kind::kHighHalf);
+          return __ BitcastWord32PairToFloat64(reversed_lo, reversed_hi);
         }
       }
       case kExternalBigInt64Array:
@@ -3101,8 +3109,26 @@ class MachineLoweringReducer : public Next {
     }
   }
 
-  Factory* factory_;
-  Isolate* isolate_;
+  V<Word32> CompareMapAgainstMultipleMaps(V<Map> heap_object_map,
+                                          const ZoneRefSet<Map>& maps) {
+    if (maps.is_empty()) {
+      return __ Word32Constant(0);
+    }
+    V<Word32> result;
+    for (size_t i = 0; i < maps.size(); ++i) {
+      V<Map> map = __ HeapConstant(maps[i].object());
+      if (i == 0) {
+        result = __ TaggedEqual(heap_object_map, map);
+      } else {
+        result =
+            __ Word32BitwiseOr(result, __ TaggedEqual(heap_object_map, map));
+      }
+    }
+    return result;
+  }
+
+  Isolate* isolate_ = PipelineData::Get().isolate();
+  Factory* factory_ = isolate_->factory();
 };
 
 #include "src/compiler/turboshaft/undef-assembler-macros.inc"

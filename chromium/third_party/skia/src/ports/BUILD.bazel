@@ -35,6 +35,7 @@ skia_filegroup(
     srcs = select({
         "//bazel/common_config_settings:use_fontations_true": [
             "SkTypeface_fontations.cpp",
+            "//src/ports/fontations:srcs",
         ],
         "//conditions:default": [],
     }),
@@ -274,7 +275,9 @@ skia_filegroup(
 
 skia_filegroup(
     name = "private_hdrs",
-    srcs = ["SkOSLibrary.h"] + select({
+    srcs = [
+        "SkOSLibrary.h",
+    ] + select({
         ":uses_freetype": [
             "SkFontHost_FreeType_common.h",
             "SkFontMgr_custom.h",
@@ -294,7 +297,7 @@ skia_filegroup(
         "//conditions:default": [],
     }) + select({
         "//bazel/common_config_settings:use_fontations_true": [
-            "SkTypeface_fontations.h",
+            "SkTypeface_fontations_priv.h",
         ],
         "//conditions:default": [],
     }),
@@ -341,8 +344,7 @@ skia_cc_deps(
         "//bazel/common_config_settings:uses_android_fontmgr": ["@expat"],
         "//conditions:default": [],
     }) + select({
-        "//bazel/common_config_settings:use_fontations_true": [
-        ],
+        "//bazel/common_config_settings:use_fontations_true": ["//src/ports/fontations:deps"],
         "//conditions:default": [],
     }),
 )

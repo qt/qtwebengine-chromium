@@ -25,8 +25,10 @@ export class Radio extends LitElement {
       --md-focus-ring-width: 2px;
       --md-radio-icon-size: 16px;
       --md-radio-unselected-icon-color: var(--cros-sys-on_surface);
-      --md-ripple-pressed-color: var(--cros-sys-ripple_primary);
-      --md-ripple-pressed-opacity: 32%;
+      --md-radio-unselected-pressed-state-layer-color: var(--cros-sys-ripple_primary);
+      --md-radio-unselected-pressed-state-layer-opacity: 32%;
+      --md-radio-selected-pressed-state-layer-color: var(--cros-sys-ripple_primary);
+      --md-radio-selected-pressed-state-layer-opacity: 32%;
       --md-sys-color-on-surface: var(--cros-sys-on_surface);
       --md-sys-color-primary: var(--cros-sys-primary);
     }
@@ -39,12 +41,14 @@ export class Radio extends LitElement {
 
   private checkedInternal = false;
 
+  /** @export */
   disabled: boolean;
 
   get mdRadio(): MdRadio|undefined {
     return this.renderRoot?.querySelector('md-radio') || undefined;
   }
 
+  /** @export */
   get checked() {
     return this.mdRadio?.checked || false;
   }

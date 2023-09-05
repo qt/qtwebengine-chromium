@@ -31,11 +31,11 @@
 #include "src/tint/ast/loop_statement.h"
 #include "src/tint/ast/return_statement.h"
 #include "src/tint/ast/switch_statement.h"
+#include "src/tint/ast/transform/decompose_memory_access.h"
 #include "src/tint/ast/unary_op_expression.h"
 #include "src/tint/builtin/builtin_value.h"
 #include "src/tint/program_builder.h"
 #include "src/tint/scope_stack.h"
-#include "src/tint/transform/decompose_memory_access.h"
 #include "src/tint/utils/hash.h"
 #include "src/tint/utils/string_stream.h"
 #include "src/tint/writer/glsl/generator.h"
@@ -383,11 +383,11 @@ class GeneratorImpl : public TextGenerator {
     /// this function will simply return `true` without emitting anything.
     /// @param buffer the text buffer that the type declaration will be written to
     /// @param ty the struct to generate
-    void EmitStructType(TextBuffer* buffer, const sem::Struct* ty);
+    void EmitStructType(TextBuffer* buffer, const type::Struct* ty);
     /// Handles generating the members of a structure
     /// @param buffer the text buffer that the struct members will be written to
     /// @param ty the struct to generate
-    void EmitStructMembers(TextBuffer* buffer, const sem::Struct* ty);
+    void EmitStructMembers(TextBuffer* buffer, const type::Struct* ty);
     /// Handles a unary op expression
     /// @param out the output of the expression stream
     /// @param expr the expression to emit
@@ -399,7 +399,7 @@ class GeneratorImpl : public TextGenerator {
     /// Handles generating a 'var' declaration
     /// @param var the variable to generate
     void EmitVar(const ast::Var* var);
-    /// Handles generating a function-scope 'let' declaration
+    /// Handles generating a 'let' declaration
     /// @param let the variable to generate
     void EmitLet(const ast::Let* let);
     /// Handles generating a module-scope 'let' declaration
@@ -460,7 +460,7 @@ class GeneratorImpl : public TextGenerator {
     std::unordered_map<const type::Vector*, std::string> dynamic_vector_write_;
     std::unordered_map<const type::Vector*, std::string> int_dot_funcs_;
     std::unordered_map<BinaryOperandType, std::string> float_modulo_funcs_;
-    std::unordered_set<const sem::Struct*> emitted_structs_;
+    std::unordered_set<const type::Struct*> emitted_structs_;
     bool requires_oes_sample_variables_ = false;
     bool requires_default_precision_qualifier_ = false;
     bool requires_f16_extension_ = false;

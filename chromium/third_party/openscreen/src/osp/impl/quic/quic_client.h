@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "osp/impl/quic/quic_connection_factory.h"
@@ -44,7 +45,7 @@ class QuicClient final : public ProtocolConnectionClient,
              std::unique_ptr<QuicConnectionFactory> connection_factory,
              ProtocolConnectionServiceObserver* observer,
              ClockNowFunctionPtr now_function,
-             TaskRunner* task_runner);
+             TaskRunner& task_runner);
   ~QuicClient() override;
 
   // ProtocolConnectionClient overrides.

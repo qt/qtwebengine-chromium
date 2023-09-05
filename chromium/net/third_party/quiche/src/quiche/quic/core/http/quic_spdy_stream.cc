@@ -32,7 +32,9 @@
 #include "quiche/quic/platform/api/quic_flag_utils.h"
 #include "quiche/quic/platform/api/quic_flags.h"
 #include "quiche/quic/platform/api/quic_logging.h"
+#include "quiche/quic/platform/api/quic_testvalue.h"
 #include "quiche/common/capsule.h"
+#include "quiche/common/platform/api/quiche_logging.h"
 #include "quiche/common/quiche_mem_slice_storage.h"
 #include "quiche/common/quiche_text_utils.h"
 #include "quiche/spdy/core/spdy_protocol.h"
@@ -622,8 +624,11 @@ void QuicSpdyStream::OnInitialHeadersComplete(
   }
   // Validate request headers if it did not exceed size limit. If it did,
   // OnHeadersTooLarge() should have already handled it previously.
-  if (!header_too_large && !AreHeadersValid(header_list)) {
+  if (!header_too_large && !ValidatedRequestHeaders(header_list)) {
     QUIC_CODE_COUNT_N(quic_validate_request_header, 1, 2);
+    QUICHE_DCHECK(!invalid_request_details().empty())
+        << "ValidatedRequestHeaders() returns false without populating "
+           "invalid_request_details_";
     if (GetQuicReloadableFlag(quic_act_upon_invalid_header)) {
       QUIC_RELOADABLE_FLAG_COUNT(quic_act_upon_invalid_header);
       OnInvalidHeaders();
@@ -632,8 +637,7 @@ void QuicSpdyStream::OnInitialHeadersComplete(
   }
   QUIC_CODE_COUNT_N(quic_validate_request_header, 2, 2);
 
-  if (!GetQuicReloadableFlag(quic_verify_request_headers_2) ||
-      !header_too_large) {
+  if (!header_too_large) {
     MaybeProcessReceivedWebTransportHeaders();
   }
 
@@ -951,6 +955,15 @@ bool QuicSpdyStream::OnDataFrameStart(QuicByteCount header_length,
   }
 
   if (!headers_decompressed_ || trailers_decompressed_) {
+    QUICHE_LOG(INFO) << ENDPOINT << "stream_id: " << id()
+                     << ", headers_decompressed: "
+                     << (headers_decompressed_ ? "true" : "false")
+                     << ", trailers_decompressed: "
+                     << (trailers_decompressed_ ? "true" : "false")
+                     << ", NumBytesConsumed: "
+                     << sequencer()->NumBytesConsumed()
+                     << ", total_body_bytes_received: "
+                     << body_manager_.total_body_bytes_received();
     stream_delegate()->OnStreamError(
         QUIC_HTTP_INVALID_FRAME_SEQUENCE_ON_SPDY_STREAM,
         "Unexpected DATA frame received.");
@@ -1040,6 +1053,13 @@ bool QuicSpdyStream::OnHeadersFrameStart(QuicByteCount header_length,
   headers_payload_length_ = payload_length;
 
   if (trailers_decompressed_) {
+    QUICHE_LOG(INFO) << ENDPOINT << "stream_id: " << id()
+                     << ", headers_decompressed: "
+                     << (headers_decompressed_ ? "true" : "false")
+                     << ", NumBytesConsumed: "
+                     << sequencer()->NumBytesConsumed()
+                     << ", total_body_bytes_received: "
+                     << body_manager_.total_body_bytes_received();
     stream_delegate()->OnStreamError(
         QUIC_HTTP_INVALID_FRAME_SEQUENCE_ON_SPDY_STREAM,
         "HEADERS frame received after trailing HEADERS.");
@@ -1242,14 +1262,6 @@ void QuicSpdyStream::MaybeProcessReceivedWebTransportHeaders() {
                           "Datagram-Flow-Id header";
       return;
     }
-    if (header_name == "sec-webtransport-http3-draft02") {
-      if (header_value != "1") {
-        QUIC_DLOG(ERROR) << ENDPOINT
-                         << "Rejecting WebTransport due to invalid value of "
-                            "Sec-Webtransport-Http3-Draft02 header";
-        return;
-      }
-    }
   }
 
   if (method != "CONNECT" || protocol != "webtransport") {
@@ -1384,6 +1396,14 @@ bool QuicSpdyStream::OnCapsule(const Capsule& capsule) {
       web_transport_->OnCloseReceived(
           capsule.close_web_transport_session_capsule().error_code,
           capsule.close_web_transport_session_capsule().error_message);
+      return true;
+    case CapsuleType::DRAIN_WEBTRANSPORT_SESSION:
+      if (web_transport_ == nullptr) {
+        QUIC_DLOG(ERROR) << ENDPOINT << "Received capsule " << capsule
+                         << " for a non-WebTransport stream.";
+        return false;
+      }
+      web_transport_->OnDrainSessionReceived();
       return true;
     case CapsuleType::ADDRESS_ASSIGN:
       if (connect_ip_visitor_ == nullptr) {
@@ -1627,20 +1647,39 @@ constexpr bool isInvalidHeaderNameCharacter(unsigned char c) {
 }
 }  // namespace
 
-bool QuicSpdyStream::AreHeadersValid(const QuicHeaderList& header_list) const {
-  QUICHE_DCHECK(GetQuicReloadableFlag(quic_verify_request_headers_2));
+bool QuicSpdyStream::ValidatedRequestHeaders(
+    const QuicHeaderList& header_list) {
+  bool force_fail_validation = false;
+  AdjustTestValue("quic::QuicSpdyStream::request_header_validation_adjust",
+                  &force_fail_validation);
+  if (force_fail_validation) {
+    invalid_request_details_ =
+        "request_header_validation_adjust force failed the validation.";
+    QUIC_DLOG(ERROR) << invalid_request_details_;
+    return false;
+  }
   for (const std::pair<std::string, std::string>& pair : header_list) {
     const std::string& name = pair.first;
     if (std::any_of(name.begin(), name.end(), isInvalidHeaderNameCharacter)) {
-      QUIC_DLOG(ERROR) << "Invalid request header " << name;
+      invalid_request_details_ = absl::StrCat("Invalid request header ", name);
+      QUIC_DLOG(ERROR) << invalid_request_details_;
       return false;
     }
     if (http2::GetInvalidHttp2HeaderSet().contains(name)) {
-      QUIC_DLOG(ERROR) << name << " header is not allowed";
+      invalid_request_details_ = absl::StrCat(name, " header is not allowed");
+      QUIC_DLOG(ERROR) << invalid_request_details_;
       return false;
     }
   }
   return true;
+}
+
+void QuicSpdyStream::set_invalid_request_details(
+    std::string invalid_request_details) {
+  QUIC_BUG_IF(
+      empty invalid request detail,
+      !invalid_request_details_.empty() || invalid_request_details.empty());
+  invalid_request_details_ = std::move(invalid_request_details);
 }
 
 bool QuicSpdyStream::AreHeaderFieldValuesValid(

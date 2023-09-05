@@ -29,6 +29,7 @@ declare_args() {
   skia_enable_svg = !is_component_build
   skia_enable_tools = is_skia_dev_build
   skia_enable_gpu_debug_layers = is_skia_dev_build && is_debug
+  skia_enable_vello_shaders = false
   skia_disable_vma_stl_shared_mutex = false
   skia_enable_winuwp = false
   skia_generate_workarounds = false
@@ -73,7 +74,6 @@ declare_args() {
 
   # Currently only supported in Android framework
   skia_android_framework_use_perfetto = false
-  skia_use_piet = false
   skia_use_piex = !is_win && !is_wasm
   skia_use_sfml = false
   skia_use_webgl = is_wasm
@@ -91,9 +91,6 @@ declare_args() {
     skia_ios_identity = ".*Google.*"
     skia_ios_profile = "Google Development"
   }
-
-  # Temporary GN arg for flutter to control updating their unit tests synchronously with new alg.
-  skia_use_legacy_layer_bounds = false
 
   skia_build_rust_targets = false
 }

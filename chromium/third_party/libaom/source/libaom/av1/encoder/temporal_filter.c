@@ -141,12 +141,13 @@ static void tf_motion_search(AV1_COMP *cpi, MACROBLOCK *mb,
 
   // Do motion search.
   int_mv best_mv;  // Searched motion vector.
+  FULLPEL_MV_STATS best_mv_stats;
   int block_mse = INT_MAX;
   MV block_mv = kZeroMv;
   const int q = av1_get_q(cpi);
 
   av1_make_default_fullpel_ms_params(&full_ms_params, cpi, mb, block_size,
-                                     &baseline_mv, search_site_cfg,
+                                     &baseline_mv, start_mv, search_site_cfg,
                                      /*fine_search_interval=*/0);
   av1_set_mv_search_method(&full_ms_params, search_site_cfg, search_method);
   full_ms_params.run_mesh_search = 1;
@@ -160,7 +161,7 @@ static void tf_motion_search(AV1_COMP *cpi, MACROBLOCK *mb,
 
   av1_full_pixel_search(start_mv, &full_ms_params, step_param,
                         cond_cost_list(cpi, cost_list), &best_mv.as_fullmv,
-                        NULL);
+                        &best_mv_stats, NULL);
 
   if (force_integer_mv == 1) {  // Only do full search on the entire block.
     const int mv_row = best_mv.as_mv.row;
@@ -181,12 +182,13 @@ static void tf_motion_search(AV1_COMP *cpi, MACROBLOCK *mb,
     // Since we are merely refining the result from full pixel search, we don't
     // need regularization for subpel search
     ms_params.mv_cost_params.mv_cost_type = MV_COST_NONE;
+    best_mv_stats.err_cost = 0;
 
     MV subpel_start_mv = get_mv_from_fullmv(&best_mv.as_fullmv);
     assert(av1_is_subpelmv_in_range(&ms_params.mv_limits, subpel_start_mv));
     error = cpi->mv_search_params.find_fractional_mv_step(
-        &mb->e_mbd, &cpi->common, &ms_params, subpel_start_mv, &best_mv.as_mv,
-        &distortion, &sse, NULL);
+        &mb->e_mbd, &cpi->common, &ms_params, subpel_start_mv, &best_mv_stats,
+        &best_mv.as_mv, &distortion, &sse, NULL);
     block_mse = DIVIDE_AND_ROUND(error, mb_pels);
     block_mv = best_mv.as_mv;
     *ref_mv = best_mv.as_mv;
@@ -205,7 +207,7 @@ static void tf_motion_search(AV1_COMP *cpi, MACROBLOCK *mb,
         mbd->plane[0].pre[0].buf = ref_frame->y_buffer + y_offset + offset;
         av1_make_default_fullpel_ms_params(&full_ms_params, cpi, mb,
                                            subblock_size, &baseline_mv,
-                                           search_site_cfg,
+                                           start_mv, search_site_cfg,
                                            /*fine_search_interval=*/0);
         av1_set_mv_search_method(&full_ms_params, search_site_cfg,
                                  search_method);
@@ -220,7 +222,7 @@ static void tf_motion_search(AV1_COMP *cpi, MACROBLOCK *mb,
 
         av1_full_pixel_search(start_mv, &full_ms_params, step_param,
                               cond_cost_list(cpi, cost_list),
-                              &best_mv.as_fullmv, NULL);
+                              &best_mv.as_fullmv, &best_mv_stats, NULL);
 
         av1_make_default_subpel_ms_params(&ms_params, cpi, mb, subblock_size,
                                           &baseline_mv, cost_list);
@@ -229,12 +231,13 @@ static void tf_motion_search(AV1_COMP *cpi, MACROBLOCK *mb,
         // Since we are merely refining the result from full pixel search, we
         // don't need regularization for subpel search
         ms_params.mv_cost_params.mv_cost_type = MV_COST_NONE;
+        best_mv_stats.err_cost = 0;
 
         subpel_start_mv = get_mv_from_fullmv(&best_mv.as_fullmv);
         assert(av1_is_subpelmv_in_range(&ms_params.mv_limits, subpel_start_mv));
         error = cpi->mv_search_params.find_fractional_mv_step(
             &mb->e_mbd, &cpi->common, &ms_params, subpel_start_mv,
-            &best_mv.as_mv, &distortion, &sse, NULL);
+            &best_mv_stats, &best_mv.as_mv, &distortion, &sse, NULL);
         subblock_mses[subblock_idx] = DIVIDE_AND_ROUND(error, subblock_pels);
         subblock_mvs[subblock_idx] = best_mv.as_mv;
         ++subblock_idx;
@@ -1008,11 +1011,9 @@ static void tf_setup_filtering_buffer(AV1_COMP *cpi,
   const YV12_BUFFER_CONFIG *to_filter_frame = &to_filter_buf->img;
   const int num_planes = av1_num_planes(&cpi->common);
   double *noise_levels = tf_ctx->noise_levels;
-  for (int plane = 0; plane < num_planes; ++plane) {
-    noise_levels[plane] = av1_estimate_noise_from_single_plane(
-        to_filter_frame, plane, cpi->common.seq_params->bit_depth,
-        NOISE_ESTIMATION_EDGE_THRESHOLD);
-  }
+  av1_estimate_noise_level(to_filter_frame, noise_levels, AOM_PLANE_Y,
+                           num_planes - 1, cpi->common.seq_params->bit_depth,
+                           NOISE_ESTIMATION_EDGE_THRESHOLD);
   // Get quantization factor.
   const int q = av1_get_q(cpi);
   // Get correlation estimates from first-pass;
@@ -1053,6 +1054,18 @@ static void tf_setup_filtering_buffer(AV1_COMP *cpi,
     adjust_num = 0;
   } else if ((update_type == KF_UPDATE) && q <= 10) {
     adjust_num = 0;
+  } else if (cpi->sf.hl_sf.adjust_num_frames_for_arf_filtering &&
+             update_type != KF_UPDATE) {
+    // Adjust number of frames to be considered for filtering based on noise
+    // level of the current frame. For low-noise frame, use more frames to
+    // filter such that the filtered frame can provide better predictions for
+    // subsequent frames and vice versa.
+    if (noise_levels[AOM_PLANE_Y] < 0.5)
+      adjust_num = 4;
+    else if (noise_levels[AOM_PLANE_Y] < 1.0)
+      adjust_num = 2;
+    else
+      adjust_num = 0;
   }
   num_frames = AOMMIN(num_frames + adjust_num, lookahead_depth);
 
@@ -1067,10 +1080,6 @@ static void tf_setup_filtering_buffer(AV1_COMP *cpi,
 
     num_frames = AOMMIN(num_frames, gfu_boost / 150);
     num_frames += !(num_frames & 1);  // Make the number odd.
-
-    // Limit the number of frames if noise levels are low and high quantizers.
-    if (noise_levels[AOM_PLANE_Y] < 1.9 && cpi->ppi->p_rc.arf_q > 40)
-      num_frames = AOMMIN(num_frames, cpi->sf.hl_sf.num_frames_used_in_tf);
 
     // Only use 2 neighbours for the second ARF.
     if (update_type == INTNL_ARF_UPDATE) num_frames = AOMMIN(num_frames, 3);
@@ -1121,21 +1130,50 @@ static void tf_setup_filtering_buffer(AV1_COMP *cpi,
 
 /*!\cond */
 
-// A constant number, sqrt(pi / 2),  used for noise estimation.
-static const double SQRT_PI_BY_2 = 1.25331413732;
+double av1_estimate_noise_from_single_plane_c(const uint8_t *src, int height,
+                                              int width, int stride,
+                                              int edge_thresh) {
+  int64_t accum = 0;
+  int count = 0;
 
-double av1_estimate_noise_from_single_plane(const YV12_BUFFER_CONFIG *frame,
-                                            const int plane,
-                                            const int bit_depth,
-                                            const int edge_thresh) {
-  const int is_y_plane = (plane == 0);
-  const int height = frame->crop_heights[is_y_plane ? 0 : 1];
-  const int width = frame->crop_widths[is_y_plane ? 0 : 1];
-  const int stride = frame->strides[is_y_plane ? 0 : 1];
-  const uint8_t *src = frame->buffers[plane];
-  const uint16_t *src16 = CONVERT_TO_SHORTPTR(src);
-  const int is_high_bitdepth = is_frame_high_bitdepth(frame);
+  for (int i = 1; i < height - 1; ++i) {
+    for (int j = 1; j < width - 1; ++j) {
+      // Setup a small 3x3 matrix.
+      const int center_idx = i * stride + j;
+      int mat[3][3];
+      for (int ii = -1; ii <= 1; ++ii) {
+        for (int jj = -1; jj <= 1; ++jj) {
+          const int idx = center_idx + ii * stride + jj;
+          mat[ii + 1][jj + 1] = src[idx];
+        }
+      }
+      // Compute sobel gradients.
+      const int Gx = (mat[0][0] - mat[0][2]) + (mat[2][0] - mat[2][2]) +
+                     2 * (mat[1][0] - mat[1][2]);
+      const int Gy = (mat[0][0] - mat[2][0]) + (mat[0][2] - mat[2][2]) +
+                     2 * (mat[0][1] - mat[2][1]);
+      const int Ga = ROUND_POWER_OF_TWO(abs(Gx) + abs(Gy), 0);
+      // Accumulate Laplacian.
+      if (Ga < edge_thresh) {  // Only count smooth pixels.
+        const int v = 4 * mat[1][1] -
+                      2 * (mat[0][1] + mat[2][1] + mat[1][0] + mat[1][2]) +
+                      (mat[0][0] + mat[0][2] + mat[2][0] + mat[2][2]);
+        accum += ROUND_POWER_OF_TWO(abs(v), 0);
+        ++count;
+      }
+    }
+  }
 
+  // Return -1.0 (unreliable estimation) if there are too few smooth pixels.
+  return (count < 16) ? -1.0 : (double)accum / (6 * count) * SQRT_PI_BY_2;
+}
+
+#if CONFIG_AV1_HIGHBITDEPTH
+double av1_highbd_estimate_noise_from_single_plane(const uint16_t *src16,
+                                                   int height, int width,
+                                                   const int stride,
+                                                   int bit_depth,
+                                                   int edge_thresh) {
   int64_t accum = 0;
   int count = 0;
   for (int i = 1; i < height - 1; ++i) {
@@ -1146,7 +1184,7 @@ double av1_estimate_noise_from_single_plane(const YV12_BUFFER_CONFIG *frame,
       for (int ii = -1; ii <= 1; ++ii) {
         for (int jj = -1; jj <= 1; ++jj) {
           const int idx = center_idx + ii * stride + jj;
-          mat[ii + 1][jj + 1] = is_high_bitdepth ? src16[idx] : src[idx];
+          mat[ii + 1][jj + 1] = src16[idx];
         }
       }
       // Compute sobel gradients.
@@ -1168,6 +1206,35 @@ double av1_estimate_noise_from_single_plane(const YV12_BUFFER_CONFIG *frame,
 
   // Return -1.0 (unreliable estimation) if there are too few smooth pixels.
   return (count < 16) ? -1.0 : (double)accum / (6 * count) * SQRT_PI_BY_2;
+}
+#endif
+
+void av1_estimate_noise_level(const YV12_BUFFER_CONFIG *frame,
+                              double *noise_level, int plane_from, int plane_to,
+                              int bit_depth, int edge_thresh) {
+  for (int plane = plane_from; plane <= plane_to; plane++) {
+    const bool is_uv_plane = (plane != AOM_PLANE_Y);
+    const int height = frame->crop_heights[is_uv_plane];
+    const int width = frame->crop_widths[is_uv_plane];
+    const int stride = frame->strides[is_uv_plane];
+    const uint8_t *src = frame->buffers[plane];
+
+#if CONFIG_AV1_HIGHBITDEPTH
+    const uint16_t *src16 = CONVERT_TO_SHORTPTR(src);
+    const int is_high_bitdepth = is_frame_high_bitdepth(frame);
+    if (is_high_bitdepth) {
+      noise_level[plane] = av1_highbd_estimate_noise_from_single_plane(
+          src16, height, width, stride, bit_depth, edge_thresh);
+    } else {
+      noise_level[plane] = av1_estimate_noise_from_single_plane(
+          src, height, width, stride, edge_thresh);
+    }
+#else
+    (void)bit_depth;
+    noise_level[plane] = av1_estimate_noise_from_single_plane(
+        src, height, width, stride, edge_thresh);
+#endif
+  }
 }
 
 // Initializes the members of TemporalFilterCtx

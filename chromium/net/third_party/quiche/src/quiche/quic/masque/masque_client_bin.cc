@@ -143,7 +143,6 @@ class MasqueTunSession : public MasqueClientSession::EncapsulatedIpSession,
 };
 
 int RunMasqueClient(int argc, char* argv[]) {
-  quiche::QuicheSystemEventLoop system_event_loop("masque_client");
   const char* usage = "Usage: masque_client [options] <url>";
 
   // The first non-flag argument is the URI template of the MASQUE server.
@@ -159,6 +158,7 @@ int RunMasqueClient(int argc, char* argv[]) {
     return 1;
   }
 
+  quiche::QuicheSystemEventLoop system_event_loop("masque_client");
   const bool disable_certificate_verification =
       quiche::GetQuicheCommandLineFlag(FLAGS_disable_certificate_verification);
   std::unique_ptr<QuicEventLoop> event_loop =
@@ -178,8 +178,8 @@ int RunMasqueClient(int argc, char* argv[]) {
   if (!parsed_uri_template.scheme.is_nonempty() ||
       !parsed_uri_template.host.is_nonempty() ||
       !parsed_uri_template.path.is_nonempty()) {
-    std::cerr << "Failed to parse MASQUE URI template \"" << urls[0] << "\""
-              << std::endl;
+    QUIC_LOG(ERROR) << "Failed to parse MASQUE URI template \"" << urls[0]
+                    << "\"";
     return 1;
   }
   std::string host = uri_template.substr(parsed_uri_template.host.begin,
@@ -198,7 +198,7 @@ int RunMasqueClient(int argc, char* argv[]) {
     } else if (mode_string == "connectip" || mode_string == "connect-ip") {
       masque_mode = MasqueMode::kConnectIp;
     } else {
-      std::cerr << "Invalid masque_mode \"" << mode_string << "\"" << std::endl;
+      QUIC_LOG(ERROR) << "Invalid masque_mode \"" << mode_string << "\"";
       return 1;
     }
   }
@@ -212,7 +212,7 @@ int RunMasqueClient(int argc, char* argv[]) {
   } else if (address_family == 6) {
     address_family_for_lookup = AF_INET6;
   } else {
-    std::cerr << "Invalid address_family " << address_family << std::endl;
+    QUIC_LOG(ERROR) << "Invalid address_family " << address_family;
     return 1;
   }
   std::unique_ptr<MasqueClient> masque_client = MasqueClient::Create(
@@ -221,11 +221,11 @@ int RunMasqueClient(int argc, char* argv[]) {
     return 1;
   }
 
-  std::cerr << "MASQUE is connected " << masque_client->connection_id()
-            << " in " << masque_mode << " mode" << std::endl;
+  QUIC_LOG(INFO) << "MASQUE is connected " << masque_client->connection_id()
+                 << " in " << masque_mode << " mode";
 
   if (bring_up_tun) {
-    std::cerr << "Bringing up tun" << std::endl;
+    QUIC_LOG(INFO) << "Bringing up tun";
     MasqueTunSession tun_session(event_loop.get(),
                                  masque_client->masque_client_session());
     masque_client->masque_client_session()->SendIpPacket(

@@ -64,8 +64,7 @@ size_t NumPlanes(DXGI_FORMAT dxgi_format) {
     case DXGI_FORMAT_R16G16B16A16_FLOAT:
       return 1;
     default:
-      NOTREACHED();
-      return 0;
+      NOTREACHED_NORETURN();
   }
 }
 
@@ -94,10 +93,13 @@ Texture2DWrapper::Texture2DWrapper() = default;
 
 Texture2DWrapper::~Texture2DWrapper() = default;
 
-DefaultTexture2DWrapper::DefaultTexture2DWrapper(const gfx::Size& size,
-                                                 DXGI_FORMAT dxgi_format,
-                                                 ComD3D11Device device)
+DefaultTexture2DWrapper::DefaultTexture2DWrapper(
+    const gfx::Size& size,
+    const gfx::ColorSpace& color_space,
+    DXGI_FORMAT dxgi_format,
+    ComD3D11Device device)
     : size_(size),
+      color_space_(color_space),
       dxgi_format_(dxgi_format),
       video_device_(std::move(device)) {}
 
@@ -140,6 +142,10 @@ D3D11Status DefaultTexture2DWrapper::ProcessTexture(
   // We're just binding, so the output and output color spaces are the same.
   *output_color_space = input_color_space;
 
+  // TODO(hitawala): Possibly optimize this method as input and stored color
+  // spaces should be same.
+  CHECK_EQ(input_color_space, color_space_);
+
   return D3D11Status::Codes::kOk;
 }
 
@@ -180,9 +186,9 @@ D3D11Status DefaultTexture2DWrapper::Init(
                      weak_factory_.GetWeakPtr()));
   gpu_resources_ = base::SequenceBound<GpuResources>(
       std::move(gpu_task_runner), std::move(on_error_cb),
-      std::move(get_helper_cb), std::move(mailboxes), size_, dxgi_format_,
-      video_device_, texture, array_slice, std::move(picture_buffer),
-      std::move(gpu_resource_init_cb));
+      std::move(get_helper_cb), std::move(mailboxes), size_, color_space_,
+      dxgi_format_, video_device_, texture, array_slice,
+      std::move(picture_buffer), std::move(gpu_resource_init_cb));
   return D3D11Status::Codes::kOk;
 }
 
@@ -211,6 +217,7 @@ DefaultTexture2DWrapper::GpuResources::GpuResources(
     GetCommandBufferHelperCB get_helper_cb,
     const std::vector<gpu::Mailbox>& mailboxes,
     const gfx::Size& size,
+    const gfx::ColorSpace& color_space,
     DXGI_FORMAT dxgi_format,
     ComD3D11Device video_device,
     ComD3D11Texture2D texture,
@@ -271,11 +278,18 @@ DefaultTexture2DWrapper::GpuResources::GpuResources(
     DCHECK_EQ(mailboxes.size(), 1u);
     // TODO(crbug.com/1430349): Switch |texture_target| to GL_TEXTURE_2D since
     // it's now supported by ANGLE.
-    shared_image_backings.push_back(gpu::D3DImageBacking::Create(
-        mailboxes[0], DXGIFormatToMultiPlanarSharedImageFormat(dxgi_format),
-        size, gfx::ColorSpace(), kTopLeft_GrSurfaceOrigin, kPremul_SkAlphaType,
-        usage, texture, std::move(dxgi_shared_handle_state),
-        GL_TEXTURE_EXTERNAL_OES, array_slice));
+    std::unique_ptr<gpu::SharedImageBacking> backing =
+        gpu::D3DImageBacking::Create(
+            mailboxes[0], DXGIFormatToMultiPlanarSharedImageFormat(dxgi_format),
+            size, color_space, kTopLeft_GrSurfaceOrigin, kPremul_SkAlphaType,
+            usage, texture, std::move(dxgi_shared_handle_state),
+            GL_TEXTURE_EXTERNAL_OES, array_slice);
+    if (backing) {
+      // Need to clear the backing since the D3D11 Video Decoder will initialize
+      // the textures.
+      backing->SetCleared();
+      shared_image_backings.push_back(std::move(backing));
+    }
   } else {
     shared_image_backings = gpu::D3DImageBacking::CreateFromVideoTexture(
         mailboxes, dxgi_format, size, usage, texture, array_slice,

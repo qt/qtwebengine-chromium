@@ -2319,7 +2319,9 @@ static void pick_sb_modes_nonrd(AV1_COMP *const cpi, TileDataEnc *tile_data,
     // Do not skip if intra or new mv is picked, or color sensitivity is set.
     // Never skip on slide/scene change.
     if (cpi->sf.rt_sf.skip_cdef_sb >= 2) {
-      mi_sb[0]->cdef_strength = mi_sb[0]->cdef_strength && allow_cdef_skipping;
+      mi_sb[0]->cdef_strength =
+          mi_sb[0]->cdef_strength &&
+          (allow_cdef_skipping || x->source_variance == 0);
     } else {
       mi_sb[0]->cdef_strength =
           mi_sb[0]->cdef_strength && allow_cdef_skipping &&
@@ -4462,14 +4464,15 @@ static void verify_write_partition_tree(const AV1_COMP *const cpi,
 
 static int read_partition_tree(AV1_COMP *const cpi, PC_TREE *const pc_tree,
                                const int config_id) {
+  const AV1_COMMON *const cm = &cpi->common;
   const char *path = cpi->oxcf.partition_info_path;
   char filename[256];
   snprintf(filename, sizeof(filename), "%s/partition_tree_sb%d_c%d", path,
            cpi->sb_counter, config_id);
   FILE *pfile = fopen(filename, "r");
   if (pfile == NULL) {
-    printf("Can't find the file: %s\n", filename);
-    exit(0);
+    aom_internal_error(cm->error, AOM_CODEC_ERROR, "Can't find input file: %s.",
+                       filename);
   }
 
   int read_bsize;
@@ -4629,7 +4632,9 @@ static RD_STATS rd_search_for_fixed_partition(
       best_rdc.dist = sum_subblock_dist;
       best_rdc.rdcost = RDCOST(x->rdmult, best_rdc.rate, best_rdc.dist);
       break;
-    default: assert(0 && "invalid partition type."); exit(0);
+    default:
+      assert(0 && "invalid partition type.");
+      aom_internal_error(cm->error, AOM_CODEC_ERROR, "Invalid partition type.");
   }
   // Note: it is necessary to restore context information.
   av1_restore_context(x, &x_ctx, mi_row, mi_col, bsize, num_planes);
@@ -5071,6 +5076,7 @@ bool av1_rd_partition_search(AV1_COMP *const cpi, ThreadData *td,
                              SIMPLE_MOTION_DATA_TREE *sms_root, int mi_row,
                              int mi_col, const BLOCK_SIZE bsize,
                              RD_STATS *best_rd_cost) {
+  AV1_COMMON *const cm = &cpi->common;
   if (cpi->ext_part_controller.ready) {
     bool valid_search = true;
     const aom_ext_part_decision_mode_t decision_mode =
@@ -5086,13 +5092,13 @@ bool av1_rd_partition_search(AV1_COMP *const cpi, ThreadData *td,
       return false;
     }
     if (!valid_search) {
-      assert(0 && "Invalid search from ML model, partition search failed.");
-      exit(0);
+      aom_internal_error(
+          cm->error, AOM_CODEC_ERROR,
+          "Invalid search from ML model, partition search failed");
     }
     return true;
   }
 
-  AV1_COMMON *const cm = &cpi->common;
   MACROBLOCK *const x = &td->mb;
   int best_idx = 0;
   int64_t min_rdcost = INT64_MAX;
@@ -5109,8 +5115,7 @@ bool av1_rd_partition_search(AV1_COMP *const cpi, ThreadData *td,
       av1_free_pc_tree_recursive(pc_tree, av1_num_planes(cm), 0, 0,
                                  cpi->sf.part_sf.partition_search_type);
       if (rdcost != NULL) aom_free(rdcost);
-      exit(0);
-      return false;
+      aom_internal_error(cm->error, AOM_CODEC_ERROR, "Invalid configs.");
     }
     verify_write_partition_tree(cpi, pc_tree, bsize, i, mi_row, mi_col);
     // Encode the block with the given partition tree. Get rdcost and encoding

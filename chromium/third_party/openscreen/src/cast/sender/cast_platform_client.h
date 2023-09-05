@@ -37,7 +37,7 @@ class CastPlatformClient final : public CastMessageHandler {
 
   CastPlatformClient(VirtualConnectionRouter* router,
                      ClockNowFunctionPtr clock,
-                     TaskRunner* task_runner);
+                     TaskRunner& task_runner);
   ~CastPlatformClient() override;
 
   // Requests availability information for |app_id| from the receiver identified
@@ -87,7 +87,7 @@ class CastPlatformClient final : public CastMessageHandler {
       pending_requests_by_receiver_id_;
 
   const ClockNowFunctionPtr clock_;
-  TaskRunner* const task_runner_;
+  TaskRunner& task_runner_;
 };
 
 }  // namespace cast

@@ -6,6 +6,8 @@
 #define DISCOVERY_DNSSD_IMPL_SERVICE_DISPATCHER_H_
 
 #include <memory>
+#include <string>
+#include <vector>
 
 #include "discovery/dnssd/impl/querier_impl.h"
 #include "discovery/dnssd/impl/service_instance.h"
@@ -25,7 +27,7 @@ class ServiceDispatcher final : public DnsSdPublisher,
                                 public DnsSdQuerier,
                                 public DnsSdService {
  public:
-  ServiceDispatcher(TaskRunner* task_runner,
+  ServiceDispatcher(TaskRunner& task_runner,
                     ReportingClient* reporting_client,
                     const Config& config);
   ~ServiceDispatcher() override;
@@ -47,7 +49,7 @@ class ServiceDispatcher final : public DnsSdPublisher,
 
   std::vector<std::unique_ptr<ServiceInstance>> service_instances_;
 
-  TaskRunner* const task_runner_;
+  TaskRunner& task_runner_;
 
   // Pointers either to this instance or to nullptr depending whether the below
   // types are supported.

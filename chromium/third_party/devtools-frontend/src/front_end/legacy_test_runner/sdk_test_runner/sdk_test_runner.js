@@ -3,13 +3,14 @@
 // found in the LICENSE file.
 
 import '../../core/sdk/sdk-legacy.js';
-import '../test_runner/test_runner.js';
+
 import * as Platform from '../../core/platform/platform.js';
+import {TestRunner} from '../test_runner/test_runner.js';
 
 /**
  * @fileoverview using private properties isn't a Closure violation in tests.
  */
-self.SDKTestRunner = self.SDKTestRunner || {};
+export const SDKTestRunner = {};
 
 let id = 0;
 

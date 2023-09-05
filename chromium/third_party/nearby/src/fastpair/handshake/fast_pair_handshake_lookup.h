@@ -15,6 +15,7 @@
 #ifndef THIRD_PARTY_NEARBY_FASTPAIR_HANDSHAKE_FAST_PAIR_HANDSHAKE_LOOKUP_H_
 #define THIRD_PARTY_NEARBY_FASTPAIR_HANDSHAKE_FAST_PAIR_HANDSHAKE_LOOKUP_H_
 
+#include <functional>
 #include <memory>
 #include <optional>
 
@@ -24,6 +25,7 @@
 #include "fastpair/common/fast_pair_device.h"
 #include "fastpair/common/pair_failure.h"
 #include "fastpair/handshake/fast_pair_handshake.h"
+#include "fastpair/internal/mediums/mediums.h"
 
 namespace nearby {
 namespace fastpair {
@@ -34,11 +36,16 @@ class FastPairHandshakeLookup {
   using OnCompleteCallback = absl::AnyInvocable<void(
       FastPairDevice& device, std::optional<PairFailure> failure)>;
 
+  using CreateFunction = absl::AnyInvocable<std::unique_ptr<FastPairHandshake>(
+      FastPairDevice& device, Mediums& mediums, OnCompleteCallback callback)>;
+
   // This is the static method that controls the access to the singleton
   // instance. On the first run, it creates a singleton object and places it
   // into the static field. On subsequent runs, it returns the existing object
   // stored in the static field.
   static FastPairHandshakeLookup* GetInstance();
+
+  static void SetCreateFunctionForTesting(CreateFunction create_function);
 
   // Singletons should not be cloneable.
   FastPairHandshakeLookup(const FastPairHandshakeLookup&) = delete;
@@ -63,8 +70,9 @@ class FastPairHandshakeLookup {
   // Creates and returns a new instance for |FastPairdevice| if no instance
   // already exists.
   // Returns the existing instance if there is one.
-  FastPairHandshake* Create(FastPairDevice& device,
-                            OnCompleteCallback on_complete);
+  FastPairHandshake* Create(FastPairDevice& device, Mediums& mediums,
+                            OnCompleteCallback on_complete,
+                            SingleThreadExecutor* executor);
 
  protected:
   // Constructor/destructor of singleton object should not be public

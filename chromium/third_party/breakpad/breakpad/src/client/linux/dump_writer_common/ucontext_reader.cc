@@ -310,21 +310,19 @@ void UContextReader::FillCPUContext(RawContextCPU* out, const ucontext_t* uc) {
   out->t5  = uc->uc_mcontext.__gregs[30];
   out->t6  = uc->uc_mcontext.__gregs[31];
 
-# if __riscv_flen == 32
-  for(int i = 0; i < MD_FLOATINGSAVEAREA_RISCV_FPR_COUNT; i++)
-    out->float_save.regs[i] = uc->uc_mcontext.__fpregs.__f.__f[i];
-  out->float_save.fpcsr = uc->uc_mcontext.__fpregs.__f.__fcsr;
-# elif __riscv_flen == 64
-  for(int i = 0; i < MD_FLOATINGSAVEAREA_RISCV_FPR_COUNT; i++)
-    out->float_save.regs[i] = uc->uc_mcontext.__fpregs.__d.__f[i];
-  out->float_save.fpcsr = uc->uc_mcontext.__fpregs.__d.__fcsr;
-# elif __riscv_flen == 128
-  for(int i = 0; i < MD_FLOATINGSAVEAREA_RISCV_FPR_COUNT; i++) {
-    out->float_save.regs[i].high = uc->uc_mcontext.__fpregs.__q.__f[2*i];
-    out->float_save.regs[i].low  = uc->uc_mcontext.__fpregs.__q.__f[2*i+1];
-  }
-  out->float_save.fpcsr = uc->uc_mcontext.__fpregs.__q.__fcsr;
-# endif
+  // Breakpad only supports RISCV32 with 32 bit floating point.
+  // Breakpad only supports RISCV64 with 64 bit floating point.
+#if __riscv_xlen == 32
+  for (int i = 0; i < MD_CONTEXT_RISCV_FPR_COUNT; i++)
+    out->fpregs[i] = uc->uc_mcontext.__fpregs.__f.__f[i];
+  out->fcsr = uc->uc_mcontext.__fpregs.__f.__fcsr;
+#elif __riscv_xlen == 64
+  for (int i = 0; i < MD_CONTEXT_RISCV_FPR_COUNT; i++)
+    out->fpregs[i] = uc->uc_mcontext.__fpregs.__d.__f[i];
+  out->fcsr = uc->uc_mcontext.__fpregs.__d.__fcsr;
+#else
+#error "Unexpected __riscv_xlen"
+#endif
 }
 #endif
 

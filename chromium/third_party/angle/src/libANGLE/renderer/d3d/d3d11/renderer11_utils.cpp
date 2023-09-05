@@ -29,8 +29,8 @@
 #include "libANGLE/renderer/d3d/d3d11/texture_format_table.h"
 #include "libANGLE/renderer/driver_utils.h"
 #include "libANGLE/renderer/dxgi_support_table.h"
-#include "platform/FeaturesD3D_autogen.h"
 #include "platform/PlatformMethods.h"
+#include "platform/autogen/FeaturesD3D_autogen.h"
 
 namespace rx
 {
@@ -1649,6 +1649,7 @@ void GenerateCaps(ID3D11Device *device,
     extensions->shaderTextureLodEXT         = GetShaderTextureLODSupport(featureLevel);
     extensions->fragDepthEXT                = true;
     extensions->conservativeDepthEXT        = (featureLevel >= D3D_FEATURE_LEVEL_11_0);
+    extensions->polygonModeANGLE            = true;
     extensions->polygonOffsetClampEXT       = (featureLevel >= D3D_FEATURE_LEVEL_10_0);
     extensions->depthClampEXT               = true;
     extensions->stencilTexturingANGLE       = (featureLevel >= D3D_FEATURE_LEVEL_10_1);
@@ -1678,6 +1679,14 @@ void GenerateCaps(ID3D11Device *device,
     extensions->textureStorageMultisample2dArrayOES = true;
     extensions->textureMirrorClampToEdgeEXT         = true;
     extensions->shaderNoperspectiveInterpolationNV  = (featureLevel >= D3D_FEATURE_LEVEL_10_0);
+    extensions->sampleVariablesOES                  = (featureLevel >= D3D_FEATURE_LEVEL_11_0);
+    extensions->shaderMultisampleInterpolationOES   = (featureLevel >= D3D_FEATURE_LEVEL_11_0);
+    if (extensions->shaderMultisampleInterpolationOES)
+    {
+        caps->subPixelInterpolationOffsetBits = 4;
+        caps->minInterpolationOffset          = -0.5f;
+        caps->maxInterpolationOffset          = +0.4375f;  // +0.5 - (2 ^ -4)
+    }
     extensions->multiviewMultisampleANGLE =
         ((extensions->multiviewOVR || extensions->multiview2OVR) &&
          extensions->textureStorageMultisample2dArrayOES);

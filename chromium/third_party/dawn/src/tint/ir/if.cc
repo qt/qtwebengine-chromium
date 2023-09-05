@@ -16,10 +16,33 @@
 
 TINT_INSTANTIATE_TYPEINFO(tint::ir::If);
 
+#include "src/tint/ir/multi_in_block.h"
+
 namespace tint::ir {
 
-If::If() : Base() {}
+If::If(Value* cond, ir::Block* t, ir::Block* f) : true_(t), false_(f) {
+    TINT_ASSERT(IR, true_);
+    TINT_ASSERT(IR, false_);
+
+    AddOperand(If::kConditionOperandOffset, cond);
+
+    if (true_) {
+        true_->SetParent(this);
+    }
+    if (false_) {
+        false_->SetParent(this);
+    }
+}
 
 If::~If() = default;
+
+void If::ForeachBlock(const std::function<void(ir::Block*)>& cb) {
+    if (true_) {
+        cb(true_);
+    }
+    if (false_) {
+        cb(false_);
+    }
+}
 
 }  // namespace tint::ir

@@ -67,6 +67,8 @@ GNCStatus GNCStatusFromCppStatus(Status status) {
       return GNCStatusAlreadyAdvertising;
     case Status::kAlreadyDiscovering:
       return GNCStatusAlreadyDiscovering;
+    case Status::kAlreadyListening:
+      return GNCStatusAlreadyListening;
     case Status::kEndpointIoError:
       return GNCStatusEndpointIoError;
     case Status::kEndpointUnknown:
@@ -278,14 +280,14 @@ GNCStatus GNCStatusFromCppStatus(Status status) {
   std::string endpoint_id = [endpointID cStringUsingEncoding:[NSString defaultCStringEncoding]];
 
   PayloadListener listener;
-  listener.payload_cb = ^(const std::string &endpoint_id, Payload payload) {
-    NSString *endpointID = @(endpoint_id.c_str());
+  listener.payload_cb = [delegate](absl::string_view endpoint_id, Payload payload) {
+    NSString *endpointID = @(std::string(endpoint_id).c_str());
     GNCPayload *gncPayload = [GNCPayload fromCpp:std::move(payload)];
     [delegate receivedPayload:gncPayload fromEndpoint:endpointID];
   };
   listener.payload_progress_cb =
-      ^(const std::string &endpoint_id, const PayloadProgressInfo &info) {
-        NSString *endpointID = @(endpoint_id.c_str());
+      [delegate](absl::string_view endpoint_id, const PayloadProgressInfo &info) {
+        NSString *endpointID = @(std::string(endpoint_id).c_str());
         GNCPayloadStatus status;
         switch (info.status) {
           case PayloadProgressInfo::Status::kSuccess:

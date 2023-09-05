@@ -29,6 +29,7 @@
 #include "quiche/quic/platform/api/quic_server_stats.h"
 #include "quiche/quic/platform/api/quic_stack_trace.h"
 #include "quiche/common/platform/api/quiche_logging.h"
+#include "quiche/common/quiche_callbacks.h"
 #include "quiche/common/quiche_text_utils.h"
 
 namespace quic {
@@ -487,6 +488,7 @@ void QuicSession::OnSuccessfulVersionNegotiation(
 void QuicSession::OnPacketReceived(const QuicSocketAddress& /*self_address*/,
                                    const QuicSocketAddress& peer_address,
                                    bool is_connectivity_probe) {
+  QUICHE_DCHECK(!connection_->ignore_gquic_probing());
   if (is_connectivity_probe && perspective() == Perspective::IS_SERVER) {
     // Server only sends back a connectivity probe after received a
     // connectivity probe from a new peer address.
@@ -1824,6 +1826,16 @@ bool QuicSession::PacketFlusherAttached() const {
   return connection()->packet_creator().PacketFlusherAttached();
 }
 
+void QuicSession::OnEncryptedClientHelloSent(
+    absl::string_view client_hello) const {
+  connection()->OnEncryptedClientHelloSent(client_hello);
+}
+
+void QuicSession::OnEncryptedClientHelloReceived(
+    absl::string_view client_hello) const {
+  connection()->OnEncryptedClientHelloReceived(client_hello);
+}
+
 void QuicSession::OnCryptoHandshakeMessageSent(
     const CryptoHandshakeMessage& /*message*/) {}
 
@@ -2150,16 +2162,12 @@ void QuicSession::SendAckFrequency(const QuicAckFrequencyFrame& frame) {
 }
 
 void QuicSession::SendNewConnectionId(const QuicNewConnectionIdFrame& frame) {
-  // Count NEW_CONNECTION_ID frames sent to client.
-  QUIC_RELOADABLE_FLAG_COUNT_N(quic_connection_migration_use_new_cid_v2, 1, 6);
   control_frame_manager_.WriteOrBufferNewConnectionId(
       frame.connection_id, frame.sequence_number, frame.retire_prior_to,
       frame.stateless_reset_token);
 }
 
 void QuicSession::SendRetireConnectionId(uint64_t sequence_number) {
-  // Count RETIRE_CONNECTION_ID frames sent to client.
-  QUIC_RELOADABLE_FLAG_COUNT_N(quic_connection_migration_use_new_cid_v2, 2, 6);
   control_frame_manager_.WriteOrBufferRetireConnectionId(sequence_number);
 }
 
@@ -2631,7 +2639,7 @@ void QuicSession::NeuterCryptoDataOfEncryptionLevel(EncryptionLevel level) {
 }
 
 void QuicSession::PerformActionOnActiveStreams(
-    std::function<bool(QuicStream*)> action) {
+    quiche::UnretainedCallback<bool(QuicStream*)> action) {
   std::vector<QuicStream*> active_streams;
   for (const auto& it : stream_map_) {
     if (!it.second->is_static() && !it.second->IsZombie()) {
@@ -2647,7 +2655,7 @@ void QuicSession::PerformActionOnActiveStreams(
 }
 
 void QuicSession::PerformActionOnActiveStreams(
-    std::function<bool(QuicStream*)> action) const {
+    quiche::UnretainedCallback<bool(QuicStream*)> action) const {
   for (const auto& it : stream_map_) {
     if (!it.second->is_static() && !it.second->IsZombie() &&
         !action(it.second.get())) {

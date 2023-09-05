@@ -16,10 +16,10 @@
 
 #include <algorithm>
 #include <atomic>
-#include <cinttypes>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <new>
+#include <optional>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -32,6 +32,7 @@
 #include "internal/platform/count_down_latch.h"
 #include "internal/platform/feature_flags.h"
 #include "internal/platform/implementation/ble_v2.h"
+#include "internal/platform/implementation/bluetooth_classic.h"
 #include "internal/platform/logging.h"
 #include "internal/platform/prng.h"
 
@@ -138,7 +139,7 @@ void MediumEnvironment::OnBluetoothAdapterChangedState(
     }
     // We don't care if there is an adapter already since all we store is a
     // pointer. Pointer must remain valid for the duration of a Core session
-    // (since it is owned by the correspoinding Medium, and mediums lifetime
+    // (since it is owned by the corresponding Medium, and mediums lifetime
     // matches Core lifetime).
     if (enabled) {
       bluetooth_adapters_.emplace(&adapter, &adapter_device);
@@ -166,8 +167,12 @@ void MediumEnvironment::OnBluetoothDeviceStateChanged(
       // Store device name, and report it as discovered.
       info.devices.emplace(&device, name);
       if (enable_notifications_) {
-        RunOnMediumEnvironmentThread(
-            [&info, &device]() { info.callback.device_discovered_cb(device); });
+        RunOnMediumEnvironmentThread([&]() {
+          info.callback.device_discovered_cb(device);
+          for (auto& observer : observers_.GetObservers()) {
+            observer->DeviceAdded(device);
+          }
+        });
       }
     }
   } else {
@@ -189,8 +194,11 @@ void MediumEnvironment::OnBluetoothDeviceStateChanged(
       } else {
         // Device is in discovery mode, so we are reporting it anyway.
         if (enable_notifications_) {
-          RunOnMediumEnvironmentThread([&info, &device]() {
+          RunOnMediumEnvironmentThread([&]() {
             info.callback.device_discovered_cb(device);
+            for (auto& observer : observers_.GetObservers()) {
+              observer->DeviceAdded(device);
+            }
           });
         }
       }
@@ -199,8 +207,12 @@ void MediumEnvironment::OnBluetoothDeviceStateChanged(
       // Known device is turned off.
       // Erase it from the map, and report as lost.
       if (enable_notifications_) {
-        RunOnMediumEnvironmentThread(
-            [&info, &device]() { info.callback.device_lost_cb(device); });
+        RunOnMediumEnvironmentThread([&]() {
+          info.callback.device_lost_cb(device);
+          for (auto& observer : observers_.GetObservers()) {
+            observer->DeviceRemoved(device);
+          }
+        });
       }
       info.devices.erase(item);
     }
@@ -212,13 +224,11 @@ api::BluetoothDevice* MediumEnvironment::FindBluetoothDevice(
   api::BluetoothDevice* device = nullptr;
   CountDownLatch latch(1);
   RunOnMediumEnvironmentThread([this, &device, &latch, &mac_address]() {
-    NEARBY_LOGS(INFO) << " Looking for: "
-                      << absl::BytesToHexString(mac_address);
+    NEARBY_LOGS(INFO) << " Looking for: " << mac_address;
     for (auto& item : bluetooth_mediums_) {
       auto* adapter = item.second.adapter;
       if (!adapter) continue;
-      NEARBY_LOGS(INFO) << " Adapter: "
-                        << absl::BytesToHexString(adapter->GetMacAddress());
+      NEARBY_LOGS(INFO) << " Adapter: " << adapter->GetMacAddress();
       if (adapter->GetMacAddress() == mac_address) {
         device = bluetooth_adapters_[adapter];
         break;
@@ -227,6 +237,51 @@ api::BluetoothDevice* MediumEnvironment::FindBluetoothDevice(
     latch.CountDown();
   });
   latch.Await();
+  return device;
+}
+
+api::ble_v2::BleMedium* MediumEnvironment::FindBleV2Medium(
+    absl::string_view address) {
+  api::ble_v2::BleMedium* device = nullptr;
+  CountDownLatch latch(1);
+  NEARBY_LOGS(INFO) << "FindBleV2Medium " << address;
+  RunOnMediumEnvironmentThread([&]() {
+    for (auto& item : ble_v2_mediums_) {
+      auto* medium = item.first;
+      auto* peripheral = item.second.ble_peripheral;
+      if (peripheral != nullptr && peripheral->GetAddress() == address) {
+        device = medium;
+        break;
+      }
+    }
+    latch.CountDown();
+  });
+  latch.Await();
+  if (device == nullptr) {
+    NEARBY_LOGS(INFO) << "FindBleV2Medium, not found: " << address;
+  }
+  return device;
+}
+
+api::ble_v2::BleMedium* MediumEnvironment::FindBleV2Medium(uint64_t id) {
+  api::ble_v2::BleMedium* device = nullptr;
+  CountDownLatch latch(1);
+  NEARBY_LOGS(INFO) << "FindBleV2Medium " << id;
+  RunOnMediumEnvironmentThread([&]() {
+    for (auto& item : ble_v2_mediums_) {
+      auto* medium = item.first;
+      auto* peripheral = item.second.ble_peripheral;
+      if (peripheral != nullptr && peripheral->GetUniqueId() == id) {
+        device = medium;
+        break;
+      }
+    }
+    latch.CountDown();
+  });
+  latch.Await();
+  if (device == nullptr) {
+    NEARBY_LOGS(INFO) << "FindBleV2Medium, not found: " << id;
+  }
   return device;
 }
 
@@ -525,10 +580,12 @@ void MediumEnvironment::CallBleAcceptedConnectionCallback(
       });
 }
 
-void MediumEnvironment::RegisterBleV2Medium(api::ble_v2::BleMedium& medium) {
+void MediumEnvironment::RegisterBleV2Medium(
+    api::ble_v2::BleMedium& medium, api::ble_v2::BlePeripheral* peripheral) {
   if (!enabled_) return;
-  RunOnMediumEnvironmentThread([this, &medium]() {
-    ble_v2_mediums_.insert({&medium, BleV2MediumContext{}});
+  RunOnMediumEnvironmentThread([this, &medium, peripheral]() {
+    ble_v2_mediums_.insert(
+        {&medium, BleV2MediumContext{.ble_peripheral = peripheral}});
     NEARBY_LOGS(INFO) << "G3 Registered: medium:" << &medium;
   });
 }
@@ -562,7 +619,7 @@ void MediumEnvironment::UpdateBleV2MediumForAdvertising(
             BleV2MediumContext& remote_context = medium_info.second;
             // Do not send notification to the same medium.
             if (remote_medium == &medium) continue;
-            // Do not send notification to the medium that is not scannig.
+            // Do not send notification to the medium that is not scanning.
             if (!remote_context.scanning) continue;
             absl::flat_hash_set<Uuid> remote_scanning_service_uuids;
             for (auto& element : remote_context.scan_callback_map) {
@@ -650,157 +707,6 @@ void MediumEnvironment::UpdateBleV2MediumForScanning(
       }
     }
   });
-}
-
-void MediumEnvironment::InsertBleV2MediumGattCharacteristics(
-    const api::ble_v2::GattCharacteristic& characteristic,
-    const ByteArray& gatt_advertisement_byte) {
-  if (!enabled_) return;
-  CountDownLatch latch(1);
-  RunOnMediumEnvironmentThread(
-      [this, &latch, &characteristic, &gatt_advertisement_byte]() {
-        gatt_advertisement_bytes_[characteristic] = gatt_advertisement_byte;
-        latch.CountDown();
-      });
-  latch.Await();
-}
-
-void MediumEnvironment::ClearBleV2MediumGattCharacteristics() {
-  if (!enabled_) return;
-  RunOnMediumEnvironmentThread([this]() { gatt_advertisement_bytes_.clear(); });
-}
-
-bool MediumEnvironment::DiscoverBleV2MediumGattCharacteristics(
-    const Uuid& service_uuid, const std::vector<Uuid>& characteristic_uuids) {
-  if (!enabled_) return false;
-  int found_characteristic = 0;
-  CountDownLatch latch(1);
-  RunOnMediumEnvironmentThread(
-      [this, &found_characteristic, &latch, &service_uuid,
-       &characteristic_uuids]() {
-        for (const auto& item : gatt_advertisement_bytes_) {
-          if (item.first.service_uuid == service_uuid) {
-            Uuid char_uuid_key = item.first.uuid;
-            auto it = std::find_if(characteristic_uuids.rbegin(),
-                                   characteristic_uuids.rend(),
-                                   [char_uuid_key](const auto& char_uuid) {
-                                     return char_uuid == char_uuid_key;
-                                   });
-            if (it != characteristic_uuids.rend()) {
-              discovered_gatt_advertisement_bytes_[item.first] = item.second;
-              found_characteristic++;
-            }
-          }
-        }
-        latch.CountDown();
-      });
-  latch.Await();
-  return found_characteristic == characteristic_uuids.size();
-}
-
-ByteArray MediumEnvironment::ReadBleV2MediumGattCharacteristics(
-    const api::ble_v2::GattCharacteristic& characteristic) {
-  if (!enabled_) return {};
-  ByteArray gatt_advertisement_byte = {};
-  CountDownLatch latch(1);
-  RunOnMediumEnvironmentThread(
-      [this, &latch, &characteristic, &gatt_advertisement_byte]() {
-        auto it = discovered_gatt_advertisement_bytes_.find(characteristic);
-        if (it != discovered_gatt_advertisement_bytes_.end()) {
-          gatt_advertisement_byte = it->second;
-        }
-        latch.CountDown();
-      });
-  latch.Await();
-  return gatt_advertisement_byte;
-}
-
-bool MediumEnvironment::WriteBleV2MediumGattCharacteristic(
-    const api::ble_v2::GattCharacteristic& characteristic,
-    absl::string_view value) {
-  if (!enabled_) return false;
-  bool success = false;
-  CountDownLatch latch(1);
-  ByteArray gatt_request_byte((std::string(value)));
-  RunOnMediumEnvironmentThread(
-      [this, &latch, &success, &characteristic, &gatt_request_byte]() {
-        auto it = discovered_gatt_advertisement_bytes_.find(characteristic);
-        if (it != discovered_gatt_advertisement_bytes_.end()) {
-          it->second = gatt_request_byte;
-          success = true;
-        }
-        latch.CountDown();
-      });
-  latch.Await();
-  return success;
-}
-
-bool MediumEnvironment::SetBleV2MediumGattCharacteristicSubscription(
-    const api::ble_v2::GattCharacteristic& characteristic, bool enable,
-    absl::AnyInvocable<void(absl::string_view value)>
-        on_characteristic_changed_cb) {
-  if (!enabled_) return false;
-  bool success = false;
-  CountDownLatch latch(1);
-  RunOnMediumEnvironmentThread([this, &latch, &success, &characteristic,
-                                &enable, &on_characteristic_changed_cb]() {
-    auto it = discovered_gatt_advertisement_bytes_.find(characteristic);
-    if (it != discovered_gatt_advertisement_bytes_.end()) {
-      if (!enable) {
-        subscribed_characteristic_.erase(characteristic);
-      } else {
-        subscribed_characteristic_.insert(
-            {characteristic, std::move(on_characteristic_changed_cb)});
-      }
-      success = true;
-    }
-    latch.CountDown();
-  });
-  latch.Await();
-  return success;
-}
-
-absl::Status MediumEnvironment::NotifyBleV2MediumGattCharacteristicChanged(
-    const api::ble_v2::GattCharacteristic& characteristic, bool confirm,
-    const ByteArray& new_value) {
-  if (!enabled_) return absl::UnknownError("MediumEnvironment not enabled.");
-  absl::Status status = absl::NotFoundError(
-      "Characteristic not subscribed to receive notification.");
-  CountDownLatch latch(1);
-  RunOnMediumEnvironmentThread(
-      [this, &latch, &status, &new_value, &confirm, &characteristic]() {
-        auto it = subscribed_characteristic_.find(characteristic);
-        if (it != subscribed_characteristic_.end()) {
-          if (!confirm) {
-            // Send a notification
-            it->second(new_value.string_data());
-          } else {
-            // Request confirmation from the client (indication)
-            // no-op for now as the method is not hooked up at platform layer.
-          }
-          status = absl::OkStatus();
-        }
-        latch.CountDown();
-      });
-  latch.Await();
-  return status;
-}
-
-void MediumEnvironment::ClearBleV2MediumGattCharacteristicsForDiscovery() {
-  if (!enabled_) return;
-  RunOnMediumEnvironmentThread(
-      [this]() { discovered_gatt_advertisement_bytes_.clear(); });
-}
-
-void MediumEnvironment::EraseBleV2MediumGattCharacteristicsForDiscovery(
-    const api::ble_v2::GattCharacteristic& characteristic) {
-  if (!enabled_) return;
-  CountDownLatch latch(1);
-  RunOnMediumEnvironmentThread([this, &latch, &characteristic]() {
-    discovered_gatt_advertisement_bytes_.erase(characteristic);
-    latch.CountDown();
-  });
-  latch.Await();
 }
 
 void MediumEnvironment::UnregisterBleV2Medium(api::ble_v2::BleMedium& medium) {
@@ -1214,6 +1120,225 @@ absl::optional<FakeClock*> MediumEnvironment::GetSimulatedClock() {
     return absl::optional<FakeClock*>(simulated_clock_.get());
   }
   return absl::nullopt;
+}
+
+void MediumEnvironment::RegisterGattServer(
+    api::ble_v2::BleMedium& medium, api::ble_v2::BlePeripheral* peripheral,
+    Borrowable<api::ble_v2::GattServer*> gatt_server) {
+  if (!enabled_) return;
+  RunOnMediumEnvironmentThread([this, &medium, peripheral, gatt_server]() {
+    NEARBY_LOGS(INFO) << "RegisterGattServer for " << peripheral->GetAddress();
+    auto it = ble_v2_mediums_.find(&medium);
+    if (it == ble_v2_mediums_.end()) {
+      NEARBY_LOGS(INFO) << "G3 RegisterGattServer failed. There is no "
+                           "medium registered.";
+      return;
+    }
+    auto& context = it->second;
+    CHECK_EQ(context.gatt_server, nullptr);
+    context.gatt_server =
+        std::make_unique<Borrowable<api::ble_v2::GattServer*>>(gatt_server);
+    context.ble_peripheral = peripheral;
+  });
+}
+
+void MediumEnvironment::UnregisterGattServer(api::ble_v2::BleMedium& medium) {
+  if (!enabled_) return;
+  RunOnMediumEnvironmentThread([this, &medium]() {
+    auto it = ble_v2_mediums_.find(&medium);
+    if (it == ble_v2_mediums_.end()) {
+      NEARBY_LOGS(INFO) << "G3 UnregisterGattServer failed. There is no "
+                           "medium registered.";
+      return;
+    }
+    auto& context = it->second;
+    context.gatt_server = nullptr;
+    context.ble_peripheral = nullptr;
+  });
+}
+
+Borrowable<api::ble_v2::GattServer*>* MediumEnvironment::GetGattServer(
+    api::ble_v2::BlePeripheral& peripheral) {
+  Borrowable<api::ble_v2::GattServer*>* result = nullptr;
+  CountDownLatch latch(1);
+  RunOnMediumEnvironmentThread([&]() {
+    for (const auto& medium_info : ble_v2_mediums_) {
+      const BleV2MediumContext& remote_context = medium_info.second;
+      const api::ble_v2::BlePeripheral* ble_peripheral =
+          remote_context.ble_peripheral;
+      if (remote_context.gatt_server != nullptr && ble_peripheral != nullptr &&
+          (ble_peripheral->GetAddress() == peripheral.GetAddress())) {
+        if (remote_context.gatt_server == nullptr) {
+          break;
+        }
+        result = remote_context.gatt_server.get();
+      }
+    }
+    latch.CountDown();
+  });
+  latch.Await();
+  if (result == nullptr) {
+    NEARBY_LOGS(INFO) << "G3 GetGattServer failed. No GATT server for "
+                      << peripheral.GetAddress();
+  }
+  return result;
+}
+
+void MediumEnvironment::ConfigBluetoothPairingContext(
+    api::BluetoothDevice* device, api::PairingParams pairing_params) {
+  if (!enabled_) return;
+  CountDownLatch latch(1);
+  RunOnMediumEnvironmentThread([&]() {
+    BluetoothPairingContext pairing_context;
+    pairing_context.pairing_params = std::move(pairing_params);
+    devices_pairing_contexts_[device] = std::move(pairing_context);
+    latch.CountDown();
+  });
+  latch.Await();
+}
+
+bool MediumEnvironment::SetPairingState(api::BluetoothDevice* device,
+                                        bool paired) {
+  if (!enabled_) return false;
+  bool updated = false;
+  CountDownLatch latch(1);
+  RunOnMediumEnvironmentThread([&]() {
+    auto it = devices_pairing_contexts_.find(device);
+    if (it != devices_pairing_contexts_.end()) {
+      it->second.is_paired = paired;
+      updated = true;
+    }
+    latch.CountDown();
+  });
+  latch.Await();
+  if (enable_notifications_) {
+    for (auto& observer : observers_.GetObservers()) {
+      observer->DevicePairedChanged(*device, true);
+    }
+  }
+  return updated;
+}
+
+bool MediumEnvironment::SetPairingResult(
+    api::BluetoothDevice* device,
+    std::optional<api::BluetoothPairingCallback::PairingError> error) {
+  if (!enabled_) return false;
+  bool notified = false;
+  CountDownLatch latch(1);
+  RunOnMediumEnvironmentThread([&]() {
+    auto it = devices_pairing_contexts_.find(device);
+    if (it != devices_pairing_contexts_.end()) {
+      it->second.pairing_error = error;
+      notified = true;
+    }
+    latch.CountDown();
+  });
+  latch.Await();
+  return notified;
+}
+
+bool MediumEnvironment::InitiatePairing(
+    api::BluetoothDevice* remote_device,
+    api::BluetoothPairingCallback pairing_cb) {
+  if (!enabled_) return false;
+  CountDownLatch latch(1);
+  bool initiated = false;
+  BluetoothPairingContext* pairing_context = nullptr;
+  RunOnMediumEnvironmentThread([&]() mutable {
+    auto it = devices_pairing_contexts_.find(remote_device);
+    if (it != devices_pairing_contexts_.end()) {
+      pairing_context = &it->second;
+      initiated = true;
+    }
+    latch.CountDown();
+  });
+  latch.Await();
+  if (!initiated) return false;
+  pairing_context->pairing_callback = std::move(pairing_cb);
+  pairing_context->pairing_callback.on_pairing_initiated_cb(
+      pairing_context->pairing_params);
+  return true;
+}
+
+bool MediumEnvironment::FinishPairing(api::BluetoothDevice* device) {
+  if (!enabled_) return false;
+  bool finshed = false;
+  CountDownLatch latch(1);
+  BluetoothPairingContext* pairing_context = nullptr;
+  RunOnMediumEnvironmentThread([&]() {
+    auto it = devices_pairing_contexts_.find(device);
+    if (it != devices_pairing_contexts_.end()) {
+      finshed = true;
+      pairing_context = &it->second;
+    }
+    latch.CountDown();
+  });
+  latch.Await();
+  if (pairing_context->pairing_error.has_value()) {
+    pairing_context->pairing_callback.on_pairing_error_cb(
+        pairing_context->pairing_error.value());
+  } else {
+    pairing_context->is_paired = true;
+    if (enable_notifications_) {
+      for (auto& observer : observers_.GetObservers()) {
+        observer->DevicePairedChanged(*device, true);
+      }
+    }
+    pairing_context->pairing_callback.on_paired_cb();
+  }
+  return finshed;
+}
+
+bool MediumEnvironment::CancelPairing(api::BluetoothDevice* device) {
+  if (!enabled_) return false;
+  bool canceled = false;
+  CountDownLatch latch(1);
+  BluetoothPairingContext* pairing_context = nullptr;
+  RunOnMediumEnvironmentThread([&]() {
+    auto it = devices_pairing_contexts_.find(device);
+    if (it != devices_pairing_contexts_.end()) {
+      canceled = true;
+      pairing_context = &it->second;
+    }
+    latch.CountDown();
+  });
+  latch.Await();
+  if (!canceled) return false;
+  pairing_context->pairing_callback.on_pairing_error_cb(
+      api::BluetoothPairingCallback::PairingError::kAuthCanceled);
+  return true;
+}
+
+bool MediumEnvironment::IsPaired(api::BluetoothDevice* device) {
+  if (!enabled_) return false;
+  bool is_paired = false;
+  CountDownLatch latch(1);
+  RunOnMediumEnvironmentThread([&]() {
+    auto it = devices_pairing_contexts_.find(device);
+    if (it != devices_pairing_contexts_.end()) {
+      is_paired = it->second.is_paired;
+    }
+    latch.CountDown();
+  });
+  latch.Await();
+  return is_paired;
+}
+
+void MediumEnvironment::ClearBluetoothDevicesForPairing() {
+  if (!enabled_) return;
+  RunOnMediumEnvironmentThread([&]() { devices_pairing_contexts_.clear(); });
+}
+
+void MediumEnvironment::AddObserver(
+    api::BluetoothClassicMedium::Observer* observer) {
+  if (!enabled_) return;
+  observers_.AddObserver(observer);
+}
+
+void MediumEnvironment::RemoveObserver(
+    api::BluetoothClassicMedium::Observer* observer) {
+  if (!enabled_) return;
+  observers_.RemoveObserver(observer);
 }
 
 }  // namespace nearby

@@ -71,14 +71,14 @@ class Environment : public UdpSocket::Client {
   // |local_endpoint|. Default behavior if |local_endpoint| is omitted is to
   // bind to all available interfaces using IPv4.
   Environment(ClockNowFunctionPtr now_function,
-              TaskRunner* task_runner,
+              TaskRunner& task_runner,
               const IPEndpoint& local_endpoint = IPEndpoint::kAnyV4());
 
   ~Environment() override;
 
   ClockNowFunctionPtr now_function() const { return now_function_; }
   Clock::time_point now() const { return now_function_(); }
-  TaskRunner* task_runner() const { return task_runner_; }
+  TaskRunner& task_runner() const { return task_runner_; }
 
   // Returns the local endpoint the socket is bound to, or the zero IPEndpoint
   // if socket creation/binding failed.
@@ -122,19 +122,15 @@ class Environment : public UdpSocket::Client {
   // before they actually head-out through the socket.
   virtual void SendPacket(ByteView packet);
 
- protected:
-  Environment() : now_function_(nullptr), task_runner_(nullptr) {}
-
-  // Protected so that they can be set by the MockEnvironment for testing.
-  ClockNowFunctionPtr now_function_;
-  TaskRunner* task_runner_;
-
  private:
   // UdpSocket::Client implementation.
   void OnBound(UdpSocket* socket) final;
   void OnError(UdpSocket* socket, Error error) final;
   void OnSendError(UdpSocket* socket, Error error) final;
   void OnRead(UdpSocket* socket, ErrorOr<UdpPacket> packet_or_error) final;
+
+  ClockNowFunctionPtr now_function_;
+  TaskRunner& task_runner_;
 
   // The UDP socket bound to the local endpoint that was passed into the
   // constructor, or null if socket creation failed.

@@ -194,18 +194,18 @@ bool BestPractices::PreCallValidateCreateGraphicsPipelines(VkDevice device, VkPi
     return skip;
 }
 
-static std::vector<bp_state::AttachmentInfo> GetAttachmentAccess(const safe_VkGraphicsPipelineCreateInfo& create_info,
-                                                                 std::shared_ptr<const RENDER_PASS_STATE>& rp) {
+static std::vector<bp_state::AttachmentInfo> GetAttachmentAccess(bp_state::Pipeline& pipe_state) {
     std::vector<bp_state::AttachmentInfo> result;
+    auto rp = pipe_state.RenderPassState();
     if (!rp || rp->UsesDynamicRendering()) {
         return result;
     }
-
+    auto& create_info = pipe_state.GetCreateInfo<VkGraphicsPipelineCreateInfo>();
     const auto& subpass = rp->createInfo.pSubpasses[create_info.subpass];
 
     // NOTE: see PIPELINE_LAYOUT and safe_VkGraphicsPipelineCreateInfo constructors. pColorBlendState and pDepthStencilState
     // are only non-null if they are enabled.
-    if (create_info.pColorBlendState) {
+    if (create_info.pColorBlendState && !(pipe_state.ignore_color_attachments)) {
         // According to spec, pColorBlendState must be ignored if subpass does not have color attachments.
         uint32_t num_color_attachments = std::min(subpass.colorAttachmentCount, create_info.pColorBlendState->attachmentCount);
         for (uint32_t j = 0; j < num_color_attachments; j++) {
@@ -240,7 +240,7 @@ bp_state::Pipeline::Pipeline(const ValidationStateTracker* state_data, const VkG
                              uint32_t create_index, std::shared_ptr<const RENDER_PASS_STATE>&& rpstate,
                              std::shared_ptr<const PIPELINE_LAYOUT_STATE>&& layout, CreateShaderModuleStates* csm_states)
     : PIPELINE_STATE(state_data, pCreateInfo, create_index, std::move(rpstate), std::move(layout), csm_states),
-      access_framebuffer_attachments(GetAttachmentAccess(create_info.graphics, rp_state)) {}
+      access_framebuffer_attachments(GetAttachmentAccess(*this)) {}
 
 std::shared_ptr<PIPELINE_STATE> BestPractices::CreateGraphicsPipelineState(const VkGraphicsPipelineCreateInfo* pCreateInfo,
                                                                            uint32_t create_index,
@@ -482,7 +482,7 @@ void BestPractices::PostCallRecordCmdBindPipeline(VkCommandBuffer commandBuffer,
             const auto* blend_state = pipeline_state->ColorBlendState();
             const auto* stencil_state = pipeline_state->DepthStencilState();
 
-            if (blend_state) {
+            if (blend_state && !(pipeline_state->ignore_color_attachments)) {
                 // assume the pipeline is depth-only unless any of the attachments have color writes enabled
                 render_pass_state.depthOnly = true;
                 for (size_t i = 0; i < blend_state->attachmentCount; i++) {

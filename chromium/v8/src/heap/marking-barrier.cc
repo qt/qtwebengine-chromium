@@ -42,6 +42,11 @@ void MarkingBarrier::Write(HeapObject host, HeapObjectSlot slot,
   DCHECK(IsCurrentMarkingBarrier(host));
   DCHECK(is_activated_ || shared_heap_worklist_.has_value());
   DCHECK(MemoryChunk::FromHeapObject(host)->IsMarking());
+
+  if (!marking_state_.IsMarked(host) &&
+      (is_major() || Heap::InYoungGeneration(host)))
+    return;
+
   MarkValue(host, value);
 
   if (slot.address() && IsCompacting(host)) {
@@ -71,6 +76,11 @@ void MarkingBarrier::Write(InstructionStream host, RelocInfo* reloc_info,
   DCHECK(!host.InWritableSharedSpace());
   DCHECK(is_activated_ || shared_heap_worklist_.has_value());
   DCHECK(MemoryChunk::FromHeapObject(host)->IsMarking());
+
+  if (!marking_state_.IsMarked(host) &&
+      (is_major() || Heap::InYoungGeneration(host)))
+    return;
+
   MarkValue(host, value);
   if (is_compacting_) {
     DCHECK(is_major());
@@ -89,6 +99,10 @@ void MarkingBarrier::Write(JSArrayBuffer host,
   DCHECK(IsCurrentMarkingBarrier(host));
   DCHECK(!host.InWritableSharedSpace());
   DCHECK(MemoryChunk::FromHeapObject(host)->IsMarking());
+
+  if (!marking_state_.IsMarked(host) &&
+      (is_major() || Heap::InYoungGeneration(host)))
+    return;
 
   if (is_minor()) {
     if (Heap::InYoungGeneration(host)) {
@@ -354,19 +368,11 @@ void MarkingBarrier::PublishAll(Heap* heap) {
 void MarkingBarrier::PublishIfNeeded() {
   if (is_activated_) {
     current_worklist_->Publish();
-    base::Optional<CodePageHeaderModificationScope> optional_rwx_write_scope;
-    if (!typed_slots_map_.empty()) {
-      optional_rwx_write_scope.emplace(
-          "Merging typed slots may require allocating a new typed slot set.");
-    }
     for (auto& it : typed_slots_map_) {
       MemoryChunk* memory_chunk = it.first;
       // Access to TypeSlots need to be protected, since LocalHeaps might
       // publish code in the background thread.
-      base::Optional<base::MutexGuard> opt_guard;
-      if (v8_flags.concurrent_sparkplug) {
-        opt_guard.emplace(memory_chunk->mutex());
-      }
+      base::MutexGuard guard(memory_chunk->mutex());
       std::unique_ptr<TypedSlots>& typed_slots = it.second;
       RememberedSet<OLD_TO_OLD>::MergeTyped(memory_chunk,
                                             std::move(typed_slots));

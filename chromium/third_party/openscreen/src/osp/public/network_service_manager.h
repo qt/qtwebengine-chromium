@@ -27,7 +27,7 @@ class NetworkServiceManager final {
   // Creates the singleton instance of the NetworkServiceManager.  nullptr may
   // be passed for services not provided by the embedder.
   static NetworkServiceManager* Create(
-      std::unique_ptr<ServiceListener> mdns_listener,
+      std::unique_ptr<ServiceListener> service_listener,
       std::unique_ptr<ServicePublisher> service_publisher,
       std::unique_ptr<ProtocolConnectionClient> connection_client,
       std::unique_ptr<ProtocolConnectionServer> connection_server);
@@ -43,7 +43,7 @@ class NetworkServiceManager final {
 
   // Returns an instance of the mDNS receiver listener, or nullptr if not
   // provided.
-  ServiceListener* GetMdnsServiceListener();
+  ServiceListener* GetServiceListener();
 
   // Returns an instance of the mDNS receiver publisher, or nullptr if not
   // provided.
@@ -59,14 +59,14 @@ class NetworkServiceManager final {
 
  private:
   NetworkServiceManager(
-      std::unique_ptr<ServiceListener> mdns_listener,
+      std::unique_ptr<ServiceListener> service_listener,
       std::unique_ptr<ServicePublisher> service_publisher,
       std::unique_ptr<ProtocolConnectionClient> connection_client,
       std::unique_ptr<ProtocolConnectionServer> connection_server);
 
   ~NetworkServiceManager();
 
-  std::unique_ptr<ServiceListener> mdns_listener_;
+  std::unique_ptr<ServiceListener> service_listener_;
   std::unique_ptr<ServicePublisher> service_publisher_;
   std::unique_ptr<ProtocolConnectionClient> connection_client_;
   std::unique_ptr<ProtocolConnectionServer> connection_server_;

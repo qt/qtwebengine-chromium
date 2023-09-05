@@ -11,7 +11,6 @@
 #include "include/core/SkShader.h"
 #include "include/core/SkStrokeRec.h"
 #include "src/base/SkTLazy.h"
-#include "src/core/SkMatrixProvider.h"
 #include "src/core/SkPathPriv.h"
 #include "src/core/SkRRectPriv.h"
 #include "src/core/SkRectPriv.h"
@@ -81,7 +80,7 @@ bool oriented_bbox_intersection(const Rect& a, const Transform& aXform,
     return all(overlaps); // any non-overlapping interval would imply no intersection
 }
 
-static const Transform kIdentity{SkM44()};
+static constexpr Transform kIdentity = Transform::Identity();
 
 } // anonymous namespace
 

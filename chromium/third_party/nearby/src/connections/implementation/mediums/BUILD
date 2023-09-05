@@ -47,9 +47,11 @@ cc_library(
     deps = [
         ":utils",
         "//connections:core_types",
+        "//connections/implementation/flags:connections_flags",
         "//connections/implementation/mediums/ble_v2",
         "//connections/implementation/mediums/webrtc",
         "//connections/implementation/proto:offline_wire_formats_cc_proto",
+        "//internal/flags:nearby_flags",
         "//internal/platform:base",
         "//internal/platform:cancellation_flag",
         "//internal/platform:comm",
@@ -57,6 +59,7 @@ cc_library(
         "//internal/platform:types",
         "//internal/platform:uuid",
         "//proto/mediums:web_rtc_signaling_frames_cc_proto",
+        # TODO: Support WebRTC
         "@com_google_absl//absl/container:btree",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
@@ -65,12 +68,7 @@ cc_library(
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/time",
         "@com_google_absl//absl/types:optional",
-    ] + select({
-        "@platforms//cpu:arm": [],
-        "//conditions:default": [
-            # TODO: Support WebRTC
-        ],
-    }),
+    ],
 )
 
 cc_library(
@@ -122,7 +120,9 @@ cc_test(
     deps = [
         ":mediums",
         ":utils",
+        "//connections/implementation/flags:connections_flags",
         "//connections/implementation/mediums/ble_v2",
+        "//internal/flags:nearby_flags",
         "//internal/platform:base",
         "//internal/platform:comm",
         "//internal/platform:test_util",
@@ -151,9 +151,11 @@ cc_test(
         ":mediums",
         ":utils",
         "//internal/platform:base",
+        "//internal/platform:comm",
         "//internal/platform:test_util",
         "//internal/platform:types",
         "//internal/platform/implementation/g3",  # build_cleaner: keep
+        "//internal/test",
         "@com_github_protobuf_matchers//protobuf-matchers",
         "@com_google_googletest//:gtest_main",
     ],

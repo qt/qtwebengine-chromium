@@ -13,9 +13,12 @@
 // limitations under the License.
 
 #include <mutex>
+#include <utility>
 
+#include "absl/strings/str_format.h"
 #include "dawn/native/Device.h"
 #include "dawn/native/ObjectBase.h"
+#include "dawn/native/ObjectType_autogen.h"
 
 namespace dawn::native {
 
@@ -82,8 +85,7 @@ ApiObjectBase::~ApiObjectBase() {
 }
 
 void ApiObjectBase::APISetLabel(const char* label) {
-    mLabel = label;
-    SetLabelImpl();
+    SetLabel(label);
 }
 
 void ApiObjectBase::APIRelease() {
@@ -95,8 +97,20 @@ void ApiObjectBase::APIRelease() {
     Release();
 }
 
+void ApiObjectBase::SetLabel(std::string label) {
+    mLabel = std::move(label);
+    SetLabelImpl();
+}
+
 const std::string& ApiObjectBase::GetLabel() const {
     return mLabel;
+}
+
+void ApiObjectBase::FormatLabel(absl::FormatSink* s) const {
+    s->Append(ObjectTypeAsString(GetType()));
+    if (!mLabel.empty()) {
+        s->Append(absl::StrFormat(" \"%s\"", mLabel));
+    }
 }
 
 void ApiObjectBase::SetLabelImpl() {}

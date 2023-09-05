@@ -30,11 +30,11 @@
 
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
-import type * as SDK from '../../core/sdk/sdk.js';
+import * as SDK from '../../core/sdk/sdk.js';
+import * as Protocol from '../../generated/protocol.js';
 import * as TimelineModel from '../../models/timeline_model/timeline_model.js';
 import * as PerfUI from '../../ui/legacy/components/perf_ui/perf_ui.js';
 import * as UI from '../../ui/legacy/legacy.js';
-import * as Protocol from '../../generated/protocol.js';
 
 import {type PerformanceModel} from './PerformanceModel.js';
 
@@ -205,9 +205,10 @@ export class TimelineEventOverviewCPUActivity extends TimelineEventOverview {
         x += quantSizePx;
       }
 
-      function onEventStart(e: SDK.TracingModel.Event): void {
+      function onEventStart(e: SDK.TracingModel.CompatibleTraceEvent): void {
+        const {startTime} = SDK.TracingModel.timesForEventInMilliseconds(e);
         const index = categoryIndexStack.length ? categoryIndexStack[categoryIndexStack.length - 1] : idleIndex;
-        quantizer.appendInterval(e.startTime, (index as number));
+        quantizer.appendInterval(startTime, (index as number));
         const categoryIndex = categoryToIndex.get(TimelineUIUtils.eventStyle(e).category);
         if (categoryIndex === idleIndex) {
           // Idle event won't show in CPU activity, so just skip them.
@@ -216,10 +217,11 @@ export class TimelineEventOverviewCPUActivity extends TimelineEventOverview {
         categoryIndexStack.push(categoryIndex !== undefined ? categoryIndex : otherIndex);
       }
 
-      function onEventEnd(e: SDK.TracingModel.Event): void {
+      function onEventEnd(e: SDK.TracingModel.CompatibleTraceEvent): void {
+        const {endTime} = SDK.TracingModel.timesForEventInMilliseconds(e);
         const lastCategoryIndex = categoryIndexStack.pop();
-        if (e.endTime !== undefined && lastCategoryIndex) {
-          quantizer.appendInterval(e.endTime, lastCategoryIndex);
+        if (endTime !== undefined && lastCategoryIndex) {
+          quantizer.appendInterval(endTime, lastCategoryIndex);
         }
       }
 
@@ -310,10 +312,12 @@ export class TimelineFilmStripOverview extends TimelineEventOverview {
   private drawGeneration?: symbol;
   private emptyImage?: HTMLImageElement;
   private imageWidth?: number;
+  #filmStripModel: SDK.FilmStripModel.FilmStripModel|null = null;
 
-  constructor() {
+  constructor(filmStripModel: SDK.FilmStripModel.FilmStripModel) {
     super('filmstrip', null);
     this.frameToImagePromise = new Map();
+    this.#filmStripModel = filmStripModel;
     this.lastFrame = null;
     this.lastElement = null;
     this.reset();
@@ -321,7 +325,7 @@ export class TimelineFilmStripOverview extends TimelineEventOverview {
 
   override update(): void {
     super.update();
-    const frames = this.model ? this.model.filmStripModel().frames() : [];
+    const frames = this.#filmStripModel ? this.#filmStripModel.frames() : [];
     if (!frames.length) {
       return;
     }
@@ -357,14 +361,13 @@ export class TimelineFilmStripOverview extends TimelineEventOverview {
     if (!imageWidth || !this.model) {
       return;
     }
-    const filmStripModel = this.model.filmStripModel();
-    if (!filmStripModel.frames().length) {
+    if (!this.#filmStripModel || this.#filmStripModel.frames().length < 1) {
       return;
     }
     const padding = TimelineFilmStripOverview.Padding;
     const width = this.width();
-    const zeroTime = filmStripModel.zeroTime();
-    const spanTime = filmStripModel.spanTime();
+    const zeroTime = this.#filmStripModel.zeroTime();
+    const spanTime = this.#filmStripModel.spanTime();
     const scale = spanTime / width;
     const context = this.context();
     const drawGeneration = this.drawGeneration;
@@ -372,7 +375,7 @@ export class TimelineFilmStripOverview extends TimelineEventOverview {
     context.beginPath();
     for (let x = padding; x < width; x += imageWidth + 2 * padding) {
       const time = zeroTime + (x + imageWidth / 2) * scale;
-      const frame = filmStripModel.frameByTimestamp(time);
+      const frame = this.#filmStripModel.frameByTimestamp(time);
       if (!frame) {
         continue;
       }
@@ -392,7 +395,7 @@ export class TimelineFilmStripOverview extends TimelineEventOverview {
   }
 
   override async overviewInfoPromise(x: number): Promise<Element|null> {
-    if (!this.model || !this.model.filmStripModel().frames().length) {
+    if (!this.#filmStripModel || this.#filmStripModel.frames().length === 0) {
       return null;
     }
 
@@ -401,7 +404,7 @@ export class TimelineFilmStripOverview extends TimelineEventOverview {
       return null;
     }
     const time = calculator.positionToTime(x);
-    const frame = this.model.filmStripModel().frameByTimestamp(time);
+    const frame = this.#filmStripModel.frameByTimestamp(time);
     if (frame === this.lastFrame) {
       return this.lastElement;
     }

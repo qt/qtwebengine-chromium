@@ -171,6 +171,7 @@ source_set("sender") {
     "sender.h",
     "sender_packet_router.h",  # FIXME: Only for Chromium tests.
     "sender_session.h",
+    "statistics.h",
   ]
   sources = [
     "bandwidth_estimator.cc",
@@ -184,6 +185,7 @@ source_set("sender") {
     "sender_report_builder.cc",
     "sender_report_builder.h",
     "sender_session.cc",
+    "statistics.cc",
   ]
 
   public_deps = [ ":common" ]

@@ -18,29 +18,30 @@
 
 #include "stateless/stateless_validation.h"
 #include "generated/enum_flag_bits.h"
-
-struct SampleOrderInfo {
-    VkShadingRatePaletteEntryNV shadingRate;
-    uint32_t width;
-    uint32_t height;
-};
-
-// All palette entries with more than one pixel per fragment
-static SampleOrderInfo sample_order_infos[] = {
-    {VK_SHADING_RATE_PALETTE_ENTRY_1_INVOCATION_PER_1X2_PIXELS_NV, 1, 2},
-    {VK_SHADING_RATE_PALETTE_ENTRY_1_INVOCATION_PER_2X1_PIXELS_NV, 2, 1},
-    {VK_SHADING_RATE_PALETTE_ENTRY_1_INVOCATION_PER_2X2_PIXELS_NV, 2, 2},
-    {VK_SHADING_RATE_PALETTE_ENTRY_1_INVOCATION_PER_4X2_PIXELS_NV, 4, 2},
-    {VK_SHADING_RATE_PALETTE_ENTRY_1_INVOCATION_PER_2X4_PIXELS_NV, 2, 4},
-    {VK_SHADING_RATE_PALETTE_ENTRY_1_INVOCATION_PER_4X4_PIXELS_NV, 4, 4},
-};
+#include <array>
 
 bool StatelessValidation::ValidateCoarseSampleOrderCustomNV(const VkCoarseSampleOrderCustomNV *order) const {
     bool skip = false;
 
-    SampleOrderInfo *sample_order_info;
+    struct SampleOrderInfo {
+        VkShadingRatePaletteEntryNV shadingRate;
+        uint32_t width;
+        uint32_t height;
+    };
+
+    // All palette entries with more than one pixel per fragment
+    constexpr std::array sample_order_infos = {
+        SampleOrderInfo{VK_SHADING_RATE_PALETTE_ENTRY_1_INVOCATION_PER_1X2_PIXELS_NV, 1, 2},
+        SampleOrderInfo{VK_SHADING_RATE_PALETTE_ENTRY_1_INVOCATION_PER_2X1_PIXELS_NV, 2, 1},
+        SampleOrderInfo{VK_SHADING_RATE_PALETTE_ENTRY_1_INVOCATION_PER_2X2_PIXELS_NV, 2, 2},
+        SampleOrderInfo{VK_SHADING_RATE_PALETTE_ENTRY_1_INVOCATION_PER_4X2_PIXELS_NV, 4, 2},
+        SampleOrderInfo{VK_SHADING_RATE_PALETTE_ENTRY_1_INVOCATION_PER_2X4_PIXELS_NV, 2, 4},
+        SampleOrderInfo{VK_SHADING_RATE_PALETTE_ENTRY_1_INVOCATION_PER_4X4_PIXELS_NV, 4, 4},
+    };
+
+    const SampleOrderInfo *sample_order_info;
     uint32_t info_idx = 0;
-    for (sample_order_info = nullptr; info_idx < ARRAY_SIZE(sample_order_infos); ++info_idx) {
+    for (sample_order_info = nullptr; info_idx < sample_order_infos.size(); ++info_idx) {
         if (sample_order_infos[info_idx].shadingRate == order->shadingRate) {
             sample_order_info = &sample_order_infos[info_idx];
             break;
@@ -507,21 +508,6 @@ bool StatelessValidation::manual_PreCallValidateCreateDescriptorSetLayout(VkDevi
     if (pCreateInfo->pBindings != nullptr) {
         for (uint32_t i = 0; i < pCreateInfo->bindingCount; ++i) {
             if (pCreateInfo->pBindings[i].descriptorCount != 0) {
-                if (((pCreateInfo->pBindings[i].descriptorType == VK_DESCRIPTOR_TYPE_SAMPLER) ||
-                     (pCreateInfo->pBindings[i].descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)) &&
-                    (pCreateInfo->pBindings[i].pImmutableSamplers != nullptr)) {
-                    for (uint32_t descriptor_index = 0; descriptor_index < pCreateInfo->pBindings[i].descriptorCount;
-                         ++descriptor_index) {
-                        if (pCreateInfo->pBindings[i].pImmutableSamplers[descriptor_index] == VK_NULL_HANDLE) {
-                            skip |= LogError(device, "VUID-VkDescriptorSetLayoutBinding-descriptorType-00282",
-                                             "vkCreateDescriptorSetLayout: required parameter "
-                                             "pCreateInfo->pBindings[%" PRIu32 "].pImmutableSamplers[%" PRIu32
-                                             "] specified as VK_NULL_HANDLE",
-                                             i, descriptor_index);
-                        }
-                    }
-                }
-
                 // If descriptorCount is not 0, stageFlags must be a valid combination of VkShaderStageFlagBits values
                 if ((pCreateInfo->pBindings[i].stageFlags != 0) &&
                     ((pCreateInfo->pBindings[i].stageFlags & (~AllVkShaderStageFlagBits)) != 0)) {
@@ -683,7 +669,7 @@ bool StatelessValidation::manual_PreCallValidateFreeDescriptorSets(VkDevice devi
     // This is an array of handles, where the elements are allowed to be VK_NULL_HANDLE, and does not require any validation beyond
     // ValidateArray()
     return ValidateArray("vkFreeDescriptorSets", "descriptorSetCount", "pDescriptorSets", descriptorSetCount, &pDescriptorSets,
-                         true, true, kVUIDUndefined, kVUIDUndefined);
+                         true, true, kVUIDUndefined, "VUID-vkFreeDescriptorSets-pDescriptorSets-00310");
 }
 
 bool StatelessValidation::ValidateWriteDescriptorSet(const char *vkCallingFunction, const uint32_t descriptorWriteCount,

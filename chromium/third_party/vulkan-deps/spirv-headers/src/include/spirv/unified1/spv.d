@@ -68,6 +68,7 @@ enum SourceLanguage : uint
     HLSL = 5,
     CPP_for_OpenCL = 6,
     SYCL = 7,
+    HERO_C = 8,
 }
 
 enum ExecutionModel : uint
@@ -723,6 +724,7 @@ enum BuiltIn : uint
     HitKindKHR = 5333,
     HitKindNV = 5333,
     CurrentRayTimeNV = 5334,
+    HitTriangleVertexPositionsKHR = 5335,
     IncomingRayFlagsKHR = 5351,
     IncomingRayFlagsNV = 5351,
     RayGeometryIndexKHR = 5352,
@@ -1085,6 +1087,7 @@ enum Capability : uint
     UniformTexelBufferArrayNonUniformIndexingEXT = 5311,
     StorageTexelBufferArrayNonUniformIndexing = 5312,
     StorageTexelBufferArrayNonUniformIndexingEXT = 5312,
+    RayTracingPositionFetchKHR = 5336,
     RayTracingNV = 5340,
     RayTracingMotionBlurNV = 5341,
     VulkanMemoryModel = 5345,
@@ -1105,6 +1108,7 @@ enum Capability : uint
     RayTracingOpacityMicromapEXT = 5381,
     ShaderInvocationReorderNV = 5383,
     BindlessTextureNV = 5390,
+    RayQueryPositionFetchKHR = 5391,
     SubgroupShuffleINTEL = 5568,
     SubgroupBufferBlockIOINTEL = 5569,
     SubgroupImageBlockIOINTEL = 5570,
@@ -1718,6 +1722,7 @@ enum Op : uint
     OpTraceNV = 5337,
     OpTraceMotionNV = 5338,
     OpTraceRayMotionNV = 5339,
+    OpRayQueryGetIntersectionTriangleVertexPositionsKHR = 5340,
     OpTypeAccelerationStructureKHR = 5341,
     OpTypeAccelerationStructureNV = 5341,
     OpExecuteCallableNV = 5344,

@@ -13,7 +13,11 @@ import sys
 
 target = sys.argv[1]
 output = sys.argv[2]
-subprocess.run(["bazelisk", "build", target], check=True)
+
+print("Invoking bazelisk from ", os.getcwd())
+
+# Forward the remaining args to the bazel invocation
+subprocess.run(["bazelisk", "build", target ] + sys.argv[3:], check=True)
 
 expected_output = os.path.join(os.getcwd(), os.path.basename(output))
 if not os.path.exists(expected_output):

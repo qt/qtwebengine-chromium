@@ -953,14 +953,7 @@ TEST_P(QuicDispatcherTestAllVersions,
 
   uint8_t short_packet[22] = {0x70, 0xa7, 0x02, 0x6b};
   uint8_t valid_size_packet[23] = {0x70, 0xa7, 0x02, 0x6c};
-  size_t short_packet_len;
-  if (version_.HasIetfInvariantHeader()) {
-    short_packet_len = 21;
-  } else {
-    short_packet_len = 22;
-    short_packet[0] = 0x0a;
-    valid_size_packet[0] = 0x0a;
-  }
+  size_t short_packet_len = 21;
   QuicReceivedPacket packet(reinterpret_cast<char*>(short_packet),
                             short_packet_len, QuicTime::Zero());
   QuicReceivedPacket packet2(reinterpret_cast<char*>(valid_size_packet),
@@ -971,21 +964,13 @@ TEST_P(QuicDispatcherTestAllVersions,
   EXPECT_CALL(*time_wait_list_manager_, AddConnectionIdToTimeWait(_, _))
       .Times(0);
   // Verify small packet is silently dropped.
-  if (version_.HasIetfInvariantHeader()) {
-    EXPECT_CALL(connection_id_generator_, ConnectionIdLength(0xa7))
-        .WillOnce(Return(kQuicDefaultConnectionIdLength));
-  } else {
-    EXPECT_CALL(connection_id_generator_, ConnectionIdLength(_)).Times(0);
-  }
+  EXPECT_CALL(connection_id_generator_, ConnectionIdLength(0xa7))
+      .WillOnce(Return(kQuicDefaultConnectionIdLength));
   EXPECT_CALL(*time_wait_list_manager_, SendPublicReset(_, _, _, _, _, _))
       .Times(0);
   dispatcher_->ProcessPacket(server_address_, client_address, packet);
-  if (version_.HasIetfInvariantHeader()) {
-    EXPECT_CALL(connection_id_generator_, ConnectionIdLength(0xa7))
-        .WillOnce(Return(kQuicDefaultConnectionIdLength));
-  } else {
-    EXPECT_CALL(connection_id_generator_, ConnectionIdLength(_)).Times(0);
-  }
+  EXPECT_CALL(connection_id_generator_, ConnectionIdLength(0xa7))
+      .WillOnce(Return(kQuicDefaultConnectionIdLength));
   EXPECT_CALL(*time_wait_list_manager_, SendPublicReset(_, _, _, _, _, _))
       .Times(1);
   dispatcher_->ProcessPacket(server_address_, client_address, packet2);
@@ -1521,7 +1506,7 @@ TEST_P(QuicDispatcherTestOneVersion,
   dispatcher_->ProcessPacket(server_address_, client_address, received_packet);
 }
 
-static_assert(quic::SupportedVersions().size() == 6u,
+static_assert(quic::SupportedVersions().size() == 5u,
               "Please add new RejectDeprecatedVersion tests above this assert "
               "when deprecating versions");
 
@@ -1559,7 +1544,8 @@ class SavingWriter : public QuicPacketWriterWrapper {
   WriteResult WritePacket(const char* buffer, size_t buf_len,
                           const QuicIpAddress& /*self_client_address*/,
                           const QuicSocketAddress& /*peer_client_address*/,
-                          PerPacketOptions* /*options*/) override {
+                          PerPacketOptions* /*options*/,
+                          const QuicPacketWriterParams& /*params*/) override {
     packets_.push_back(
         QuicEncryptedPacket(buffer, buf_len, /*owns_buffer=*/false).Clone());
     return WriteResult(WRITE_STATUS_OK, buf_len);
@@ -1892,7 +1878,8 @@ class BlockingWriter : public QuicPacketWriterWrapper {
   WriteResult WritePacket(const char* /*buffer*/, size_t /*buf_len*/,
                           const QuicIpAddress& /*self_client_address*/,
                           const QuicSocketAddress& /*peer_client_address*/,
-                          PerPacketOptions* /*options*/) override {
+                          PerPacketOptions* /*options*/,
+                          const QuicPacketWriterParams& /*params*/) override {
     // It would be quite possible to actually implement this method here with
     // the fake blocked status, but it would be significantly more work in
     // Chromium, and since it's not called anyway, don't bother.

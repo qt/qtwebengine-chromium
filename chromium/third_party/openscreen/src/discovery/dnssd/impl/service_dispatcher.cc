@@ -52,22 +52,21 @@ Error ForAllPublishers(
 
 // static
 SerialDeletePtr<DnsSdService> CreateDnsSdService(
-    TaskRunner* task_runner,
+    TaskRunner& task_runner,
     ReportingClient* reporting_client,
     const Config& config) {
   return SerialDeletePtr<DnsSdService>(
-      task_runner,
+      &task_runner,
       new ServiceDispatcher(task_runner, reporting_client, config));
 }
 
-ServiceDispatcher::ServiceDispatcher(TaskRunner* task_runner,
+ServiceDispatcher::ServiceDispatcher(TaskRunner& task_runner,
                                      ReportingClient* reporting_client,
                                      const Config& config)
     : task_runner_(task_runner),
       publisher_(config.enable_publication ? this : nullptr),
       querier_(config.enable_querying ? this : nullptr) {
   OSP_DCHECK_GT(config.network_info.size(), 0);
-  OSP_DCHECK(task_runner);
 
   service_instances_.reserve(config.network_info.size());
   for (const auto& network_info : config.network_info) {
@@ -77,7 +76,7 @@ ServiceDispatcher::ServiceDispatcher(TaskRunner* task_runner,
 }
 
 ServiceDispatcher::~ServiceDispatcher() {
-  OSP_DCHECK(task_runner_->IsRunningOnTaskRunner());
+  OSP_DCHECK(task_runner_.IsRunningOnTaskRunner());
 }
 
 // DnsSdQuerier overrides.

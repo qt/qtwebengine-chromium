@@ -8,6 +8,7 @@
 #ifndef SKSL_FUNCTIONDECLARATION
 #define SKSL_FUNCTIONDECLARATION
 
+#include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
 #include "include/private/base/SkTArray.h"
 #include "src/sksl/SkSLIntrinsicList.h"
@@ -17,7 +18,6 @@
 #include <memory>
 #include <string>
 #include <string_view>
-#include <vector>
 
 namespace SkSL {
 
@@ -25,7 +25,6 @@ class Context;
 class ExpressionArray;
 class FunctionDefinition;
 class Position;
-class SymbolTable;
 class Type;
 class Variable;
 
@@ -41,19 +40,20 @@ public:
     FunctionDeclaration(Position pos,
                         const Modifiers* modifiers,
                         std::string_view name,
-                        std::vector<Variable*> parameters,
+                        skia_private::TArray<Variable*> parameters,
                         const Type* returnType,
                         bool builtin);
 
     static FunctionDeclaration* Convert(const Context& context,
-                                        SymbolTable& symbols,
                                         Position pos,
                                         Position modifiersPos,
                                         const Modifiers* modifiers,
                                         std::string_view name,
-                                        std::vector<std::unique_ptr<Variable>> parameters,
+                                        skia_private::TArray<std::unique_ptr<Variable>> parameters,
                                         Position returnTypePos,
                                         const Type* returnType);
+
+    void addParametersToSymbolTable(const Context& context);
 
     const Modifiers& modifiers() const {
         return *fModifiers;
@@ -77,7 +77,7 @@ public:
         fNextOverload = overload;
     }
 
-    const std::vector<Variable*>& parameters() const {
+    SkSpan<Variable* const> parameters() const {
         return fParameters;
     }
 
@@ -139,7 +139,7 @@ private:
     const FunctionDefinition* fDefinition;
     FunctionDeclaration* fNextOverload = nullptr;
     const Modifiers* fModifiers;
-    std::vector<Variable*> fParameters;
+    skia_private::TArray<Variable*> fParameters;
     const Type* fReturnType;
     bool fBuiltin;
     bool fIsMain;

@@ -58,6 +58,7 @@ const char kSetFlossEnabled[] = "SetFlossEnabled";
 const char kSetSpeakOnMuteDetection[] = "SetSpeakOnMuteDetection";
 const char kSpeakOnMuteDetectionEnabled[] = "SpeakOnMuteDetectionEnabled";
 const char kSetForceRespectUiGains[] = "SetForceRespectUiGains";
+const char kGetNumStreamIgnoreUiGains[] = "GetNumStreamIgnoreUiGains";
 
 // Names of properties returned by GetNodes() and GetNodeInfos()
 const char kIsInputProperty[] = "IsInput";
@@ -74,6 +75,7 @@ const char kAudioEffectProperty[] = "AudioEffect";
 const char kNodeVolumeProperty[] = "NodeVolume";
 const char kInputNodeGainProperty[] = "InputNodeGain";
 const char kNumberOfVolumeStepsProperty[] = "NumberOfVolumeSteps";
+const char kDeviceLastOpenResultProperty[] = "DeviceLastOpenResult";
 // The following two properties are optional.
 const char kNumberOfUnderrunsProperty[] = "NumberOfUnderruns";
 const char kNumberOfSevereUnderrunsProperty[] = "NumberOfSevereUnderruns";
@@ -116,6 +118,7 @@ const char kHotwordTriggered[] = "HotwordTriggered";
 const char kBluetoothBatteryChanged[] = "BluetoothBatteryChanged";
 const char kSurveyTrigger[] = "SurveyTrigger";
 const char kSpeakOnMuteDetected[] = "SpeakOnMuteDetected";
+const char kNumStreamIgnoreUiGainsChanged[] = "NumStreamIgnoreUiGainsChanged";
 }  // namespace cras
 
 #endif  // SYSTEM_API_DBUS_AUDIO_DBUS_CONSTANTS_H_

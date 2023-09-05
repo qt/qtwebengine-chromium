@@ -591,12 +591,26 @@ static int enc_row_mt_worker_hook(void *arg1, void *unused) {
 static int enc_worker_hook(void *arg1, void *unused) {
   EncWorkerData *const thread_data = (EncWorkerData *)arg1;
   AV1_COMP *const cpi = thread_data->cpi;
+  MACROBLOCKD *const xd = &thread_data->td->mb.e_mbd;
+  struct aom_internal_error_info *const error_info = &thread_data->error_info;
   const AV1_COMMON *const cm = &cpi->common;
   const int tile_cols = cm->tiles.cols;
   const int tile_rows = cm->tiles.rows;
   int t;
 
   (void)unused;
+
+  xd->error_info = error_info;
+
+  // The jmp_buf is valid only for the duration of the function that calls
+  // setjmp(). Therefore, this function must reset the 'setjmp' field to 0
+  // before it returns.
+  if (setjmp(error_info->jmp)) {
+    error_info->setjmp = 0;
+    return 0;
+  }
+  error_info->setjmp = 1;
+
   // Preallocate the pc_tree for realtime coding to reduce the cost of memory
   // allocation.
   thread_data->td->rt_pc_root =
@@ -619,6 +633,7 @@ static int enc_worker_hook(void *arg1, void *unused) {
   av1_free_pc_tree_recursive(thread_data->td->rt_pc_root, av1_num_planes(cm), 0,
                              0, cpi->sf.part_sf.partition_search_type);
 
+  error_info->setjmp = 0;
   return 1;
 }
 
@@ -775,6 +790,7 @@ void av1_init_tile_thread_data(AV1_PRIMARY *ppi, int is_first_pass) {
 
   int num_workers = p_mt_info->num_workers;
   int num_enc_workers = av1_get_num_mod_workers_for_alloc(p_mt_info, MOD_ENC);
+  assert(num_enc_workers <= num_workers);
   for (int i = num_workers - 1; i >= 0; i--) {
     EncWorkerData *const thread_data = &p_mt_info->tile_thr_data[i];
 
@@ -884,6 +900,10 @@ void av1_init_tile_thread_data(AV1_PRIMARY *ppi, int is_first_pass) {
       }
     }
   }
+
+  // Record the number of workers in encode stage multi-threading for which
+  // allocation is done.
+  p_mt_info->prev_num_enc_workers = num_enc_workers;
 }
 
 void av1_create_workers(AV1_PRIMARY *ppi, int num_workers) {
@@ -1161,7 +1181,7 @@ static AOM_INLINE void sync_fpmt_workers(AV1_PRIMARY *ppi) {
     AVxWorker *const worker = ppi->p_mt_info.p_workers[i];
     if (!winterface->sync(worker)) {
       had_error = 1;
-      error = ((AV1_COMP *)worker->data1)->common.error;
+      error = ppi->parallel_cpi[i]->common.error;
     }
   }
 
@@ -1259,17 +1279,27 @@ static AOM_INLINE void launch_workers(MultiThreadInfo *const mt_info,
 static AOM_INLINE void sync_enc_workers(MultiThreadInfo *const mt_info,
                                         AV1_COMMON *const cm, int num_workers) {
   const AVxWorkerInterface *const winterface = aom_get_worker_interface();
-  int had_error = 0;
+  int had_error = mt_info->workers[0].had_error;
+  struct aom_internal_error_info error_info;
+
+  // Read the error_info of main thread.
+  if (had_error) {
+    AVxWorker *const worker = &mt_info->workers[0];
+    error_info = ((EncWorkerData *)worker->data1)->error_info;
+  }
 
   // Encoding ends.
   for (int i = num_workers - 1; i > 0; i--) {
     AVxWorker *const worker = &mt_info->workers[i];
-    had_error |= !winterface->sync(worker);
+    if (!winterface->sync(worker)) {
+      had_error = 1;
+      error_info = ((EncWorkerData *)worker->data1)->error_info;
+    }
   }
 
   if (had_error)
-    aom_internal_error(cm->error, AOM_CODEC_ERROR,
-                       "Failed to encode tile data");
+    aom_internal_error(cm->error, error_info.error_code, "%s",
+                       error_info.detail);
 }
 
 static AOM_INLINE void accumulate_counters_enc_workers(AV1_COMP *cpi,
@@ -1313,15 +1343,9 @@ static AOM_INLINE void prepare_enc_workers(AV1_COMP *cpi, AVxWorkerHook hook,
                                            int num_workers) {
   MultiThreadInfo *const mt_info = &cpi->mt_info;
   AV1_COMMON *const cm = &cpi->common;
-  MACROBLOCKD *xd = &cpi->td.mb.e_mbd;
   for (int i = num_workers - 1; i >= 0; i--) {
     AVxWorker *const worker = &mt_info->workers[i];
     EncWorkerData *const thread_data = &mt_info->tile_thr_data[i];
-
-    // Initialize loopfilter data
-    thread_data->lf_sync = &mt_info->lf_row_sync;
-    thread_data->lf_data = &thread_data->lf_sync->lfdata[i];
-    loop_filter_data_reset(thread_data->lf_data, &cm->cur_frame->buf, cm, xd);
 
     worker->hook = hook;
     worker->data1 = thread_data;
@@ -1614,7 +1638,7 @@ static AOM_INLINE int fp_compute_max_mb_rows(const AV1_COMMON *cm,
 }
 #endif
 
-static void lpf_pipeline_mt_init(AV1_COMP *cpi) {
+static void lpf_pipeline_mt_init(AV1_COMP *cpi, int num_workers) {
   // Pipelining of loop-filtering after encoding is enabled when loop-filter
   // level is chosen based on quantizer and frame type. It is disabled in case
   // of 'LOOPFILTER_SELECTIVELY' as the stats collected during encoding stage
@@ -1625,18 +1649,20 @@ static void lpf_pipeline_mt_init(AV1_COMP *cpi) {
   const int use_superres = av1_superres_scaled(cm);
   const int use_cdef = is_cdef_used(cm);
   const int use_restoration = is_restoration_used(cm);
+  MultiThreadInfo *const mt_info = &cpi->mt_info;
+  MACROBLOCKD *xd = &cpi->td.mb.e_mbd;
 
   const unsigned int skip_apply_postproc_filters =
       derive_skip_apply_postproc_filters(cpi, use_loopfilter, use_cdef,
                                          use_superres, use_restoration);
-  cpi->mt_info.pipeline_lpf_mt_with_enc =
+  mt_info->pipeline_lpf_mt_with_enc =
       (cpi->oxcf.mode == REALTIME) && (cpi->oxcf.speed >= 5) &&
       (cpi->sf.lpf_sf.lpf_pick == LPF_PICK_FROM_Q) &&
       (cpi->oxcf.algo_cfg.loopfilter_control != LOOPFILTER_SELECTIVELY) &&
       !cpi->ppi->rtc_ref.non_reference_frame && !cm->features.allow_intrabc &&
       ((skip_apply_postproc_filters & SKIP_APPLY_LOOPFILTER) == 0);
 
-  if (!cpi->mt_info.pipeline_lpf_mt_with_enc) return;
+  if (!mt_info->pipeline_lpf_mt_with_enc) return;
 
   set_postproc_filter_default_params(cm);
 
@@ -1662,12 +1688,20 @@ static void lpf_pipeline_mt_init(AV1_COMP *cpi) {
 
     av1_loop_filter_frame_init(cm, plane_start, plane_end);
 
-    assert(cpi->mt_info.num_mod_workers[MOD_ENC] ==
-           cpi->mt_info.num_mod_workers[MOD_LPF]);
+    assert(mt_info->num_mod_workers[MOD_ENC] ==
+           mt_info->num_mod_workers[MOD_LPF]);
     loop_filter_frame_mt_init(cm, start_mi_row, end_mi_row, planes_to_lf,
-                              cpi->mt_info.num_mod_workers[MOD_LPF],
-                              &cpi->mt_info.lf_row_sync, lpf_opt_level,
+                              mt_info->num_mod_workers[MOD_LPF],
+                              &mt_info->lf_row_sync, lpf_opt_level,
                               cm->seq_params->mib_size_log2);
+
+    for (int i = num_workers - 1; i >= 0; i--) {
+      EncWorkerData *const thread_data = &mt_info->tile_thr_data[i];
+      // Initialize loopfilter data
+      thread_data->lf_sync = &mt_info->lf_row_sync;
+      thread_data->lf_data = &thread_data->lf_sync->lfdata[i];
+      loop_filter_data_reset(thread_data->lf_data, &cm->cur_frame->buf, cm, xd);
+    }
   }
 }
 
@@ -1702,7 +1736,8 @@ void av1_encode_tiles_row_mt(AV1_COMP *cpi) {
                      cpi->oxcf.algo_cfg.cdf_update_mode);
   }
 
-  lpf_pipeline_mt_init(cpi);
+  num_workers = AOMMIN(num_workers, mt_info->num_workers);
+  lpf_pipeline_mt_init(cpi, num_workers);
 
   av1_init_tile_data(cpi);
 
@@ -1731,8 +1766,6 @@ void av1_encode_tiles_row_mt(AV1_COMP *cpi) {
                              this_tile->tile_info.mi_col_end, tile_row);
     }
   }
-
-  num_workers = AOMMIN(num_workers, mt_info->num_workers);
 
   assign_tile_to_thread(thread_id_to_tile_id, tile_cols * tile_rows,
                         num_workers);
@@ -2003,6 +2036,7 @@ static AOM_INLINE void prepare_tpl_workers(AV1_COMP *cpi, AVxWorkerHook hook,
   }
 }
 
+#if CONFIG_BITRATE_ACCURACY
 // Accumulate transform stats after tpl.
 static void tpl_accumulate_txfm_stats(ThreadData *main_td,
                                       const MultiThreadInfo *mt_info,
@@ -2018,6 +2052,7 @@ static void tpl_accumulate_txfm_stats(ThreadData *main_td,
     }
   }
 }
+#endif  // CONFIG_BITRATE_ACCURACY
 
 // Implements multi-threading for tpl.
 void av1_mc_flow_dispenser_mt(AV1_COMP *cpi) {
@@ -2043,7 +2078,9 @@ void av1_mc_flow_dispenser_mt(AV1_COMP *cpi) {
   prepare_tpl_workers(cpi, tpl_worker_hook, num_workers);
   launch_workers(&cpi->mt_info, num_workers);
   sync_enc_workers(&cpi->mt_info, cm, num_workers);
+#if CONFIG_BITRATE_ACCURACY
   tpl_accumulate_txfm_stats(&cpi->td, &cpi->mt_info, num_workers);
+#endif  // CONFIG_BITRATE_ACCURACY
 }
 
 // Deallocate memory for temporal filter multi-thread synchronization.
@@ -3006,6 +3043,9 @@ static AOM_INLINE int compute_num_pack_bs_workers(AV1_COMP *cpi) {
 // Computes num_workers for all intra multi-threading.
 static AOM_INLINE int compute_num_ai_workers(AV1_COMP *cpi) {
   if (cpi->oxcf.max_threads <= 1) return 1;
+  // The multi-threading implementation of deltaq-mode = 3 in allintra
+  // mode is based on row multi threading.
+  if (!cpi->oxcf.row_mt) return 1;
   cpi->weber_bsize = BLOCK_8X8;
   const BLOCK_SIZE bsize = cpi->weber_bsize;
   const int mb_step = mi_size_wide[bsize];

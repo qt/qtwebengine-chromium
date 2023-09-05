@@ -85,10 +85,6 @@ class QUIC_EXPORT_PRIVATE QuicFramerVisitorInterface {
   // has been validated or processed.
   virtual void OnPacket() = 0;
 
-  // Called when a public reset packet has been parsed but has not yet
-  // been validated.
-  virtual void OnPublicResetPacket(const QuicPublicResetPacket& packet) = 0;
-
   // Called only when |perspective_| is IS_CLIENT and a version negotiation
   // packet has been parsed.
   virtual void OnVersionNegotiationPacket(
@@ -350,8 +346,7 @@ class QUIC_EXPORT_PRIVATE QuicFramer {
   // data length provided, but not counting the size of the data payload.
   static size_t GetMinCryptoFrameSize(QuicStreamOffset offset,
                                       QuicPacketLength data_length);
-  static size_t GetMessageFrameSize(QuicTransportVersion version,
-                                    bool last_frame_in_packet,
+  static size_t GetMessageFrameSize(bool last_frame_in_packet,
                                     QuicByteCount length);
   // Size in bytes of all ack frame fields without the missing packets or ack
   // blocks.
@@ -527,8 +522,6 @@ class QUIC_EXPORT_PRIVATE QuicFramer {
   // If header.version_flag is set, the version in the
   // packet will be set -- but it will be set from version_ not
   // header.versions.
-  bool AppendPacketHeader(const QuicPacketHeader& header,
-                          QuicDataWriter* writer, size_t* length_field_offset);
   bool AppendIetfHeaderTypeByte(const QuicPacketHeader& header,
                                 QuicDataWriter* writer);
   bool AppendIetfPacketHeader(const QuicPacketHeader& header,
@@ -631,9 +624,6 @@ class QUIC_EXPORT_PRIVATE QuicFramer {
     supported_versions_ = versions;
     version_ = versions[0];
   }
-
-  // Tell framer to infer packet header type from version_.
-  void InferPacketHeaderTypeFromVersion();
 
   // Returns true if |header| is considered as an stateless reset packet.
   bool IsIetfStatelessResetPacket(const QuicPacketHeader& header) const;
@@ -798,17 +788,10 @@ class QUIC_EXPORT_PRIVATE QuicFramer {
                               uint64_t* full_packet_number,
                               std::vector<char>* associated_data);
 
-  bool ProcessDataPacket(QuicDataReader* reader, QuicPacketHeader* header,
-                         const QuicEncryptedPacket& packet,
-                         char* decrypted_buffer, size_t buffer_length);
-
   bool ProcessIetfDataPacket(QuicDataReader* encrypted_reader,
                              QuicPacketHeader* header,
                              const QuicEncryptedPacket& packet,
                              char* decrypted_buffer, size_t buffer_length);
-
-  bool ProcessPublicResetPacket(QuicDataReader* reader,
-                                const QuicPacketHeader& header);
 
   bool ProcessVersionNegotiationPacket(QuicDataReader* reader,
                                        const QuicPacketHeader& header);
@@ -822,15 +805,6 @@ class QUIC_EXPORT_PRIVATE QuicFramer {
 
   bool MaybeProcessIetfLength(QuicDataReader* encrypted_reader,
                               QuicPacketHeader* header);
-
-  bool ProcessPublicHeader(QuicDataReader* reader,
-                           bool packet_has_ietf_packet_header,
-                           QuicPacketHeader* header);
-
-  // Processes the unauthenticated portion of the header into |header| from
-  // the current QuicDataReader.  Returns true on success, false on failure.
-  bool ProcessUnauthenticatedHeader(QuicDataReader* encrypted_reader,
-                                    QuicPacketHeader* header);
 
   // Processes the version label in the packet header.
   static bool ProcessVersionLabel(QuicDataReader* reader,
@@ -1066,8 +1040,7 @@ class QUIC_EXPORT_PRIVATE QuicFramer {
   bool RaiseError(QuicErrorCode error);
 
   // Returns true if |header| indicates a version negotiation packet.
-  bool IsVersionNegotiation(const QuicPacketHeader& header,
-                            bool packet_has_ietf_packet_header) const;
+  bool IsVersionNegotiation(const QuicPacketHeader& header) const;
 
   // Calculates and returns type byte of stream frame.
   uint8_t GetStreamFrameTypeByte(const QuicStreamFrame& frame,
@@ -1105,8 +1078,6 @@ class QUIC_EXPORT_PRIVATE QuicFramer {
   QuicPacketNumber largest_decrypted_packet_numbers_[NUM_PACKET_NUMBER_SPACES];
   // Last server connection ID seen on the wire.
   QuicConnectionId last_serialized_server_connection_id_;
-  // Last client connection ID seen on the wire.
-  QuicConnectionId last_serialized_client_connection_id_;
   // Version of the protocol being used.
   ParsedQuicVersion version_;
   // This vector contains QUIC versions which we currently support.
@@ -1182,11 +1153,6 @@ class QUIC_EXPORT_PRIVATE QuicFramer {
 
   // Whether we are in the middle of a call to this->ProcessPacket.
   bool is_processing_packet_ = false;
-
-  // If true, framer infers packet header type (IETF/GQUIC) from version_.
-  // Otherwise, framer infers packet header type from first byte of a received
-  // packet.
-  bool infer_packet_header_type_from_version_;
 
   // IETF short headers contain a destination connection ID but do not
   // encode its length. These variables contains the length we expect to read.

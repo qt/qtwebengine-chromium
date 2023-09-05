@@ -12,10 +12,7 @@ type IgnoreListArgs = {
 };
 
 export class TracingModel {
-  #backingStorageInternal: BackingStorage;
-  readonly #shouldSaveToFile: boolean;
   readonly #title: string|undefined;
-  #firstWritePending: boolean;
   readonly #processById: Map<string|number, Process>;
   readonly #processByName: Map<string, Process>;
   #minimumRecordTimeInternal: number;
@@ -29,12 +26,8 @@ export class TracingModel {
   readonly #mainFrameNavStartTimes: Map<string, PayloadEvent>;
   readonly #allEventsPayload: EventPayload[] = [];
 
-  constructor(backingStorage: BackingStorage, shouldSaveToFile = true, title?: string) {
-    this.#backingStorageInternal = backingStorage;
-    this.#shouldSaveToFile = shouldSaveToFile;
+  constructor(title?: string) {
     this.#title = title;
-    // Avoid extra reset of the storage as it's expensive.
-    this.#firstWritePending = true;
     this.#processById = new Map();
     this.#processByName = new Map();
     this.#minimumRecordTimeInternal = Number(Infinity);
@@ -48,10 +41,10 @@ export class TracingModel {
     this.#mainFrameNavStartTimes = new Map();
   }
 
-  static isTopLevelEvent(event: Event): boolean {
-    return event.hasCategory(DevToolsTimelineEventCategory) && event.name === 'RunTask' ||
-        event.hasCategory(LegacyTopLevelEventCategory) ||
-        event.hasCategory(DevToolsMetadataEventCategory) &&
+  static isTopLevelEvent(event: CompatibleTraceEvent): boolean {
+    return eventHasCategory(event, DevToolsTimelineEventCategory) && event.name === 'RunTask' ||
+        eventHasCategory(event, LegacyTopLevelEventCategory) ||
+        eventHasCategory(event, DevToolsMetadataEventCategory) &&
         event.name === 'Program';  // Older timelines may have this instead of toplevel.
   }
 
@@ -117,21 +110,10 @@ export class TracingModel {
 
   tracingComplete(): void {
     this.processPendingAsyncEvents();
-    if (this.#shouldSaveToFile) {
-      this.#backingStorageInternal.appendString(this.#firstWritePending ? '[]' : ']');
-      this.#backingStorageInternal.finishWriting();
-      this.#firstWritePending = false;
-    }
     for (const process of this.#processById.values()) {
       for (const thread of process.threads.values()) {
         thread.tracingComplete();
       }
-    }
-  }
-
-  dispose(): void {
-    if (!this.#firstWritePending && this.#shouldSaveToFile) {
-      this.#backingStorageInternal.reset();
     }
   }
 
@@ -141,21 +123,6 @@ export class TracingModel {
     if (!process) {
       process = new Process(this, payload.pid);
       this.#processById.set(payload.pid, process);
-    }
-
-    let backingStorage: (() => Promise<string|null>)|null = null;
-    if (this.#shouldSaveToFile) {
-      const eventsDelimiter = ',\n';
-      this.#backingStorageInternal.appendString(this.#firstWritePending ? '[' : eventsDelimiter);
-      this.#firstWritePending = false;
-      const stringPayload = JSON.stringify(payload);
-      const isAccessible = payload.ph === TraceEngine.Types.TraceEvents.Phase.OBJECT_SNAPSHOT;
-      const keepStringsLessThan = 10000;
-      if (isAccessible && stringPayload.length > keepStringsLessThan) {
-        backingStorage = this.#backingStorageInternal.appendAccessibleString(stringPayload);
-      } else {
-        this.#backingStorageInternal.appendString(stringPayload);
-      }
     }
 
     const timestamp = payload.ts / 1000;
@@ -213,7 +180,6 @@ export class TracingModel {
     if (TraceEngine.Types.TraceEvents.isAsyncPhase(payload.ph)) {
       this.#asyncEvents.push((event as AsyncEvent));
     }
-    event.setBackingStorage(backingStorage);
     if (event.hasCategory(DevToolsMetadataEventCategory)) {
       this.#devToolsMetadataEventsInternal.push(event);
     }
@@ -406,10 +372,6 @@ export class TracingModel {
     console.assert(false, 'Invalid async event phase');
   }
 
-  backingStorage(): BackingStorage {
-    return this.#backingStorageInternal;
-  }
-
   title(): string|undefined {
     return this.#title;
   }
@@ -444,19 +406,6 @@ export const LegacyTopLevelEventCategory = 'toplevel';
 
 export const DevToolsMetadataEventCategory = 'disabled-by-default-devtools.timeline';
 export const DevToolsTimelineEventCategory = 'disabled-by-default-devtools.timeline';
-
-export abstract class BackingStorage {
-  appendString(_string: string): void {
-  }
-
-  abstract appendAccessibleString(string: string): () => Promise<string|null>;
-
-  finishWriting(): void {
-  }
-
-  reset(): void {
-  }
-}
 
 export function eventHasPayload(event: Event): event is PayloadEvent {
   return 'rawPayload' in event;
@@ -547,9 +496,6 @@ export class Event {
     }
     this.setEndTime(endEvent.startTime);
   }
-
-  setBackingStorage(_backingStorage: (() => Promise<string|null>)|null): void {
-  }
 }
 
 /**
@@ -619,14 +565,9 @@ export class PayloadEvent extends Event {
 }
 
 export class ObjectSnapshot extends PayloadEvent {
-  #backingStorage: (() => Promise<string|null>)|null;
-  #objectPromiseInternal: Promise<ObjectSnapshot|null>|null;
-
   private constructor(
       category: string|undefined, name: string, startTime: number, thread: Thread, rawPayload: EventPayload) {
     super(category, name, TraceEngine.Types.TraceEvents.Phase.OBJECT_SNAPSHOT, startTime, thread, rawPayload);
-    this.#backingStorage = null;
-    this.#objectPromiseInternal = null;
   }
 
   static override fromPayload(payload: EventPayload, thread: Thread): ObjectSnapshot {
@@ -645,45 +586,12 @@ export class ObjectSnapshot extends PayloadEvent {
     return snapshot;
   }
 
-  requestObject(callback: (arg0: ObjectSnapshot|null) => void): void {
+  getSnapshot(): ObjectSnapshot {
     const snapshot = this.args['snapshot'];
-    if (snapshot) {
-      callback((snapshot as ObjectSnapshot));
-      return;
+    if (!snapshot) {
+      throw new Error('ObjectSnapshot has no snapshot argument.');
     }
-    const storage = this.#backingStorage;
-    if (storage) {
-      storage().then(onRead, callback.bind(null, null));
-    }
-
-    function onRead(result: string|null): void {
-      if (!result) {
-        callback(null);
-        return;
-      }
-      try {
-        const payload = JSON.parse(result);
-        callback(payload['args']['snapshot']);
-      } catch (e) {
-        Common.Console.Console.instance().error('Malformed event data in backing storage');
-        callback(null);
-      }
-    }
-  }
-
-  objectPromise(): Promise<ObjectSnapshot|null> {
-    if (!this.#objectPromiseInternal) {
-      this.#objectPromiseInternal = new Promise(this.requestObject.bind(this));
-    }
-    return this.#objectPromiseInternal;
-  }
-
-  override setBackingStorage(backingStorage: (() => Promise<string|null>)|null): void {
-    if (!backingStorage) {
-      return;
-    }
-    this.#backingStorage = backingStorage;
-    this.args = {};
+    return snapshot;
   }
 }
 
@@ -953,7 +861,7 @@ export function timesForEventInMilliseconds(event: Event|
 // Parsed categories are cached to prevent calling cat.split() multiple
 // times on the same categories string.
 const parsedCategories = new Map<string, Set<string>>();
-export function eventHasCategory(event: Event|TraceEngine.Types.TraceEvents.TraceEventData, category: string): boolean {
+export function eventHasCategory(event: CompatibleTraceEvent, category: string): boolean {
   if (event instanceof Event) {
     return event.hasCategory(category);
   }
@@ -980,7 +888,9 @@ export function threadIDForEvent(event: Event|
   return event.tid;
 }
 
-export function eventIsFromNewEngine(event: Event|TraceEngine.Types.TraceEvents.TraceEventData|
+export function eventIsFromNewEngine(event: CompatibleTraceEvent|
                                      null): event is TraceEngine.Types.TraceEvents.TraceEventData {
   return event !== null && !(event instanceof Event);
 }
+
+export type CompatibleTraceEvent = Event|TraceEngine.Types.TraceEvents.TraceEventData;

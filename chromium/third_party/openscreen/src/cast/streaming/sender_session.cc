@@ -307,6 +307,11 @@ int SenderSession::GetEstimatedNetworkBandwidth() const {
   return packet_router_.ComputeNetworkBandwidth();
 }
 
+void SenderSession::SetStatsClient(SenderStatsClient* client) {
+  OSP_CHECK(!stats_client_) << "Client should only be set once.";
+  stats_client_ = client;
+}
+
 void SenderSession::ResetState() {
   state_ = State::kIdle;
   current_negotiation_.reset();

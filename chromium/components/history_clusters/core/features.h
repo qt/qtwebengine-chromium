@@ -75,9 +75,9 @@ BASE_DECLARE_FEATURE(kJourneysPersistCachesToPrefs);
 // batches.
 BASE_DECLARE_FEATURE(kHistoryClustersNavigationContextClustering);
 
-// Enables either the hide visits thumbs-down or menu item on individual visits
-// of persisted clusters.
-BASE_DECLARE_FEATURE(kHideVisits);
+// Enables Journeys creating new tab groups that have names derived from the
+// cluster title. If disabled, new tab groups are anonymous.
+BASE_DECLARE_FEATURE(kJourneysNamedNewTabGroups);
 
 // Enables use of cache to store the URL for display to avoid calls to url
 // formatter.
@@ -99,6 +99,9 @@ BASE_DECLARE_FEATURE(kJourneysZeroStateFiltering);
 BASE_DECLARE_FEATURE(kSidePanelJourneys);
 extern const base::FeatureParam<bool> kSidePanelJourneysOpensFromOmnibox;
 BASE_DECLARE_FEATURE(kSidePanelJourneysQueryless);
+
+// Enables renaming Journeys in the UI.
+BASE_DECLARE_FEATURE(kRenameJourneys);
 
 }  // namespace history_clusters
 

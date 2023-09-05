@@ -267,7 +267,8 @@
    *
    * @Input:
    *   stream ::
-   *     The source font stream.
+   *     Dummy argument for compatibility with the `FT_Face_InitFunc` API.
+   *     Ignored.  The stream should be passed through `face->root.stream`.
    *
    *   face_index ::
    *     The index of the font face in the resource.
@@ -373,6 +374,14 @@
 
       if ( info->is_fixed_pitch )
         cidface->face_flags |= FT_FACE_FLAG_FIXED_WIDTH;
+
+      /*
+       * For the sfnt-wrapped CID fonts for MacOS, currently,
+       * its `cmap' tables are ignored, and the content in
+       * its `CID ' table is treated the same as naked CID-keyed
+       * font.  See ft_lookup_PS_in_sfnt_stream().
+       */
+      cidface->face_flags |= FT_FACE_FLAG_CID_KEYED;
 
       /* XXX: TODO: add kerning with .afm support */
 

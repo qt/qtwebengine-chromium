@@ -64,11 +64,11 @@ class SwapChain : public SwapChainBase {
         bool needsBlit = false;
     };
     ResultOrError<Config> ChooseConfig(const VulkanSurfaceInfo& surfaceInfo) const;
-    ResultOrError<Ref<TextureViewBase>> GetCurrentTextureViewInternal(bool isReentrant = false);
+    ResultOrError<Ref<TextureBase>> GetCurrentTextureInternal(bool isReentrant = false);
 
     // SwapChainBase implementation
     MaybeError PresentImpl() override;
-    ResultOrError<Ref<TextureViewBase>> GetCurrentTextureViewImpl() override;
+    ResultOrError<Ref<TextureBase>> GetCurrentTextureImpl() override;
     void DetachFromSurfaceImpl() override;
 
     Config mConfig;
@@ -76,6 +76,7 @@ class SwapChain : public SwapChainBase {
     VkSurfaceKHR mVkSurface = VK_NULL_HANDLE;
     VkSwapchainKHR mSwapChain = VK_NULL_HANDLE;
     std::vector<VkImage> mSwapChainImages;
+    std::vector<VkSemaphore> mSwapChainSemaphores;
     uint32_t mLastImageIndex = 0;
 
     Ref<Texture> mBlitTexture;

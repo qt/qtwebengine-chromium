@@ -83,11 +83,6 @@ config("skia_public") {
     defines += [ "SK_USE_PERFETTO" ]
   }
 
-  # Temporary define for flutter to control in their GN build
-  if (skia_use_legacy_layer_bounds) {
-    defines += [ "SK_LEGACY_LAYER_BOUNDS_EXPANSION" ]
-  }
-
   # Some older versions of the Clang toolchain change the visibility of
   # symbols decorated with API_AVAILABLE macro to be visible. Users of such
   # toolchains suppress the use of this macro till toolchain updates are made.
@@ -180,12 +175,6 @@ template("opts") {
 
 is_x86 = current_cpu == "x64" || current_cpu == "x86"
 
-opts("crc32") {
-  enabled = current_cpu == "arm64"
-  sources = skia_opts.crc32_sources
-  cflags = [ "-march=armv8-a+crc" ]
-}
-
 opts("ssse3") {
   enabled = is_x86
   sources = skia_opts.ssse3_sources
@@ -193,32 +182,6 @@ opts("ssse3") {
     defines = [ "SK_CPU_SSE_LEVEL=SK_CPU_SSE_LEVEL_SSSE3" ]
   } else {
     cflags = [ "-mssse3" ]
-    if (!is_win) {
-      cflags += [
-        "-fomit-frame-pointer",
-        "-momit-leaf-frame-pointer",
-      ]
-    } else {
-      cflags += [ "/Oy-" ]
-    }
-  }
-}
-
-opts("sse42") {
-  enabled = is_x86
-  sources = skia_opts.sse42_sources
-  if (!is_clang && is_win) {
-    defines = [ "SK_CPU_SSE_LEVEL=SK_CPU_SSE_LEVEL_SSE42" ]
-  } else {
-    cflags = [ "-msse4.2" ]
-    if (!is_win) {
-      cflags += [
-        "-fomit-frame-pointer",
-        "-momit-leaf-frame-pointer",
-      ]
-    } else {
-      cflags += [ "/Oy-" ]
-    }
   }
 }
 
@@ -229,17 +192,6 @@ opts("avx") {
     cflags = [ "/arch:AVX" ]
   } else {
     cflags = [ "-mavx" ]
-    if (!is_win) {
-      cflags += [
-        "-fomit-frame-pointer",
-        "-momit-leaf-frame-pointer",
-      ]
-    } else {
-      cflags += [ "/Oy-" ]
-    }
-    if (is_mac && is_debug) {
-      cflags += [ "-fno-stack-check" ]  # Work around skia:9709
-    }
   }
 }
 
@@ -250,17 +202,6 @@ opts("hsw") {
     cflags = [ "/arch:AVX2" ]
   } else {
     cflags = [ "-march=haswell" ]
-    if (!is_win) {
-      cflags += [
-        "-fomit-frame-pointer",
-        "-momit-leaf-frame-pointer",
-      ]
-    } else {
-      cflags += [ "/Oy-" ]
-    }
-    if (is_mac && is_debug) {
-      cflags += [ "-fno-stack-check" ]  # Work around skia:9709
-    }
   }
 }
 
@@ -271,17 +212,6 @@ opts("skx") {
     cflags = [ "/arch:AVX512" ]
   } else {
     cflags = [ "-march=skylake-avx512" ]
-    if (!is_win) {
-      cflags += [
-        "-fomit-frame-pointer",
-        "-momit-leaf-frame-pointer",
-      ]
-    } else {
-      cflags += [ "/Oy-" ]
-    }
-    if (is_mac && is_debug) {
-      cflags += [ "-fno-stack-check" ]  # Work around skia:9709
-    }
   }
 }
 
@@ -815,6 +745,7 @@ if (skia_compile_sksl_tests) {
       "SKSL_STANDALONE",
       "SK_DISABLE_TRACING",
       "SK_ENABLE_SKVM",
+      "SK_ENABLE_SKSL_IN_RASTER_PIPELINE",
       "SK_ENABLE_SPIRV_CROSS",
       "SK_ENABLE_SPIRV_VALIDATION",
       "SK_ENABLE_WGSL_VALIDATION",
@@ -940,12 +871,6 @@ if (skia_compile_sksl_tests) {
     lang = "--skrp"
     settings = "--settings"
   }
-  compile_sksl("skvm_tests") {
-    sources = sksl_skvm_tests_sources
-    outExtensions = [ ".skvm" ]
-    lang = "--skvm"
-    settings = "--settings"
-  }
   compile_sksl("stage_tests") {
     sources = sksl_stage_tests_sources
     outExtensions = [ ".stage" ]
@@ -974,8 +899,6 @@ if (skia_compile_sksl_tests) {
   group("compile_sksl_hlsl_tests") {
   }
   group("compile_sksl_skrp_tests") {
-  }
-  group("compile_sksl_skvm_tests") {
   }
   group("compile_sksl_spirv_tests") {
   }
@@ -1054,7 +977,6 @@ optional("gpu") {
     ":compile_sksl_glsl_tests",
     ":compile_sksl_metal_tests",
     ":compile_sksl_skrp_tests",
-    ":compile_sksl_skvm_tests",
     ":compile_sksl_spirv_tests",
     ":gpu_shared",
     ":minify_sksl",
@@ -1175,11 +1097,10 @@ optional("gpu") {
   }
 }
 
-optional("piet") {
-  enabled = skia_use_piet
-  public_defines = [ "SK_ENABLE_PIET_GPU" ]
-  public_deps = [ "//third_party/piet-gpu" ]
-  sources = skia_piet_gpu_sources
+optional("vello") {
+  enabled = skia_enable_vello_shaders
+  public_defines = [ "SK_ENABLE_VELLO_SHADERS" ]
+  public_deps = [ "//third_party/vello" ]
 }
 
 optional("heif") {
@@ -1278,13 +1199,13 @@ optional("graphite") {
   enabled = skia_enable_graphite
   deps = [
     ":gpu_shared",
-    ":piet",
+    ":vello",
   ]
   public = skia_graphite_public
   sources = skia_graphite_sources
 
-  if (skia_use_piet) {
-    sources += skia_graphite_piet_sources
+  if (skia_enable_vello_shaders) {
+    sources += skia_graphite_vello_sources
   }
 
   if (skia_use_dawn) {
@@ -1319,12 +1240,6 @@ optional("pdf") {
   public_defines = [ "SK_SUPPORT_PDF" ]
 
   deps = [ "//third_party/zlib" ]
-  if (skia_use_libjpeg_turbo_decode) {
-    deps += [ ":jpeg_decode" ]
-  }
-  if (skia_use_libjpeg_turbo_encode) {
-    deps += [ ":jpeg_encode" ]
-  }
   public = skia_pdf_public
   sources = skia_pdf_sources
   sources_when_disabled = [ "src/pdf/SkDocument_PDF_None.cpp" ]
@@ -1334,6 +1249,22 @@ optional("pdf") {
   } else if (skia_use_icu && skia_use_sfntly) {
     deps += [ "//third_party/sfntly" ]
     defines = [ "SK_PDF_USE_SFNTLY" ]
+  }
+
+  if (skia_use_libjpeg_turbo_decode) {
+    deps += [
+      ":jpeg_decode",
+
+      # This is not a public_dep so we need to directly depend on it
+      # to use jpeg headers
+      "//third_party/libjpeg-turbo:libjpeg",
+    ]
+    sources += [ "src/pdf/SkJpegInfo_libjpegturbo.cpp" ]
+  } else {
+    sources += [ "src/pdf/SkJpegInfo_none.cpp" ]
+  }
+  if (skia_use_libjpeg_turbo_encode) {
+    deps += [ ":jpeg_encode" ]
   }
 }
 
@@ -1393,10 +1324,11 @@ optional("typeface_freetype") {
 }
 
 optional("typeface_fontations") {
+  public_defines = [ "SK_TYPEFACE_FACTORY_FONTATIONS" ]
   enabled = skia_use_fontations
   sources = [
     "src/ports/SkTypeface_fontations.cpp",
-    "src/ports/SkTypeface_fontations.h",
+    "src/ports/SkTypeface_fontations_priv.h",
   ]
 }
 
@@ -1493,20 +1425,18 @@ skia_component("skia") {
     ":android_utils",
     ":avif",
     ":avx",
-    ":crc32",
     ":fontmgr_factory",
     ":heif",
     ":hsw",
     ":jpeg_decode",
     ":jpegxl_decode",
     ":ndk_images",
-    ":piet",
     ":png_decode",
     ":raw",
     ":skvm_jit",
     ":skx",
-    ":sse42",
     ":ssse3",
+    ":vello",
     ":webp_decode",
     ":wuffs",
     ":xml",
@@ -1520,8 +1450,10 @@ skia_component("skia") {
 
   sources = []
   sources += skia_core_sources
-  sources += skia_utils_sources
+  sources += skia_utils_private
+  sources += skia_utils_chromium
   sources += skia_effects_sources
+  sources += skia_colorfilters_sources
   sources += skia_effects_imagefilter_sources
   sources += skia_codec_core
   sources += skia_codec_decode_bmp
@@ -1549,11 +1481,14 @@ skia_component("skia") {
   if (skia_enable_sksl) {
     deps += [ ":minify_sksl" ]
     sources += skia_sksl_sources
+    sources += skia_colorfilters_sksl_sources
 
     if (skia_enable_sksl_tracing) {
       defines += [ "SKSL_ENABLE_TRACING" ]
       sources += skia_sksl_tracing_sources
     }
+  } else {
+    sources += skia_colorfilters_nosksl_sources
   }
 
   if (skia_build_for_debugger) {
@@ -1690,9 +1625,7 @@ skia_static_library("pathkit") {
 
   deps = [
     ":avx",
-    ":crc32",
     ":hsw",
-    ":sse42",
     ":ssse3",
   ]
 
@@ -2388,6 +2321,7 @@ if (skia_enable_tools) {
     }
     test_app("imgcvt") {
       sources = [ "tools/imgcvt.cpp" ]
+      configs = [ ":our_vulkan_headers" ]
       deps = [
         ":skia",
         "modules/skcms",
@@ -2609,7 +2543,7 @@ if (skia_enable_tools) {
       "fuzz/FuzzCommon.cpp",
       "fuzz/FuzzCommon.h",
       "fuzz/FuzzCreateDDL.cpp",
-      "fuzz/FuzzCubicQuadRoots.cpp",
+      "fuzz/FuzzCubicRoots.cpp",
       "fuzz/FuzzDDLThreading.cpp",
       "fuzz/FuzzDrawFunctions.cpp",
       "fuzz/FuzzEncoders.cpp",
@@ -2619,6 +2553,7 @@ if (skia_enable_tools) {
       "fuzz/FuzzPathMeasure.cpp",
       "fuzz/FuzzPathop.cpp",
       "fuzz/FuzzPolyUtils.cpp",
+      "fuzz/FuzzQuadRoots.cpp",
       "fuzz/FuzzRegionOp.cpp",
       "fuzz/FuzzSkParagraph.cpp",
       "fuzz/FuzzTriangulation.cpp",
@@ -2751,8 +2686,6 @@ if (skia_enable_tools) {
       sources = [
         "modules/jetski/src/Canvas.cpp",
         "modules/jetski/src/ColorFilters.cpp",
-        "modules/jetski/src/Font.cpp",
-        "modules/jetski/src/FontChainAdapter.cpp",
         "modules/jetski/src/Gradients.cpp",
         "modules/jetski/src/Image.cpp",
         "modules/jetski/src/ImageFilter.cpp",
@@ -2768,7 +2701,6 @@ if (skia_enable_tools) {
         "modules/jetski/src/Surface.h",
         "modules/jetski/src/SurfaceThread.cpp",
         "modules/jetski/src/SurfaceThread.h",
-        "modules/jetski/src/Text.cpp",
         "modules/jetski/src/Utils.cpp",
       ]
       libs = [
@@ -2777,10 +2709,9 @@ if (skia_enable_tools) {
       ]
 
       deps = [
-        ":sk_app",
         ":skia",
-        "experimental/sktext:sktext",
         "modules/skottie:skottie",
+        "tools/window:window",
       ]
     }
   }
@@ -3041,6 +2972,7 @@ if (skia_enable_tools) {
         "tools/viewer/ManyRectsSlide.cpp",
         "tools/viewer/MaterialShadowsSlide.cpp",
         "tools/viewer/MegaStrokeSlide.cpp",
+        "tools/viewer/MeshSlide.cpp",
         "tools/viewer/MixerSlide.cpp",
         "tools/viewer/PatchSlide.cpp",
         "tools/viewer/PathClipSlide.cpp",
@@ -3589,10 +3521,18 @@ if (skia_enable_tools) {
       deps = []
     }
 
-    libfuzzer_app("cubic_quad_roots") {
+    libfuzzer_app("quad_roots") {
       sources = [
-        "fuzz/FuzzCubicQuadRoots.cpp",
-        "fuzz/oss_fuzz/FuzzCubicQuadRoots.cpp",
+        "fuzz/FuzzQuadRoots.cpp",
+        "fuzz/oss_fuzz/FuzzQuadRoots.cpp",
+      ]
+      deps = []
+    }
+
+    libfuzzer_app("cubic_roots") {
+      sources = [
+        "fuzz/FuzzCubicRoots.cpp",
+        "fuzz/oss_fuzz/FuzzCubicRoots.cpp",
       ]
       deps = []
     }

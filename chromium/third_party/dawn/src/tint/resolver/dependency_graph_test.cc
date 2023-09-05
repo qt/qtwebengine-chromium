@@ -23,12 +23,12 @@
 #include "src/tint/type/texture_dimension.h"
 #include "src/tint/utils/transform.h"
 
-using namespace tint::number_suffixes;  // NOLINT
-
 namespace tint::resolver {
 namespace {
 
 using ::testing::ElementsAre;
+using namespace tint::builtin::fluent_types;  // NOLINT
+using namespace tint::number_suffixes;        // NOLINT
 
 template <typename T>
 class ResolverDependencyGraphTestWithParam : public ResolverTestWithParam<T> {
@@ -1732,7 +1732,7 @@ TEST_F(ResolverDependencyGraphTraversalTest, SymbolsReached) {
     GlobalVar(Sym(), ty.array(T, V));
     GlobalVar(Sym(), ty.vec3(T));
     GlobalVar(Sym(), ty.mat3x2(T));
-    GlobalVar(Sym(), ty.pointer(T, builtin::AddressSpace::kPrivate));
+    GlobalVar(Sym(), ty.ptr<private_>(T));
     GlobalVar(Sym(), ty.sampled_texture(type::TextureDimension::k2d, T));
     GlobalVar(Sym(), ty.depth_texture(type::TextureDimension::k2d));
     GlobalVar(Sym(), ty.depth_multisampled_texture(type::TextureDimension::k2d));

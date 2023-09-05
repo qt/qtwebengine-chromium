@@ -18,8 +18,18 @@ TINT_INSTANTIATE_TYPEINFO(tint::ir::Switch);
 
 namespace tint::ir {
 
-Switch::Switch() : Base() {}
+Switch::Switch(Value* cond) {
+    TINT_ASSERT(IR, cond);
+
+    AddOperand(Switch::kConditionOperandOffset, cond);
+}
 
 Switch::~Switch() = default;
+
+void Switch::ForeachBlock(const std::function<void(ir::Block*)>& cb) {
+    for (auto& c : cases_) {
+        cb(c.Block());
+    }
+}
 
 }  // namespace tint::ir

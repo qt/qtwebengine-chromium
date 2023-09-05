@@ -102,15 +102,15 @@ static GLFWwindow* window = nullptr;
 
 static dawn::wire::WireServer* wireServer = nullptr;
 static dawn::wire::WireClient* wireClient = nullptr;
-static utils::TerribleCommandBuffer* c2sBuf = nullptr;
-static utils::TerribleCommandBuffer* s2cBuf = nullptr;
+static dawn::utils::TerribleCommandBuffer* c2sBuf = nullptr;
+static dawn::utils::TerribleCommandBuffer* s2cBuf = nullptr;
 
 static constexpr uint32_t kWidth = 640;
 static constexpr uint32_t kHeight = 480;
 
 wgpu::Device CreateCppDawnDevice() {
-    ScopedEnvironmentVar angleDefaultPlatform;
-    if (GetEnvironmentVar("ANGLE_DEFAULT_PLATFORM").first.empty()) {
+    dawn::ScopedEnvironmentVar angleDefaultPlatform;
+    if (dawn::GetEnvironmentVar("ANGLE_DEFAULT_PLATFORM").first.empty()) {
         angleDefaultPlatform.Set("ANGLE_DEFAULT_PLATFORM", "swiftshader");
     }
 
@@ -128,21 +128,15 @@ wgpu::Device CreateCppDawnDevice() {
     }
 
     instance = std::make_unique<dawn::native::Instance>();
-    instance->DiscoverDefaultAdapters();
+
+    wgpu::RequestAdapterOptionsBackendType backendTypeOptions = {};
+    backendTypeOptions.backendType = backendType;
+
+    wgpu::RequestAdapterOptions options = {};
+    options.nextInChain = &backendTypeOptions;
 
     // Get an adapter for the backend to use, and create the device.
-    dawn::native::Adapter backendAdapter;
-    {
-        std::vector<dawn::native::Adapter> adapters = instance->GetAdapters();
-        auto adapterIt = std::find_if(adapters.begin(), adapters.end(),
-                                      [](const dawn::native::Adapter adapter) -> bool {
-                                          wgpu::AdapterProperties properties;
-                                          adapter.GetProperties(&properties);
-                                          return properties.backendType == backendType;
-                                      });
-        ASSERT(adapterIt != adapters.end());
-        backendAdapter = *adapterIt;
-    }
+    dawn::native::Adapter backendAdapter = instance->EnumerateAdapters(&options)[0];
 
     std::vector<const char*> enableToggleNames;
     std::vector<const char*> disabledToggleNames;
@@ -194,8 +188,8 @@ wgpu::Device CreateCppDawnDevice() {
             break;
 
         case CmdBufType::Terrible: {
-            c2sBuf = new utils::TerribleCommandBuffer();
-            s2cBuf = new utils::TerribleCommandBuffer();
+            c2sBuf = new dawn::utils::TerribleCommandBuffer();
+            s2cBuf = new dawn::utils::TerribleCommandBuffer();
 
             dawn::wire::WireServerDescriptor serverDesc = {};
             serverDesc.procs = &backendProcs;
@@ -216,7 +210,7 @@ wgpu::Device CreateCppDawnDevice() {
                                      deviceReservation.generation);
             cDevice = deviceReservation.device;
 
-            auto swapChainReservation = wireClient->ReserveSwapChain(cDevice);
+            auto swapChainReservation = wireClient->ReserveSwapChain(cDevice, &swapChainDesc);
             wireServer->InjectSwapChain(backendSwapChain, swapChainReservation.id,
                                         swapChainReservation.generation, deviceReservation.id,
                                         deviceReservation.generation);

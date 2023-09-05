@@ -14,6 +14,7 @@ const params = new URLSearchParams(window.location.search);
 const track = params.get('track');
 const fileName = params.get('fileName');
 const expanded = params.get('expanded');
+const darkMode = params.get('darkMode');
 
 const customStartWindowTime = params.get('windowStart');
 const customEndWindowTime = params.get('windowEnd');
@@ -23,9 +24,14 @@ await renderContent(expanded === 'false' ? false : true);
 
 type FlameChartData = {
   flameChart: PerfUI.FlameChart.FlameChart,
-  dataProvider: Timeline.TimelineFlameChartDataProvider.TimelineFlameChartDataProvider,
+  dataProvider: Timeline.TimelineFlameChartDataProvider.TimelineFlameChartDataProvider|
+              Timeline.TimelineFlameChartNetworkDataProvider.TimelineFlameChartNetworkDataProvider,
 };
 async function renderContent(expanded: boolean) {
+  if (darkMode) {
+    document.documentElement.classList.add('-theme-with-dark-background');
+  }
+
   const container = document.getElementById('container');
   if (!container) {
     throw new Error('could not find container');
@@ -50,6 +56,8 @@ async function renderContent(expanded: boolean) {
     } else if (track in TimelineModel.TimelineModel.TrackType) {
       flameChartData = await FrontendHelpers.getMainFlameChartWithLegacyTrack(
           file, track as TimelineModel.TimelineModel.TrackType, expanded);
+    } else if (track === 'Network') {
+      flameChartData = await FrontendHelpers.getNetworkFlameChartWithLegacyTrack(file, expanded);
     } else {
       p.classList.remove('loading');
       p.innerText = `Invalid track name: ${track}`;

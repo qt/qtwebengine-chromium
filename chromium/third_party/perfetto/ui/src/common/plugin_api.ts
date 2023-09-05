@@ -18,6 +18,8 @@ import {TrackCreator} from '../frontend/track';
 
 export {EngineProxy} from '../common/engine';
 export {
+  LONG,
+  LONG_NULL,
   NUM,
   NUM_NULL,
   STR,

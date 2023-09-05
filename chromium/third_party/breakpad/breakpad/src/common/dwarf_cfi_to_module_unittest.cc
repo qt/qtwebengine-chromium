@@ -311,8 +311,8 @@ TEST(RegisterNames, X86_64) {
 TEST(RegisterNames, RISCV) {
   vector<string> names = DwarfCFIToModule::RegisterNames::RISCV();
 
-  EXPECT_EQ("x0", names[0]);
-  EXPECT_EQ("x31", names[31]);
+  EXPECT_EQ("pc", names[0]);
+  EXPECT_EQ("t6", names[31]);
   EXPECT_EQ("f0", names[32]);
   EXPECT_EQ("f31", names[63]);
   EXPECT_EQ("v0", names[96]);

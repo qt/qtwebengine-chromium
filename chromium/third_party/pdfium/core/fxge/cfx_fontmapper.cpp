@@ -19,6 +19,7 @@
 #include "core/fxcrt/fx_memory.h"
 #include "core/fxcrt/fx_memory_wrappers.h"
 #include "core/fxcrt/stl_util.h"
+#include "core/fxcrt/unowned_ptr_exclusion.h"
 #include "core/fxge/cfx_fontmgr.h"
 #include "core/fxge/cfx_substfont.h"
 #include "core/fxge/fx_font.h"
@@ -390,7 +391,7 @@ class ScopedFontDeleter {
 
  private:
   UnownedPtr<SystemFontInfoIface> const font_info_;
-  void* const font_;
+  UNOWNED_PTR_EXCLUSION void* const font_;  // void type incompatible.
 };
 
 }  // namespace
@@ -715,7 +716,7 @@ RetainPtr<CFX_Face> CFX_FontMapper::FindSubstFont(const ByteString& name,
   }
 
   if (Charset == FX_Charset::kSymbol) {
-#if BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_WIN)
     if (subst_name == "Symbol") {
       subst_font->m_Family = "Chrome Symbol";
       subst_font->m_Charset = FX_Charset::kSymbol;

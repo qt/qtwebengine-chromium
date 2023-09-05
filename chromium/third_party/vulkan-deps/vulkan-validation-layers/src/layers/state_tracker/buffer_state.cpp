@@ -21,7 +21,7 @@
 #include "generated/layer_chassis_dispatch.h"
 #include "state_tracker/state_tracker.h"
 
-static VkExternalMemoryHandleTypeFlags GetExternalHandleType(const VkBufferCreateInfo *create_info) {
+static VkExternalMemoryHandleTypeFlags GetExternalHandleTypes(const VkBufferCreateInfo *create_info) {
     const auto *external_memory_info = LvlFindInChain<VkExternalMemoryBufferCreateInfo>(create_info->pNext);
     return external_memory_info ? external_memory_info->handleTypes : 0;
 }
@@ -34,11 +34,9 @@ static VkMemoryRequirements GetMemoryRequirements(ValidationStateTracker *dev_da
 
 BUFFER_STATE::BUFFER_STATE(ValidationStateTracker *dev_data, VkBuffer buff, const VkBufferCreateInfo *pCreateInfo)
     : BINDABLE(buff, kVulkanObjectTypeBuffer, (pCreateInfo->flags & VK_BUFFER_CREATE_SPARSE_BINDING_BIT) != 0,
-               (pCreateInfo->flags & VK_BUFFER_CREATE_PROTECTED_BIT) == 0, GetExternalHandleType(pCreateInfo)),
+               (pCreateInfo->flags & VK_BUFFER_CREATE_PROTECTED_BIT) == 0, GetExternalHandleTypes(pCreateInfo)),
       safe_create_info(pCreateInfo),
       createInfo(*safe_create_info.ptr()),
-      deviceAddress(0),
       requirements(GetMemoryRequirements(dev_data, buff)),
-      memory_requirements_checked(false),
       supported_video_profiles(
           dev_data->video_profile_cache_.Get(dev_data, LvlFindInChain<VkVideoProfileListInfoKHR>(pCreateInfo->pNext))) {}

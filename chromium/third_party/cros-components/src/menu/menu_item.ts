@@ -68,22 +68,29 @@ export class MenuItem extends LitElement implements MenuItemType {
   /**
    * Headline is the primary text of the list item, name follows from
    * md-menu-item.
+   * @export
    */
   headline: string;
+  /** @export */
   itemStart: 'icon'|'';
+  /** @export */
   itemEnd: 'shortcut'|'icon'|'switch'|null;
 
   // The following properties are necessary for wrapping and keyboard
   // navigation
   /**
    * Whether or not the menu-item is disabled.
+   * @export
    */
   disabled: boolean;
+  /** @export */
   readonly isMenuItem: boolean;
+  /** @export */
   readonly isListItem: boolean;
   /**
    * Whether or not the element is actively being interacted with by md-list.
    * When active, tabindex is set to 0, and focuses the underlying item.
+   * @export
    */
   active: boolean;
 

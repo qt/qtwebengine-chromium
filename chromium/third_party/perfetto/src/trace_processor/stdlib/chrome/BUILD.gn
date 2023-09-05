@@ -15,5 +15,12 @@
 import("../../../../gn/perfetto_sql.gni")
 
 perfetto_sql_source_set("chrome_sql") {
-  sources = [ "cpu_powerups.sql" ]
+  sources = [
+    "chrome_scroll_janks.sql",
+    "chrome_scrolls.sql",
+    "cpu_powerups.sql",
+    "histograms.sql",
+    "metadata.sql",
+    "speedometer.sql",
+  ]
 }

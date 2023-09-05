@@ -44,11 +44,14 @@ namespace tint {
 
 class Program;
 
+namespace ast::transform {
+class Transform;
+class VertexPulling;
+}  // namespace ast::transform
+
 namespace transform {
 class DataMap;
 class Manager;
-class Transform;
-class VertexPulling;
 }  // namespace transform
 
 }  // namespace tint
@@ -118,7 +121,7 @@ ResultOrError<Extent3D> ValidateComputeStageWorkgroupSize(
 
 RequiredBufferSizes ComputeRequiredBufferSizesForLayout(const EntryPointMetadata& entryPoint,
                                                         const PipelineLayoutBase* layout);
-ResultOrError<tint::Program> RunTransforms(tint::transform::Transform* transform,
+ResultOrError<tint::Program> RunTransforms(tint::transform::Manager* transformManager,
                                            const tint::Program* program,
                                            const tint::transform::DataMap& inputs,
                                            tint::transform::DataMap* outputs,
@@ -194,7 +197,7 @@ struct EntryPointMetadata {
 
     // An array to record the basic types (float, int and uint) of the fragment shader outputs.
     struct FragmentOutputVariableInfo {
-        wgpu::TextureComponentType baseType;
+        TextureComponentType baseType;
         uint8_t componentCount;
     };
     ityp::array<ColorAttachmentIndex, FragmentOutputVariableInfo, kMaxColorAttachments>

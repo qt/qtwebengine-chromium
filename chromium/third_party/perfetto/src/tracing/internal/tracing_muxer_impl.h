@@ -300,7 +300,7 @@ class TracingMuxerImpl : public TracingMuxer {
     void OnAttach(bool success, const TraceConfig&) override;
     void OnTraceStats(bool success, const TraceStats&) override;
     void OnObservableEvents(const ObservableEvents&) override;
-    void OnSessionCloned(bool, const std::string&) override;
+    void OnSessionCloned(const OnSessionClonedArgs&) override;
 
     void NotifyStartComplete();
     void NotifyError(const TracingError&);
@@ -502,8 +502,6 @@ class TracingMuxerImpl : public TracingMuxer {
       uint32_t backend_connection_id,
       DataSourceInstanceID,
       const DataSourceConfig&,
-      uint64_t config_hash,
-      uint64_t startup_config_hash,
       TracingSessionGlobalID startup_session_id);
   void StartDataSourceImpl(const FindDataSourceRes&);
   void StopDataSource_AsyncBeginImpl(const FindDataSourceRes&);

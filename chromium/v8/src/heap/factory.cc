@@ -133,6 +133,10 @@ MaybeHandle<Code> Factory::CodeBuilder::BuildInternal(
   Handle<ByteArray> reloc_info =
       NewByteArray(code_desc_.reloc_size, AllocationType::kOld);
 
+  CodePageMemoryModificationScopeForPerf memory_write_scope(
+      "Temporary performance optimization to prevent frequent permission "
+      "switching.");
+
   // Basic block profiling data for builtins is stored in the JS heap rather
   // than in separately-allocated C++ objects. Allocate that data now if
   // appropriate.
@@ -152,7 +156,6 @@ MaybeHandle<Code> Factory::CodeBuilder::BuildInternal(
   Handle<Code> code;
   {
     static_assert(InstructionStream::kOnHeapBodyIsContiguous);
-    CodePageCollectionMemoryModificationScope code_allocation(isolate_->heap());
 
     Handle<InstructionStream> istream;
     if (!NewInstructionStream(retry_allocation_or_fail).ToHandle(&istream)) {
@@ -162,9 +165,11 @@ MaybeHandle<Code> Factory::CodeBuilder::BuildInternal(
     {
       DisallowGarbageCollection no_gc;
       InstructionStream raw_istream = *istream;
-
-      raw_istream.set_body_size(code_desc_.instruction_size() +
-                                code_desc_.metadata_size());
+      CodePageMemoryModificationScope memory_modification_scope(raw_istream);
+      int body_size = code_desc_.body_size();
+      ThreadIsolation::RegisterInstructionStreamAllocation(
+          raw_istream.address(), InstructionStream::SizeFor(body_size));
+      raw_istream.set_body_size(body_size);
       raw_istream.initialize_code_to_smi_zero(kReleaseStore);
       raw_istream.set_relocation_info(*reloc_info);
       raw_istream.clear_padding();
@@ -221,18 +226,22 @@ MaybeHandle<Code> Factory::CodeBuilder::BuildInternal(
                 handle(on_heap_profiler_data->counts(), isolate_));
       }
 
-      // Migrate generated code.
-      // The generated code can contain embedded objects (typically from
-      // handles) in a pointer-to-tagged-value format (i.e. with indirection
-      // like a handle) that are dereferenced during the copy to point directly
-      // to the actual heap objects. These pointers can include references to
-      // the code object itself, through the self_reference parameter.
-      code->CopyFromNoFlush(*reloc_info, isolate_->heap(), code_desc_);
+      {
+        CodePageMemoryModificationScope memory_modification_scope(raw_istream);
+        // Migrate generated code.
+        // The generated code can contain embedded objects (typically from
+        // handles) in a pointer-to-tagged-value format (i.e. with indirection
+        // like a handle) that are dereferenced during the copy to point
+        // directly to the actual heap objects. These pointers can include
+        // references to the code object itself, through the self_reference
+        // parameter.
+        code->CopyFromNoFlush(*reloc_info, isolate_->heap(), code_desc_);
 
-      // Now that the InstructionStream's body is fully initialized and
-      // relocated, publish its code pointer, effectively enabling RelocInfo
-      // iteration. See InstructionStream::BodyDescriptor::IterateBody.
-      raw_istream.set_code(*code, kReleaseStore);
+        // Now that the InstructionStream's body is fully initialized and
+        // relocated, publish its code pointer, effectively enabling RelocInfo
+        // iteration. See InstructionStream::BodyDescriptor::IterateBody.
+        raw_istream.set_code(*code, kReleaseStore);
+      }
 
 #ifdef VERIFY_HEAP
       if (v8_flags.verify_heap) {
@@ -288,8 +297,12 @@ MaybeHandle<InstructionStream> Factory::CodeBuilder::AllocateInstructionStream(
   // The code object has not been fully initialized yet.  We rely on the
   // fact that no allocation will happen from this point on.
   DisallowGarbageCollection no_gc;
-  result.set_map_after_allocation(
-      *isolate_->factory()->instruction_stream_map(), SKIP_WRITE_BARRIER);
+  {
+    CodePageMemoryModificationScope memory_modification_scope(
+        BasicMemoryChunk::FromHeapObject(result));
+    result.set_map_after_allocation(
+        *isolate_->factory()->instruction_stream_map(), SKIP_WRITE_BARRIER);
+  }
   Handle<InstructionStream> istream =
       handle(InstructionStream::cast(result), isolate_);
   DCHECK(IsAligned(istream->instruction_start(), kCodeAlignment));
@@ -313,8 +326,13 @@ Factory::CodeBuilder::AllocateConcurrentSparkplugInstructionStream(
   // The code object has not been fully initialized yet.  We rely on the
   // fact that no allocation will happen from this point on.
   DisallowGarbageCollection no_gc;
-  result.set_map_after_allocation(
-      *local_isolate_->factory()->instruction_stream_map(), SKIP_WRITE_BARRIER);
+  {
+    CodePageMemoryModificationScope memory_modification_scope(
+        BasicMemoryChunk::FromHeapObject(result));
+    result.set_map_after_allocation(
+        *local_isolate_->factory()->instruction_stream_map(),
+        SKIP_WRITE_BARRIER);
+  }
   Handle<InstructionStream> istream =
       handle(InstructionStream::cast(result), local_isolate_);
   DCHECK(IsAligned(istream->instruction_start(), kCodeAlignment));
@@ -419,6 +437,11 @@ Handle<EnumCache> Factory::NewEnumCache(Handle<FixedArray> keys,
   return handle(result, isolate());
 }
 
+Handle<Tuple2> Factory::NewTuple2Uninitialized(AllocationType allocation) {
+  auto result = NewStructInternal<Tuple2>(TUPLE2_TYPE, allocation);
+  return handle(result, isolate());
+}
+
 Handle<Tuple2> Factory::NewTuple2(Handle<Object> value1, Handle<Object> value2,
                                   AllocationType allocation) {
   auto result = NewStructInternal<Tuple2>(TUPLE2_TYPE, allocation);
@@ -430,7 +453,7 @@ Handle<Tuple2> Factory::NewTuple2(Handle<Object> value1, Handle<Object> value2,
 
 Handle<Oddball> Factory::NewOddball(Handle<Map> map, const char* to_string,
                                     Handle<Object> to_number,
-                                    const char* type_of, byte kind) {
+                                    const char* type_of, uint8_t kind) {
   Handle<Oddball> oddball(Oddball::cast(New(map, AllocationType::kReadOnly)),
                           isolate());
   Oddball::Initialize(isolate(), oddball, to_string, to_number, type_of, kind);
@@ -621,7 +644,7 @@ Handle<PropertyDescriptorObject> Factory::NewPropertyDescriptorObject() {
       PROPERTY_DESCRIPTOR_OBJECT_TYPE, AllocationType::kYoung);
   DisallowGarbageCollection no_gc;
   object.set_flags(0);
-  Oddball the_hole = read_only_roots().the_hole_value();
+  Hole the_hole = read_only_roots().the_hole_value();
   object.set_value(the_hole, SKIP_WRITE_BARRIER);
   object.set_get(the_hole, SKIP_WRITE_BARRIER);
   object.set_set(the_hole, SKIP_WRITE_BARRIER);
@@ -650,8 +673,7 @@ Handle<SwissNameDictionary> Factory::CreateCanonicalEmptySwissNameDictionary() {
 }
 
 // Internalized strings are created in the old generation (data space).
-Handle<String> Factory::InternalizeUtf8String(
-    const base::Vector<const char>& string) {
+Handle<String> Factory::InternalizeUtf8String(base::Vector<const char> string) {
   base::Vector<const uint8_t> utf8_data =
       base::Vector<const uint8_t>::cast(string);
   Utf8Decoder decoder(utf8_data);
@@ -773,8 +795,8 @@ MaybeHandle<String> NewStringFromUtf8Variant(Isolate* isolate,
 }  // namespace
 
 MaybeHandle<String> Factory::NewStringFromUtf8(
-    const base::Vector<const uint8_t>& string,
-    unibrow::Utf8Variant utf8_variant, AllocationType allocation) {
+    base::Vector<const uint8_t> string, unibrow::Utf8Variant utf8_variant,
+    AllocationType allocation) {
   if (string.size() > kMaxInt) {
     // The Utf8Decode can't handle longer inputs, and we couldn't create
     // strings from them anyway.
@@ -785,8 +807,8 @@ MaybeHandle<String> Factory::NewStringFromUtf8(
                                   allocation);
 }
 
-MaybeHandle<String> Factory::NewStringFromUtf8(
-    const base::Vector<const char>& string, AllocationType allocation) {
+MaybeHandle<String> Factory::NewStringFromUtf8(base::Vector<const char> string,
+                                               AllocationType allocation) {
   return NewStringFromUtf8(base::Vector<const uint8_t>::cast(string),
                            unibrow::Utf8Variant::kLossyUtf8, allocation);
 }
@@ -829,14 +851,14 @@ namespace {
 struct Wtf16Decoder {
   int length_;
   bool is_one_byte_;
-  explicit Wtf16Decoder(const base::Vector<const uint16_t>& data)
+  explicit Wtf16Decoder(base::Vector<const uint16_t> data)
       : length_(data.length()),
         is_one_byte_(String::IsOneByte(data.begin(), length_)) {}
   bool is_invalid() const { return false; }
   bool is_one_byte() const { return is_one_byte_; }
   int utf16_length() const { return length_; }
   template <typename Char>
-  void Decode(Char* out, const base::Vector<const uint16_t>& data) {
+  void Decode(Char* out, base::Vector<const uint16_t> data) {
     CopyChars(out, data.begin(), length_);
   }
 };
@@ -939,7 +961,7 @@ MaybeHandle<String> Factory::NewStringFromTwoByte(const base::uc16* string,
 }
 
 MaybeHandle<String> Factory::NewStringFromTwoByte(
-    const base::Vector<const base::uc16>& string, AllocationType allocation) {
+    base::Vector<const base::uc16> string, AllocationType allocation) {
   return NewStringFromTwoByte(string.begin(), string.length(), allocation);
 }
 
@@ -951,7 +973,7 @@ MaybeHandle<String> Factory::NewStringFromTwoByte(
 
 #if V8_ENABLE_WEBASSEMBLY
 MaybeHandle<String> Factory::NewStringFromTwoByteLittleEndian(
-    const base::Vector<const base::uc16>& str, AllocationType allocation) {
+    base::Vector<const base::uc16> str, AllocationType allocation) {
 #if defined(V8_TARGET_LITTLE_ENDIAN)
   return NewStringFromTwoByte(str, allocation);
 #elif defined(V8_TARGET_BIG_ENDIAN)
@@ -1791,7 +1813,7 @@ Handle<WasmArray> Factory::NewWasmArray(const wasm::ArrayType* type,
       wasm::WasmValue packed = initial_value.Packed(type->element_type());
       for (uint32_t i = 0; i < length; i++) {
         Address address = result.ElementAddress(i);
-        packed.CopyTo(reinterpret_cast<byte*>(address));
+        packed.CopyTo(reinterpret_cast<uint8_t*>(address));
       }
     }
   } else {
@@ -1813,7 +1835,7 @@ Handle<WasmArray> Factory::NewWasmArrayFromElements(
       Address address = result.ElementAddress(i);
       elements[i]
           .Packed(type->element_type())
-          .CopyTo(reinterpret_cast<byte*>(address));
+          .CopyTo(reinterpret_cast<uint8_t*>(address));
     }
   } else {
     for (uint32_t i = 0; i < length; i++) {
@@ -1879,7 +1901,9 @@ Handle<WasmStruct> Factory::NewWasmStruct(const wasm::StructType* type,
     int offset = type->field_offset(i);
     if (type->field(i).is_numeric()) {
       Address address = result.RawFieldAddress(offset);
-      args[i].Packed(type->field(i)).CopyTo(reinterpret_cast<byte*>(address));
+      args[i]
+          .Packed(type->field(i))
+          .CopyTo(reinterpret_cast<uint8_t*>(address));
     } else {
       offset += WasmStruct::kHeaderSize;
       TaggedField<Object>::store(result, offset, *args[i].to_ref());
@@ -2063,6 +2087,7 @@ Handle<Map> Factory::NewMap(InstanceType type, int instance_size,
                 V8HeapCompressionScheme::CompressObject(result.ptr()) >
                     InstanceTypeChecker::kNonJsReceiverMapLimit);
 #endif
+  isolate()->counters()->maps_created()->Increment();
   return handle(InitializeMap(Map::cast(result), type, instance_size,
                               elements_kind, inobject_properties, roots),
                 isolate());
@@ -2085,7 +2110,10 @@ Map Factory::InitializeMap(Map map, InstanceType type, int instance_size,
   map.init_prototype_and_constructor_or_back_pointer(ro_roots);
   map.set_instance_size(instance_size);
   if (map.IsJSObjectMap()) {
-    DCHECK(!ReadOnlyHeap::Contains(map));
+    // Shared space JS objects have fixed layout and can have RO maps. No other
+    // JS objects have RO maps.
+    DCHECK_IMPLIES(!map.IsAlwaysSharedSpaceJSObjectMap(),
+                   !ReadOnlyHeap::Contains(map));
     map.SetInObjectPropertiesStartInWords(instance_size / kTaggedSize -
                                           inobject_properties);
     DCHECK_EQ(map.GetInObjectProperties(), inobject_properties);
@@ -2493,12 +2521,6 @@ Handle<JSObject> Factory::NewExternal(void* value) {
   return external;
 }
 
-Handle<DeoptimizationLiteralArray> Factory::NewDeoptimizationLiteralArray(
-    int length) {
-  return Handle<DeoptimizationLiteralArray>::cast(
-      NewWeakFixedArray(length, AllocationType::kOld));
-}
-
 Handle<Code> Factory::NewCodeObjectForEmbeddedBuiltin(Handle<Code> code,
                                                       Address off_heap_entry) {
   CHECK_NOT_NULL(isolate()->embedded_blob_code());
@@ -2574,7 +2596,6 @@ Handle<BytecodeArray> Factory::CopyBytecodeArray(Handle<BytecodeArray> source) {
   copy.set_handler_table(raw_source.handler_table());
   copy.set_source_position_table(raw_source.source_position_table(kAcquireLoad),
                                  kReleaseStore);
-  copy.set_bytecode_age(raw_source.bytecode_age());
   raw_source.CopyBytecodesTo(copy);
   return handle(copy, isolate());
 }
@@ -2650,7 +2671,7 @@ Handle<JSGlobalObject> Factory::NewJSGlobalObject(
   // Create a new map for the global object.
   Handle<Map> new_map = Map::CopyDropDescriptors(isolate(), map);
   Map raw_map = *new_map;
-  raw_map.set_may_have_interesting_symbols(true);
+  raw_map.set_may_have_interesting_properties(true);
   raw_map.set_is_dictionary_map(true);
   LOG(isolate(), MapDetails(raw_map));
 
@@ -2876,18 +2897,22 @@ Handle<FixedArrayBase> Factory::NewJSArrayStorage(
   DCHECK_GT(capacity, 0);
   Handle<FixedArrayBase> elms;
   if (IsDoubleElementsKind(elements_kind)) {
-    if (mode == DONT_INITIALIZE_ARRAY_ELEMENTS) {
+    if (mode == ArrayStorageAllocationMode::DONT_INITIALIZE_ARRAY_ELEMENTS) {
       elms = NewFixedDoubleArray(capacity);
     } else {
-      DCHECK(mode == INITIALIZE_ARRAY_ELEMENTS_WITH_HOLE);
+      DCHECK_EQ(
+          mode,
+          ArrayStorageAllocationMode::INITIALIZE_ARRAY_ELEMENTS_WITH_HOLE);
       elms = NewFixedDoubleArrayWithHoles(capacity);
     }
   } else {
     DCHECK(IsSmiOrObjectElementsKind(elements_kind));
-    if (mode == DONT_INITIALIZE_ARRAY_ELEMENTS) {
+    if (mode == ArrayStorageAllocationMode::DONT_INITIALIZE_ARRAY_ELEMENTS) {
       elms = NewFixedArray(capacity);
     } else {
-      DCHECK(mode == INITIALIZE_ARRAY_ELEMENTS_WITH_HOLE);
+      DCHECK_EQ(
+          mode,
+          ArrayStorageAllocationMode::INITIALIZE_ARRAY_ELEMENTS_WITH_HOLE);
       elms = NewFixedArrayWithHoles(capacity);
     }
   }
@@ -3332,7 +3357,7 @@ Handle<JSGlobalProxy> Factory::NewUninitializedJSGlobalProxy(int size) {
     DisallowGarbageCollection no_gc;
     Map raw = *map;
     raw.set_is_access_check_needed(true);
-    raw.set_may_have_interesting_symbols(true);
+    raw.set_may_have_interesting_properties(true);
     LOG(isolate(), MapDetails(raw));
   }
   Handle<JSGlobalProxy> proxy = Handle<JSGlobalProxy>::cast(
@@ -3791,7 +3816,16 @@ Handle<Map> Factory::CreateSloppyFunctionMap(
   }
   Handle<JSFunction> empty_function;
   if (maybe_empty_function.ToHandle(&empty_function)) {
+    // Temporarily set constructor to empty function to calm down map verifier.
+    map->SetConstructor(*empty_function);
     Map::SetPrototype(isolate(), map, empty_function);
+  } else {
+    // |maybe_empty_function| is allowed to be empty only during empty function
+    // creation.
+    DCHECK(isolate()
+               ->raw_native_context()
+               .get(Context::EMPTY_FUNCTION_INDEX)
+               .IsUndefined());
   }
 
   //
@@ -3880,6 +3914,8 @@ Handle<Map> Factory::CreateStrictFunctionMap(
     raw_map.set_has_prototype_slot(has_prototype);
     raw_map.set_is_constructor(has_prototype);
     raw_map.set_is_callable(true);
+    // Temporarily set constructor to empty function to calm down map verifier.
+    raw_map.SetConstructor(*empty_function);
   }
   Map::SetPrototype(isolate(), map, empty_function);
 
@@ -3944,6 +3980,8 @@ Handle<Map> Factory::CreateClassFunctionMap(Handle<JSFunction> empty_function) {
     raw_map.set_is_constructor(true);
     raw_map.set_is_prototype_map(true);
     raw_map.set_is_callable(true);
+    // Temporarily set constructor to empty function to calm down map verifier.
+    raw_map.SetConstructor(*empty_function);
   }
   Map::SetPrototype(isolate(), map, empty_function);
 
@@ -4076,7 +4114,7 @@ Handle<JSSharedArray> Factory::NewJSSharedArray(Handle<JSFunction> constructor,
 
 Handle<JSAtomicsMutex> Factory::NewJSAtomicsMutex() {
   SharedObjectSafePublishGuard publish_guard;
-  Handle<Map> map = isolate()->js_atomics_mutex_map();
+  Handle<Map> map = read_only_roots().js_atomics_mutex_map_handle();
   Handle<JSAtomicsMutex> mutex = Handle<JSAtomicsMutex>::cast(
       NewJSObjectFromMap(map, AllocationType::kSharedOld));
   mutex->set_state(JSAtomicsMutex::kUnlocked);
@@ -4086,7 +4124,7 @@ Handle<JSAtomicsMutex> Factory::NewJSAtomicsMutex() {
 
 Handle<JSAtomicsCondition> Factory::NewJSAtomicsCondition() {
   SharedObjectSafePublishGuard publish_guard;
-  Handle<Map> map = isolate()->js_atomics_condition_map();
+  Handle<Map> map = read_only_roots().js_atomics_condition_map_handle();
   Handle<JSAtomicsCondition> cond = Handle<JSAtomicsCondition>::cast(
       NewJSObjectFromMap(map, AllocationType::kSharedOld));
   cond->set_state(JSAtomicsCondition::kEmptyState);

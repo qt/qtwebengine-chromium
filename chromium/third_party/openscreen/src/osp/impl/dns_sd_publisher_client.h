@@ -7,7 +7,6 @@
 
 #include <memory>
 
-#include "discovery/common/reporting_client.h"
 #include "discovery/dnssd/public/dns_sd_service.h"
 #include "discovery/public/dns_sd_service_publisher.h"
 #include "osp/impl/service_publisher_impl.h"
@@ -19,11 +18,9 @@ class TaskRunner;
 
 namespace osp {
 
-class DnsSdPublisherClient final : public ServicePublisherImpl::Delegate,
-                                   openscreen::discovery::ReportingClient {
+class DnsSdPublisherClient final : public ServicePublisherImpl::Delegate {
  public:
-  DnsSdPublisherClient(ServicePublisher::Observer* observer,
-                       openscreen::TaskRunner* task_runner);
+  explicit DnsSdPublisherClient(TaskRunner& task_runner);
   ~DnsSdPublisherClient() override;
 
   // ServicePublisherImpl::Delegate overrides.
@@ -38,16 +35,11 @@ class DnsSdPublisherClient final : public ServicePublisherImpl::Delegate,
   DnsSdPublisherClient(const DnsSdPublisherClient&) = delete;
   DnsSdPublisherClient(DnsSdPublisherClient&&) noexcept = delete;
 
-  // openscreen::discovery::ReportingClient overrides.
-  void OnFatalError(Error) override;
-  void OnRecoverableError(Error) override;
-
   void StartPublisherInternal(const ServicePublisher::Config& config);
   SerialDeletePtr<discovery::DnsSdService> CreateDnsSdServiceInternal(
       const ServicePublisher::Config& config);
 
-  ServicePublisher::Observer* const observer_;
-  TaskRunner* const task_runner_;
+  TaskRunner& task_runner_;
   SerialDeletePtr<discovery::DnsSdService> dns_sd_service_;
 
   using OspDnsSdPublisher =

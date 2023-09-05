@@ -16,65 +16,90 @@
 -- All thread slices with data about thread, thread track and process.
 -- Where possible, use available view functions which filter this view.
 --
--- @column slice_id           Id of slice.
--- @column slice_name         Name of slice.
--- @column ts                 Timestamp of slice start.
--- @column dur                Duration of slice.
--- @column slice_depth        Depth of slice.
--- @column arg_set_id         Slice arg set id.
--- @column thread_track_id    Id of thread track.
--- @column thread_track_name  Name of thread track.
--- @column utid               Utid of thread with slice.
--- @column thread_name        Name of thread with slice.
--- @column upid               Upid of process with slice.
--- @column process_name       Name of process with slice.
+-- @column id                 Alias for `slice.id`.
+-- @column type               Alias for `slice.type`.
+-- @column ts                 Alias for `slice.ts`.
+-- @column dur                Alias for `slice.dur`.
+-- @column category           Alias for `slice.category`.
+-- @column name               Alias for `slice.name`.
+-- @column track_id           Alias for `slice.track_id`.
+-- @column track_name         Alias for `thread_track.name`.
+-- @column thread_name        Alias for `thread.name`.
+-- @column utid               Alias for `thread.utid`.
+-- @column tid                Alias for `thread.tid`
+-- @column process_name       Alias for `process.name`.
+-- @column upid               Alias for `process.upid`.
+-- @column pid                Alias for `process.pid`.
+-- @column depth              Alias for `slice.depth`.
+-- @column parent_id          Alias for `slice.parent_id`.
+-- @column arg_set_id         Alias for `slice.arg_set_id`.
+-- @column thread_ts          Alias for `slice.thread_ts`.
+-- @column thread_dur         Alias for `slice.thread_dur`.
 CREATE VIEW thread_slice AS
 SELECT
-  slice.id AS slice_id,
-  slice.name AS slice_name,
-  ts,
-  dur,
-  slice.depth AS slice_depth,
-  slice.arg_set_id,
-  slice.track_id AS thread_track_id,
-  thread_track.name AS thread_track_name,
-  utid,
+  slice.id,
+  slice.ts,
+  slice.dur,
+  slice.category,
+  slice.name,
+  slice.track_id,
+  thread_track.name AS track_name,
   thread.name AS thread_name,
-  upid,
-  process.name AS process_name
+  thread.utid,
+  thread.tid,
+  process.name AS process_name,
+  process.upid,
+  process.pid,
+  slice.depth,
+  slice.parent_id,
+  slice.arg_set_id,
+  slice.thread_ts,
+  slice.thread_dur
 FROM slice
 JOIN thread_track ON slice.track_id = thread_track.id
-JOIN thread using (utid)
-LEFT JOIN process using (upid);
+JOIN thread USING (utid)
+LEFT JOIN process USING (upid);
 
 -- All process slices with data about process track and process.
 -- Where possible, use available view functions which filter this view.
 --
--- @column slice_id           Id of slice.
--- @column slice_name         Name of slice.
--- @column ts                 Timestamp of slice start.
--- @column dur                Duration of slice.
--- @column slice_depth        Depth of slice.
--- @column arg_set_id         Slice arg set id.
--- @column process_track_id   Id of process track.
--- @column process_track_name Name of process track.
--- @column upid               Upid of process with slice.
--- @column process_name       Name of process with slice.
+-- @column id                 Alias for `slice.id`.
+-- @column type               Alias for `slice.type`.
+-- @column ts                 Alias for `slice.ts`.
+-- @column dur                Alias for `slice.dur`.
+-- @column category           Alias for `slice.category`.
+-- @column name               Alias for `slice.name`.
+-- @column track_id           Alias for `slice.track_id`.
+-- @column track_name         Alias for `process_track.name`.
+-- @column process_name       Alias for `process.name`.
+-- @column upid               Alias for `process.upid`.
+-- @column pid                Alias for `process.pid`.
+-- @column depth              Alias for `slice.depth`.
+-- @column parent_id          Alias for `slice.parent_id`.
+-- @column arg_set_id         Alias for `slice.arg_set_id`.
+-- @column thread_ts          Alias for `slice.thread_ts`.
+-- @column thread_dur         Alias for `slice.thread_dur`.
 CREATE VIEW process_slice AS
 SELECT
-  slice.id AS slice_id,
-  slice.name AS slice_name,
-  ts,
-  dur,
-  slice.depth AS slice_depth,
+  slice.id,
+  slice.type,
+  slice.ts,
+  slice.dur,
+  slice.category,
+  slice.name,
+  slice.track_id,
+  process_track.name AS track_name,
+  process.name AS process_name,
+  process.upid,
+  process.pid,
+  slice.depth,
+  slice.parent_id,
   slice.arg_set_id,
-  process_track.id AS process_track_id,
-  process_track.name AS process_track_name,
-  upid,
-  process.name AS process_name
+  slice.thread_ts,
+  slice.thread_dur
 FROM slice
 JOIN process_track ON slice.track_id = process_track.id
-JOIN process using (upid);
+JOIN process USING (upid);
 
 -- Checks if slice has an ancestor with provided name.
 --
@@ -95,6 +120,24 @@ SELECT
   '
 );
 
+-- Checks if slice has a descendant with provided name.
+-- @arg id INT                  Id of the slice to check descendants of.
+-- @arg descendant_name STRING  Name of potential descendant slice.
+-- @ret BOOL                    Whether `descendant_name` is a name of an descendant slice.
+SELECT
+  CREATE_FUNCTION(
+    'HAS_DESCENDANT_SLICE_WITH_NAME(id INT, descendant_name STRING)',
+    'BOOL',
+    '
+    SELECT EXISTS(
+      SELECT 1
+      FROM descendant_slice($id)
+      WHERE name = $descendant_name
+      LIMIT 1
+    );
+  '
+);
+
 -- Count slices with specified name.
 --
 -- @arg slice_glob STRING Name of the slices to counted.
@@ -103,4 +146,26 @@ SELECT CREATE_FUNCTION(
   'SLICE_COUNT(slice_glob STRING)',
   'INT',
   'SELECT COUNT(1) FROM slice WHERE name GLOB $slice_glob;'
+);
+
+
+-- Finds the end timestamp for a given slice's descendant with a given name.
+-- If there are multiple descendants with a given name, the function will return the
+-- first one, so it's most useful when working with a timeline broken down into phases,
+-- where each subphase can happen only once.
+-- @arg parent_id INT Id of the parent slice.
+-- @arg child_name STRING name of the child with the desired end TS.
+-- @ret INT end timestamp of the child or NULL if it doesn't exist.
+SELECT CREATE_FUNCTION(
+  'DESCENDANT_SLICE_END(parent_id INT, child_name STRING)',
+  'INT',
+  'SELECT
+    CASE WHEN s.dur
+      IS NOT -1 THEN s.ts + s.dur
+      ELSE NULL
+    END
+   FROM descendant_slice($parent_id) s
+   WHERE s.name = $child_name
+   LIMIT 1
+  '
 );

@@ -248,6 +248,9 @@ export interface InspectorFrontendHostAPI {
 
   platform(): string;
 
+  recordCountHistogram(histogramName: string, sample: number, min: number, exclusiveMax: number, bucketSize: number):
+      void;
+
   recordEnumeratedHistogram(actionName: EnumeratedHistogram, actionCode: number, bucketSize: number): void;
 
   recordPerformanceHistogram(histogramName: string, duration: number): void;
@@ -321,6 +324,12 @@ export interface ExtensionDescriptor {
   startPage: string;
   name: string;
   exposeExperimentalAPIs: boolean;
+  hostsPolicy?: ExtensionHostsPolicy;
+  allowFileAccess?: boolean;
+}
+export interface ExtensionHostsPolicy {
+  runtimeAllowedHosts: string[];
+  runtimeBlockedHosts: string[];
 }
 export interface ShowSurveyResult {
   surveyShown: boolean;
@@ -361,6 +370,7 @@ export enum EnumeratedHistogram {
   IssuesPanelOpenedFrom = 'DevTools.IssuesPanelOpenedFrom',
   IssuesPanelResourceOpened = 'DevTools.IssuesPanelResourceOpened',
   KeybindSetSettingChanged = 'DevTools.KeybindSetSettingChanged',
+  ElementsSidebarTabShown = 'DevTools.Elements.SidebarTabShown',
   ExperimentEnabledAtLaunch = 'DevTools.ExperimentEnabledAtLaunch',
   ExperimentEnabled = 'DevTools.ExperimentEnabled',
   ExperimentDisabled = 'DevTools.ExperimentDisabled',
@@ -379,6 +389,8 @@ export enum EnumeratedHistogram {
   RecordingReplaySpeed = 'DevTools.RecordingReplaySpeed',
   RecordingReplayStarted = 'DevTools.RecordingReplayStarted',
   RecordingToggled = 'DevTools.RecordingToggled',
+  SourcesSidebarTabShown = 'DevTools.Sources.SidebarTabShown',
+  SourcesPanelFileDebugged = 'DevTools.SourcesPanelFileDebugged',
   SourcesPanelFileOpened = 'DevTools.SourcesPanelFileOpened',
   NetworkPanelResponsePreviewOpened = 'DevTools.NetworkPanelResponsePreviewOpened',
   StyleTextCopied = 'DevTools.StyleTextCopied',
@@ -390,4 +402,7 @@ export enum EnumeratedHistogram {
   CSSPropertyDocumentation = 'DevTools.CSSPropertyDocumentation',
   InlineScriptParsed = 'DevTools.InlineScriptParsed',
   VMInlineScriptTypeShown = 'DevTools.VMInlineScriptShown',
+  BreakpointsRestoredFromStorageCount = 'DevTools.BreakpointsRestoredFromStorageCount',
+  SwatchActivated = 'DevTools.SwatchActivated',
+  BadgeActivated = 'DevTools.BadgeActivated',
 }

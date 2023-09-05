@@ -19,6 +19,7 @@
 #include "aom_mem/aom_mem.h"
 #include "av1/encoder/encoder.h"
 #include "av1/encoder/encoder_utils.h"
+#include "av1/encoder/pickcdef.h"
 #include "av1/encoder/picklpf.h"
 #include "av1/encoder/ratectrl.h"
 #include "av1/encoder/rc_utils.h"
@@ -314,6 +315,16 @@ AV1LoopfilterLevel AV1RateControlRTC::GetLoopfilterLevel() const {
   lpf_level.filter_level_v = cpi_->common.lf.filter_level_v;
 
   return lpf_level;
+}
+
+AV1CdefInfo AV1RateControlRTC::GetCdefInfo() const {
+  av1_pick_cdef_from_qp(&cpi_->common, 0, 0);
+  AV1CdefInfo cdef_level;
+  cdef_level.cdef_strength_y = cpi_->common.cdef_info.cdef_strengths[0];
+  cdef_level.cdef_strength_uv = cpi_->common.cdef_info.cdef_uv_strengths[0];
+  cdef_level.damping = cpi_->common.cdef_info.cdef_damping;
+
+  return cdef_level;
 }
 
 signed char *AV1RateControlRTC::GetCyclicRefreshMap() const {

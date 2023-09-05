@@ -35,12 +35,11 @@ class UIBrokerImpl : public UIBroker {
   void AddObserver(Observer *observer) override;
   void RemoveObserver(Observer *observer) override;
   void ShowDiscovery(
-      const FastPairDevice &device,
+      FastPairDevice &device,
       FastPairNotificationController &notification_controller) override;
 
  private:
-  void NotifyDiscoveryAction(const FastPairDevice &device,
-                             DiscoveryAction action);
+  void NotifyDiscoveryAction(FastPairDevice &device, DiscoveryAction action);
 
   std::unique_ptr<FastPairPresenter> fast_pair_presenter_;
   ObserverList<Observer> observers_;

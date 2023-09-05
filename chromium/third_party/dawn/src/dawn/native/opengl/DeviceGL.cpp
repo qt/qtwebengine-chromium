@@ -137,7 +137,7 @@ MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
     // extensions
     bool hasDebugOutput = gl.IsAtLeastGL(4, 3) || gl.IsAtLeastGLES(3, 2);
 
-    if (GetAdapter()->GetInstance()->IsBackendValidationEnabled() && hasDebugOutput) {
+    if (GetPhysicalDevice()->GetInstance()->IsBackendValidationEnabled() && hasDebugOutput) {
         gl.Enable(GL_DEBUG_OUTPUT);
         gl.Enable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
 
@@ -177,7 +177,7 @@ MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
 }
 
 const GLFormat& Device::GetGLFormat(const Format& format) {
-    ASSERT(format.isSupported);
+    ASSERT(format.IsSupported());
     ASSERT(format.GetIndex() < mFormatTable.size());
 
     const GLFormat& result = mFormatTable[format.GetIndex()];
@@ -255,8 +255,9 @@ ResultOrError<Ref<TextureViewBase>> Device::CreateTextureViewImpl(
 
 ResultOrError<wgpu::TextureUsage> Device::GetSupportedSurfaceUsageImpl(
     const Surface* surface) const {
-    wgpu::TextureUsage usages =
-        wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding;
+    wgpu::TextureUsage usages = wgpu::TextureUsage::RenderAttachment |
+                                wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopySrc |
+                                wgpu::TextureUsage::CopyDst;
     return usages;
 }
 

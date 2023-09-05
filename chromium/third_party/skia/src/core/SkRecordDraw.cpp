@@ -9,9 +9,9 @@
 #include "include/core/SkImage.h"
 #include "include/private/base/SkTDArray.h"
 #include "src/core/SkCanvasPriv.h"
-#include "src/core/SkColorFilterBase.h"
 #include "src/core/SkImageFilter_Base.h"
 #include "src/core/SkRecordDraw.h"
+#include "src/effects/colorfilters/SkColorFilterBase.h"
 #include "src/utils/SkPatchUtils.h"
 
 void SkRecordDraw(const SkRecord& record,
@@ -56,19 +56,6 @@ void SkRecordDraw(const SkRecord& record,
             // DRAW() macro.
             record.visit(i, draw);
         }
-    }
-}
-
-void SkRecordPartialDraw(const SkRecord& record, SkCanvas* canvas,
-                         SkPicture const* const drawablePicts[], int drawableCount,
-                         int start, int stop,
-                         const SkM44& initialCTM) {
-    SkAutoCanvasRestore saveRestore(canvas, true /*save now, restore at exit*/);
-
-    stop = std::min(stop, record.count());
-    SkRecords::Draw draw(canvas, drawablePicts, nullptr, drawableCount, &initialCTM);
-    for (int i = start; i < stop; i++) {
-        record.visit(i, draw);
     }
 }
 

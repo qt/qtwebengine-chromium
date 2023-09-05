@@ -35,6 +35,7 @@ import * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Bindings from '../../models/bindings/bindings.js';
+import * as Breakpoints from '../../models/breakpoints/breakpoints.js';
 import * as Extensions from '../../models/extensions/extensions.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import * as IconButton from '../../ui/components/icon_button/icon_button.js';
@@ -257,6 +258,10 @@ export class SourcesPanel extends UI.Panel.Panel implements UI.ContextMenu.Provi
     const navigatorMenuButton = new UI.Toolbar.ToolbarMenuButton(this.populateNavigatorMenu.bind(this), true);
     navigatorMenuButton.setTitle(i18nString(UIStrings.moreOptions));
     tabbedPane.rightToolbar().appendToolbarItem(navigatorMenuButton);
+    tabbedPane.addEventListener(
+        UI.TabbedPane.Events.TabSelected,
+        ({data: {tabId}}: Common.EventTarget.EventTargetEvent<UI.TabbedPane.EventData>): void =>
+            Host.userMetrics.sourcesSidebarTabShown(tabId));
 
     if (UI.ViewManager.ViewManager.instance().hasViewsForLocation('run-view-sidebar')) {
       const navigatorSplitWidget =
@@ -362,7 +367,7 @@ export class SourcesPanel extends UI.Panel.Panel implements UI.ContextMenu.Provi
     if (ThreadsSidebarPane.shouldBeShown() && !this.threadsSidebarPane) {
       this.threadsSidebarPane = UI.ViewManager.ViewManager.instance().view('sources.threads');
       if (this.sidebarPaneStack && this.threadsSidebarPane) {
-        void this.sidebarPaneStack.showView(
+        this.sidebarPaneStack.appendView(
             this.threadsSidebarPane, this.splitWidget.isVertical() ? this.watchSidebarPane : this.callstackPane);
       }
     }
@@ -669,7 +674,7 @@ export class SourcesPanel extends UI.Panel.Panel implements UI.ContextMenu.Provi
     const details = currentDebuggerModel ? currentDebuggerModel.debuggerPausedDetails() : null;
     await this.debuggerPausedMessage.render(
         details, Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance(),
-        Bindings.BreakpointManager.BreakpointManager.instance());
+        Breakpoints.BreakpointManager.BreakpointManager.instance());
     if (details) {
       this.updateDebuggerButtonsAndStatusForTest();
     }
@@ -876,7 +881,10 @@ export class SourcesPanel extends UI.Panel.Panel implements UI.ContextMenu.Provi
     const uiSourceCode = (target as Workspace.UISourceCode.UISourceCode);
     const eventTarget = (event.target as Node);
     if (!uiSourceCode.project().isServiceProject() &&
-        !eventTarget.isSelfOrDescendant(this.navigatorTabbedLocation.widget().element)) {
+        !eventTarget.isSelfOrDescendant(this.navigatorTabbedLocation.widget().element) &&
+        !(Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.JUST_MY_CODE) &&
+          Bindings.IgnoreListManager.IgnoreListManager.instance().isUserOrSourceMapIgnoreListedUISourceCode(
+              uiSourceCode))) {
       contextMenu.revealSection().appendItem(
           i18nString(UIStrings.revealInSidebar), this.handleContextMenuReveal.bind(this, uiSourceCode));
     }
@@ -1109,7 +1117,7 @@ export class SourcesPanel extends UI.Panel.Panel implements UI.ContextMenu.Provi
     this.sidebarPaneStack.appendApplicableItems('sources.sidebar-top');
 
     if (this.threadsSidebarPane) {
-      void this.sidebarPaneStack.showView(this.threadsSidebarPane);
+      this.sidebarPaneStack.appendView(this.threadsSidebarPane);
     }
 
     const jsBreakpoints = UI.ViewManager.ViewManager.instance().view('sources.jsBreakpoints');

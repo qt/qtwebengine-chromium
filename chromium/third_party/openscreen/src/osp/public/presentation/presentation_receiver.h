@@ -61,9 +61,9 @@ class ReceiverDelegate {
 class Receiver final : public MessageDemuxer::MessageCallback,
                        public Connection::ParentDelegate {
  public:
-  // TODO(crbug.com/openscreen/31): Remove singletons in the embedder API and
-  // protocol implementation layers.
-  static Receiver* Get();
+  Receiver();
+  ~Receiver() override;
+
   void Init();
   void Deinit();
 
@@ -115,9 +115,6 @@ class Receiver final : public MessageDemuxer::MessageCallback,
     uint64_t terminate_request_id;
     std::vector<Connection*> connections;
   };
-
-  Receiver();
-  ~Receiver() override;
 
   using QueuedResponseIterator = std::vector<QueuedResponse>::const_iterator;
 

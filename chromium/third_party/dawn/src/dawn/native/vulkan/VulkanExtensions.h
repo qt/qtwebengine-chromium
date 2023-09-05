@@ -97,6 +97,7 @@ enum class DeviceExt {
     // Promoted to 1.3
     ShaderIntegerDotProduct,
     ZeroInitializeWorkgroupMemory,
+    Maintenance4,
 
     // Others
     DepthClipEnable,
@@ -104,6 +105,7 @@ enum class DeviceExt {
     Swapchain,
     SubgroupSizeControl,
     QueueFamilyForeign,
+    Robustness2,
 
     // External* extensions
     ExternalMemoryAndroidHardwareBuffer,

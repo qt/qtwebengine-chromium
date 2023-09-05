@@ -5,35 +5,35 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkColorSpace.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSurface.h"
 #include "include/gpu/GrBackendSurface.h"
+#include "include/gpu/ganesh/mtl/SkSurfaceMetal.h"
 #include "include/gpu/mtl/GrMtlTypes.h"
 #include "src/gpu/ganesh/GrProxyProvider.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
 #include "src/gpu/ganesh/GrResourceProvider.h"
 #include "src/gpu/ganesh/GrResourceProviderPriv.h"
+#include "src/gpu/ganesh/GrSurface.h"
 #include "src/gpu/ganesh/SurfaceDrawContext.h"
+#include "src/gpu/ganesh/mtl/GrMtlTextureRenderTarget.h"
 #include "src/gpu/ganesh/surface/SkSurface_Ganesh.h"
 
-#if defined(SK_GANESH)
-
-#include "src/gpu/ganesh/GrSurface.h"
-#include "src/gpu/ganesh/mtl/GrMtlTextureRenderTarget.h"
-
-#ifdef SK_METAL
 #import <Metal/Metal.h>
 #import <MetalKit/MetalKit.h>
 #import <QuartzCore/CAMetalLayer.h>
 
-sk_sp<SkSurface> SkSurface::MakeFromCAMetalLayer(GrRecordingContext* rContext,
-                                                 GrMTLHandle layer,
-                                                 GrSurfaceOrigin origin,
-                                                 int sampleCnt,
-                                                 SkColorType colorType,
-                                                 sk_sp<SkColorSpace> colorSpace,
-                                                 const SkSurfaceProps* surfaceProps,
-                                                 GrMTLHandle* drawable) {
+namespace SkSurfaces {
+
+sk_sp<SkSurface> WrapCAMetalLayer(GrRecordingContext* rContext,
+                                  GrMTLHandle layer,
+                                  GrSurfaceOrigin origin,
+                                  int sampleCnt,
+                                  SkColorType colorType,
+                                  sk_sp<SkColorSpace> colorSpace,
+                                  const SkSurfaceProps* surfaceProps,
+                                  GrMTLHandle* drawable) {
     GrProxyProvider* proxyProvider = rContext->priv().proxyProvider();
 
     CAMetalLayer* metalLayer = (__bridge CAMetalLayer*)layer;
@@ -99,13 +99,13 @@ sk_sp<SkSurface> SkSurface::MakeFromCAMetalLayer(GrRecordingContext* rContext,
     return sk_make_sp<SkSurface_Ganesh>(std::move(device));
 }
 
-sk_sp<SkSurface> SkSurface::MakeFromMTKView(GrRecordingContext* rContext,
-                                            GrMTLHandle view,
-                                            GrSurfaceOrigin origin,
-                                            int sampleCnt,
-                                            SkColorType colorType,
-                                            sk_sp<SkColorSpace> colorSpace,
-                                            const SkSurfaceProps* surfaceProps) {
+sk_sp<SkSurface> WrapMTKView(GrRecordingContext* rContext,
+                             GrMTLHandle view,
+                             GrSurfaceOrigin origin,
+                             int sampleCnt,
+                             SkColorType colorType,
+                             sk_sp<SkColorSpace> colorSpace,
+                             const SkSurfaceProps* surfaceProps) {
     GrProxyProvider* proxyProvider = rContext->priv().proxyProvider();
 
     MTKView* mtkView = (__bridge MTKView*)view;
@@ -170,6 +170,4 @@ sk_sp<SkSurface> SkSurface::MakeFromMTKView(GrRecordingContext* rContext,
     return sk_make_sp<SkSurface_Ganesh>(std::move(device));
 }
 
-#endif
-
-#endif
+}  // namespace SkSurfaces

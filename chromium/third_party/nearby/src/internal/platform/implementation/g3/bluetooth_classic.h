@@ -16,6 +16,7 @@
 #define PLATFORM_IMPL_G3_BLUETOOTH_CLASSIC_H_
 
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "absl/container/flat_hash_map.h"
@@ -169,6 +170,24 @@ class BluetoothServerSocket : public api::BluetoothServerSocket {
   bool closed_ ABSL_GUARDED_BY(mutex_) = false;
 };
 
+// A concrete implementation for BluetoothPairing.
+class BluetoothPairing : public api::BluetoothPairing {
+ public:
+  explicit BluetoothPairing(api::BluetoothDevice& remote_device);
+  BluetoothPairing(const BluetoothPairing&) = default;
+  BluetoothPairing& operator=(const BluetoothPairing&) = default;
+  ~BluetoothPairing() override;
+
+  bool InitiatePairing(api::BluetoothPairingCallback pairing_cb) override;
+  bool FinishPairing(std::optional<absl::string_view> pin_code) override;
+  bool CancelPairing() override;
+  bool Unpair() override;
+  bool IsPaired() override;
+
+ private:
+  api::BluetoothDevice& remote_device_;
+};
+
 // Container of operations that can be performed over the Bluetooth Classic
 // medium.
 class BluetoothClassicMedium : public api::BluetoothClassicMedium {
@@ -232,6 +251,11 @@ class BluetoothClassicMedium : public api::BluetoothClassicMedium {
   std::unique_ptr<api::BluetoothServerSocket> ListenForService(
       const std::string& service_name, const std::string& service_uuid) override
       ABSL_LOCKS_EXCLUDED(mutex_);
+
+  // Return a Bluetooth pairing instance to handle the pairing process with the
+  // remote device.
+  std::unique_ptr<api::BluetoothPairing> CreatePairing(
+      api::BluetoothDevice& remote_device) override;
 
   api::BluetoothDevice* GetRemoteDevice(
       const std::string& mac_address) override;

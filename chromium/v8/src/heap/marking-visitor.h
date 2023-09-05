@@ -7,6 +7,7 @@
 
 #include "src/common/globals.h"
 #include "src/execution/isolate.h"
+#include "src/heap/ephemeron-remembered-set.h"
 #include "src/heap/marking-state.h"
 #include "src/heap/marking-worklist.h"
 #include "src/heap/objects-visiting.h"
@@ -43,7 +44,8 @@ class MarkingVisitorBase : public ConcurrentHeapVisitor<int, ConcreteVisitor> {
                      unsigned mark_compact_epoch,
                      base::EnumSet<CodeFlushMode> code_flush_mode,
                      bool trace_embedder_fields,
-                     bool should_keep_ages_unchanged)
+                     bool should_keep_ages_unchanged,
+                     uint16_t code_flushing_increase)
       : ConcurrentHeapVisitor<int, ConcreteVisitor>(heap->isolate()),
         local_marking_worklists_(local_marking_worklists),
         local_weak_objects_(local_weak_objects),
@@ -52,7 +54,9 @@ class MarkingVisitorBase : public ConcurrentHeapVisitor<int, ConcreteVisitor> {
         code_flush_mode_(code_flush_mode),
         trace_embedder_fields_(trace_embedder_fields),
         should_keep_ages_unchanged_(should_keep_ages_unchanged),
-        should_mark_shared_heap_(heap->isolate()->is_shared_space_isolate())
+        should_mark_shared_heap_(heap->isolate()->is_shared_space_isolate()),
+        code_flushing_increase_(code_flushing_increase),
+        isolate_in_background_(heap->isolate()->IsIsolateInBackground())
 #ifdef V8_ENABLE_SANDBOX
         ,
         external_pointer_table_(&heap->isolate()->external_pointer_table()),
@@ -98,8 +102,9 @@ class MarkingVisitorBase : public ConcurrentHeapVisitor<int, ConcreteVisitor> {
                                MaybeObjectSlot end) final {
     VisitPointersImpl(host, start, end);
   }
-  V8_INLINE void VisitCodePointer(Code host, CodeObjectSlot slot) final {
-    VisitCodePointerImpl(host, slot);
+  V8_INLINE void VisitInstructionStreamPointer(
+      Code host, InstructionStreamSlot slot) final {
+    VisitInstructionStreamPointerImpl(host, slot);
   }
   V8_INLINE void VisitEmbeddedPointer(InstructionStream host,
                                       RelocInfo* rinfo) final;
@@ -152,7 +157,8 @@ class MarkingVisitorBase : public ConcurrentHeapVisitor<int, ConcreteVisitor> {
 
   // Similar to VisitPointersImpl() but using code cage base for loading from
   // the slot.
-  V8_INLINE void VisitCodePointerImpl(Code host, CodeObjectSlot slot);
+  V8_INLINE void VisitInstructionStreamPointerImpl(Code host,
+                                                   InstructionStreamSlot slot);
 
   V8_INLINE void VisitDescriptorsForMap(Map map);
 
@@ -184,6 +190,14 @@ class MarkingVisitorBase : public ConcurrentHeapVisitor<int, ConcreteVisitor> {
     return !MarkingState::kCollectRetainers;
   }
 
+  // Methods needed for supporting code flushing.
+  bool ShouldFlushCode(SharedFunctionInfo sfi) const;
+  bool ShouldFlushBaselineCode(JSFunction js_function) const;
+
+  bool HasBytecodeArrayForFlushing(SharedFunctionInfo sfi) const;
+  bool IsOld(SharedFunctionInfo sfi) const;
+  void MakeOlder(SharedFunctionInfo sfi) const;
+
   MarkingWorklists::Local* const local_marking_worklists_;
   WeakObjects::Local* const local_weak_objects_;
   Heap* const heap_;
@@ -192,6 +206,8 @@ class MarkingVisitorBase : public ConcurrentHeapVisitor<int, ConcreteVisitor> {
   const bool trace_embedder_fields_;
   const bool should_keep_ages_unchanged_;
   const bool should_mark_shared_heap_;
+  const uint16_t code_flushing_increase_;
+  const bool isolate_in_background_;
 #ifdef V8_ENABLE_SANDBOX
   ExternalPointerTable* const external_pointer_table_;
   ExternalPointerTable* const shared_external_pointer_table_;
@@ -202,12 +218,12 @@ template <typename ConcreteVisitor, typename MarkingState>
 class YoungGenerationMarkingVisitorBase
     : public NewSpaceVisitor<ConcreteVisitor> {
  public:
-  YoungGenerationMarkingVisitorBase(Isolate* isolate,
-                                    MarkingWorklists::Local* worklists_local);
+  YoungGenerationMarkingVisitorBase(
+      Isolate* isolate, MarkingWorklists::Local* worklists_local,
+      EphemeronRememberedSet::TableList::Local* ephemeron_tables_local,
+      PretenuringHandler::PretenuringFeedbackMap* local_pretenuring_feedback);
 
-  ~YoungGenerationMarkingVisitorBase() override {
-    DCHECK(local_pretenuring_feedback_.empty());
-  }
+  ~YoungGenerationMarkingVisitorBase() override;
 
   YoungGenerationMarkingVisitorBase(const YoungGenerationMarkingVisitorBase&) =
       delete;
@@ -233,26 +249,28 @@ class YoungGenerationMarkingVisitorBase
   V8_INLINE int VisitJSArrayBuffer(Map map, JSArrayBuffer object);
   V8_INLINE int VisitJSDataViewOrRabGsabDataView(
       Map map, JSDataViewOrRabGsabDataView object);
+  V8_INLINE int VisitEphemeronHashTable(Map map, EphemeronHashTable table);
   V8_INLINE int VisitJSObject(Map map, JSObject object);
   V8_INLINE int VisitJSObjectFast(Map map, JSObject object);
   template <typename T, typename TBodyDescriptor = typename T::BodyDescriptor>
   V8_INLINE int VisitJSObjectSubclass(Map map, T object);
   V8_INLINE int VisitJSTypedArray(Map map, JSTypedArray object);
 
-  V8_INLINE void Finalize();
-
  protected:
   using NewSpaceVisitor<ConcreteVisitor>::concrete_visitor;
 
   MarkingWorklists::Local* worklists_local() const { return worklists_local_; }
+
+  PretenuringHandler* pretenuring_handler() { return pretenuring_handler_; }
 
   template <typename T>
   int VisitEmbedderTracingSubClassWithEmbedderTracing(Map map, T object);
 
  private:
   MarkingWorklists::Local* worklists_local_;
+  EphemeronRememberedSet::TableList::Local* ephemeron_tables_local_;
   PretenuringHandler* const pretenuring_handler_;
-  PretenuringHandler::PretenuringFeedbackMap local_pretenuring_feedback_;
+  PretenuringHandler::PretenuringFeedbackMap* const local_pretenuring_feedback_;
 };
 
 }  // namespace internal

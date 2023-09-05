@@ -1259,12 +1259,11 @@ bool MinidumpContext::Read(uint32_t expected_size) {
           Swap(&context_riscv->t5);
           Swap(&context_riscv->t6);
 
-          for (int fpr_index = 0;
-               fpr_index < MD_FLOATINGSAVEAREA_RISCV_FPR_COUNT;
+          for (int fpr_index = 0; fpr_index < MD_CONTEXT_RISCV_FPR_COUNT;
                ++fpr_index) {
-            Swap(&context_riscv->float_save.regs[fpr_index]);
+            Swap(&context_riscv->fpregs[fpr_index]);
           }
-          Swap(&context_riscv->float_save.fpcsr);
+          Swap(&context_riscv->fcsr);
         }
         SetContextRISCV(context_riscv.release());
 
@@ -1338,12 +1337,11 @@ bool MinidumpContext::Read(uint32_t expected_size) {
           Swap(&context_riscv64->t5);
           Swap(&context_riscv64->t6);
 
-          for (int fpr_index = 0;
-               fpr_index < MD_FLOATINGSAVEAREA_RISCV_FPR_COUNT;
+          for (int fpr_index = 0; fpr_index < MD_CONTEXT_RISCV_FPR_COUNT;
                ++fpr_index) {
-            Swap(&context_riscv64->float_save.regs[fpr_index]);
+            Swap(&context_riscv64->fpregs[fpr_index]);
           }
-          Swap(&context_riscv64->float_save.fpcsr);
+          Swap(&context_riscv64->fcsr);
         }
         SetContextRISCV64(context_riscv64.release());
 
@@ -5505,7 +5503,7 @@ void MinidumpCrashpadInfo::Print() {
         // Value represents something else.
         char buffer[3];
         for (const uint8_t& v : annot.value) {
-          snprintf(buffer, sizeof(buffer), "%X", v);
+          snprintf(buffer, sizeof(buffer), "%02X", v);
           str_value.append(buffer);
         }
       }

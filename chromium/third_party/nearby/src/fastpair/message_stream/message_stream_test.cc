@@ -69,7 +69,9 @@ class FakeObserver : public MessageStream::Observer {
 
   void OnLogBufferFull() override { log_buffer_full_.Set(true); }
 
-  void OnModelId(int model_id) override { model_id_.Set(model_id); }
+  void OnModelId(absl::string_view model_id) override {
+    model_id_.Set(std::string(model_id));
+  }
 
   void OnBleAddressUpdated(absl::string_view address) override {
     ble_address_updated_.Set(std::string(address));
@@ -91,7 +93,7 @@ class FakeObserver : public MessageStream::Observer {
   }
   Future<absl::Status> connection_result_;
   Future<absl::Status> disconnected_reason_;
-  Future<int> model_id_;
+  Future<std::string> model_id_;
   Future<std::string> ble_address_updated_;
   Future<std::vector<MessageStream::BatteryInfo>> battery_levels_;
   Future<absl::Duration> remaining_battery_time_;
@@ -109,7 +111,7 @@ class MessageStreamTest : public testing::Test {
   void SetUp() override {
     MediumEnvironment::Instance().Start();
 
-    fp_device_.set_public_address(provider_.GetMacAddress());
+    fp_device_.SetPublicAddress(provider_.GetMacAddress());
     provider_.DiscoverProvider(seeker_medium_);
     provider_.EnableProviderRfcomm();
   }
@@ -122,7 +124,7 @@ class MessageStreamTest : public testing::Test {
     MessageStream message_stream = MessageStream(
         fp_device_, std::optional<BluetoothClassicMedium*>(&seeker_medium_),
         observer_);
-    CHECK(message_stream.OpenRfcomm().ok());
+    CHECK_OK(message_stream.OpenRfcomm());
     CHECK(observer_.connection_result_.Get().ok());
     CHECK(observer_.connection_result_.Get().GetResult().ok());
     return message_stream;
@@ -269,7 +271,8 @@ TEST_F(MessageStreamTest, ReceiveModelId) {
   provider_.WriteProviderBytes(absl::HexStringToBytes("03010003ABCDEF"));
 
   ASSERT_TRUE(observer_.model_id_.Get().ok());
-  ASSERT_EQ(observer_.model_id_.Get().GetResult(), 0xABCDEF);
+  ASSERT_EQ(observer_.model_id_.Get().GetResult(),
+            absl::HexStringToBytes("ABCDEF"));
 }
 
 TEST_F(MessageStreamTest, ReceiveEnableSilenceMode) {
@@ -362,7 +365,7 @@ TEST_F(MessageStreamTest, ReceiveBleAddressUpdated) {
 
   ASSERT_TRUE(observer_.ble_address_updated_.Get().ok());
   EXPECT_EQ(observer_.ble_address_updated_.Get().GetResult(),
-            absl::HexStringToBytes("AABBCCDDEEFF"));
+            "AA:BB:CC:DD:EE:FF");
 }
 
 TEST_F(MessageStreamTest, ReceiveBatteryUpdated) {

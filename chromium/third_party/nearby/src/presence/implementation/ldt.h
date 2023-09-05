@@ -20,8 +20,8 @@
 
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
-#if USE_RUST_LDT == 1
-#include "third_party/nearby_rust/presence/ldt_np_adv_ffi/include/np_ldt.h"
+#ifdef USE_RUST_LDT
+#include "third_party/beto-core/src/nearby/presence/ldt_np_adv_ffi/include/np_ldt.h"
 #else
 #include "presence/implementation/np_ldt.h"
 #endif /* USE_RUST_LDT */

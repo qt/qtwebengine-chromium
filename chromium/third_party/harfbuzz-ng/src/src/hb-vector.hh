@@ -54,7 +54,7 @@ struct hb_vector_t
   hb_vector_t (const Iterable &o) : hb_vector_t ()
   {
     auto iter = hb_iter (o);
-    if (iter.is_random_access_iterator)
+    if (iter.is_random_access_iterator || iter.has_fast_len)
       alloc (hb_len (iter), true);
     hb_copy (iter, *this);
   }
@@ -62,7 +62,19 @@ struct hb_vector_t
   {
     alloc (o.length, true);
     if (unlikely (in_error ())) return;
-    copy_vector (o);
+    copy_array (o.as_array ());
+  }
+  hb_vector_t (array_t o) : hb_vector_t ()
+  {
+    alloc (o.length, true);
+    if (unlikely (in_error ())) return;
+    copy_array (o);
+  }
+  hb_vector_t (c_array_t o) : hb_vector_t ()
+  {
+    alloc (o.length, true);
+    if (unlikely (in_error ())) return;
+    copy_array (o);
   }
   hb_vector_t (hb_vector_t &&o)
   {
@@ -74,7 +86,7 @@ struct hb_vector_t
   ~hb_vector_t () { fini (); }
 
   public:
-  int allocated = 0; /* == -1 means allocation failed. */
+  int allocated = 0; /* < 0 means allocation failed. */
   unsigned int length = 0;
   public:
   Type *arrayZ = nullptr;
@@ -90,19 +102,21 @@ struct hb_vector_t
 
   void fini ()
   {
-    shrink_vector (0);
-    hb_free (arrayZ);
+    /* We allow a hack to make the vector point to a foriegn array
+     * by the user. In that case length/arrayZ are non-zero but
+     * allocated is zero. Don't free anything. */
+    if (allocated)
+    {
+      shrink_vector (0);
+      hb_free (arrayZ);
+    }
     init ();
   }
 
   void reset ()
   {
     if (unlikely (in_error ()))
-      /* Big Hack! We don't know the true allocated size before
-       * an allocation failure happened. But we know it was at
-       * least as big as length. Restore it to that and continue
-       * as if error did not happen. */
-      allocated = length;
+      reset_error ();
     resize (0);
   }
 
@@ -119,7 +133,7 @@ struct hb_vector_t
     alloc (o.length, true);
     if (unlikely (in_error ())) return *this;
 
-    copy_vector (o);
+    copy_array (o.as_array ());
 
     return *this;
   }
@@ -227,6 +241,16 @@ struct hb_vector_t
   }
 
   bool in_error () const { return allocated < 0; }
+  void set_error ()
+  {
+    assert (allocated >= 0);
+    allocated = -allocated - 1;
+  }
+  void reset_error ()
+  {
+    assert (allocated < 0);
+    allocated = -(allocated + 1);
+  }
 
   template <typename T = Type,
 	    hb_enable_if (hb_is_trivially_copy_assignable(T))>
@@ -277,33 +301,28 @@ struct hb_vector_t
   void
   grow_vector (unsigned size)
   {
-    while (length < size)
-    {
-      length++;
-      new (std::addressof (arrayZ[length - 1])) Type ();
-    }
+    for (; length < size; length++)
+      new (std::addressof (arrayZ[length])) Type ();
   }
 
   template <typename T = Type,
 	    hb_enable_if (hb_is_trivially_copyable (T))>
   void
-  copy_vector (const hb_vector_t &other)
+  copy_array (hb_array_t<const Type> other)
   {
     length = other.length;
-#ifndef HB_OPTIMIZE_SIZE
-    if (sizeof (T) >= sizeof (long long))
+    if (!HB_OPTIMIZE_SIZE_VAL && sizeof (T) >= sizeof (long long))
       /* This runs faster because of alignment. */
       for (unsigned i = 0; i < length; i++)
 	arrayZ[i] = other.arrayZ[i];
     else
-#endif
        hb_memcpy ((void *) arrayZ, (const void *) other.arrayZ, length * item_size);
   }
   template <typename T = Type,
 	    hb_enable_if (!hb_is_trivially_copyable (T) &&
 			   std::is_copy_constructible<T>::value)>
   void
-  copy_vector (const hb_vector_t &other)
+  copy_array (hb_array_t<const Type> other)
   {
     length = 0;
     while (length < other.length)
@@ -318,7 +337,7 @@ struct hb_vector_t
 			  std::is_default_constructible<T>::value &&
 			  std::is_copy_assignable<T>::value)>
   void
-  copy_vector (const hb_vector_t &other)
+  copy_array (hb_array_t<const Type> other)
   {
     length = 0;
     while (length < other.length)
@@ -332,11 +351,14 @@ struct hb_vector_t
   void
   shrink_vector (unsigned size)
   {
-    while ((unsigned) length > size)
-    {
-      arrayZ[(unsigned) length - 1].~Type ();
-      length--;
-    }
+    if (std::is_trivially_destructible<Type>::value)
+      length = size;
+    else
+      while ((unsigned) length > size)
+      {
+	arrayZ[(unsigned) length - 1].~Type ();
+	length--;
+      }
   }
 
   void
@@ -383,7 +405,7 @@ struct hb_vector_t
 
     if (unlikely (overflows))
     {
-      allocated = -1;
+      set_error ();
       return false;
     }
 
@@ -394,7 +416,7 @@ struct hb_vector_t
       if (new_allocated <= (unsigned) allocated)
         return true; // shrinking failed; it's okay; happens in our fuzzer
 
-      allocated = -1;
+      set_error ();
       return false;
     }
 

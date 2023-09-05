@@ -12,7 +12,7 @@ await FrontendHelpers.initializeGlobalVars();
 const testIcon = '/front_end/Images/file-image.svg';
 const fileIcon = '/front_end/Images/document.svg';
 const plusIcon = '/front_end/Images/plus.svg';
-const minusIcon = '/front_end/Images/minus_icon.svg';
+const minusIcon = '/front_end/Images/minus.svg';
 const trashBinIcon = '/front_end/Images/bin.svg';
 const closeIcon = '/front_end/Images/cross.svg';
 
@@ -160,6 +160,16 @@ primaryIconOnlyButton.data = {
 primaryIconOnlyButton.onclick = () => alert('clicked');
 primaryIconOnlyButton.style.width = '24px';
 appendButton(primaryIconOnlyButton);
+
+// Primary Icon with a name
+const primaryIconByNameButton = new Buttons.Button.Button();
+primaryIconByNameButton.data = {
+  variant: Buttons.Button.Variant.PRIMARY,
+  iconName: 'file-image',
+};
+primaryIconByNameButton.onclick = () => alert('clicked');
+primaryIconByNameButton.innerHTML = 'Icon by name';
+appendButton(primaryIconByNameButton);
 
 // Secondary Icon Only
 const secondaryIconOnlyButton = new Buttons.Button.Button();

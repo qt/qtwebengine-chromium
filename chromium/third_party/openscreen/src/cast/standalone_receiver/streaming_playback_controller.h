@@ -33,8 +33,13 @@ class StreamingPlaybackController final : public ReceiverSession::Client {
     virtual ~Client();
   };
 
-  StreamingPlaybackController(TaskRunner* task_runner,
+#if defined(CAST_STANDALONE_RECEIVER_HAVE_EXTERNAL_LIBS)
+  StreamingPlaybackController(TaskRunner& task_runner,
                               StreamingPlaybackController::Client* client);
+#else
+  explicit StreamingPlaybackController(
+      StreamingPlaybackController::Client* client);
+#endif  // defined(CAST_STANDALONE_RECEIVER_HAVE_EXTERNAL_LIBS)
 
   // ReceiverSession::Client overrides.
   void OnNegotiated(const ReceiverSession* session,
@@ -47,13 +52,14 @@ class StreamingPlaybackController final : public ReceiverSession::Client {
   void OnError(const ReceiverSession* session, Error error) override;
 
  private:
-  TaskRunner* const task_runner_;
   StreamingPlaybackController::Client* client_;
 
   void Initialize(ReceiverSession::ConfiguredReceivers receivers);
 
 #if defined(CAST_STANDALONE_RECEIVER_HAVE_EXTERNAL_LIBS)
   void HandleKeyboardEvent(const SDL_KeyboardEvent& event);
+
+  TaskRunner& task_runner_;
 
   // NOTE: member ordering is important, since the sub systems must be
   // first-constructed, last-destroyed. Make sure any new SDL related

@@ -86,15 +86,29 @@ Open DevTools via F12 or Ctrl+Shift+J on Windows/Linux or Cmd+Option+I on Mac.
 
 ##### Running in hosted mode
 
-Serve the content of `out/Default/gen/front_end` on a web server, e.g. via `python -m http.server`.
+Serve the content of `out/Default/gen/front_end` on a web server, e.g. via `python3 -m http.server 8000`.
 
-Then point to that web server when starting Chromium, for example:
+Then start Chromium, allowing for accesses from the web server:
 
 ```bash
-<path-to-devtools-frontend>/third_party/chrome/chrome-<platform>/chrome --custom-devtools-frontend=http://localhost:8000/ --remote-debugging-port=9222
+$ <path-to-devtools-frontend>/third_party/chrome/chrome-<platform>/chrome --remote-debugging-port=9222 --remote-allow-origins=http://localhost:8000 about:blank
 ```
 
-In a regular Chrome tab, go to the URL `http://localhost:9222#custom=true`. It lists URLs that can be copied to new Chrome tabs to inspect individual debug targets.
+Get the list of pages together with their DevTools frontend URLs:
+```bash
+$ curl http://localhost:9222/json -s | grep '\(url\|devtoolsFrontend\)'
+   "devtoolsFrontendUrl": "/devtools/inspector.html?ws=localhost:9222/devtools/page/BADADD4E55BADADD4E55BADADD4E5511",
+   "url": "about:blank",
+```
+
+In a regular Chrome tab, go to the URL `http://localhost:8000/inspector.html?ws=<web-socket-url>`, where `<web-socket-url>` should be replaced by
+your desired DevTools web socket URL (from `devtoolsFrontendUrl`). For example, for
+`"devtoolsFrontendUrl": "/devtools/inspector.html?ws=localhost:9222/devtools/page/BADADD4E55BADADD4E55BADADD4E5511"`,
+you could run the hosted DevTools with the following command:
+
+```
+$ google-chrome http://localhost:8000/inspector.html?ws=localhost:9222/devtools/page/BADADD4E55BADADD4E55BADADD4E5511
+```
 
 ### Integrated checkout
 
@@ -163,19 +177,16 @@ to add the devtools project and a hook to automatically symlink (comments are op
 solutions = [
   {
     # Chromium src project
-    "url": "https://chromium.googlesource.com/chromium/src.git",
-    "managed": False,
     "name": "src",
+    "url": "https://chromium.googlesource.com/chromium/src.git",
     "custom_deps": {
       "src/third_party/devtools-frontend/src": None,
     },
-    "custom_vars": {},
   },
   {
     # devtools-frontend project
     "name": "devtools-frontend",
-    "url": "https://chromium.googlesource.com/devtools/devtools-frontend",
-    "custom_deps": {}
+    "url": "https://chromium.googlesource.com/devtools/devtools-frontend.git",
   }
 ]
 ```
@@ -192,7 +203,7 @@ hooks = [
     'name': 'Symlink Depot Tools',
     'pattern': '.',
     'action': [
-        'python',
+        'python3',
         '<path>/<to>/devtools-frontend/scripts/deps/ensure_symlink.py',
         '<path>/<to>/chromium/src',
         '<path>/<to>/devtools-frontend'
@@ -200,6 +211,11 @@ hooks = [
   }
 ]
 ```
+
+If the hook doesn't work, check that
+
+  - all paths are relative to the gclient file (don't use `~`) and
+  - python > 3.8 is installed on your system.
 
 Running `gclient sync` anywhere within `chromium/src/` or `chromium/src/third_party/devtools-frontend/src` will update dependencies for both checkouts. Running `gclient sync -D` will not remove your symlink.
 

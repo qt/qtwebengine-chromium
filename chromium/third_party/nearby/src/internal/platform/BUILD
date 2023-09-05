@@ -101,6 +101,8 @@ cc_library(
     visibility = [
         "//connections:__subpackages__",
         "//fastpair:__subpackages__",
+        "//internal/auth:__subpackages__",
+        "//internal/auth/credential_store:__subpackages__",
         "//internal/interop:__pkg__",
         "//internal/network:__subpackages__",
         "//internal/platform:__subpackages__",
@@ -151,6 +153,8 @@ cc_library(
         "wifi_lan_connection_info.h",
     ],
     visibility = [
+        "//connections/implementation:__pkg__",
+        "//connections/v3:__pkg__",
         "//internal/interop:__pkg__",
         "//presence:__subpackages__",
     ],
@@ -223,6 +227,7 @@ cc_library(
         ":logging",
         ":types",
         ":uuid",
+        "//internal/base",
         "//internal/platform/implementation:comm",
         "//internal/test",
         "@com_google_absl//absl/container:flat_hash_map",
@@ -346,9 +351,12 @@ cc_library(
     visibility = [
         "//connections:__subpackages__",
         "//fastpair:__subpackages__",
+        "//internal/account:__subpackages__",
         "//internal/base:__subpackages__",
         "//internal/flags:__subpackages__",
+        "//internal/interop:__pkg__",
         "//internal/network:__subpackages__",
+        "//internal/platform/implementation/g3:__pkg__",
         "//internal/platform/implementation/windows:__subpackages__",
         "//internal/preferences:__subpackages__",
         "//internal/test:__subpackages__",
@@ -401,12 +409,15 @@ cc_library(
         "wifi_lan.h",
         "wifi_utils.h",
     ],
-    copts = ["-DCORE_ADAPTER_DLL"] + ["-DNO_WEBRTC"],
+    copts = [
+        "-DCORE_ADAPTER_DLL",
+        "-DNO_WEBRTC",
+    ],
     visibility = [
         "//connections:__subpackages__",
         "//fastpair:__subpackages__",
         "//internal/platform/implementation:__subpackages__",
-        "//location/nearby/cpp:__subpackages__",
+        "//internal/test:__subpackages__",
         "//presence:__subpackages__",
     ],
     deps = [
@@ -418,18 +429,14 @@ cc_library(
         "//internal/base",
         "//internal/platform/implementation:comm",
         "//internal/platform/implementation:platform",
+        # TODO: Support WebRTC
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/functional:any_invocable",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:optional",
-    ] + select({
-        "@platforms//cpu:arm": [],
-        "//conditions:default": [
-            # TODO: Support WebRTC
-        ],
-    }),
+    ],
 )
 
 cc_test(

@@ -16,7 +16,9 @@
 #define PLATFORM_PUBLIC_BLUETOOTH_CLASSIC_H_
 
 #include <memory>
+#include <optional>
 #include <string>
+#include <utility>
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
@@ -67,7 +69,7 @@ class BluetoothSocket final {
   // Socket created by a default public constructor is not valid, because
   // it is missing platform implementation.
   // The only way to obtain a valid socket is through connection, such as
-  // an object returned by either BluetoothClassicMedium::ConnectTotService or
+  // an object returned by either BluetoothClassicMedium::ConnectToService or
   // BluetoothServerSocket::Accept().
   // These methods may also return an invalid socket if connection failed for
   // any reason.
@@ -126,10 +128,39 @@ class BluetoothServerSocket final {
   std::shared_ptr<api::BluetoothServerSocket> impl_;
 };
 
+// Opaque wrapper for a BluetoothPairing.
+class BluetoothPairing final {
+ public:
+  explicit BluetoothPairing(
+      std::unique_ptr<api::BluetoothPairing> bluetooth_pairing)
+      : impl_(std::move(bluetooth_pairing)) {}
+
+  bool InitiatePairing(api::BluetoothPairingCallback pairing_cb) {
+    return impl_->InitiatePairing(std::move(pairing_cb));
+  }
+
+  bool FinishPairing(std::optional<absl::string_view> pin_code) {
+    return impl_->FinishPairing(pin_code);
+  }
+
+  bool CancelPairing() { return impl_->CancelPairing(); }
+
+  bool Unpair() { return impl_->Unpair(); }
+
+  bool IsPaired() { return impl_->IsPaired(); }
+
+  // Returns reference to platform implementation.
+  // This is used to communicate with platform code, and for debugging
+  // purposes.
+  api::BluetoothPairing* GetImpl() { return impl_.get(); }
+
+ private:
+  std::unique_ptr<api::BluetoothPairing> impl_;
+};
+
 // Container of operations that can be performed over the Bluetooth Classic
 // medium.
-class BluetoothClassicMedium final
-    : public api::BluetoothClassicMedium::Observer {
+class BluetoothClassicMedium : public api::BluetoothClassicMedium::Observer {
  public:
   using Platform = api::ImplementationPlatform;
   struct DiscoveryCallback {
@@ -147,6 +178,7 @@ class BluetoothClassicMedium final
     absl::AnyInvocable<void(BluetoothDevice& device)> device_lost_cb =
         DefaultCallback<BluetoothDevice&>();
   };
+
   struct DeviceDiscoveryInfo {
     BluetoothDevice device;
   };
@@ -219,9 +251,9 @@ class BluetoothClassicMedium final
   //
   // Returns a new BluetoothSocket. On Success, BluetoothSocket::IsValid()
   // returns true.
-  BluetoothSocket ConnectToService(BluetoothDevice& remote_device,
-                                   const std::string& service_uuid,
-                                   CancellationFlag* cancellation_flag);
+  virtual BluetoothSocket ConnectToService(BluetoothDevice& remote_device,
+                                           const std::string& service_uuid,
+                                           CancellationFlag* cancellation_flag);
 
   // https://developer.android.com/reference/android/bluetooth/BluetoothAdapter.html#listenUsingInsecureRfcommWithServiceRecord
   //
@@ -237,6 +269,15 @@ class BluetoothClassicMedium final
                                          const std::string& service_uuid) {
     return BluetoothServerSocket(
         impl_->ListenForService(service_name, service_uuid));
+  }
+
+  // Return a Bluetooth pairing instance to handle the pairing process with the
+  // remote device.
+  std::unique_ptr<BluetoothPairing> CreatePairing(
+      BluetoothDevice& remote_device) {
+    std::unique_ptr<api::BluetoothPairing> bluetooth_pairing =
+        impl_->CreatePairing(remote_device.GetImpl());
+    return std::make_unique<BluetoothPairing>(std::move(bluetooth_pairing));
   }
 
   bool IsValid() const { return impl_ != nullptr; }

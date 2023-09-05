@@ -15,7 +15,6 @@
 
 #include "absl/strings/string_view.h"
 #include "osp/msgs/osp_messages.h"
-#include "osp/public/mdns_service_listener_factory.h"
 #include "osp/public/message_demuxer.h"
 #include "osp/public/network_service_manager.h"
 #include "osp/public/presentation/presentation_controller.h"
@@ -25,6 +24,7 @@
 #include "osp/public/protocol_connection_server.h"
 #include "osp/public/protocol_connection_server_factory.h"
 #include "osp/public/service_listener.h"
+#include "osp/public/service_listener_factory.h"
 #include "osp/public/service_publisher.h"
 #include "osp/public/service_publisher_factory.h"
 #include "platform/api/network_interface.h"
@@ -96,7 +96,7 @@ class DemoListenerObserver final : public ServiceListener::Observer {
     OSP_LOG_INFO << "removed! " << info.friendly_name;
   }
   void OnAllReceiversRemoved() override { OSP_LOG_INFO << "all removed!"; }
-  void OnError(ServiceListenerError) override {}
+  void OnError(Error) override {}
   void OnMetrics(ServiceListener::Metrics) override {}
 };
 
@@ -224,14 +224,14 @@ class DemoRequestDelegate final : public RequestDelegate {
 
   void OnConnection(std::unique_ptr<Connection> conn) override {
     OSP_LOG_INFO << "request successful";
-    connection = std::move(conn);
+    connection_ = std::move(conn);
   }
 
   void OnError(const Error& error) override {
     OSP_LOG_INFO << "on request error";
   }
 
-  std::unique_ptr<Connection> connection;
+  std::unique_ptr<Connection> connection_;
 };
 
 class DemoConnectionDelegate final : public Connection::Delegate {
@@ -272,15 +272,16 @@ class DemoReceiverConnectionDelegate final : public Connection::Delegate {
 
   void OnStringMessage(const absl::string_view message) override {
     OSP_LOG_INFO << "got message: " << message;
-    connection->SendString("--echo-- " + std::string(message));
+    connection_->SendString("--echo-- " + std::string(message));
   }
   void OnBinaryMessage(const std::vector<uint8_t>& data) override {}
 
-  Connection* connection;
+  Connection* connection_;
 };
 
 class DemoReceiverDelegate final : public ReceiverDelegate {
  public:
+  explicit DemoReceiverDelegate(Receiver* receiver) : receiver_(receiver) {}
   ~DemoReceiverDelegate() override = default;
 
   std::vector<msgs::UrlAvailability> OnUrlAvailabilityRequest(
@@ -300,34 +301,35 @@ class DemoReceiverDelegate final : public ReceiverDelegate {
       const Connection::PresentationInfo& info,
       uint64_t source_id,
       const std::vector<msgs::HttpHeader>& http_headers) override {
-    presentation_id = info.id;
-    connection = std::make_unique<Connection>(info, &cd, Receiver::Get());
-    cd.connection = connection.get();
-    Receiver::Get()->OnPresentationStarted(info.id, connection.get(),
-                                           ResponseResult::kSuccess);
+    presentation_id_ = info.id;
+    connection_ = std::make_unique<Connection>(info, &cd_, receiver_);
+    cd_.connection_ = connection_.get();
+    receiver_->OnPresentationStarted(info.id, connection_.get(),
+                                     ResponseResult::kSuccess);
     return true;
   }
 
   bool ConnectToPresentation(uint64_t request_id,
                              const std::string& id,
                              uint64_t source_id) override {
-    connection = std::make_unique<Connection>(
-        Connection::PresentationInfo{id, connection->presentation_info().url},
-        &cd, Receiver::Get());
-    cd.connection = connection.get();
-    Receiver::Get()->OnConnectionCreated(request_id, connection.get(),
-                                         ResponseResult::kSuccess);
+    connection_ = std::make_unique<Connection>(
+        Connection::PresentationInfo{id, connection_->presentation_info().url},
+        &cd_, receiver_);
+    cd_.connection_ = connection_.get();
+    receiver_->OnConnectionCreated(request_id, connection_.get(),
+                                   ResponseResult::kSuccess);
     return true;
   }
 
   void TerminatePresentation(const std::string& id,
                              TerminationReason reason) override {
-    Receiver::Get()->OnPresentationTerminated(id, reason);
+    receiver_->OnPresentationTerminated(id, reason);
   }
 
-  std::string presentation_id;
-  std::unique_ptr<Connection> connection;
-  DemoReceiverConnectionDelegate cd;
+  Receiver* receiver_;
+  std::string presentation_id_;
+  std::unique_ptr<Connection> connection_;
+  DemoReceiverConnectionDelegate cd_;
 };
 
 struct CommandLineSplit {
@@ -406,15 +408,15 @@ void RunControllerPollLoop(Controller* controller) {
       connect_request = controller->StartPresentation(
           url, service_id, &request_delegate, &connection_delegate);
     } else if (command_result.command_line.command == "msg") {
-      request_delegate.connection->SendString(
+      request_delegate.connection_->SendString(
           command_result.command_line.argument_tail);
     } else if (command_result.command_line.command == "close") {
-      request_delegate.connection->Close(Connection::CloseReason::kClosed);
+      request_delegate.connection_->Close(Connection::CloseReason::kClosed);
     } else if (command_result.command_line.command == "reconnect") {
       connect_request = controller->ReconnectConnection(
-          std::move(request_delegate.connection), &request_delegate);
+          std::move(request_delegate.connection_), &request_delegate);
     } else if (command_result.command_line.command == "term") {
-      request_delegate.connection->Terminate(
+      request_delegate.connection_->Terminate(
           TerminationReason::kControllerTerminateCalled);
     }
   }
@@ -425,11 +427,20 @@ void RunControllerPollLoop(Controller* controller) {
 void ListenerDemo() {
   SignalThings();
 
+  ServiceListener::Config listener_config;
+  for (const InterfaceInfo& interface : GetNetworkInterfaces()) {
+    OSP_VLOG << "Found interface: " << interface;
+    if (!interface.addresses.empty()) {
+      listener_config.network_interfaces.push_back(interface);
+    }
+  }
+  OSP_LOG_IF(WARN, listener_config.network_interfaces.empty())
+      << "No network interfaces had usable addresses for mDNS Listening.";
+
   DemoListenerObserver listener_observer;
-  MdnsServiceListenerConfig listener_config;
-  auto mdns_listener = MdnsServiceListenerFactory::Create(
-      listener_config, &listener_observer,
-      PlatformClientPosix::GetInstance()->GetTaskRunner());
+  auto service_listener = ServiceListenerFactory::Create(
+      listener_config, PlatformClientPosix::GetInstance()->GetTaskRunner());
+  service_listener->AddObserver(&listener_observer);
 
   MessageDemuxer demuxer(Clock::now, MessageDemuxer::kDefaultBufferLimit);
   DemoConnectionClientObserver client_observer;
@@ -437,16 +448,17 @@ void ListenerDemo() {
       &demuxer, &client_observer,
       PlatformClientPosix::GetInstance()->GetTaskRunner());
 
-  auto* network_service = NetworkServiceManager::Create(
-      std::move(mdns_listener), nullptr, std::move(connection_client), nullptr);
+  auto* network_service =
+      NetworkServiceManager::Create(std::move(service_listener), nullptr,
+                                    std::move(connection_client), nullptr);
   auto controller = std::make_unique<Controller>(Clock::now);
 
-  network_service->GetMdnsServiceListener()->Start();
+  network_service->GetServiceListener()->Start();
   network_service->GetProtocolConnectionClient()->Start();
 
   RunControllerPollLoop(controller.get());
 
-  network_service->GetMdnsServiceListener()->Stop();
+  network_service->GetServiceListener()->Stop();
   network_service->GetProtocolConnectionClient()->Stop();
 
   controller.reset();
@@ -470,12 +482,12 @@ void HandleReceiverCommand(absl::string_view command,
       publisher->Suspend();
     }
   } else if (command == "close") {
-    delegate.connection->Close(Connection::CloseReason::kClosed);
+    delegate.connection_->Close(Connection::CloseReason::kClosed);
   } else if (command == "msg") {
-    delegate.connection->SendString(argument_tail);
+    delegate.connection_->SendString(argument_tail);
   } else if (command == "term") {
-    Receiver::Get()->OnPresentationTerminated(
-        delegate.presentation_id, TerminationReason::kReceiverUserTerminated);
+    delegate.receiver_->OnPresentationTerminated(
+        delegate.presentation_id_, TerminationReason::kReceiverUserTerminated);
   } else {
     OSP_LOG_FATAL << "Received unknown receiver command: " << command;
   }
@@ -500,8 +512,6 @@ void RunReceiverPollLoop(pollfd& file_descriptor,
 }
 
 void CleanupPublisherDemo(NetworkServiceManager* manager) {
-  Receiver::Get()->SetReceiverDelegate(nullptr);
-  Receiver::Get()->Deinit();
   manager->GetServicePublisher()->Stop();
   manager->GetProtocolConnectionServer()->Stop();
 
@@ -546,10 +556,11 @@ void PublisherDemo(absl::string_view friendly_name) {
   auto* network_service =
       NetworkServiceManager::Create(nullptr, std::move(service_publisher),
                                     nullptr, std::move(connection_server));
+  auto receiver = std::make_unique<Receiver>();
 
-  DemoReceiverDelegate receiver_delegate;
-  Receiver::Get()->Init();
-  Receiver::Get()->SetReceiverDelegate(&receiver_delegate);
+  DemoReceiverDelegate receiver_delegate(receiver.get());
+  receiver->Init();
+  receiver->SetReceiverDelegate(&receiver_delegate);
   network_service->GetServicePublisher()->Start();
   network_service->GetProtocolConnectionServer()->Start();
 
@@ -557,7 +568,9 @@ void PublisherDemo(absl::string_view friendly_name) {
 
   RunReceiverPollLoop(stdin_pollfd, network_service, receiver_delegate);
 
-  receiver_delegate.connection.reset();
+  receiver_delegate.connection_.reset();
+  receiver->SetReceiverDelegate(nullptr);
+  receiver->Deinit();
   CleanupPublisherDemo(network_service);
 }
 

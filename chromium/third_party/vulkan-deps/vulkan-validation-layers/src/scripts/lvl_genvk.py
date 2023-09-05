@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 #
 # Copyright (c) 2013-2023 The Khronos Group Inc.
+# Copyright (c) 2023-2023 RasterGrid Kft.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,7 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import argparse, cProfile, pdb, string, sys, time, os
+import argparse, pdb, sys, time, os
 
 # Simple timer functions
 startTime = None
@@ -47,307 +48,221 @@ def makeGenOpts(args):
     global genOpts
     genOpts = {}
 
-    # Default class of extensions to include, or None
-    defaultExtensions = args.defaultExtensions
-
-    # Additional extensions to include (list of extensions)
-    extensions = args.extension
-
-    # Extensions to remove (list of extensions)
-    removeExtensions = args.removeExtensions
-
-    # Extensions to emit (list of extensions)
-    emitExtensions = args.emitExtensions
+    # Allow downstream users to merge other (e.g. the main "vulkan") API into
+    # the API for which code is generated
+    mergeApiNames = None
 
     # Extensions to warn about, if enabled(list of extensions)
     warnExtensions = args.warnExtensions
 
-    # Features to include (list of features)
-    features = args.feature
-
-    # Spirv elements to emit (list of extensions and capabilities)
-    emitSpirv = args.emitSpirv
-
-    # Format elements to emit
-    emitFormats = args.emitFormats
-
-    # Whether to disable inclusion protect in headers
-    protect = args.protect
-
     # Output target directory
-    directory = args.directory
-
-    # Path to generated files, particularly api.py
-    genpath = args.genpath
-
-    # Descriptive names for various regexp patterns used to select
-    # versions and extensions
-    allFeatures     = allExtensions = allSpirv = allFormats = '.*'
-    noFeatures      = noExtensions = noSpirv = None
-
-    # Turn lists of names/patterns into matching regular expressions
-    addExtensionsPat     = makeREstring(extensions, None)
-    removeExtensionsPat  = makeREstring(removeExtensions, None)
-    emitExtensionsPat    = makeREstring(emitExtensions, allExtensions)
-    featuresPat          = makeREstring(features, allFeatures)
-    emitSpirvPat         = makeREstring(emitSpirv, allSpirv)
-    emitFormatsPat       = makeREstring(emitFormats, allFormats)
-
-    # Defaults for generating re-inclusion protection wrappers (or not)
-    protectFeature = protect
-
-    # An API style convention object
-    conventions = VulkanConventions()
+    from generators.base_generator import SetOutputDirectory
+    from generators.base_generator import SetTargetApiName
+    SetOutputDirectory(args.directory)
+    SetTargetApiName(args.api)
 
     # ValidationLayer Generators
     # Options for thread safety header code-generation
-    genOpts['thread_safety.h'] = [
+    
+    genOpts['thread_safety_counter_definitions.h'] = [
           ThreadOutputGenerator,
-          ThreadGeneratorOptions(
-            conventions       = conventions,
-            filename          = 'thread_safety.h',
-            directory         = directory,
-            versions          = featuresPat,
-            emitversions      = featuresPat,
-            addExtensions     = addExtensionsPat,
-            removeExtensions  = removeExtensionsPat,
-            emitExtensions    = emitExtensionsPat)
+          BaseGeneratorOptions(
+            filename          = 'thread_safety_counter_definitions.h',
+            mergeApiNames     = mergeApiNames)
+        ]
+    
+    genOpts['thread_safety_counter_instances.h'] = [
+          ThreadOutputGenerator,
+          BaseGeneratorOptions(
+            filename          = 'thread_safety_counter_instances.h',
+            mergeApiNames     = mergeApiNames)
+        ]
+    
+    genOpts['thread_safety_counter_bodies.h'] = [
+          ThreadOutputGenerator,
+          BaseGeneratorOptions(
+            filename          = 'thread_safety_counter_bodies.h',
+            mergeApiNames     = mergeApiNames)
+        ]
+    
+    genOpts['thread_safety_commands.h'] = [
+          ThreadOutputGenerator,
+          BaseGeneratorOptions(
+            filename          = 'thread_safety_commands.h',
+            mergeApiNames     = mergeApiNames)
         ]
 
     # Options for thread safety source code-generation
     genOpts['thread_safety.cpp'] = [
           ThreadOutputGenerator,
-          ThreadGeneratorOptions(
-            conventions       = conventions,
+          BaseGeneratorOptions(
             filename          = 'thread_safety.cpp',
-            directory         = directory,
-            versions          = featuresPat,
-            emitversions      = featuresPat,
-            addExtensions     = addExtensionsPat,
-            removeExtensions  = removeExtensionsPat,
-            emitExtensions    = emitExtensionsPat)
+            mergeApiNames     = mergeApiNames)
         ]
 
     # Options for stateless validation source file
     genOpts['parameter_validation.cpp'] = [
           ParameterValidationOutputGenerator,
-          ParameterValidationGeneratorOptions(
-            conventions       = conventions,
+          BaseGeneratorOptions(
             filename          = 'parameter_validation.cpp',
-            directory         = directory,
-            versions          = featuresPat,
-            emitversions      = featuresPat,
-            addExtensions     = addExtensionsPat,
-            removeExtensions  = removeExtensionsPat,
-            emitExtensions    = emitExtensionsPat,
             valid_usage_path  = args.scripts)
           ]
 
     # Options for stateless validation header file
     genOpts['parameter_validation.h'] = [
           ParameterValidationOutputGenerator,
-          ParameterValidationGeneratorOptions(
-            conventions       = conventions,
+          BaseGeneratorOptions(
             filename          = 'parameter_validation.h',
-            directory         = directory,
-            versions          = featuresPat,
-            emitversions      = featuresPat,
-            addExtensions     = addExtensionsPat,
-            removeExtensions  = removeExtensionsPat,
-            emitExtensions    = emitExtensionsPat,
             valid_usage_path  = args.scripts)
           ]
 
     # Options for stateless validation enum helper file
     genOpts['enum_flag_bits.h'] = [
           ParameterValidationOutputGenerator,
-          ParameterValidationGeneratorOptions(
-            conventions       = conventions,
+          BaseGeneratorOptions(
             filename          = 'enum_flag_bits.h',
-            directory         = directory,
-            versions          = featuresPat,
-            emitversions      = featuresPat,
-            addExtensions     = addExtensionsPat,
-            removeExtensions  = removeExtensionsPat,
-            emitExtensions    = emitExtensionsPat,
+            mergeApiNames     = mergeApiNames,
             valid_usage_path  = args.scripts)
           ]
 
     # Options for object_tracker code-generated validation routines
     genOpts['object_tracker.cpp'] = [
           ObjectTrackerOutputGenerator,
-          ObjectTrackerGeneratorOptions(
-            conventions       = conventions,
+          BaseGeneratorOptions(
             filename          = 'object_tracker.cpp',
-            directory         = directory,
-            versions          = featuresPat,
-            emitversions      = featuresPat,
-            addExtensions     = addExtensionsPat,
-            removeExtensions  = removeExtensionsPat,
-            emitExtensions    = emitExtensionsPat,
+            mergeApiNames     = mergeApiNames,
             valid_usage_path  = args.scripts)
         ]
 
     # Options for object_tracker code-generated prototypes
     genOpts['object_tracker.h'] = [
           ObjectTrackerOutputGenerator,
-          ObjectTrackerGeneratorOptions(
-            conventions       = conventions,
+          BaseGeneratorOptions(
             filename          = 'object_tracker.h',
-            directory         = directory,
-            versions          = featuresPat,
-            emitversions      = featuresPat,
-            addExtensions     = addExtensionsPat,
-            removeExtensions  = removeExtensionsPat,
-            emitExtensions    = emitExtensionsPat,
+            mergeApiNames     = mergeApiNames,
             valid_usage_path  = args.scripts)
         ]
 
     # Options for dispatch table helper generator
     genOpts['vk_dispatch_table_helper.h'] = [
           DispatchTableHelperOutputGenerator,
-          DispatchTableHelperOutputGeneratorOptions(
-            conventions       = conventions,
+          BaseGeneratorOptions(
             filename          = 'vk_dispatch_table_helper.h',
-            directory         = directory,
-            versions          = featuresPat,
-            emitversions      = featuresPat,
-            addExtensions     = addExtensionsPat,
-            removeExtensions  = removeExtensionsPat,
-            emitExtensions    = emitExtensionsPat)
+            mergeApiNames     = mergeApiNames)
         ]
 
     # lvt_file generator options for lvt_function_pointers.h
     genOpts['lvt_function_pointers.h'] = [
           LvtFileOutputGenerator,
-          LvtFileOutputGeneratorOptions(
-            conventions       = conventions,
+          BaseGeneratorOptions(
             filename          = 'lvt_function_pointers.h',
-            directory         = directory,
-            versions          = featuresPat,
-            emitversions      = featuresPat,
-            addExtensions     = addExtensionsPat,
-            removeExtensions  = removeExtensionsPat,
-            emitExtensions    = emitExtensionsPat,
-            lvt_file_type  = 'function_pointer_header')
+            mergeApiNames     = mergeApiNames,
+            lvt_file_type     = 'function_pointer_header')
         ]
 
     # lvt_file generator options for lvt_function_pointers.cpp
     genOpts['lvt_function_pointers.cpp'] = [
           LvtFileOutputGenerator,
-          LvtFileOutputGeneratorOptions(
-            conventions       = conventions,
+          BaseGeneratorOptions(
             filename          = 'lvt_function_pointers.cpp',
-            directory         = directory,
-            versions          = featuresPat,
-            emitversions      = featuresPat,
-            addExtensions     = addExtensionsPat,
-            removeExtensions  = removeExtensionsPat,
-            emitExtensions    = emitExtensionsPat,
-            lvt_file_type  = 'function_pointer_source')
+            lvt_file_type     = 'function_pointer_source')
         ]
 
     # Options for Layer dispatch table generator
     genOpts['vk_layer_dispatch_table.h'] = [
           LayerDispatchTableOutputGenerator,
-          LayerDispatchTableGeneratorOptions(
-            conventions       = conventions,
+          BaseGeneratorOptions(
             filename          = 'vk_layer_dispatch_table.h',
-            directory         = directory,
-            versions          = featuresPat,
-            emitversions      = featuresPat,
-            addExtensions     = addExtensionsPat,
-            removeExtensions  = removeExtensionsPat,
-            emitExtensions    = emitExtensionsPat)
+            mergeApiNames     = mergeApiNames)
         ]
 
     # Helper file generator options for vk_enum_string_helper.h
     genOpts['vk_enum_string_helper.h'] = [
           HelperFileOutputGenerator,
-          HelperFileOutputGeneratorOptions(
-            conventions       = conventions,
+          BaseGeneratorOptions(
             filename          = 'vk_enum_string_helper.h',
-            directory         = directory,
-            versions          = featuresPat,
-            emitversions      = featuresPat,
-            addExtensions     = addExtensionsPat,
-            removeExtensions  = removeExtensionsPat,
-            emitExtensions    = emitExtensionsPat,
+            mergeApiNames     = mergeApiNames,
             helper_file_type  = 'enum_string_header')
         ]
 
     # Helper file generator options for vk_safe_struct.h
     genOpts['vk_safe_struct.h'] = [
           HelperFileOutputGenerator,
-          HelperFileOutputGeneratorOptions(
-            conventions       = conventions,
+          BaseGeneratorOptions(
             filename          = 'vk_safe_struct.h',
-            directory         = directory,
-            versions          = featuresPat,
-            emitversions      = featuresPat,
-            addExtensions     = addExtensionsPat,
-            removeExtensions  = removeExtensionsPat,
-            emitExtensions    = emitExtensionsPat,
+            mergeApiNames     = mergeApiNames,
             helper_file_type  = 'safe_struct_header')
         ]
 
-    # Helper file generator options for vk_safe_struct.cpp
-    genOpts['vk_safe_struct.cpp'] = [
+    # Helper file generator options for vk_safe_struct_utils.cpp
+    genOpts['vk_safe_struct_utils.cpp'] = [
           HelperFileOutputGenerator,
-          HelperFileOutputGeneratorOptions(
-            conventions       = conventions,
-            filename          = 'vk_safe_struct.cpp',
-            directory         = directory,
-            versions          = featuresPat,
-            emitversions      = featuresPat,
-            addExtensions     = addExtensionsPat,
-            removeExtensions  = removeExtensionsPat,
-            emitExtensions    = emitExtensionsPat,
+          BaseGeneratorOptions(
+            filename          = 'vk_safe_struct_utils.cpp',
+            mergeApiNames     = mergeApiNames,
+            helper_file_type  = 'safe_struct_source')
+        ]
+
+    # Helper file generator options for vk_safe_struct_core.cpp
+    genOpts['vk_safe_struct_core.cpp'] = [
+          HelperFileOutputGenerator,
+          BaseGeneratorOptions(
+            filename          = 'vk_safe_struct_core.cpp',
+            mergeApiNames     = mergeApiNames,
+            helper_file_type  = 'safe_struct_source')
+        ]
+
+    # Helper file generator options for vk_safe_struct_khr.cpp
+    genOpts['vk_safe_struct_khr.cpp'] = [
+          HelperFileOutputGenerator,
+          BaseGeneratorOptions(
+            filename          = 'vk_safe_struct_khr.cpp',
+            mergeApiNames     = mergeApiNames,
+            helper_file_type  = 'safe_struct_source')
+        ]
+
+    # Helper file generator options for vk_safe_struct_khr.cpp
+    genOpts['vk_safe_struct_ext.cpp'] = [
+          HelperFileOutputGenerator,
+          BaseGeneratorOptions(
+            filename          = 'vk_safe_struct_ext.cpp',
+            mergeApiNames     = mergeApiNames,
+            helper_file_type  = 'safe_struct_source')
+        ]
+
+    # Helper file generator options for vk_safe_struct_vendor.cpp
+    genOpts['vk_safe_struct_vendor.cpp'] = [
+          HelperFileOutputGenerator,
+          BaseGeneratorOptions(
+            filename          = 'vk_safe_struct_vendor.cpp',
+            mergeApiNames     = mergeApiNames,
             helper_file_type  = 'safe_struct_source')
         ]
 
     # Helper file generator options for vk_object_types.h
     genOpts['vk_object_types.h'] = [
           HelperFileOutputGenerator,
-          HelperFileOutputGeneratorOptions(
-            conventions       = conventions,
+          BaseGeneratorOptions(
             filename          = 'vk_object_types.h',
-            directory         = directory,
-            versions          = featuresPat,
-            emitversions      = featuresPat,
-            addExtensions     = addExtensionsPat,
-            removeExtensions  = removeExtensionsPat,
-            emitExtensions    = emitExtensionsPat,
+            mergeApiNames     = mergeApiNames,
             helper_file_type  = 'object_types_header')
         ]
 
     # Helper file generator options for extension_helper.h
     genOpts['vk_extension_helper.h'] = [
           HelperFileOutputGenerator,
-          HelperFileOutputGeneratorOptions(
-            conventions       = conventions,
+          BaseGeneratorOptions(
             filename          = 'vk_extension_helper.h',
-            directory         = directory,
-            versions          = featuresPat,
-            emitversions      = featuresPat,
-            addExtensions     = addExtensionsPat,
-            removeExtensions  = removeExtensionsPat,
-            emitExtensions    = emitExtensionsPat,
+            mergeApiNames     = mergeApiNames,
             helper_file_type  = 'extension_helper_header')
         ]
 
     # Helper file generator options for typemap_helper.h
     genOpts['vk_typemap_helper.h'] = [
           HelperFileOutputGenerator,
-          HelperFileOutputGeneratorOptions(
-            conventions       = conventions,
+          BaseGeneratorOptions(
             filename          = 'vk_typemap_helper.h',
-            directory         = directory,
-            versions          = featuresPat,
-            emitversions      = featuresPat,
-            addExtensions     = addExtensionsPat,
-            removeExtensions  = removeExtensionsPat,
-            emitExtensions    = emitExtensionsPat,
+            mergeApiNames     = mergeApiNames,
             helper_file_type  = 'typemap_helper_header')
         ]
 
@@ -355,15 +270,9 @@ def makeGenOpts(args):
     # Options for layer chassis header
     genOpts['chassis.h'] = [
           LayerChassisOutputGenerator,
-          LayerChassisGeneratorOptions(
-            conventions       = conventions,
+          BaseGeneratorOptions(
             filename          = 'chassis.h',
-            directory         = directory,
-            versions          = featuresPat,
-            emitversions      = featuresPat,
-            addExtensions     = addExtensionsPat,
-            removeExtensions  = removeExtensionsPat,
-            emitExtensions    = emitExtensionsPat,
+            mergeApiNames     = mergeApiNames,
             warnExtensions    = warnExtensions,
             helper_file_type  = 'layer_chassis_header')
         ]
@@ -371,15 +280,8 @@ def makeGenOpts(args):
     # Options for layer chassis source file
     genOpts['chassis.cpp'] = [
           LayerChassisOutputGenerator,
-          LayerChassisGeneratorOptions(
-            conventions       = conventions,
+          BaseGeneratorOptions(
             filename          = 'chassis.cpp',
-            directory         = directory,
-            versions          = featuresPat,
-            emitversions      = featuresPat,
-            addExtensions     = addExtensionsPat,
-            removeExtensions  = removeExtensionsPat,
-            emitExtensions    = emitExtensionsPat,
             warnExtensions    = warnExtensions,
             helper_file_type  = 'layer_chassis_source')
         ]
@@ -388,133 +290,73 @@ def makeGenOpts(args):
     # Options for layer chassis header
     genOpts['chassis_dispatch_helper.h'] = [
           LayerChassisOutputGenerator,
-          LayerChassisGeneratorOptions(
-            conventions       = conventions,
+          BaseGeneratorOptions(
             filename          = 'chassis_dispatch_helper.h',
-            directory         = directory,
-            versions          = featuresPat,
-            emitversions      = featuresPat,
-            addExtensions     = addExtensionsPat,
-            removeExtensions  = removeExtensionsPat,
-            emitExtensions    = emitExtensionsPat,
+            mergeApiNames     = mergeApiNames,
             helper_file_type  = 'layer_chassis_helper_header')
         ]
-
-
 
     # Options for layer chassis dispatch source file
     genOpts['layer_chassis_dispatch.cpp'] = [
           LayerChassisDispatchOutputGenerator,
-          LayerChassisDispatchGeneratorOptions(
-            conventions       = conventions,
+          BaseGeneratorOptions(
             filename          = 'layer_chassis_dispatch.cpp',
-            directory         = directory,
-            versions          = featuresPat,
-            emitversions      = featuresPat,
-            addExtensions     = addExtensionsPat,
-            removeExtensions  = removeExtensionsPat,
-            emitExtensions    = emitExtensionsPat)
+            mergeApiNames     = mergeApiNames)
         ]
 
     # Options for layer chassis dispatch header file
     genOpts['layer_chassis_dispatch.h'] = [
           LayerChassisDispatchOutputGenerator,
-          LayerChassisDispatchGeneratorOptions(
-            conventions       = conventions,
+          BaseGeneratorOptions(
             filename          = 'layer_chassis_dispatch.h',
-            directory         = directory,
-            versions          = featuresPat,
-            emitversions      = featuresPat,
-            addExtensions     = addExtensionsPat,
-            removeExtensions  = removeExtensionsPat,
-            emitExtensions    = emitExtensionsPat)
+            mergeApiNames     = mergeApiNames)
         ]
 
     # Options for best practices code-generated source
     genOpts['best_practices.cpp'] = [
           BestPracticesOutputGenerator,
-          BestPracticesOutputGeneratorOptions(
-            conventions       = conventions,
+          BaseGeneratorOptions(
             filename          = 'best_practices.cpp',
-            directory         = directory,
-            versions          = featuresPat,
-            emitversions      = featuresPat,
-            addExtensions     = addExtensionsPat,
-            removeExtensions  = removeExtensionsPat,
-            emitExtensions    = emitExtensionsPat)
+            mergeApiNames     = mergeApiNames)
         ]
 
     # Options for best_practices code-generated header
     genOpts['best_practices.h'] = [
           BestPracticesOutputGenerator,
-          BestPracticesOutputGeneratorOptions(
-            conventions       = conventions,
+          BaseGeneratorOptions(
             filename          = 'best_practices.h',
-            directory         = directory,
-            versions          = featuresPat,
-            emitversions      = featuresPat,
-            addExtensions     = addExtensionsPat,
-            removeExtensions  = removeExtensionsPat,
-            emitExtensions    = emitExtensionsPat)
+            mergeApiNames     = mergeApiNames)
         ]
 
 # Create an API generator and corresponding generator options based on
 # the requested target and command line options.
     # Helper file generator options for sync_validation_types.h
     genOpts['sync_validation_types.h'] = [
-          HelperFileOutputGenerator,
-          HelperFileOutputGeneratorOptions(
-            conventions       = conventions,
+          SyncValidationOutputGenerator,
+          BaseGeneratorOptions(
             filename          = 'sync_validation_types.h',
-            directory         = directory,
-            versions          = featuresPat,
-            emitversions      = featuresPat,
-            addExtensions     = addExtensionsPat,
-            removeExtensions  = removeExtensionsPat,
-            emitExtensions    = emitExtensionsPat,
-            helper_file_type  = 'sync_helper_header',
-            valid_usage_path  = args.scripts)
+            mergeApiNames     = mergeApiNames)
         ]
 
     genOpts['sync_validation_types.cpp'] = [
-          HelperFileOutputGenerator,
-          HelperFileOutputGeneratorOptions(
-            conventions       = conventions,
+          SyncValidationOutputGenerator,
+          BaseGeneratorOptions(
             filename          = 'sync_validation_types.cpp',
-            directory         = directory,
-            versions          = featuresPat,
-            emitversions      = featuresPat,
-            addExtensions     = addExtensionsPat,
-            removeExtensions  = removeExtensionsPat,
-            emitExtensions    = emitExtensionsPat,
-            helper_file_type  = 'sync_helper_source',
-            valid_usage_path  = args.scripts)
+            mergeApiNames     = mergeApiNames)
         ]
 
     # Options for spirv_validation_helper code-generated header
     genOpts['spirv_validation_helper.cpp'] = [
           SpirvValidationHelperOutputGenerator,
-          SpirvValidationHelperOutputGeneratorOptions(
-            conventions       = conventions,
-            filename          = 'spirv_validation_helper.cpp',
-            directory         = directory,
-            versions          = featuresPat,
-            emitversions      = featuresPat,
-            addExtensions     = addExtensionsPat,
-            removeExtensions  = removeExtensionsPat,
-            emitExtensions    = emitExtensionsPat,
-            emitFormats       = emitFormatsPat,
-            emitSpirv         = emitSpirvPat)
+          BaseGeneratorOptions(filename = 'spirv_validation_helper.cpp')
         ]
 
     # Options for spirv_grammar_helper code-generated source
     # Only uses spirv grammar and not the vk.xml
     genOpts['spirv_grammar_helper.cpp'] = [
           SpirvGrammarHelperOutputGenerator,
-          SpirvGrammarHelperOutputGeneratorOptions(
-            conventions       = conventions,
+          BaseGeneratorOptions(
             filename          = 'spirv_grammar_helper.cpp',
-            directory         = directory,
             grammar           = args.grammar)
         ]
 
@@ -522,61 +364,58 @@ def makeGenOpts(args):
     # Only uses spirv grammar and not the vk.xml
     genOpts['spirv_grammar_helper.h'] = [
           SpirvGrammarHelperOutputGenerator,
-          SpirvGrammarHelperOutputGeneratorOptions(
-            conventions       = conventions,
+          BaseGeneratorOptions(
             filename          = 'spirv_grammar_helper.h',
-            directory         = directory,
             grammar           = args.grammar)
         ]
 
     # Options for command_validation code-generated header
     genOpts['command_validation.cpp'] = [
           CommandValidationOutputGenerator,
-          CommandValidationOutputGeneratorOptions(
-            conventions       = conventions,
+          BaseGeneratorOptions(
             filename          = 'command_validation.cpp',
-            directory         = directory,
-            versions          = featuresPat,
-            emitversions      = featuresPat,
-            addExtensions     = addExtensionsPat,
-            removeExtensions  = removeExtensionsPat,
-            emitExtensions    = emitExtensionsPat,
+            mergeApiNames     = mergeApiNames,
             valid_usage_path  = args.scripts)
         ]
 
     # generator for command_validation.h
     genOpts['command_validation.h'] = [
           CommandValidationOutputGenerator,
-          CommandValidationOutputGeneratorOptions(
-            conventions       = conventions,
+          BaseGeneratorOptions(
             filename          = 'command_validation.h',
-            directory         = directory,
-            versions          = featuresPat,
-            emitversions      = featuresPat,
-            addExtensions     = addExtensionsPat,
-            removeExtensions  = removeExtensionsPat,
-            emitExtensions    = emitExtensionsPat,
+            mergeApiNames     = mergeApiNames,
             valid_usage_path  = args.scripts)
+        ]
+
+    genOpts['dynamic_state_helper.cpp'] = [
+          DynamicStateOutputGenerator,
+          BaseGeneratorOptions(
+            filename          = 'dynamic_state_helper.cpp',
+            mergeApiNames     = mergeApiNames)
+        ]
+
+    # generator for command_validation.h
+    genOpts['dynamic_state_helper.h'] = [
+          DynamicStateOutputGenerator,
+          BaseGeneratorOptions(
+            filename          = 'dynamic_state_helper.h',
+            mergeApiNames     = mergeApiNames)
         ]
 
     # Options for format_utils code-generated header
     genOpts['vk_format_utils.cpp'] = [
           FormatUtilsOutputGenerator,
-          FormatUtilsOutputGeneratorOptions(
-            conventions       = conventions,
+          BaseGeneratorOptions(
             filename          = 'vk_format_utils.cpp',
-            directory         = directory,
-            emitFormats       = emitFormatsPat)
+            mergeApiNames     = mergeApiNames)
         ]
 
     # generator for format_utils.h
     genOpts['vk_format_utils.h'] = [
           FormatUtilsOutputGenerator,
-          FormatUtilsOutputGeneratorOptions(
-            conventions       = conventions,
+          BaseGeneratorOptions(
             filename          = 'vk_format_utils.h',
-            directory         = directory,
-            emitFormats       = emitFormatsPat)
+            mergeApiNames     = mergeApiNames)
         ]
 
 # Generate a target based on the options in the matching genOpts{} object.
@@ -585,8 +424,6 @@ def makeGenOpts(args):
 # fields that are used:
 #   target - target to generate
 #   directory - directory to generate it in
-#   protect - True if re-inclusion wrappers should be created
-#   extensions - list of additional extensions to include in generated
 #   interfaces
 def genTarget(args):
     global genOpts
@@ -600,14 +437,6 @@ def genTarget(args):
 
         if not args.quiet:
             write('* Building', options.filename, file=sys.stderr)
-            write('* options.versions          =', options.versions, file=sys.stderr)
-            write('* options.emitversions      =', options.emitversions, file=sys.stderr)
-            write('* options.defaultExtensions =', options.defaultExtensions, file=sys.stderr)
-            write('* options.addExtensions     =', options.addExtensions, file=sys.stderr)
-            write('* options.removeExtensions  =', options.removeExtensions, file=sys.stderr)
-            write('* options.emitExtensions    =', options.emitExtensions, file=sys.stderr)
-            write('* options.emitSpirv         =', options.emitSpirv, file=sys.stderr)
-            write('* options.emitFormats       =', options.emitFormats, file=sys.stderr)
 
         gen = createGenerator(errFile=errWarn,
                               warnFile=errWarn,
@@ -620,37 +449,19 @@ def genTarget(args):
               args.target, file=sys.stderr)
         return none
 
-# -feature name
 # -extension name
 # For both, "name" may be a single name, or a space-separated list
 # of names, or a regular expression.
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('-defaultExtensions', action='store',
+    parser.add_argument('-api', action='store',
                         default='vulkan',
-                        help='Specify a single class of extensions to add to targets')
-    parser.add_argument('-extension', action='append',
-                        default=[],
-                        help='Specify an extension or extensions to add to targets')
-    parser.add_argument('-removeExtensions', action='append',
-                        default=[],
-                        help='Specify an extension or extensions to remove from targets')
-    parser.add_argument('-emitExtensions', action='append',
-                        default=[],
-                        help='Specify an extension or extensions to emit in targets')
+                        choices=['vulkan'],
+                        help='Specify API name to generate')
     parser.add_argument('-warnExtensions', action='append',
                         default=[],
                         help='Specify an extension with partial support. Warning will be log if it is enabled')
-    parser.add_argument('-feature', action='append',
-                        default=[],
-                        help='Specify a core API feature name or names to add to targets')
-    parser.add_argument('-emitSpirv', action='append',
-                        default=[],
-                        help='Specify spirv extensions or capabilities to emit in targets')
-    parser.add_argument('-emitFormats', action='append',
-                        default=[],
-                        help='Specify spirv extensions or capabilities to emit in targets')
     parser.add_argument('-debug', action='store_true',
                         help='Enable debugging')
     parser.add_argument('-dump', action='store_true',
@@ -661,10 +472,6 @@ if __name__ == '__main__':
     parser.add_argument('-errfile', action='store',
                         default=None,
                         help='Write errors and warnings to specified file instead of stderr')
-    parser.add_argument('-noprotect', dest='protect', action='store_false',
-                        help='Disable inclusion protection in output headers')
-    parser.add_argument('-profile', action='store_true',
-                        help='Enable profiling')
     parser.add_argument('-registry', action='store',
                         default='vk.xml',
                         help='Use specified registry file instead of vk.xml')
@@ -675,8 +482,6 @@ if __name__ == '__main__':
                         help='Enable timing')
     parser.add_argument('-validate', action='store_true',
                         help='Enable XML group validation')
-    parser.add_argument('-genpath', action='store', default='gen',
-                        help='Path to generated files')
     parser.add_argument('-o', action='store', dest='directory',
                         default='.',
                         help='Create target and related files in specified directory')
@@ -706,28 +511,24 @@ if __name__ == '__main__':
     from cgenerator import CGeneratorOptions, COutputGenerator
 
     # ValidationLayer Generator Modifications
-    from thread_safety_generator import  ThreadGeneratorOptions, ThreadOutputGenerator
-    from parameter_validation_generator import ParameterValidationGeneratorOptions, ParameterValidationOutputGenerator
-    from object_tracker_generator import ObjectTrackerGeneratorOptions, ObjectTrackerOutputGenerator
-    from dispatch_table_helper_generator import DispatchTableHelperOutputGenerator, DispatchTableHelperOutputGeneratorOptions
-    from helper_file_generator import HelperFileOutputGenerator, HelperFileOutputGeneratorOptions
-    from layer_dispatch_table_generator import LayerDispatchTableOutputGenerator, LayerDispatchTableGeneratorOptions
-    from layer_chassis_generator import LayerChassisOutputGenerator, LayerChassisGeneratorOptions
-    from layer_chassis_dispatch_generator import LayerChassisDispatchOutputGenerator, LayerChassisDispatchGeneratorOptions
-    from lvt_file_generator import LvtFileOutputGenerator, LvtFileOutputGeneratorOptions
-    from best_practices_generator import BestPracticesOutputGenerator, BestPracticesOutputGeneratorOptions
-    from spirv_validation_generator import SpirvValidationHelperOutputGenerator, SpirvValidationHelperOutputGeneratorOptions
-    from spirv_grammar_generator import SpirvGrammarHelperOutputGenerator, SpirvGrammarHelperOutputGeneratorOptions
-    from command_validation_generator import CommandValidationOutputGenerator, CommandValidationOutputGeneratorOptions
-    from format_utils_generator import FormatUtilsOutputGenerator, FormatUtilsOutputGeneratorOptions
+    from generators.base_generator import BaseGeneratorOptions
 
-    # Temporary workaround for vkconventions python2 compatibility
-    import abc; abc.ABC = abc.ABCMeta('ABC', (object,), {})
-    from vkconventions import VulkanConventions
-
-    # This splits arguments which are space-separated lists
-    args.feature = [name for arg in args.feature for name in arg.split()]
-    args.extension = [name for arg in args.extension for name in arg.split()]
+    from generators.thread_safety_generator import ThreadOutputGenerator
+    from generators.parameter_validation_generator import ParameterValidationOutputGenerator
+    from generators.object_tracker_generator import  ObjectTrackerOutputGenerator
+    from generators.dispatch_table_helper_generator import DispatchTableHelperOutputGenerator
+    from generators.helper_file_generator import HelperFileOutputGenerator
+    from generators.layer_dispatch_table_generator import LayerDispatchTableOutputGenerator
+    from generators.layer_chassis_generator import LayerChassisOutputGenerator
+    from generators.layer_chassis_dispatch_generator import LayerChassisDispatchOutputGenerator
+    from generators.lvt_file_generator import LvtFileOutputGenerator
+    from generators.best_practices_generator import BestPracticesOutputGenerator
+    from generators.spirv_validation_generator import SpirvValidationHelperOutputGenerator
+    from generators.spirv_grammar_generator import SpirvGrammarHelperOutputGenerator
+    from generators.command_validation_generator import CommandValidationOutputGenerator
+    from generators.format_utils_generator import FormatUtilsOutputGenerator
+    from generators.dynamic_state_generator import DynamicStateOutputGenerator
+    from generators.sync_validation_generator import SyncValidationOutputGenerator
 
     # create error/warning & diagnostic files
     if (args.errfile):
@@ -753,7 +554,8 @@ if __name__ == '__main__':
     endTimer(args.time, '* Time to make ElementTree =')
 
     # Filter out non-Vulkan extensions
-    [exts.remove(e) for exts in tree.findall('extensions') for e in exts.findall('extension') if (sup := e.get('supported')) is not None and options.apiname not in sup.split(',')]
+    if args.api == 'vulkan':
+        [exts.remove(e) for exts in tree.findall('extensions') for e in exts.findall('extension') if (sup := e.get('supported')) is not None and options.apiname not in sup.split(',')]
 
     # Load the XML tree into the registry object
     startTimer(args.time)

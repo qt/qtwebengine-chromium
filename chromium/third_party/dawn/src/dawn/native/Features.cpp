@@ -82,6 +82,11 @@ static constexpr FeatureEnumAndInfoList kFeatureNameAndInfoList = {{
     {Feature::BGRA8UnormStorage,
      {"bgra8unorm-storage", "Allows the STORAGE usage on textures with format \"bgra8unorm\".",
       "https://bugs.chromium.org/p/dawn/issues/detail?id=1591", FeatureInfo::FeatureState::Stable}},
+    {Feature::Float32Filterable,
+     {"float32-filterable",
+      "Allows textures with formats \"r32float\" \"rg32float\" and \"rgba32float\" to be filtered.",
+      "https://bugs.chromium.org/p/dawn/issues/detail?id=1664",
+      FeatureInfo::FeatureState::Experimental}},
     {Feature::DawnInternalUsages,
      {"dawn-internal-usages",
       "Add internal usages to resources to affect how the texture is allocated, but not "
@@ -107,6 +112,11 @@ static constexpr FeatureEnumAndInfoList kFeatureNameAndInfoList = {{
       "Support querying Surface's capabilities such as supported usage flags. This feature also "
       "enables swap chain to be created with usage other than RenderAttachment.",
       "https://bugs.chromium.org/p/dawn/issues/detail?id=1760", FeatureInfo::FeatureState::Stable}},
+    {Feature::TransientAttachments,
+     {"transient-attachments",
+      "Support transient attachments that allow render pass operations to stay in tile memory, "
+      "avoiding VRAM traffic and potentially avoiding VRAM allocation for the textures.",
+      "https://bugs.chromium.org/p/dawn/issues/detail?id=1695", FeatureInfo::FeatureState::Stable}},
 }};
 
 Feature FromAPIFeature(wgpu::FeatureName feature) {
@@ -153,6 +163,10 @@ Feature FromAPIFeature(wgpu::FeatureName feature) {
             return Feature::ImplicitDeviceSynchronization;
         case wgpu::FeatureName::SurfaceCapabilities:
             return Feature::SurfaceCapabilities;
+        case wgpu::FeatureName::TransientAttachments:
+            return Feature::TransientAttachments;
+        case wgpu::FeatureName::Float32Filterable:
+            return Feature::Float32Filterable;
     }
     return Feature::InvalidEnum;
 }
@@ -195,6 +209,10 @@ wgpu::FeatureName ToAPIFeature(Feature feature) {
             return wgpu::FeatureName::ImplicitDeviceSynchronization;
         case Feature::SurfaceCapabilities:
             return wgpu::FeatureName::SurfaceCapabilities;
+        case Feature::TransientAttachments:
+            return wgpu::FeatureName::TransientAttachments;
+        case Feature::Float32Filterable:
+            return wgpu::FeatureName::Float32Filterable;
 
         case Feature::EnumCount:
             break;

@@ -45,7 +45,7 @@ deps = {
       '@' + '3c7e3f1b8b1e4c0b6ec693430379cea682de78d6',
     'condition': 'not build_with_chromium',
   },
-  'buildtools/clang_format/script': {
+  'third_party/clang-format/script': {
     'url': Var('chromium_git') +
       '/external/github.com/llvm/llvm-project/clang/tools/clang-format.git' +
       '@' + Var('clang_format_revision'),
@@ -219,10 +219,6 @@ hooks = [
                 '-s', 'buildtools/mac/clang-format.arm64.sha1' ],
     'condition': 'host_os == "mac" and host_cpu == "arm64" and not build_with_chromium',
   },
-]
-
-recursedeps = [
-  'cast',
 ]
 
 include_rules = [

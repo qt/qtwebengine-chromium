@@ -13,32 +13,31 @@ namespace openscreen {
 int ScopedWakeLockLinux::reference_count_ = 0;
 
 SerialDeletePtr<ScopedWakeLock> ScopedWakeLock::Create(
-    TaskRunner* task_runner) {
-  return SerialDeletePtr<ScopedWakeLock>(task_runner,
+    TaskRunner& task_runner) {
+  return SerialDeletePtr<ScopedWakeLock>(&task_runner,
                                          new ScopedWakeLockLinux());
 }
 
 namespace {
 
-TaskRunner* GetTaskRunner() {
+TaskRunner& GetTaskRunner() {
   auto* const platform_client = PlatformClientPosix::GetInstance();
   OSP_DCHECK(platform_client);
-  auto* const task_runner = platform_client->GetTaskRunner();
-  OSP_DCHECK(task_runner);
+  auto& task_runner = platform_client->GetTaskRunner();
   return task_runner;
 }
 
 }  // namespace
 
 ScopedWakeLockLinux::ScopedWakeLockLinux() : ScopedWakeLock() {
-  OSP_DCHECK(GetTaskRunner()->IsRunningOnTaskRunner());
+  OSP_DCHECK(GetTaskRunner().IsRunningOnTaskRunner());
   if (reference_count_++ == 0) {
     AcquireWakeLock();
   }
 }
 
 ScopedWakeLockLinux::~ScopedWakeLockLinux() {
-  GetTaskRunner()->PostTask([] {
+  GetTaskRunner().PostTask([] {
     if (--reference_count_ == 0) {
       ReleaseWakeLock();
     }

@@ -5,6 +5,7 @@
 #include "src/objects/js-objects.h"
 
 #include "src/api/api-arguments-inl.h"
+#include "src/api/api-natives.h"
 #include "src/base/optional.h"
 #include "src/common/assert-scope.h"
 #include "src/common/globals.h"
@@ -657,8 +658,8 @@ base::Optional<NativeContext> JSReceiver::GetCreationContextRaw() {
       }
     }
   }
-  if (function.has_context()) return function.native_context();
-  return {};
+  CHECK(function.has_context());
+  return function.native_context();
 }
 
 MaybeHandle<NativeContext> JSReceiver::GetCreationContext() {
@@ -1365,8 +1366,24 @@ Maybe<bool> DefinePropertyWithInterceptorInternal(
   std::unique_ptr<v8::PropertyDescriptor> descriptor(
       new v8::PropertyDescriptor());
   if (PropertyDescriptor::IsAccessorDescriptor(desc)) {
-    descriptor.reset(new v8::PropertyDescriptor(
-        v8::Utils::ToLocal(desc->get()), v8::Utils::ToLocal(desc->set())));
+    Handle<Object> getter = desc->get();
+    if (!getter.is_null() && getter->IsFunctionTemplateInfo()) {
+      ASSIGN_RETURN_ON_EXCEPTION_VALUE(
+          isolate, getter,
+          ApiNatives::InstantiateFunction(
+              Handle<FunctionTemplateInfo>::cast(getter), MaybeHandle<Name>()),
+          Nothing<bool>());
+    }
+    Handle<Object> setter = desc->set();
+    if (!setter.is_null() && setter->IsFunctionTemplateInfo()) {
+      ASSIGN_RETURN_ON_EXCEPTION_VALUE(
+          isolate, setter,
+          ApiNatives::InstantiateFunction(
+              Handle<FunctionTemplateInfo>::cast(setter), MaybeHandle<Name>()),
+          Nothing<bool>());
+    }
+    descriptor.reset(new v8::PropertyDescriptor(v8::Utils::ToLocal(getter),
+                                                v8::Utils::ToLocal(setter)));
   } else if (PropertyDescriptor::IsDataDescriptor(desc)) {
     if (desc->has_writable()) {
       descriptor.reset(new v8::PropertyDescriptor(
@@ -2824,8 +2841,8 @@ void JSObject::SetNormalizedProperty(Handle<JSObject> object, Handle<Name> name,
         dictionary->SetEntry(entry, *name, *value, details);
       }
       // TODO(pthier): Add flags to swiss dictionaries.
-      if (name->IsInterestingSymbol()) {
-        dictionary->set_may_have_interesting_symbols(true);
+      if (name->IsInteresting(isolate)) {
+        dictionary->set_may_have_interesting_properties(true);
       }
     }
   }
@@ -2932,9 +2949,13 @@ void JSObject::JSObjectShortPrint(StringStream* accumulator) {
     case JS_SHARED_STRUCT_TYPE:
       accumulator->Add("<JSSharedStruct>");
       break;
+    case JS_MESSAGE_OBJECT_TYPE:
+      accumulator->Add("<JSMessageObject>");
+      break;
+    case JS_EXTERNAL_OBJECT_TYPE:
+      accumulator->Add("<JSExternalObject>");
+      break;
 
-    // All other JSObjects are rather similar to each other (JSObject,
-    // JSGlobalProxy, JSGlobalObject, JSUndetectable, JSPrimitiveWrapper).
     default: {
       Map map_of_this = map();
       Heap* heap = GetHeap();
@@ -3379,8 +3400,8 @@ void MigrateFastToSlow(Isolate* isolate, Handle<JSObject> object,
     // Copy the next enumeration index from instance descriptor.
     dictionary->set_next_enumeration_index(real_size + 1);
     // TODO(pthier): Add flags to swiss dictionaries.
-    dictionary->set_may_have_interesting_symbols(
-        map->may_have_interesting_symbols());
+    dictionary->set_may_have_interesting_properties(
+        map->may_have_interesting_properties());
   }
 
   // From here on we cannot fail and we shouldn't GC anymore.
@@ -3857,8 +3878,8 @@ void JSObject::MigrateSlowToFast(Handle<JSObject> object,
   Handle<Map> new_map = Map::CopyDropDescriptors(isolate, old_map);
   // We should not only set this bit if we need to. We should not retain the
   // old bit because turning a map into dictionary always sets this bit.
-  new_map->set_may_have_interesting_symbols(new_map->has_named_interceptor() ||
-                                            new_map->is_access_check_needed());
+  new_map->set_may_have_interesting_properties(
+      new_map->has_named_interceptor() || new_map->is_access_check_needed());
   new_map->set_is_dictionary_map(false);
 
   NotifyMapChange(old_map, new_map, isolate);
@@ -3929,8 +3950,8 @@ void JSObject::MigrateSlowToFast(Handle<JSObject> object,
     Handle<Name> key(k, isolate);
 
     // Properly mark the {new_map} if the {key} is an "interesting symbol".
-    if (key->IsInterestingSymbol()) {
-      new_map->set_may_have_interesting_symbols(true);
+    if (key->IsInteresting(isolate)) {
+      new_map->set_may_have_interesting_properties(true);
     }
 
     DCHECK_EQ(PropertyLocation::kField, details.location());
@@ -4231,7 +4252,7 @@ Maybe<bool> JSObject::PreventExtensions(Isolate* isolate,
   }
 
   if (object->IsAccessCheckNeeded() &&
-      !isolate->MayAccess(handle(isolate->context(), isolate), object)) {
+      !isolate->MayAccess(isolate->native_context(), object)) {
     isolate->ReportFailedAccessCheck(object);
     RETURN_VALUE_IF_SCHEDULED_EXCEPTION(isolate, Nothing<bool>());
     RETURN_FAILURE(isolate, should_throw,
@@ -4280,7 +4301,7 @@ Maybe<bool> JSObject::PreventExtensions(Isolate* isolate,
 
 bool JSObject::IsExtensible(Isolate* isolate, Handle<JSObject> object) {
   if (object->IsAccessCheckNeeded() &&
-      !isolate->MayAccess(handle(isolate->context(), isolate), object)) {
+      !isolate->MayAccess(isolate->native_context(), object)) {
     return true;
   }
   if (object->IsJSGlobalProxy()) {
@@ -4354,7 +4375,7 @@ Maybe<bool> JSObject::PreventExtensionsWithTransition(
   DCHECK_IMPLIES(object->IsJSModuleNamespace(), attrs == NONE);
 
   if (object->IsAccessCheckNeeded() &&
-      !isolate->MayAccess(handle(isolate->context(), isolate), object)) {
+      !isolate->MayAccess(isolate->native_context(), object)) {
     isolate->ReportFailedAccessCheck(object);
     RETURN_VALUE_IF_SCHEDULED_EXCEPTION(isolate, Nothing<bool>());
     RETURN_FAILURE(isolate, should_throw,
@@ -4916,13 +4937,24 @@ void JSObject::OptimizeAsPrototype(Handle<JSObject> object,
     // Replace the pointer to the exact constructor with the Object function
     // from the same context if undetectable from JS. This is to avoid keeping
     // memory alive unnecessarily.
-    Object maybe_constructor = new_map->GetConstructor();
+    Object maybe_constructor = new_map->GetConstructorRaw();
+    Tuple2 tuple;
+    if (maybe_constructor.IsTuple2()) {
+      // Handle the {constructor, non-instance_prototype} tuple case if the map
+      // has non-instance prototype.
+      tuple = Tuple2::cast(maybe_constructor);
+      maybe_constructor = tuple.value1();
+    }
     if (maybe_constructor.IsJSFunction()) {
       JSFunction constructor = JSFunction::cast(maybe_constructor);
       if (!constructor.shared().IsApiFunction()) {
-        Context context = constructor.native_context();
+        NativeContext context = constructor.native_context();
         JSFunction object_function = context.object_function();
-        new_map->SetConstructor(object_function);
+        if (!tuple.is_null()) {
+          tuple.set_value1(object_function);
+        } else {
+          new_map->SetConstructor(object_function);
+        }
       }
     }
     JSObject::MigrateToMap(isolate, object, new_map);
@@ -5167,7 +5199,7 @@ Maybe<bool> JSObject::SetPrototype(Isolate* isolate, Handle<JSObject> object,
 
   if (from_javascript) {
     if (object->IsAccessCheckNeeded() &&
-        !isolate->MayAccess(handle(isolate->context(), isolate), object)) {
+        !isolate->MayAccess(isolate->native_context(), object)) {
       isolate->ReportFailedAccessCheck(object);
       RETURN_VALUE_IF_SCHEDULED_EXCEPTION(isolate, Nothing<bool>());
       RETURN_FAILURE(isolate, should_throw,
@@ -5245,7 +5277,7 @@ Maybe<bool> JSObject::SetPrototype(Isolate* isolate, Handle<JSObject> object,
   isolate->UpdateNoElementsProtectorOnSetPrototype(real_receiver);
   isolate->UpdateTypedArraySpeciesLookupChainProtectorOnSetPrototype(
       real_receiver);
-  isolate->UpdateNumberStringPrototypeNoReplaceProtectorOnSetPrototype(
+  isolate->UpdateNumberStringNotRegexpLikeProtectorOnSetPrototype(
       real_receiver);
 
   Handle<Map> new_map =

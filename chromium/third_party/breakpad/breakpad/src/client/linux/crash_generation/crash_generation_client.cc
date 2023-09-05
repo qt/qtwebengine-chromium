@@ -49,9 +49,11 @@ namespace {
 class CrashGenerationClientImpl : public CrashGenerationClient {
  public:
   explicit CrashGenerationClientImpl(int server_fd) : server_fd_(server_fd) {}
-  virtual ~CrashGenerationClientImpl() {}
+  CrashGenerationClientImpl(const CrashGenerationClientImpl&) = delete;
+  void operator=(const CrashGenerationClientImpl&) = delete;
+  ~CrashGenerationClientImpl() override = default;
 
-  virtual bool RequestDump(const void* blob, size_t blob_size) {
+  bool RequestDump(const void* blob, size_t blob_size) override {
     int fds[2];
     if (sys_pipe(fds) < 0)
       return false;
@@ -92,8 +94,6 @@ class CrashGenerationClientImpl : public CrashGenerationClient {
 
  private:
   int server_fd_;
-
-  DISALLOW_COPY_AND_ASSIGN(CrashGenerationClientImpl);
 };
 
 }  // namespace

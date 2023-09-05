@@ -16,6 +16,7 @@
 #include "include/core/SkShader.h"
 #include "include/core/SkVertices.h"
 #include "include/private/base/SkTo.h"
+#include "include/private/chromium/Slug.h"
 #include "src/base/SkTLazy.h"
 #include "src/core/SkEnumerate.h"
 #include "src/core/SkImageFilterCache.h"
@@ -33,9 +34,6 @@
 #include "src/shaders/SkLocalMatrixShader.h"
 #include "src/text/GlyphRun.h"
 #include "src/utils/SkPatchUtils.h"
-#if defined(SK_GANESH)
-#include "include/private/chromium/Slug.h"
-#endif
 
 SkBaseDevice::SkBaseDevice(const SkImageInfo& info, const SkSurfaceProps& surfaceProps)
         : SkMatrixProvider(/* localToDevice = */ SkMatrix::I())
@@ -315,6 +313,10 @@ sk_sp<SkSpecialImage> SkBaseDevice::snapSpecial() {
     return this->snapSpecial(SkIRect::MakeWH(this->width(), this->height()));
 }
 
+skif::Context SkBaseDevice::createContext(const skif::ContextInfo& ctxInfo) const {
+    return skif::Context::MakeRaster(ctxInfo);
+}
+
 void SkBaseDevice::drawDevice(SkBaseDevice* device, const SkSamplingOptions& sampling,
                               const SkPaint& paint) {
     sk_sp<SkSpecialImage> deviceImage = device->snapSpecial();
@@ -341,11 +343,16 @@ void SkBaseDevice::drawFilteredImage(const skif::Mapping& mapping,
     // getImageFilterCache returns a bare image filter cache pointer that must be ref'ed until the
     // filter's filterImage(ctx) function returns.
     sk_sp<SkImageFilterCache> cache(this->getImageFilterCache());
-    skif::Context ctx(mapping, targetOutput, cache.get(), colorType, this->imageInfo().colorSpace(),
-                      skif::FilterResult(sk_ref_sp(src)));
+    skif::Context ctx = this->createContext({mapping,
+                                             targetOutput,
+                                             skif::FilterResult(sk_ref_sp(src)),
+                                             colorType,
+                                             this->imageInfo().colorSpace(),
+                                             src ? src->props() : this->surfaceProps(),
+                                             cache.get()});
 
     SkIPoint offset;
-    sk_sp<SkSpecialImage> result = as_IFB(filter)->filterImage(ctx).imageAndOffset(&offset);
+    sk_sp<SkSpecialImage> result = as_IFB(filter)->filterImage(ctx).imageAndOffset(ctx, &offset);
     if (result) {
         SkMatrix deviceMatrixWithOffset = mapping.layerToDevice();
         deviceMatrixWithOffset.preTranslate(offset.fX, offset.fY);
@@ -477,7 +484,6 @@ void SkBaseDevice::simplifyGlyphRunRSXFormAndRedraw(SkCanvas* canvas,
     }
 }
 
-#if (defined(SK_GANESH) || defined(SK_GRAPHITE))
 sk_sp<sktext::gpu::Slug> SkBaseDevice::convertGlyphRunListToSlug(
         const sktext::GlyphRunList& glyphRunList,
         const SkPaint& initialPaint,
@@ -488,7 +494,6 @@ sk_sp<sktext::gpu::Slug> SkBaseDevice::convertGlyphRunListToSlug(
 void SkBaseDevice::drawSlug(SkCanvas*, const sktext::gpu::Slug*, const SkPaint&) {
     SK_ABORT("Slug drawing not supported.");
 }
-#endif
 
 //////////////////////////////////////////////////////////////////////////////////////////
 

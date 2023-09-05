@@ -237,7 +237,7 @@ static void update_mbgraph_frame_stats(VP9_COMP *cpi,
   xd->mi[0] = &mi_local;
   mi_local.sb_type = BLOCK_16X16;
   mi_local.ref_frame[0] = LAST_FRAME;
-  mi_local.ref_frame[1] = NONE;
+  mi_local.ref_frame[1] = NO_REF_FRAME;
 
   for (mb_row = 0; mb_row < cm->mb_rows; mb_row++) {
     MV gld_left_mv = gld_top_mv;
@@ -288,7 +288,7 @@ static void separate_arf_mbs(VP9_COMP *cpi) {
   int *arf_not_zz;
 
   CHECK_MEM_ERROR(
-      cm, arf_not_zz,
+      &cm->error, arf_not_zz,
       vpx_calloc(cm->mb_rows * cm->mb_cols * sizeof(*arf_not_zz), 1));
 
   // We are not interested in results beyond the alt ref itself.

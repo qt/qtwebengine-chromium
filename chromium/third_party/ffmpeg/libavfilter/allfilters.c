@@ -75,6 +75,7 @@ extern const AVFilter ff_af_apulsator;
 extern const AVFilter ff_af_arealtime;
 extern const AVFilter ff_af_aresample;
 extern const AVFilter ff_af_areverse;
+extern const AVFilter ff_af_arls;
 extern const AVFilter ff_af_arnndn;
 extern const AVFilter ff_af_asdr;
 extern const AVFilter ff_af_asegment;
@@ -160,6 +161,7 @@ extern const AVFilter ff_af_volumedetect;
 
 extern const AVFilter ff_asrc_aevalsrc;
 extern const AVFilter ff_asrc_afdelaysrc;
+extern const AVFilter ff_asrc_afireqsrc;
 extern const AVFilter ff_asrc_afirsrc;
 extern const AVFilter ff_asrc_anoisesrc;
 extern const AVFilter ff_asrc_anullsrc;
@@ -196,6 +198,7 @@ extern const AVFilter ff_vf_boxblur;
 extern const AVFilter ff_vf_boxblur_opencl;
 extern const AVFilter ff_vf_bwdif;
 extern const AVFilter ff_vf_cas;
+extern const AVFilter ff_vf_ccrepack;
 extern const AVFilter ff_vf_chromaber_vulkan;
 extern const AVFilter ff_vf_chromahold;
 extern const AVFilter ff_vf_chromakey;
@@ -555,6 +558,7 @@ extern const AVFilter ff_vsrc_smptehdbars;
 extern const AVFilter ff_vsrc_testsrc;
 extern const AVFilter ff_vsrc_testsrc2;
 extern const AVFilter ff_vsrc_yuvtestsrc;
+extern const AVFilter ff_vsrc_zoneplate;
 
 extern const AVFilter ff_vsink_nullsink;
 

@@ -8,6 +8,8 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
@@ -200,7 +202,7 @@ class Controller final : public ServiceListener::Observer,
   void OnReceiverChanged(const ServiceInfo& info) override;
   void OnReceiverRemoved(const ServiceInfo& info) override;
   void OnAllReceiversRemoved() override;
-  void OnError(ServiceListenerError) override;
+  void OnError(Error) override;
   void OnMetrics(ServiceListener::Metrics) override;
 
   std::map<std::string, uint64_t> next_connection_id_;

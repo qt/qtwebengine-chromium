@@ -44,8 +44,6 @@ namespace internal {
 struct default_packet_traits
 {
   enum {
-    HasHalfPacket = 0,
-
     HasAdd       = 1,
     HasSub       = 1,
     HasShift     = 1,
@@ -115,7 +113,6 @@ template<typename T> struct packet_traits : default_packet_traits
     Vectorizable = 0,
     size = 1,
     AlignedOnScalar = 0,
-    HasHalfPacket = 0
   };
   enum {
     HasAdd    = 0,

@@ -43,7 +43,7 @@ class CastService final : public discovery::ReportingClient {
  public:
   struct Configuration {
     // The task runner to be used for async calls.
-    TaskRunner* task_runner;
+    TaskRunner& task_runner;
 
     // The interface the cast service is running on.
     InterfaceInfo interface;

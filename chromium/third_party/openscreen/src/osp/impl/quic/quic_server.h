@@ -8,6 +8,8 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <utility>
+#include <vector>
 
 #include "osp/impl/quic/quic_connection_factory.h"
 #include "osp/impl/quic/quic_service_common.h"
@@ -38,7 +40,7 @@ class QuicServer final : public ProtocolConnectionServer,
              std::unique_ptr<QuicConnectionFactory> connection_factory,
              ProtocolConnectionServer::Observer* observer,
              ClockNowFunctionPtr now_function,
-             TaskRunner* task_runner);
+             TaskRunner& task_runner);
   ~QuicServer() override;
 
   // ProtocolConnectionServer overrides.

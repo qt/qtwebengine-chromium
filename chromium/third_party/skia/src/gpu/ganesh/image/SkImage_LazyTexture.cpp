@@ -15,8 +15,8 @@
 #include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrTypes.h"
-#include "include/gpu/ganesh/GrTextureGenerator.h"
 #include "include/gpu/ganesh/SkImageGanesh.h"
+#include "include/private/gpu/ganesh/GrTextureGenerator.h" // IWYU pragma: keep
 #include "src/gpu/ganesh/GrColorInfo.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrSurfaceProxyView.h"
@@ -30,10 +30,11 @@
 
 enum class GrColorType;
 
-sk_sp<SkImage> SkImage_LazyTexture::onMakeSubset(const SkIRect& subset,
-                                                 GrDirectContext* direct) const {
-    auto pixels = direct ? SkImages::TextureFromImage(direct, this) : this->makeRasterImage();
-    return pixels ? pixels->makeSubset(subset, direct) : nullptr;
+sk_sp<SkImage> SkImage_LazyTexture::onMakeSubset(GrDirectContext* direct,
+                                                 const SkIRect& subset) const {
+    auto pixels = direct ? SkImages::TextureFromImage(direct, this) :
+                           this->makeRasterImage(nullptr);
+    return pixels ? pixels->makeSubset(direct, subset) : nullptr;
 }
 
 bool SkImage_LazyTexture::readPixelsProxy(GrDirectContext* ctx, const SkPixmap& pixmap) const {

@@ -24,13 +24,13 @@
 #include "include/private/base/SkAlign.h"
 #include "include/private/base/SkAssert.h"
 #include "src/core/SkBlenderBase.h"
-#include "src/core/SkColorFilterBase.h"
 #include "src/core/SkImageFilter_Base.h"
 #include "src/core/SkMaskFilterBase.h"
 #include "src/core/SkPaintPriv.h"
 #include "src/core/SkPicturePriv.h"
 #include "src/core/SkSamplingPriv.h"
 #include "src/core/SkTHash.h"
+#include "src/effects/colorfilters/SkColorFilterBase.h"
 #include "src/shaders/SkShaderBase.h"
 
 #include <cstddef>
@@ -188,6 +188,9 @@ public:
     void setDeserialProcs(const SkDeserialProcs& procs);
     const SkDeserialProcs& getDeserialProcs() const { return fProcs; }
 
+    bool allowSkSL() const { return fAllowSkSL; }
+    void setAllowSkSL(bool allow) { fAllowSkSL = allow; }
+
     /**
      *  If isValid is false, sets the buffer to be "invalid". Returns true if the buffer
      *  is still valid.
@@ -258,6 +261,7 @@ private:
         return SkIsAlign4((uintptr_t)ptr);
     }
 
+    bool fAllowSkSL = true;
     bool fError = false;
 };
 

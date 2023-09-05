@@ -168,6 +168,17 @@ inline const char* TypeName(const BaseType t) {
   return nullptr;
 }
 
+inline const char* StringOf(const BaseType t) {
+  switch (t) {
+  #define FLATBUFFERS_TD(ENUM, IDLTYPE, CTYPE, ...) \
+    case BASE_TYPE_##ENUM: return #CTYPE;
+      FLATBUFFERS_GEN_TYPES(FLATBUFFERS_TD)
+  #undef FLATBUFFERS_TD
+    default: FLATBUFFERS_ASSERT(0);
+  }
+  return "";
+}
+
 // clang-format on
 
 struct StructDef;
@@ -644,6 +655,7 @@ struct IDLOptions {
   CaseStyle cpp_object_api_field_case_style;
   bool cpp_direct_copy;
   bool gen_nullable;
+  std::string java_package_prefix;
   bool java_checkerframework;
   bool gen_generated;
   bool gen_json_coders;
@@ -685,6 +697,8 @@ struct IDLOptions {
   bool no_leak_private_annotations;
   bool require_json_eof;
   bool keep_proto_id;
+  bool python_no_type_prefix_suffix;
+  bool python_typing;
   ProtoIdGapAction proto_id_gap_action;
 
   // Possible options for the more general generator below.
@@ -706,6 +720,7 @@ struct IDLOptions {
     kKotlin = 1 << 15,
     kSwift = 1 << 16,
     kNim = 1 << 17,
+    kProto = 1 << 18,
     kMAX
   };
 
@@ -793,6 +808,8 @@ struct IDLOptions {
         no_leak_private_annotations(false),
         require_json_eof(true),
         keep_proto_id(false),
+        python_no_type_prefix_suffix(false),
+        python_typing(false),
         proto_id_gap_action(ProtoIdGapAction::WARNING),
         mini_reflect(IDLOptions::kNone),
         require_explicit_ids(false),
@@ -1183,13 +1200,14 @@ class Parser : public ParserState {
 // strict_json adds "quotes" around field names if true.
 // If the flatbuffer cannot be encoded in JSON (e.g., it contains non-UTF-8
 // byte arrays in String values), returns false.
-extern bool GenerateTextFromTable(const Parser &parser, const void *table,
-                                  const std::string &tablename,
-                                  std::string *text);
-extern bool GenerateText(const Parser &parser, const void *flatbuffer,
-                         std::string *text);
-extern bool GenerateTextFile(const Parser &parser, const std::string &path,
-                             const std::string &file_name);
+extern const char *GenerateTextFromTable(const Parser &parser, const void *table,
+                                         const std::string &tablename,
+                                         std::string *text);
+extern const char *GenerateText(const Parser &parser, const void *flatbuffer,
+                                std::string *text);
+extern const char *GenerateTextFile(const Parser &parser,
+                                    const std::string &path,
+                                    const std::string &file_name);
 
 // Generate Json schema to string
 // See idl_gen_json_schema.cpp.
@@ -1270,9 +1288,10 @@ extern bool GenerateSwift(const Parser &parser, const std::string &path,
 // Generate a schema file from the internal representation, useful after
 // parsing a .proto schema.
 extern std::string GenerateFBS(const Parser &parser,
-                               const std::string &file_name);
+                               const std::string &file_name,
+                               bool no_log);
 extern bool GenerateFBS(const Parser &parser, const std::string &path,
-                        const std::string &file_name);
+                        const std::string &file_name, bool no_log);
 
 // Generate a make rule for the generated TypeScript code.
 // See idl_gen_ts.cpp.

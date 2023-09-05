@@ -40,12 +40,8 @@ discovery::DnsSdInstance ServiceConfigToDnsSdInstance(
 
 }  // namespace
 
-DnsSdPublisherClient::DnsSdPublisherClient(ServicePublisher::Observer* observer,
-                                           openscreen::TaskRunner* task_runner)
-    : observer_(observer), task_runner_(task_runner) {
-  OSP_DCHECK(observer_);
-  OSP_DCHECK(task_runner_);
-}
+DnsSdPublisherClient::DnsSdPublisherClient(TaskRunner& task_runner)
+    : task_runner_(task_runner) {}
 
 DnsSdPublisherClient::~DnsSdPublisherClient() = default;
 
@@ -58,7 +54,6 @@ void DnsSdPublisherClient::StartPublisher(
   if (result.ok()) {
     SetState(State::kRunning);
   } else {
-    OnFatalError(result);
     SetState(State::kStopped);
   }
 }
@@ -85,14 +80,6 @@ void DnsSdPublisherClient::ResumePublisher(
   OSP_DCHECK(dns_sd_publisher_);
   dns_sd_publisher_->Register(config);
   SetState(State::kRunning);
-}
-
-void DnsSdPublisherClient::OnFatalError(Error error) {
-  observer_->OnError(error);
-}
-
-void DnsSdPublisherClient::OnRecoverableError(Error error) {
-  observer_->OnError(error);
 }
 
 void DnsSdPublisherClient::StartPublisherInternal(
@@ -124,7 +111,7 @@ DnsSdPublisherClient::CreateDnsSdServiceInternal(
   // discovery::DnsSdService, e.g. through a ref-counting handle, so that the
   // OSP publisher and the OSP listener don't have to coordinate through an
   // additional object.
-  return CreateDnsSdService(task_runner_, this, dns_sd_config);
+  return CreateDnsSdService(task_runner_, publisher_, dns_sd_config);
 }
 
 }  // namespace osp

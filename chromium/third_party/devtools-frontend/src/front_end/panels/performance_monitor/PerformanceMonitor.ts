@@ -95,7 +95,7 @@ export class PerformanceMonitorImpl extends UI.Widget.HBox implements
     const chartContainer = this.contentElement.createChild('div', 'perfmon-chart-container');
     this.canvas = chartContainer.createChild('canvas') as HTMLCanvasElement;
     this.canvas.tabIndex = -1;
-    UI.ARIAUtils.setAccessibleName(this.canvas, i18nString(UIStrings.graphsDisplayingARealtimeViewOf));
+    UI.ARIAUtils.setLabel(this.canvas, i18nString(UIStrings.graphsDisplayingARealtimeViewOf));
     this.contentElement.createChild('div', 'perfmon-chart-suspend-overlay fill').createChild('div').textContent =
         i18nString(UIStrings.paused);
     this.controlPane.addEventListener(Events.MetricChanged, this.recalcChartHeight, this);
@@ -680,7 +680,7 @@ export class MetricIndicator {
 
   private updateSwatchElement(): void {
     const color = this.active ? this.color : 'var(--icon-disabled)';
-    this.swatchElement.data = {iconName: 'checkmark', color, width: '14px', height: '14px'};
+    this.swatchElement.data = {iconName: 'checkmark', color, width: '16px', height: '14px'};
   }
 
   private toggleIndicator(): void {

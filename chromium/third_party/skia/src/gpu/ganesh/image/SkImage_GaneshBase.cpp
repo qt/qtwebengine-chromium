@@ -10,19 +10,30 @@
 #include "include/core/SkAlphaType.h"
 #include "include/core/SkBitmap.h"
 #include "include/core/SkColorSpace.h"
+#include "include/core/SkColorType.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkImageInfo.h"
+#include "include/core/SkMatrix.h"
 #include "include/core/SkPixmap.h"
-#include "include/core/SkPromiseImageTexture.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRect.h"
 #include "include/core/SkSize.h"
+#include "include/core/SkSurfaceProps.h"
+#include "include/core/SkTypes.h"
 #include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrRecordingContext.h"
-#include "include/private/base/SkAssert.h"
+#include "include/gpu/ganesh/SkImageGanesh.h"
+#include "include/private/chromium/GrPromiseImageTexture.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/core/SkBitmapCache.h"
+#include "src/core/SkColorSpacePriv.h"
+#include "src/core/SkImageFilterCache.h"
+#include "src/core/SkImageFilterTypes.h"
+#include "src/core/SkImageFilter_Base.h"
 #include "src/core/SkImageInfoPriv.h"
+#include "src/core/SkSpecialImage.h"
 #include "src/gpu/RefCntedCallback.h"
 #include "src/gpu/SkBackingFit.h"
 #include "src/gpu/ganesh/GrCaps.h"
@@ -40,18 +51,14 @@
 #include "src/gpu/ganesh/SurfaceContext.h"
 #include "src/gpu/ganesh/image/GrImageUtils.h"
 #include "src/gpu/ganesh/image/SkImage_Ganesh.h"
+#include "src/image/SkImage_Base.h"
 
 #include <functional>
 #include <memory>
 #include <utility>
 
 class GrContextThreadSafeProxy;
-enum SkColorType : int;
-struct SkIRect;
-
-#if defined(SK_GRAPHITE)
-#include "src/gpu/graphite/Log.h"
-#endif
+class SkImageFilter;
 
 SkImage_GaneshBase::SkImage_GaneshBase(sk_sp<GrImageContext> context,
                                        SkImageInfo info,
@@ -159,12 +166,34 @@ bool SkImage_GaneshBase::getROPixels(GrDirectContext* dContext,
     return true;
 }
 
-sk_sp<SkImage> SkImage_GaneshBase::onMakeSubset(const SkIRect& subset,
-                                                GrDirectContext* direct) const {
+sk_sp<SkImage> SkImage_GaneshBase::makeSubset(GrDirectContext* direct,
+                                              const SkIRect& subset) const {
     if (!fContext->priv().matches(direct)) {
         return nullptr;
     }
 
+    if (subset.isEmpty()) {
+        return nullptr;
+    }
+
+    const SkIRect bounds = SkIRect::MakeWH(this->width(), this->height());
+    if (!bounds.contains(subset)) {
+        return nullptr;
+    }
+
+    // optimization : return self if the subset == our bounds
+    if (bounds == subset) {
+        return sk_ref_sp(const_cast<SkImage_GaneshBase*>(this));
+    }
+
+    return this->onMakeSubset(direct, subset);
+}
+
+sk_sp<SkImage> SkImage_GaneshBase::onMakeSubset(GrDirectContext* direct,
+                                                const SkIRect& subset) const {
+    if (!fContext->priv().matches(direct)) {
+        return nullptr;
+    }
     auto [view, ct] = skgpu::ganesh::AsView(direct, this, skgpu::Mipmapped::kNo);
     SkASSERT(view);
     SkASSERT(ct == SkColorTypeToGrColorType(this->colorType()));
@@ -188,28 +217,20 @@ sk_sp<SkImage> SkImage_GaneshBase::onMakeSubset(const SkIRect& subset,
                                       this->imageInfo().colorInfo());
 }
 
-#if defined(SK_GRAPHITE)
-sk_sp<SkImage> SkImage_GaneshBase::onMakeTextureImage(skgpu::graphite::Recorder*,
-                                                      SkImage::RequiredImageProperties) const {
-    SKGPU_LOG_W("Cannot convert Ganesh-backed image to Graphite");
+sk_sp<SkImage> SkImage_GaneshBase::onMakeSubset(skgpu::graphite::Recorder*,
+                                                const SkIRect&,
+                                                RequiredProperties) const {
+    SkDEBUGFAIL("Cannot convert Ganesh-backed image to Graphite");
     return nullptr;
 }
 
-sk_sp<SkImage> SkImage_GaneshBase::onMakeSubset(const SkIRect&,
-                                                skgpu::graphite::Recorder*,
-                                                RequiredImageProperties) const {
-    SKGPU_LOG_W("Cannot convert Ganesh-backed image to Graphite");
+sk_sp<SkImage> SkImage_GaneshBase::makeColorTypeAndColorSpace(skgpu::graphite::Recorder*,
+                                                              SkColorType,
+                                                              sk_sp<SkColorSpace>,
+                                                              RequiredProperties) const {
+    SkDEBUGFAIL("Cannot convert Ganesh-backed image to Graphite");
     return nullptr;
 }
-
-sk_sp<SkImage> SkImage_GaneshBase::onMakeColorTypeAndColorSpace(SkColorType,
-                                                                sk_sp<SkColorSpace>,
-                                                                skgpu::graphite::Recorder*,
-                                                                RequiredImageProperties) const {
-    SKGPU_LOG_W("Cannot convert Ganesh-backed image to Graphite");
-    return nullptr;
-}
-#endif
 
 bool SkImage_GaneshBase::onReadPixels(GrDirectContext* dContext,
                                       const SkImageInfo& dstInfo,
@@ -248,6 +269,76 @@ bool SkImage_GaneshBase::isValid(GrRecordingContext* context) const {
     return true;
 }
 
+sk_sp<SkImage> SkImage_GaneshBase::makeColorTypeAndColorSpace(GrDirectContext* dContext,
+                                                              SkColorType targetColorType,
+                                                              sk_sp<SkColorSpace> targetCS) const {
+    if (kUnknown_SkColorType == targetColorType || !targetCS) {
+        return nullptr;
+    }
+
+    auto myContext = this->context();
+    // This check is also performed in the subclass, but we do it here for the short-circuit below.
+    if (!myContext || !myContext->priv().matches(dContext)) {
+        return nullptr;
+    }
+
+    SkColorType colorType = this->colorType();
+    SkColorSpace* colorSpace = this->colorSpace();
+    if (!colorSpace) {
+        colorSpace = sk_srgb_singleton();
+    }
+    if (colorType == targetColorType &&
+        (SkColorSpace::Equals(colorSpace, targetCS.get()) || this->isAlphaOnly())) {
+        return sk_ref_sp(const_cast<SkImage_GaneshBase*>(this));
+    }
+
+    return this->onMakeColorTypeAndColorSpace(targetColorType, std::move(targetCS), dContext);
+}
+
+sk_sp<SkImage> SkImage_GaneshBase::makeWithFilter(GrRecordingContext* rContext,
+                                                  const SkImageFilter* filter,
+                                                  const SkIRect& subset,
+                                                  const SkIRect& clipBounds,
+                                                  SkIRect* outSubset,
+                                                  SkIPoint* offset) const {
+    if (!filter || !outSubset || !offset || !this->bounds().contains(subset)) {
+        return nullptr;
+    }
+    auto myContext = this->context();
+    if (!myContext || !myContext->priv().matches(rContext)) {
+        return nullptr;
+    }
+    auto srcSpecialImage = SkSpecialImage::MakeFromImage(
+            rContext, subset, sk_ref_sp(const_cast<SkImage_GaneshBase*>(this)), SkSurfaceProps());
+    if (!srcSpecialImage) {
+        return nullptr;
+    }
+
+    sk_sp<SkImageFilterCache> cache(
+            SkImageFilterCache::Create(SkImageFilterCache::kDefaultTransientSize));
+
+    // The filters operate in the local space of the src image, where (0,0) corresponds to the
+    // subset's top left corner. But the clip bounds and any crop rects on the filters are in the
+    // original coordinate system, so configure the CTM to correct crop rects and explicitly adjust
+    // the clip bounds (since it is assumed to already be in image space).
+    // TODO: Once all image filters support it, we can just use the subset's top left corner as
+    // the source FilterResult's origin.
+    skif::ContextInfo ctxInfo = {
+            skif::Mapping(SkMatrix::Translate(-subset.x(), -subset.y())),
+            skif::LayerSpace<SkIRect>(clipBounds.makeOffset(-subset.topLeft())),
+            skif::FilterResult(srcSpecialImage),
+            this->imageInfo().colorType(),
+            this->imageInfo().colorSpace(),
+            /*fSurfaceProps=*/{},
+            cache.get()};
+
+    auto view = srcSpecialImage->view(rContext);
+    skif::Context context = skif::Context::MakeGanesh(rContext, view.origin(), ctxInfo);
+
+    return this->filterSpecialImage(
+            context, as_IFB(filter), srcSpecialImage.get(), subset, clipBounds, outSubset, offset);
+}
+
 sk_sp<GrTextureProxy> SkImage_GaneshBase::MakePromiseImageLazyProxy(
         GrContextThreadSafeProxy* tsp,
         SkISize dimensions,
@@ -273,11 +364,11 @@ sk_sp<GrTextureProxy> SkImage_GaneshBase::MakePromiseImageLazyProxy(
     /**
      * This class is the lazy instantiation callback for promise images. It manages calling the
      * client's Fulfill and Release procs. It attempts to reuse a GrTexture instance in
-     * cases where the client provides the same SkPromiseImageTexture as Fulfill results for
+     * cases where the client provides the same GrPromiseImageTexture as Fulfill results for
      * multiple SkImages. The created GrTexture is given a key based on a unique ID associated with
-     * the SkPromiseImageTexture.
+     * the GrPromiseImageTexture.
      *
-     * A key invalidation message is installed on the SkPromiseImageTexture so that the GrTexture
+     * A key invalidation message is installed on the GrPromiseImageTexture so that the GrTexture
      * is deleted once it can no longer be used to instantiate a proxy.
      */
     class PromiseLazyInstantiateCallback {
@@ -327,7 +418,7 @@ sk_sp<GrTextureProxy> SkImage_GaneshBase::MakePromiseImageLazyProxy(
             }
 
             SkImages::PromiseImageTextureContext textureContext = fReleaseHelper->context();
-            sk_sp<SkPromiseImageTexture> promiseTexture = fFulfillProc(textureContext);
+            sk_sp<GrPromiseImageTexture> promiseTexture = fFulfillProc(textureContext);
 
             if (!promiseTexture) {
                 fFulfillProcFailed = true;
@@ -360,4 +451,17 @@ sk_sp<GrTextureProxy> SkImage_GaneshBase::MakePromiseImageLazyProxy(
 
     return GrProxyProvider::CreatePromiseProxy(
             tsp, std::move(callback), backendFormat, dimensions, mipmapped);
+}
+
+namespace SkImages {
+sk_sp<SkImage> SubsetTextureFrom(GrDirectContext* context,
+                                 const SkImage* img,
+                                 const SkIRect& subset) {
+    if (context == nullptr || img == nullptr) {
+        return nullptr;
+    }
+    auto subsetImg = img->makeSubset(context, subset);
+    return SkImages::TextureFromImage(context, subsetImg.get());
+}
+
 }

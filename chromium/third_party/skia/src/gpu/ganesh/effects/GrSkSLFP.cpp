@@ -7,29 +7,50 @@
 
 #include "src/gpu/ganesh/effects/GrSkSLFP.h"
 
+#include "include/core/SkAlphaType.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkColorSpace.h"
+#include "include/core/SkData.h"
+#include "include/core/SkString.h"
+#include "include/core/SkSurfaceProps.h"
+#include "include/effects/SkOverdrawColorFilter.h"
 #include "include/effects/SkRuntimeEffect.h"
-#include "include/private/gpu/ganesh/GrContext_Base.h"
+#include "include/private/SkSLSampleUsage.h"
+#include "include/private/base/SkMalloc.h"
+#include "include/private/base/SkTo.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/base/SkArenaAlloc.h"
+#include "src/base/SkRandom.h"
 #include "src/core/SkColorSpacePriv.h"
-#include "src/core/SkFilterColorProgram.h"
 #include "src/core/SkRasterPipeline.h"
 #include "src/core/SkRasterPipelineOpContexts.h"
 #include "src/core/SkRasterPipelineOpList.h"
 #include "src/core/SkRuntimeEffectPriv.h"
 #include "src/core/SkSLTypeShared.h"
-#include "src/core/SkVM.h"
 #include "src/gpu/KeyBuilder.h"
-#include "src/gpu/ganesh/GrBaseContextPriv.h"
 #include "src/gpu/ganesh/GrColorInfo.h"
-#include "src/gpu/ganesh/GrTexture.h"
+#include "src/gpu/ganesh/GrColorSpaceXform.h"
+#include "src/gpu/ganesh/GrFragmentProcessors.h"
+#include "src/gpu/ganesh/GrShaderVar.h"
 #include "src/gpu/ganesh/glsl/GrGLSLFragmentShaderBuilder.h"
-#include "src/gpu/ganesh/glsl/GrGLSLProgramBuilder.h"
+#include "src/gpu/ganesh/glsl/GrGLSLUniformHandler.h"
 #include "src/sksl/SkSLString.h"
 #include "src/sksl/SkSLUtil.h"
 #include "src/sksl/codegen/SkSLPipelineStageCodeGenerator.h"
 #include "src/sksl/codegen/SkSLRasterPipelineBuilder.h"
-#include "src/sksl/codegen/SkSLRasterPipelineCodeGenerator.h"
 #include "src/sksl/ir/SkSLProgram.h"
+#include "src/sksl/ir/SkSLType.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
+#include "src/sksl/ir/SkSLVariable.h"
+
+#if defined(SK_ENABLE_SKVM)
+#include "src/core/SkFilterColorProgram.h"
+#endif
+
+#include <algorithm>
+
+namespace SkSL { class Context; }
+struct GrShaderCaps;
 
 class GrSkSLFP::Impl : public ProgramImpl {
 public:
@@ -452,8 +473,8 @@ SkPMColor4f GrSkSLFP::constantOutputForConstantInput(const SkPMColor4f& inputCol
            SkDEBUGFAIL("constant-output-for-constant-input unsupported when child shaders present");
            return false;
         }
-        void toLinearSrgb() override { /* identity color conversion */ }
-        void fromLinearSrgb() override { /* identity color conversion */ }
+        void toLinearSrgb(const void* color) override { /* identity color conversion */ }
+        void fromLinearSrgb(const void* color) override { /* identity color conversion */ }
     };
 
     if (const SkSL::RP::Program* program = fEffect->getRPProgram(/*debugTrace=*/nullptr)) {
@@ -496,9 +517,6 @@ GR_DEFINE_FRAGMENT_PROCESSOR_TEST(GrSkSLFP)
 
 #if GR_TEST_UTILS
 
-#include "include/effects/SkOverdrawColorFilter.h"
-#include "src/core/SkColorFilterBase.h"
-
 std::unique_ptr<GrFragmentProcessor> GrSkSLFP::TestCreate(GrProcessorTestData* d) {
     SkColor colors[SkOverdrawColorFilter::kNumColors];
     for (SkColor& c : colors) {
@@ -506,8 +524,8 @@ std::unique_ptr<GrFragmentProcessor> GrSkSLFP::TestCreate(GrProcessorTestData* d
     }
     auto filter = SkOverdrawColorFilter::MakeWithSkColors(colors);
     SkSurfaceProps props; // default props for testing
-    auto [success, fp] = as_CFB(filter)->asFragmentProcessor(/*inputFP=*/nullptr, d->context(),
-                                                             GrColorInfo{}, props);
+    auto [success, fp] = GrFragmentProcessors::Make(
+            d->context(), filter.get(), /*inputFP=*/nullptr, GrColorInfo{}, props);
     SkASSERT(success);
     return std::move(fp);
 }

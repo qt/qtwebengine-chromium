@@ -289,8 +289,7 @@ void Module::GetStackFrameEntries(vector<StackFrameEntry*>* vec) const {
   }
 }
 
-void Module::AssignSourceIds(
-    set<InlineOrigin*, InlineOriginCompare>& inline_origins) {
+void Module::AssignSourceIds() {
   // First, give every source file an id of -1.
   for (FileByNameMap::iterator file_it = files_.begin();
        file_it != files_.end(); ++file_it) {
@@ -394,7 +393,7 @@ bool Module::Write(std::ostream& stream, SymbolData symbol_data) {
     // Get all referenced inline origins.
     set<InlineOrigin*, InlineOriginCompare> inline_origins;
     CreateInlineOrigins(inline_origins);
-    AssignSourceIds(inline_origins);
+    AssignSourceIds();
 
     // Write out files.
     for (FileByNameMap::iterator file_it = files_.begin();

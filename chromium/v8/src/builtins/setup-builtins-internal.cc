@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fstream>
+
 #include "src/builtins/builtins.h"
 #include "src/builtins/profile-data-reader.h"
 #include "src/codegen/assembler-inl.h"
@@ -79,7 +81,7 @@ using CodeAssemblerGenerator = void (*)(compiler::CodeAssemblerState*);
 
 Handle<Code> BuildPlaceholder(Isolate* isolate, Builtin builtin) {
   HandleScope scope(isolate);
-  byte buffer[kBufferSize];
+  uint8_t buffer[kBufferSize];
   MacroAssembler masm(isolate, CodeObjectRequired::kYes,
                       ExternalAssemblerBuffer(buffer, kBufferSize));
   DCHECK(!masm.has_frame());
@@ -103,7 +105,7 @@ Code BuildWithMacroAssembler(Isolate* isolate, Builtin builtin,
                              MacroAssemblerGenerator generator,
                              const char* s_name) {
   HandleScope scope(isolate);
-  byte buffer[kBufferSize];
+  uint8_t buffer[kBufferSize];
 
   MacroAssembler masm(isolate, BuiltinAssemblerOptions(isolate, builtin),
                       CodeObjectRequired::kYes,
@@ -124,6 +126,14 @@ Code BuildWithMacroAssembler(Isolate* isolate, Builtin builtin,
     HandlerTable::EmitReturnEntry(
         &masm, 0, isolate->builtins()->js_entry_handler_offset());
   }
+#if V8_ENABLE_WEBASSEMBLY && (V8_TARGET_ARCH_X64 || V8_TARGET_ARCH_ARM64)
+  // TODO(v8:12191): Enable on all platforms once the builtin has been ported.
+  if (builtin == Builtin::kWasmReturnPromiseOnSuspend) {
+    handler_table_offset = HandlerTable::EmitReturnTableStart(&masm);
+    HandlerTable::EmitReturnEntry(
+        &masm, 0, isolate->builtins()->jspi_prompt_handler_offset());
+  }
+#endif
 
   CodeDesc desc;
   masm.GetCode(isolate, &desc, MacroAssembler::kNoSafepointTable,
@@ -142,7 +152,7 @@ Code BuildWithMacroAssembler(Isolate* isolate, Builtin builtin,
 Code BuildAdaptor(Isolate* isolate, Builtin builtin, Address builtin_address,
                   const char* name) {
   HandleScope scope(isolate);
-  byte buffer[kBufferSize];
+  uint8_t buffer[kBufferSize];
   MacroAssembler masm(isolate, BuiltinAssemblerOptions(isolate, builtin),
                       CodeObjectRequired::kYes,
                       ExternalAssemblerBuffer(buffer, kBufferSize));
@@ -223,7 +233,6 @@ void SetupIsolateDelegate::ReplacePlaceholders(Isolate* isolate) {
   // Replace references from all builtin code objects to placeholders.
   Builtins* builtins = isolate->builtins();
   DisallowGarbageCollection no_gc;
-  CodePageCollectionMemoryModificationScope modification_scope(isolate->heap());
   static const int kRelocMask =
       RelocInfo::ModeMask(RelocInfo::CODE_TARGET) |
       RelocInfo::ModeMask(RelocInfo::FULL_EMBEDDED_OBJECT) |
@@ -234,8 +243,7 @@ void SetupIsolateDelegate::ReplacePlaceholders(Isolate* isolate) {
        ++builtin) {
     Code code = builtins->code(builtin);
     InstructionStream istream = code.instruction_stream();
-    isolate->heap()->UnprotectAndRegisterMemoryChunk(
-        code, UnprotectMemoryOrigin::kMainThread);
+    CodePageMemoryModificationScope code_modification_scope(istream);
     bool flush_icache = false;
     for (RelocIterator it(code, kRelocMask); !it.done(); it.next()) {
       RelocInfo* rinfo = it.rinfo();
@@ -284,6 +292,11 @@ Code GenerateBytecodeHandler(Isolate* isolate, Builtin builtin,
 void SetupIsolateDelegate::SetupBuiltinsInternal(Isolate* isolate) {
   Builtins* builtins = isolate->builtins();
   DCHECK(!builtins->initialized_);
+
+  if (v8_flags.dump_builtins_hashes_to_file) {
+    // Create an empty file.
+    std::ofstream(v8_flags.dump_builtins_hashes_to_file, std::ios_base::trunc);
+  }
 
   PopulateWithPlaceholders(isolate);
 

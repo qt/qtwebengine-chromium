@@ -56,8 +56,6 @@ void add_solid_uniform_data(const ShaderCodeDictionary* dict,
                             PipelineDataGatherer* gatherer) {
     VALIDATE_UNIFORMS(gatherer, dict, BuiltInCodeSnippetID::kSolidColorShader)
     gatherer->write(premulColor);
-
-    gatherer->addFlags(dict->getSnippetRequirementFlags(BuiltInCodeSnippetID::kSolidColorShader));
 }
 
 } // anonymous namespace
@@ -79,6 +77,46 @@ void SolidColorShaderBlock::BeginBlock(const KeyContext& keyContext,
 
 namespace {
 
+void add_dst_read_sample_uniform_data(const ShaderCodeDictionary* dict,
+                                       PipelineDataGatherer* gatherer,
+                                       sk_sp<TextureProxy> dstTexture) {
+    static const SkTileMode kTileModes[2] = {SkTileMode::kClamp, SkTileMode::kClamp};
+    gatherer->add(SkSamplingOptions(), kTileModes, dstTexture);
+
+    VALIDATE_UNIFORMS(gatherer, dict, BuiltInCodeSnippetID::kDstReadSample)
+
+    SkV4 coords{0.0f,
+                0.0f,
+                1.0f / dstTexture->dimensions().width(),
+                1.0f / dstTexture->dimensions().height()};
+    gatherer->write(coords);
+}
+
+} // anonymous namespace
+
+void DstReadSampleBlock::BeginBlock(const KeyContext& keyContext,
+                                    PaintParamsKeyBuilder* builder,
+                                    PipelineDataGatherer* gatherer,
+                                    sk_sp<TextureProxy> dstTexture) {
+    if (gatherer) {
+        add_dst_read_sample_uniform_data(keyContext.dict(), gatherer, std::move(dstTexture));
+    }
+    builder->beginBlock(BuiltInCodeSnippetID::kDstReadSample);
+}
+
+void DstReadFetchBlock::BeginBlock(const KeyContext& keyContext,
+                                   PaintParamsKeyBuilder* builder,
+                                   PipelineDataGatherer* gatherer) {
+    if (gatherer) {
+        VALIDATE_UNIFORMS(gatherer, keyContext.dict(), BuiltInCodeSnippetID::kDstReadFetch)
+    }
+    builder->beginBlock(BuiltInCodeSnippetID::kDstReadFetch);
+}
+
+//--------------------------------------------------------------------------------------------------
+
+namespace {
+
 void add_gradient_preamble(const GradientShaderBlocks::GradientData& gradData,
                            PipelineDataGatherer* gatherer) {
     constexpr int kInternalStopLimit = GradientShaderBlocks::GradientData::kNumInternalStorageStops;
@@ -90,7 +128,6 @@ void add_gradient_preamble(const GradientShaderBlocks::GradientData& gradData,
         gatherer->writeArray({gradData.fOffsets, stops});
     }
 }
-
 
 // All the gradients share a common postamble of:
 //   numStops - for texture-based gradients
@@ -131,8 +168,6 @@ void add_linear_gradient_uniform_data(const ShaderCodeDictionary* dict,
     gatherer->write(gradData.fPoints[0]);
     gatherer->write(gradData.fPoints[1]);
     add_gradient_postamble(gradData, gatherer);
-
-    gatherer->addFlags(dict->getSnippetRequirementFlags(codeSnippetID));
 };
 
 void add_radial_gradient_uniform_data(const ShaderCodeDictionary* dict,
@@ -145,8 +180,6 @@ void add_radial_gradient_uniform_data(const ShaderCodeDictionary* dict,
     gatherer->write(gradData.fPoints[0]);
     gatherer->write(gradData.fRadii[0]);
     add_gradient_postamble(gradData, gatherer);
-
-    gatherer->addFlags(dict->getSnippetRequirementFlags(codeSnippetID));
 };
 
 void add_sweep_gradient_uniform_data(const ShaderCodeDictionary* dict,
@@ -160,8 +193,6 @@ void add_sweep_gradient_uniform_data(const ShaderCodeDictionary* dict,
     gatherer->write(gradData.fBias);
     gatherer->write(gradData.fScale);
     add_gradient_postamble(gradData, gatherer);
-
-    gatherer->addFlags(dict->getSnippetRequirementFlags(codeSnippetID));
 };
 
 void add_conical_gradient_uniform_data(const ShaderCodeDictionary* dict,
@@ -176,8 +207,6 @@ void add_conical_gradient_uniform_data(const ShaderCodeDictionary* dict,
     gatherer->write(gradData.fRadii[0]);
     gatherer->write(gradData.fRadii[1]);
     add_gradient_postamble(gradData, gatherer);
-
-    gatherer->addFlags(dict->getSnippetRequirementFlags(codeSnippetID));
 };
 
 } // anonymous namespace
@@ -291,10 +320,9 @@ void GradientShaderBlocks::BeginBlock(const KeyContext& keyContext,
                 add_conical_gradient_uniform_data(dict, codeSnippetID, gradData, gatherer);
             }
             break;
-        case SkShaderBase::GradientType::kColor:
         case SkShaderBase::GradientType::kNone:
         default:
-            SkASSERT(0);
+            SkDEBUGFAIL("Expected a gradient shader, but it wasn't one.");
             break;
     }
 
@@ -317,9 +345,6 @@ void add_localmatrixshader_uniform_data(const ShaderCodeDictionary* dict,
     }
 
     gatherer->write(lmInverse);
-
-    gatherer->addFlags(
-            dict->getSnippetRequirementFlags(BuiltInCodeSnippetID::kLocalMatrixShader));
 }
 
 } // anonymous namespace
@@ -389,15 +414,13 @@ void add_image_uniform_data(const ShaderCodeDictionary* dict,
     gatherer->write(imgData.fSampling.useCubic);
     if (imgData.fSampling.useCubic) {
         const SkCubicResampler& cubic = imgData.fSampling.cubic;
-        gatherer->write(SkImageShader::CubicResamplerMatrix(cubic.B, cubic.C));
+        gatherer->writeHalf(SkImageShader::CubicResamplerMatrix(cubic.B, cubic.C));
     } else {
-        gatherer->write(SkM44());
+        gatherer->writeHalf(SkM44());
     }
     gatherer->write(SkTo<int>(imgData.fReadSwizzle));
 
     add_color_space_uniforms(imgData.fSteps, gatherer);
-
-    gatherer->addFlags(dict->getSnippetRequirementFlags(BuiltInCodeSnippetID::kImageShader));
 }
 
 } // anonymous namespace
@@ -442,6 +465,80 @@ void ImageShaderBlock::BeginBlock(const KeyContext& keyContext,
 
 //--------------------------------------------------------------------------------------------------
 
+// makes use of ImageShader functions, above
+namespace {
+
+void add_yuv_image_uniform_data(const ShaderCodeDictionary* dict,
+                                const YUVImageShaderBlock::ImageData& imgData,
+                                PipelineDataGatherer* gatherer) {
+    VALIDATE_UNIFORMS(gatherer, dict, BuiltInCodeSnippetID::kYUVImageShader)
+
+    gatherer->write(imgData.fImgSize);
+    gatherer->write(imgData.fSubset);
+    gatherer->write(SkTo<int>(imgData.fTileModes[0]));
+    gatherer->write(SkTo<int>(imgData.fTileModes[1]));
+    gatherer->write(SkTo<int>(imgData.fSampling.filter));
+    gatherer->write(imgData.fSampling.useCubic);
+    if (imgData.fSampling.useCubic) {
+        const SkCubicResampler& cubic = imgData.fSampling.cubic;
+        gatherer->writeHalf(SkImageShader::CubicResamplerMatrix(cubic.B, cubic.C));
+    } else {
+        gatherer->writeHalf(SkM44());
+    }
+
+    for (int i = 0; i < 4; ++i) {
+        gatherer->writeHalf(imgData.fChannelSelect[i]);
+    }
+    gatherer->writeHalf(imgData.fYUVtoRGBMatrix);
+    gatherer->write(imgData.fYUVtoRGBTranslate);
+
+    add_color_space_uniforms(imgData.fSteps, gatherer);
+}
+
+} // anonymous namespace
+
+YUVImageShaderBlock::ImageData::ImageData(const SkSamplingOptions& sampling,
+                                          SkTileMode tileModeX,
+                                          SkTileMode tileModeY,
+                                          SkRect subset)
+        : fSampling(sampling)
+        , fTileModes{tileModeX, tileModeY}
+        , fSubset(subset) {
+    SkASSERT(fSteps.flags.mask() == 0);   // By default, the colorspace should have no effect
+}
+
+void YUVImageShaderBlock::BeginBlock(const KeyContext& keyContext,
+                                     PaintParamsKeyBuilder* builder,
+                                     PipelineDataGatherer* gatherer,
+                                     const ImageData* imgData) {
+    SkASSERT(!gatherer == !imgData);
+
+    // TODO: allow through lazy proxies
+    if (gatherer &&
+        (!imgData->fTextureProxies[0] || !imgData->fTextureProxies[1] ||
+         !imgData->fTextureProxies[2] || !imgData->fTextureProxies[3])) {
+        // TODO: At some point the pre-compile path should also be creating a texture
+        // proxy (i.e., we can remove the 'pipelineData' in the above test).
+        SolidColorShaderBlock::BeginBlock(keyContext, builder, gatherer, kErrorColor);
+        return;
+    }
+
+    auto dict = keyContext.dict();
+    if (gatherer) {
+        for (int i = 0; i < 4; ++i) {
+            gatherer->add(imgData->fSampling,
+                          imgData->fTileModes,
+                          imgData->fTextureProxies[i]);
+        }
+
+        add_yuv_image_uniform_data(dict, *imgData, gatherer);
+    }
+
+    builder->beginBlock(BuiltInCodeSnippetID::kYUVImageShader);
+}
+
+//--------------------------------------------------------------------------------------------------
+
 namespace {
 
 void add_coordclamp_uniform_data(const ShaderCodeDictionary* dict,
@@ -450,8 +547,6 @@ void add_coordclamp_uniform_data(const ShaderCodeDictionary* dict,
     VALIDATE_UNIFORMS(gatherer, dict, BuiltInCodeSnippetID::kCoordClampShader)
 
     gatherer->write(clampData.fSubset);
-
-    gatherer->addFlags(dict->getSnippetRequirementFlags(BuiltInCodeSnippetID::kCoordClampShader));
 }
 
 } // anonymous namespace
@@ -480,8 +575,6 @@ void add_dither_uniform_data(const ShaderCodeDictionary* dict,
     VALIDATE_UNIFORMS(gatherer, dict, BuiltInCodeSnippetID::kDitherShader)
 
     gatherer->writeHalf(ditherData.fRange);
-
-    gatherer->addFlags(dict->getSnippetRequirementFlags(BuiltInCodeSnippetID::kDitherShader));
 }
 
 } // anonymous namespace
@@ -535,8 +628,6 @@ void add_perlin_noise_uniform_data(const ShaderCodeDictionary* dict,
 
     gatherer->add(kNearestSampling, kRepeatXTileModes, noiseData.fPermutationsProxy);
     gatherer->add(kNearestSampling, kRepeatXTileModes, noiseData.fNoiseProxy);
-
-    gatherer->addFlags(dict->getSnippetRequirementFlags(BuiltInCodeSnippetID::kPerlinNoiseShader));
 }
 
 } // anonymous namespace
@@ -561,9 +652,7 @@ void BlendShaderBlock::BeginBlock(const KeyContext& keyContext,
                                   PaintParamsKeyBuilder* builder,
                                   PipelineDataGatherer* gatherer) {
     if (gatherer) {
-        auto dict = keyContext.dict();
-        VALIDATE_UNIFORMS(gatherer, dict, BuiltInCodeSnippetID::kBlendShader)
-        gatherer->addFlags(dict->getSnippetRequirementFlags(BuiltInCodeSnippetID::kBlendShader));
+        VALIDATE_UNIFORMS(gatherer, keyContext.dict(), BuiltInCodeSnippetID::kBlendShader)
     }
 
     builder->beginBlock(BuiltInCodeSnippetID::kBlendShader);
@@ -576,11 +665,8 @@ void BlendModeBlenderBlock::BeginBlock(const KeyContext& keyContext,
                                        PipelineDataGatherer* gatherer,
                                        SkBlendMode blendMode) {
     if (gatherer) {
-        auto dict = keyContext.dict();
-        VALIDATE_UNIFORMS(gatherer, dict, BuiltInCodeSnippetID::kBlendModeBlender)
+        VALIDATE_UNIFORMS(gatherer, keyContext.dict(), BuiltInCodeSnippetID::kBlendModeBlender)
         gatherer->write(SkTo<int>(blendMode));
-        gatherer->addFlags(
-                dict->getSnippetRequirementFlags(BuiltInCodeSnippetID::kBlendModeBlender));
     }
 
     builder->beginBlock(BuiltInCodeSnippetID::kBlendModeBlender);
@@ -593,11 +679,9 @@ void CoeffBlenderBlock::BeginBlock(const KeyContext& keyContext,
                                    PipelineDataGatherer* gatherer,
                                    SkSpan<const float> coeffs) {
     if (gatherer) {
-        auto dict = keyContext.dict();
-        VALIDATE_UNIFORMS(gatherer, dict, BuiltInCodeSnippetID::kCoeffBlender)
+        VALIDATE_UNIFORMS(gatherer, keyContext.dict(), BuiltInCodeSnippetID::kCoeffBlender)
         SkASSERT(coeffs.size() == 4);
         gatherer->write(SkSLType::kHalf4, coeffs.data());
-        gatherer->addFlags(dict->getSnippetRequirementFlags(BuiltInCodeSnippetID::kCoeffBlender));
     }
 
     builder->beginBlock(BuiltInCodeSnippetID::kCoeffBlender);
@@ -605,13 +689,21 @@ void CoeffBlenderBlock::BeginBlock(const KeyContext& keyContext,
 
 //--------------------------------------------------------------------------------------------------
 
+void DstColorBlock::BeginBlock(const KeyContext& keyContext,
+                               PaintParamsKeyBuilder* builder,
+                               PipelineDataGatherer* gatherer) {
+    if (gatherer) {
+        VALIDATE_UNIFORMS(gatherer, keyContext.dict(), BuiltInCodeSnippetID::kDstColor)
+    }
+
+    builder->beginBlock(BuiltInCodeSnippetID::kDstColor);
+}
+
 void PrimitiveColorBlock::BeginBlock(const KeyContext& keyContext,
                                      PaintParamsKeyBuilder* builder,
                                      PipelineDataGatherer* gatherer) {
     if (gatherer) {
-        auto dict = keyContext.dict();
-        VALIDATE_UNIFORMS(gatherer, dict, BuiltInCodeSnippetID::kPrimitiveColor)
-        gatherer->addFlags(dict->getSnippetRequirementFlags(BuiltInCodeSnippetID::kPrimitiveColor));
+        VALIDATE_UNIFORMS(gatherer, keyContext.dict(), BuiltInCodeSnippetID::kPrimitiveColor)
     }
 
     builder->beginBlock(BuiltInCodeSnippetID::kPrimitiveColor);
@@ -622,13 +714,6 @@ void PrimitiveColorBlock::BeginBlock(const KeyContext& keyContext,
 void ColorFilterShaderBlock::BeginBlock(const KeyContext& keyContext,
                                         PaintParamsKeyBuilder* builder,
                                         PipelineDataGatherer* gatherer) {
-    auto dict = keyContext.dict();
-
-    if (gatherer) {
-        gatherer->addFlags(
-                dict->getSnippetRequirementFlags(BuiltInCodeSnippetID::kColorFilterShader));
-    }
-
     builder->beginBlock(BuiltInCodeSnippetID::kColorFilterShader);
 }
 
@@ -643,9 +728,6 @@ void add_matrix_colorfilter_uniform_data(const ShaderCodeDictionary* dict,
     gatherer->write(data.fMatrix);
     gatherer->write(data.fTranslate);
     gatherer->write(static_cast<int>(data.fInHSLA));
-
-    gatherer->addFlags(
-            dict->getSnippetRequirementFlags(BuiltInCodeSnippetID::kMatrixColorFilter));
 }
 
 } // anonymous namespace
@@ -690,8 +772,6 @@ void add_table_colorfilter_uniform_data(const ShaderCodeDictionary* dict,
 
     static const SkTileMode kTileModes[2] = { SkTileMode::kClamp, SkTileMode::kClamp };
     gatherer->add(SkSamplingOptions(), kTileModes, data.fTextureProxy);
-
-    gatherer->addFlags(dict->getSnippetRequirementFlags(BuiltInCodeSnippetID::kTableColorFilter));
 }
 
 } // anonymous namespace
@@ -725,9 +805,6 @@ void add_color_space_xform_uniform_data(
 
     VALIDATE_UNIFORMS(gatherer, dict, BuiltInCodeSnippetID::kColorSpaceXformColorFilter)
     add_color_space_uniforms(data->fSteps, gatherer);
-
-    gatherer->addFlags(
-            dict->getSnippetRequirementFlags(BuiltInCodeSnippetID::kColorSpaceXformColorFilter));
 }
 
 }  // anonymous namespace
@@ -760,9 +837,7 @@ void AddDstBlendBlock(const KeyContext& keyContext,
     PriorOutputBlock::BeginBlock(keyContext, builder, gatherer);
     builder->endBlock();
     // dst -- surface color
-    // TODO(b/238757201): Use the surface color as the destination by replacing
-    // SolidColorShaderBlock with a DstColorBlock
-    SolidColorShaderBlock::BeginBlock(keyContext, builder, gatherer, {1, 1, 1, 1});
+    DstColorBlock::BeginBlock(keyContext, builder, gatherer);
     builder->endBlock();
     // blender -- shader based blending
     as_BB(blender)->addToKey(keyContext, builder, gatherer);
@@ -855,7 +930,6 @@ void RuntimeEffectBlock::BeginBlock(const KeyContext& keyContext,
         SkASSERT(entry);
 
         SkDEBUGCODE(UniformExpectationsValidator uev(gatherer, entry->fUniforms);)
-        gatherer->addFlags(entry->fSnippetRequirementFlags);
 
         gather_runtime_effect_uniforms(shaderData.fEffect->uniforms(),
                                        entry->fUniforms,

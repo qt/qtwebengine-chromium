@@ -41,8 +41,9 @@
 namespace {
 
 // A limit on the size of the xref table. Theoretical limits are higher, but
-// this may be large enough in practice.
-const int32_t kMaxXRefSize = 1048576;
+// this may be large enough in practice. The max size should always be 1 more
+// than the max object number.
+constexpr int32_t kMaxXRefSize = CPDF_Parser::kMaxObjectNumber + 1;
 
 // "%PDF-1.7\n"
 constexpr FX_FILESIZE kPDFHeaderSize = 9;
@@ -198,10 +199,6 @@ bool CPDF_Parser::IsObjectFreeOrNull(uint32_t objnum) const {
 
 bool CPDF_Parser::IsObjectFree(uint32_t objnum) const {
   return GetObjectType(objnum) == ObjectType::kFree;
-}
-
-void CPDF_Parser::ShrinkObjectMap(uint32_t size) {
-  m_CrossRefTable->ShrinkObjectMap(size);
 }
 
 bool CPDF_Parser::InitSyntaxParser(RetainPtr<CPDF_ReadValidator> validator) {
@@ -384,7 +381,7 @@ bool CPDF_Parser::LoadAllCrossRefV4(FX_FILESIZE xref_offset) {
   m_CrossRefTable->SetTrailer(std::move(trailer), kNoV4TrailerObjectNumber);
   const int32_t xrefsize = GetTrailer()->GetDirectIntegerFor("Size");
   if (xrefsize > 0 && xrefsize <= kMaxXRefSize)
-    ShrinkObjectMap(xrefsize);
+    m_CrossRefTable->SetObjectMapSize(xrefsize);
 
   FX_FILESIZE xref_stm = GetTrailer()->GetDirectIntegerFor("XRefStm");
   std::vector<FX_FILESIZE> xref_stream_list{xref_stm};
@@ -648,8 +645,6 @@ void CPDF_Parser::MergeCrossRefObjectsData(
         m_CrossRefTable->AddCompressed(obj.obj_num, obj.info.archive.obj_num,
                                        obj.info.archive.obj_index);
         break;
-      default:
-        NOTREACHED();
     }
   }
 }
@@ -778,7 +773,7 @@ bool CPDF_Parser::LoadCrossRefV5(FX_FILESIZE* pos, bool bMainXRef) {
   if (bMainXRef) {
     m_CrossRefTable = std::make_unique<CPDF_CrossRefTable>(
         std::move(pNewTrailer), pStream->GetObjNum());
-    m_CrossRefTable->ShrinkObjectMap(size);
+    m_CrossRefTable->SetObjectMapSize(size);
   } else {
     m_CrossRefTable = CPDF_CrossRefTable::MergeUp(
         std::make_unique<CPDF_CrossRefTable>(std::move(pNewTrailer),
@@ -815,17 +810,33 @@ bool CPDF_Parser::LoadCrossRefV5(FX_FILESIZE* pos, bool bMainXRef) {
 
     pdfium::span<const uint8_t> seg_span = data_span.subspan(
         segindex * total_width, index.obj_count * total_width);
-    FX_SAFE_UINT32 dwMaxObjNum = index.start_obj_num;
-    dwMaxObjNum += index.obj_count;
-    uint32_t dwV5Size =
-        m_CrossRefTable->objects_info().empty() ? 0 : GetLastObjNum() + 1;
-    if (!dwMaxObjNum.IsValid() || dwMaxObjNum.ValueOrDie() > dwV5Size)
+    FX_SAFE_UINT32 safe_new_size = index.start_obj_num;
+    safe_new_size += index.obj_count;
+    if (!safe_new_size.IsValid()) {
       continue;
+    }
+
+    // Until SetObjectMapSize() below has been called by a prior loop iteration,
+    // `current_size` is based on the /Size value parsed in LoadCrossRefV5().
+    // PDFs may not always have the correct /Size. In this case, other PDF
+    // implementations ignore the incorrect size, and PDFium also ignores
+    // incorrect size in trailers for V4 xrefs.
+    const uint32_t current_size =
+        m_CrossRefTable->objects_info().empty() ? 0 : GetLastObjNum() + 1;
+    // So allow `new_size` to be greater than `current_size`, but avoid going
+    // over `kMaxXRefSize`. This works just fine because the loop below checks
+    // against `kMaxObjectNumber`, and the two "max" constants are in sync.
+    const uint32_t new_size =
+        std::min<uint32_t>(safe_new_size.ValueOrDie(), kMaxXRefSize);
+    if (new_size > current_size) {
+      m_CrossRefTable->SetObjectMapSize(new_size);
+    }
 
     for (uint32_t i = 0; i < index.obj_count; ++i) {
       const uint32_t obj_num = index.start_obj_num + i;
-      if (obj_num >= CPDF_Parser::kMaxObjectNumber)
+      if (obj_num >= kMaxObjectNumber) {
         break;
+      }
 
       ProcessCrossRefV5Entry(seg_span.subspan(i * total_width, total_width),
                              field_widths, obj_num);
@@ -841,13 +852,18 @@ void CPDF_Parser::ProcessCrossRefV5Entry(
     pdfium::span<const uint32_t> field_widths,
     uint32_t obj_num) {
   DCHECK_GE(field_widths.size(), kMinFieldCount);
-  ObjectType type = ObjectType::kNotCompressed;
+  ObjectType type;
   if (field_widths[0]) {
     const uint32_t cross_ref_stream_obj_type =
         GetFirstXRefStreamEntry(entry_span, field_widths);
     type = GetObjectTypeFromCrossRefStreamType(cross_ref_stream_obj_type);
     if (type == ObjectType::kNull)
       return;
+  } else {
+    // Per ISO 32000-1:2008 table 17, use the default value of 1 for the xref
+    // stream entry when it is not specified. The `type` assignment is the
+    // equivalent to calling GetObjectTypeFromCrossRefStreamType(1).
+    type = ObjectType::kNotCompressed;
   }
 
   const ObjectType existing_type = GetObjectType(obj_num);

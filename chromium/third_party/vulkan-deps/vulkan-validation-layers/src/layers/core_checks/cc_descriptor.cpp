@@ -452,7 +452,7 @@ bool CoreChecks::PreCallValidateCreateDescriptorSetLayout(VkDevice device, const
 
         if ((binding_info.descriptorType == VK_DESCRIPTOR_TYPE_SAMPLER ||
              binding_info.descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) &&
-            binding_info.pImmutableSamplers && IsExtEnabled(device_extensions.vk_ext_custom_border_color)) {
+            binding_info.pImmutableSamplers) {
             for (uint32_t j = 0; j < binding_info.descriptorCount; j++) {
                 auto sampler_state = Get<SAMPLER_STATE>(binding_info.pImmutableSamplers[j]);
                 if (sampler_state && (sampler_state->createInfo.borderColor == VK_BORDER_COLOR_INT_CUSTOM_EXT ||
@@ -1081,7 +1081,7 @@ bool CoreChecks::ValidateDescriptor(const DescriptorContext &context, const Desc
                 }
             }
 
-            if ((variable.is_dref_operation) && !(format_features & VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_DEPTH_COMPARISON_BIT)) {
+            if ((variable.is_dref) && !(format_features & VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_DEPTH_COMPARISON_BIT)) {
                 auto set = context.descriptor_set.GetSet();
                 const LogObjectList objlist(set, image_view);
                 return LogError(objlist, context.vuids.depth_compare_sample_06479,
@@ -1413,8 +1413,7 @@ bool CoreChecks::ValidateDescriptor(const DescriptorContext &context, const Desc
             }
         }
 
-        for (const auto &pair : binding_info.second.variable->write_without_formats_component_count_list) {
-            const uint32_t texel_component_count = pair.second;
+        for (const uint32_t texel_component_count : binding_info.second.variable->write_without_formats_component_count_list) {
             const uint32_t format_component_count = FormatComponentCount(image_view_format);
             if (texel_component_count < format_component_count) {
                 auto set = context.descriptor_set.GetSet();
@@ -1422,9 +1421,8 @@ bool CoreChecks::ValidateDescriptor(const DescriptorContext &context, const Desc
                 return LogError(device, context.vuids.storage_image_write_texel_count_04115,
                                 "%s: OpImageWrite Texel operand only contains %" PRIu32
                                 " components, but the VkImageView is mapped to a OpImage format of %s has %" PRIu32
-                                " components.\n%s",
-                                context.caller, texel_component_count, string_VkFormat(image_view_format), format_component_count,
-                                pair.first.Describe().c_str());
+                                " components.\n",
+                                context.caller, texel_component_count, string_VkFormat(image_view_format), format_component_count);
             }
         }
     }
@@ -1578,8 +1576,7 @@ bool CoreChecks::ValidateDescriptor(const DescriptorContext &context, const Desc
             }
         }
 
-        for (const auto &pair : binding_info.second.variable->write_without_formats_component_count_list) {
-            const uint32_t texel_component_count = pair.second;
+        for (const uint32_t texel_component_count : binding_info.second.variable->write_without_formats_component_count_list) {
             const uint32_t format_component_count = FormatComponentCount(buffer_view_format);
             if (texel_component_count < format_component_count) {
                 auto set = context.descriptor_set.GetSet();
@@ -1588,9 +1585,8 @@ bool CoreChecks::ValidateDescriptor(const DescriptorContext &context, const Desc
                 return LogError(device, context.vuids.storage_texel_buffer_write_texel_count_04469,
                                 "%s: OpImageWrite Texel operand only contains %" PRIu32
                                 " components, but the VkImageView is mapped to a OpImage format of %s has %" PRIu32
-                                " components.\n%s",
-                                context.caller, texel_component_count, string_VkFormat(buffer_view_format), format_component_count,
-                                pair.first.Describe().c_str());
+                                " components.\n",
+                                context.caller, texel_component_count, string_VkFormat(buffer_view_format), format_component_count);
             }
         }
     }
@@ -3694,7 +3690,7 @@ bool CoreChecks::PreCallValidateCmdBindDescriptorBuffersEXT(VkCommandBuffer comm
         {
             using BUFFER_STATE_PTR = ValidationStateTracker::BUFFER_STATE_PTR;
             BufferAddressValidation<5> buffer_address_validator = {{{
-                {"VUID-vkCmdBindDescriptorBuffersEXT-pBindingInfos-08052",
+                {"VUID-vkCmdBindDescriptorBuffersEXT-pBindingInfos-08052", LogObjectList(device),
                  [this, commandBuffer](const BUFFER_STATE_PTR &buffer_state, std::string *out_error_msg) {
                      if (!out_error_msg) {
                          return !buffer_state->sparse && buffer_state->IsMemoryBound();
@@ -3704,7 +3700,7 @@ bool CoreChecks::PreCallValidateCmdBindDescriptorBuffersEXT(VkCommandBuffer comm
                      }
                  }},
 
-                {"VUID-vkCmdBindDescriptorBuffersEXT-pBindingInfos-08055",
+                {"VUID-vkCmdBindDescriptorBuffersEXT-pBindingInfos-08055", LogObjectList(device),
                  [binding_usage = bindingInfo.usage](const BUFFER_STATE_PTR &buffer_state, std::string *out_error_msg) {
                      if ((buffer_state->createInfo.usage &
                           (VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
@@ -3724,7 +3720,7 @@ bool CoreChecks::PreCallValidateCmdBindDescriptorBuffersEXT(VkCommandBuffer comm
                             "].usage (" + string_VkBufferUsageFlags(binding_usage) + "):\n";
                  }},
 
-                {"VUID-VkDescriptorBufferBindingInfoEXT-usage-08122",
+                {"VUID-VkDescriptorBufferBindingInfoEXT-usage-08122", LogObjectList(device),
                  [binding_usage = bindingInfo.usage, &num_sampler_buffers](const BUFFER_STATE_PTR &buffer_state,
                                                                            std::string *out_error_msg) {
                      if (binding_usage & VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT) {
@@ -3742,7 +3738,7 @@ bool CoreChecks::PreCallValidateCmdBindDescriptorBuffersEXT(VkCommandBuffer comm
                      return "The following buffers were not created with VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT:\n";
                  }},
 
-                {"VUID-VkDescriptorBufferBindingInfoEXT-usage-08123",
+                {"VUID-VkDescriptorBufferBindingInfoEXT-usage-08123", LogObjectList(device),
                  [binding_usage = bindingInfo.usage, &num_resource_buffers](const BUFFER_STATE_PTR &buffer_state,
                                                                             std::string *out_error_msg) {
                      if (binding_usage & VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT) {
@@ -3760,7 +3756,7 @@ bool CoreChecks::PreCallValidateCmdBindDescriptorBuffersEXT(VkCommandBuffer comm
                      return "The following buffers were not created with VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT:\n";
                  }},
 
-                {"VUID-VkDescriptorBufferBindingInfoEXT-usage-08124",
+                {"VUID-VkDescriptorBufferBindingInfoEXT-usage-08124", LogObjectList(device),
                  [binding_usage = bindingInfo.usage, &num_push_descriptor_buffers](const BUFFER_STATE_PTR &buffer_state,
                                                                                    std::string *out_error_msg) {
                      if (binding_usage & VK_BUFFER_USAGE_PUSH_DESCRIPTORS_DESCRIPTOR_BUFFER_BIT_EXT) {
@@ -3782,7 +3778,7 @@ bool CoreChecks::PreCallValidateCmdBindDescriptorBuffersEXT(VkCommandBuffer comm
 
             const std::string address_name = "pBindingInfos[" + std::to_string(i) + "].address";
             skip |= buffer_address_validator.LogErrorsIfNoValidBuffer(*this, buffer_states, "vkCmdBindDescriptorBuffersEXT()",
-                                                                      address_name, bindingInfo.address, LogObjectList(device));
+                                                                      address_name, bindingInfo.address);
         }
 
         const auto *buffer_handle = LvlFindInChain<VkDescriptorBufferBindingPushDescriptorBufferHandleEXT>(pBindingInfos[i].pNext);
@@ -4096,7 +4092,7 @@ bool CoreChecks::ValidateDescriptorAddressInfoEXT(VkDevice device, const VkDescr
     } else {
         using BUFFER_STATE_PTR = ValidationStateTracker::BUFFER_STATE_PTR;
         BufferAddressValidation<1> buffer_address_validator = {
-            {{{"VUID-VkDescriptorAddressInfoEXT-range-08045",
+            {{{"VUID-VkDescriptorAddressInfoEXT-range-08045", LogObjectList(device),
                [&address_info](const BUFFER_STATE_PTR &buffer_state, std::string *out_error_msg) {
                    if (address_info->range >
                        buffer_state->createInfo.size - (address_info->address - buffer_state->deviceAddress)) {
@@ -4109,7 +4105,7 @@ bool CoreChecks::ValidateDescriptorAddressInfoEXT(VkDevice device, const VkDescr
                }}}}};
 
         skip |= buffer_address_validator.LogErrorsIfNoValidBuffer(*this, buffer_states, "vkCmdBindDescriptorBuffersEXT", "address",
-                                                                  address_info->address, LogObjectList(device));
+                                                                  address_info->address);
     }
 
     if (address_info->range == VK_WHOLE_SIZE) {
@@ -4231,7 +4227,8 @@ bool CoreChecks::PreCallValidateGetDescriptorEXT(VkDevice device, const VkDescri
     std::string_view vuid_memory_bound = "";
     using BUFFER_STATE_PTR = ValidationStateTracker::BUFFER_STATE_PTR;
     BufferAddressValidation<1> buffer_address_validator = {
-        {{{"", [this, device, &vuid_memory_bound](const BUFFER_STATE_PTR &buffer_state, std::string *out_error_msg) {
+        {{{"VUID-VkDescriptorDataEXT-type", LogObjectList(device),
+           [this, device, &vuid_memory_bound](const BUFFER_STATE_PTR &buffer_state, std::string *out_error_msg) {
                if (!out_error_msg) {
                    return !buffer_state->sparse && buffer_state->IsMemoryBound();
                } else {
@@ -4245,9 +4242,9 @@ bool CoreChecks::PreCallValidateGetDescriptorEXT(VkDevice device, const VkDescri
                 const auto buffer_states = GetBuffersByAddress(pDescriptorInfo->data.pUniformBuffer->address);
                 if (!buffer_states.empty()) {
                     vuid_memory_bound = "VUID-VkDescriptorDataEXT-type-08030";
-                    skip |= buffer_address_validator.LogErrorsIfNoValidBuffer(
-                        *this, buffer_states, "vkGetDescriptorEXT()", "pDescriptorInfo->data.pUniformBuffer->address",
-                        pDescriptorInfo->data.pUniformBuffer->address, LogObjectList(device));
+                    skip |= buffer_address_validator.LogErrorsIfNoValidBuffer(*this, buffer_states, "vkGetDescriptorEXT()",
+                                                                              "pDescriptorInfo->data.pUniformBuffer->address",
+                                                                              pDescriptorInfo->data.pUniformBuffer->address);
                 }
             } else if (!enabled_features.robustness2_features.nullDescriptor) {
                 skip |= LogError(device, "VUID-VkDescriptorDataEXT-type-08039",
@@ -4260,9 +4257,9 @@ bool CoreChecks::PreCallValidateGetDescriptorEXT(VkDevice device, const VkDescri
                 const auto buffer_states = GetBuffersByAddress(pDescriptorInfo->data.pUniformBuffer->address);
                 if (!buffer_states.empty()) {
                     vuid_memory_bound = "VUID-VkDescriptorDataEXT-type-08031";
-                    skip |= buffer_address_validator.LogErrorsIfNoValidBuffer(
-                        *this, buffer_states, "vkGetDescriptorEXT()", "pDescriptorInfo->data.pUniformBuffer->address",
-                        pDescriptorInfo->data.pUniformBuffer->address, LogObjectList(device));
+                    skip |= buffer_address_validator.LogErrorsIfNoValidBuffer(*this, buffer_states, "vkGetDescriptorEXT()",
+                                                                              "pDescriptorInfo->data.pUniformBuffer->address",
+                                                                              pDescriptorInfo->data.pUniformBuffer->address);
                 }
             } else if (!enabled_features.robustness2_features.nullDescriptor) {
                 skip |= LogError(device, "VUID-VkDescriptorDataEXT-type-08040",
@@ -4275,9 +4272,9 @@ bool CoreChecks::PreCallValidateGetDescriptorEXT(VkDevice device, const VkDescri
                 const auto buffer_states = GetBuffersByAddress(pDescriptorInfo->data.pUniformBuffer->address);
                 if (!buffer_states.empty()) {
                     vuid_memory_bound = "VUID-VkDescriptorDataEXT-type-08032";
-                    skip |= buffer_address_validator.LogErrorsIfNoValidBuffer(
-                        *this, buffer_states, "vkGetDescriptorEXT()", "pDescriptorInfo->data.pUniformBuffer->address",
-                        pDescriptorInfo->data.pUniformBuffer->address, LogObjectList(device));
+                    skip |= buffer_address_validator.LogErrorsIfNoValidBuffer(*this, buffer_states, "vkGetDescriptorEXT()",
+                                                                              "pDescriptorInfo->data.pUniformBuffer->address",
+                                                                              pDescriptorInfo->data.pUniformBuffer->address);
                 }
             } else if (!enabled_features.robustness2_features.nullDescriptor) {
                 skip |= LogError(device, "VUID-VkDescriptorDataEXT-type-08037",
@@ -4290,9 +4287,9 @@ bool CoreChecks::PreCallValidateGetDescriptorEXT(VkDevice device, const VkDescri
                 const auto buffer_states = GetBuffersByAddress(pDescriptorInfo->data.pUniformBuffer->address);
                 if (!buffer_states.empty()) {
                     vuid_memory_bound = "VUID-VkDescriptorDataEXT-type-08033";
-                    skip |= buffer_address_validator.LogErrorsIfNoValidBuffer(
-                        *this, buffer_states, "vkGetDescriptorEXT()", "pDescriptorInfo->data.pUniformBuffer->address",
-                        pDescriptorInfo->data.pUniformBuffer->address, LogObjectList(device));
+                    skip |= buffer_address_validator.LogErrorsIfNoValidBuffer(*this, buffer_states, "vkGetDescriptorEXT()",
+                                                                              "pDescriptorInfo->data.pUniformBuffer->address",
+                                                                              pDescriptorInfo->data.pUniformBuffer->address);
                 }
             } else if (!enabled_features.robustness2_features.nullDescriptor) {
                 skip |= LogError(device, "VUID-VkDescriptorDataEXT-type-08038",
@@ -4587,8 +4584,9 @@ bool CoreChecks::PreCallValidateCmdPushDescriptorSetKHR(VkCommandBuffer commandB
                 } else {
                     // Create an empty proxy in order to use the existing descriptor set update validation
                     // TODO move the validation (like this) that doesn't need descriptor set state to the DSL object so we
-                    // don't have to do this.
-                    cvdescriptorset::DescriptorSet proxy_ds(VK_NULL_HANDLE, nullptr, dsl, 0, this);
+                    // don't have to do this. Note we need to const_cast<>(this) because GPU-AV needs a non-const version of
+                    // the state tracker. The proxy here could get away with const.
+                    cvdescriptorset::DescriptorSet proxy_ds(VK_NULL_HANDLE, nullptr, dsl, 0, const_cast<CoreChecks *>(this));
                     skip |= ValidatePushDescriptorsUpdate(&proxy_ds, descriptorWriteCount, pDescriptorWrites,
                                                           "vkCmdPushDescriptorSetKHR()");
                 }
@@ -4776,14 +4774,21 @@ bool CoreChecks::PreCallValidateCmdPushDescriptorSetWithTemplateKHR(VkCommandBuf
     }
 
     if (dsl && template_state) {
-        // Create an empty proxy in order to use the existing descriptor set update validation
-        cvdescriptorset::DescriptorSet proxy_ds(VK_NULL_HANDLE, nullptr, dsl, 0, this);
-        // Decode the template into a set of write updates
-        cvdescriptorset::DecodedTemplateUpdate decoded_template(this, VK_NULL_HANDLE, template_state.get(), pData,
-                                                                dsl->GetDescriptorSetLayout());
-        // Validate the decoded update against the proxy_ds
-        skip |= ValidatePushDescriptorsUpdate(&proxy_ds, static_cast<uint32_t>(decoded_template.desc_writes.size()),
-                                              decoded_template.desc_writes.data(), "vkCmdPushDescriptorSetWithTemplateKHR()");
+        if (!Get<cvdescriptorset::DescriptorSetLayout>(dsl->GetDescriptorSetLayout())) {
+            const LogObjectList objlist(cb_state->commandBuffer(), descriptorUpdateTemplate, layout);
+            skip |= LogError(objlist, "VUID-vkCmdPushDescriptorSetWithTemplateKHR-pData-01686",
+                             "vkCmdPushDescriptorSetWithTemplateKHR(): pData does not point to a valid layout, it possible the "
+                             "VkDescriptorUpdateTemplateCreateInfo::descriptorSetLayout was accidentally destroy.");
+        } else {
+            // Create an empty proxy in order to use the existing descriptor set update validation
+            cvdescriptorset::DescriptorSet proxy_ds(VK_NULL_HANDLE, nullptr, dsl, 0, const_cast<CoreChecks *>(this));
+            // Decode the template into a set of write updates
+            cvdescriptorset::DecodedTemplateUpdate decoded_template(this, VK_NULL_HANDLE, template_state.get(), pData,
+                                                                    dsl->GetDescriptorSetLayout());
+            // Validate the decoded update against the proxy_ds
+            skip |= ValidatePushDescriptorsUpdate(&proxy_ds, static_cast<uint32_t>(decoded_template.desc_writes.size()),
+                                                  decoded_template.desc_writes.data(), "vkCmdPushDescriptorSetWithTemplateKHR()");
+        }
     }
 
     return skip;
@@ -5206,6 +5211,7 @@ bool CoreChecks::PreCallValidateCreatePipelineLayout(VkDevice device, const VkPi
                          phys_dev_ext_props.ray_tracing_props_nv.maxDescriptorSetAccelerationStructures);
     }
 
+    // Extension exposes new properties limits
     if (IsExtEnabled(device_extensions.vk_ext_descriptor_indexing)) {
         // XXX TODO: replace with correct VU messages
 
@@ -5400,6 +5406,7 @@ bool CoreChecks::PreCallValidateCreatePipelineLayout(VkDevice device, const VkPi
         }
     }
 
+    // Extension exposes new properties limits
     if (IsExtEnabled(device_extensions.vk_ext_fragment_density_map2)) {
         uint32_t sum_subsampled_samplers = 0;
         for (const auto &dsl : set_layouts) {

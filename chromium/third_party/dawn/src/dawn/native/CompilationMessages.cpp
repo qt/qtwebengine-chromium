@@ -77,17 +77,14 @@ OwnedCompilationMessages::OwnedCompilationMessages() {
 
 OwnedCompilationMessages::~OwnedCompilationMessages() = default;
 
-void OwnedCompilationMessages::AddMessageForTesting(std::string message,
-                                                    wgpu::CompilationMessageType type,
-                                                    uint64_t lineNum,
-                                                    uint64_t linePos,
-                                                    uint64_t offset,
-                                                    uint64_t length) {
+void OwnedCompilationMessages::AddMessage(std::string message,
+                                          wgpu::CompilationMessageType type,
+                                          uint64_t lineNum,
+                                          uint64_t linePos,
+                                          uint64_t offset,
+                                          uint64_t length) {
     // Cannot add messages after GetCompilationInfo has been called.
     ASSERT(mCompilationInfo.messages == nullptr);
-
-    // Message can only contain ascii characters.
-    ASSERT(tint::utils::utf8::IsASCII(message));
 
     mMessageStrings.push_back(message);
     mMessages.push_back({nullptr, nullptr, static_cast<WGPUCompilationMessageType>(type), lineNum,

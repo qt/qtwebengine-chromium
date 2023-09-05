@@ -27,8 +27,8 @@ class BytecodeArray
     return OBJECT_POINTER_ALIGN(kHeaderSize + length);
   }
 
-  inline byte get(int index) const;
-  inline void set(int index, byte value);
+  inline uint8_t get(int index) const;
+  inline void set(int index, uint8_t value);
 
   inline Address GetFirstBytecodeAddress();
 
@@ -46,13 +46,6 @@ class BytecodeArray
       const;
   inline void set_incoming_new_target_or_generator_register(
       interpreter::Register incoming_new_target_or_generator_register);
-
-  static constexpr int kBytecodeAgeSize = kUInt16Size;
-  static_assert(kBytecodeAgeOffset + kBytecodeAgeSize - 1 ==
-                kBytecodeAgeOffsetEnd);
-
-  inline uint16_t bytecode_age() const;
-  inline void set_bytecode_age(uint16_t age);
 
   inline bool HasSourcePositionTable() const;
   inline bool DidSourcePositionGenerationFail() const;
@@ -88,10 +81,6 @@ class BytecodeArray
                                             std::ostream& os);
 
   void CopyBytecodesTo(BytecodeArray to);
-
-  // Bytecode aging
-  V8_EXPORT_PRIVATE bool IsOld() const;
-  V8_EXPORT_PRIVATE void MakeOlder();
 
   // Clear uninitialized padding space. This ensures that the snapshot content
   // is deterministic.

@@ -14,7 +14,8 @@ namespace discovery {
 // discovery implementation will use this API to report back errors and metrics.
 // NOTE: All methods in the reporting client will be called from the task runner
 // thread.
-// TODO(rwkeane): Report state changes back to the caller.
+// TODO(issuetracker.google.com/281739775): Report state changes back to the
+// caller.
 class ReportingClient {
  public:
   virtual ~ReportingClient() = default;

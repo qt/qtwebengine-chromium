@@ -9,7 +9,7 @@ ts_library("ts") {
   testonly = true
   sources = [
     "basic.ts",
-    "cpuprofile.ts",
+    "flamechart.ts",
     "track_example.ts",
   ]
   deps = [
@@ -21,6 +21,7 @@ ts_library("ts") {
     "../../../../models/workspace:bundle",
     "../../../../panels/timeline:bundle",
     "../../../legacy:bundle",
+    "../../../legacy/components/perf_ui:bundle",
     "../../helpers:bundle",
   ]
 }
@@ -29,7 +30,7 @@ copy_to_gen("performance_panel") {
   testonly = true
   sources = [
     "basic.html",
-    "cpuprofile.html",
+    "flamechart.html",
     "track_example.html",
   ]
 

@@ -424,14 +424,67 @@ bool DumpSymbols::CreateEmptyModule(scoped_ptr<Module>& module) {
   return true;
 }
 
+void DumpSymbols::StartProcessSplitDwarf(
+    google_breakpad::CompilationUnit* reader,
+    Module* module,
+    google_breakpad::Endianness endianness,
+    bool handle_inter_cu_refs,
+    bool handle_inline) const {
+  std::string split_file;
+  google_breakpad::SectionMap split_sections;
+  google_breakpad::ByteReader split_byte_reader(endianness);
+  uint64_t cu_offset = 0;
+  if (reader->ProcessSplitDwarf(split_file, split_sections, split_byte_reader,
+                                cu_offset))
+    return;
+  DwarfCUToModule::FileContext file_context(split_file, module,
+                                            handle_inter_cu_refs);
+  for (auto section : split_sections)
+    file_context.AddSectionToSectionMap(section.first, section.second.first,
+                                        section.second.second);
+  // Because DWP/DWO file doesn't have .debug_addr/.debug_line/.debug_line_str,
+  // its debug info will refer to .debug_addr/.debug_line in the main binary.
+  if (file_context.section_map().find(".debug_addr") ==
+      file_context.section_map().end())
+    file_context.AddSectionToSectionMap(".debug_addr", reader->GetAddrBuffer(),
+                                        reader->GetAddrBufferLen());
+  if (file_context.section_map().find(".debug_line") ==
+      file_context.section_map().end())
+    file_context.AddSectionToSectionMap(".debug_line", reader->GetLineBuffer(),
+                                        reader->GetLineBufferLen());
+  if (file_context.section_map().find(".debug_line_str") ==
+      file_context.section_map().end())
+    file_context.AddSectionToSectionMap(".debug_line_str",
+                                        reader->GetLineStrBuffer(),
+                                        reader->GetLineStrBufferLen());
+  DumperRangesHandler ranges_handler(&split_byte_reader);
+  DumperLineToModule line_to_module(&split_byte_reader);
+  DwarfCUToModule::WarningReporter reporter(split_file, cu_offset);
+  DwarfCUToModule root_handler(
+      &file_context, &line_to_module, &ranges_handler, &reporter, handle_inline,
+      reader->GetLowPC(), reader->GetAddrBase(), reader->HasSourceLineInfo(),
+      reader->GetSourceLineOffset());
+  google_breakpad::DIEDispatcher die_dispatcher(&root_handler);
+  google_breakpad::CompilationUnit split_reader(
+      split_file, file_context.section_map(), cu_offset, &split_byte_reader,
+      &die_dispatcher);
+  split_reader.SetSplitDwarf(reader->GetAddrBase(), reader->GetDWOID());
+  split_reader.Start();
+  // Normally, it won't happen unless we have transitive reference.
+  if (split_reader.ShouldProcessSplitDwarf()) {
+    StartProcessSplitDwarf(&split_reader, module, endianness,
+                           handle_inter_cu_refs, handle_inline);
+  }
+}
+
 void DumpSymbols::ReadDwarf(google_breakpad::Module* module,
                             const mach_o::Reader& macho_reader,
                             const mach_o::SectionMap& dwarf_sections,
                             bool handle_inter_cu_refs) const {
   // Build a byte reader of the appropriate endianness.
-  ByteReader byte_reader(macho_reader.big_endian()
-                         ? ENDIANNESS_BIG
-                         : ENDIANNESS_LITTLE);
+  google_breakpad::Endianness endianness =
+      macho_reader.big_endian() ? ENDIANNESS_BIG : ENDIANNESS_LITTLE;
+  ByteReader byte_reader(endianness);
 
   // Construct a context for this file.
   DwarfCUToModule::FileContext file_context(selected_object_name_,
@@ -467,14 +520,14 @@ void DumpSymbols::ReadDwarf(google_breakpad::Module* module,
 
   // Walk the __debug_info section, one compilation unit at a time.
   uint64_t debug_info_length = debug_info_section.second;
+  bool handle_inline = symbol_data_ & INLINES;
   for (uint64_t offset = 0; offset < debug_info_length;) {
     // Make a handler for the root DIE that populates MODULE with the
     // debug info.
     DwarfCUToModule::WarningReporter reporter(selected_object_name_,
                                               offset);
     DwarfCUToModule root_handler(&file_context, &line_to_module,
-                                 &ranges_handler, &reporter,
-                                 symbol_data_ & INLINES);
+                                 &ranges_handler, &reporter, handle_inline);
     // Make a Dwarf2Handler that drives our DIEHandler.
     DIEDispatcher die_dispatcher(&root_handler);
     // Make a DWARF parser for the compilation unit at OFFSET.
@@ -485,6 +538,11 @@ void DumpSymbols::ReadDwarf(google_breakpad::Module* module,
                                                &die_dispatcher);
     // Process the entire compilation unit; get the offset of the next.
     offset += dwarf_reader.Start();
+    // Start to process split dwarf file.
+    if (dwarf_reader.ShouldProcessSplitDwarf()) {
+      StartProcessSplitDwarf(&dwarf_reader, module, endianness,
+                             handle_inter_cu_refs, handle_inline);
+    }
   }
 }
 

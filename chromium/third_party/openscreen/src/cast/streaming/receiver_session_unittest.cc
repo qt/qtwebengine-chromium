@@ -376,7 +376,7 @@ class ReceiverSessionTest : public ::testing::Test {
 
   std::unique_ptr<MockEnvironment> MakeEnvironment() {
     auto environment = std::make_unique<NiceMock<MockEnvironment>>(
-        &FakeClock::now, &task_runner_);
+        &FakeClock::now, task_runner_);
     ON_CALL(*environment, GetBoundLocalEndpoint())
         .WillByDefault(Return(IPEndpoint{{127, 0, 0, 1}, 12345}));
     environment->SetSocketStateForTesting(Environment::SocketState::kReady);

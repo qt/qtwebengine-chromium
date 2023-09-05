@@ -63,7 +63,7 @@ CastService::CastService(CastService::Configuration config)
           discovery_service_
               ? MakeSerialDelete<
                     discovery::DnsSdServicePublisher<ReceiverInfo>>(
-                    config.task_runner,
+                    &config.task_runner,
                     discovery_service_.get(),
                     kCastV2ServiceId,
                     ReceiverInfoToDnsSdInstance)

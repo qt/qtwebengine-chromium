@@ -5,11 +5,14 @@
 #ifndef DISCOVERY_DNSSD_IMPL_PUBLISHER_IMPL_H_
 #define DISCOVERY_DNSSD_IMPL_PUBLISHER_IMPL_H_
 
+#include <map>
+#include <string>
+
 #include "absl/strings/string_view.h"
 #include "discovery/dnssd/impl/conversion_layer.h"
 #include "discovery/dnssd/public/dns_sd_instance.h"
 #include "discovery/dnssd/public/dns_sd_publisher.h"
-#include "discovery/mdns/mdns_domain_confirmed_provider.h"
+#include "discovery/mdns/public/mdns_domain_confirmed_provider.h"
 #include "discovery/mdns/public/mdns_service.h"
 
 namespace openscreen {
@@ -23,7 +26,7 @@ class PublisherImpl : public DnsSdPublisher,
  public:
   PublisherImpl(MdnsService* publisher,
                 ReportingClient* reporting_client,
-                TaskRunner* task_runner,
+                TaskRunner& task_runner,
                 const NetworkInterfaceConfig* network_config);
   ~PublisherImpl() override;
 
@@ -50,7 +53,7 @@ class PublisherImpl : public DnsSdPublisher,
 
   MdnsService* const mdns_publisher_;
   ReportingClient* const reporting_client_;
-  TaskRunner* const task_runner_;
+  TaskRunner& task_runner_;
   const NetworkInterfaceConfig* const network_config_;
 
   friend class PublisherTesting;

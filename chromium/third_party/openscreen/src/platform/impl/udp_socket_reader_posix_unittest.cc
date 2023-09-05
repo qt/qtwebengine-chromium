@@ -4,6 +4,8 @@
 
 #include "platform/impl/udp_socket_reader_posix.h"
 
+#include <memory>
+
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "platform/api/time.h"
@@ -16,13 +18,9 @@
 namespace openscreen {
 namespace {
 
-using namespace ::testing;
-using ::testing::_;
-using ::testing::Invoke;
-
 class MockUdpSocketPosix : public UdpSocketPosix {
  public:
-  explicit MockUdpSocketPosix(TaskRunner* task_runner,
+  explicit MockUdpSocketPosix(TaskRunner& task_runner,
                               Client* client,
                               int fd,
                               Version version = Version::kV4)
@@ -105,22 +103,21 @@ class TestingUdpSocketReader final : public UdpSocketReaderPosix {
 TEST(UdpSocketReaderTest, WatchReadableSucceeds) {
   std::unique_ptr<SocketHandleWaiter> mock_waiter =
       std::unique_ptr<SocketHandleWaiter>(new MockNetworkWaiter());
-  std::unique_ptr<TaskRunner> task_runner =
-      std::unique_ptr<TaskRunner>(new MockTaskRunner());
+  auto task_runner = MockTaskRunner();
   FakeUdpSocket::MockClient client;
   std::unique_ptr<MockUdpSocketPosix> socket =
-      std::make_unique<MockUdpSocketPosix>(task_runner.get(), &client, 42,
+      std::make_unique<MockUdpSocketPosix>(task_runner, &client, 42,
                                            UdpSocket::Version::kV4);
 }
 
 TEST(UdpSocketReaderTest, UnwatchReadableSucceeds) {
   std::unique_ptr<SocketHandleWaiter> mock_waiter =
       std::unique_ptr<SocketHandleWaiter>(new MockNetworkWaiter());
-  std::unique_ptr<TaskRunner> task_runner =
-      std::unique_ptr<TaskRunner>(new MockTaskRunner());
+  auto task_runner = MockTaskRunner();
+
   FakeUdpSocket::MockClient client;
   std::unique_ptr<MockUdpSocketPosix> socket =
-      std::make_unique<MockUdpSocketPosix>(task_runner.get(), &client, 17,
+      std::make_unique<MockUdpSocketPosix>(task_runner, &client, 17,
                                            UdpSocket::Version::kV4);
   TestingUdpSocketReader network_waiter(mock_waiter.get());
 

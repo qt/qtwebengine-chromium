@@ -13,16 +13,10 @@
 #include "platform/base/ip_address.h"
 
 namespace openscreen {
-
-struct IPEndpoint;
-class TaskRunner;
-
 namespace discovery {
 
-struct Config;
 class DnsSdPublisher;
 class DnsSdQuerier;
-class ReportingClient;
 
 // This class provides a wrapper around DnsSdQuerier and DnsSdPublisher to
 // allow for an embedder-overridable factory method below.

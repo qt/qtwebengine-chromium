@@ -136,7 +136,7 @@ constexpr int SimulatedFrame::kPlayoutChangeAtFrame;
 // proper behavior of the Receiver.
 class MockSender : public CompoundRtcpParser::Client {
  public:
-  MockSender(TaskRunner* task_runner, UdpSocket::Client* receiver)
+  MockSender(TaskRunner& task_runner, UdpSocket::Client* receiver)
       : task_runner_(task_runner),
         receiver_(receiver),
         sender_endpoint_{
@@ -173,7 +173,7 @@ class MockSender : public CompoundRtcpParser::Client {
     UdpPacket packet_to_send(packet_and_report_id.first.begin(),
                              packet_and_report_id.first.end());
     packet_to_send.set_source(sender_endpoint_);
-    task_runner_->PostTaskWithDelay(
+    task_runner_.PostTaskWithDelay(
         [receiver = receiver_, packet = std::move(packet_to_send)]() mutable {
           receiver->OnRead(nullptr, ErrorOr<UdpPacket>(std::move(packet)));
         },
@@ -218,7 +218,7 @@ class MockSender : public CompoundRtcpParser::Client {
           rtp_packetizer_.GeneratePacket(frame_being_sent_, packet_id, buffer);
       UdpPacket packet_to_send(span.begin(), span.end());
       packet_to_send.set_source(sender_endpoint_);
-      task_runner_->PostTaskWithDelay(
+      task_runner_.PostTaskWithDelay(
           [receiver = receiver_, packet = std::move(packet_to_send)]() mutable {
             receiver->OnRead(nullptr, ErrorOr<UdpPacket>(std::move(packet)));
           },
@@ -244,7 +244,7 @@ class MockSender : public CompoundRtcpParser::Client {
   MOCK_METHOD1(OnReceiverIsMissingPackets, void(std::vector<PacketNack> nacks));
 
  private:
-  TaskRunner* const task_runner_;
+  TaskRunner& task_runner_;
   UdpSocket::Client* const receiver_;
   const IPEndpoint sender_endpoint_;
   RtcpSession rtcp_session_;
@@ -267,7 +267,7 @@ class ReceiverTest : public testing::Test {
   ReceiverTest()
       : clock_(Clock::now()),
         task_runner_(&clock_),
-        env_(&FakeClock::now, &task_runner_),
+        env_(&FakeClock::now, task_runner_),
         packet_router_(&env_),
         receiver_(&env_,
                   &packet_router_,
@@ -279,7 +279,7 @@ class ReceiverTest : public testing::Test {
                    /* .aes_secret_key = */ kAesKey,
                    /* .aes_iv_mask = */ kCastIvMask,
                    /* .is_pli_enabled = */ true}),
-        sender_(&task_runner_, &env_) {
+        sender_(task_runner_, &env_) {
     env_.SetSocketSubscriber(&socket_subscriber_);
     ON_CALL(env_, SendPacket(_))
         .WillByDefault(Invoke([this](ByteView packet) {

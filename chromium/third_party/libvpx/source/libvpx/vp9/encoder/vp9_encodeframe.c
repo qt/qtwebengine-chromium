@@ -1437,7 +1437,7 @@ static int choose_partitioning(VP9_COMP *cpi, const TileInfo *const tile,
                            &cm->frame_refs[LAST_FRAME - 1].sf);
       mi->ref_frame[0] = LAST_FRAME;
     }
-    mi->ref_frame[1] = NONE;
+    mi->ref_frame[1] = NO_REF_FRAME;
     mi->sb_type = BLOCK_64X64;
     mi->mv[0].as_int = 0;
     mi->interp_filter = BILINEAR;
@@ -1545,7 +1545,7 @@ static int choose_partitioning(VP9_COMP *cpi, const TileInfo *const tile,
   }
 
   if (low_res && threshold_4x4avg < INT64_MAX)
-    CHECK_MEM_ERROR(cm, vt2, vpx_calloc(16, sizeof(*vt2)));
+    CHECK_MEM_ERROR(&cm->error, vt2, vpx_calloc(16, sizeof(*vt2)));
   // Fill in the entire tree of 8x8 (or 4x4 under some conditions) variances
   // for splits.
   for (i = 0; i < 4; i++) {
@@ -1706,7 +1706,7 @@ static int choose_partitioning(VP9_COMP *cpi, const TileInfo *const tile,
           const int y16_idx = ((j >> 1) << 1);
           // For inter frames: if variance4x4downsample[] == 1 for this 16x16
           // block, then the variance is based on 4x4 down-sampling, so use vt2
-          // in set_vt_partioning(), otherwise use vt.
+          // in set_vt_partitioning(), otherwise use vt.
           v16x16 *vtemp = (!is_key_frame && variance4x4downsample[i2 + j] == 1)
                               ? &vt2[i2 + j]
                               : &vt.split[i].split[j];
@@ -1924,7 +1924,7 @@ static void set_mode_info_seg_skip(MACROBLOCK *x, TX_MODE tx_mode,
   mi->skip = 1;
   mi->uv_mode = DC_PRED;
   mi->ref_frame[0] = LAST_FRAME;
-  mi->ref_frame[1] = NONE;
+  mi->ref_frame[1] = NO_REF_FRAME;
   mi->mv[0].as_int = 0;
   mi->interp_filter = filter_ref;
 
@@ -3449,7 +3449,7 @@ static void simple_motion_search(const VP9_COMP *const cpi, MACROBLOCK *const x,
   vp9_setup_pre_planes(xd, 0, yv12, mi_row, mi_col,
                        &cm->frame_refs[ref - 1].sf);
   mi->ref_frame[0] = ref;
-  mi->ref_frame[1] = NONE;
+  mi->ref_frame[1] = NO_REF_FRAME;
   mi->sb_type = bsize;
   vp9_set_mv_search_range(&x->mv_limits, &ref_mv);
   vp9_full_pixel_search(cpi, x, bsize, &ref_mv_full, step_param, search_method,
@@ -3470,11 +3470,11 @@ static void simple_motion_search(const VP9_COMP *const cpi, MACROBLOCK *const x,
 // Features used: QP; spatial block size contexts; variance of prediction
 // residue after simple_motion_search.
 #define FEATURES 12
-static void ml_predict_var_rd_paritioning(const VP9_COMP *const cpi,
-                                          MACROBLOCK *const x,
-                                          PC_TREE *const pc_tree,
-                                          BLOCK_SIZE bsize, int mi_row,
-                                          int mi_col, int *none, int *split) {
+static void ml_predict_var_rd_partitioning(const VP9_COMP *const cpi,
+                                           MACROBLOCK *const x,
+                                           PC_TREE *const pc_tree,
+                                           BLOCK_SIZE bsize, int mi_row,
+                                           int mi_col, int *none, int *split) {
   const VP9_COMMON *const cm = &cpi->common;
   const NN_CONFIG *nn_config = NULL;
   const MACROBLOCKD *const xd = &x->e_mbd;
@@ -3710,7 +3710,6 @@ static int get_rdmult_delta(VP9_COMP *cpi, BLOCK_SIZE bsize, int mi_row,
   int row, col;
 
   int dr = 0;
-  int count = 0;
   double r0, rk, beta;
 
   TplDepFrame *tpl_frame;
@@ -3734,8 +3733,6 @@ static int get_rdmult_delta(VP9_COMP *cpi, BLOCK_SIZE bsize, int mi_row,
 
       intra_cost += this_stats->intra_cost;
       mc_dep_cost += this_stats->mc_dep_cost;
-
-      ++count;
     }
   }
 
@@ -3792,7 +3789,7 @@ static void assign_motion_vector_info(const int block_width_4x4,
       const int col_4x4 = col_start_4x4 + j;
       const int unit_index = row_4x4 * num_unit_cols + col_4x4;
       if (row_4x4 >= num_unit_rows || col_4x4 >= num_unit_cols) continue;
-      if (source_ref_frame[1] == NONE) {
+      if (source_ref_frame[1] == NO_REF_FRAME) {
         assert(source_mv[1]->row == 0 && source_mv[1]->col == 0);
       }
       motion_vector_info[unit_index].ref_frame[0] = source_ref_frame[0];
@@ -4095,8 +4092,8 @@ static int rd_pick_partition(VP9_COMP *cpi, ThreadData *td,
         mi_row + num_8x8_blocks_high_lookup[bsize] <= cm->mi_rows &&
         mi_col + num_8x8_blocks_wide_lookup[bsize] <= cm->mi_cols;
     if (do_rd_ml_partition_var_pruning) {
-      ml_predict_var_rd_paritioning(cpi, x, pc_tree, bsize, mi_row, mi_col,
-                                    &partition_none_allowed, &do_split);
+      ml_predict_var_rd_partitioning(cpi, x, pc_tree, bsize, mi_row, mi_col,
+                                     &partition_none_allowed, &do_split);
     } else {
       vp9_zero(pc_tree->mv);
     }
@@ -4823,9 +4820,9 @@ static void pred_pixel_ready_reset(PC_TREE *pc_tree, BLOCK_SIZE bsize) {
 
 #define FEATURES 6
 #define LABELS 2
-static int ml_predict_var_paritioning(VP9_COMP *cpi, MACROBLOCK *x,
-                                      BLOCK_SIZE bsize, int mi_row,
-                                      int mi_col) {
+static int ml_predict_var_partitioning(VP9_COMP *cpi, MACROBLOCK *x,
+                                       BLOCK_SIZE bsize, int mi_row,
+                                       int mi_col) {
   VP9_COMMON *const cm = &cpi->common;
   const NN_CONFIG *nn_config = NULL;
 
@@ -4957,7 +4954,7 @@ static void nonrd_pick_partition(VP9_COMP *cpi, ThreadData *td,
     if (partition_none_allowed || do_split) do_rect = 0;
     if (partition_none_allowed && do_split) {
       const int ml_predicted_partition =
-          ml_predict_var_paritioning(cpi, x, bsize, mi_row, mi_col);
+          ml_predict_var_partitioning(cpi, x, bsize, mi_row, mi_col);
       if (ml_predicted_partition == PARTITION_NONE) do_split = 0;
       if (ml_predicted_partition == PARTITION_SPLIT) partition_none_allowed = 0;
     }
@@ -5446,7 +5443,7 @@ static void get_estimated_pred(VP9_COMP *cpi, const TileInfo *const tile,
                            &cm->frame_refs[LAST_FRAME - 1].sf);
       mi->ref_frame[0] = LAST_FRAME;
     }
-    mi->ref_frame[1] = NONE;
+    mi->ref_frame[1] = NO_REF_FRAME;
     mi->sb_type = BLOCK_64X64;
     mi->mv[0].as_int = 0;
     mi->interp_filter = BILINEAR;
@@ -5636,7 +5633,7 @@ static void encode_nonrd_sb_row(VP9_COMP *cpi, ThreadData *td,
         if ((cpi->oxcf.rc_mode == VPX_VBR && cpi->rc.high_source_sad &&
              cpi->oxcf.speed < 6 && !frame_is_intra_only(cm) &&
              (cpi->refresh_golden_frame || cpi->refresh_alt_ref_frame))) {
-          // Use lower max_partition_size for low resoultions.
+          // Use lower max_partition_size for low resolutions.
           if (cm->width <= 352 && cm->height <= 288)
             x->max_partition_size = BLOCK_32X32;
           else
@@ -5786,7 +5783,7 @@ static void source_var_based_partition_search_method(VP9_COMP *cpi) {
     if (cm->last_width != cm->width || cm->last_height != cm->height) {
       if (cpi->source_diff_var) vpx_free(cpi->source_diff_var);
 
-      CHECK_MEM_ERROR(cm, cpi->source_diff_var,
+      CHECK_MEM_ERROR(&cm->error, cpi->source_diff_var,
                       vpx_calloc(cm->MBs, sizeof(cpi->source_diff_var)));
     }
 
@@ -5826,7 +5823,7 @@ void vp9_init_tile_data(VP9_COMP *cpi) {
   if (cpi->tile_data == NULL || cpi->allocated_tiles < tile_cols * tile_rows) {
     if (cpi->tile_data != NULL) vpx_free(cpi->tile_data);
     CHECK_MEM_ERROR(
-        cm, cpi->tile_data,
+        &cm->error, cpi->tile_data,
         vpx_malloc(tile_cols * tile_rows * sizeof(*cpi->tile_data)));
     cpi->allocated_tiles = tile_cols * tile_rows;
 
@@ -6185,7 +6182,6 @@ static int compute_frame_aq_offset(struct VP9_COMP *cpi) {
 
   int mi_row, mi_col;
   int sum_delta = 0;
-  int map_index = 0;
   int qdelta_index;
   int segment_id;
 
@@ -6195,7 +6191,6 @@ static int compute_frame_aq_offset(struct VP9_COMP *cpi) {
       segment_id = mi_8x8[0]->segment_id;
       qdelta_index = get_segdata(seg, segment_id, SEG_LVL_ALT_Q);
       sum_delta += qdelta_index;
-      map_index++;
     }
     mi_8x8_ptr += cm->mi_stride;
   }

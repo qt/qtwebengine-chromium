@@ -257,7 +257,7 @@ class TestStream : public QuicSpdyStream {
   MOCK_METHOD(bool, HasPendingRetransmission, (), (const, override));
 
  protected:
-  bool AreHeadersValid(const QuicHeaderList& /*header_list*/) const override {
+  bool ValidatedRequestHeaders(const QuicHeaderList& /*header_list*/) override {
     return true;
   }
 };
@@ -422,8 +422,7 @@ class QuicSpdySessionTestBase : public QuicTestWithParam<ParsedQuicVersion> {
             SupportedVersions(GetParam()))),
         session_(connection_) {
     if (perspective == Perspective::IS_SERVER &&
-        VersionUsesHttp3(transport_version()) &&
-        GetQuicReloadableFlag(quic_verify_request_headers_2)) {
+        VersionUsesHttp3(transport_version())) {
       session_.set_allow_extended_connect(allow_extended_connect);
     }
     session_.Initialize();
@@ -524,7 +523,7 @@ class QuicSpdySessionTestBase : public QuicTestWithParam<ParsedQuicVersion> {
 
   void CompleteHandshake() {
     if (VersionHasIetfQuicFrames(transport_version())) {
-      EXPECT_CALL(*writer_, WritePacket(_, _, _, _, _))
+      EXPECT_CALL(*writer_, WritePacket(_, _, _, _, _, _))
           .WillOnce(Return(WriteResult(WRITE_STATUS_OK, 0)));
     }
     if (connection_->version().UsesTls() &&
@@ -567,7 +566,6 @@ class QuicSpdySessionTestBase : public QuicTestWithParam<ParsedQuicVersion> {
     headers.OnHeaderBlockStart();
     headers.OnHeader(":method", "CONNECT");
     headers.OnHeader(":protocol", "webtransport");
-    headers.OnHeader("sec-webtransport-http3-draft02", "1");
     stream->OnStreamHeaderList(/*fin=*/true, 0, headers);
     WebTransportHttp3* web_transport =
         session_.GetWebTransportSession(session_id);
@@ -792,7 +790,7 @@ TEST_P(QuicSpdySessionTestServer, ManyAvailableStreams) {
 TEST_P(QuicSpdySessionTestServer,
        DebugDFatalIfMarkingClosedStreamWriteBlocked) {
   CompleteHandshake();
-  EXPECT_CALL(*writer_, WritePacket(_, _, _, _, _))
+  EXPECT_CALL(*writer_, WritePacket(_, _, _, _, _, _))
       .WillRepeatedly(Return(WriteResult(WRITE_STATUS_OK, 0)));
 
   TestStream* stream2 = session_.CreateOutgoingBidirectionalStream();
@@ -823,7 +821,7 @@ TEST_P(QuicSpdySessionTestServer, TooLargeStreamBlocked) {
       static_cast<QuicSession*>(&session_), QuicUtils::GetMaxStreamCount());
   QuicStreamsBlockedFrame frame;
   frame.stream_count = QuicUtils::GetMaxStreamCount();
-  EXPECT_CALL(*writer_, WritePacket(_, _, _, _, _))
+  EXPECT_CALL(*writer_, WritePacket(_, _, _, _, _, _))
       .WillOnce(Return(WriteResult(WRITE_STATUS_OK, 0)));
   EXPECT_CALL(debug_visitor, OnGoAwayFrameSent(_));
   session_.OnStreamsBlockedFrame(frame);
@@ -861,7 +859,7 @@ TEST_P(QuicSpdySessionTestServer, OnCanWriteBundlesStreams) {
 
   // Expect that we only send one packet, the writes from different streams
   // should be bundled together.
-  EXPECT_CALL(*writer_, WritePacket(_, _, _, _, _))
+  EXPECT_CALL(*writer_, WritePacket(_, _, _, _, _, _))
       .WillOnce(Return(WriteResult(WRITE_STATUS_OK, 0)));
   EXPECT_CALL(*send_algorithm, OnPacketSent(_, _, _, _, _));
   EXPECT_CALL(*send_algorithm, OnApplicationLimited(_));
@@ -927,7 +925,7 @@ TEST_P(QuicSpdySessionTestServer, OnCanWriteWriterBlocks) {
 
   // Drive packet writer manually.
   EXPECT_CALL(*writer_, IsWriteBlocked()).WillRepeatedly(Return(true));
-  EXPECT_CALL(*writer_, WritePacket(_, _, _, _, _)).Times(0);
+  EXPECT_CALL(*writer_, WritePacket(_, _, _, _, _, _)).Times(0);
 
   TestStream* stream2 = session_.CreateOutgoingBidirectionalStream();
 
@@ -1079,7 +1077,7 @@ TEST_P(QuicSpdySessionTestServer, SendGoAway) {
     return;
   }
   connection_->SetDefaultEncryptionLevel(ENCRYPTION_FORWARD_SECURE);
-  EXPECT_CALL(*writer_, WritePacket(_, _, _, _, _))
+  EXPECT_CALL(*writer_, WritePacket(_, _, _, _, _, _))
       .WillOnce(Return(WriteResult(WRITE_STATUS_OK, 0)));
 
   EXPECT_CALL(*connection_, SendControlFrame(_))
@@ -1119,7 +1117,7 @@ TEST_P(QuicSpdySessionTestServer, SendHttp3GoAway) {
   StrictMock<MockHttp3DebugVisitor> debug_visitor;
   session_.set_debug_visitor(&debug_visitor);
 
-  EXPECT_CALL(*writer_, WritePacket(_, _, _, _, _))
+  EXPECT_CALL(*writer_, WritePacket(_, _, _, _, _, _))
       .WillOnce(Return(WriteResult(WRITE_STATUS_OK, 0)));
   // Send max stream id (currently 32 bits).
   EXPECT_CALL(debug_visitor, OnGoAwayFrameSent(/* stream_id = */ 0xfffffffc));
@@ -1162,7 +1160,7 @@ TEST_P(QuicSpdySessionTestServer, SendHttp3GoAwayAfterStreamIsCreated) {
       GetNthClientInitiatedBidirectionalStreamId(transport_version(), 0);
   EXPECT_TRUE(session_.GetOrCreateStream(kTestStreamId));
 
-  EXPECT_CALL(*writer_, WritePacket(_, _, _, _, _))
+  EXPECT_CALL(*writer_, WritePacket(_, _, _, _, _, _))
       .WillOnce(Return(WriteResult(WRITE_STATUS_OK, 0)));
   // Send max stream id (currently 32 bits).
   EXPECT_CALL(debug_visitor, OnGoAwayFrameSent(/* stream_id = */ 0xfffffffc));
@@ -1218,7 +1216,8 @@ TEST_P(QuicSpdySessionTestServer, Http3GoAwayLargerIdThanBefore) {
 // Test that server session will send a connectivity probe in response to a
 // connectivity probe on the same path.
 TEST_P(QuicSpdySessionTestServer, ServerReplyToConnecitivityProbe) {
-  if (VersionHasIetfQuicFrames(transport_version())) {
+  if (VersionHasIetfQuicFrames(transport_version()) ||
+      GetQuicReloadableFlag(quic_ignore_gquic_probing)) {
     return;
   }
   connection_->SetDefaultEncryptionLevel(ENCRYPTION_FORWARD_SECURE);
@@ -1232,12 +1231,6 @@ TEST_P(QuicSpdySessionTestServer, ServerReplyToConnecitivityProbe) {
   EXPECT_CALL(*connection_,
               SendConnectivityProbingPacket(nullptr, new_peer_address));
 
-  if (VersionHasIetfQuicFrames(transport_version())) {
-    // Need to explicitly do this to emulate the reception of a PathChallenge,
-    // which stores its payload for use in generating the response.
-    connection_->OnPathChallengeFrame(
-        QuicPathChallengeFrame(0, {{0, 1, 2, 3, 4, 5, 6, 7}}));
-  }
   session_.OnPacketReceived(session_.self_address(), new_peer_address,
                             /*is_connectivity_probe=*/true);
   EXPECT_EQ(old_peer_address, session_.peer_address());
@@ -1269,7 +1262,7 @@ TEST_P(QuicSpdySessionTestServer, RstStreamBeforeHeadersDecompressed) {
   // In HTTP/3, Qpack stream will send data on stream reset and cause packet to
   // be flushed.
   if (VersionUsesHttp3(transport_version())) {
-    EXPECT_CALL(*writer_, WritePacket(_, _, _, _, _))
+    EXPECT_CALL(*writer_, WritePacket(_, _, _, _, _, _))
         .WillOnce(Return(WriteResult(WRITE_STATUS_OK, 0)));
   }
   EXPECT_CALL(*connection_, SendControlFrame(_));
@@ -1504,7 +1497,7 @@ TEST_P(QuicSpdySessionTestServer,
     EXPECT_CALL(*connection_, OnStreamReset(stream->id(), _));
     EXPECT_CALL(*connection_, SendControlFrame(_));
   } else {
-    EXPECT_CALL(*writer_, WritePacket(_, _, _, _, _))
+    EXPECT_CALL(*writer_, WritePacket(_, _, _, _, _, _))
         .WillOnce(Return(WriteResult(WRITE_STATUS_OK, 0)));
   }
   QuicRstStreamFrame rst_frame(kInvalidControlFrameId, stream->id(),
@@ -1783,7 +1776,7 @@ TEST_P(QuicSpdySessionTestClient, TooLargeHeadersMustNotCauseWriteAfterReset) {
   CompleteHandshake();
   TestStream* stream = session_.CreateOutgoingBidirectionalStream();
 
-  EXPECT_CALL(*writer_, WritePacket(_, _, _, _, _))
+  EXPECT_CALL(*writer_, WritePacket(_, _, _, _, _, _))
       .WillOnce(Return(WriteResult(WRITE_STATUS_OK, 0)));
   // Write headers with FIN set to close write side of stream.
   // Header block does not matter.
@@ -2839,7 +2832,7 @@ TEST_P(QuicSpdySessionTestServer, OnSetting) {
     session_.OnSetting(SETTINGS_MAX_FIELD_SECTION_SIZE, 5);
     EXPECT_EQ(5u, session_.max_outbound_header_list_size());
 
-    EXPECT_CALL(*writer_, WritePacket(_, _, _, _, _))
+    EXPECT_CALL(*writer_, WritePacket(_, _, _, _, _, _))
         .WillRepeatedly(Return(WriteResult(WRITE_STATUS_OK, 0)));
     QpackEncoder* qpack_encoder = session_.qpack_encoder();
     EXPECT_EQ(0u, QpackEncoderPeer::maximum_blocked_streams(qpack_encoder));
@@ -3066,7 +3059,7 @@ TEST_P(QuicSpdySessionTestServer, Http3GoAwayWhenClosingConnection) {
                                 QuicUtils::StreamIdDelta(transport_version())));
 
   // Close connection.
-  EXPECT_CALL(*writer_, WritePacket(_, _, _, _, _))
+  EXPECT_CALL(*writer_, WritePacket(_, _, _, _, _, _))
       .WillRepeatedly(Return(WriteResult(WRITE_STATUS_OK, 0)));
   EXPECT_CALL(*connection_, CloseConnection(QUIC_NO_ERROR, _, _))
       .WillOnce(
@@ -3643,7 +3636,6 @@ TEST_P(QuicSpdySessionTestClient, WebTransportWithoutExtendedConnect) {
   if (!version().UsesHttp3()) {
     return;
   }
-  SetQuicReloadableFlag(quic_verify_request_headers_2, true);
   SetQuicReloadableFlag(quic_act_upon_invalid_header, true);
   session_.set_local_http_datagram_support(HttpDatagramSupport::kDraft04);
   session_.set_supports_webtransport(true);
@@ -3753,7 +3745,6 @@ TEST_P(QuicSpdySessionTestServerNoExtendedConnect, BadExtendedConnectSetting) {
   if (!version().UsesHttp3()) {
     return;
   }
-  SetQuicReloadableFlag(quic_verify_request_headers_2, true);
   SetQuicReloadableFlag(quic_act_upon_invalid_header, true);
 
   EXPECT_FALSE(session_.SupportsWebTransport());

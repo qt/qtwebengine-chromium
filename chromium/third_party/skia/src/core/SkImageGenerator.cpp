@@ -12,7 +12,10 @@
 #include "include/core/SkGraphics.h"
 #include "include/private/base/SkAssert.h"
 #include "src/core/SkNextID.h"
+#include "src/image/SkImageGeneratorPriv.h"
 
+#include <memory>
+#include <optional>
 #include <utility>
 
 #if defined(SK_GRAPHITE)
@@ -51,26 +54,6 @@ bool SkImageGenerator::getYUVAPlanes(const SkYUVAPixmaps& yuvaPixmaps) {
     return this->onGetYUVAPlanes(yuvaPixmaps);
 }
 
-#if defined(SK_GRAPHITE)
-sk_sp<SkImage> SkImageGenerator::makeTextureImage(skgpu::graphite::Recorder* recorder,
-                                                  const SkImageInfo& info,
-                                                  skgpu::Mipmapped mipmapped) {
-    // This still allows for a difference in colorType and colorSpace. Just no subsetting.
-    if (fInfo.dimensions() != info.dimensions()) {
-        return nullptr;
-    }
-
-    return this->onMakeTextureImage(recorder, info, mipmapped);
-}
-
-sk_sp<SkImage> SkImageGenerator::onMakeTextureImage(skgpu::graphite::Recorder*,
-                                                    const SkImageInfo&,
-                                                    skgpu::Mipmapped) {
-    return nullptr;
-}
-
-#endif // SK_GRAPHITE
-
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 static SkGraphics::ImageGeneratorFromEncodedDataFactory gFactory;
@@ -83,8 +66,10 @@ SkGraphics::SetImageGeneratorFromEncodedDataFactory(ImageGeneratorFromEncodedDat
     return prev;
 }
 
-std::unique_ptr<SkImageGenerator> SkImageGenerator::MakeFromEncoded(
-        sk_sp<SkData> data, std::optional<SkAlphaType> at) {
+namespace SkImageGenerators {
+
+std::unique_ptr<SkImageGenerator> MakeFromEncoded(sk_sp<SkData> data,
+                                                  std::optional<SkAlphaType> at) {
     if (!data || at == kOpaque_SkAlphaType) {
         return nullptr;
     }
@@ -93,5 +78,7 @@ std::unique_ptr<SkImageGenerator> SkImageGenerator::MakeFromEncoded(
             return generator;
         }
     }
-    return SkImageGenerator::MakeFromEncodedImpl(std::move(data), at);
+    return MakeFromEncodedImpl(std::move(data), at);
 }
+
+}  // namespace SkImageGenerators

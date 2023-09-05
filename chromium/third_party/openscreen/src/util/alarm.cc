@@ -4,6 +4,8 @@
 
 #include "util/alarm.h"
 
+#include <algorithm>
+
 #include "util/osp_logging.h"
 
 namespace openscreen {
@@ -58,10 +60,9 @@ class Alarm::CancelableFunctor {
   Alarm* alarm_;
 };
 
-Alarm::Alarm(ClockNowFunctionPtr now_function, TaskRunner* task_runner)
+Alarm::Alarm(ClockNowFunctionPtr now_function, TaskRunner& task_runner)
     : now_function_(now_function), task_runner_(task_runner) {
   OSP_DCHECK(now_function_);
-  OSP_DCHECK(task_runner_);
 }
 
 Alarm::~Alarm() {
@@ -99,7 +100,7 @@ void Alarm::InvokeLater(Clock::time_point now, Clock::time_point fire_time) {
   OSP_DCHECK(!queued_fire_);
   next_fire_time_ = fire_time;
   // Note: Instantiating the CancelableFunctor below sets |this->queued_fire_|.
-  task_runner_->PostTaskWithDelay(CancelableFunctor(this), fire_time - now);
+  task_runner_.PostTaskWithDelay(CancelableFunctor(this), fire_time - now);
 }
 
 void Alarm::TryInvoke() {

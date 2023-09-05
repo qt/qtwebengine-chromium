@@ -27,6 +27,7 @@
 #include <bitset>
 #include <iomanip>
 #include "cast_utils.h"
+#include "generated/vk_extension_helper.h"
 #include "generated/vk_format_utils.h"
 #include "error_message/logging.h"
 
@@ -63,13 +64,13 @@ static inline VkOffset3D CastTo3D(const VkOffset2D &d2) {
 }
 
 // Convert integer API version to a string
-static inline std::string StringAPIVersion(uint32_t version) {
+static inline std::string StringAPIVersion(APIVersion version) {
     std::stringstream version_name;
-    uint32_t major = VK_VERSION_MAJOR(version);
-    uint32_t minor = VK_VERSION_MINOR(version);
-    uint32_t patch = VK_VERSION_PATCH(version);
-    version_name << major << "." << minor << "." << patch << " (0x" << std::setfill('0') << std::setw(8) << std::hex << version
-                 << ")";
+    if (!version.valid()) {
+        return "<unrecognized>";
+    }
+    version_name << version.major() << "." << version.minor() << "." << version.patch() << " (0x" << std::setfill('0')
+                 << std::setw(8) << std::hex << version.value() << ")";
     return version_name.str();
 }
 
@@ -215,6 +216,29 @@ constexpr T Align(T x, T p2) {
 
 // Returns the 0-based index of the LSB. An input mask of 0 yields -1
 static inline int LeastSignificantBit(uint32_t mask) { return u_ffs(static_cast<int>(mask)) - 1; }
+
+// Compute a binomial coefficient
+template <typename T>
+constexpr T binom(T n, T k) {
+    static_assert(std::numeric_limits<T>::is_integer, "Unsigned integer required.");
+    static_assert(std::is_unsigned<T>::value, "Unsigned integer required.");
+    assert(n >= k);
+    if (n == 0) {
+        return 0;
+    }
+    if (k == 0) {
+        return 1;
+    }
+
+    T numerator = 1;
+    T denominator = 1;
+    for (T i = 1; i <= k; ++i) {
+        numerator *= n - i + 1;
+        denominator *= i;
+    }
+
+    return numerator / denominator;
+}
 
 template <typename FlagBits, typename Flags>
 FlagBits LeastSignificantFlag(Flags flags) {
@@ -467,8 +491,8 @@ static inline uint32_t FullMipChainLevels(VkExtent3D extent) {
 }
 
 // Returns the effective extent of an image subresource, adjusted for mip level and array depth.
-[[nodiscard]] constexpr VkExtent3D GetEffectiveExtent(const VkImageCreateInfo &ci, const VkImageAspectFlags aspect_mask,
-                                                      const uint32_t mip_level) {
+[[nodiscard]] inline VkExtent3D GetEffectiveExtent(const VkImageCreateInfo &ci, const VkImageAspectFlags aspect_mask,
+                                                   const uint32_t mip_level) {
     // Return zero extent if mip level doesn't exist
     if (mip_level >= ci.mipLevels) {
         return VkExtent3D{0, 0, 0};
@@ -508,7 +532,7 @@ static inline uint32_t FullMipChainLevels(VkExtent3D extent) {
 }
 
 // Returns the effective extent of an image subresource, adjusted for mip level and array depth.
-[[nodiscard]] constexpr VkExtent3D GetEffectiveExtent(const VkImageCreateInfo &ci, const VkImageSubresourceRange &range) {
+[[nodiscard]] inline VkExtent3D GetEffectiveExtent(const VkImageCreateInfo &ci, const VkImageSubresourceRange &range) {
     return GetEffectiveExtent(ci, range.aspectMask, range.baseMipLevel);
 }
 
@@ -751,4 +775,41 @@ class vl_concurrent_unordered_map {
         return hash;
     }
 };
+
+static constexpr VkPipelineStageFlags2KHR kFramebufferStagePipelineStageFlags =
+    (VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
+     VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+
+static constexpr VkAccessFlags2 kShaderTileImageAllowedAccessFlags =
+    VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+    VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+static constexpr bool HasNonFramebufferStagePipelineStageFlags(VkPipelineStageFlags2KHR inflags) {
+    return (inflags & ~kFramebufferStagePipelineStageFlags) != 0;
+}
+
+static constexpr bool HasFramebufferStagePipelineStageFlags(VkPipelineStageFlags2KHR inflags) {
+    return (inflags & kFramebufferStagePipelineStageFlags) != 0;
+}
+
+static constexpr bool HasNonShaderTileImageAccessFlags(VkAccessFlags2 in_flags) {
+    return ((in_flags & ~kShaderTileImageAllowedAccessFlags) != 0);
+}
+
+namespace vvl {
+
+static inline void ToLower(std::string &str) {
+    // std::tolower() returns int which can cause compiler warnings
+    transform(str.begin(), str.end(), str.begin(),
+              [](char c) { return static_cast<char>(std::tolower(c)); });
+}
+
+static inline void ToUpper(std::string &str) {
+    // std::toupper() returns int which can cause compiler warnings
+    transform(str.begin(), str.end(), str.begin(),
+              [](char c) { return static_cast<char>(std::toupper(c)); });
+}
+
+}  // namespace vvl
+
 #endif

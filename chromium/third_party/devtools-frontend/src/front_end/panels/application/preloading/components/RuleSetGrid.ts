@@ -5,15 +5,22 @@
 import * as i18n from '../../../../core/i18n/i18n.js';
 import * as DataGrid from '../../../../ui/components/data_grid/data_grid.js';
 import * as ComponentHelpers from '../../../../ui/components/helpers/helpers.js';
+import * as LegacyWrapper from '../../../../ui/components/legacy_wrapper/legacy_wrapper.js';
 import * as LitHtml from '../../../../ui/lit-html/lit-html.js';
+
+import type * as UI from '../../../../ui/legacy/legacy.js';
 
 import ruleSetGridStyles from './ruleSetGrid.css.js';
 
 const UIStrings = {
   /**
-   *@description Column header for a table displaying rule sets.
+   *@description Column header for a table displaying rule sets: Indicates a rule set contains errors.
    */
   validity: 'Validity',
+  /**
+   *@description Column header for a table displaying rule sets: Where a rule set came from.
+   */
+  location: 'Location',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/application/preloading/components/RuleSetGrid.ts', UIStrings);
 export const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -21,10 +28,11 @@ export const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 export interface RuleSetGridRow {
   id: string;
   validity: string;
+  location: string;
 }
 
 // Grid component to show SpeculationRules rule sets.
-export class RuleSetGrid extends HTMLElement {
+export class RuleSetGrid extends LegacyWrapper.LegacyWrapper.WrappableComponent<UI.Widget.VBox> {
   static readonly litTagName = LitHtml.literal`devtools-resources-ruleset-grid`;
 
   readonly #shadow = this.attachShadow({mode: 'open'});
@@ -50,6 +58,13 @@ export class RuleSetGrid extends HTMLElement {
           hideable: false,
           visible: true,
         },
+        {
+          id: 'location',
+          title: i18nString(UIStrings.location),
+          widthWeighting: 80,
+          hideable: false,
+          visible: true,
+        },
       ],
       rows: this.#buildReportRows(),
     };
@@ -71,6 +86,7 @@ export class RuleSetGrid extends HTMLElement {
                             cells: [
                               {columnId: 'id', value: row.id},
                               {columnId: 'validity', value: row.validity},
+                              {columnId: 'location', value: row.location},
                             ],
                           }));
   }

@@ -8,6 +8,7 @@
 #include "src/gpu/graphite/dawn/DawnGraphicsPipeline.h"
 
 #include "include/gpu/graphite/TextureInfo.h"
+#include "src/gpu/PipelineUtils.h"
 #include "src/gpu/Swizzle.h"
 #include "src/gpu/graphite/Attribute.h"
 #include "src/gpu/graphite/ContextUtils.h"
@@ -194,6 +195,22 @@ static wgpu::BlendFactor blend_coeff_to_dawn_blend(skgpu::BlendCoeff coeff) {
     SkUNREACHABLE;
 }
 
+static wgpu::BlendFactor blend_coeff_to_dawn_blend_for_alpha(skgpu::BlendCoeff coeff) {
+    switch (coeff) {
+        // Force all srcColor used in alpha slot to alpha version.
+        case skgpu::BlendCoeff::kSC:
+            return wgpu::BlendFactor::SrcAlpha;
+        case skgpu::BlendCoeff::kISC:
+            return wgpu::BlendFactor::OneMinusSrcAlpha;
+        case skgpu::BlendCoeff::kDC:
+            return wgpu::BlendFactor::DstAlpha;
+        case skgpu::BlendCoeff::kIDC:
+            return wgpu::BlendFactor::OneMinusDstAlpha;
+        default:
+            return blend_coeff_to_dawn_blend(coeff);
+    }
+}
+
 // TODO: share this w/ Ganesh Metal backend?
 static wgpu::BlendOperation blend_equation_to_dawn_blend_op(skgpu::BlendEquation equation) {
     static const wgpu::BlendOperation gTable[] = {
@@ -220,7 +237,7 @@ sk_sp<DawnGraphicsPipeline> DawnGraphicsPipeline::Make(const DawnSharedContext* 
                                                        const RenderPassDesc& renderPassDesc) {
     const auto& device = sharedContext->device();
 
-    SkSL::Program::Inputs vsInputs, fsInputs;
+    SkSL::Program::Interface vsInterface, fsInterface;
     SkSL::ProgramSettings settings;
 
     settings.fForceNoRTFlip = true;
@@ -239,7 +256,7 @@ sk_sp<DawnGraphicsPipeline> DawnGraphicsPipeline::Make(const DawnSharedContext* 
 
     // Some steps just render depth buffer but not color buffer, so the fragment
     // shader is null.
-    const FragSkSLInfo fsSkSLInfo = GetSkSLFS(sharedContext->caps()->resourceBindingRequirements(),
+    const FragSkSLInfo fsSkSLInfo = GetSkSLFS(sharedContext->caps(),
                                               sharedContext->shaderCodeDictionary(),
                                               runtimeDict,
                                               step,
@@ -258,7 +275,7 @@ sk_sp<DawnGraphicsPipeline> DawnGraphicsPipeline::Make(const DawnSharedContext* 
                          SkSL::ProgramKind::kGraphiteFragment,
                          settings,
                          &fsSPIRV,
-                         &fsInputs,
+                         &fsInterface,
                          errorHandler)) {
             return {};
         }
@@ -278,7 +295,7 @@ sk_sp<DawnGraphicsPipeline> DawnGraphicsPipeline::Make(const DawnSharedContext* 
                      SkSL::ProgramKind::kGraphiteVertex,
                      settings,
                      &vsSPIRV,
-                     &vsInputs,
+                     &vsInterface,
                      errorHandler)) {
         return {};
     }
@@ -305,8 +322,8 @@ sk_sp<DawnGraphicsPipeline> DawnGraphicsPipeline::Make(const DawnSharedContext* 
         blend.color.srcFactor = blend_coeff_to_dawn_blend(srcCoeff);
         blend.color.dstFactor = blend_coeff_to_dawn_blend(dstCoeff);
         blend.alpha.operation = blend_equation_to_dawn_blend_op(equation);
-        blend.alpha.srcFactor = blend_coeff_to_dawn_blend(srcCoeff);
-        blend.alpha.dstFactor = blend_coeff_to_dawn_blend(dstCoeff);
+        blend.alpha.srcFactor = blend_coeff_to_dawn_blend_for_alpha(srcCoeff);
+        blend.alpha.dstFactor = blend_coeff_to_dawn_blend_for_alpha(dstCoeff);
     }
 
     wgpu::ColorTargetState colorTarget;

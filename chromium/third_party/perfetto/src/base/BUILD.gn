@@ -144,6 +144,9 @@ if (enable_perfetto_ipc) {
     if (is_win && perfetto_build_standalone) {
       libs = [ "Ws2_32.lib" ]
     }
+    if (is_linux || is_android) {
+      sources += [ "vm_sockets.h" ]
+    }
   }
 }
 
@@ -199,6 +202,7 @@ perfetto_unittest_source_set("unittests") {
     "scoped_file_unittest.cc",
     "small_vector_unittest.cc",
     "status_or_unittest.cc",
+    "status_unittest.cc",
     "string_splitter_unittest.cc",
     "string_utils_unittest.cc",
     "string_view_unittest.cc",

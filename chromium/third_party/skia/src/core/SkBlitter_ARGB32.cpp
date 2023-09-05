@@ -5,11 +5,28 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkShader.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkColorPriv.h"
+#include "include/core/SkColorType.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkPixmap.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkTypes.h"
 #include "include/private/SkColorData.h"
+#include "include/private/base/SkCPUTypes.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkMalloc.h"
+#include "include/private/base/SkTo.h"
+#include "src/base/SkUtils.h"
 #include "src/base/SkVx.h"
+#include "src/core/SkBlitRow.h"
 #include "src/core/SkCoreBlitters.h"
+#include "src/core/SkMask.h"
 #include "src/core/SkOpts.h"
+#include "src/shaders/SkShaderBase.h"
+
+#include <cstddef>
+#include <cstdint>
 
 static inline int upscale_31_to_32(int value) {
     SkASSERT((unsigned)value <= 31);
@@ -681,14 +698,6 @@ SkARGB32_Blitter::SkARGB32_Blitter(const SkPixmap& device, const SkPaint& paint)
     fPMColor = SkPackARGB32(fSrcA, fSrcR, fSrcG, fSrcB);
 }
 
-const SkPixmap* SkARGB32_Blitter::justAnOpaqueColor(uint32_t* value) {
-    if (255 == fSrcA) {
-        *value = fPMColor;
-        return &fDevice;
-    }
-    return nullptr;
-}
-
 #if defined _WIN32  // disable warning : local variable used without having been initialized
 #pragma warning ( push )
 #pragma warning ( disable : 4701 )
@@ -968,7 +977,6 @@ SkARGB32_Shader_Blitter::SkARGB32_Shader_Blitter(const SkPixmap& device,
 
     fShadeDirectlyIntoDevice =
             SkToBool(shaderContext->getFlags() & SkShaderBase::kOpaqueAlpha_Flag);
-    fConstInY = SkToBool(shaderContext->getFlags() & SkShaderBase::kConstInY32_Flag);
 }
 
 SkARGB32_Shader_Blitter::~SkARGB32_Shader_Blitter() {
@@ -997,27 +1005,6 @@ void SkARGB32_Shader_Blitter::blitRect(int x, int y, int width, int height) {
     size_t     deviceRB = fDevice.rowBytes();
     auto*      shaderContext = fShaderContext;
     SkPMColor* span = fBuffer;
-
-    if (fConstInY) {
-        if (fShadeDirectlyIntoDevice) {
-            // shade the first row directly into the device
-            shaderContext->shadeSpan(x, y, device, width);
-            span = device;
-            while (--height > 0) {
-                device = (uint32_t*)((char*)device + deviceRB);
-                memcpy(device, span, width << 2);
-            }
-        } else {
-            shaderContext->shadeSpan(x, y, span, width);
-            SkBlitRow::Proc32 proc = fProc32;
-            do {
-                proc(device, span, width, 255);
-                y += 1;
-                device = (uint32_t*)((char*)device + deviceRB);
-            } while (--height > 0);
-        }
-        return;
-    }
 
     if (fShadeDirectlyIntoDevice) {
         do {
@@ -1095,9 +1082,9 @@ static void drive(SkPMColor* dst, const SkPMColor* src, const uint8_t* cov, int 
 
     auto apply = [kernel](U32 dst, U32 src, U8 cov) -> U32 {
         U8x4 cov_splat = skvx::shuffle<0,0,0,0, 1,1,1,1, 2,2,2,2, 3,3,3,3>(cov);
-        return skvx::bit_pun<U32>(kernel(skvx::bit_pun<U8x4>(dst),
-                                         skvx::bit_pun<U8x4>(src),
-                                         cov_splat));
+        return sk_bit_cast<U32>(kernel(sk_bit_cast<U8x4>(dst),
+                                       sk_bit_cast<U8x4>(src),
+                                       cov_splat));
     };
     while (n >= 4) {
         apply(U32::Load(dst), U32::Load(src), U8::Load(cov)).store(dst);
@@ -1255,32 +1242,6 @@ void SkARGB32_Shader_Blitter::blitV(int x, int y, int height, SkAlpha alpha) {
 
     uint32_t* device = fDevice.writable_addr32(x, y);
     size_t    deviceRB = fDevice.rowBytes();
-
-    if (fConstInY) {
-        SkPMColor c;
-        fShaderContext->shadeSpan(x, y, &c, 1);
-
-        if (fShadeDirectlyIntoDevice) {
-            if (255 == alpha) {
-                do {
-                    *device = c;
-                    device = (uint32_t*)((char*)device + deviceRB);
-                } while (--height > 0);
-            } else {
-                do {
-                    *device = SkFourByteInterp(c, *device, alpha);
-                    device = (uint32_t*)((char*)device + deviceRB);
-                } while (--height > 0);
-            }
-        } else {
-            SkBlitRow::Proc32 proc = (255 == alpha) ? fProc32 : fProc32Blend;
-            do {
-                proc(device, &c, 1, alpha);
-                device = (uint32_t*)((char*)device + deviceRB);
-            } while (--height > 0);
-        }
-        return;
-    }
 
     if (fShadeDirectlyIntoDevice) {
         if (255 == alpha) {

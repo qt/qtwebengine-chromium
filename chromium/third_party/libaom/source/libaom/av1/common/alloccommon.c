@@ -289,12 +289,12 @@ void av1_alloc_cdef_buffers(AV1_COMMON *const cm,
 }
 
 // Assumes cm->rst_info[p].restoration_unit_size is already initialized
-void av1_alloc_restoration_buffers(AV1_COMMON *cm) {
+void av1_alloc_restoration_buffers(AV1_COMMON *cm, bool is_sgr_enabled) {
   const int num_planes = av1_num_planes(cm);
   for (int p = 0; p < num_planes; ++p)
     av1_alloc_restoration_struct(cm, &cm->rst_info[p], p > 0);
 
-  if (cm->rst_tmpbuf == NULL) {
+  if (cm->rst_tmpbuf == NULL && is_sgr_enabled) {
     CHECK_MEM_ERROR(cm, cm->rst_tmpbuf,
                     (int32_t *)aom_memalign(16, RESTORATION_TMPBUF_SIZE));
   }

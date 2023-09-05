@@ -51,7 +51,7 @@ int vp9_diamond_search_sad_avx(const MACROBLOCK *x,
                                const search_site_config *cfg, MV *ref_mv,
                                uint32_t start_mv_sad, MV *best_mv,
                                int search_param, int sad_per_bit, int *num00,
-                               const vp9_variance_fn_ptr_t *fn_ptr,
+                               const vp9_sad_fn_ptr_t *sad_fn_ptr,
                                const MV *center_mv) {
   const int_mv maxmv = pack_int_mv(x->mv_limits.row_max, x->mv_limits.col_max);
   const __m128i v_max_mv_w = _mm_set1_epi32((int)maxmv.as_int);
@@ -167,8 +167,8 @@ int vp9_diamond_search_sad_avx(const MACROBLOCK *x,
 #endif
       }
 
-      fn_ptr->sdx4df(what, what_stride, (const uint8_t **)&v_blocka[0],
-                     in_what_stride, (uint32_t *)&v_sad_d);
+      sad_fn_ptr->sdx4df(what, what_stride, (const uint8_t **)&v_blocka[0],
+                         in_what_stride, (uint32_t *)&v_sad_d);
 
       // Look up the component cost of the residual motion vector
       {
@@ -233,11 +233,19 @@ int vp9_diamond_search_sad_avx(const MACROBLOCK *x,
         if (UNLIKELY(local_best_sad == 0xffff)) {
           __m128i v_loval_d, v_hival_d, v_loidx_d, v_hiidx_d, v_sel_d;
 
-          v_loval_d = v_sad_d;
-          v_loidx_d = _mm_set_epi32(3, 2, 1, 0);
+          // Re-arrange the values in v_sad_d as follows:
+          // v_loval_d[0] = v_sad_d[0], v_loval_d[1] = v_sad_d[2]
+          // v_loval_d[2] = v_sad_d[1], v_loval_d[3] = v_sad_d[3]
+          // v_loidx_d stores the corresponding indices 0, 2, 1, 3
+          // This re-arrangement is required to ensure that when there exists
+          // more than one minimum, the one with the least index is selected
+          v_loval_d = _mm_shuffle_epi32(v_sad_d, 0xd8);
+          v_loidx_d = _mm_set_epi32(3, 1, 2, 0);
+
           v_hival_d = _mm_srli_si128(v_loval_d, 8);
           v_hiidx_d = _mm_srli_si128(v_loidx_d, 8);
 
+          // Compare if v_sad_d[1] < v_sad_d[0], v_sad_d[3] < v_sad_d[2]
           v_sel_d = _mm_cmplt_epi32(v_hival_d, v_loval_d);
 
           v_loval_d = _mm_blendv_epi8(v_loval_d, v_hival_d, v_sel_d);
@@ -245,6 +253,7 @@ int vp9_diamond_search_sad_avx(const MACROBLOCK *x,
           v_hival_d = _mm_srli_si128(v_loval_d, 4);
           v_hiidx_d = _mm_srli_si128(v_loidx_d, 4);
 
+          // min(v_sad_d[2], v_sad_d[3]) < min(v_sad_d[0], v_sad_d[1])
           v_sel_d = _mm_cmplt_epi32(v_hival_d, v_loval_d);
 
           v_loval_d = _mm_blendv_epi8(v_loval_d, v_hival_d, v_sel_d);

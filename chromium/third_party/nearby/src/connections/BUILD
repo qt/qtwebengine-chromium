@@ -78,7 +78,7 @@ cc_library(
         "//internal/platform:types",
         "//internal/platform:util",
         "//proto:connections_enums_cc_proto",
-        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/functional:any_invocable",
         "@com_google_absl//absl/types:variant",
     ],
 )
@@ -98,7 +98,7 @@ cc_test(
         ":core",
         ":core_types",
         "//connections/implementation:internal_test",
-        "//internal/interop:device",
+        "//connections/v3:v3_types",
         "//internal/platform:base",
         "//internal/platform:logging",
         "//internal/platform:types",

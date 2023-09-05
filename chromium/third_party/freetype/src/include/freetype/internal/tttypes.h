@@ -1200,12 +1200,16 @@ FT_BEGIN_HEADER
    *   mm ::
    *     A pointer to the Multiple Masters service.
    *
-   *   var ::
-   *     A pointer to the Metrics Variations service.
+   *   tt_var ::
+   *     A pointer to the Metrics Variations service for the "truetype"
+   *     driver.
    *
-   *   hdmx ::
-   *     The face's horizontal device metrics ('hdmx' table).  This table is
-   *     optional in TrueType/OpenType fonts.
+   *   face_var ::
+   *     A pointer to the Metrics Variations service for this `TT_Face`'s
+   *     driver.
+   *
+   *   psaux ::
+   *     A pointer to the PostScript Auxiliary service.
    *
    *   gasp ::
    *     The grid-fitting and scaling properties table ('gasp').  This table
@@ -1311,6 +1315,12 @@ FT_BEGIN_HEADER
    *   var_postscript_prefix_len ::
    *     The length of the `var_postscript_prefix` string.
    *
+   *   var_default_named_instance ::
+   *     The index of the default named instance.
+   *
+   *   non_var_style_name ::
+   *     The non-variation style name, used as a backup.
+   *
    *   horz_metrics_size ::
    *     The size of the 'hmtx' table.
    *
@@ -1357,14 +1367,6 @@ FT_BEGIN_HEADER
    *     A mapping between the strike indices exposed by the API and the
    *     indices used in the font's sbit table.
    *
-   *   cpal ::
-   *     A pointer to data related to the 'CPAL' table.  `NULL` if the table
-   *     is not available.
-   *
-   *   colr ::
-   *     A pointer to data related to the 'COLR' table.  `NULL` if the table
-   *     is not available.
-   *
    *   kern_table ::
    *     A pointer to the 'kern' table.
    *
@@ -1392,19 +1394,23 @@ FT_BEGIN_HEADER
    *   vert_metrics_offset ::
    *     The file offset of the 'vmtx' table.
    *
-   *   sph_found_func_flags ::
-   *     Flags identifying special bytecode functions (used by the v38
-   *     implementation of the bytecode interpreter).
-   *
-   *   sph_compatibility_mode ::
-   *     This flag is set if we are in ClearType backward compatibility mode
-   *     (used by the v38 implementation of the bytecode interpreter).
-   *
    *   ebdt_start ::
    *     The file offset of the sbit data table (CBDT, bdat, etc.).
    *
    *   ebdt_size ::
    *     The size of the sbit data table.
+   *
+   *   cpal ::
+   *     A pointer to data related to the 'CPAL' table.  `NULL` if the table
+   *     is not available.
+   *
+   *   colr ::
+   *     A pointer to data related to the 'COLR' table.  `NULL` if the table
+   *     is not available.
+   *
+   *   svg ::
+   *     A pointer to data related to the 'SVG' table.  `NULL` if the table
+   *     is not available.
    */
   typedef struct  TT_FaceRec_
   {
@@ -1462,7 +1468,7 @@ FT_BEGIN_HEADER
     /* a typeless pointer to the FT_Service_MetricsVariationsRec table */
     /* used to handle the HVAR, VVAR, and MVAR OpenType tables by this */
     /* TT_Face's driver                                                */
-    void*                 face_var;
+    void*                 face_var;             /* since 2.13.1 */
 #endif
 
     /* a typeless pointer to the PostScript Aux service */
@@ -1544,6 +1550,9 @@ FT_BEGIN_HEADER
     const char*           var_postscript_prefix;     /* since 2.7.2 */
     FT_UInt               var_postscript_prefix_len; /* since 2.7.2 */
 
+    FT_UInt               var_default_named_instance;  /* since 2.13.1 */
+
+    const char*           non_var_style_name;  /* since 2.13.1 */
 #endif
 
     /* since version 2.2 */
@@ -1579,13 +1588,6 @@ FT_BEGIN_HEADER
     /* since 2.3.0 */
     FT_ULong              horz_metrics_offset;
     FT_ULong              vert_metrics_offset;
-
-#ifdef TT_SUPPORT_SUBPIXEL_HINTING_INFINALITY
-    /* since 2.4.12 */
-    FT_ULong              sph_found_func_flags; /* special functions found */
-                                                /* for this face           */
-    FT_Bool               sph_compatibility_mode;
-#endif /* TT_SUPPORT_SUBPIXEL_HINTING_INFINALITY */
 
 #ifdef TT_CONFIG_OPTION_EMBEDDED_BITMAPS
     /* since 2.7 */

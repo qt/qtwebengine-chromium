@@ -149,7 +149,7 @@ config("icu_code") {
       # Used for conditional changes to the compilation process that
       # are only needed for the Fuchsia toolchain.
       "-DICU_IS_IN_FUCHSIA",
-    ]
+    ] + icu_fuchsia_extra_compile_flags
   }
   if (current_cpu == "wasm") {
     # Tell ICU that we are a 32 bit platform, otherwise,

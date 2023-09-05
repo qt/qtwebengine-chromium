@@ -14,18 +14,18 @@ import {CorsIssue} from './CorsIssue.js';
 import {CrossOriginEmbedderPolicyIssue, isCrossOriginEmbedderPolicyIssue} from './CrossOriginEmbedderPolicyIssue.js';
 import {DeprecationIssue} from './DeprecationIssue.js';
 import {FederatedAuthRequestIssue} from './FederatedAuthRequestIssue.js';
+import {FederatedAuthUserInfoRequestIssue} from './FederatedAuthUserInfoRequestIssue.js';
 import {GenericIssue} from './GenericIssue.js';
 import {HeavyAdIssue} from './HeavyAdIssue.js';
 import {type Issue, type IssueKind} from './Issue.js';
 import {Events} from './IssuesManagerEvents.js';
 import {LowTextContrastIssue} from './LowTextContrastIssue.js';
 import {MixedContentIssue} from './MixedContentIssue.js';
-import {NavigatorUserAgentIssue} from './NavigatorUserAgentIssue.js';
 import {QuirksModeIssue} from './QuirksModeIssue.js';
 import {CookieIssue} from './CookieIssue.js';
 import {SharedArrayBufferIssue} from './SharedArrayBufferIssue.js';
 import {SourceFrameIssuesManager} from './SourceFrameIssuesManager.js';
-import {TrustedWebActivityIssue} from './TrustedWebActivityIssue.js';
+import {StylesheetLoadingIssue} from './StylesheetLoadingIssue.js';
 
 export {Events} from './IssuesManagerEvents.js';
 
@@ -70,10 +70,6 @@ const issueCodeHandlers = new Map<
     SharedArrayBufferIssue.fromInspectorIssue,
   ],
   [
-    Protocol.Audits.InspectorIssueCode.TrustedWebActivityIssue,
-    TrustedWebActivityIssue.fromInspectorIssue,
-  ],
-  [
     Protocol.Audits.InspectorIssueCode.LowTextContrastIssue,
     LowTextContrastIssue.fromInspectorIssue,
   ],
@@ -84,10 +80,6 @@ const issueCodeHandlers = new Map<
   [
     Protocol.Audits.InspectorIssueCode.QuirksModeIssue,
     QuirksModeIssue.fromInspectorIssue,
-  ],
-  [
-    Protocol.Audits.InspectorIssueCode.NavigatorUserAgentIssue,
-    NavigatorUserAgentIssue.fromInspectorIssue,
   ],
   [
     Protocol.Audits.InspectorIssueCode.AttributionReportingIssue,
@@ -112,6 +104,14 @@ const issueCodeHandlers = new Map<
   [
     Protocol.Audits.InspectorIssueCode.BounceTrackingIssue,
     BounceTrackingIssue.fromInspectorIssue,
+  ],
+  [
+    Protocol.Audits.InspectorIssueCode.StylesheetLoadingIssue,
+    StylesheetLoadingIssue.fromInspectorIssue,
+  ],
+  [
+    Protocol.Audits.InspectorIssueCode.FederatedAuthUserInfoRequestIssue,
+    FederatedAuthUserInfoRequestIssue.fromInspectorIssue,
   ],
 ]);
 

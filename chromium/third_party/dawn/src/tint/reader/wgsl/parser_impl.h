@@ -99,10 +99,9 @@ class ParserImpl {
 
         /// Constructor for a successful parse.
         /// @param val the result value of the parse
-        /// @param s the optional source of the value
         template <typename U>
-        inline Expect(U&& val, const Source& s = {})  // NOLINT
-            : value(std::forward<U>(val)), source(s) {}
+        inline Expect(U&& val)  // NOLINT
+            : value(std::forward<U>(val)) {}
 
         /// Constructor for parse error.
         inline Expect(Failure::Errored) : errored(true) {}  // NOLINT
@@ -122,16 +121,14 @@ class ParserImpl {
         /// std::unique_ptr, operator->() automatically dereferences so that the
         /// return type will always be a pointer to a non-pointer type. #errored
         /// must be false to call.
-        inline typename detail::OperatorArrow<T>::type operator->() {
+        inline typename wgsl::detail::OperatorArrow<T>::type operator->() {
             TINT_ASSERT(Reader, !errored);
-            return detail::OperatorArrow<T>::ptr(value);
+            return wgsl::detail::OperatorArrow<T>::ptr(value);
         }
 
         /// The expected value of a successful parse.
         /// Zero-initialized when there was a parse error.
         T value{};
-        /// Optional source of the value.
-        Source source;
         /// True if there was a error parsing.
         bool errored = false;
     };
@@ -186,9 +183,9 @@ class ParserImpl {
         /// std::unique_ptr, operator->() automatically dereferences so that the
         /// return type will always be a pointer to a non-pointer type. #errored
         /// must be false to call.
-        inline typename detail::OperatorArrow<T>::type operator->() {
+        inline typename wgsl::detail::OperatorArrow<T>::type operator->() {
             TINT_ASSERT(Reader, !errored);
-            return detail::OperatorArrow<T>::ptr(value);
+            return wgsl::detail::OperatorArrow<T>::ptr(value);
         }
 
         /// The value of a successful parse.
@@ -565,8 +562,13 @@ class ParserImpl {
     /// @param use the use of the expression list
     /// @param terminator the terminating token for the list
     /// @returns the parsed expression list or error
-    Expect<utils::Vector<const ast::Expression*, 3>> expect_expression_list(std::string_view use,
-                                                                            Token::Type terminator);
+    Maybe<ParserImpl::ExpressionList> expression_list(std::string_view use, Token::Type terminator);
+    /// Parses a comma separated expression list, with at least one expression
+    /// @param use the use of the expression list
+    /// @param terminator the terminating token for the list
+    /// @returns the parsed expression list or error
+    Expect<ParserImpl::ExpressionList> expect_expression_list(std::string_view use,
+                                                              Token::Type terminator);
     /// Parses the `bitwise_expression.post.unary_expression` grammar element
     /// @param lhs the left side of the expression
     /// @returns the parsed expression or nullptr
@@ -679,7 +681,9 @@ class ParserImpl {
     /// Consumes the next token on match.
     /// @param use a description of what was being parsed if an error was raised
     /// @returns the parsed integer.
-    Expect<int32_t> expect_sint(std::string_view use);
+    /// @param source if not nullptr, the next token's source is written to this
+    /// pointer, regardless of success or error
+    Expect<int32_t> expect_sint(std::string_view use, Source* source = nullptr);
     /// Parses a signed integer from the next token in the stream, erroring if
     /// the next token is not a signed integer or is negative.
     /// Consumes the next token if it is a signed integer (not necessarily
@@ -820,7 +824,28 @@ class ParserImpl {
 
     /// Reports an error if the attribute list `list` is not empty.
     /// Used to ensure that all attributes are consumed.
-    bool expect_attributes_consumed(utils::VectorRef<const ast::Attribute*> list);
+    Expect<Void> expect_attributes_consumed(utils::VectorRef<const ast::Attribute*> list);
+
+    /// Raises an error if the next token is the start of a template list.
+    /// Used to hint to the user that the parser interpreted the following as a templated identifier
+    /// expression:
+    ///
+    /// ```
+    /// a < b, c >
+    ///   ^~~~~~~~
+    /// ```
+    Expect<Void> expect_next_not_template_list(const Source& lhs_source);
+
+    /// Raises an error if the parsed expression is a templated identifier expression
+    /// Used to hint to the user that the parser intepreted the following as a templated identifier
+    /// expression:
+    ///
+    /// ```
+    /// a < b, c > d
+    /// ^^^^^^^^^^
+    ///    expr
+    /// ```
+    Expect<Void> expect_not_templated_ident_expr(const ast::Expression* expr);
 
     /// Parses the given enum, providing sensible error messages if the next token does not match
     /// any of the enum values.

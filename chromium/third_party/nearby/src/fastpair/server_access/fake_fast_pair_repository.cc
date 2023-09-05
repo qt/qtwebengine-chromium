@@ -15,6 +15,7 @@
 #include "fastpair/server_access/fake_fast_pair_repository.h"
 
 #include <memory>
+#include <string>
 #include <utility>
 
 #include "absl/strings/string_view.h"
@@ -35,11 +36,23 @@ void FakeFastPairRepository::ClearFakeMetadata(absl::string_view hex_model_id) {
 
 void FakeFastPairRepository::GetDeviceMetadata(
     absl::string_view hex_model_id, DeviceMetadataCallback callback) {
-  callback_ = std::move(callback);
-  if (data_.contains(hex_model_id)) {
-    std::move(callback_)(*data_[hex_model_id]);
-    return;
-  }
+  executor_.Execute([callback = std::move(callback), this,
+                     hex_model_id = std::string(hex_model_id)]() mutable {
+    if (data_.contains(hex_model_id)) {
+      callback(*data_[hex_model_id]);
+    }
+  });
+}
+
+std::unique_ptr<FakeFastPairRepository> FakeFastPairRepository::Create(
+    absl::string_view model_id, absl::string_view public_anti_spoof_key) {
+  std::string decoded_key;
+  absl::Base64Unescape(public_anti_spoof_key, &decoded_key);
+  proto::Device metadata;
+  auto repository = std::make_unique<FakeFastPairRepository>();
+  metadata.mutable_anti_spoofing_key_pair()->set_public_key(decoded_key);
+  repository->SetFakeMetadata(model_id, metadata);
+  return repository;
 }
 
 }  // namespace fastpair

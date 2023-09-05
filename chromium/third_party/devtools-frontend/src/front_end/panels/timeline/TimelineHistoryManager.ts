@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import * as Common from '../../core/common/common.js';
+import type * as SDK from '../../core/sdk/sdk.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as UI from '../../ui/legacy/legacy.js';
@@ -65,7 +66,8 @@ const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
 export type RecordingData = {
   legacyModel: PerformanceModel,
-  traceParseData: TraceEngine.TraceModel.PartialTraceParseDataDuringMigration|null,
+  traceParseData: TraceEngine.Handlers.Migration.PartialTraceData|null,
+  filmStripModel: SDK.FilmStripModel.FilmStripModel,
 };
 
 export class TimelineHistoryManager {
@@ -101,15 +103,15 @@ export class TimelineHistoryManager {
   }
 
   addRecording(
-      performanceModel: PerformanceModel,
-      traceParseData: TraceEngine.TraceModel.PartialTraceParseDataDuringMigration|null): void {
+      performanceModel: PerformanceModel, traceParseData: TraceEngine.Handlers.Migration.PartialTraceData|null,
+      filmStripModel: SDK.FilmStripModel.FilmStripModel): void {
     this.lastActiveModel = performanceModel;
-    this.recordings.unshift({legacyModel: performanceModel, traceParseData});
-    this.buildPreview(performanceModel);
+    this.recordings.unshift({legacyModel: performanceModel, traceParseData, filmStripModel});
+    this.buildPreview(performanceModel, filmStripModel);
     const modelTitle = this.title(performanceModel);
     this.buttonInternal.setText(modelTitle);
     const buttonTitle = this.action.title();
-    UI.ARIAUtils.setAccessibleName(
+    UI.ARIAUtils.setLabel(
         this.buttonInternal.element, i18nString(UIStrings.currentSessionSS, {PH1: modelTitle, PH2: buttonTitle}));
     this.updateState();
     if (this.recordings.length <= maxRecordings) {
@@ -118,7 +120,6 @@ export class TimelineHistoryManager {
     const modelUsedMoreTimeAgo =
         this.recordings.reduce((a, b) => lastUsedTime(a.legacyModel) < lastUsedTime(b.legacyModel) ? a : b);
     this.recordings.splice(this.recordings.indexOf(modelUsedMoreTimeAgo), 1);
-    modelUsedMoreTimeAgo.legacyModel.dispose();
 
     function lastUsedTime(model: PerformanceModel): number {
       const data = TimelineHistoryManager.dataForModel(model);
@@ -139,7 +140,6 @@ export class TimelineHistoryManager {
   }
 
   clear(): void {
-    this.recordings.forEach(model => model.legacyModel.dispose());
     this.recordings = [];
     this.lastActiveModel = null;
     this.updateState();
@@ -196,7 +196,7 @@ export class TimelineHistoryManager {
     const modelTitle = this.title(model);
     const buttonTitle = this.action.title();
     this.buttonInternal.setText(modelTitle);
-    UI.ARIAUtils.setAccessibleName(
+    UI.ARIAUtils.setLabel(
         this.buttonInternal.element, i18nString(UIStrings.currentSessionSS, {PH1: modelTitle, PH2: buttonTitle}));
   }
 
@@ -236,7 +236,8 @@ export class TimelineHistoryManager {
     return data.title;
   }
 
-  private buildPreview(performanceModel: PerformanceModel): HTMLDivElement {
+  private buildPreview(performanceModel: PerformanceModel, filmStripModel: SDK.FilmStripModel.FilmStripModel):
+      HTMLDivElement {
     const parsedURL = Common.ParsedURL.ParsedURL.fromString(performanceModel.timelineModel().pageURL());
     const domain = parsedURL ? parsedURL.host : '';
     const title = performanceModel.tracingModel().title() || domain;
@@ -254,7 +255,7 @@ export class TimelineHistoryManager {
 
     preview.appendChild(this.buildTextDetails(performanceModel, title, timeElement));
     const screenshotAndOverview = preview.createChild('div', 'hbox');
-    screenshotAndOverview.appendChild(this.buildScreenshotThumbnail(performanceModel));
+    screenshotAndOverview.appendChild(this.buildScreenshotThumbnail(filmStripModel));
     screenshotAndOverview.appendChild(this.buildOverview(performanceModel));
     return data.preview;
   }
@@ -265,7 +266,7 @@ export class TimelineHistoryManager {
     container.classList.add('hbox');
     const nameSpan = container.createChild('span', 'name');
     nameSpan.textContent = title;
-    UI.ARIAUtils.setAccessibleName(nameSpan, title);
+    UI.ARIAUtils.setLabel(nameSpan, title);
     const tracingModel = performanceModel.tracingModel();
     const duration =
         i18n.TimeUtilities.millisToString(tracingModel.maximumRecordTime() - tracingModel.minimumRecordTime(), false);
@@ -275,13 +276,12 @@ export class TimelineHistoryManager {
     return container;
   }
 
-  private buildScreenshotThumbnail(performanceModel: PerformanceModel): Element {
+  private buildScreenshotThumbnail(filmStripModel: SDK.FilmStripModel.FilmStripModel): Element {
     const container = document.createElement('div');
     container.classList.add('screenshot-thumb');
     const thumbnailAspectRatio = 3 / 2;
     container.style.width = this.totalHeight * thumbnailAspectRatio + 'px';
     container.style.height = this.totalHeight + 'px';
-    const filmStripModel = performanceModel.filmStripModel();
     const frames = filmStripModel.frames();
     const lastFrame = frames[frames.length - 1];
     if (!lastFrame) {
@@ -362,7 +362,7 @@ export class DropDown implements UI.ListControl.ListDelegate<PerformanceModel> {
     listModel.replaceAll(models);
 
     UI.ARIAUtils.markAsMenu(this.listControl.element);
-    UI.ARIAUtils.setAccessibleName(this.listControl.element, i18nString(UIStrings.selectTimelineSession));
+    UI.ARIAUtils.setLabel(this.listControl.element, i18nString(UIStrings.selectTimelineSession));
     contentElement.appendChild(this.listControl.element);
     contentElement.addEventListener('keydown', this.onKeyDown.bind(this), false);
     contentElement.addEventListener('click', this.onClick.bind(this), false);

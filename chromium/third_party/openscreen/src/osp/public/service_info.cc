@@ -43,5 +43,15 @@ bool ServiceInfo::Update(std::string new_friendly_name,
   return changed;
 }
 
+std::string ServiceInfo::ToString() const {
+  std::stringstream ss;
+  ss << "ServiceInfo{service_id=\"" << service_id << ", \"friendly_name=\""
+     << friendly_name
+     << "\", network_interface_index=" << network_interface_index
+     << ", v4_endpoint=\"" << v4_endpoint.ToString() << ", v6_endpoint=\""
+     << v6_endpoint.ToString() << "\"}";
+  return ss.str();
+}
+
 }  // namespace osp
 }  // namespace openscreen

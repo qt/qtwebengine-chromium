@@ -14,13 +14,7 @@ export class ApplicationPanelTreeElement extends UI.TreeOutline.TreeElement {
   constructor(resourcesPanel: ResourcesPanel, title: string, expandable: boolean) {
     super(title, expandable);
     this.resourcesPanel = resourcesPanel;
-    UI.ARIAUtils.setAccessibleName(this.listItemElement, title);
-    this.listItemElement.tabIndex = -1;
-  }
-
-  override deselect(): void {
-    super.deselect();
-    this.listItemElement.tabIndex = -1;
+    UI.ARIAUtils.setLabel(this.listItemElement, title);
   }
 
   get itemURL(): Platform.DevToolsPath.UrlString {

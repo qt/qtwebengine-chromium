@@ -29,6 +29,10 @@ message FeatureOverride {
   // If the feature is enabled AND has parameters associated with it,
   // they'll appear here.
   repeated Param params = 3;
+  // Name of the field trial (study).
+  string trial_name = 4;
+  // Name of the experiment group the device is enrolled in.
+  string group_name = 5;
 }
 
 // Information about the last known "safe" seed.
@@ -71,6 +75,11 @@ message SeedDetails {
   reserved 2, 3;
 }
 
+// Message containing all the chrome://flags overrides.
+message OverridesSet {
+  repeated FeatureOverride overrides = 1;
+}
+
 // Encapsulates information necessary for platform disaster recovery.
 message Store {
   // Number of platform reboots since receiving a Chrome dbus call indicating
@@ -78,8 +87,15 @@ message Store {
   uint32 boot_attempts_since_last_seed_update = 1;
   // Data associated with the last known "safe" seed.
   SeedDetails last_good_seed = 2;
-  // chrome://flags overrides.
-  repeated FeatureOverride overrides = 3;
+  // chrome://flags overrides, as a serialized OverridesSet.
+  bytes overrides = 4;
+  // HMAC of |overrides|.
+  bytes overrides_hmac = 5;
+
+  // The repeated FeatureOverride overrides was a member of this message
+  // directly, but we need to wrap it in a message so we can separately
+  // serialize and HMAC it.
+  reserved 3;
 }
 
 // ComputedState is evaluate_seed's output, including both the evaluated state

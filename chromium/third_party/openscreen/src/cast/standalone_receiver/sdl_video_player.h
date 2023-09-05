@@ -20,7 +20,7 @@ class SDLVideoPlayer final : public SDLPlayerBase {
   // |error_callback| is run only if a fatal error occurs, at which point the
   // player has halted and set |error_status()|.
   SDLVideoPlayer(ClockNowFunctionPtr now_function,
-                 TaskRunner* task_runner,
+                 TaskRunner& task_runner,
                  Receiver* receiver,
                  VideoCodec codec_name,
                  SDL_Renderer* renderer,

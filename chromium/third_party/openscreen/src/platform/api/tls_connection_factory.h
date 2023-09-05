@@ -56,7 +56,7 @@ class TlsConnectionFactory {
   // callbacks both on the factory and on created TlsConnection instances.
   static std::unique_ptr<TlsConnectionFactory> CreateFactory(
       Client* client,
-      TaskRunner* task_runner);
+      TaskRunner& task_runner);
 
   virtual ~TlsConnectionFactory();
 

@@ -120,7 +120,11 @@ typedef enum avifReformatMode
 {
     AVIF_REFORMAT_MODE_YUV_COEFFICIENTS = 0, // Normal YUV conversion using coefficients
     AVIF_REFORMAT_MODE_IDENTITY,             // Pack GBR directly into YUV planes (AVIF_MATRIX_COEFFICIENTS_IDENTITY)
-    AVIF_REFORMAT_MODE_YCGCO                 // YUV conversion using AVIF_MATRIX_COEFFICIENTS_YCGCO
+    AVIF_REFORMAT_MODE_YCGCO,                // YUV conversion using AVIF_MATRIX_COEFFICIENTS_YCGCO
+#if defined(AVIF_ENABLE_EXPERIMENTAL_YCGCO_R)
+    AVIF_REFORMAT_MODE_YCGCO_RE, // YUV conversion using AVIF_MATRIX_COEFFICIENTS_YCGCO_RE
+    AVIF_REFORMAT_MODE_YCGCO_RO, // YUV conversion using AVIF_MATRIX_COEFFICIENTS_YCGCO_RO
+#endif
 } avifReformatMode;
 
 typedef enum avifAlphaMultiplyMode
@@ -301,7 +305,23 @@ void avifCodecSpecificOptionsDestroy(avifCodecSpecificOptions * csOptions);
 avifResult avifCodecSpecificOptionsSet(avifCodecSpecificOptions * csOptions, const char * key, const char * value); // if(value==NULL), key is deleted
 
 // ---------------------------------------------------------------------------
-// avifCodec (abstraction layer to use different AV1 implementations)
+// avifCodecType (underlying video format)
+
+// Alliance for Open Media video formats that can be used in the AVIF image format.
+typedef enum avifCodecType
+{
+    AVIF_CODEC_TYPE_UNKNOWN,
+    AVIF_CODEC_TYPE_AV1,
+#if defined(AVIF_CODEC_AVM)
+    AVIF_CODEC_TYPE_AV2, // Experimental.
+#endif
+} avifCodecType;
+
+// Returns AVIF_CODEC_TYPE_UNKNOWN unless the chosen codec is available with the requiredFlags.
+avifCodecType avifCodecTypeFromChoice(avifCodecChoice choice, avifCodecFlags requiredFlags);
+
+// ---------------------------------------------------------------------------
+// avifCodec (abstraction layer to use different codec implementations)
 
 struct avifCodec;
 struct avifCodecInternal;
@@ -337,7 +357,9 @@ typedef avifBool (*avifCodecGetNextImageFunc)(struct avifCodec * codec,
 // avifCodecEncodeImageFunc is responsible for automatic tiling if encoder->autoTiling is set to
 // AVIF_TRUE. The actual tiling values are passed to avifCodecEncodeImageFunc as parameters.
 // Similarly, avifCodecEncodeImageFunc should use the quantizer parameter instead of
-// encoder->quality and encoder->qualityAlpha.
+// encoder->quality and encoder->qualityAlpha. If disableLaggedOutput is AVIF_TRUE, then the encoder will emit the output frame
+// without any lag (if supported). Note that disableLaggedOutput is only used by the first call to this function (which
+// initializes the encoder) and is ignored by the subsequent calls.
 //
 // Note: The caller of avifCodecEncodeImageFunc always passes encoder->data->tileRowsLog2 and
 // encoder->data->tileColsLog2 as the tileRowsLog2 and tileColsLog2 arguments. Because
@@ -352,6 +374,7 @@ typedef avifResult (*avifCodecEncodeImageFunc)(struct avifCodec * codec,
                                                int tileColsLog2,
                                                int quantizer,
                                                avifEncoderChanges encoderChanges,
+                                               avifBool disableLaggedOutput,
                                                avifAddImageFlags addImageFlags,
                                                avifCodecEncodeOutput * output);
 typedef avifBool (*avifCodecEncodeFinishFunc)(struct avifCodec * codec, avifCodecEncodeOutput * output);
@@ -388,6 +411,8 @@ avifCodec * avifCodecCreateRav1e(void);   // requires AVIF_CODEC_RAV1E (codec_ra
 const char * avifCodecVersionRav1e(void); // requires AVIF_CODEC_RAV1E (codec_rav1e.c)
 avifCodec * avifCodecCreateSvt(void);     // requires AVIF_CODEC_SVT (codec_svt.c)
 const char * avifCodecVersionSvt(void);   // requires AVIF_CODEC_SVT (codec_svt.c)
+avifCodec * avifCodecCreateAVM(void);     // requires AVIF_CODEC_AVM (codec_avm.c)
+const char * avifCodecVersionAVM(void);   // requires AVIF_CODEC_AVM (codec_avm.c)
 
 // ---------------------------------------------------------------------------
 // avifDiagnostics
@@ -465,6 +490,7 @@ void avifRWStreamWriteZeros(avifRWStream * stream, size_t byteCount);
 // This is to make it clear that the box size is currently unknown, and will be determined later (with a call to avifRWStreamFinishBox)
 #define AVIF_BOX_SIZE_TBD 0
 
+// Used for both av1C and av2C.
 typedef struct avifCodecConfigurationBox
 {
     // [skipped; is constant] unsigned int (1)marker = 1;
@@ -491,6 +517,7 @@ typedef struct avifCodecConfigurationBox
 
 typedef struct avifSequenceHeader
 {
+    uint8_t reduced_still_picture_header;
     uint32_t maxWidth;
     uint32_t maxHeight;
     uint32_t bitDepth;
@@ -500,9 +527,10 @@ typedef struct avifSequenceHeader
     avifTransferCharacteristics transferCharacteristics;
     avifMatrixCoefficients matrixCoefficients;
     avifRange range;
-    avifCodecConfigurationBox av1C;
+    avifCodecConfigurationBox av1C; // TODO(yguyon): Rename or add av2C
 } avifSequenceHeader;
-avifBool avifSequenceHeaderParse(avifSequenceHeader * header, const avifROData * sample);
+
+avifBool avifSequenceHeaderParse(avifSequenceHeader * header, const avifROData * sample, avifCodecType codecType);
 
 #define AVIF_INDEFINITE_DURATION64 UINT64_MAX
 #define AVIF_INDEFINITE_DURATION32 UINT32_MAX

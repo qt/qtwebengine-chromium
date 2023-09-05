@@ -7,8 +7,10 @@
 
 #include "src/sksl/ir/SkSLType.h"
 
+#include "include/private/base/SkTo.h"
 #include "src/base/SkMathPriv.h"
 #include "src/base/SkSafeMath.h"
+#include "src/core/SkTHash.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLConstantFolder.h"
 #include "src/sksl/SkSLContext.h"
@@ -24,11 +26,12 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <iterator>
 #include <limits>
 #include <optional>
 #include <string_view>
 #include <utility>
+
+using namespace skia_private;
 
 namespace SkSL {
 
@@ -37,8 +40,8 @@ static constexpr int kMaxStructDepth = 8;
 class AliasType final : public Type {
 public:
     AliasType(std::string_view name, const Type& targetType)
-        : INHERITED(name, targetType.abbreviatedName(), targetType.typeKind())
-        , fTargetType(targetType) {}
+            : INHERITED(name, targetType.abbreviatedName(), targetType.typeKind())
+            , fTargetType(targetType) {}
 
     const Type& resolve() const override {
         return fTargetType;
@@ -74,6 +77,10 @@ public:
 
     size_t slotCount() const override {
         return fTargetType.slotCount();
+    }
+
+    const Type& slotType(size_t n) const override {
+        return fTargetType.slotType(n);
     }
 
     SpvDim_ dimensions() const override {
@@ -143,9 +150,9 @@ public:
     inline static constexpr TypeKind kTypeKind = TypeKind::kArray;
 
     ArrayType(std::string_view name, const char* abbrev, const Type& componentType, int count)
-        : INHERITED(name, abbrev, kTypeKind)
-        , fComponentType(componentType)
-        , fCount(count) {
+            : INHERITED(name, abbrev, kTypeKind)
+            , fComponentType(componentType)
+            , fCount(count) {
         SkASSERT(count > 0 || count == kUnsizedArray);
         // Disallow multi-dimensional arrays.
         SkASSERT(!componentType.is<ArrayType>());
@@ -181,6 +188,11 @@ public:
         return fCount * fComponentType.slotCount();
     }
 
+    const Type& slotType(size_t n) const override {
+        SkASSERT(fCount == kUnsizedArray || n < this->slotCount());
+        return fComponentType.slotType(n % fComponentType.slotCount());
+    }
+
 private:
     using INHERITED = Type;
 
@@ -192,8 +204,9 @@ class GenericType final : public Type {
 public:
     inline static constexpr TypeKind kTypeKind = TypeKind::kGeneric;
 
-    GenericType(const char* name, SkSpan<const Type* const> coercibleTypes)
-        : INHERITED(name, "G", kTypeKind) {
+    GenericType(const char* name, SkSpan<const Type* const> coercibleTypes, const Type* slotType)
+            : INHERITED(name, "G", kTypeKind)
+            , fSlotType(slotType) {
         fNumTypes = coercibleTypes.size();
         SkASSERT(fNumTypes <= std::size(fCoercibleTypes));
         std::copy(coercibleTypes.begin(), coercibleTypes.end(), fCoercibleTypes);
@@ -203,10 +216,15 @@ public:
         return SkSpan(fCoercibleTypes, fNumTypes);
     }
 
+    const Type& slotType(size_t) const override {
+        return *fSlotType;
+    }
+
 private:
     using INHERITED = Type;
 
     const Type* fCoercibleTypes[9];
+    const Type* fSlotType;
     size_t fNumTypes;
 };
 
@@ -215,9 +233,9 @@ public:
     inline static constexpr TypeKind kTypeKind = TypeKind::kLiteral;
 
     LiteralType(const char* name, const Type& scalarType, int8_t priority)
-        : INHERITED(name, "L", kTypeKind)
-        , fScalarType(scalarType)
-        , fPriority(priority) {}
+            : INHERITED(name, "L", kTypeKind)
+            , fScalarType(scalarType)
+            , fPriority(priority) {}
 
     const Type& scalarTypeForLiteral() const override {
         return fScalarType;
@@ -263,6 +281,11 @@ public:
         return 1;
     }
 
+    const Type& slotType(size_t n) const override {
+        SkASSERT(n == 0);
+        return fScalarType;
+    }
+
 private:
     using INHERITED = Type;
 
@@ -277,10 +300,10 @@ public:
 
     ScalarType(std::string_view name, const char* abbrev, NumberKind numberKind, int8_t priority,
                int8_t bitWidth)
-        : INHERITED(name, abbrev, kTypeKind)
-        , fNumberKind(numberKind)
-        , fPriority(priority)
-        , fBitWidth(bitWidth) {}
+            : INHERITED(name, abbrev, kTypeKind)
+            , fNumberKind(numberKind)
+            , fPriority(priority)
+            , fBitWidth(bitWidth) {}
 
     NumberKind numberKind() const override {
         return fNumberKind;
@@ -312,6 +335,11 @@ public:
 
     size_t slotCount() const override {
         return 1;
+    }
+
+    const Type& slotType(size_t n) const override {
+        SkASSERT(n == 0);
+        return *this;
     }
 
     using int_limits = std::numeric_limits<int32_t>;
@@ -369,6 +397,11 @@ public:
 
     bool isAllowedInES2() const override { return false; }
 
+    const Type& slotType(size_t n) const override {
+        SkASSERT(n == 0);
+        return *this;
+    }
+
 private:
     using INHERITED = Type;
 };
@@ -379,10 +412,10 @@ public:
 
     MatrixType(std::string_view name, const char* abbrev, const Type& componentType,
                int8_t columns, int8_t rows)
-        : INHERITED(name, abbrev, kTypeKind)
-        , fComponentType(componentType.as<ScalarType>())
-        , fColumns(columns)
-        , fRows(rows) {
+            : INHERITED(name, abbrev, kTypeKind)
+            , fComponentType(componentType.as<ScalarType>())
+            , fColumns(columns)
+            , fRows(rows) {
         SkASSERT(columns >= 2 && columns <= 4);
         SkASSERT(rows >= 2 && rows <= 4);
     }
@@ -415,6 +448,11 @@ public:
         return fColumns * fRows;
     }
 
+    const Type& slotType(size_t n) const override {
+        SkASSERT(n < this->slotCount());
+        return fComponentType;
+    }
+
 private:
     using INHERITED = Type;
 
@@ -429,12 +467,12 @@ public:
 
     TextureType(const char* name, SpvDim_ dimensions, bool isDepth, bool isArrayed,
                 bool isMultisampled, TextureAccess textureAccess)
-        : INHERITED(name, "T", kTypeKind)
-        , fDimensions(dimensions)
-        , fIsDepth(isDepth)
-        , fIsArrayed(isArrayed)
-        , fIsMultisampled(isMultisampled)
-        , fTextureAccess(textureAccess) {}
+            : INHERITED(name, "T", kTypeKind)
+            , fDimensions(dimensions)
+            , fIsDepth(isDepth)
+            , fIsArrayed(isArrayed)
+            , fIsMultisampled(isMultisampled)
+            , fTextureAccess(textureAccess) {}
 
     SpvDim_ dimensions() const override {
         return fDimensions;
@@ -456,6 +494,11 @@ public:
         return fTextureAccess;
     }
 
+    const Type& slotType(size_t n) const override {
+        SkASSERT(n == 0);
+        return *this;
+    }
+
 private:
     using INHERITED = Type;
 
@@ -471,8 +514,8 @@ public:
     inline static constexpr TypeKind kTypeKind = TypeKind::kSampler;
 
     SamplerType(const char* name, const Type& textureType)
-        : INHERITED(name, "Z", kTypeKind)
-        , fTextureType(textureType.as<TextureType>()) {}
+            : INHERITED(name, "Z", kTypeKind)
+            , fTextureType(textureType.as<TextureType>()) {}
 
     const TextureType& textureType() const override {
         return fTextureType;
@@ -498,6 +541,11 @@ public:
         return fTextureType.textureAccess();
     }
 
+    const Type& slotType(size_t n) const override {
+        SkASSERT(n == 0);
+        return *this;
+    }
+
 private:
     using INHERITED = Type;
 
@@ -508,7 +556,7 @@ class StructType final : public Type {
 public:
     inline static constexpr TypeKind kTypeKind = TypeKind::kStruct;
 
-    StructType(Position pos, std::string_view name, std::vector<Field> fields, bool interfaceBlock)
+    StructType(Position pos, std::string_view name, TArray<Field> fields, bool interfaceBlock)
             : INHERITED(std::move(name), "S", kTypeKind, pos)
             , fFields(std::move(fields))
             , fInterfaceBlock(interfaceBlock) {}
@@ -539,10 +587,23 @@ public:
         return slots;
     }
 
+    const Type& slotType(size_t n) const override {
+        for (const Field& field : fFields) {
+            size_t fieldSlots = field.fType->slotCount();
+            if (n < fieldSlots) {
+                return field.fType->slotType(n);
+            } else {
+                n -= fieldSlots;
+            }
+        }
+        SkDEBUGFAIL("slot index out of range");
+        return *this;
+    }
+
 private:
     using INHERITED = Type;
 
-    std::vector<Field> fFields;
+    TArray<Field> fFields;
     bool fInterfaceBlock;
 };
 
@@ -552,9 +613,9 @@ public:
 
     VectorType(std::string_view name, const char* abbrev, const Type& componentType,
                int8_t columns)
-        : INHERITED(name, abbrev, kTypeKind)
-        , fComponentType(componentType.as<ScalarType>())
-        , fColumns(columns) {
+            : INHERITED(name, abbrev, kTypeKind)
+            , fComponentType(componentType.as<ScalarType>())
+            , fColumns(columns) {
         SkASSERT(columns >= 2 && columns <= 4);
     }
 
@@ -586,6 +647,11 @@ public:
         return fColumns;
     }
 
+    const Type& slotType(size_t n) const override {
+        SkASSERT(n < SkToSizeT(fColumns));
+        return fComponentType;
+    }
+
 private:
     using INHERITED = Type;
 
@@ -611,8 +677,10 @@ std::unique_ptr<Type> Type::MakeArrayType(std::string_view name, const Type& com
                                        componentType, columns);
 }
 
-std::unique_ptr<Type> Type::MakeGenericType(const char* name, SkSpan<const Type* const> types) {
-    return std::make_unique<GenericType>(name, types);
+std::unique_ptr<Type> Type::MakeGenericType(const char* name,
+                                            SkSpan<const Type* const> types,
+                                            const Type* slotType) {
+    return std::make_unique<GenericType>(name, types, slotType);
 }
 
 std::unique_ptr<Type> Type::MakeLiteralType(const char* name, const Type& scalarType,
@@ -650,7 +718,7 @@ static bool is_too_deeply_nested(const Type* t, int limit) {
     }
 
     if (t->isStruct()) {
-        for (const Type::Field& f : t->fields()) {
+        for (const Field& f : t->fields()) {
             if (is_too_deeply_nested(f.fType, limit - 1)) {
                 return true;
             }
@@ -663,31 +731,51 @@ static bool is_too_deeply_nested(const Type* t, int limit) {
 std::unique_ptr<Type> Type::MakeStructType(const Context& context,
                                            Position pos,
                                            std::string_view name,
-                                           std::vector<Field> fields,
+                                           TArray<Field> fields,
                                            bool interfaceBlock) {
+    const char* const structOrIB  = interfaceBlock ? "interface block" : "struct";
+    const char* const aStructOrIB = interfaceBlock ? "an interface block" : "a struct";
+
+    if (fields.empty()) {
+        context.fErrors->error(pos, std::string(structOrIB) + " '" + std::string(name) +
+                                    "' must contain at least one field");
+    }
     size_t slots = 0;
+
+    THashSet<std::string_view> fieldNames;
     for (const Field& field : fields) {
+        // Add this field name to our set; if the set doesn't grow, we found a duplicate.
+        int numFieldNames = fieldNames.count();
+        fieldNames.add(field.fName);
+        if (fieldNames.count() == numFieldNames) {
+            context.fErrors->error(field.fPosition, "field '" + std::string(field.fName) +
+                                                    "' was already defined in the same " +
+                                                    std::string(structOrIB) + " ('" +
+                                                    std::string(name) + "')");
+        }
         if (field.fModifiers.fFlags != Modifiers::kNo_Flag) {
             std::string desc = field.fModifiers.description();
             desc.pop_back();  // remove trailing space
-            context.fErrors->error(field.fPosition,
-                                   "modifier '" + desc + "' is not permitted on a struct field");
+            context.fErrors->error(field.fPosition, "modifier '" + desc + "' is not permitted on " +
+                                                    std::string(aStructOrIB) + " field");
         }
         if (field.fModifiers.fLayout.fFlags & Layout::kBinding_Flag) {
-            context.fErrors->error(field.fPosition,
-                                   "layout qualifier 'binding' is not permitted on a struct field");
+            context.fErrors->error(field.fPosition, "layout qualifier 'binding' is not permitted "
+                                                    "on " + std::string(aStructOrIB) + " field");
         }
         if (field.fModifiers.fLayout.fFlags & Layout::kSet_Flag) {
-            context.fErrors->error(field.fPosition,
-                                   "layout qualifier 'set' is not permitted on a struct field");
+            context.fErrors->error(field.fPosition, "layout qualifier 'set' is not permitted on " +
+                                                    std::string(aStructOrIB) + " field");
         }
 
         if (field.fType->isVoid()) {
-            context.fErrors->error(field.fPosition, "type 'void' is not permitted in a struct");
+            context.fErrors->error(field.fPosition, "type 'void' is not permitted in " +
+                                                    std::string(aStructOrIB));
         }
         if (field.fType->isOpaque() && !field.fType->isAtomic()) {
             context.fErrors->error(field.fPosition, "opaque type '" + field.fType->displayName() +
-                                                    "' is not permitted in a struct");
+                                                    "' is not permitted in " +
+                                                    std::string(aStructOrIB));
         }
         if (field.fType->isOrContainsUnsizedArray()) {
             if (!interfaceBlock) {
@@ -700,14 +788,15 @@ std::unique_ptr<Type> Type::MakeStructType(const Context& context,
                 // ... see if this field causes us to exceed the size limit.
                 slots = SkSafeMath::Add(slots, field.fType->slotCount());
                 if (slots >= kVariableSlotLimit) {
-                    context.fErrors->error(pos, "struct is too large");
+                    context.fErrors->error(pos, std::string(structOrIB) + " is too large");
                 }
             }
         }
     }
     for (const Field& field : fields) {
         if (is_too_deeply_nested(field.fType, kMaxStructDepth)) {
-            context.fErrors->error(pos, "struct '" + std::string(name) + "' is too deeply nested");
+            context.fErrors->error(pos, std::string(structOrIB) + " '" + std::string(name) +
+                                        "' is too deeply nested");
             break;
         }
     }
@@ -765,17 +854,15 @@ CoercionCost Type::coercionCost(const Type& other) const {
 
 const Type* Type::applyQualifiers(const Context& context,
                                   Modifiers* modifiers,
-                                  SymbolTable* symbols,
                                   Position pos) const {
     const Type* type;
-    type = this->applyPrecisionQualifiers(context, modifiers, symbols, pos);
-    type = type->applyAccessQualifiers(context, modifiers, symbols, pos);
+    type = this->applyPrecisionQualifiers(context, modifiers, pos);
+    type = type->applyAccessQualifiers(context, modifiers, pos);
     return type;
 }
 
 const Type* Type::applyPrecisionQualifiers(const Context& context,
                                            Modifiers* modifiers,
-                                           SymbolTable* symbols,
                                            Position pos) const {
     int precisionQualifiers = modifiers->fFlags & (Modifiers::kHighp_Flag |
                                                    Modifiers::kMediump_Flag |
@@ -833,7 +920,7 @@ const Type* Type::applyPrecisionQualifiers(const Context& context,
         if (mediumpType) {
             // Convert the mediump component type into the final vector/matrix/array type as needed.
             return this->isArray()
-                           ? symbols->addArrayDimension(mediumpType, this->columns())
+                           ? context.fSymbolTable->addArrayDimension(mediumpType, this->columns())
                            : &mediumpType->toCompound(context, this->columns(), this->rows());
         }
     }
@@ -845,7 +932,6 @@ const Type* Type::applyPrecisionQualifiers(const Context& context,
 
 const Type* Type::applyAccessQualifiers(const Context& context,
                                         Modifiers* modifiers,
-                                        SymbolTable* symbols,
                                         Position pos) const {
     int accessQualifiers = modifiers->fFlags & (Modifiers::kReadOnly_Flag |
                                                 Modifiers::kWriteOnly_Flag);
@@ -1039,7 +1125,7 @@ const Type* Type::clone(SymbolTable* symbolTable) const {
             return symbolTable->add(
                     std::make_unique<StructType>(this->fPosition,
                                                  *name,
-                                                 std::vector(fieldSpan.begin(), fieldSpan.end()),
+                                                 TArray<Field>(fieldSpan.data(), fieldSpan.size()),
                                                  this->isInterfaceBlock()));
         }
         default:
@@ -1061,7 +1147,7 @@ std::unique_ptr<Expression> Type::coerceExpression(std::unique_ptr<Expression> e
     const ProgramSettings& settings = context.fConfig->fSettings;
     if (!expr->coercionCost(*this).isPossible(settings.fAllowNarrowingConversions)) {
         context.fErrors->error(pos, "expected '" + this->displayName() + "', but found '" +
-                expr->type().displayName() + "'");
+                                    expr->type().displayName() + "'");
         return nullptr;
     }
 
@@ -1080,7 +1166,7 @@ std::unique_ptr<Expression> Type::coerceExpression(std::unique_ptr<Expression> e
 
 static bool is_or_contains_array(const Type* type, bool onlyMatchUnsizedArrays) {
     if (type->isStruct()) {
-        for (const Type::Field& f : type->fields()) {
+        for (const Field& f : type->fields()) {
             if (is_or_contains_array(f.fType, onlyMatchUnsizedArrays)) {
                 return true;
             }
@@ -1192,31 +1278,39 @@ SKSL_INT Type::convertArraySize(const Context& context,
     if (!size) {
         return 0;
     }
-    if (!this->checkIfUsableInArray(context, arrayPos)) {
-        return 0;
-    }
     SKSL_INT count;
     if (!ConstantFolder::GetConstantInt(*size, &count)) {
         context.fErrors->error(size->fPosition, "array size must be an integer");
         return 0;
     }
-    if (count <= 0) {
-        context.fErrors->error(size->fPosition, "array size must be positive");
+    return this->convertArraySize(context, arrayPos, size->fPosition, count);
+}
+
+SKSL_INT Type::convertArraySize(const Context& context,
+                                Position arrayPos,
+                                Position sizePos,
+                                SKSL_INT size) const {
+    if (!this->checkIfUsableInArray(context, arrayPos)) {
+        // `checkIfUsableInArray` will generate an error for us.
+        return 0;
+    }
+    if (size <= 0) {
+        context.fErrors->error(sizePos, "array size must be positive");
         return 0;
     }
     // We can't get a meaningful slot count if the interior type contains an unsized array; we'll
     // assert if we try. Unsized arrays should only occur in a handful of limited cases (e.g. an
     // interface block with a trailing buffer), and will never be valid in a runtime effect.
     if (!this->isOrContainsUnsizedArray()) {
-        if (SkSafeMath::Mul(this->slotCount(), count) > kVariableSlotLimit) {
-            context.fErrors->error(size->fPosition, "array size is too large");
+        if (SkSafeMath::Mul(this->slotCount(), size) > kVariableSlotLimit) {
+            context.fErrors->error(sizePos, "array size is too large");
             return 0;
         }
     }
-    return static_cast<int>(count);
+    return size;
 }
 
-std::string Type::Field::description() const {
+std::string Field::description() const {
     return fModifiers.description() + fType->displayName() + " " + std::string(fName) + ";";
 }
 

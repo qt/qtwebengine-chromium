@@ -12,7 +12,7 @@
 #include "discovery/dnssd/impl/constants.h"
 #include "discovery/dnssd/public/dns_sd_instance_endpoint.h"
 #include "discovery/dnssd/public/dns_sd_txt_record.h"
-#include "discovery/mdns/mdns_records.h"
+#include "discovery/mdns/public/mdns_records.h"
 #include "platform/base/error.h"
 
 namespace openscreen {

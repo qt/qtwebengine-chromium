@@ -24,8 +24,8 @@ namespace fastpair {
 
 class MockScannerBroker : public ScannerBroker {
  public:
-  MOCK_METHOD(void, StartScanning, (Protocol), (override));
-  MOCK_METHOD(void, StopScanning, (Protocol), (override));
+  MOCK_METHOD(std::unique_ptr<ScanningSession>, StartScanning, (Protocol),
+              (override));
 
   void AddObserver(Observer* observer) override {
     observers_.AddObserver(observer);
@@ -35,13 +35,13 @@ class MockScannerBroker : public ScannerBroker {
     observers_.RemoveObserver(observer);
   }
 
-  void NotifyDeviceFound(const FastPairDevice& device) {
+  void NotifyDeviceFound(FastPairDevice& device) {
     for (auto& observer : observers_.GetObservers()) {
       observer->OnDeviceFound(device);
     }
   }
 
-  void NotifyDeviceLost(const FastPairDevice& device) {
+  void NotifyDeviceLost(FastPairDevice& device) {
     for (auto& observer : observers_.GetObservers()) {
       observer->OnDeviceLost(device);
     }

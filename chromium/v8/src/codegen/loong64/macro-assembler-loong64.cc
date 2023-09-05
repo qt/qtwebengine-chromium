@@ -101,9 +101,22 @@ int MacroAssembler::PopCallerSaved(SaveFPRegsMode fp_mode, Register exclusion1,
 }
 
 void MacroAssembler::LoadRoot(Register destination, RootIndex index) {
+  if (V8_STATIC_ROOTS_BOOL && RootsTable::IsReadOnly(index) &&
+      is_int12(ReadOnlyRootPtr(index))) {
+    DecompressTagged(destination, ReadOnlyRootPtr(index));
+    return;
+  }
+  // Many roots have addresses that are too large to fit into addition immediate
+  // operands. Evidence suggests that the extra instruction for decompression
+  // costs us more than the load.
   Ld_d(destination, MemOperand(s6, RootRegisterOffsetForRootIndex(index)));
 }
-void MacroAssembler::LoadCompressedRoot(Register destination, RootIndex index) {
+void MacroAssembler::LoadTaggedRoot(Register destination, RootIndex index) {
+  if (V8_STATIC_ROOTS_BOOL && RootsTable::IsReadOnly(index) &&
+      is_int12(ReadOnlyRootPtr(index))) {
+    li(destination, (int32_t)ReadOnlyRootPtr(index));
+    return;
+  }
   Ld_w(destination, MemOperand(s6, RootRegisterOffsetForRootIndex(index)));
 }
 
@@ -166,6 +179,70 @@ void MacroAssembler::RecordWriteField(Register object, int offset,
               save_fp, SmiCheck::kOmit);
 
   bind(&done);
+}
+
+void MacroAssembler::DecodeSandboxedPointer(Register value) {
+  ASM_CODE_COMMENT(this);
+#ifdef V8_ENABLE_SANDBOX
+  srli_d(value, value, kSandboxedPointerShift);
+  Add_d(value, value, kPtrComprCageBaseRegister);
+#else
+  UNREACHABLE();
+#endif
+}
+
+void MacroAssembler::LoadSandboxedPointerField(
+    Register destination, const MemOperand& field_operand) {
+#ifdef V8_ENABLE_SANDBOX
+  ASM_CODE_COMMENT(this);
+  Ld_d(destination, field_operand);
+  DecodeSandboxedPointer(destination);
+#else
+  UNREACHABLE();
+#endif
+}
+
+void MacroAssembler::StoreSandboxedPointerField(
+    Register value, const MemOperand& dst_field_operand) {
+#ifdef V8_ENABLE_SANDBOX
+  ASM_CODE_COMMENT(this);
+  UseScratchRegisterScope temps(this);
+  Register scratch = temps.Acquire();
+  Sub_d(scratch, value, kPtrComprCageBaseRegister);
+  slli_d(scratch, scratch, kSandboxedPointerShift);
+  St_d(scratch, dst_field_operand);
+#else
+  UNREACHABLE();
+#endif
+}
+
+void MacroAssembler::LoadExternalPointerField(Register destination,
+                                              MemOperand field_operand,
+                                              ExternalPointerTag tag,
+                                              Register isolate_root) {
+  DCHECK(!AreAliased(destination, isolate_root));
+  ASM_CODE_COMMENT(this);
+#ifdef V8_ENABLE_SANDBOX
+  DCHECK_NE(tag, kExternalPointerNullTag);
+  DCHECK(!IsSharedExternalPointerType(tag));
+  UseScratchRegisterScope temps(this);
+  Register external_table = temps.Acquire();
+  if (isolate_root == no_reg) {
+    DCHECK(root_array_available_);
+    isolate_root = kRootRegister;
+  }
+  Ld_d(external_table,
+       MemOperand(isolate_root,
+                  IsolateData::external_pointer_table_offset() +
+                      Internals::kExternalPointerTableBufferOffset));
+  Ld_wu(destination, field_operand);
+  srli_d(destination, destination, kExternalPointerIndexShift);
+  slli_d(destination, destination, kExternalPointerTableEntrySizeLog2);
+  Ld_d(destination, MemOperand(external_table, destination));
+  And(destination, destination, Operand(~tag));
+#else
+  Ld_d(destination, field_operand);
+#endif  // V8_ENABLE_SANDBOX
 }
 
 void MacroAssembler::MaybeSaveRegisters(RegList registers) {
@@ -353,7 +430,7 @@ void MacroAssembler::Add_d(Register rd, Register rj, const Operand& rk) {
     } else {
       // li handles the relocation.
       UseScratchRegisterScope temps(this);
-      Register scratch = temps.Acquire();
+      Register scratch = temps.hasAvailable() ? temps.Acquire() : t8;
       DCHECK(rj != scratch);
       li(scratch, rk);
       add_d(rd, rj, scratch);
@@ -2241,7 +2318,7 @@ void MacroAssembler::Branch(Label* L, Condition cond, Register rj,
       left = temps.hasAvailable() ? temps.Acquire() : t8;
       slli_w(left, rj, 0);
     }
-    LoadCompressedRoot(right, index);
+    LoadTaggedRoot(right, index);
     Branch(L, cond, left, Operand(right));
   } else {
     LoadRoot(right, index);
@@ -2705,18 +2782,17 @@ void MacroAssembler::Call(Handle<Code> code, RelocInfo::Mode rmode,
   Call(static_cast<Address>(target_index), rmode, cond, rj, rk);
 }
 
-void MacroAssembler::LoadEntryFromBuiltinIndex(Register builtin_index) {
+void MacroAssembler::LoadEntryFromBuiltinIndex(Register builtin_index,
+                                               Register target) {
   ASM_CODE_COMMENT(this);
   static_assert(kSystemPointerSize == 8);
   static_assert(kSmiTagSize == 1);
   static_assert(kSmiTag == 0);
 
   // The builtin_index register contains the builtin index as a Smi.
-  SmiUntag(builtin_index, builtin_index);
-  Alsl_d(builtin_index, builtin_index, kRootRegister, kSystemPointerSizeLog2,
-         t7);
-  Ld_d(builtin_index,
-       MemOperand(builtin_index, IsolateData::builtin_entry_table_offset()));
+  SmiUntag(target, builtin_index);
+  Alsl_d(target, target, kRootRegister, kSystemPointerSizeLog2, t7);
+  Ld_d(target, MemOperand(target, IsolateData::builtin_entry_table_offset()));
 }
 
 void MacroAssembler::LoadEntryFromBuiltin(Builtin builtin,
@@ -2729,11 +2805,13 @@ MemOperand MacroAssembler::EntryFromBuiltinAsOperand(Builtin builtin) {
                     IsolateData::BuiltinEntrySlotOffset(builtin));
 }
 
-void MacroAssembler::CallBuiltinByIndex(Register builtin_index) {
+void MacroAssembler::CallBuiltinByIndex(Register builtin_index,
+                                        Register target) {
   ASM_CODE_COMMENT(this);
-  LoadEntryFromBuiltinIndex(builtin_index);
-  Call(builtin_index);
+  LoadEntryFromBuiltinIndex(builtin_index, target);
+  Call(target);
 }
+
 void MacroAssembler::CallBuiltin(Builtin builtin) {
   ASM_CODE_COMMENT_STRING(this, CommentForOffHeapTrampoline("call", builtin));
   UseScratchRegisterScope temps(this);
@@ -2742,6 +2820,12 @@ void MacroAssembler::CallBuiltin(Builtin builtin) {
     case BuiltinCallJumpMode::kAbsolute: {
       li(temp, Operand(BuiltinEntry(builtin), RelocInfo::OFF_HEAP_TARGET));
       Call(temp);
+      break;
+    }
+    case BuiltinCallJumpMode::kPCRelative: {
+      RecordRelocInfo(RelocInfo::NEAR_BUILTIN_ENTRY);
+      bl(static_cast<int>(builtin));
+      set_pc_for_safepoint();
       break;
     }
     case BuiltinCallJumpMode::kIndirect: {
@@ -2762,9 +2846,6 @@ void MacroAssembler::CallBuiltin(Builtin builtin) {
       }
       break;
     }
-    case BuiltinCallJumpMode::kPCRelative:
-      // Short builtin calls is unsupported in loongarch64.
-      UNREACHABLE();
   }
 }
 
@@ -2785,6 +2866,12 @@ void MacroAssembler::TailCallBuiltin(Builtin builtin) {
       Jump(temp);
       break;
     }
+    case BuiltinCallJumpMode::kPCRelative: {
+      RecordRelocInfo(RelocInfo::NEAR_BUILTIN_ENTRY);
+      b(static_cast<int>(builtin));
+      set_pc_for_safepoint();
+      break;
+    }
     case BuiltinCallJumpMode::kForMksnapshot: {
       if (options().use_pc_relative_calls_and_jumps_for_mksnapshot) {
         Handle<Code> code = isolate()->builtins()->code_handle(builtin);
@@ -2797,22 +2884,7 @@ void MacroAssembler::TailCallBuiltin(Builtin builtin) {
       }
       break;
     }
-    case BuiltinCallJumpMode::kPCRelative:
-      UNREACHABLE();
   }
-}
-
-void MacroAssembler::PatchAndJump(Address target) {
-  ASM_CODE_COMMENT(this);
-  UseScratchRegisterScope temps(this);
-  Register scratch = temps.Acquire();
-  pcaddi(scratch, 4);
-  Ld_d(t7, MemOperand(scratch, 0));
-  jirl(zero_reg, t7, 0);
-  nop();
-  DCHECK_EQ(reinterpret_cast<uint64_t>(pc_) % 8, 0);
-  *reinterpret_cast<uint64_t*>(pc_) = target;  // pc_ should be align.
-  pc_ += sizeof(uint64_t);
 }
 
 void MacroAssembler::StoreReturnAddressAndCall(Register target) {
@@ -3253,7 +3325,9 @@ void MacroAssembler::GetInstanceTypeRange(Register map, Register type_reg,
                                           InstanceType lower_limit,
                                           Register range) {
   Ld_hu(type_reg, FieldMemOperand(map, Map::kInstanceTypeOffset));
-  Sub_d(range, type_reg, Operand(lower_limit));
+  if (lower_limit != 0 || type_reg != range) {
+    Sub_d(range, type_reg, Operand(lower_limit));
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -3543,6 +3617,11 @@ void MacroAssembler::LoadMap(Register destination, Register object) {
   LoadTaggedField(destination, FieldMemOperand(object, HeapObject::kMapOffset));
 }
 
+void MacroAssembler::LoadCompressedMap(Register dst, Register object) {
+  ASM_CODE_COMMENT(this);
+  Ld_w(dst, FieldMemOperand(object, HeapObject::kMapOffset));
+}
+
 void MacroAssembler::LoadNativeContextSlot(Register dst, int index) {
   LoadMap(dst, cp);
   LoadTaggedField(
@@ -3586,7 +3665,8 @@ void MacroAssembler::EnterExitFrame(int stack_space,
                                     StackFrame::Type frame_type) {
   ASM_CODE_COMMENT(this);
   DCHECK(frame_type == StackFrame::EXIT ||
-         frame_type == StackFrame::BUILTIN_EXIT);
+         frame_type == StackFrame::BUILTIN_EXIT ||
+         frame_type == StackFrame::API_CALLBACK_EXIT);
 
   // Set up the frame structure on the stack.
   static_assert(2 * kSystemPointerSize ==
@@ -3737,6 +3817,66 @@ void MacroAssembler::JumpIfNotSmi(Register value, Label* not_smi_label) {
   Register scratch = temps.Acquire();
   andi(scratch, value, kSmiTagMask);
   Branch(not_smi_label, ne, scratch, Operand(zero_reg));
+}
+
+void MacroAssembler::JumpIfObjectType(Label* target, Condition cc,
+                                      Register object,
+                                      InstanceType instance_type,
+                                      Register scratch) {
+  DCHECK(cc == eq || cc == ne);
+  UseScratchRegisterScope temps(this);
+  if (scratch == no_reg) {
+    scratch = temps.Acquire();
+  }
+  if (V8_STATIC_ROOTS_BOOL) {
+    if (base::Optional<RootIndex> expected =
+            InstanceTypeChecker::UniqueMapOfInstanceType(instance_type)) {
+      Tagged_t ptr = ReadOnlyRootPtr(*expected);
+      LoadCompressedMap(scratch, object);
+      Branch(target, cc, scratch, Operand(ptr));
+      return;
+    }
+  }
+  GetObjectType(object, scratch, scratch);
+  Branch(target, cc, scratch, Operand(instance_type));
+}
+
+void MacroAssembler::JumpIfJSAnyIsNotPrimitive(Register heap_object,
+                                               Register scratch, Label* target,
+                                               Label::Distance distance,
+                                               Condition cc) {
+  CHECK(cc == Condition::kUnsignedLessThan ||
+        cc == Condition::kUnsignedGreaterThanEqual);
+  if (V8_STATIC_ROOTS_BOOL) {
+#ifdef DEBUG
+    Label ok;
+    LoadMap(scratch, heap_object);
+    GetInstanceTypeRange(scratch, scratch, FIRST_JS_RECEIVER_TYPE, scratch);
+    Branch(&ok, Condition::kUnsignedLessThanEqual, scratch,
+           Operand(LAST_JS_RECEIVER_TYPE - FIRST_JS_RECEIVER_TYPE));
+
+    LoadMap(scratch, heap_object);
+    GetInstanceTypeRange(scratch, scratch, FIRST_PRIMITIVE_HEAP_OBJECT_TYPE,
+                         scratch);
+    Branch(&ok, Condition::kUnsignedLessThanEqual, scratch,
+           Operand(LAST_PRIMITIVE_HEAP_OBJECT_TYPE -
+                   FIRST_PRIMITIVE_HEAP_OBJECT_TYPE));
+
+    Abort(AbortReason::kInvalidReceiver);
+    bind(&ok);
+#endif  // DEBUG
+
+    // All primitive object's maps are allocated at the start of the read only
+    // heap. Thus JS_RECEIVER's must have maps with larger (compressed)
+    // addresses.
+    LoadCompressedMap(scratch, heap_object);
+    Branch(target, cc, scratch,
+           Operand(InstanceTypeChecker::kNonJsReceiverMapLimit));
+  } else {
+    static_assert(LAST_JS_RECEIVER_TYPE == LAST_TYPE);
+    GetObjectType(heap_object, scratch, scratch);
+    Branch(target, cc, scratch, Operand(FIRST_JS_RECEIVER_TYPE));
+  }
 }
 
 #ifdef V8_ENABLE_DEBUG_CODE
@@ -4457,6 +4597,11 @@ void MacroAssembler::DecompressTagged(Register dst, Register src) {
   ASM_CODE_COMMENT(this);
   Bstrpick_d(dst, src, 31, 0);
   Add_d(dst, kPtrComprCageBaseRegister, Operand(dst));
+}
+
+void MacroAssembler::DecompressTagged(Register dst, Tagged_t immediate) {
+  ASM_CODE_COMMENT(this);
+  Add_d(dst, kPtrComprCageBaseRegister, static_cast<int32_t>(immediate));
 }
 
 void MacroAssembler::AtomicDecompressTaggedSigned(Register dst,

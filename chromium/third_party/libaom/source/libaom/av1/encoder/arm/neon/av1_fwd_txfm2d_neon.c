@@ -24,7 +24,7 @@
 
 static INLINE void transpose_16bit_4x4(const int16x8_t *const in,
                                        int16x8_t *const out) {
-#if defined(__aarch64__)
+#if AOM_ARCH_AARCH64
   const int16x8_t a0 = vzip1q_s16(in[0], in[1]);
   const int16x8_t a1 = vzip1q_s16(in[2], in[3]);
 #else
@@ -45,7 +45,7 @@ static INLINE void transpose_16bit_4x4(const int16x8_t *const in,
 
 static INLINE void transpose_16bit_4x8(const int16x8_t *const in,
                                        int16x8_t *const out) {
-#if defined(__aarch64__)
+#if AOM_ARCH_AARCH64
   const int16x8_t a0 = vzip1q_s16(in[0], in[1]);
   const int16x8_t a1 = vzip1q_s16(in[2], in[3]);
   const int16x8_t a2 = vzip1q_s16(in[4], in[5]);
@@ -67,7 +67,7 @@ static INLINE void transpose_16bit_4x8(const int16x8_t *const in,
   const int32x4x2_t b13 =
       vzipq_s32(vreinterpretq_s32_s16(a2), vreinterpretq_s32_s16(a3));
 
-#if defined(__aarch64__)
+#if AOM_ARCH_AARCH64
   out[0] = vreinterpretq_s16_s64(vzip1q_s64(vreinterpretq_s64_s32(b02.val[0]),
                                             vreinterpretq_s64_s32(b13.val[0])));
   out[1] = vreinterpretq_s16_s64(vzip2q_s64(vreinterpretq_s64_s32(b02.val[0]),
@@ -100,7 +100,7 @@ static INLINE void transpose_16bit_8x4(const int16x8_t *const in,
 
   const int32x4_t zeros = vdupq_n_s32(0);
 
-#if defined(__aarch64__)
+#if AOM_ARCH_AARCH64
   out[0] = vreinterpretq_s16_s64(vzip1q_s64(vreinterpretq_s64_s32(b01.val[0]),
                                             vreinterpretq_s64_s32(zeros)));
   out[1] = vreinterpretq_s16_s64(vzip2q_s64(vreinterpretq_s64_s32(b01.val[0]),
@@ -149,7 +149,7 @@ static INLINE void transpose_16bit_8x8(const int16x8_t *const in,
   const int32x4x2_t b37 = vzipq_s32(vreinterpretq_s32_s16(a26.val[1]),
                                     vreinterpretq_s32_s16(a37.val[1]));
 
-#if defined(__aarch64__)
+#if AOM_ARCH_AARCH64
   out[0] = vreinterpretq_s16_s64(vzip1q_s64(vreinterpretq_s64_s32(b04.val[0]),
                                             vreinterpretq_s64_s32(b15.val[0])));
   out[1] = vreinterpretq_s16_s64(vzip2q_s64(vreinterpretq_s64_s32(b04.val[0]),

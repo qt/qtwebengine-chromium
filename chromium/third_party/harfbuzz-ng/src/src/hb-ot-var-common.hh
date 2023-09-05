@@ -41,7 +41,6 @@ struct DeltaSetIndexMapFormat01
   {
     TRACE_SERIALIZE (this);
     auto *out = c->start_embed (this);
-    if (unlikely (!out)) return_trace (nullptr);
 
     unsigned total_size = min_size + mapCount * get_width ();
     HBUINT8 *p = c->allocate_size<HBUINT8> (total_size);
@@ -250,37 +249,108 @@ struct TupleVariationHeader
   const TupleVariationHeader &get_next (unsigned axis_count) const
   { return StructAtOffset<TupleVariationHeader> (this, get_size (axis_count)); }
 
-  float calculate_scalar (hb_array_t<int> coords, unsigned int coord_count,
-                          const hb_array_t<const F2DOT14> shared_tuples) const
+  bool unpack_axis_tuples (unsigned axis_count,
+                           const hb_array_t<const F2DOT14> shared_tuples,
+                           const hb_map_t *axes_old_index_tag_map,
+                           hb_hashmap_t<hb_tag_t, Triple>& axis_tuples /* OUT */) const
   {
-    hb_array_t<const F2DOT14> peak_tuple;
-
+    const F2DOT14 *peak_tuple = nullptr;
     if (has_peak ())
-      peak_tuple = get_peak_tuple (coord_count);
+      peak_tuple = get_peak_tuple (axis_count).arrayZ;
     else
     {
       unsigned int index = get_index ();
-      if (unlikely (index * coord_count >= shared_tuples.length))
-        return 0.f;
-      peak_tuple = shared_tuples.sub_array (coord_count * index, coord_count);
+      if (unlikely ((index + 1) * axis_count > shared_tuples.length))
+        return false;
+      peak_tuple = shared_tuples.sub_array (axis_count * index, axis_count).arrayZ;
     }
 
-    hb_array_t<const F2DOT14> start_tuple;
-    hb_array_t<const F2DOT14> end_tuple;
-    if (has_intermediate ())
+    const F2DOT14 *start_tuple = nullptr;
+    const F2DOT14 *end_tuple = nullptr;
+    bool has_interm = has_intermediate ();
+
+    if (has_interm)
     {
-      start_tuple = get_start_tuple (coord_count);
-      end_tuple = get_end_tuple (coord_count);
+      start_tuple = get_start_tuple (axis_count).arrayZ;
+      end_tuple = get_end_tuple (axis_count).arrayZ;
+    }
+
+    for (unsigned i = 0; i < axis_count; i++)
+    {
+      float peak = peak_tuple[i].to_float ();
+      if (peak == 0.f) continue;
+
+      hb_tag_t *axis_tag;
+      if (!axes_old_index_tag_map->has (i, &axis_tag))
+        return false;
+
+      float start, end;
+      if (has_interm)
+      {
+        start = start_tuple[i].to_float ();
+        end = end_tuple[i].to_float ();
+      }
+      else
+      {
+        start = hb_min (peak, 0.f);
+        end = hb_max (peak, 0.f);
+      }
+      axis_tuples.set (*axis_tag, Triple (start, peak, end));
+    }
+
+    return true;
+  }
+
+  float calculate_scalar (hb_array_t<int> coords, unsigned int coord_count,
+                          const hb_array_t<const F2DOT14> shared_tuples,
+			  const hb_vector_t<int> *shared_tuple_active_idx = nullptr) const
+  {
+    const F2DOT14 *peak_tuple;
+
+    unsigned start_idx = 0;
+    unsigned end_idx = coord_count;
+
+    if (has_peak ())
+      peak_tuple = get_peak_tuple (coord_count).arrayZ;
+    else
+    {
+      unsigned int index = get_index ();
+      if (unlikely ((index + 1) * coord_count > shared_tuples.length))
+        return 0.f;
+      peak_tuple = shared_tuples.sub_array (coord_count * index, coord_count).arrayZ;
+
+      if (shared_tuple_active_idx)
+      {
+	if (unlikely (index >= shared_tuple_active_idx->length))
+	  return 0.f;
+	int v = (*shared_tuple_active_idx).arrayZ[index];
+	if (v != -1)
+	{
+	  start_idx = v;
+	  end_idx = start_idx + 1;
+	}
+      }
+    }
+
+    const F2DOT14 *start_tuple = nullptr;
+    const F2DOT14 *end_tuple = nullptr;
+    bool has_interm = has_intermediate ();
+    if (has_interm)
+    {
+      start_tuple = get_start_tuple (coord_count).arrayZ;
+      end_tuple = get_end_tuple (coord_count).arrayZ;
     }
 
     float scalar = 1.f;
-    for (unsigned int i = 0; i < coord_count; i++)
+    for (unsigned int i = start_idx; i < end_idx; i++)
     {
-      int v = coords[i];
       int peak = peak_tuple[i].to_int ();
-      if (!peak || v == peak) continue;
+      if (!peak) continue;
 
-      if (has_intermediate ())
+      int v = coords[i];
+      if (v == peak) continue;
+
+      if (has_interm)
       {
         int start = start_tuple[i].to_int ();
         int end = end_tuple[i].to_int ();
@@ -346,6 +416,120 @@ struct TupleVariationHeader
   DEFINE_SIZE_MIN (4);
 };
 
+struct tuple_delta_t
+{
+  public:
+  hb_hashmap_t<hb_tag_t, Triple> axis_tuples;
+
+  /* indices_length = point_count, indice[i] = 1 means point i is referenced */
+  hb_vector_t<bool> indices;
+  
+  hb_vector_t<float> deltas_x;
+  /* empty for cvar tuples */
+  hb_vector_t<float> deltas_y;
+
+  tuple_delta_t () = default;
+  tuple_delta_t (const tuple_delta_t& o) = default;
+
+  tuple_delta_t (tuple_delta_t&& o) : tuple_delta_t ()
+  {
+    axis_tuples = std::move (o.axis_tuples);
+    indices = std::move (o.indices);
+    deltas_x = std::move (o.deltas_x);
+    deltas_y = std::move (o.deltas_y);
+  }
+
+  tuple_delta_t& operator = (tuple_delta_t&& o)
+  {
+    hb_swap (*this, o);
+    return *this;
+  }
+
+  void remove_axis (hb_tag_t axis_tag)
+  { axis_tuples.del (axis_tag); }
+
+  bool set_tent (hb_tag_t axis_tag, Triple tent)
+  { return axis_tuples.set (axis_tag, tent); }
+
+  tuple_delta_t& operator += (const tuple_delta_t& o)
+  {
+    unsigned num = indices.length;
+    for (unsigned i = 0; i < num; i++)
+    {
+      if (indices.arrayZ[i])
+      {
+        if (o.indices.arrayZ[i])
+        {
+          deltas_x[i] += o.deltas_x[i];
+          if (deltas_y && o.deltas_y)
+            deltas_y[i] += o.deltas_y[i];
+        }
+      }
+      else
+      {
+        if (!o.indices.arrayZ[i]) continue;
+        deltas_x[i] = o.deltas_x[i];
+        if (deltas_y && o.deltas_y)
+          deltas_y[i] = o.deltas_y[i];
+      }
+    }
+    return *this;
+  }
+
+  tuple_delta_t& operator *= (float scalar)
+  {
+    if (scalar == 1.0f)
+      return *this;
+
+    unsigned num = indices.length;
+    for (unsigned i = 0; i < num; i++)
+    {
+      if (!indices.arrayZ[i]) continue;
+
+      deltas_x[i] *= scalar;
+      if (deltas_y)
+        deltas_y[i] *= scalar;
+    }
+    return *this;
+  }
+
+  hb_vector_t<tuple_delta_t> change_tuple_var_axis_limit (hb_tag_t axis_tag, Triple axis_limit) const
+  {
+    hb_vector_t<tuple_delta_t> out;
+    Triple *tent;
+    if (!axis_tuples.has (axis_tag, &tent))
+    {
+      out.push (*this);
+      return out;
+    }
+
+    if ((tent->minimum < 0.f && tent->maximum > 0.f) ||
+        !(tent->minimum <= tent->middle && tent->middle <= tent->maximum))
+      return out;
+
+    if (tent->middle == 0.f)
+    {
+      out.push (*this);
+      return out;
+    }
+
+    result_t solutions = rebase_tent (*tent, axis_limit);
+    for (auto t : solutions)
+    {
+      tuple_delta_t new_var = *this;
+      if (t.second == Triple ())
+        new_var.remove_axis (axis_tag);
+      else
+        new_var.set_tent (axis_tag, t.second);
+
+      new_var *= t.first;
+      out.push (std::move (new_var));
+    }
+
+    return out;
+  }
+};
+
 struct TupleVariationData
 {
   bool sanitize (hb_sanitize_context_t *c) const
@@ -359,7 +543,7 @@ struct TupleVariationData
   unsigned get_size (unsigned axis_count) const
   {
     unsigned total_size = min_size;
-    unsigned count = tupleVarCount;
+    unsigned count = tupleVarCount.get_count ();
     const TupleVariationHeader *tuple_var_header = &(get_tuple_var_header());
     for (unsigned i = 0; i < count; i++)
     {
@@ -373,8 +557,134 @@ struct TupleVariationData
   const TupleVariationHeader &get_tuple_var_header (void) const
   { return StructAfter<TupleVariationHeader> (data); }
 
+  struct tuple_iterator_t;
+  struct tuple_variations_t
+  {
+    hb_vector_t<tuple_delta_t> tuple_vars;
+
+    void fini () { tuple_vars.fini (); }
+    bool create_from_tuple_var_data (tuple_iterator_t iterator,
+                                     unsigned tuple_var_count,
+                                     unsigned point_count,
+                                     bool is_gvar,
+                                     const hb_map_t *axes_old_index_tag_map,
+                                     const hb_vector_t<unsigned> &shared_indices,
+                                     const hb_array_t<const F2DOT14> shared_tuples)
+    {
+      do
+      {
+        const HBUINT8 *p = iterator.get_serialized_data ();
+        unsigned int length = iterator.current_tuple->get_data_size ();
+        if (unlikely (!iterator.var_data_bytes.check_range (p, length)))
+        { fini (); return false; }
+
+        hb_hashmap_t<hb_tag_t, Triple> axis_tuples;
+        if (!iterator.current_tuple->unpack_axis_tuples (iterator.get_axis_count (), shared_tuples, axes_old_index_tag_map, axis_tuples)
+            || axis_tuples.is_empty ())
+        { fini (); return false; }
+
+        hb_vector_t<unsigned> private_indices;
+        bool has_private_points = iterator.current_tuple->has_private_points ();
+        const HBUINT8 *end = p + length;
+        if (has_private_points &&
+            !TupleVariationData::unpack_points (p, private_indices, end))
+        { fini (); return false; }
+
+        const hb_vector_t<unsigned> &indices = has_private_points ? private_indices : shared_indices;
+        unsigned num_deltas = indices.length;
+
+        hb_vector_t<int> deltas_x;
+
+        if (unlikely (!deltas_x.resize (num_deltas, false) ||
+                      !TupleVariationData::unpack_deltas (p, deltas_x, end)))
+        { fini (); return false; }
+
+        hb_vector_t<int> deltas_y;
+        if (is_gvar)
+        {
+          if (unlikely (!deltas_y.resize (num_deltas, false) ||
+                        !TupleVariationData::unpack_deltas (p, deltas_y, end)))
+          { fini (); return false; }
+        }
+
+        tuple_delta_t var;
+        var.axis_tuples = std::move (axis_tuples);
+        if (unlikely (!var.indices.resize (point_count) ||
+                      !var.deltas_x.resize (point_count, false)))
+        { fini (); return false; }
+
+        if (is_gvar && unlikely (!var.deltas_y.resize (point_count, false)))
+        { fini (); return false; }
+
+        for (unsigned i = 0; i < num_deltas; i++)
+        {
+          unsigned idx = indices[i];
+          var.indices[idx] = true;
+          var.deltas_x[idx] = static_cast<float> (deltas_x[i]);
+          if (is_gvar)
+            var.deltas_y[idx] = static_cast<float> (deltas_y[i]);
+        }
+        tuple_vars.push (std::move (var));
+      } while (iterator.move_to_next ());
+      return true;
+    }
+
+    void change_tuple_variations_axis_limits (const hb_hashmap_t<hb_tag_t, Triple> *normalized_axes_location)
+    {
+      for (auto _ : *normalized_axes_location)
+      {
+        hb_tag_t axis_tag = _.first;
+        Triple axis_limit = _.second;
+        hb_vector_t<tuple_delta_t> new_vars;
+        for (const tuple_delta_t& var : tuple_vars)
+        {
+          hb_vector_t<tuple_delta_t> out = var.change_tuple_var_axis_limit (axis_tag, axis_limit);
+          if (!out) continue;
+          unsigned new_len = new_vars.length + out.length;
+
+          if (unlikely (!new_vars.alloc (new_len, false)))
+          { fini (); return;}
+
+          for (unsigned i = 0; i < out.length; i++)
+            new_vars.push (std::move (out[i]));
+        }
+        tuple_vars.fini ();
+        tuple_vars = std::move (new_vars);
+      }
+    }
+
+    /* merge tuple variations with overlapping tents */
+    void merge_tuple_variations ()
+    {
+      hb_vector_t<tuple_delta_t> new_vars;
+      hb_hashmap_t<hb_hashmap_t<hb_tag_t, Triple>, unsigned> m;
+      unsigned i = 0;
+      for (const tuple_delta_t& var : tuple_vars)
+      {
+        /* if all axes are pinned, drop the tuple variation */
+        if (var.axis_tuples.is_empty ()) continue;
+
+        unsigned *idx;
+        if (m.has (var.axis_tuples, &idx))
+        {
+          new_vars[*idx] += var;
+        }
+        else
+        {
+          new_vars.push (var);
+          m.set (var.axis_tuples, i);
+          i++;
+        }
+      }
+      tuple_vars.fini ();
+      tuple_vars = std::move (new_vars);
+    }
+  };
+
   struct tuple_iterator_t
   {
+    unsigned get_axis_count () const { return axis_count; }
+
     void init (hb_bytes_t var_data_bytes_, unsigned int axis_count_, const void *table_base_)
     {
       var_data_bytes = var_data_bytes_;
@@ -469,12 +779,12 @@ struct TupleVariationData
       if (unlikely (p + 1 > end)) return false;
       unsigned control = *p++;
       unsigned run_count = (control & POINT_RUN_COUNT_MASK) + 1;
-      if (unlikely (i + run_count > count)) return false;
-      unsigned j;
+      unsigned stop = i + run_count;
+      if (unlikely (stop > count)) return false;
       if (control & POINTS_ARE_WORDS)
       {
         if (unlikely (p + run_count * HBUINT16::static_size > end)) return false;
-        for (j = 0; j < run_count; j++, i++)
+        for (; i < stop; i++)
         {
           n += *(const HBUINT16 *)p;
           points.arrayZ[i] = n;
@@ -484,7 +794,7 @@ struct TupleVariationData
       else
       {
         if (unlikely (p + run_count > end)) return false;
-        for (j = 0; j < run_count; j++, i++)
+        for (; i < stop; i++)
         {
           n += *p++;
           points.arrayZ[i] = n;
@@ -512,17 +822,17 @@ struct TupleVariationData
       if (unlikely (p + 1 > end)) return false;
       unsigned control = *p++;
       unsigned run_count = (control & DELTA_RUN_COUNT_MASK) + 1;
-      if (unlikely (i + run_count > count)) return false;
-      unsigned j;
+      unsigned stop = i + run_count;
+      if (unlikely (stop > count)) return false;
       if (control & DELTAS_ARE_ZERO)
       {
-        for (j = 0; j < run_count; j++, i++)
+        for (; i < stop; i++)
           deltas.arrayZ[i] = 0;
       }
       else if (control & DELTAS_ARE_WORDS)
       {
         if (unlikely (p + run_count * HBUINT16::static_size > end)) return false;
-        for (j = 0; j < run_count; j++, i++)
+        for (; i < stop; i++)
         {
           deltas.arrayZ[i] = * (const HBINT16 *) p;
           p += HBUINT16::static_size;
@@ -531,7 +841,7 @@ struct TupleVariationData
       else
       {
         if (unlikely (p + run_count > end)) return false;
-        for (j = 0; j < run_count; j++, i++)
+        for (; i < stop; i++)
         {
           deltas.arrayZ[i] = * (const HBINT8 *) p++;
         }
@@ -541,6 +851,21 @@ struct TupleVariationData
   }
 
   bool has_data () const { return tupleVarCount; }
+
+  bool decompile_tuple_variations (unsigned point_count,
+                                   bool is_gvar,
+                                   tuple_iterator_t iterator,
+                                   const hb_map_t *axes_old_index_tag_map,
+                                   const hb_vector_t<unsigned> &shared_indices,
+                                   const hb_array_t<const F2DOT14> shared_tuples,
+                                   tuple_variations_t& tuple_variations /* OUT */) const
+  {
+    return tuple_variations.create_from_tuple_var_data (iterator, tupleVarCount,
+                                                        point_count, is_gvar,
+                                                        axes_old_index_tag_map,
+                                                        shared_indices,
+                                                        shared_tuples);
+  }
 
   protected:
   struct TupleVarCount : HBUINT16

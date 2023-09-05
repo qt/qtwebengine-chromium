@@ -499,6 +499,24 @@
   {
     if ( **d == 30 )
       return cff_parse_real( *d, parser->limit, scaling, NULL );
+    else if ( **d == 255 )
+    {
+      FT_Fixed val = ( ( ( (FT_UInt32)*( d[0] + 1 ) << 24 ) |
+                         ( (FT_UInt32)*( d[0] + 2 ) << 16 ) |
+                         ( (FT_UInt32)*( d[0] + 3 ) <<  8 ) |
+                           (FT_UInt32)*( d[0] + 4 )         ) );
+
+      if ( scaling )
+      {
+        if ( FT_ABS( val ) > power_ten_limits[scaling] )
+        {
+           FT_TRACE4(( "!!!OVERFLOW:!!!" ));
+           return val > 0 ? 0x7FFFFFFFL : -0x7FFFFFFFL;
+        }
+        val *= power_tens[scaling];
+      }
+      return val;
+    }
     else
     {
       FT_Long  val = cff_parse_integer( *d, parser->limit );
@@ -506,7 +524,7 @@
 
       if ( scaling )
       {
-        if ( FT_ABS( val ) > power_ten_limits[scaling] )
+        if ( ( FT_ABS( val ) << 16 ) > power_ten_limits[scaling] )
         {
           val = val > 0 ? 0x7FFFFFFFL : -0x7FFFFFFFL;
           goto Overflow;
@@ -536,7 +554,7 @@
 
 
   /* read a floating point number, either integer or real */
-  static FT_Fixed
+  FT_LOCAL_DEF( FT_Fixed )
   cff_parse_fixed( CFF_Parser  parser,
                    FT_Byte**   d )
   {
@@ -622,7 +640,7 @@
 
       dict->has_font_matrix = TRUE;
 
-      /* We expect a well-formed font matrix, this is, the matrix elements */
+      /* We expect a well-formed font matrix, that is, the matrix elements */
       /* `xx' and `yy' are of approximately the same magnitude.  To avoid  */
       /* loss of precision, we use the magnitude of the largest matrix     */
       /* element to scale all other elements.  The scaling factor is then  */
@@ -1200,8 +1218,8 @@
         FT_Byte*     charstring_base;
         FT_ULong     charstring_len;
 
-        FT_Fixed*      stack;
-        FT_Byte*       q;
+        FT_Fixed*  stack;
+        FT_Byte*   q = NULL;
 
 
         charstring_base = ++p;
@@ -1243,7 +1261,7 @@
         /* converting it back to charstring number representations     */
         /* (this is ugly, I know).                                     */
         /* The maximum required size is 5 bytes per stack element.     */
-        if ( FT_QALLOC( q, 2 * sizeof ( FT_ListNode ) +
+        if ( FT_QALLOC( q, (FT_Long)( 2 * sizeof ( FT_ListNode ) ) +
                            5 * ( decoder.top - decoder.stack ) ) )
           goto Exit;
 

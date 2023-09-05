@@ -13,6 +13,7 @@
 #include "include/gpu/GrContextOptions.h"
 #include "include/gpu/GrDirectContext.h"
 #include "src/base/SkRectMemcpy.h"
+#include "src/gpu/PipelineUtils.h"
 #include "src/gpu/dawn/DawnUtilsPriv.h"
 #include "src/gpu/ganesh/GrDataUtils.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
@@ -60,17 +61,17 @@ static wgpu::FilterMode to_dawn_filter_mode(GrSamplerState::Filter filter) {
     }
 }
 
-static wgpu::FilterMode to_dawn_mipmap_mode(GrSamplerState::MipmapMode mode) {
+static wgpu::MipmapFilterMode to_dawn_mipmap_mode(GrSamplerState::MipmapMode mode) {
     switch (mode) {
         case GrSamplerState::MipmapMode::kNone:
             // Fall-through (Dawn does not have an equivalent for "None")
         case GrSamplerState::MipmapMode::kNearest:
-            return wgpu::FilterMode::Nearest;
+            return wgpu::MipmapFilterMode::Nearest;
         case GrSamplerState::MipmapMode::kLinear:
-            return wgpu::FilterMode::Linear;
+            return wgpu::MipmapFilterMode::Linear;
         default:
             SkDEBUGFAIL("unsupported filter mode");
-            return wgpu::FilterMode::Nearest;
+            return wgpu::MipmapFilterMode::Nearest;
     }
 }
 
@@ -966,7 +967,8 @@ wgpu::Sampler GrDawnGpu::getOrCreateSampler(GrSamplerState samplerState) {
     desc.maxAnisotropy = samplerState.maxAniso();
     if (samplerState.isAniso()) {
         // WebGPU requires these to be linear when maxAnisotropy is > 1.
-        desc.magFilter = desc.minFilter = desc.mipmapFilter = wgpu::FilterMode::Linear;
+        desc.magFilter = desc.minFilter = wgpu::FilterMode::Linear;
+        desc.mipmapFilter = wgpu::MipmapFilterMode::Linear;
     } else {
         desc.magFilter = desc.minFilter = to_dawn_filter_mode(samplerState.filter());
         desc.mipmapFilter = to_dawn_mipmap_mode(samplerState.mipmapMode());
@@ -1003,29 +1005,22 @@ void GrDawnGpu::flushCopyEncoder() {
 std::string GrDawnGpu::SkSLToSPIRV(const char* shaderString,
                                    SkSL::ProgramKind kind,
                                    uint32_t rtFlipOffset,
-                                   SkSL::Program::Inputs* inputs) {
-    auto errorHandler = this->getContext()->priv().getShaderErrorHandler();
+                                   SkSL::Program::Interface* interface) {
     SkSL::ProgramSettings settings;
     settings.fRTFlipOffset = rtFlipOffset;
     settings.fRTFlipBinding = 0;
     settings.fRTFlipSet = 0;
-    std::unique_ptr<SkSL::Program> program = this->shaderCompiler()->convertProgram(
-        kind,
-        shaderString,
-        settings);
-    if (!program) {
-        errorHandler->compileError(shaderString, this->shaderCompiler()->errorText().c_str());
+    std::string outSPIRV;
+    if (!skgpu::SkSLToSPIRV(this->shaderCompiler(),
+                            {shaderString},
+                            kind,
+                            settings,
+                            &outSPIRV,
+                            interface,
+                            this->getContext()->priv().getShaderErrorHandler())) {
         return "";
     }
-    if (inputs) {
-        *inputs = program->fInputs;
-    }
-    std::string code;
-    if (!this->shaderCompiler()->toSPIRV(*program, &code)) {
-        errorHandler->compileError(shaderString, this->shaderCompiler()->errorText().c_str());
-        return "";
-    }
-    return code;
+    return outSPIRV;
 }
 
 wgpu::ShaderModule GrDawnGpu::createShaderModule(const std::string& spirvSource) {

@@ -17,7 +17,7 @@
 namespace v8 {
 namespace internal {
 
-class Factory;
+class LocalFactory;
 
 // The TranslationArray is the on-heap representation of translations created
 // during code generation in a (zone-allocated) TranslationArrayBuilder. The
@@ -72,7 +72,7 @@ class TranslationArrayBuilder {
         basis_instructions_(zone),
         zone_(zone) {}
 
-  Handle<TranslationArray> ToTranslationArray(Factory* factory);
+  Handle<TranslationArray> ToTranslationArray(LocalFactory* factory);
 
   int BeginTranslation(int frame_count, int jsframe_count,
                        bool update_feedback);
@@ -89,6 +89,8 @@ class TranslationArrayBuilder {
   void BeginJSToWasmBuiltinContinuationFrame(
       BytecodeOffset bailout_id, int literal_id, unsigned height,
       base::Optional<wasm::ValueKind> return_kind);
+  void BeginWasmInlinedIntoJSFrame(BytecodeOffset bailout_id, int literal_id,
+                                   unsigned height);
 #endif  // V8_ENABLE_WEBASSEMBLY
   void BeginJavaScriptBuiltinContinuationFrame(BytecodeOffset bailout_id,
                                                int literal_id, unsigned height);

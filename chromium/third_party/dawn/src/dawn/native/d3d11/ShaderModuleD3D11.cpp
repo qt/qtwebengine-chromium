@@ -24,10 +24,10 @@
 #include "dawn/native/TintUtils.h"
 #include "dawn/native/d3d/D3DCompilationRequest.h"
 #include "dawn/native/d3d/D3DError.h"
-#include "dawn/native/d3d11/AdapterD3D11.h"
 #include "dawn/native/d3d11/BackendD3D11.h"
 #include "dawn/native/d3d11/BindGroupLayoutD3D11.h"
 #include "dawn/native/d3d11/DeviceD3D11.h"
+#include "dawn/native/d3d11/PhysicalDeviceD3D11.h"
 #include "dawn/native/d3d11/PipelineLayoutD3D11.h"
 #include "dawn/native/d3d11/PlatformFunctionsD3D11.h"
 #include "dawn/native/d3d11/UtilsD3D11.h"
@@ -125,9 +125,30 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
                 bindingRemapper.binding_points.emplace(srcBindingPoint, dstBindingPoint);
             }
         }
+
+        // Tint will add two bindings (plane1, params) for one external texture binding.
+        // We need to remap the binding points for the two bindings.
+        // we cannot specified the final slot of those two bindings in
+        // req.hlsl.externalTextureOptions because the final slots may be conflict with
+        // existing other bindings, and then they will be remapped again with bindingRemapper
+        // incorrectly. So we have to use intermediate binding slots in
+        // req.hlsl.externalTextureOptions, and then map them to the final slots with
+        // bindingRemapper.
+        for (const auto& [_, expansion] : groupLayout->GetExternalTextureBindingExpansionMap()) {
+            uint32_t plane1Slot = indices[groupLayout->GetBindingIndex(expansion.plane1)];
+            uint32_t paramsSlot = indices[groupLayout->GetBindingIndex(expansion.params)];
+            bindingRemapper.binding_points.emplace(
+                tint::writer::BindingPoint{static_cast<uint32_t>(group),
+                                           static_cast<uint32_t>(expansion.plane1)},
+                tint::writer::BindingPoint{0u, plane1Slot});
+            bindingRemapper.binding_points.emplace(
+                tint::writer::BindingPoint{static_cast<uint32_t>(group),
+                                           static_cast<uint32_t>(expansion.params)},
+                tint::writer::BindingPoint{0u, paramsSlot});
+        }
     }
 
-    std::optional<tint::transform::SubstituteOverride::Config> substituteOverrideConfig;
+    std::optional<tint::ast::transform::SubstituteOverride::Config> substituteOverrideConfig;
     if (!programmableStage.metadata->overrides.empty()) {
         substituteOverrideConfig = BuildSubstituteOverridesTransformConfig(programmableStage);
     }
@@ -158,11 +179,18 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     req.hlsl.limits = LimitsForCompilationRequest::Create(limits.v1);
 
     CacheResult<d3d::CompiledShader> compiledShader;
-    DAWN_TRY_LOAD_OR_RUN(compiledShader, device, std::move(req), d3d::CompiledShader::FromBlob,
-                         d3d::CompileShader);
+    MaybeError compileError = [&]() -> MaybeError {
+        DAWN_TRY_LOAD_OR_RUN(compiledShader, device, std::move(req), d3d::CompiledShader::FromBlob,
+                             d3d::CompileShader);
+        return {};
+    }();
 
-    if (req.hlsl.dumpShaders) {
+    if (device->IsToggleEnabled(Toggle::DumpShaders)) {
         d3d::DumpCompiledShader(device, *compiledShader, compileFlags);
+    }
+
+    if (compileError.IsError()) {
+        return {compileError.AcquireError()};
     }
 
     device->GetBlobCache()->EnsureStored(compiledShader);

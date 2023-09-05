@@ -64,7 +64,7 @@ DEFINE_SDL_UNIQUE_PTR(Texture);
 // event is received.
 class SDLEventLoopProcessor {
  public:
-  SDLEventLoopProcessor(TaskRunner* task_runner,
+  SDLEventLoopProcessor(TaskRunner& task_runner,
                         std::function<void()> quit_callback);
   ~SDLEventLoopProcessor();
 

@@ -9,11 +9,17 @@ assets = [
   "assets/tracebox_aarch64"
 ]
 has_classes_jar = true
-has_native_libraries = false
+has_native_libraries = true
 has_proguard_flags = false
 has_r_text_file = true
 is_manifest_empty = false
 manifest_package = "androidx.benchmark"
+native_libraries = [
+  "jni/armeabi-v7a/libbenchmarkNative.so",
+  "jni/x86/libbenchmarkNative.so",
+  "jni/arm64-v8a/libbenchmarkNative.so",
+  "jni/x86_64/libbenchmarkNative.so"
+]
 resources = [
   "res/layout/isolation_activity.xml",
   "res/drawable-nodpi-v4/logo.png",

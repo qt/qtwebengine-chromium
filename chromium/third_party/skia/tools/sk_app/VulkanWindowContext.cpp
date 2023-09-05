@@ -12,10 +12,10 @@
 #include "include/gpu/GrBackendSemaphore.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
-#include "src/base/SkAutoMalloc.h"
-
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/gpu/vk/GrVkTypes.h"
 #include "include/gpu/vk/VulkanExtensions.h"
+#include "src/base/SkAutoMalloc.h"
 #include "src/gpu/ganesh/vk/GrVkImage.h"
 #include "src/gpu/ganesh/vk/GrVkUtil.h"
 #include "src/gpu/vk/VulkanInterface.h"
@@ -357,19 +357,24 @@ bool VulkanWindowContext::createBuffers(VkFormat format, VkImageUsageFlags usage
 
         if (usageFlags & VK_IMAGE_USAGE_SAMPLED_BIT) {
             GrBackendTexture backendTexture(fWidth, fHeight, info);
-            fSurfaces[i] = SkSurface::MakeFromBackendTexture(
-                    fContext.get(), backendTexture, kTopLeft_GrSurfaceOrigin,
-                    fDisplayParams.fMSAASampleCount,
-                    colorType, fDisplayParams.fColorSpace, &fDisplayParams.fSurfaceProps);
+            fSurfaces[i] = SkSurfaces::WrapBackendTexture(fContext.get(),
+                                                          backendTexture,
+                                                          kTopLeft_GrSurfaceOrigin,
+                                                          fDisplayParams.fMSAASampleCount,
+                                                          colorType,
+                                                          fDisplayParams.fColorSpace,
+                                                          &fDisplayParams.fSurfaceProps);
         } else {
             if (fDisplayParams.fMSAASampleCount > 1) {
                 return false;
             }
             GrBackendRenderTarget backendRT(fWidth, fHeight, fSampleCount, info);
-            fSurfaces[i] = SkSurface::MakeFromBackendRenderTarget(
-                    fContext.get(), backendRT, kTopLeft_GrSurfaceOrigin, colorType,
-                    fDisplayParams.fColorSpace, &fDisplayParams.fSurfaceProps);
-
+            fSurfaces[i] = SkSurfaces::WrapBackendRenderTarget(fContext.get(),
+                                                               backendRT,
+                                                               kTopLeft_GrSurfaceOrigin,
+                                                               colorType,
+                                                               fDisplayParams.fColorSpace,
+                                                               &fDisplayParams.fSurfaceProps);
         }
         if (!fSurfaces[i]) {
             return false;
@@ -535,7 +540,7 @@ sk_sp<SkSurface> VulkanWindowContext::getBackbufferSurface() {
 void VulkanWindowContext::onSwapBuffers() {
 
     BackbufferInfo* backbuffer = fBackbuffers + fCurrentBackbufferIndex;
-    SkSurface* surface = fSurfaces[backbuffer->fImageIndex].get();
+    sk_sp<SkSurface> surface = fSurfaces[backbuffer->fImageIndex];
 
     GrBackendSemaphore beSemaphore;
     beSemaphore.initVulkan(backbuffer->fRenderSemaphore);
@@ -544,8 +549,9 @@ void VulkanWindowContext::onSwapBuffers() {
     info.fNumSemaphores = 1;
     info.fSignalSemaphores = &beSemaphore;
     skgpu::MutableTextureState presentState(VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, fPresentQueueIndex);
-    surface->flush(info, &presentState);
-    surface->recordingContext()->asDirectContext()->submit();
+    auto dContext = surface->recordingContext()->asDirectContext();
+    dContext->flush(surface, info, &presentState);
+    dContext->submit();
 
     // Submit present operation to present queue
     const VkPresentInfoKHR presentInfo =

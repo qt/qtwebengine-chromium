@@ -537,6 +537,12 @@ bool ProgramD3DMetadata::usesCustomOutVars() const
     }
 }
 
+bool ProgramD3DMetadata::usesSampleMask() const
+{
+    const rx::ShaderD3D *shader = mAttachedShaders[gl::ShaderType::Fragment];
+    return (shader && shader->usesSampleMask());
+}
+
 const ShaderD3D *ProgramD3DMetadata::getFragmentShader() const
 {
     return mAttachedShaders[gl::ShaderType::Fragment];
@@ -1147,6 +1153,7 @@ std::unique_ptr<rx::LinkEvent> ProgramD3D::load(const gl::Context *context,
     }
 
     stream->readEnum(&mFragDepthUsage);
+    stream->readBool(&mUsesSampleMask);
     stream->readBool(&mHasANGLEMultiviewEnabled);
     stream->readBool(&mUsesVertexID);
     stream->readBool(&mUsesViewID);
@@ -1443,6 +1450,7 @@ void ProgramD3D::save(const gl::Context *context, gl::BinaryOutputStream *stream
     }
 
     stream->writeEnum(mFragDepthUsage);
+    stream->writeBool(mUsesSampleMask);
     stream->writeBool(mHasANGLEMultiviewEnabled);
     stream->writeBool(mUsesVertexID);
     stream->writeBool(mUsesViewID);
@@ -1565,7 +1573,7 @@ angle::Result ProgramD3D::getPixelExecutableForCachedOutputLayout(
     }
 
     std::string pixelHLSL = mDynamicHLSL->generatePixelShaderForOutputSignature(
-        mShaderHLSL[gl::ShaderType::Fragment], mPixelShaderKey, mFragDepthUsage,
+        mShaderHLSL[gl::ShaderType::Fragment], mPixelShaderKey, mFragDepthUsage, mUsesSampleMask,
         mPixelShaderOutputLayoutCache, mShaderStorageBlocks[gl::ShaderType::Fragment],
         mPixelShaderKey.size());
 
@@ -2171,6 +2179,7 @@ std::unique_ptr<LinkEvent> ProgramD3D::link(const gl::Context *context,
         mUsesPointSize                = vertexShader && vertexShader->usesPointSize();
         mDynamicHLSL->getPixelShaderOutputKey(data, mState, metadata, &mPixelShaderKey);
         mFragDepthUsage           = metadata.getFragDepthUsage();
+        mUsesSampleMask           = metadata.usesSampleMask();
         mUsesVertexID             = metadata.usesVertexID();
         mUsesViewID               = metadata.usesViewID();
         mHasANGLEMultiviewEnabled = metadata.hasANGLEMultiviewEnabled();
@@ -3067,6 +3076,7 @@ void ProgramD3D::reset()
     }
 
     mFragDepthUsage           = FragDepthUsage::Unused;
+    mUsesSampleMask           = false;
     mHasANGLEMultiviewEnabled = false;
     mUsesVertexID             = false;
     mUsesViewID               = false;

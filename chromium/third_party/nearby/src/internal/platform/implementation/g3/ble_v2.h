@@ -15,25 +15,40 @@
 #ifndef PLATFORM_IMPL_G3_BLE_V2_H_
 #define PLATFORM_IMPL_G3_BLE_V2_H_
 
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/container/flat_hash_set.h"
 #include "absl/synchronization/mutex.h"
+#include "internal/platform/borrowable.h"
 #include "internal/platform/byte_array.h"
 #include "internal/platform/implementation/ble_v2.h"
 #include "internal/platform/implementation/g3/bluetooth_adapter.h"
 #include "internal/platform/implementation/g3/pipe.h"
+#include "internal/platform/medium_environment.h"
 #include "internal/platform/prng.h"
 #include "internal/platform/uuid.h"
 
 namespace nearby {
 namespace g3 {
 
-class BleV2nMedium;
+// BlePeripheral implementation.
+class BleV2Peripheral : public api::ble_v2::BlePeripheral {
+ public:
+  explicit BleV2Peripheral(BluetoothAdapter* adapter);
+  std::string GetAddress() const override;
+  api::ble_v2::BlePeripheral::UniqueId GetUniqueId() const override;
+
+  BluetoothAdapter& GetAdapter() { return adapter_; }
+
+ private:
+  BluetoothAdapter& adapter_;
+};
 
 class BleV2Socket : public api::ble_v2::BleSocket {
  public:
@@ -205,10 +220,26 @@ class BleV2Medium : public api::ble_v2::BleMedium {
 
   BluetoothAdapter& GetAdapter() { return *adapter_; }
 
+  BleV2Peripheral& GetPeripheral() { return peripheral_; }
+
+  bool GetRemotePeripheral(const std::string& mac_address,
+                           GetRemotePeripheralCallback callback) override;
+
+  bool GetRemotePeripheral(api::ble_v2::BlePeripheral::UniqueId id,
+                           GetRemotePeripheralCallback callback) override;
+
  private:
+  class GattClient;
   // A concrete implementation for GattServer.
   class GattServer : public api::ble_v2::GattServer {
    public:
+    GattServer(BleV2Medium& medium,
+               api::ble_v2::ServerGattConnectionCallback callback);
+    ~GattServer() override;
+
+    api::ble_v2::BlePeripheral& GetBlePeripheral() override {
+      return ble_peripheral_;
+    }
     std::optional<api::ble_v2::GattCharacteristic> CreateCharacteristic(
         const Uuid& service_uuid, const Uuid& characteristic_uuid,
         api::ble_v2::GattCharacteristic::Permission permission,
@@ -223,11 +254,62 @@ class BleV2Medium : public api::ble_v2::BleMedium {
         const ByteArray& new_value) override;
 
     void Stop() override;
+    bool IsStopped() { return stopped_; }
+    bool DiscoverBleV2MediumGattCharacteristics(
+        const Uuid& service_uuid,
+        const std::vector<Uuid>& characteristic_uuids);
+
+    absl::StatusOr<ByteArray> ReadCharacteristic(
+        const BleV2Peripheral& remote_device,
+        const api::ble_v2::GattCharacteristic& characteristic, int offset);
+
+    absl::Status WriteCharacteristic(
+        const BleV2Peripheral& remote_device,
+        const api::ble_v2::GattCharacteristic& characteristic, int offset,
+        absl::string_view data);
+
+    bool AddCharacteristicSubscription(
+        const BleV2Peripheral& remote_device,
+        const api::ble_v2::GattCharacteristic& characteristic,
+        absl::AnyInvocable<void(absl::string_view value)>);
+    bool RemoveCharacteristicSubscription(
+        const BleV2Peripheral& remote_device,
+        const api::ble_v2::GattCharacteristic& characteristic);
+
+    bool HasCharacteristic(
+        const api::ble_v2::GattCharacteristic& characteristic);
+
+    void Connect(GattClient* client) { connected_clients_.push_back(client); }
+    void Disconnect(GattClient* client) {
+      connected_clients_.erase(std::remove(connected_clients_.begin(),
+                                           connected_clients_.end(), client),
+                               connected_clients_.end());
+    }
+
+   private:
+    using SubscriberKey =
+        std::pair<const BleV2Peripheral*, api::ble_v2::GattCharacteristic>;
+    using SubscriberCallback =
+        absl::AnyInvocable<void(absl::string_view value)>;
+    BleV2Medium& medium_;
+    api::ble_v2::ServerGattConnectionCallback callback_;
+    BleV2Peripheral ble_peripheral_;
+    absl::flat_hash_map<api::ble_v2::GattCharacteristic,
+                        absl::StatusOr<ByteArray>>
+        characteristics_;
+    absl::flat_hash_map<SubscriberKey, SubscriberCallback> subscribers_;
+    std::vector<GattClient*> connected_clients_;
+    std::atomic_bool stopped_ = false;
+    Lender<api::ble_v2::GattServer*> lender_{this};
   };
 
   // A concrete implementation for GattClient.
   class GattClient : public api::ble_v2::GattClient {
    public:
+    GattClient(api::ble_v2::BlePeripheral& peripheral,
+               Borrowable<api::ble_v2::GattServer*> gatt_server,
+               api::ble_v2::ClientGattConnectionCallback callback);
+    ~GattClient() override;
     bool DiscoverServiceAndCharacteristics(
         const Uuid& service_uuid,
         const std::vector<Uuid>& characteristic_uuids) override;
@@ -250,17 +332,27 @@ class BleV2Medium : public api::ble_v2::BleMedium {
 
     void Disconnect() override;
 
+    void OnServerDisconnected();
+
    private:
     absl::Mutex mutex_;
 
     // A flag to indicate the gatt connection alive or not. If it is
-    // disconnected/*false*/, the instance needs to be created again to bring it
-    // alive.
+    // disconnected/*false*/, the instance needs to be created again to bring
+    // it alive.
     bool is_connection_alive_ ABSL_GUARDED_BY(mutex_) = true;
+    BleV2Peripheral& peripheral_;
+    Borrowable<api::ble_v2::GattServer*> gatt_server_;
+    api::ble_v2::ClientGattConnectionCallback callback_;
   };
 
+  bool IsStopped(Borrowable<api::ble_v2::GattServer*>* server);
   absl::Mutex mutex_;
   BluetoothAdapter* adapter_;  // Our device adapter; read-only.
+  BleV2Peripheral peripheral_{adapter_};
+  absl::flat_hash_map<api::ble_v2::BlePeripheral::UniqueId,
+                      std::unique_ptr<BleV2Peripheral>>
+      remote_peripherals_ ABSL_GUARDED_BY(mutex_);
   absl::flat_hash_map<std::string, BleV2ServerSocket*> server_sockets_
       ABSL_GUARDED_BY(mutex_);
   absl::flat_hash_set<std::pair<Uuid, std::uint32_t>>

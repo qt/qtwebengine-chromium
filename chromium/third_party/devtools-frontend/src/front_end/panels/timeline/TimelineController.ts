@@ -7,7 +7,6 @@ import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
-import * as Bindings from '../../models/bindings/bindings.js';
 import * as TimelineModel from '../../models/timeline_model/timeline_model.js';
 import * as TraceEngine from '../../models/trace/trace.js';
 import type * as Protocol from '../../generated/protocol.js';
@@ -53,9 +52,7 @@ export class TimelineController implements SDK.TargetManager.SDKModelObserver<SD
     this.performanceModel = new PerformanceModel();
     this.performanceModel.setMainTarget(target);
     this.client = client;
-
-    const backingStorage = new Bindings.TempFile.TempFileBackingStorage();
-    this.tracingModel = new SDK.TracingModel.TracingModel(backingStorage);
+    this.tracingModel = new SDK.TracingModel.TracingModel();
 
     SDK.TargetManager.TargetManager.instance().observeModels(SDK.CPUProfilerModel.CPUProfilerModel, this);
   }
@@ -100,7 +97,7 @@ export class TimelineController implements SDK.TargetManager.SDKModelObserver<SD
     if (Root.Runtime.experiments.isEnabled('timelineV8RuntimeCallStats') && options.enableJSSampling) {
       categoriesArray.push(disabledByDefault('v8.runtime_stats_sampling'));
     }
-    if (!Root.Runtime.Runtime.queryParam('timelineTracingJSProfileDisabled') && options.enableJSSampling) {
+    if (options.enableJSSampling) {
       categoriesArray.push(disabledByDefault('v8.cpu_profiler'));
     }
     if (Root.Runtime.experiments.isEnabled('timelineInvalidationTracking')) {
@@ -116,7 +113,7 @@ export class TimelineController implements SDK.TargetManager.SDKModelObserver<SD
     }
 
     this.performanceModel.setRecordStartTime(Date.now());
-    const response = await this.startRecordingWithCategories(categoriesArray.join(','), options.enableJSSampling);
+    const response = await this.startRecordingWithCategories(categoriesArray.join(','));
     if (response.getError()) {
       await this.waitForTracingToStop(false);
       await SDK.TargetManager.TargetManager.instance().resumeAllTargets();
@@ -162,12 +159,6 @@ export class TimelineController implements SDK.TargetManager.SDKModelObserver<SD
     // but it's too late. Backend connection is closed.
   }
 
-  private async startProfilingOnAllModels(): Promise<void> {
-    this.profiling = true;
-    const models = SDK.TargetManager.TargetManager.instance().models(SDK.CPUProfilerModel.CPUProfilerModel);
-    await Promise.all(models.map(model => model.startRecording()));
-  }
-
   private addCpuProfile(targetId: Protocol.Target.TargetID|'main', cpuProfile: Protocol.Profiler.Profile|null): void {
     if (!cpuProfile) {
       Common.Console.Console.instance().warn(i18nString(UIStrings.cpuProfileForATargetIsNot));
@@ -192,8 +183,7 @@ export class TimelineController implements SDK.TargetManager.SDKModelObserver<SD
     await Promise.all(promises);
   }
 
-  private async startRecordingWithCategories(categories: string, enableJSSampling?: boolean):
-      Promise<Protocol.ProtocolResponseWithError> {
+  private async startRecordingWithCategories(categories: string): Promise<Protocol.ProtocolResponseWithError> {
     if (!this.tracingManager) {
       throw new Error(UIStrings.tracingNotSupported);
     }
@@ -201,10 +191,6 @@ export class TimelineController implements SDK.TargetManager.SDKModelObserver<SD
     // caused by starting CPU profiler, that needs to traverse JS heap to collect
     // all the functions data.
     await SDK.TargetManager.TargetManager.instance().suspendAllTargets('performance-timeline');
-    if (enableJSSampling && Root.Runtime.Runtime.queryParam('timelineTracingJSProfileDisabled')) {
-      await this.startProfilingOnAllModels();
-    }
-
     return this.tracingManager.start(this, categories, '');
   }
 
@@ -371,7 +357,7 @@ export interface Client {
   loadingProgress(progress?: number): void;
   loadingComplete(
       tracingModel: SDK.TracingModel.TracingModel|null,
-      exclusiveFilter: TimelineModel.TimelineModelFilter.TimelineModelFilter|null): void;
+      exclusiveFilter: TimelineModel.TimelineModelFilter.TimelineModelFilter|null): Promise<void>;
   loadingCompleteForTest(): void;
 }
 export interface RecordingOptions {

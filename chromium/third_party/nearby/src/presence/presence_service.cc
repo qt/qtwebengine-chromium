@@ -16,25 +16,30 @@
 
 #include <memory>
 #include <utility>
+#include <vector>
 
 #include "internal/platform/borrowable.h"
 #include "presence/data_types.h"
 #include "presence/implementation/service_controller_impl.h"
+#include "presence/presence_client_impl.h"
 
 namespace nearby {
 namespace presence {
 PresenceService::PresenceService() {
-  this->service_controller_ = std::make_unique<ServiceControllerImpl>();
+  service_controller_ = std::make_unique<ServiceControllerImpl>();
+  provider_ = std::make_unique<PresenceDeviceProvider>(
+      service_controller_->GetLocalDeviceMetadata());
 }
 
-PresenceClient PresenceService::CreatePresenceClient() {
-  return PresenceClient(lender_.GetBorrowable());
+std::unique_ptr<PresenceClient> PresenceService::CreatePresenceClient() {
+  return PresenceClientImpl::Factory::Create(lender_.GetBorrowable());
 }
 
 absl::StatusOr<ScanSessionId> PresenceService::StartScan(
     ScanRequest scan_request, ScanCallback callback) {
   return service_controller_->StartScan(scan_request, std::move(callback));
 }
+
 void PresenceService::StopScan(ScanSessionId id) {
   service_controller_->StopScan(id);
 }
@@ -47,6 +52,22 @@ absl::StatusOr<BroadcastSessionId> PresenceService::StartBroadcast(
 
 void PresenceService::StopBroadcast(BroadcastSessionId session) {
   service_controller_->StopBroadcast(session);
+}
+
+void PresenceService::GetLocalPublicCredentials(
+    const CredentialSelector& credential_selector,
+    GetPublicCredentialsResultCallback callback) {
+  service_controller_->GetLocalPublicCredentials(credential_selector,
+                                                 std::move(callback));
+}
+
+void PresenceService::UpdateRemotePublicCredentials(
+    absl::string_view manager_app_id, absl::string_view account_name,
+    const std::vector<nearby::internal::SharedCredential>& remote_public_creds,
+    UpdateRemotePublicCredentialsCallback credentials_updated_cb) {
+  service_controller_->UpdateRemotePublicCredentials(
+      manager_app_id, account_name, remote_public_creds,
+      std::move(credentials_updated_cb));
 }
 
 }  // namespace presence

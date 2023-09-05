@@ -360,6 +360,7 @@ public:
     
   StorageVal(const StorageIndex& innerIndex, const Scalar& value) : m_innerIndex(innerIndex), m_value(value) {}
   StorageVal(const StorageVal& other) : m_innerIndex(other.m_innerIndex), m_value(other.m_value) {}
+  StorageVal(StorageVal&& other) = default;
 
   inline const StorageIndex& key() const { return m_innerIndex; }
   inline StorageIndex& key() { return m_innerIndex; }
@@ -382,6 +383,9 @@ class StorageRef
 {
 public:
   using value_type = StorageVal<Scalar, StorageIndex>;
+  
+  // StorageRef Needs to be move-able for sort on macos.
+  StorageRef(StorageRef&& other) = default;
 
   inline StorageRef& operator=(const StorageRef& other) {
     key() = other.key();
@@ -436,6 +440,7 @@ public:
   CompressedStorageIterator(difference_type index, StorageIndex* innerIndexPtr, Scalar* valuePtr) : m_index(index), m_data(innerIndexPtr, valuePtr) {}
   CompressedStorageIterator(difference_type index, reference data) : m_index(index), m_data(data) {}
   CompressedStorageIterator(const CompressedStorageIterator& other) : m_index(other.m_index), m_data(other.m_data) {}
+  CompressedStorageIterator(CompressedStorageIterator&& other) = default;
   inline CompressedStorageIterator& operator=(const CompressedStorageIterator& other) {
     m_index = other.m_index;
     m_data = other.m_data;

@@ -83,7 +83,7 @@ class CastAppDiscoveryServiceImplTest : public ::testing::Test {
   VirtualConnectionRouter router_;
   FakeClock clock_{Clock::now()};
   FakeTaskRunner task_runner_{&clock_};
-  CastPlatformClient platform_client_{&router_, &FakeClock::now, &task_runner_};
+  CastPlatformClient platform_client_{&router_, &FakeClock::now, task_runner_};
   CastAppDiscoveryServiceImpl app_discovery_service_{&platform_client_,
                                                      &FakeClock::now};
 

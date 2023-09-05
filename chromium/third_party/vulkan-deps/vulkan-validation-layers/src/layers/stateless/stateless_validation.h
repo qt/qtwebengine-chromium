@@ -1014,7 +1014,7 @@ class StatelessValidation : public ValidationObject {
     bool ValidateValidationFeatures(const VkInstanceCreateInfo *pCreateInfo,
                                     const VkValidationFeaturesEXT *validation_features) const;
 
-    bool ValidateApiVersion(uint32_t api_version, uint32_t effective_api_version) const;
+    bool ValidateApiVersion(uint32_t api_version, APIVersion effective_api_version) const;
 
     bool ValidateString(const char *apiName, const ParameterName &stringName, const std::string &vuid,
                         const char *validateString) const;
@@ -1368,6 +1368,8 @@ class StatelessValidation : public ValidationObject {
                                                                VkSamplerYcbcrConversion *pYcbcrConversion) const;
 
     bool manual_PreCallValidateGetMemoryFdKHR(VkDevice device, const VkMemoryGetFdInfoKHR *pGetFdInfo, int *pFd) const;
+    bool manual_PreCallValidateGetMemoryFdPropertiesKHR(VkDevice device, VkExternalMemoryHandleTypeFlagBits handleType, int fd,
+                                                        VkMemoryFdPropertiesKHR *pMemoryFdProperties) const;
     bool ValidateExternalSemaphoreHandleType(VkSemaphore semaphore, const char *vuid, const char *caller,
                                              VkExternalSemaphoreHandleTypeFlagBits handle_type,
                                              VkExternalSemaphoreHandleTypeFlags allowed_types) const;
@@ -1382,6 +1384,9 @@ class StatelessValidation : public ValidationObject {
     bool manual_PreCallValidateGetFenceFdKHR(VkDevice device, const VkFenceGetFdInfoKHR *pGetFdInfo, int *pFd) const;
 
 #ifdef VK_USE_PLATFORM_WIN32_KHR
+    bool manual_PreCallValidateGetMemoryWin32HandlePropertiesKHR(
+        VkDevice device, VkExternalMemoryHandleTypeFlagBits handleType, HANDLE handle,
+        VkMemoryWin32HandlePropertiesKHR *pMemoryWin32HandleProperties) const;
     bool manual_PreCallValidateImportSemaphoreWin32HandleKHR(
         VkDevice device, const VkImportSemaphoreWin32HandleInfoKHR *pImportSemaphoreWin32HandleInfo) const;
     bool manual_PreCallValidateGetSemaphoreWin32HandleKHR(VkDevice device,

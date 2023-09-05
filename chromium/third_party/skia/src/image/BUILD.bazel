@@ -12,9 +12,13 @@ CORE_FILES = [
     "SkImage_Lazy.cpp",
     "SkImage_Lazy.h",
     "SkImage_LazyFactories.cpp",
+    "SkImage_Picture.cpp",
+    "SkImage_Picture.h",
     "SkImage_Raster.cpp",
     "SkImage_Raster.h",
     "SkImage_RasterFactories.cpp",
+    "SkPictureImageGenerator.cpp",
+    "SkPictureImageGenerator.h",
     "SkRescaleAndReadPixels.cpp",
     "SkRescaleAndReadPixels.h",
     "SkSurface.cpp",
@@ -23,6 +27,7 @@ CORE_FILES = [
     "SkSurface_Null.cpp",
     "SkSurface_Raster.cpp",
     "SkSurface_Raster.h",
+    "SkTiledImageUtils.cpp",
 ]
 
 split_srcs_and_hdrs(

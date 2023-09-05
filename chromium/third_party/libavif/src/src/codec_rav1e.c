@@ -57,6 +57,7 @@ static avifResult rav1eCodecEncodeImage(avifCodec * codec,
                                         int tileColsLog2,
                                         int quantizer,
                                         avifEncoderChanges encoderChanges,
+                                        avifBool disableLaggedOutput,
                                         uint32_t addImageFlags,
                                         avifCodecEncodeOutput * output)
 {
@@ -77,6 +78,9 @@ static avifResult rav1eCodecEncodeImage(avifCodec * codec,
     if (encoder->extraLayerCount > 0) {
         return AVIF_RESULT_NOT_IMPLEMENTED;
     }
+
+    // rav1e does not support disabling lagged output. See https://github.com/xiph/rav1e/issues/2267. Ignore this setting.
+    (void)disableLaggedOutput;
 
     avifResult result = AVIF_RESULT_UNKNOWN_ERROR;
 
@@ -169,6 +173,12 @@ static avifResult rav1eCodecEncodeImage(avifCodec * codec,
         if (encoder->speed != AVIF_SPEED_DEFAULT) {
             int speed = AVIF_CLAMP(encoder->speed, 0, 10);
             if (rav1e_config_parse_int(rav1eConfig, "speed", speed) == -1) {
+                goto cleanup;
+            }
+        }
+        if (encoder->keyframeInterval > 0) {
+            // "key_frame_interval" is the maximum interval between two keyframes.
+            if (rav1e_config_parse_int(rav1eConfig, "key_frame_interval", encoder->keyframeInterval) == -1) {
                 goto cleanup;
             }
         }

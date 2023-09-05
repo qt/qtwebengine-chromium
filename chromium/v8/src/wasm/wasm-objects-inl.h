@@ -146,8 +146,8 @@ double WasmGlobalObject::GetF64() {
   return base::ReadUnalignedValue<double>(address());
 }
 
-byte* WasmGlobalObject::GetS128RawBytes() {
-  return reinterpret_cast<byte*>(address());
+uint8_t* WasmGlobalObject::GetS128RawBytes() {
+  return reinterpret_cast<uint8_t*>(address());
 }
 
 Handle<Object> WasmGlobalObject::GetRef() {
@@ -178,9 +178,10 @@ void WasmGlobalObject::SetRef(Handle<Object> value) {
 }
 
 // WasmInstanceObject
-SANDBOXED_POINTER_ACCESSORS(WasmInstanceObject, memory_start, byte*,
-                            kMemoryStartOffset)
-PRIMITIVE_ACCESSORS(WasmInstanceObject, memory_size, size_t, kMemorySizeOffset)
+SANDBOXED_POINTER_ACCESSORS(WasmInstanceObject, memory0_start, uint8_t*,
+                            kMemory0StartOffset)
+PRIMITIVE_ACCESSORS(WasmInstanceObject, memory0_size, size_t,
+                    kMemory0SizeOffset)
 PRIMITIVE_ACCESSORS(WasmInstanceObject, stack_limit_address, Address,
                     kStackLimitAddressOffset)
 PRIMITIVE_ACCESSORS(WasmInstanceObject, real_stack_limit_address, Address,
@@ -195,9 +196,9 @@ PRIMITIVE_ACCESSORS(WasmInstanceObject, old_allocation_top_address, Address*,
                     kOldAllocationTopAddressOffset)
 PRIMITIVE_ACCESSORS(WasmInstanceObject, isorecursive_canonical_types,
                     const uint32_t*, kIsorecursiveCanonicalTypesOffset)
-SANDBOXED_POINTER_ACCESSORS(WasmInstanceObject, globals_start, byte*,
+SANDBOXED_POINTER_ACCESSORS(WasmInstanceObject, globals_start, uint8_t*,
                             kGlobalsStartOffset)
-ACCESSORS(WasmInstanceObject, imported_mutable_globals, ByteArray,
+ACCESSORS(WasmInstanceObject, imported_mutable_globals, FixedAddressArray,
           kImportedMutableGlobalsOffset)
 ACCESSORS(WasmInstanceObject, imported_function_targets, FixedAddressArray,
           kImportedFunctionTargetsOffset)
@@ -213,6 +214,8 @@ PRIMITIVE_ACCESSORS(WasmInstanceObject, hook_on_function_call_address, Address,
                     kHookOnFunctionCallAddressOffset)
 PRIMITIVE_ACCESSORS(WasmInstanceObject, tiering_budget_array, uint32_t*,
                     kTieringBudgetArrayOffset)
+ACCESSORS(WasmInstanceObject, memory_bases_and_sizes, FixedAddressArray,
+          kMemoryBasesAndSizesOffset)
 ACCESSORS(WasmInstanceObject, data_segment_starts, FixedAddressArray,
           kDataSegmentStartsOffset)
 ACCESSORS(WasmInstanceObject, data_segment_sizes, FixedUInt32Array,
@@ -226,8 +229,7 @@ ACCESSORS(WasmInstanceObject, module_object, WasmModuleObject,
           kModuleObjectOffset)
 ACCESSORS(WasmInstanceObject, exports_object, JSObject, kExportsObjectOffset)
 ACCESSORS(WasmInstanceObject, native_context, Context, kNativeContextOffset)
-OPTIONAL_ACCESSORS(WasmInstanceObject, memory_object, WasmMemoryObject,
-                   kMemoryObjectOffset)
+ACCESSORS(WasmInstanceObject, memory_objects, FixedArray, kMemoryObjectsOffset)
 OPTIONAL_ACCESSORS(WasmInstanceObject, untagged_globals_buffer, JSArrayBuffer,
                    kUntaggedGlobalsBufferOffset)
 OPTIONAL_ACCESSORS(WasmInstanceObject, tagged_globals_buffer, FixedArray,
@@ -248,13 +250,27 @@ ACCESSORS(WasmInstanceObject, managed_object_maps, FixedArray,
           kManagedObjectMapsOffset)
 ACCESSORS(WasmInstanceObject, feedback_vectors, FixedArray,
           kFeedbackVectorsOffset)
+ACCESSORS(WasmInstanceObject, well_known_imports, FixedArray,
+          kWellKnownImportsOffset)
 
 void WasmInstanceObject::clear_padding() {
-  if (FIELD_SIZE(kOptionalPaddingOffset) != 0) {
+  if constexpr (FIELD_SIZE(kOptionalPaddingOffset) != 0) {
     DCHECK_EQ(4, FIELD_SIZE(kOptionalPaddingOffset));
     memset(reinterpret_cast<void*>(address() + kOptionalPaddingOffset), 0,
            FIELD_SIZE(kOptionalPaddingOffset));
   }
+}
+
+WasmMemoryObject WasmInstanceObject::memory_object(int memory_index) const {
+  return WasmMemoryObject::cast(memory_objects().get(memory_index));
+}
+
+Address WasmInstanceObject::memory_base(int memory_index) const {
+  return memory_bases_and_sizes().get_sandboxed_pointer(2 * memory_index);
+}
+
+size_t WasmInstanceObject::memory_size(int memory_index) const {
+  return memory_bases_and_sizes().get(2 * memory_index + 1);
 }
 
 ImportedFunctionEntry::ImportedFunctionEntry(

@@ -8,6 +8,7 @@
 
 #include "include/core/SkTypes.h"
 #include "include/private/base/SkMutex.h"
+#include "src/base/SkNoDestructor.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLModifiersPool.h"
@@ -169,7 +170,7 @@ struct ModuleLoader::Impl {
 };
 
 ModuleLoader ModuleLoader::Get() {
-    static ModuleLoader::Impl* sModuleLoaderImpl = new ModuleLoader::Impl;
+    static SkNoDestructor<ModuleLoader::Impl> sModuleLoaderImpl;
     return ModuleLoader(*sModuleLoaderImpl);
 }
 
@@ -432,12 +433,12 @@ void ModuleLoader::Impl::makeRootSymbolTable() {
     // sk_Caps is "builtin", but all references to it are resolved to Settings, so we don't need to
     // treat it as builtin (ie, no need to clone it into the Program).
     rootModule->fSymbols->add(std::make_unique<Variable>(/*pos=*/Position(),
-                                                          /*modifiersPosition=*/Position(),
-                                                          fCoreModifiers.add(Modifiers{}),
-                                                          "sk_Caps",
-                                                          fBuiltinTypes.fSkCaps.get(),
-                                                          /*builtin=*/false,
-                                                          Variable::Storage::kGlobal));
+                                                         /*modifiersPosition=*/Position(),
+                                                         fCoreModifiers.add(Modifiers{}),
+                                                         "sk_Caps",
+                                                         fBuiltinTypes.fSkCaps.get(),
+                                                         /*builtin=*/false,
+                                                         Variable::Storage::kGlobal));
     fRootModule = std::move(rootModule);
 }
 

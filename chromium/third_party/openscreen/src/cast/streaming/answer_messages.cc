@@ -8,6 +8,7 @@
 
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_split.h"
+#include "cast/streaming/constants.h"
 #include "platform/base/error.h"
 #include "util/enum_name_table.h"
 #include "util/json/json_helpers.h"
@@ -27,10 +28,6 @@ static constexpr char kVideo[] = "video";
 // by the receiver, the sender will use kDefaultAudioMinBitRate and
 // kDefaultVideoMinBitRate, which represent the true operational minimum.
 static constexpr char kMinBitRate[] = "minBitRate";
-// 32kbps is sender default for audio minimum bit rate.
-static constexpr int kDefaultAudioMinBitRate = 32 * 1000;
-// 300kbps is sender default for video minimum bit rate.
-static constexpr int kDefaultVideoMinBitRate = 300 * 1000;
 
 // Maximum encoded bits per second. This is the lower of (1) the max capability
 // of the decoder, or (2) the max data transfer rate.

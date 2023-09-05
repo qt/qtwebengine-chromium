@@ -79,7 +79,7 @@ public:
             return surface;
         }
         // serialize-8888 returns null from makeSurface; fallback to a raster surface.
-        return SkSurface::MakeRaster(info);
+        return SkSurfaces::Raster(info);
     }
 
     void draw(SkCanvas* canvas, sk_sp<SkImage> input, int blurRadius) {
@@ -115,7 +115,6 @@ public:
         canvas->drawImage(drawSurface->makeImageSnapshot(), input->width() / 4, 0,
                           SkSamplingOptions());
         canvas->translate(input->width() / 4, input->height() * 0.75);
-        drawSurface->flush();
 
         // And now we'll ping pong between our surfaces, to accumulate the result of various
         // offsets.

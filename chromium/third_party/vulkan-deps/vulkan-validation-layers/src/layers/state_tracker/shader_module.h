@@ -58,6 +58,8 @@ struct DecorationBase {
     // Component is optional and spec says it is 0 if not defined
     uint32_t component = 0;
 
+    uint32_t offset = 0;
+
     // A given object can only have a single BuiltIn OpDecoration
     uint32_t builtin = kInvalidValue;
 
@@ -138,10 +140,46 @@ struct TypeStructInfo {
     const uint32_t id;
     const uint32_t length;  // number of elements
     const DecorationSet &decorations;
-    std::vector<uint32_t> member_ids;
+
+    // data about each member in struct
+    struct Member {
+        uint32_t id;
+        const Instruction *insn;
+        const DecorationBase *decorations;
+        std::shared_ptr<const TypeStructInfo> type_struct_info;  // for nested structs
+    };
+    std::vector<Member> members;
 
     TypeStructInfo(const SHADER_MODULE_STATE &module_state, const Instruction &struct_insn);
 };
+
+// Represents the OpImage* instructions and how it maps to the variable
+// This is created in the SHADER_MODULE_STATE but then used with VariableBase objects
+struct ImageAccess {
+    const Instruction &image_insn;  // OpImage*
+    const Instruction *variable_image_insn = nullptr;
+    // If there is a OpSampledImage there will also be a sampler variable
+    const Instruction *variable_sampler_insn = nullptr;
+    bool no_function_jump = true;  // TODO 5614 - Handle function jumps
+
+    bool is_dref = false;
+    bool is_sampler_implicitLod_dref_proj = false;
+    bool is_sampler_sampled = false;
+    bool is_sampler_bias_offset = false;
+    bool is_written_to = false;
+    bool is_read_from = false;
+
+    static constexpr uint32_t kInvalidValue = std::numeric_limits<uint32_t>::max();
+    uint32_t image_access_chain_index = kInvalidValue;    // Index 0
+    uint32_t sampler_access_chain_index = kInvalidValue;  // Index 0
+    uint32_t texel_component_count = kInvalidValue;
+
+    ImageAccess(const SHADER_MODULE_STATE &module_state, const Instruction &image_insn);
+};
+
+// <Image OpVariable Result ID, [ImageAccess, ImageAccess, etc] > - used for faster lookup
+// Many ImageAccess can point to a single Image Variable
+using ImageAccessMap = vvl::unordered_map<uint32_t, std::vector<std::shared_ptr<const ImageAccess>>>;
 
 // A slot is a <Location, Component> mapping
 struct InterfaceSlot {
@@ -241,22 +279,21 @@ struct StageInteraceVariable : public VariableBase {
 // at draw/submit time we can cross reference with the last bound descriptor.
 struct ResourceInterfaceVariable : public VariableBase {
     // If the type is a OpTypeArray save the length
-    uint32_t array_length = 0;
-    bool runtime_array = false;  // OpTypeRuntimeArray - can't validate length until run time
+    uint32_t array_length;
+    bool runtime_array;  // OpTypeRuntimeArray - can't validate length until run time
+
+    bool is_sampled_image;  // OpTypeSampledImage
 
     // List of samplers that sample a given image. The index of array is index of image.
     std::vector<vvl::unordered_set<SamplerUsedByImage>> samplers_used_by_image;
 
-    // For storage images - list of < OpImageWrite : Texel component length >
-    std::vector<std::pair<Instruction, uint32_t>> write_without_formats_component_count_list;
+    // For storage images - list of Texel component length the OpImageWrite
+    std::vector<uint32_t> write_without_formats_component_count_list;
 
     // A variable can have an array of indexes, need to track which are written to
     // can't use bitset because number of indexes isn't known until runtime
     // This array will match the OpTypeArray and not consider the InputAttachmentIndex
     std::vector<bool> input_attachment_index_read;
-
-    // Sampled Type width of the OpTypeImage the variable points to, 0 if doesn't use the image
-    uint32_t image_sampled_type_width = 0;
 
     // Type once array/pointer are stripped
     // most likly will be OpTypeImage, OpTypeStruct, OpTypeSampler, or OpTypeAccelerationStructureKHR
@@ -267,6 +304,8 @@ struct ResourceInterfaceVariable : public VariableBase {
     const spv::Dim image_dim;
     const bool is_image_array;
     const bool is_multisampled;
+    // Sampled Type width of the OpTypeImage the variable points to, 0 if doesn't use the image
+    uint32_t image_sampled_type_width = 0;
 
     bool is_read_from{false};   // has operation to reads from the variable
     bool is_written_to{false};  // has operation to writes to the variable
@@ -283,9 +322,10 @@ struct ResourceInterfaceVariable : public VariableBase {
     bool is_sampler_bias_offset{false};
     bool is_read_without_format{false};   // For storage images
     bool is_write_without_format{false};  // For storage images
-    bool is_dref_operation{false};
+    bool is_dref{false};
 
-    ResourceInterfaceVariable(const SHADER_MODULE_STATE &module_state, const EntryPoint &entrypoint, const Instruction &insn);
+    ResourceInterfaceVariable(const SHADER_MODULE_STATE &module_state, const EntryPoint &entrypoint, const Instruction &insn,
+                              const ImageAccessMap &image_access_map);
 
   protected:
     static const Instruction &FindBaseType(ResourceInterfaceVariable &variable, const SHADER_MODULE_STATE &module_state);
@@ -297,63 +337,16 @@ struct ResourceInterfaceVariable : public VariableBase {
 inline bool operator==(const ResourceInterfaceVariable &a, const ResourceInterfaceVariable &b) noexcept { return a.id == b.id; }
 inline bool operator<(const ResourceInterfaceVariable &a, const ResourceInterfaceVariable &b) noexcept { return a.id < b.id; }
 
-// Contains all the details for a OpTypeStruct for Push Constants
-// TODO - Replace with TypeStructInfo
-struct StructInfo {
-    uint32_t offset;
-    uint32_t size;                                 // A scalar size or a struct size. Not consider array
-    std::vector<uint32_t> array_length_hierarchy;  // multi-dimensional array, mat, vec. mat is combined with 2 array.
-                                                   // e.g :array[2] -> {2}, array[2][3][4] -> {2,3,4}, mat4[2] ->{2,4,4},
-    std::vector<uint32_t> array_block_size;        // When index increases, how many data increases.
-                                             // e.g : array[2][3][4] -> {12,4,1}, it means if the first index increases one, the
-                                             // array gets 12 data. If the second index increases one, the array gets 4 data.
+// vkspec.html#interfaces-resources-pushconst
+// Push constants need to be statically used in shader
+// Push constants are always OpTypeStruct and Block decorated
+struct PushConstantVariable : public VariableBase {
+    // This info could be found/saved in TypeStructInfo, but since Push Constants are the only ones using it right now, no point to
+    // do it for every struct
+    uint32_t offset;  // where first member is
+    uint32_t size;    // total size of block
 
-    // OpTypeStruct can have OpTypeStruct inside it so need to track the struct-in-struct chain
-    std::vector<StructInfo> struct_members;  // If the data is not a struct, it's empty.
-    StructInfo *root;
-
-    StructInfo() : offset(0), size(0), root(nullptr) {}
-
-    bool IsUsed() const {
-        if (!root) return false;
-        return !root->used_bytes.empty();
-    }
-
-    std::vector<uint8_t> *GetUsedbytes() const {
-        if (!root) return nullptr;
-        return &root->used_bytes;
-    }
-
-    std::string GetLocationDesc(uint32_t index_used_bytes) const {
-        std::string desc = "";
-        if (array_length_hierarchy.size() > 0) {
-            desc += " index:";
-            for (const auto block_size : array_block_size) {
-                desc += "[";
-                desc += std::to_string(index_used_bytes / (block_size * size));
-                desc += "]";
-                index_used_bytes = index_used_bytes % (block_size * size);
-            }
-        }
-        const int struct_members_size = static_cast<int>(struct_members.size());
-        if (struct_members_size > 0) {
-            desc += " member:";
-            for (int i = struct_members_size - 1; i >= 0; --i) {
-                if (index_used_bytes > struct_members[i].offset) {
-                    desc += std::to_string(i);
-                    desc += struct_members[i].GetLocationDesc(index_used_bytes - struct_members[i].offset);
-                    break;
-                }
-            }
-        } else {
-            desc += " offset:";
-            desc += std::to_string(index_used_bytes);
-        }
-        return desc;
-    }
-
-  private:
-    std::vector<uint8_t> used_bytes;  // This only works for root. 0: not used. 1: used. The totally array * size.
+    PushConstantVariable(const SHADER_MODULE_STATE &module_state, const Instruction &insn, VkShaderStageFlagBits stage);
 };
 
 // Represents a single Entrypoint into a Shader Module
@@ -374,6 +367,8 @@ struct EntryPoint {
     // All ids that can be accessed from the entry point
     const vvl::unordered_set<uint32_t> accessible_ids;
 
+    // only one Push Constant block is allowed per entry point
+    std::shared_ptr<const PushConstantVariable> push_constant_variable;
     const std::vector<ResourceInterfaceVariable> resource_interface_variables;
     const std::vector<StageInteraceVariable> stage_interface_variables;
     // Easier to lookup without having to check for the is_builtin bool
@@ -394,8 +389,6 @@ struct EntryPoint {
     uint32_t builtin_input_components = 0;
     uint32_t builtin_output_components = 0;
 
-    StructInfo push_constant_used_in_shader;
-
     // Mark if a BuiltIn is written to
     bool written_builtin_point_size{false};
     bool written_builtin_primitive_shading_rate_khr{false};
@@ -404,14 +397,15 @@ struct EntryPoint {
 
     bool has_passthrough{false};
 
-    EntryPoint(const SHADER_MODULE_STATE &module_state, const Instruction &entrypoint_insn);
+    EntryPoint(const SHADER_MODULE_STATE &module_state, const Instruction &entrypoint_insn, const ImageAccessMap &image_access_map);
 
   protected:
     static vvl::unordered_set<uint32_t> GetAccessibleIds(const SHADER_MODULE_STATE &module_state, EntryPoint &entrypoint);
     static std::vector<StageInteraceVariable> GetStageInterfaceVariables(const SHADER_MODULE_STATE &module_state,
                                                                          const EntryPoint &entrypoint);
     static std::vector<ResourceInterfaceVariable> GetResourceInterfaceVariables(const SHADER_MODULE_STATE &module_state,
-                                                                                const EntryPoint &entrypoint);
+                                                                                EntryPoint &entrypoint,
+                                                                                const ImageAccessMap &image_access_map);
 };
 
 struct SHADER_MODULE_STATE : public BASE_NODE {
@@ -447,8 +441,12 @@ struct SHADER_MODULE_STATE : public BASE_NODE {
         std::vector<const Instruction *> variable_inst;
         // both OpDecorate and OpMemberDecorate builtin instructions
         std::vector<const Instruction *> builtin_decoration_inst;
-        // OpEmitStreamVertex/OpEndStreamPrimitive
+        // OpEmitStreamVertex/OpEndStreamPrimitive - only allowed in Geometry shader
         std::vector<const Instruction *> transform_feedback_stream_inst;
+        // For shader tile image - OpDepthAttachmentReadEXT/OpStencilAttachmentReadEXT/OpColorAttachmentReadEXT
+        bool has_shader_tile_image_depth_read{false};
+        bool has_shader_tile_image_stencil_read{false};
+        bool has_shader_tile_image_color_read{false};
         // BuiltIn we just care about existing or not, don't have to be written to
         bool has_builtin_layer{false};
         bool has_builtin_fully_covered{false};
@@ -474,17 +472,10 @@ struct SHADER_MODULE_STATE : public BASE_NODE {
 
         // Tracks accesses (load, store, atomic) to the instruction calling them
         // Example: the OpLoad does the "access" but need to know if a OpImageRead uses that OpLoad later
-        std::vector<uint32_t> image_read_load_ids;
-        std::vector<uint32_t> image_write_load_ids;
         vvl::unordered_map<const Instruction *, uint32_t> image_write_load_id_map;  // <OpImageWrite, load id>
         std::vector<uint32_t> atomic_pointer_ids;
         std::vector<uint32_t> store_pointer_ids;
         std::vector<uint32_t> atomic_store_pointer_ids;
-        std::vector<uint32_t> sampler_load_ids;  // tracks all sampling operations
-        std::vector<uint32_t> sampler_implicitLod_dref_proj_load_ids;
-        std::vector<uint32_t> sampler_bias_offset_load_ids;
-        std::vector<uint32_t> image_dref_load_ids;
-        std::vector<std::pair<uint32_t, uint32_t>> sampled_image_load_ids;                       // <image, sampler>
         vvl::unordered_map<uint32_t, uint32_t> load_members;                              // <result id, pointer>
         vvl::unordered_map<uint32_t, std::pair<uint32_t, uint32_t>> accesschain_members;  // <result id, <base,index[0]>>
         vvl::unordered_map<uint32_t, uint32_t> image_texel_pointer_members;               // <result id, image>
@@ -522,8 +513,6 @@ struct SHADER_MODULE_STATE : public BASE_NODE {
 
     const std::vector<const Instruction *> FindVariableAccesses(uint32_t variable_id, const std::vector<uint32_t> &access_ids,
                                                                 bool atomic) const;
-
-    bool HasMultipleEntryPoints() const { return static_data_.entry_points.size() > 1; }
 
     VkShaderModule vk_shader_module() const { return handle_.Cast<VkShaderModule>(); }
 
@@ -567,18 +556,16 @@ struct SHADER_MODULE_STATE : public BASE_NODE {
 
     std::optional<VkPrimitiveTopology> GetTopology(const EntryPoint &entrypoint) const;
 
-    const StructInfo *FindEntrypointPushConstant(char const *name, VkShaderStageFlagBits stageBits) const;
     std::shared_ptr<const EntryPoint> FindEntrypoint(char const *name, VkShaderStageFlagBits stageBits) const;
     bool FindLocalSize(const EntryPoint &entrypoint, uint32_t &local_size_x, uint32_t &local_size_y, uint32_t &local_size_z) const;
 
-    uint32_t CalculateComputeSharedMemory() const;
+    uint32_t CalculateWorkgroupSharedMemory() const;
 
     const Instruction *GetConstantDef(uint32_t id) const;
     uint32_t GetConstantValueById(uint32_t id) const;
     uint32_t GetLocationsConsumedByType(uint32_t type) const;
     uint32_t GetComponentsConsumedByType(uint32_t type) const;
     NumericType GetNumericType(uint32_t type) const;
-    const Instruction *GetStructType(const Instruction *insn) const;
 
     bool IsBuiltInWritten(const Instruction *builtin_insn, const EntryPoint &entrypoint) const;
 
@@ -595,21 +582,4 @@ struct SHADER_MODULE_STATE : public BASE_NODE {
         return std::any_of(static_data_.capability_list.begin(), static_data_.capability_list.end(),
                            [find_capability](const spv::Capability &capability) { return capability == find_capability; });
     }
-
-    // Used to set push constants values at shader module initialization time
-    static void SetPushConstantUsedInShader(const SHADER_MODULE_STATE &module_state,
-                                            std::vector<std::shared_ptr<EntryPoint>> &entry_points);
-
-  private:
-    // The following are all helper functions to set the push constants values by tracking if the values are accessed in the entry
-    // point functions and which offset in the structs are used
-    uint32_t UpdateOffset(uint32_t offset, const std::vector<uint32_t> &array_indices, const StructInfo &data) const;
-    void SetUsedBytes(uint32_t offset, const std::vector<uint32_t> &array_indices, const StructInfo &data) const;
-    void DefineStructMember(const Instruction *insn, StructInfo &data) const;
-    void RunUsedArray(uint32_t offset, std::vector<uint32_t> array_indices, uint32_t access_chain_word_index,
-                      const Instruction *access_chain, const StructInfo &data) const;
-    void RunUsedStruct(uint32_t offset, uint32_t access_chain_word_index, const Instruction *access_chain,
-                       const StructInfo &data) const;
-    void SetUsedStructMember(const uint32_t variable_id, const vvl::unordered_set<uint32_t> &accessible_ids,
-                             const StructInfo &data) const;
 };

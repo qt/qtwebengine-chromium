@@ -10,17 +10,18 @@
 
 #include "include/core/SkDrawable.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkPicture.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkChecksum.h"
 #include "include/private/base/SkDebug.h"
 #include "include/private/base/SkFixed.h"
 #include "include/private/base/SkTo.h"
 #include "src/base/SkVx.h"
+#include "src/core/SkChecksum.h"
 #include "src/core/SkMask.h"
 
 #include <algorithm>
@@ -31,6 +32,7 @@
 #include <optional>
 
 class SkArenaAlloc;
+class SkCanvas;
 class SkGlyph;
 class SkReadBuffer;
 class SkScalerContext;
@@ -395,6 +397,19 @@ private:
     uint16_t fWidth, fHeight;
 };
 
+class SkPictureBackedGlyphDrawable final : public SkDrawable {
+public:
+    static sk_sp<SkPictureBackedGlyphDrawable>MakeFromBuffer(SkReadBuffer& buffer);
+    static void FlattenDrawable(SkWriteBuffer& buffer, SkDrawable* drawable);
+    SkPictureBackedGlyphDrawable(sk_sp<SkPicture> self);
+
+private:
+    sk_sp<SkPicture> fPicture;
+    SkRect onGetBounds() override;
+    size_t onApproximateBytesUsed() override;
+    void onDraw(SkCanvas* canvas) override;
+};
+
 class SkGlyph {
 public:
     static std::optional<SkGlyph> MakeFromBuffer(SkReadBuffer&);
@@ -504,7 +519,7 @@ public:
 
     // Make sure that the intercept information is on the glyph and return it, or return it if it
     // already exists.
-    // * bounds - either end of the gap for the character.
+    // * bounds - [0] - top of underline; [1] - bottom of underline.
     // * scale, xPos - information about how wide the gap is.
     // * array - accumulated gaps for many characters if not null.
     // * count - the number of gaps.
@@ -524,7 +539,7 @@ public:
     // Read the image data, store it in the alloc, and add it to the glyph.
     size_t addImageFromBuffer(SkReadBuffer&, SkArenaAlloc*);
 
-    // Flatten just the the path data.
+    // Flatten just the path data.
     void flattenPath(SkWriteBuffer&) const;
 
     // Read the path data, create the glyph's path data in the alloc, and add it to the glyph.

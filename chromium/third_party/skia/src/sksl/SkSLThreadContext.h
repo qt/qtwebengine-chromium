@@ -26,34 +26,37 @@ class Compiler;
 class ModifiersPool;
 class Pool;
 class ProgramElement;
-class SymbolTable;
 class Variable;
 enum class ProgramKind : int8_t;
-struct Modifiers;
 struct Module;
-
-namespace dsl {
-
-class DSLCore;
-
-} // namespace dsl
 
 /**
  * Thread-safe class that tracks per-thread state associated with SkSL output.
  */
 class ThreadContext {
 public:
-    ThreadContext(SkSL::Compiler* compiler,
-                  SkSL::ProgramKind kind,
-                  const SkSL::ProgramSettings& settings,
-                  const SkSL::Module* module,
-                  bool isModule);
     ~ThreadContext();
 
     /**
-     * Returns true if the DSL has been started.
+     * Initializes our thread-local state for compiling a program.
      */
-    static bool IsActive();
+    static void Start(SkSL::Compiler* compiler,
+                      SkSL::ProgramKind kind,
+                      const SkSL::ProgramSettings& settings);
+
+    /**
+     * Initializes our thread-local state for compiling a module (SkSL include files).
+     */
+    static void StartModule(SkSL::Compiler* compiler,
+                            SkSL::ProgramKind kind,
+                            const SkSL::ProgramSettings& settings,
+                            const SkSL::Module* parentModule);
+
+    /**
+     * Signals the end of compilation. This must be called sometime after a call to Start() and
+     * before the termination of the thread.
+     */
+    static void End();
 
     /**
      * Returns the Compiler used by DSL operations in the current thread.
@@ -64,16 +67,6 @@ public:
      * Returns the Context used by DSL operations in the current thread.
      */
     static SkSL::Context& Context();
-
-    /**
-     * Returns the Settings used by DSL operations in the current thread.
-     */
-    static const SkSL::ProgramSettings& Settings();
-
-    /**
-     * Returns the Program::Inputs used by the current thread.
-     */
-    static SkSL::Program::Inputs& Inputs() { return Instance().fInputs; }
 
     /**
      * Returns the collection to which DSL program elements in this thread should be appended.
@@ -87,32 +80,9 @@ public:
     }
 
     /**
-     * Returns the current SymbolTable.
-     */
-    static std::shared_ptr<SkSL::SymbolTable>& SymbolTable();
-
-    /**
-     * Returns the current memory pool.
-     */
-    static std::unique_ptr<Pool>& MemoryPool() { return Instance().fPool; }
-
-    /**
-     * Returns the current modifiers pool.
-     */
-    static std::unique_ptr<ModifiersPool>& GetModifiersPool() { return Instance().fModifiersPool; }
-
-    /**
      * Returns the current ProgramConfig.
      */
-    static const std::unique_ptr<ProgramConfig>& GetProgramConfig() { return Instance().fConfig; }
-
-    static bool IsModule() { return GetProgramConfig()->fIsBuiltinCode; }
-
-    /**
-     * Returns the final pointer to a pooled Modifiers object that should be used to represent the
-     * given modifiers.
-     */
-    static const SkSL::Modifiers* Modifiers(const SkSL::Modifiers& modifiers);
+    static bool IsModule() { return Instance().fConfig->fIsBuiltinCode; }
 
     struct RTAdjustData {
         // Points to a standalone sk_RTAdjust variable, if one exists.
@@ -130,7 +100,7 @@ public:
 
     /**
      * Returns the ErrorReporter associated with the current thread. This object will be notified
-     * when any DSL errors occur.
+     * when any compilation errors occur.
      */
     static ErrorReporter& GetErrorReporter() {
         return *Context().fErrors;
@@ -146,9 +116,15 @@ public:
 
     static ThreadContext& Instance();
 
-    static void SetInstance(std::unique_ptr<ThreadContext> instance);
-
 private:
+    ThreadContext(SkSL::Compiler* compiler,
+                  SkSL::ProgramKind kind,
+                  const SkSL::ProgramSettings& settings,
+                  const SkSL::Module* module,
+                  bool isModule);
+
+    static void SetInstance(std::unique_ptr<ThreadContext>);
+
     class DefaultErrorReporter : public ErrorReporter {
         void handleError(std::string_view msg, Position pos) override;
     };
@@ -167,9 +143,9 @@ private:
     ErrorReporter& fOldErrorReporter;
     ProgramSettings fSettings;
     RTAdjustData fRTAdjust;
-    Program::Inputs fInputs;
+    Program::Interface fInterface;
 
-    friend class dsl::DSLCore;
+    friend class Compiler;
 };
 
 } // namespace SkSL

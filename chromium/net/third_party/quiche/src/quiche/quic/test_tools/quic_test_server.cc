@@ -86,7 +86,7 @@ class QuicTestDispatcher : public QuicSimpleDispatcher {
 
   std::unique_ptr<QuicSession> CreateQuicSession(
       QuicConnectionId id, const QuicSocketAddress& self_address,
-      const QuicSocketAddress& peer_address, absl::string_view /*alpn*/,
+      const QuicSocketAddress& peer_address, absl::string_view alpn,
       const ParsedQuicVersion& version,
       const ParsedClientHello& /*parsed_chlo*/) override {
     QuicReaderMutexLock lock(&factory_lock_);
@@ -111,10 +111,9 @@ class QuicTestDispatcher : public QuicSimpleDispatcher {
     } else {
       session = session_factory_->CreateSession(
           config(), connection, this, session_helper(), crypto_config(),
-          compressed_certs_cache(), server_backend());
+          compressed_certs_cache(), server_backend(), alpn);
     }
-    if (VersionUsesHttp3(version.transport_version) &&
-        GetQuicReloadableFlag(quic_verify_request_headers_2)) {
+    if (VersionUsesHttp3(version.transport_version)) {
       QUICHE_DCHECK(session->allow_extended_connect());
       // Do not allow extended CONNECT request if the backend doesn't support
       // it.

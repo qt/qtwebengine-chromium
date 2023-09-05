@@ -66,7 +66,7 @@ public:
     sk_sp<Texture> findOrCreateDiscardableMSAAAttachment(SkISize dimensions,
                                                          const TextureInfo&);
 
-    sk_sp<Buffer> findOrCreateBuffer(size_t size, BufferType type, PrioritizeGpuReads);
+    sk_sp<Buffer> findOrCreateBuffer(size_t size, BufferType type, AccessPattern);
 
     sk_sp<Sampler> findOrCreateCompatibleSampler(const SkSamplingOptions&,
                                                  SkTileMode xTileMode,
@@ -90,6 +90,9 @@ protected:
                      uint32_t recorderID);
 
     SharedContext* fSharedContext;
+    // Each ResourceProvider owns one local cache; for some resources it also refers out to the
+    // global cache of the SharedContext, which is assumed to outlive the ResourceProvider.
+    sk_sp<ResourceCache> fResourceCache;
 
 private:
     virtual sk_sp<GraphicsPipeline> createGraphicsPipeline(const RuntimeEffectDictionary*,
@@ -97,7 +100,7 @@ private:
                                                            const RenderPassDesc&) = 0;
     virtual sk_sp<ComputePipeline> createComputePipeline(const ComputePipelineDesc&) = 0;
     virtual sk_sp<Texture> createTexture(SkISize, const TextureInfo&, skgpu::Budgeted) = 0;
-    virtual sk_sp<Buffer> createBuffer(size_t size, BufferType type, PrioritizeGpuReads) = 0;
+    virtual sk_sp<Buffer> createBuffer(size_t size, BufferType type, AccessPattern) = 0;
 
     virtual sk_sp<Sampler> createSampler(const SkSamplingOptions&,
                                          SkTileMode xTileMode,
@@ -110,10 +113,6 @@ private:
 
     virtual BackendTexture onCreateBackendTexture(SkISize dimensions, const TextureInfo&) = 0;
     virtual void onDeleteBackendTexture(BackendTexture&) = 0;
-
-    // Each ResourceProvider owns one local cache; for some resources it also refers out to the
-    // global cache of the SharedContext, which is assumed to outlive the ResourceProvider.
-    sk_sp<ResourceCache> fResourceCache;
 
     // Compiler used for compiling SkSL into backend shader code. We only want to create the
     // compiler once, as there is significant overhead to the first compile.

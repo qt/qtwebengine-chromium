@@ -178,6 +178,7 @@ INSTALL-LIBS-yes += include/vpx/vpx_image.h
 INSTALL-LIBS-yes += include/vpx/vpx_integer.h
 INSTALL-LIBS-$(CONFIG_DECODERS) += include/vpx/vpx_decoder.h
 INSTALL-LIBS-$(CONFIG_ENCODERS) += include/vpx/vpx_encoder.h
+INSTALL-LIBS-$(CONFIG_ENCODERS) += include/vpx/vpx_tpl.h
 ifeq ($(CONFIG_EXTERNAL_BUILD),yes)
 ifeq ($(CONFIG_MSVS),yes)
 INSTALL-LIBS-yes                  += $(foreach p,$(VS_PLATFORMS),$(LIBSUBDIR)/$(p)/$(CODEC_LIB).lib)
@@ -545,7 +546,7 @@ testdata: $(LIBVPX_TEST_DATA)
             echo "Checking test data:";\
             for f in $(call enabled,LIBVPX_TEST_DATA); do\
                 grep $$f $(SRC_PATH_BARE)/test/test-data.sha1 |\
-                    (cd $(LIBVPX_TEST_DATA_PATH); $${sha1sum} -c);\
+                    (cd "$(LIBVPX_TEST_DATA_PATH)"; $${sha1sum} -c);\
             done; \
         else\
             echo "Skipping test data integrity check, sha1sum not found.";\
@@ -764,10 +765,10 @@ TEST_BIN_PATH := $(addsuffix /$(TGT_OS:win64=x64)/Release, $(TEST_BIN_PATH))
 endif
 utiltest utiltest-no-data-check:
 	$(qexec)$(SRC_PATH_BARE)/test/vpxdec.sh \
-		--test-data-path $(LIBVPX_TEST_DATA_PATH) \
+		--test-data-path "$(LIBVPX_TEST_DATA_PATH)" \
 		--bin-path $(TEST_BIN_PATH)
 	$(qexec)$(SRC_PATH_BARE)/test/vpxenc.sh \
-		--test-data-path $(LIBVPX_TEST_DATA_PATH) \
+		--test-data-path "$(LIBVPX_TEST_DATA_PATH)" \
 		--bin-path $(TEST_BIN_PATH)
 utiltest: testdata
 else
@@ -791,7 +792,7 @@ EXAMPLES_BIN_PATH := $(TGT_OS:win64=x64)/Release
 endif
 exampletest exampletest-no-data-check: examples
 	$(qexec)$(SRC_PATH_BARE)/test/examples.sh \
-		--test-data-path $(LIBVPX_TEST_DATA_PATH) \
+		--test-data-path "$(LIBVPX_TEST_DATA_PATH)" \
 		--bin-path $(EXAMPLES_BIN_PATH)
 exampletest: testdata
 else

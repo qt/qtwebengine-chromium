@@ -13,6 +13,8 @@
 
 #include <arm_neon.h>
 
+#include "config/aom_config.h"
+
 #define HORIZ_EXTRA_ROWS ((SUBPEL_TAPS + 7) & ~0x07)
 
 static INLINE int16x4_t convolve8_4(const int16x4_t s0, const int16x4_t s1,
@@ -232,7 +234,7 @@ static INLINE int16x8_t convolve8_8x8_s16(
 
 // clang versions < 16 did not include the dotprod feature for Arm architecture
 // versions that should have it by default, e.g., armv8.6-a.
-#if defined(__aarch64__) && \
+#if AOM_ARCH_AARCH64 && \
     (defined(__ARM_FEATURE_DOTPROD) || defined(__ARM_FEATURE_MATMUL_INT8))
 
 DECLARE_ALIGNED(16, static const uint8_t, dot_prod_permute_tbl[48]) = {
@@ -241,9 +243,9 @@ DECLARE_ALIGNED(16, static const uint8_t, dot_prod_permute_tbl[48]) = {
   8, 9, 10, 11, 9, 10, 11, 12, 10, 11, 12, 13, 11, 12, 13, 14
 };
 
-#endif  // defined(__aarch64__) && defined(__ARM_FEATURE_DOTPROD)
+#endif  // AOM_ARCH_AARCH64 && defined(__ARM_FEATURE_DOTPROD)
 
-#if defined(__aarch64__) && defined(__ARM_FEATURE_MATMUL_INT8)
+#if AOM_ARCH_AARCH64 && defined(__ARM_FEATURE_MATMUL_INT8)
 
 static INLINE int16x8_t convolve8_x_8_usdot(uint8x16_t samples,
                                             const int8x8_t filters,
@@ -319,7 +321,7 @@ static INLINE int32x4_t convolve8_4_usdot(uint8x16_t samples,
   return sum;
 }
 
-#elif defined(__aarch64__) && defined(__ARM_FEATURE_DOTPROD)
+#elif AOM_ARCH_AARCH64 && defined(__ARM_FEATURE_DOTPROD)
 
 static INLINE int16x8_t convolve8_horiz_8_sdot(uint8x16_t samples,
                                                const int8x8_t filters,
@@ -349,7 +351,9 @@ static INLINE int16x8_t convolve8_horiz_8_sdot(uint8x16_t samples,
   sum[1] = vdotq_lane_s32(sum[1], permuted_samples[2], filters, 1);
 
   /* Narrow and re-pack. */
-  return vcombine_s16(vmovn_s32(sum[0]), vmovn_s32(sum[1]));
+  /* We halved the convolution filter values so -1 from the right shift. */
+  return vcombine_s16(vshrn_n_s32(sum[0], ROUND0_BITS - 1),
+                      vshrn_n_s32(sum[1], ROUND0_BITS - 1));
 }
 
 static INLINE int32x4_t convolve8_4_sdot(uint8x16_t samples,
@@ -442,7 +446,7 @@ static INLINE int16x8_t convolve8_x_8_sdot(uint8x16_t samples,
   return vcombine_s16(vmovn_s32(sum[0]), vmovn_s32(sum[1]));
 }
 
-#endif  // defined(__aarch64__) && defined(__ARM_FEATURE_DOTPROD)
+#endif  // AOM_ARCH_AARCH64 && defined(__ARM_FEATURE_DOTPROD)
 
 static INLINE int16x4_t convolve8_4x4_s16(
     const int16x4_t s0, const int16x4_t s1, const int16x4_t s2,
@@ -506,109 +510,7 @@ static INLINE int16x8_t convolve6_8x4(const int16x8_t s0, const int16x8_t s1,
   return sum;
 }
 
-static INLINE uint16x4_t convolve6_4_s32(const int16x4_t s0, const int16x4_t s1,
-                                         const int16x4_t s2, const int16x4_t s3,
-                                         const int16x4_t s4, const int16x4_t s5,
-                                         const int16x8_t y_filter,
-                                         const int32x4_t offset_const) {
-  const int16x4_t y_filter_lo = vget_low_s16(y_filter);
-  const int16x4_t y_filter_hi = vget_high_s16(y_filter);
-
-  int32x4_t sum = offset_const;
-  sum = vmlal_lane_s16(sum, s0, y_filter_lo, 1);
-  sum = vmlal_lane_s16(sum, s1, y_filter_lo, 2);
-  sum = vmlal_lane_s16(sum, s2, y_filter_lo, 3);
-  sum = vmlal_lane_s16(sum, s3, y_filter_hi, 0);
-  sum = vmlal_lane_s16(sum, s4, y_filter_hi, 1);
-  sum = vmlal_lane_s16(sum, s5, y_filter_hi, 2);
-
-  return vqrshrun_n_s32(sum, COMPOUND_ROUND1_BITS);
-}
-
-static INLINE uint16x8_t convolve6_8_s32(const int16x8_t s0, const int16x8_t s1,
-                                         const int16x8_t s2, const int16x8_t s3,
-                                         const int16x8_t s4, const int16x8_t s5,
-                                         const int16x8_t y_filter,
-                                         const int32x4_t offset_const) {
-  const int16x4_t y_filter_lo = vget_low_s16(y_filter);
-  const int16x4_t y_filter_hi = vget_high_s16(y_filter);
-
-  int32x4_t sum0 = offset_const;
-  sum0 = vmlal_lane_s16(sum0, vget_low_s16(s0), y_filter_lo, 1);
-  sum0 = vmlal_lane_s16(sum0, vget_low_s16(s1), y_filter_lo, 2);
-  sum0 = vmlal_lane_s16(sum0, vget_low_s16(s2), y_filter_lo, 3);
-  sum0 = vmlal_lane_s16(sum0, vget_low_s16(s3), y_filter_hi, 0);
-  sum0 = vmlal_lane_s16(sum0, vget_low_s16(s4), y_filter_hi, 1);
-  sum0 = vmlal_lane_s16(sum0, vget_low_s16(s5), y_filter_hi, 2);
-
-  int32x4_t sum1 = offset_const;
-  sum1 = vmlal_lane_s16(sum1, vget_high_s16(s0), y_filter_lo, 1);
-  sum1 = vmlal_lane_s16(sum1, vget_high_s16(s1), y_filter_lo, 2);
-  sum1 = vmlal_lane_s16(sum1, vget_high_s16(s2), y_filter_lo, 3);
-  sum1 = vmlal_lane_s16(sum1, vget_high_s16(s3), y_filter_hi, 0);
-  sum1 = vmlal_lane_s16(sum1, vget_high_s16(s4), y_filter_hi, 1);
-  sum1 = vmlal_lane_s16(sum1, vget_high_s16(s5), y_filter_hi, 2);
-
-  return vcombine_u16(vqrshrun_n_s32(sum0, COMPOUND_ROUND1_BITS),
-                      vqrshrun_n_s32(sum1, COMPOUND_ROUND1_BITS));
-}
-
-static INLINE uint16x4_t convolve8_4_s32(const int16x4_t s0, const int16x4_t s1,
-                                         const int16x4_t s2, const int16x4_t s3,
-                                         const int16x4_t s4, const int16x4_t s5,
-                                         const int16x4_t s6, const int16x4_t s7,
-                                         const int16x8_t y_filter,
-                                         const int32x4_t offset_const) {
-  const int16x4_t y_filter_lo = vget_low_s16(y_filter);
-  const int16x4_t y_filter_hi = vget_high_s16(y_filter);
-
-  int32x4_t sum = offset_const;
-  sum = vmlal_lane_s16(sum, s0, y_filter_lo, 0);
-  sum = vmlal_lane_s16(sum, s1, y_filter_lo, 1);
-  sum = vmlal_lane_s16(sum, s2, y_filter_lo, 2);
-  sum = vmlal_lane_s16(sum, s3, y_filter_lo, 3);
-  sum = vmlal_lane_s16(sum, s4, y_filter_hi, 0);
-  sum = vmlal_lane_s16(sum, s5, y_filter_hi, 1);
-  sum = vmlal_lane_s16(sum, s6, y_filter_hi, 2);
-  sum = vmlal_lane_s16(sum, s7, y_filter_hi, 3);
-
-  return vqrshrun_n_s32(sum, COMPOUND_ROUND1_BITS);
-}
-
-static INLINE uint16x8_t convolve8_8_s32(const int16x8_t s0, const int16x8_t s1,
-                                         const int16x8_t s2, const int16x8_t s3,
-                                         const int16x8_t s4, const int16x8_t s5,
-                                         const int16x8_t s6, const int16x8_t s7,
-                                         const int16x8_t y_filter,
-                                         const int32x4_t offset_const) {
-  const int16x4_t y_filter_lo = vget_low_s16(y_filter);
-  const int16x4_t y_filter_hi = vget_high_s16(y_filter);
-
-  int32x4_t sum0 = offset_const;
-  sum0 = vmlal_lane_s16(sum0, vget_low_s16(s0), y_filter_lo, 0);
-  sum0 = vmlal_lane_s16(sum0, vget_low_s16(s1), y_filter_lo, 1);
-  sum0 = vmlal_lane_s16(sum0, vget_low_s16(s2), y_filter_lo, 2);
-  sum0 = vmlal_lane_s16(sum0, vget_low_s16(s3), y_filter_lo, 3);
-  sum0 = vmlal_lane_s16(sum0, vget_low_s16(s4), y_filter_hi, 0);
-  sum0 = vmlal_lane_s16(sum0, vget_low_s16(s5), y_filter_hi, 1);
-  sum0 = vmlal_lane_s16(sum0, vget_low_s16(s6), y_filter_hi, 2);
-  sum0 = vmlal_lane_s16(sum0, vget_low_s16(s7), y_filter_hi, 3);
-
-  int32x4_t sum1 = offset_const;
-  sum1 = vmlal_lane_s16(sum1, vget_high_s16(s0), y_filter_lo, 0);
-  sum1 = vmlal_lane_s16(sum1, vget_high_s16(s1), y_filter_lo, 1);
-  sum1 = vmlal_lane_s16(sum1, vget_high_s16(s2), y_filter_lo, 2);
-  sum1 = vmlal_lane_s16(sum1, vget_high_s16(s3), y_filter_lo, 3);
-  sum1 = vmlal_lane_s16(sum1, vget_high_s16(s4), y_filter_hi, 0);
-  sum1 = vmlal_lane_s16(sum1, vget_high_s16(s5), y_filter_hi, 1);
-  sum1 = vmlal_lane_s16(sum1, vget_high_s16(s6), y_filter_hi, 2);
-  sum1 = vmlal_lane_s16(sum1, vget_high_s16(s7), y_filter_hi, 3);
-
-  return vcombine_u16(vqrshrun_n_s32(sum0, COMPOUND_ROUND1_BITS),
-                      vqrshrun_n_s32(sum1, COMPOUND_ROUND1_BITS));
-}
-
-#if !(defined(__aarch64__) && defined(__ARM_FEATURE_DOTPROD))
+#if !(AOM_ARCH_AARCH64 && defined(__ARM_FEATURE_DOTPROD))
 
 static INLINE int16x4_t convolve8_horiz_4x4_s16(
     const int16x4_t s0, const int16x4_t s1, const int16x4_t s2,
@@ -656,6 +558,6 @@ static INLINE int16x8_t convolve8_horiz_8x8_s16(
   return vshrq_n_s16(sum, ROUND0_BITS - 1);
 }
 
-#endif  // !(defined(__aarch64__) && defined(__ARM_FEATURE_DOTPROD))
+#endif  // !(AOM_ARCH_AARCH64 && defined(__ARM_FEATURE_DOTPROD))
 
 #endif  // AOM_AV1_COMMON_ARM_CONVOLVE_NEON_H_

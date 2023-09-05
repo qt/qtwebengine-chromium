@@ -354,10 +354,10 @@ void InitArgumentBufferEncoder(mtl::Context *context,
     }
 }
 
-constexpr size_t PipelineParametersToFragmentShaderVariantIndex(bool writeSampleMask,
+constexpr size_t PipelineParametersToFragmentShaderVariantIndex(bool multisampledRendering,
                                                                 bool allowFragDepthWrite)
 {
-    const size_t index = (allowFragDepthWrite << 1) | writeSampleMask;
+    const size_t index = (allowFragDepthWrite << 1) | multisampledRendering;
     ASSERT(index < kFragmentShaderVariants);
     return index;
 }
@@ -365,7 +365,7 @@ constexpr size_t PipelineParametersToFragmentShaderVariantIndex(bool writeSample
 bool UseFastMathForShaderCompilation(ContextMtl *context,
                                      const mtl::TranslatedShaderInfo *translatedMslInfo)
 {
-    return !context->getDisplay()->getFeatures().intelDisableFastMath.enabled ||
+    return !context->getDisplay()->getFeatures().intelDisableFastMath.enabled &&
            !translatedMslInfo->hasInvariantOrAtan;
 }
 
@@ -492,7 +492,6 @@ ProgramMtl::ProgramMtl(const gl::ProgramState &state)
     : ProgramImpl(state),
       mProgramHasFlatAttributes(false),
       mShadowCompareModes(),
-      mMetalRenderPipelineCache(this),
       mAuxBufferPool(nullptr)
 {}
 
@@ -545,7 +544,6 @@ void ProgramMtl::reset(ContextMtl *context)
             mAuxBufferPool = nullptr;
         }
     }
-    mMetalRenderPipelineCache.clear();
 }
 
 void ProgramMtl::saveTranslatedShaders(gl::BinaryOutputStream *stream)
@@ -938,12 +936,12 @@ angle::Result ProgramMtl::getSpecializedShader(ContextMtl *context,
     else if (shaderType == gl::ShaderType::Fragment)
     {
         // For fragment shader, we need to create 4 variants,
-        // combining sample mask and depth write enabled states.
-        const bool writeSampleMask = renderPipelineDesc.outputDescriptor.sampleCount > 1;
+        // combining multisampled rendering and depth write enabled states.
+        const bool multisampledRendering = renderPipelineDesc.outputDescriptor.sampleCount > 1;
         const bool allowFragDepthWrite =
             renderPipelineDesc.outputDescriptor.depthAttachmentPixelFormat != 0;
         shaderVariant = &mFragmentShaderVariants[PipelineParametersToFragmentShaderVariantIndex(
-            writeSampleMask, allowFragDepthWrite)];
+            multisampledRendering, allowFragDepthWrite)];
         if (shaderVariant->metalShader)
         {
             // Already created.
@@ -953,16 +951,16 @@ angle::Result ProgramMtl::getSpecializedShader(ContextMtl *context,
 
         ANGLE_MTL_OBJC_SCOPE
         {
-            NSString *sampleMaskEnabledStr =
-                [NSString stringWithUTF8String:sh::mtl::kSampleMaskEnabledConstName];
+            NSString *multisampledRenderingStr =
+                [NSString stringWithUTF8String:sh::mtl::kMultisampledRenderingConstName];
 
             NSString *depthWriteEnabledStr =
                 [NSString stringWithUTF8String:sh::mtl::kDepthWriteEnabledConstName];
 
             funcConstants = mtl::adoptObjCObj([[MTLFunctionConstantValues alloc] init]);
-            [funcConstants setConstantValue:&writeSampleMask
+            [funcConstants setConstantValue:&multisampledRendering
                                        type:MTLDataTypeBool
-                                   withName:sampleMaskEnabledStr];
+                                   withName:multisampledRenderingStr];
             [funcConstants setConstantValue:&allowFragDepthWrite
                                        type:MTLDataTypeBool
                                    withName:depthWriteEnabledStr];
@@ -982,6 +980,10 @@ angle::Result ProgramMtl::getSpecializedShader(ContextMtl *context,
         setConstantValue:&(context->getDisplay()->getFeatures().allowSamplerCompareLod.enabled)
                     type:MTLDataTypeBool
                 withName:@"ANGLEUseSampleCompareLod"];
+    [funcConstants
+        setConstantValue:&(context->getDisplay()->getFeatures().emulateAlphaToCoverage.enabled)
+                    type:MTLDataTypeBool
+                withName:@"ANGLEEmulateAlphaToCoverage"];
     // Create Metal shader object
     ANGLE_MTL_OBJC_SCOPE
     {
@@ -1003,12 +1005,6 @@ angle::Result ProgramMtl::getSpecializedShader(ContextMtl *context,
     *shaderOut = shaderVariant->metalShader;
 
     return angle::Result::Continue;
-}
-
-bool ProgramMtl::hasSpecializedShader(gl::ShaderType shaderType,
-                                      const mtl::RenderPipelineDesc &renderPipelineDesc)
-{
-    return true;
 }
 
 void ProgramMtl::saveInterfaceBlockInfo(gl::BinaryOutputStream *stream)
@@ -1542,14 +1538,18 @@ angle::Result ProgramMtl::setupDraw(const gl::Context *glContext,
     ContextMtl *context = mtl::GetImpl(glContext);
     if (pipelineDescChanged)
     {
-        // Render pipeline state needs to be changed
-        id<MTLRenderPipelineState> pipelineState =
-            mMetalRenderPipelineCache.getRenderPipelineState(context, pipelineDesc);
-        if (!pipelineState)
-        {
-            // Error already logged inside getRenderPipelineState()
-            return angle::Result::Stop;
-        }
+        id<MTLFunction> vertexShader = nil;
+        ANGLE_TRY(
+            getSpecializedShader(context, gl::ShaderType::Vertex, pipelineDesc, &vertexShader));
+
+        id<MTLFunction> fragmentShader = nil;
+        ANGLE_TRY(
+            getSpecializedShader(context, gl::ShaderType::Fragment, pipelineDesc, &fragmentShader));
+
+        mtl::AutoObjCPtr<id<MTLRenderPipelineState>> pipelineState;
+        ANGLE_TRY(context->getPipelineCache().getRenderPipeline(
+            context, vertexShader, fragmentShader, pipelineDesc, &pipelineState));
+
         cmdEncoder->setRenderPipelineState(pipelineState);
 
         // We need to rebind uniform buffers & textures also
@@ -1560,13 +1560,13 @@ angle::Result ProgramMtl::setupDraw(const gl::Context *glContext,
         mCurrentShaderVariants[gl::ShaderType::Vertex] =
             &mVertexShaderVariants[pipelineDesc.rasterizationType];
 
-        const bool writeSampleMask = pipelineDesc.outputDescriptor.sampleCount > 1;
+        const bool multisampledRendering = pipelineDesc.outputDescriptor.sampleCount > 1;
         const bool allowFragDepthWrite =
             pipelineDesc.outputDescriptor.depthAttachmentPixelFormat != 0;
         mCurrentShaderVariants[gl::ShaderType::Fragment] =
             pipelineDesc.rasterizationEnabled()
                 ? &mFragmentShaderVariants[PipelineParametersToFragmentShaderVariantIndex(
-                      writeSampleMask, allowFragDepthWrite)]
+                      multisampledRendering, allowFragDepthWrite)]
                 : nullptr;
     }
 
@@ -1828,7 +1828,7 @@ angle::Result ProgramMtl::legalizeUniformBufferOffsets(
             // Has the content of the buffer has changed since last conversion?
             if (conversion->dirty)
             {
-                const uint8_t *srcBytes = bufferMtl->getClientShadowCopyData(context);
+                const uint8_t *srcBytes = bufferMtl->getBufferDataReadOnly(context);
                 srcBytes += srcOffset;
                 size_t sizeToCopy = bufferMtl->size() - srcOffset;
 

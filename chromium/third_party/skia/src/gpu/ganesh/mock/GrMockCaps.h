@@ -122,8 +122,9 @@ public:
         return {surfaceColorType, 1};
     }
 
-    SurfaceReadPixelsSupport surfaceSupportsReadPixels(const GrSurface*) const override {
-        return SurfaceReadPixelsSupport::kSupported;
+    SurfaceReadPixelsSupport surfaceSupportsReadPixels(const GrSurface* surface) const override {
+        return surface->isProtected() ? SurfaceReadPixelsSupport::kUnsupported
+                                      : SurfaceReadPixelsSupport::kSupported;
     }
 
     GrBackendFormat getBackendFormatFromCompressionType(SkTextureCompressionType) const override {
@@ -149,6 +150,9 @@ private:
     bool onSurfaceSupportsWritePixels(const GrSurface*) const override { return true; }
     bool onCanCopySurface(const GrSurfaceProxy* dst, const SkIRect& dstRect,
                           const GrSurfaceProxy* src, const SkIRect& srcRect) const override {
+        if (src->isProtected() == GrProtected::kYes && dst->isProtected() != GrProtected::kYes) {
+            return false;
+        }
         return true;
     }
     GrBackendFormat onGetDefaultBackendFormat(GrColorType ct) const override {

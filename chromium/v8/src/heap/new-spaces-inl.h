@@ -13,6 +13,7 @@
 #include "src/heap/spaces-inl.h"
 #include "src/objects/objects-inl.h"
 #include "src/objects/tagged-impl.h"
+#include "src/objects/tagged.h"
 
 namespace v8 {
 namespace internal {
@@ -31,6 +32,12 @@ bool SemiSpace::Contains(Object o) const {
   return o.IsHeapObject() && Contains(HeapObject::cast(o));
 }
 
+template <typename T>
+inline bool SemiSpace::Contains(Tagged<T> o) const {
+  static_assert(kTaggedCanConvertToRawObjects);
+  return Contains(*o);
+}
+
 bool SemiSpace::ContainsSlow(Address a) const {
   for (const Page* p : *this) {
     if (p == BasicMemoryChunk::FromAddress(a)) return true;
@@ -47,6 +54,12 @@ bool NewSpace::Contains(Object o) const {
 
 bool NewSpace::Contains(HeapObject o) const {
   return BasicMemoryChunk::FromHeapObject(o)->InNewSpace();
+}
+
+template <typename T>
+inline bool NewSpace::Contains(Tagged<T> o) const {
+  static_assert(kTaggedCanConvertToRawObjects);
+  return Contains(*o);
 }
 
 V8_WARN_UNUSED_RESULT inline AllocationResult NewSpace::AllocateRawSynchronized(
@@ -106,8 +119,12 @@ V8_INLINE bool SemiSpaceNewSpace::EnsureAllocation(
 V8_INLINE bool PagedSpaceForNewSpace::EnsureAllocation(
     int size_in_bytes, AllocationAlignment alignment, AllocationOrigin origin,
     int* out_max_aligned_size) {
-  Address old_top = top();
-  Address old_limit = limit();
+  if (last_lab_page_) {
+    last_lab_page_->DecreaseAllocatedLabSize(limit() - top());
+    SetLimit(top());
+    // No need to write a filler to the remaining lab because it will either be
+    // reallocated if the lab can be extended or freed otherwise.
+  }
 
   if (!PagedSpaceBase::EnsureAllocation(size_in_bytes, alignment, origin,
                                         out_max_aligned_size)) {
@@ -118,20 +135,9 @@ V8_INLINE bool PagedSpaceForNewSpace::EnsureAllocation(
     }
   }
 
-  Address new_top = top();
-  Address new_limit = limit();
-  if ((new_top != old_top) || (new_limit != old_limit)) {
-    size_t new_lab_size;
-    if (new_top == old_top) {
-      // Current LAB was extended.
-      DCHECK_GT(new_limit, old_limit);
-      new_lab_size = new_limit - old_limit;
-    } else {
-      new_lab_size = new_limit - new_top;
-    }
-    last_lab_page_ = Page::FromAllocationAreaAddress(new_top);
-    last_lab_page_->IncreaseAllocatedLabSize(new_lab_size);
-  }
+  last_lab_page_ = Page::FromAllocationAreaAddress(top());
+  DCHECK_NOT_NULL(last_lab_page_);
+  last_lab_page_->IncreaseAllocatedLabSize(limit() - top());
 
   return true;
 }

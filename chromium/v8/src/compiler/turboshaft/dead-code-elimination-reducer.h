@@ -27,7 +27,7 @@ namespace v8::internal::compiler::turboshaft {
 //
 // OperationState reflects the liveness of operations. An operation is live if
 //
-//   1) The operation has the `observable_when_unused` property
+//   1) The operation has the `IsRequiredWhenUnused()` property.
 //   2) Any of its outputs is live (is used in a live operation).
 //
 // If the operation is not live, it is dead and can be eliminated.
@@ -273,7 +273,7 @@ class DeadCodeAnalysis {
             rewritable_branch_targets_.erase(it);
           }
         }
-      } else if (op.saturated_use_count == 0) {
+      } else if (op.saturated_use_count.IsZero()) {
         // Operation is already recognized as dead by a previous analysis.
         DCHECK_EQ(op_state, OperationState::kDead);
       } else if (op.Is<GotoOp>()) {
@@ -281,7 +281,7 @@ class DeadCodeAnalysis {
         // state, so we skip them here.
         liveness_[index] = OperationState::kLive;
         continue;
-      } else if (op.Properties().observable_when_unused) {
+      } else if (op.IsRequiredWhenUnused()) {
         op_state = OperationState::kLive;
       } else if (op.Is<PhiOp>()) {
         has_live_phis = has_live_phis || (op_state == OperationState::kLive);
@@ -419,12 +419,6 @@ class DeadCodeEliminationReducer
 
   using Adapter = UniformReducerAdapter<DeadCodeEliminationReducer, Next>;
 
-  template <class... Args>
-  explicit DeadCodeEliminationReducer(const std::tuple<Args...>& args)
-      : Adapter(args),
-        branch_rewrite_targets_(Asm().phase_zone()),
-        analyzer_(Asm().modifiable_input_graph(), Asm().phase_zone()) {}
-
   void Analyze() {
     // TODO(nicohartmann@): We might want to make this a flag.
     constexpr bool trace_analysis = false;
@@ -451,15 +445,11 @@ class DeadCodeEliminationReducer
     return Continuation{this}.ReduceInputGraph(ig_index, op);
   }
 
-  template <Opcode opcode, typename Continuation, typename... Args>
-  OpIndex ReduceOperation(const Args&... args) {
-    return Continuation{this}.Reduce(args...);
-  }
-
  private:
   base::Optional<FixedSidetable<OperationState::Liveness>> liveness_;
-  ZoneMap<uint32_t, BlockIndex> branch_rewrite_targets_;
-  DeadCodeAnalysis analyzer_;
+  ZoneMap<uint32_t, BlockIndex> branch_rewrite_targets_{Asm().phase_zone()};
+  DeadCodeAnalysis analyzer_{Asm().modifiable_input_graph(),
+                             Asm().phase_zone()};
 };
 
 #include "src/compiler/turboshaft/undef-assembler-macros.inc"

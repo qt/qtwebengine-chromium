@@ -18,6 +18,7 @@
 #include <stdint.h>
 #include <functional>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 
 #include "src/tint/utils/crc32.h"
@@ -73,7 +74,9 @@ static constexpr bool IsCastable =
         tint::utils::TypeInfo::HashCodeOf<CLASS>(),                           \
         tint::utils::TypeInfo::FullHashCodeOf<CLASS>(),                       \
     };                                                                        \
-    TINT_CASTABLE_POP_DISABLE_WARNINGS()
+    TINT_CASTABLE_POP_DISABLE_WARNINGS();                                     \
+    static_assert(std::is_same_v<CLASS, CLASS::Base::Class>,                  \
+                  #CLASS " does not derive from Castable<" #CLASS "[, BASE]>")
 
 /// Bit flags that can be passed to the template parameter `FLAGS` of Is() and As().
 enum CastFlags {
@@ -173,7 +176,7 @@ struct TypeInfo {
     /// @returns the static TypeInfo for the type T
     template <typename T>
     static const TypeInfo& Of() {
-        return detail::TypeInfoOf<std::remove_cv_t<T>>::info;
+        return utils::detail::TypeInfoOf<std::remove_cv_t<T>>::info;
     }
 
     /// @returns a compile-time hashcode for the type `T`.
@@ -278,7 +281,7 @@ struct Infer;
 /// @returns true if `obj` is a valid pointer, and is of, or derives from the class `TO`
 /// @param obj the object to test from
 /// @see CastFlags
-template <typename TO, int FLAGS = 0, typename FROM = detail::Infer>
+template <typename TO, int FLAGS = 0, typename FROM = utils::detail::Infer>
 inline bool Is(FROM* obj) {
     if (obj == nullptr) {
         return false;
@@ -292,7 +295,10 @@ inline bool Is(FROM* obj) {
 /// @param pred predicate function with signature `bool(const TYPE*)` called iff object is of, or
 /// derives from the class `TYPE`.
 /// @see CastFlags
-template <typename TYPE, int FLAGS = 0, typename OBJ = detail::Infer, typename Pred = detail::Infer>
+template <typename TYPE,
+          int FLAGS = 0,
+          typename OBJ = utils::detail::Infer,
+          typename Pred = utils::detail::Infer>
 inline bool Is(OBJ* obj, Pred&& pred) {
     return Is<TYPE, FLAGS, OBJ>(obj) && pred(static_cast<std::add_const_t<TYPE>*>(obj));
 }
@@ -312,7 +318,7 @@ inline bool IsAnyOf(OBJ* obj) {
 /// `TO`.
 /// @param obj the object to cast from
 /// @see CastFlags
-template <typename TO, int FLAGS = 0, typename FROM = detail::Infer>
+template <typename TO, int FLAGS = 0, typename FROM = utils::detail::Infer>
 inline TO* As(FROM* obj) {
     auto* as_castable = static_cast<CastableBase*>(obj);
     return Is<TO, FLAGS>(obj) ? static_cast<TO*>(as_castable) : nullptr;
@@ -322,7 +328,7 @@ inline TO* As(FROM* obj) {
 /// `TO`.
 /// @param obj the object to cast from
 /// @see CastFlags
-template <typename TO, int FLAGS = 0, typename FROM = detail::Infer>
+template <typename TO, int FLAGS = 0, typename FROM = utils::detail::Infer>
 inline const TO* As(const FROM* obj) {
     auto* as_castable = static_cast<const CastableBase*>(obj);
     return Is<TO, FLAGS>(obj) ? static_cast<const TO*>(as_castable) : nullptr;
@@ -358,7 +364,7 @@ class CastableBase {
     /// returns true
     /// @param pred predicate function with signature `bool(const TO*)` called iff object is of, or
     /// derives from the class `TO`.
-    template <typename TO, int FLAGS = 0, typename Pred = detail::Infer>
+    template <typename TO, int FLAGS = 0, typename Pred = utils::detail::Infer>
     inline bool Is(Pred&& pred) const {
         return tint::utils::Is<TO, FLAGS>(this, std::forward<Pred>(pred));
     }
@@ -414,18 +420,20 @@ class CastableBase {
 template <typename CLASS, typename BASE = CastableBase>
 class Castable : public BASE {
   public:
-    /// A type alias for `CLASS` to easily access the `BASE` class members.
-    /// Base actually aliases to the Castable instead of `BASE` so that you can
-    /// use Base in the `CLASS` constructor.
+    /// A type alias to this Castable. Commonly used in derived type constructors to forward
+    /// constructor arguments to BASE.
     using Base = Castable;
 
     /// A type alias for `BASE`.
     using TrueBase = BASE;
 
+    /// A type alias for `CLASS`.
+    using Class = CLASS;
+
     /// Constructor
-    /// @param args the arguments to forward to the base class.
+    /// @param arguments the arguments to forward to the base class.
     template <typename... ARGS>
-    inline explicit Castable(ARGS&&... args) : TrueBase(std::forward<ARGS>(args)...) {
+    inline explicit Castable(ARGS&&... arguments) : TrueBase(std::forward<ARGS>(arguments)...) {
         this->type_info_ = &TypeInfo::Of<CLASS>();
     }
 
@@ -440,7 +448,7 @@ class Castable : public BASE {
     /// pred(const TO*) returns true
     /// @param pred predicate function with signature `bool(const TO*)` called iff
     /// object is of, or derives from the class `TO`.
-    template <int FLAGS = 0, typename Pred = detail::Infer>
+    template <int FLAGS = 0, typename Pred = utils::detail::Infer>
     inline bool Is(Pred&& pred) const {
         using TO = typename std::remove_pointer<utils::traits::ParameterType<Pred, 0>>::type;
         return tint::utils::Is<TO, FLAGS>(static_cast<const CLASS*>(this),
@@ -529,7 +537,7 @@ struct CastableCommonBaseImpl<A, B, OTHERS...> {
 
 /// Resolves to the common most derived type that each of the types in `TYPES` derives from.
 template <typename... TYPES>
-using CastableCommonBase = detail::CastableCommonBase<TYPES...>;
+using CastableCommonBase = utils::detail::CastableCommonBase<TYPES...>;
 
 }  // namespace tint::utils
 

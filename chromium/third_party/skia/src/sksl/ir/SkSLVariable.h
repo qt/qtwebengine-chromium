@@ -20,6 +20,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace SkSL {
 
@@ -50,24 +51,24 @@ public:
     inline static constexpr Kind kIRNodeKind = Kind::kVariable;
 
     Variable(Position pos, Position modifiersPosition, const Modifiers* modifiers,
-            std::string_view name, const Type* type, bool builtin, Storage storage)
-    : INHERITED(pos, kIRNodeKind, name, type)
-    , fModifiersPosition(modifiersPosition)
-    , fModifiers(modifiers)
-    , fStorage(storage)
-    , fBuiltin(builtin) {}
+             std::string_view name, const Type* type, bool builtin, Storage storage)
+            : INHERITED(pos, kIRNodeKind, name, type)
+            , fModifiers(modifiers)
+            , fModifiersPosition(modifiersPosition)
+            , fStorage(storage)
+            , fBuiltin(builtin) {}
 
     ~Variable() override;
 
     static std::unique_ptr<Variable> Convert(const Context& context, Position pos,
-            Position modifiersPos, const Modifiers& modifiers, const Type* baseType,
-            Position namePos, std::string_view name, bool isArray,
-            std::unique_ptr<Expression> arraySize, Variable::Storage storage);
+                                             Position modifiersPos, const Modifiers& modifiers,
+                                             const Type* type, Position namePos,
+                                             std::string_view name, Variable::Storage storage);
 
     static std::unique_ptr<Variable> Make(const Context& context, Position pos,
-            Position modifiersPos, const Modifiers& modifiers, const Type* baseType,
-            std::string_view name, bool isArray, std::unique_ptr<Expression> arraySize,
-            Variable::Storage storage);
+                                          Position modifiersPos, const Modifiers& modifiers,
+                                          const Type* type, std::string_view name,
+                                          Variable::Storage storage);
 
     /**
      * Creates a local scratch variable and the associated VarDeclaration statement.
@@ -120,26 +121,28 @@ public:
     }
 
     // The interfaceBlock methods are no-op stubs here. They have proper implementations in
-    // InterfaceBlockVariable, declared below this class, which dedicates extra space to store the
-    // pointer back to the InterfaceBlock.
+    // ExtendedVariable, declared below this class, which dedicates extra space to store the pointer
+    // back to the InterfaceBlock.
     virtual InterfaceBlock* interfaceBlock() const { return nullptr; }
 
     virtual void setInterfaceBlock(InterfaceBlock*) { SkUNREACHABLE; }
 
     virtual void detachDeadInterfaceBlock() {}
 
+    // Only ExtendedVariables support mangled names.
+    virtual std::string_view mangledName() const { return this->name(); }
+
     std::string description() const override {
         return this->modifiers().description() + this->type().displayName() + " " +
                std::string(this->name());
     }
 
-    std::string mangledName() const;
-
 private:
+    // When non-null, `fMangledName` is owned by the SymbolTable.
     IRNode* fDeclaringElement = nullptr;
-    // We don't store the position in the Modifiers object itself because they are pooled
+    // We don't store the position in the Modifiers object itself because they are pooled.
+    const Modifiers* fModifiers = nullptr;
     Position fModifiersPosition;
-    const Modifiers* fModifiers;
     VariableStorage fStorage;
     bool fBuiltin;
 
@@ -147,16 +150,26 @@ private:
 };
 
 /**
- * This represents a Variable associated with an InterfaceBlock. Mostly a normal variable, but also
- * has an extra pointer back to the InterfaceBlock element that owns it.
+ * ExtendedVariable is functionally equivalent to a regular Variable, but it also contains extra
+ * fields that most variables don't need:
+ * - The variable's associated InterfaceBlock
+ * - The variable's mangled name
+ *
+ * These fields can be null/empty.
  */
-class InterfaceBlockVariable final : public Variable {
+class ExtendedVariable final : public Variable {
 public:
-    using Variable::Variable;
+    ExtendedVariable(Position pos, Position modifiersPosition, const Modifiers* modifiers,
+                     std::string_view name, const Type* type, bool builtin, Storage storage,
+                     std::string mangledName)
+            : INHERITED(pos, modifiersPosition, modifiers, name, type, builtin, storage)
+            , fMangledName(std::move(mangledName)) {}
 
-    ~InterfaceBlockVariable() override;
+    ~ExtendedVariable() override;
 
-    InterfaceBlock* interfaceBlock() const override { return fInterfaceBlockElement; }
+    InterfaceBlock* interfaceBlock() const override {
+        return fInterfaceBlockElement;
+    }
 
     void setInterfaceBlock(InterfaceBlock* elem) override {
         SkASSERT(!fInterfaceBlockElement);
@@ -168,8 +181,11 @@ public:
         fInterfaceBlockElement = nullptr;
     }
 
+    std::string_view mangledName() const override;
+
 private:
     InterfaceBlock* fInterfaceBlockElement = nullptr;
+    std::string fMangledName;
 
     using INHERITED = Variable;
 };

@@ -39,7 +39,7 @@ public:
                      SkBitmap*,
                      CachingHint = kAllow_CachingHint) const override { return false; }
 
-    sk_sp<SkImage> onMakeSubset(const SkIRect&, GrDirectContext*) const override;
+    sk_sp<SkImage> onMakeSubset(GrDirectContext*, const SkIRect&) const override;
 
     sk_sp<SkImage> onMakeColorTypeAndColorSpace(SkColorType,
                                                 sk_sp<SkColorSpace>,
@@ -60,6 +60,8 @@ public:
                                            RescaleMode,
                                            ReadPixelsCallback,
                                            ReadPixelsContext) const override;
+
+    virtual sk_sp<SkImage> makeTextureImage(Recorder*, RequiredProperties) const = 0;
 
 protected:
     Image_Base(const SkImageInfo& info, uint32_t uniqueID)

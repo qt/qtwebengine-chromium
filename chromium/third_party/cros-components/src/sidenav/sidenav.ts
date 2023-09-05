@@ -118,10 +118,14 @@ export class Sidenav extends LitElement {
   /**
    * Value to set aria-setsize, which is the number of the top level child tree
    * items.
+   * @export
    */
   override ariaSetSize = '0';
 
-  /** Whether double-clicking expands the tree. */
+  /**
+   * Whether double-clicking expands the tree.
+   * @export
+   */
   doubleclickExpands: boolean;
 
   /**

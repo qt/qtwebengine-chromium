@@ -6,7 +6,7 @@ import * as CodeMirror from '../../../../third_party/codemirror.next/codemirror.
 
 const cssParser = CodeMirror.css.cssLanguage.parser;
 
-type Point = {
+export type Point = {
   input: number,
   output: number,
 };
@@ -18,7 +18,7 @@ type LinearStop = {
 };
 
 const numberFormatter = new Intl.NumberFormat('en', {
-  maximumFractionDigits: 3,
+  maximumFractionDigits: 2,
 });
 
 function findNextDefinedInputIndex(points: Point[], currentIndex: number): number {
@@ -76,7 +76,12 @@ function consumeLinearFunction(text: string): LinearStop[]|null {
 
   // Move until the `ArgList`
   while (cursor.name !== 'ArgList' && cursor.next(true)) {
+    // If the callee is not the `linear` function, return null
+    if (cursor.name === 'Callee' && textToParse.substring(cursor.from, cursor.to) !== 'linear') {
+      return null;
+    }
   }
+
   if (cursor.name !== 'ArgList') {
     return null;
   }
@@ -96,6 +101,10 @@ function consumeLinearFunction(text: string): LinearStop[]|null {
   return stops;
 }
 
+const KeywordToValue: Record<string, string> = {
+  'linear': 'linear(0 0%, 1 100%)',
+};
+
 export class CSSLinearEasingModel {
   #points: Point[];
 
@@ -105,6 +114,11 @@ export class CSSLinearEasingModel {
 
   // https://w3c.github.io/csswg-drafts/css-easing/#linear-easing-function-parsing
   static parse(text: string): CSSLinearEasingModel|null {
+    // Parse `linear` keyword as `linear(0 0%, 1 100%)` function.
+    if (KeywordToValue[text]) {
+      return CSSLinearEasingModel.parse(KeywordToValue[text]);
+    }
+
     const stops = consumeLinearFunction(text);
     // 1. Let function be a new linear easing function.
     // 2. Let largestInput be negative infinity.
@@ -180,6 +194,23 @@ export class CSSLinearEasingModel {
     return new CSSLinearEasingModel(points);
   }
 
+  addPoint(point: Point, index?: number): void {
+    if (index !== undefined) {
+      this.#points.splice(index, 0, point);
+      return;
+    }
+
+    this.#points.push(point);
+  }
+
+  removePoint(index: number): void {
+    this.#points.splice(index, 1);
+  }
+
+  setPoint(index: number, point: Point): void {
+    this.#points[index] = point;
+  }
+
   points(): Point[] {
     return this.#points;
   }
@@ -188,6 +219,15 @@ export class CSSLinearEasingModel {
     const args =
         this.#points.map(point => `${numberFormatter.format(point.output)} ${numberFormatter.format(point.input)}%`)
             .join(', ');
-    return `linear(${args})`;
+    const text = `linear(${args})`;
+
+    // If a keyword matches to this function, return the keyword value of it.
+    for (const [keyword, value] of Object.entries(KeywordToValue)) {
+      if (value === text) {
+        return keyword;
+      }
+    }
+
+    return text;
   }
 }

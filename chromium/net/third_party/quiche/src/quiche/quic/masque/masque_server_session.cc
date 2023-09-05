@@ -323,44 +323,6 @@ void MasqueServerSession::OnSocketEvent(QuicEventLoop* /*event_loop*/,
     QUIC_DVLOG(1) << "Ignoring OnEvent fd " << fd << " event mask " << events;
     return;
   }
-  auto it = absl::c_find_if(connect_udp_server_states_,
-                            [fd](const ConnectUdpServerState& connect_udp) {
-                              return connect_udp.fd() == fd;
-                            });
-  if (it == connect_udp_server_states_.end()) {
-    auto it2 = absl::c_find_if(connect_ip_server_states_,
-                               [fd](const ConnectIpServerState& connect_ip) {
-                                 return connect_ip.fd() == fd;
-                               });
-    if (it2 == connect_ip_server_states_.end()) {
-      QUIC_BUG(quic_bug_10974_1)
-          << "Got unexpected event mask " << events << " on unknown fd " << fd;
-      return;
-    }
-
-    char datagram[1501];
-    datagram[0] = 0;  // Context ID.
-    while (true) {
-      ssize_t read_size = read(fd, datagram + 1, sizeof(datagram) - 1);
-      if (read_size < 0) {
-        break;
-      }
-      MessageStatus message_status = it2->stream()->SendHttp3Datagram(
-          absl::string_view(datagram, 1 + read_size));
-      QUIC_DVLOG(1) << "Encapsulated IP packet of length " << read_size
-                    << " with stream ID " << it2->stream()->id()
-                    << " and got message status "
-                    << MessageStatusToString(message_status);
-    }
-    if (!event_loop_->SupportsEdgeTriggered()) {
-      if (!event_loop_->RearmSocket(fd, kSocketEventReadable)) {
-        QUIC_BUG(MasqueServerSession_ConnectIp_OnSocketEvent_Rearm)
-            << "Failed to re-arm socket " << fd << " for reading";
-      }
-    }
-
-    return;
-  }
 
   auto rearm = absl::MakeCleanup([&]() {
     if (!event_loop_->SupportsEdgeTriggered()) {
@@ -371,6 +333,23 @@ void MasqueServerSession::OnSocketEvent(QuicEventLoop* /*event_loop*/,
     }
   });
 
+  if (!(HandleConnectUdpSocketEvent(fd, events) ||
+        HandleConnectIpSocketEvent(fd, events))) {
+    QUIC_BUG(MasqueServerSession_OnSocketEvent_UnhandledEvent)
+        << "Got unexpected event mask " << events << " on unknown fd " << fd;
+    std::move(rearm).Cancel();
+  }
+}
+
+bool MasqueServerSession::HandleConnectUdpSocketEvent(
+    QuicUdpSocketFd fd, QuicSocketEventMask events) {
+  auto it = absl::c_find_if(connect_udp_server_states_,
+                            [fd](const ConnectUdpServerState& connect_udp) {
+                              return connect_udp.fd() == fd;
+                            });
+  if (it == connect_udp_server_states_.end()) {
+    return false;
+  }
   QuicSocketAddress expected_target_server_address =
       it->target_server_address();
   QUICHE_DCHECK(expected_target_server_address.IsInitialized());
@@ -378,7 +357,8 @@ void MasqueServerSession::OnSocketEvent(QuicEventLoop* /*event_loop*/,
                 << ") stream ID " << it->stream()->id() << " server "
                 << expected_target_server_address;
   QuicUdpSocketApi socket_api;
-  BitMask64 packet_info_interested(QuicUdpPacketInfoBit::PEER_ADDRESS);
+  QuicUdpPacketInfoBitMask packet_info_interested(
+      {QuicUdpPacketInfoBit::PEER_ADDRESS});
   char packet_buffer[1 + kMaxIncomingPacketSize];
   packet_buffer[0] = 0;  // context ID.
   char control_buffer[kDefaultUdpPacketControlBufferSize];
@@ -392,7 +372,7 @@ void MasqueServerSession::OnSocketEvent(QuicEventLoop* /*event_loop*/,
       break;
     }
     if (!read_result.packet_info.HasValue(QuicUdpPacketInfoBit::PEER_ADDRESS)) {
-      QUIC_BUG(quic_bug_10974_2)
+      QUIC_BUG(MasqueServerSession_HandleConnectUdpSocketEvent_MissingPeer)
           << "Missing peer address when reading from fd " << fd;
       continue;
     }
@@ -406,11 +386,11 @@ void MasqueServerSession::OnSocketEvent(QuicEventLoop* /*event_loop*/,
       continue;
     }
     if (!connection()->connected()) {
-      QUIC_BUG(quic_bug_10974_3)
+      QUIC_BUG(MasqueServerSession_HandleConnectUdpSocketEvent_ConnectionClosed)
           << "Unexpected incoming UDP packet on fd " << fd << " from "
           << expected_target_server_address
           << " because MASQUE connection is closed";
-      return;
+      break;
     }
     // The packet is valid, send it to the client in a DATAGRAM frame.
     MessageStatus message_status =
@@ -422,6 +402,35 @@ void MasqueServerSession::OnSocketEvent(QuicEventLoop* /*event_loop*/,
                   << " and got message status "
                   << MessageStatusToString(message_status);
   }
+  return true;
+}
+
+bool MasqueServerSession::HandleConnectIpSocketEvent(
+    QuicUdpSocketFd fd, QuicSocketEventMask events) {
+  auto it = absl::c_find_if(connect_ip_server_states_,
+                            [fd](const ConnectIpServerState& connect_ip) {
+                              return connect_ip.fd() == fd;
+                            });
+  if (it == connect_ip_server_states_.end()) {
+    return false;
+  }
+  QUIC_DVLOG(1) << "Received readable event on fd " << fd << " (mask " << events
+                << ") stream ID " << it->stream()->id();
+  char datagram[1501];
+  datagram[0] = 0;  // Context ID.
+  while (true) {
+    ssize_t read_size = read(fd, datagram + 1, sizeof(datagram) - 1);
+    if (read_size < 0) {
+      break;
+    }
+    MessageStatus message_status = it->stream()->SendHttp3Datagram(
+        absl::string_view(datagram, 1 + read_size));
+    QUIC_DVLOG(1) << "Encapsulated IP packet of length " << read_size
+                  << " with stream ID " << it->stream()->id()
+                  << " and got message status "
+                  << MessageStatusToString(message_status);
+  }
+  return true;
 }
 
 bool MasqueServerSession::OnSettingsFrame(const SettingsFrame& frame) {

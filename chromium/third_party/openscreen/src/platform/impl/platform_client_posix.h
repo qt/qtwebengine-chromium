@@ -73,7 +73,7 @@ class PlatformClientPosix {
 
   // Returns the TaskRunner associated with this PlatformClient.
   // NOTE: This method is expected to be thread safe.
-  TaskRunner* GetTaskRunner();
+  TaskRunner& GetTaskRunner();
 
  protected:
   // Called by ShutDown().

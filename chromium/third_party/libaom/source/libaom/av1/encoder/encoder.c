@@ -375,6 +375,7 @@ static INLINE int does_level_match(int width, int height, double fps,
 static void set_bitstream_level_tier(AV1_PRIMARY *const ppi, int width,
                                      int height, double init_framerate) {
   SequenceHeader *const seq_params = &ppi->seq_params;
+  const AV1LevelParams *const level_params = &ppi->level_params;
   // TODO(any): This is a placeholder function that only addresses dimensions
   // and max display sample rates.
   // Need to add checks for max bit rate, max decoded luma sample rate, header
@@ -415,28 +416,44 @@ static void set_bitstream_level_tier(AV1_PRIMARY *const ppi, int width,
   } else if (does_level_match(width, height, init_framerate, 8192, 4352, 120.0,
                               2)) {
     level = SEQ_LEVEL_6_2;
-  } else if (does_level_match(width, height, init_framerate, 16384, 8704, 30.0,
-                              2)) {
-    level = SEQ_LEVEL_7_0;
-  } else if (does_level_match(width, height, init_framerate, 16384, 8704, 60.0,
-                              2)) {
-    level = SEQ_LEVEL_7_1;
-  } else if (does_level_match(width, height, init_framerate, 16384, 8704, 120.0,
-                              2)) {
-    level = SEQ_LEVEL_7_2;
-  } else if (does_level_match(width, height, init_framerate, 32768, 17408, 30.0,
-                              2)) {
-    level = SEQ_LEVEL_8_0;
-  } else if (does_level_match(width, height, init_framerate, 32768, 17408, 60.0,
-                              2)) {
-    level = SEQ_LEVEL_8_1;
-  } else if (does_level_match(width, height, init_framerate, 32768, 17408,
-                              120.0, 2)) {
-    level = SEQ_LEVEL_8_2;
   }
+#if CONFIG_CWG_C013
+  // TODO(bohanli): currently target level is only working for the 0th operating
+  // point, so scalable coding is not supported.
+  else if (level_params->target_seq_level_idx[0] >= SEQ_LEVEL_7_0 &&
+           level_params->target_seq_level_idx[0] <= SEQ_LEVEL_8_3) {
+    // Only use level 7.x to 8.x when explicitly asked to.
+    if (does_level_match(width, height, init_framerate, 16384, 8704, 30.0, 2)) {
+      level = SEQ_LEVEL_7_0;
+    } else if (does_level_match(width, height, init_framerate, 16384, 8704,
+                                60.0, 2)) {
+      level = SEQ_LEVEL_7_1;
+    } else if (does_level_match(width, height, init_framerate, 16384, 8704,
+                                120.0, 2)) {
+      level = SEQ_LEVEL_7_2;
+    } else if (does_level_match(width, height, init_framerate, 32768, 17408,
+                                30.0, 2)) {
+      level = SEQ_LEVEL_8_0;
+    } else if (does_level_match(width, height, init_framerate, 32768, 17408,
+                                60.0, 2)) {
+      level = SEQ_LEVEL_8_1;
+    } else if (does_level_match(width, height, init_framerate, 32768, 17408,
+                                120.0, 2)) {
+      level = SEQ_LEVEL_8_2;
+    }
+  }
+#endif
 
   for (int i = 0; i < MAX_NUM_OPERATING_POINTS; ++i) {
-    seq_params->seq_level_idx[i] = level;
+    assert(is_valid_seq_level_idx(level_params->target_seq_level_idx[i]) ||
+           level_params->target_seq_level_idx[i] == SEQ_LEVEL_KEEP_STATS);
+    // If a higher target level is specified, it is then used rather than the
+    // inferred one from resolution and framerate.
+    seq_params->seq_level_idx[i] =
+        level_params->target_seq_level_idx[i] < SEQ_LEVELS &&
+                level_params->target_seq_level_idx[i] > level
+            ? level_params->target_seq_level_idx[i]
+            : level;
     // Set the maximum parameters for bitrate and buffer size for this profile,
     // level, and tier
     seq_params->op_params[i].bitrate = av1_max_level_bitrate(
@@ -803,7 +820,11 @@ void av1_change_config(struct AV1_COMP *cpi, const AV1EncoderConfig *oxcf,
 
   if (has_no_stats_stage(cpi) && (rc_cfg->mode == AOM_Q)) {
     p_rc->baseline_gf_interval = FIXED_GF_INTERVAL;
-  } else {
+  } else if (!is_one_pass_rt_params(cpi) ||
+             cm->current_frame.frame_number == 0) {
+    // For rtc mode: logic for setting the baseline_gf_interval is done
+    // in av1_get_one_pass_rt_params(), and it should not be reset here in
+    // change_config(), unless after init_config (first frame).
     p_rc->baseline_gf_interval = (MIN_GF_INTERVAL + MAX_GF_INTERVAL) / 2;
   }
 
@@ -1389,6 +1410,8 @@ AV1_COMP *av1_create_compressor(AV1_PRIMARY *ppi, const AV1EncoderConfig *oxcf,
   init_frame_index_set(&cpi->frame_index_set);
 
   cm->current_frame.frame_number = 0;
+  cpi->rc.frame_number_encoded = 0;
+  cpi->rc.prev_frame_is_dropped = 0;
   cm->current_frame_id = -1;
   cpi->tile_data = NULL;
   cpi->last_show_frame_buf = NULL;
@@ -1597,40 +1620,6 @@ static AOM_INLINE void terminate_worker_data(AV1_PRIMARY *ppi) {
   for (int t = p_mt_info->num_workers - 1; t >= 0; --t) {
     AVxWorker *const worker = &p_mt_info->workers[t];
     aom_get_worker_interface()->end(worker);
-  }
-}
-
-// Deallocate allocated thread_data.
-static AOM_INLINE void free_thread_data(AV1_PRIMARY *ppi) {
-  PrimaryMultiThreadInfo *const p_mt_info = &ppi->p_mt_info;
-  for (int t = 1; t < p_mt_info->num_workers; ++t) {
-    EncWorkerData *const thread_data = &p_mt_info->tile_thr_data[t];
-    thread_data->td = thread_data->original_td;
-    aom_free(thread_data->td->tctx);
-    aom_free(thread_data->td->palette_buffer);
-    aom_free(thread_data->td->tmp_conv_dst);
-    release_compound_type_rd_buffers(&thread_data->td->comp_rd_buffer);
-    for (int j = 0; j < 2; ++j) {
-      aom_free(thread_data->td->tmp_pred_bufs[j]);
-    }
-    aom_free(thread_data->td->pixel_gradient_info);
-    aom_free(thread_data->td->src_var_info_of_4x4_sub_blocks);
-    release_obmc_buffers(&thread_data->td->obmc_buffer);
-    aom_free(thread_data->td->vt64x64);
-
-    for (int x = 0; x < 2; x++) {
-      for (int y = 0; y < 2; y++) {
-        aom_free(thread_data->td->hash_value_buffer[x][y]);
-        thread_data->td->hash_value_buffer[x][y] = NULL;
-      }
-    }
-    aom_free(thread_data->td->counts);
-    av1_free_pmc(thread_data->td->firstpass_ctx,
-                 ppi->seq_params.monochrome ? 1 : MAX_MB_PLANE);
-    thread_data->td->firstpass_ctx = NULL;
-    av1_free_shared_coeff_buffer(&thread_data->td->shared_coeff_buf);
-    av1_free_sms_tree(thread_data->td);
-    aom_free(thread_data->td);
   }
 }
 
@@ -2253,7 +2242,8 @@ void av1_set_frame_size(AV1_COMP *cpi, int width, int height) {
     for (int i = 0; i < num_planes; ++i)
       cm->rst_info[i].frame_restoration_type = RESTORE_NONE;
 
-    av1_alloc_restoration_buffers(cm);
+    const bool is_sgr_enabled = !cpi->sf.lpf_sf.disable_sgr_filter;
+    av1_alloc_restoration_buffers(cm, is_sgr_enabled);
     // Store the allocated restoration buffers in MT object.
     if (cpi->ppi->p_mt_info.num_workers > 1) {
       av1_init_lr_mt_buffers(cpi);
@@ -2332,7 +2322,8 @@ static void cdef_restoration_frame(AV1_COMP *cpi, AV1_COMMON *cm,
                     cpi->sf.lpf_sf.cdef_pick_method, cpi->td.mb.rdmult,
                     cpi->sf.rt_sf.skip_cdef_sb, cpi->oxcf.tool_cfg.cdef_control,
                     use_screen_content_model,
-                    cpi->ppi->rtc_ref.non_reference_frame);
+                    cpi->ppi->rtc_ref.non_reference_frame,
+                    cpi->rc.rtc_external_ratectrl);
 
     // Apply the filter
     if ((skip_apply_postproc_filters & SKIP_APPLY_CDEF) == 0) {
@@ -2526,7 +2517,8 @@ static int encode_without_recode(AV1_COMP *cpi) {
   av1_set_size_dependent_vars(cpi, &q, &bottom_index, &top_index);
   av1_set_mv_search_params(cpi);
 
-  if (cm->current_frame.frame_number == 0 && cpi->ppi->use_svc &&
+  if (cm->current_frame.frame_number == 0 &&
+      (cpi->ppi->use_svc || cpi->oxcf.rc_cfg.drop_frames_water_mark > 0) &&
       cpi->svc.temporal_layer_id == 0) {
     const SequenceHeader *seq_params = cm->seq_params;
     if (aom_alloc_frame_buffer(
@@ -3732,9 +3724,11 @@ static int encode_frame_to_data_rate(AV1_COMP *cpi, size_t *size,
   }
 
   // For 1 pass CBR, check if we are dropping this frame.
-  // Never drop on key frame.
+  // Never drop on key frame, or for frame whose base layer is key.
   if (has_no_stats_stage(cpi) && oxcf->rc_cfg.mode == AOM_CBR &&
-      current_frame->frame_type != KEY_FRAME) {
+      current_frame->frame_type != KEY_FRAME &&
+      !(cpi->ppi->use_svc &&
+        cpi->svc.layer_context[cpi->svc.temporal_layer_id].is_key_frame)) {
     FRAME_UPDATE_TYPE update_type =
         cpi->ppi->gf_group.update_type[cpi->gf_frame_index];
     (void)update_type;
@@ -4123,10 +4117,10 @@ int av1_receive_raw_frame(AV1_COMP *cpi, aom_enc_frame_flags_t frame_flags,
       // No noise synthesis if source is very clean.
       // Uses a low edge threshold to focus on smooth areas.
       // Increase output noise setting a little compared to measured value.
-      cpi->oxcf.noise_level =
-          (float)(av1_estimate_noise_from_single_plane(
-                      sd, 0, cm->seq_params->bit_depth, 16) -
-                  0.1);
+      double y_noise_level = 0.0;
+      av1_estimate_noise_level(sd, &y_noise_level, AOM_PLANE_Y, AOM_PLANE_Y,
+                               cm->seq_params->bit_depth, 16);
+      cpi->oxcf.noise_level = (float)(y_noise_level - 0.1);
       cpi->oxcf.noise_level = (float)AOMMAX(0.0, cpi->oxcf.noise_level);
       if (cpi->oxcf.noise_level > 0.0) {
         cpi->oxcf.noise_level += (float)0.5;

@@ -44,7 +44,7 @@ bool CoreChecks::PreCallValidateImportSemaphoreFdKHR(VkDevice device, const VkIm
     const char *func_name = "vkImportSemaphoreFdKHR";
     auto sem_state = Get<SEMAPHORE_STATE>(info->semaphore);
     if (sem_state) {
-        skip |= ValidateObjectNotInUse(sem_state.get(), func_name, kVUIDUndefined);
+        skip |= ValidateObjectNotInUse(sem_state.get(), func_name, "VUID-vkImportSemaphoreFdKHR-semaphore-01142");
 
         if ((info->flags & VK_SEMAPHORE_IMPORT_TEMPORARY_BIT) != 0 && sem_state->type == VK_SEMAPHORE_TYPE_TIMELINE) {
             skip |= LogError(sem_state->Handle(), "VUID-VkImportSemaphoreFdInfoKHR-flags-03323",
@@ -122,6 +122,7 @@ bool CoreChecks::PreCallValidateImportSemaphoreWin32HandleKHR(VkDevice device,
     const char *func_name = "vkImportSemaphoreWin32HandleKHR";
     auto sem_state = Get<SEMAPHORE_STATE>(info->semaphore);
     if (sem_state) {
+        // Waiting for: https://gitlab.khronos.org/vulkan/vulkan/-/issues/3507
         skip |= ValidateObjectNotInUse(sem_state.get(), func_name, kVUIDUndefined);
 
         if ((info->flags & VK_SEMAPHORE_IMPORT_TEMPORARY_BIT) != 0 && sem_state->type == VK_SEMAPHORE_TYPE_TIMELINE) {
@@ -141,7 +142,7 @@ bool CoreChecks::PreCallValidateGetSemaphoreWin32HandleKHR(VkDevice device, cons
     if (sem_state) {
         if ((info->handleType & sem_state->exportHandleTypes) == 0) {
             skip |= LogError(sem_state->Handle(), "VUID-VkSemaphoreGetWin32HandleInfoKHR-handleType-01126",
-                             "%s: handleType %s was not VkExportSemaphoreCreateInfo::handleTypes (%s)", func_name,
+                             "%s: handleType %s was not included in VkExportSemaphoreCreateInfo::handleTypes (%s)", func_name,
                              string_VkExternalSemaphoreHandleTypeFlagBits(info->handleType),
                              string_VkExternalSemaphoreHandleTypeFlags(sem_state->exportHandleTypes).c_str());
         }
@@ -179,7 +180,7 @@ bool CoreChecks::PreCallValidateImportSemaphoreZirconHandleFUCHSIA(VkDevice devi
     const char *func_name = "vkImportSemaphoreZirconHandleFUCHSIA";
     auto sem_state = Get<SEMAPHORE_STATE>(info->semaphore);
     if (sem_state) {
-        skip |= ValidateObjectNotInUse(sem_state.get(), func_name, kVUIDUndefined);
+        skip |= ValidateObjectNotInUse(sem_state.get(), func_name, "VUID-vkImportSemaphoreZirconHandleFUCHSIA-semaphore-04764");
 
         if (sem_state->type == VK_SEMAPHORE_TYPE_TIMELINE) {
             skip |=

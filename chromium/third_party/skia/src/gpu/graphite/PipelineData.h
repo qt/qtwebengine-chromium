@@ -25,7 +25,6 @@ class SkArenaAlloc;
 
 namespace skgpu::graphite {
 
-enum class SnippetRequirementFlags : uint32_t;
 class Uniform;
 
 class UniformDataBlock {
@@ -104,9 +103,6 @@ public:
     }
     bool hasTextures() const { return !fTextureDataBlock.empty(); }
 
-    void addFlags(SkEnumBitMask<SnippetRequirementFlags> flags);
-    bool needsLocalCoords() const;
-
     const TextureDataBlock& textureDataBlock() { return fTextureDataBlock; }
 
     void write(const SkM44& mat) { fUniformManager.write(mat); }
@@ -115,6 +111,7 @@ public:
     void write(const SkV2& v) { fUniformManager.write(v); }
     void write(const SkV4& v) { fUniformManager.write(v); }
     void write(const SkPoint& point) { fUniformManager.write(point); }
+    void write(const SkPoint3& point3) { fUniformManager.write(point3); }
     void write(float f) { fUniformManager.write(f); }
     void write(int i) { fUniformManager.write(i); }
 
@@ -128,6 +125,8 @@ public:
 
     void writeHalf(float f) { fUniformManager.writeHalf(f); }
     void writeHalf(const SkMatrix& mat) { fUniformManager.writeHalf(mat); }
+    void writeHalf(const SkM44& mat) { fUniformManager.writeHalf(mat); }
+    void writeHalf(const SkColor4f& unpremulColor) { fUniformManager.writeHalf(unpremulColor); }
     void writeHalfArray(SkSpan<const float> floats) { fUniformManager.writeHalfArray(floats); }
 
     bool hasUniforms() const { return fUniformManager.size(); }
@@ -146,7 +145,6 @@ private:
 
     TextureDataBlock                       fTextureDataBlock;
     UniformManager                         fUniformManager;
-    SkEnumBitMask<SnippetRequirementFlags> fSnippetRequirementFlags;
 };
 
 #ifdef SK_DEBUG

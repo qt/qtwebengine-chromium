@@ -22,7 +22,7 @@ class ProtocolConnectionServerFactory {
       const ServerConfig& config,
       MessageDemuxer* demuxer,
       ProtocolConnectionServer::Observer* observer,
-      TaskRunner* task_runner);
+      TaskRunner& task_runner);
 };
 
 }  // namespace osp

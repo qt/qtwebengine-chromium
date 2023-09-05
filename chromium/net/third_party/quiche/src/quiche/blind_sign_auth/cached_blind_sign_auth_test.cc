@@ -7,12 +7,15 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
+#include "absl/time/clock.h"
+#include "absl/time/time.h"
 #include "absl/types/span.h"
 #include "quiche/blind_sign_auth/test_tools/mock_blind_sign_auth_interface.h"
 #include "quiche/common/platform/api/quiche_mutex.h"
@@ -24,7 +27,6 @@ namespace test {
 namespace {
 
 using ::testing::_;
-using ::testing::Invoke;
 using ::testing::InvokeArgument;
 using ::testing::Unused;
 
@@ -41,40 +43,50 @@ class CachedBlindSignAuthTest : public QuicheTest {
   }
 
  public:
-  std::vector<std::string> MakeFakeTokens(int num_tokens) {
-    std::vector<std::string> fake_tokens;
+  std::vector<BlindSignToken> MakeFakeTokens(int num_tokens) {
+    std::vector<BlindSignToken> fake_tokens;
     for (int i = 0; i < kBlindSignAuthRequestMaxTokens; i++) {
-      fake_tokens.push_back(absl::StrCat("token:", i));
+      fake_tokens.push_back(BlindSignToken{absl::StrCat("token:", i),
+                                           absl::Now() + absl::Hours(1)});
     }
     return fake_tokens;
   }
+
+  std::vector<BlindSignToken> MakeExpiredTokens(int num_tokens) {
+    std::vector<BlindSignToken> fake_tokens;
+    for (int i = 0; i < kBlindSignAuthRequestMaxTokens; i++) {
+      fake_tokens.push_back(BlindSignToken{absl::StrCat("token:", i),
+                                           absl::Now() - absl::Hours(1)});
+    }
+    return fake_tokens;
+  }
+
   MockBlindSignAuthInterface mock_blind_sign_auth_interface_;
   std::unique_ptr<CachedBlindSignAuth> cached_blind_sign_auth_;
   std::string oauth_token_ = "oauth_token";
-  std::vector<std::string> fake_tokens_;
+  std::vector<BlindSignToken> fake_tokens_;
 };
 
 TEST_F(CachedBlindSignAuthTest, TestGetTokensOneCallSuccessful) {
   EXPECT_CALL(mock_blind_sign_auth_interface_,
               GetTokens(oauth_token_, kBlindSignAuthRequestMaxTokens, _))
       .Times(1)
-      .WillOnce(Invoke(
+      .WillOnce(
           [this](Unused, int num_tokens,
-                 std::function<void(absl::StatusOr<absl::Span<std::string>>)>
+                 std::function<void(absl::StatusOr<absl::Span<BlindSignToken>>)>
                      callback) {
             fake_tokens_ = MakeFakeTokens(num_tokens);
             callback(absl::MakeSpan(fake_tokens_));
-          }));
+          });
 
   int num_tokens = 5;
   QuicheNotification done;
-  std::function<void(absl::StatusOr<absl::Span<const std::string>>)> callback =
-      [num_tokens,
-       &done](absl::StatusOr<absl::Span<const std::string>> tokens) {
+  std::function<void(absl::StatusOr<absl::Span<BlindSignToken>>)> callback =
+      [num_tokens, &done](absl::StatusOr<absl::Span<BlindSignToken>> tokens) {
         QUICHE_EXPECT_OK(tokens);
         EXPECT_EQ(num_tokens, tokens->size());
         for (int i = 0; i < num_tokens; i++) {
-          EXPECT_EQ(tokens->at(i), absl::StrCat("token:", i));
+          EXPECT_EQ(tokens->at(i).token, absl::StrCat("token:", i));
         }
         done.Notify();
       };
@@ -87,46 +99,43 @@ TEST_F(CachedBlindSignAuthTest, TestGetTokensMultipleRemoteCallsSuccessful) {
   EXPECT_CALL(mock_blind_sign_auth_interface_,
               GetTokens(oauth_token_, kBlindSignAuthRequestMaxTokens, _))
       .Times(2)
-      .WillRepeatedly(Invoke(
+      .WillRepeatedly(
           [this](Unused, int num_tokens,
-                 std::function<void(absl::StatusOr<absl::Span<std::string>>)>
+                 std::function<void(absl::StatusOr<absl::Span<BlindSignToken>>)>
                      callback) {
             fake_tokens_ = MakeFakeTokens(num_tokens);
             callback(absl::MakeSpan(fake_tokens_));
-          }));
+          });
 
   int num_tokens = kBlindSignAuthRequestMaxTokens - 1;
   QuicheNotification first;
-  std::function<void(absl::StatusOr<absl::Span<const std::string>>)>
-      first_callback =
-          [num_tokens,
-           &first](absl::StatusOr<absl::Span<const std::string>> tokens) {
-            QUICHE_EXPECT_OK(tokens);
-            EXPECT_EQ(num_tokens, tokens->size());
-            for (int i = 0; i < num_tokens; i++) {
-              EXPECT_EQ(tokens->at(i), absl::StrCat("token:", i));
-            }
-            first.Notify();
-          };
+  std::function<void(absl::StatusOr<absl::Span<BlindSignToken>>)>
+      first_callback = [num_tokens, &first](
+                           absl::StatusOr<absl::Span<BlindSignToken>> tokens) {
+        QUICHE_EXPECT_OK(tokens);
+        EXPECT_EQ(num_tokens, tokens->size());
+        for (int i = 0; i < num_tokens; i++) {
+          EXPECT_EQ(tokens->at(i).token, absl::StrCat("token:", i));
+        }
+        first.Notify();
+      };
 
   cached_blind_sign_auth_->GetTokens(oauth_token_, num_tokens, first_callback);
   first.WaitForNotification();
 
   QuicheNotification second;
-  std::function<void(absl::StatusOr<absl::Span<const std::string>>)>
-      second_callback =
-          [num_tokens,
-           &second](absl::StatusOr<absl::Span<const std::string>> tokens) {
-            QUICHE_EXPECT_OK(tokens);
-            EXPECT_EQ(num_tokens, tokens->size());
-            EXPECT_EQ(
-                tokens->at(0),
-                absl::StrCat("token:", kBlindSignAuthRequestMaxTokens - 1));
-            for (int i = 1; i < num_tokens; i++) {
-              EXPECT_EQ(tokens->at(i), absl::StrCat("token:", i - 1));
-            }
-            second.Notify();
-          };
+  std::function<void(absl::StatusOr<absl::Span<BlindSignToken>>)>
+      second_callback = [num_tokens, &second](
+                            absl::StatusOr<absl::Span<BlindSignToken>> tokens) {
+        QUICHE_EXPECT_OK(tokens);
+        EXPECT_EQ(num_tokens, tokens->size());
+        EXPECT_EQ(tokens->at(0).token,
+                  absl::StrCat("token:", kBlindSignAuthRequestMaxTokens - 1));
+        for (int i = 1; i < num_tokens; i++) {
+          EXPECT_EQ(tokens->at(i).token, absl::StrCat("token:", i - 1));
+        }
+        second.Notify();
+      };
 
   cached_blind_sign_auth_->GetTokens(oauth_token_, num_tokens, second_callback);
   second.WaitForNotification();
@@ -136,43 +145,42 @@ TEST_F(CachedBlindSignAuthTest, TestGetTokensSecondRequestFilledFromCache) {
   EXPECT_CALL(mock_blind_sign_auth_interface_,
               GetTokens(oauth_token_, kBlindSignAuthRequestMaxTokens, _))
       .Times(1)
-      .WillOnce(Invoke(
+      .WillOnce(
           [this](Unused, int num_tokens,
-                 std::function<void(absl::StatusOr<absl::Span<std::string>>)>
+                 std::function<void(absl::StatusOr<absl::Span<BlindSignToken>>)>
                      callback) {
             fake_tokens_ = MakeFakeTokens(num_tokens);
             callback(absl::MakeSpan(fake_tokens_));
-          }));
+          });
 
   int num_tokens = kBlindSignAuthRequestMaxTokens / 2;
   QuicheNotification first;
-  std::function<void(absl::StatusOr<absl::Span<const std::string>>)>
-      first_callback =
-          [num_tokens,
-           &first](absl::StatusOr<absl::Span<const std::string>> tokens) {
-            QUICHE_EXPECT_OK(tokens);
-            EXPECT_EQ(num_tokens, tokens->size());
-            for (int i = 0; i < num_tokens; i++) {
-              EXPECT_EQ(tokens->at(i), absl::StrCat("token:", i));
-            }
-            first.Notify();
-          };
+  std::function<void(absl::StatusOr<absl::Span<BlindSignToken>>)>
+      first_callback = [num_tokens, &first](
+                           absl::StatusOr<absl::Span<BlindSignToken>> tokens) {
+        QUICHE_EXPECT_OK(tokens);
+        EXPECT_EQ(num_tokens, tokens->size());
+        for (int i = 0; i < num_tokens; i++) {
+          EXPECT_EQ(tokens->at(i).token, absl::StrCat("token:", i));
+        }
+        first.Notify();
+      };
 
   cached_blind_sign_auth_->GetTokens(oauth_token_, num_tokens, first_callback);
   first.WaitForNotification();
 
   QuicheNotification second;
-  std::function<void(absl::StatusOr<absl::Span<const std::string>>)>
-      second_callback =
-          [num_tokens,
-           &second](absl::StatusOr<absl::Span<const std::string>> tokens) {
-            QUICHE_EXPECT_OK(tokens);
-            EXPECT_EQ(num_tokens, tokens->size());
-            for (int i = 0; i < num_tokens; i++) {
-              EXPECT_EQ(tokens->at(i), absl::StrCat("token:", i + num_tokens));
-            }
-            second.Notify();
-          };
+  std::function<void(absl::StatusOr<absl::Span<BlindSignToken>>)>
+      second_callback = [num_tokens, &second](
+                            absl::StatusOr<absl::Span<BlindSignToken>> tokens) {
+        QUICHE_EXPECT_OK(tokens);
+        EXPECT_EQ(num_tokens, tokens->size());
+        for (int i = 0; i < num_tokens; i++) {
+          EXPECT_EQ(tokens->at(i).token,
+                    absl::StrCat("token:", i + num_tokens));
+        }
+        second.Notify();
+      };
 
   cached_blind_sign_auth_->GetTokens(oauth_token_, num_tokens, second_callback);
   second.WaitForNotification();
@@ -182,60 +190,58 @@ TEST_F(CachedBlindSignAuthTest, TestGetTokensThirdRequestRefillsCache) {
   EXPECT_CALL(mock_blind_sign_auth_interface_,
               GetTokens(oauth_token_, kBlindSignAuthRequestMaxTokens, _))
       .Times(2)
-      .WillRepeatedly(Invoke(
+      .WillRepeatedly(
           [this](Unused, int num_tokens,
-                 std::function<void(absl::StatusOr<absl::Span<std::string>>)>
+                 std::function<void(absl::StatusOr<absl::Span<BlindSignToken>>)>
                      callback) {
             fake_tokens_ = MakeFakeTokens(num_tokens);
             callback(absl::MakeSpan(fake_tokens_));
-          }));
+          });
 
   int num_tokens = kBlindSignAuthRequestMaxTokens / 2;
   QuicheNotification first;
-  std::function<void(absl::StatusOr<absl::Span<const std::string>>)>
-      first_callback =
-          [num_tokens,
-           &first](absl::StatusOr<absl::Span<const std::string>> tokens) {
-            QUICHE_EXPECT_OK(tokens);
-            EXPECT_EQ(num_tokens, tokens->size());
-            for (int i = 0; i < num_tokens; i++) {
-              EXPECT_EQ(tokens->at(i), absl::StrCat("token:", i));
-            }
-            first.Notify();
-          };
+  std::function<void(absl::StatusOr<absl::Span<BlindSignToken>>)>
+      first_callback = [num_tokens, &first](
+                           absl::StatusOr<absl::Span<BlindSignToken>> tokens) {
+        QUICHE_EXPECT_OK(tokens);
+        EXPECT_EQ(num_tokens, tokens->size());
+        for (int i = 0; i < num_tokens; i++) {
+          EXPECT_EQ(tokens->at(i).token, absl::StrCat("token:", i));
+        }
+        first.Notify();
+      };
 
   cached_blind_sign_auth_->GetTokens(oauth_token_, num_tokens, first_callback);
   first.WaitForNotification();
 
   QuicheNotification second;
-  std::function<void(absl::StatusOr<absl::Span<const std::string>>)>
-      second_callback =
-          [num_tokens,
-           &second](absl::StatusOr<absl::Span<const std::string>> tokens) {
-            QUICHE_EXPECT_OK(tokens);
-            EXPECT_EQ(num_tokens, tokens->size());
-            for (int i = 0; i < num_tokens; i++) {
-              EXPECT_EQ(tokens->at(i), absl::StrCat("token:", i + num_tokens));
-            }
-            second.Notify();
-          };
+  std::function<void(absl::StatusOr<absl::Span<BlindSignToken>>)>
+      second_callback = [num_tokens, &second](
+                            absl::StatusOr<absl::Span<BlindSignToken>> tokens) {
+        QUICHE_EXPECT_OK(tokens);
+        EXPECT_EQ(num_tokens, tokens->size());
+        for (int i = 0; i < num_tokens; i++) {
+          EXPECT_EQ(tokens->at(i).token,
+                    absl::StrCat("token:", i + num_tokens));
+        }
+        second.Notify();
+      };
 
   cached_blind_sign_auth_->GetTokens(oauth_token_, num_tokens, second_callback);
   second.WaitForNotification();
 
   QuicheNotification third;
   int third_request_tokens = 10;
-  std::function<void(absl::StatusOr<absl::Span<const std::string>>)>
-      third_callback =
-          [third_request_tokens,
-           &third](absl::StatusOr<absl::Span<const std::string>> tokens) {
-            QUICHE_EXPECT_OK(tokens);
-            EXPECT_EQ(third_request_tokens, tokens->size());
-            for (int i = 0; i < third_request_tokens; i++) {
-              EXPECT_EQ(tokens->at(i), absl::StrCat("token:", i));
-            }
-            third.Notify();
-          };
+  std::function<void(absl::StatusOr<absl::Span<BlindSignToken>>)>
+      third_callback = [third_request_tokens, &third](
+                           absl::StatusOr<absl::Span<BlindSignToken>> tokens) {
+        QUICHE_EXPECT_OK(tokens);
+        EXPECT_EQ(third_request_tokens, tokens->size());
+        for (int i = 0; i < third_request_tokens; i++) {
+          EXPECT_EQ(tokens->at(i).token, absl::StrCat("token:", i));
+        }
+        third.Notify();
+      };
 
   cached_blind_sign_auth_->GetTokens(oauth_token_, third_request_tokens,
                                      third_callback);
@@ -248,8 +254,8 @@ TEST_F(CachedBlindSignAuthTest, TestGetTokensRequestTooLarge) {
       .Times(0);
 
   int num_tokens = kBlindSignAuthRequestMaxTokens + 1;
-  std::function<void(absl::StatusOr<absl::Span<const std::string>>)> callback =
-      [](absl::StatusOr<absl::Span<const std::string>> tokens) {
+  std::function<void(absl::StatusOr<absl::Span<BlindSignToken>>)> callback =
+      [](absl::StatusOr<absl::Span<BlindSignToken>> tokens) {
         EXPECT_THAT(tokens.status().code(), absl::StatusCode::kInvalidArgument);
         EXPECT_THAT(
             tokens.status().message(),
@@ -266,8 +272,8 @@ TEST_F(CachedBlindSignAuthTest, TestGetTokensRequestNegative) {
       .Times(0);
 
   int num_tokens = -1;
-  std::function<void(absl::StatusOr<absl::Span<const std::string>>)> callback =
-      [num_tokens](absl::StatusOr<absl::Span<const std::string>> tokens) {
+  std::function<void(absl::StatusOr<absl::Span<BlindSignToken>>)> callback =
+      [num_tokens](absl::StatusOr<absl::Span<BlindSignToken>> tokens) {
         EXPECT_THAT(tokens.status().code(), absl::StatusCode::kInvalidArgument);
         EXPECT_THAT(tokens.status().message(),
                     absl::StrFormat("Negative number of tokens requested: %d",
@@ -282,20 +288,20 @@ TEST_F(CachedBlindSignAuthTest, TestHandleGetTokensResponseErrorHandling) {
               GetTokens(oauth_token_, kBlindSignAuthRequestMaxTokens, _))
       .Times(2)
       .WillOnce(InvokeArgument<2>(absl::InternalError("AuthAndSign failed")))
-      .WillOnce(Invoke(
+      .WillOnce(
           [this](Unused, int num_tokens,
-                 std::function<void(absl::StatusOr<absl::Span<std::string>>)>
+                 std::function<void(absl::StatusOr<absl::Span<BlindSignToken>>)>
                      callback) {
             fake_tokens_ = MakeFakeTokens(num_tokens);
             fake_tokens_.pop_back();
             callback(absl::MakeSpan(fake_tokens_));
-          }));
+          });
 
   int num_tokens = kBlindSignAuthRequestMaxTokens;
   QuicheNotification first;
-  std::function<void(absl::StatusOr<absl::Span<const std::string>>)>
+  std::function<void(absl::StatusOr<absl::Span<BlindSignToken>>)>
       first_callback =
-          [&first](absl::StatusOr<absl::Span<const std::string>> tokens) {
+          [&first](absl::StatusOr<absl::Span<BlindSignToken>> tokens) {
             EXPECT_THAT(tokens.status().code(), absl::StatusCode::kInternal);
             EXPECT_THAT(tokens.status().message(), "AuthAndSign failed");
             first.Notify();
@@ -305,9 +311,9 @@ TEST_F(CachedBlindSignAuthTest, TestHandleGetTokensResponseErrorHandling) {
   first.WaitForNotification();
 
   QuicheNotification second;
-  std::function<void(absl::StatusOr<absl::Span<const std::string>>)>
+  std::function<void(absl::StatusOr<absl::Span<BlindSignToken>>)>
       second_callback =
-          [&second](absl::StatusOr<absl::Span<const std::string>> tokens) {
+          [&second](absl::StatusOr<absl::Span<BlindSignToken>> tokens) {
             EXPECT_THAT(tokens.status().code(),
                         absl::StatusCode::kResourceExhausted);
             second.Notify();
@@ -323,13 +329,79 @@ TEST_F(CachedBlindSignAuthTest, TestGetTokensZeroTokensRequested) {
       .Times(0);
 
   int num_tokens = 0;
-  std::function<void(absl::StatusOr<absl::Span<const std::string>>)> callback =
-      [](absl::StatusOr<absl::Span<const std::string>> tokens) {
+  std::function<void(absl::StatusOr<absl::Span<BlindSignToken>>)> callback =
+      [](absl::StatusOr<absl::Span<BlindSignToken>> tokens) {
         QUICHE_EXPECT_OK(tokens);
         EXPECT_EQ(tokens->size(), 0);
       };
 
   cached_blind_sign_auth_->GetTokens(oauth_token_, num_tokens, callback);
+}
+
+TEST_F(CachedBlindSignAuthTest, TestExpiredTokensArePruned) {
+  EXPECT_CALL(mock_blind_sign_auth_interface_,
+              GetTokens(oauth_token_, kBlindSignAuthRequestMaxTokens, _))
+      .Times(1)
+      .WillOnce(
+          [this](Unused, int num_tokens,
+                 std::function<void(absl::StatusOr<absl::Span<BlindSignToken>>)>
+                     callback) {
+            fake_tokens_ = MakeExpiredTokens(num_tokens);
+            callback(absl::MakeSpan(fake_tokens_));
+          });
+
+  int num_tokens = kBlindSignAuthRequestMaxTokens;
+  QuicheNotification first;
+  std::function<void(absl::StatusOr<absl::Span<BlindSignToken>>)>
+      first_callback =
+          [&first](absl::StatusOr<absl::Span<BlindSignToken>> tokens) {
+            EXPECT_THAT(tokens.status().code(),
+                        absl::StatusCode::kResourceExhausted);
+            first.Notify();
+          };
+
+  cached_blind_sign_auth_->GetTokens(oauth_token_, num_tokens, first_callback);
+  first.WaitForNotification();
+}
+
+TEST_F(CachedBlindSignAuthTest, TestClearCacheRemovesTokens) {
+  EXPECT_CALL(mock_blind_sign_auth_interface_,
+              GetTokens(oauth_token_, kBlindSignAuthRequestMaxTokens, _))
+      .Times(2)
+      .WillRepeatedly(
+          [this](Unused, int num_tokens,
+                 std::function<void(absl::StatusOr<absl::Span<BlindSignToken>>)>
+                     callback) {
+            fake_tokens_ = MakeExpiredTokens(num_tokens);
+            callback(absl::MakeSpan(fake_tokens_));
+          });
+
+  int num_tokens = kBlindSignAuthRequestMaxTokens / 2;
+  QuicheNotification first;
+  std::function<void(absl::StatusOr<absl::Span<BlindSignToken>>)>
+      first_callback =
+          [&first](absl::StatusOr<absl::Span<BlindSignToken>> tokens) {
+            EXPECT_THAT(tokens.status().code(),
+                        absl::StatusCode::kResourceExhausted);
+            first.Notify();
+          };
+
+  cached_blind_sign_auth_->GetTokens(oauth_token_, num_tokens, first_callback);
+  first.WaitForNotification();
+
+  cached_blind_sign_auth_->ClearCache();
+
+  QuicheNotification second;
+  std::function<void(absl::StatusOr<absl::Span<BlindSignToken>>)>
+      second_callback =
+          [&second](absl::StatusOr<absl::Span<BlindSignToken>> tokens) {
+            EXPECT_THAT(tokens.status().code(),
+                        absl::StatusCode::kResourceExhausted);
+            second.Notify();
+          };
+
+  cached_blind_sign_auth_->GetTokens(oauth_token_, num_tokens, second_callback);
+  second.WaitForNotification();
 }
 
 }  // namespace

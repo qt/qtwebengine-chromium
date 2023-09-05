@@ -10,7 +10,7 @@ import {
 import {
   anyOf,
   deserializeComparator,
-  SerializedComparator,
+  serializeComparator,
   skipUndefined,
 } from '../webgpu/util/compare.js';
 import { kValue } from '../webgpu/util/constants.js';
@@ -215,7 +215,7 @@ g.test('value').fn(t => {
   }
 });
 
-g.test('f32_interval').fn(t => {
+g.test('fpinterval_f32').fn(t => {
   for (const interval of [
     FP.f32.toInterval(0),
     FP.f32.toInterval(-0),
@@ -239,6 +239,40 @@ g.test('f32_interval').fn(t => {
     FP.f32.toInterval([kValue.f32.subnormal.positive.min, kValue.f32.subnormal.positive.max]),
     FP.f32.toInterval([kValue.f32.subnormal.negative.min, kValue.f32.subnormal.negative.max]),
     FP.f32.toInterval([kValue.f32.infinity.negative, kValue.f32.infinity.positive]),
+  ]) {
+    const serialized = serializeFPInterval(interval);
+    const deserialized = deserializeFPInterval(serialized);
+    t.expect(
+      objectEquals(interval, deserialized),
+      `interval ${interval} -> serialize -> deserialize -> ${deserialized}`
+    );
+  }
+});
+
+g.test('fpinterval_abstract').fn(t => {
+  for (const interval of [
+    FP.abstract.toInterval(0),
+    FP.abstract.toInterval(-0),
+    FP.abstract.toInterval(1),
+    FP.abstract.toInterval(-1),
+    FP.abstract.toInterval(0.5),
+    FP.abstract.toInterval(-0.5),
+    FP.abstract.toInterval(kValue.f64.positive.max),
+    FP.abstract.toInterval(kValue.f64.positive.min),
+    FP.abstract.toInterval(kValue.f64.subnormal.positive.max),
+    FP.abstract.toInterval(kValue.f64.subnormal.positive.min),
+    FP.abstract.toInterval(kValue.f64.subnormal.negative.max),
+    FP.abstract.toInterval(kValue.f64.subnormal.negative.min),
+    FP.abstract.toInterval(kValue.f64.infinity.positive),
+    FP.abstract.toInterval(kValue.f64.infinity.negative),
+
+    FP.abstract.toInterval([-0, 0]),
+    FP.abstract.toInterval([-1, 1]),
+    FP.abstract.toInterval([-0.5, 0.5]),
+    FP.abstract.toInterval([kValue.f64.positive.min, kValue.f64.positive.max]),
+    FP.abstract.toInterval([kValue.f64.subnormal.positive.min, kValue.f64.subnormal.positive.max]),
+    FP.abstract.toInterval([kValue.f64.subnormal.negative.min, kValue.f64.subnormal.negative.max]),
+    FP.abstract.toInterval([kValue.f64.infinity.negative, kValue.f64.infinity.positive]),
   ]) {
     const serialized = serializeFPInterval(interval);
     const deserialized = deserializeFPInterval(serialized);
@@ -288,11 +322,11 @@ g.test('anyOf').fn(t => {
         testCases: [f32(0), f32(10), f32(122), f32(123), f32(124), f32(200)],
       },
     ]) {
-      const serialized = c.comparator as SerializedComparator;
+      const serialized = serializeComparator(c.comparator);
       const deserialized = deserializeComparator(serialized);
       for (const val of c.testCases) {
-        const got = deserialized(val);
-        const expect = c.comparator(val);
+        const got = deserialized.compare(val);
+        const expect = c.comparator.compare(val);
         t.expect(
           got.matched === expect.matched,
           `comparator(${val}): got: ${expect.matched}, expect: ${got.matched}`
@@ -314,11 +348,11 @@ g.test('skipUndefined').fn(t => {
         testCases: [f32(0), f32(10), f32(122), f32(123), f32(124), f32(200)],
       },
     ]) {
-      const serialized = c.comparator as SerializedComparator;
+      const serialized = serializeComparator(c.comparator);
       const deserialized = deserializeComparator(serialized);
       for (const val of c.testCases) {
-        const got = deserialized(val);
-        const expect = c.comparator(val);
+        const got = deserialized.compare(val);
+        const expect = c.comparator.compare(val);
         t.expect(
           got.matched === expect.matched,
           `comparator(${val}): got: ${expect.matched}, expect: ${got.matched}`

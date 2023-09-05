@@ -10,6 +10,7 @@
 #include "libANGLE/renderer/vulkan/vk_utils.h"
 
 #include "libANGLE/Context.h"
+#include "libANGLE/Display.h"
 #include "libANGLE/renderer/vulkan/BufferVk.h"
 #include "libANGLE/renderer/vulkan/ContextVk.h"
 #include "libANGLE/renderer/vulkan/DisplayVk.h"
@@ -20,11 +21,13 @@
 
 namespace angle
 {
-egl::Error ToEGL(Result result, rx::DisplayVk *displayVk, EGLint errorCode)
+egl::Error ToEGL(Result result, EGLint errorCode)
 {
     if (result != angle::Result::Continue)
     {
-        return displayVk->getEGLError(errorCode);
+        egl::Error error = std::move(*egl::Display::GetCurrentThreadErrorScratchSpace());
+        error.setCode(errorCode);
+        return error;
     }
     else
     {
@@ -466,14 +469,11 @@ angle::Result MemoryProperties::findCompatibleMemoryIndex(
     }
 
     // We did not find a compatible memory type. When importing external memory, there may be
-    // additional restrictions on memoryType. Fallback to requesting device local memory.
+    // additional restrictions on memoryType. Find the first available memory type that Vulkan
+    // driver decides being compatible with external memory import.
     if (isExternalMemory)
     {
-        // The Vulkan spec says the following -
-        //     There must be at least one memory type with the VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-        //     bit set in its propertyFlags
-        if (FindCompatibleMemory(mMemoryProperties, memoryRequirements,
-                                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, memoryPropertyFlagsOut,
+        if (FindCompatibleMemory(mMemoryProperties, memoryRequirements, 0, memoryPropertyFlagsOut,
                                  typeIndexOut))
         {
             return angle::Result::Continue;
@@ -1356,6 +1356,22 @@ VkPrimitiveTopology GetPrimitiveTopology(gl::PrimitiveMode mode)
     }
 }
 
+VkPolygonMode GetPolygonMode(const gl::PolygonMode polygonMode)
+{
+    switch (polygonMode)
+    {
+        case gl::PolygonMode::Point:
+            return VK_POLYGON_MODE_POINT;
+        case gl::PolygonMode::Line:
+            return VK_POLYGON_MODE_LINE;
+        case gl::PolygonMode::Fill:
+            return VK_POLYGON_MODE_FILL;
+        default:
+            UNREACHABLE();
+            return VK_POLYGON_MODE_FILL;
+    }
+}
+
 VkCullModeFlagBits GetCullMode(const gl::RasterizerState &rasterState)
 {
     if (!rasterState.cullFace)
@@ -1392,8 +1408,17 @@ VkFrontFace GetFrontFace(GLenum frontFace, bool invertCullFace)
     }
 }
 
-VkSampleCountFlagBits GetSamples(GLint sampleCount)
+VkSampleCountFlagBits GetSamples(GLint sampleCount, bool limitSampleCountTo2)
 {
+    if (limitSampleCountTo2)
+    {
+        // Limiting samples to 2 allows multisampling to work while reducing
+        // how much graphics memory is required.  This makes ANGLE nonconformant
+        // (GLES 3.0+ requires 4 samples minimum) but gives low memory systems a
+        // better chance of running applications.
+        sampleCount = std::min(sampleCount, 2);
+    }
+
     switch (sampleCount)
     {
         case 0:

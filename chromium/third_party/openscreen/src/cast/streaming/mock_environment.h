@@ -14,7 +14,7 @@ namespace cast {
 // An Environment that can intercept all packet sends, for unit testing.
 class MockEnvironment : public Environment {
  public:
-  MockEnvironment(ClockNowFunctionPtr now_function, TaskRunner* task_runner);
+  MockEnvironment(ClockNowFunctionPtr now_function, TaskRunner& task_runner);
   ~MockEnvironment() override;
 
   // Used to return fake values, to simulate a bound socket for testing.

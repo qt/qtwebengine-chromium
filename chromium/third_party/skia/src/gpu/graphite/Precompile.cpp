@@ -5,6 +5,8 @@
  * found in the LICENSE file.
  */
 
+#include "src/gpu/graphite/Caps.h"
+#include "src/gpu/graphite/ContextUtils.h"
 #include "src/gpu/graphite/FactoryFunctions.h"
 #include "src/gpu/graphite/KeyContext.h"
 #include "src/gpu/graphite/KeyHelpers.h"
@@ -92,10 +94,24 @@ int PaintOptions::numCombinations() const {
            this->numBlendModeCombinations();
 }
 
+DstReadRequirement get_dst_read_req(const Caps* caps,
+                                    bool hasCoverage,
+                                    SkSpan<const sk_sp<PrecompileBlender>> options,
+                                    int desiredOption) {
+    for (const sk_sp<PrecompileBlender>& option : options) {
+        if (desiredOption < option->numCombinations()) {
+            return GetDstReadRequirement(caps, option->asBlendMode(), hasCoverage);
+        }
+        desiredOption -= option->numCombinations();
+    }
+    return DstReadRequirement::kNone;
+}
+
 void PaintOptions::createKey(const KeyContext& keyContext,
                              int desiredCombination,
                              PaintParamsKeyBuilder* keyBuilder,
-                             bool addPrimitiveBlender) const {
+                             bool addPrimitiveBlender,
+                             bool hasCoverage) const {
     SkDEBUGCODE(keyBuilder->checkReset();)
     SkASSERT(desiredCombination < this->numCombinations());
 
@@ -119,6 +135,20 @@ void PaintOptions::createKey(const KeyContext& keyContext,
     SolidColorShaderBlock::BeginBlock(keyContext, keyBuilder, /* gatherer= */ nullptr,
                                       {1, 0, 0, 1});
     keyBuilder->endBlock();
+
+    DstReadRequirement dstReadReq = get_dst_read_req(
+            keyContext.caps(), hasCoverage, fBlenderOptions, desiredBlendCombination);
+    bool needsDstSample = dstReadReq == DstReadRequirement::kTextureCopy ||
+                          dstReadReq == DstReadRequirement::kTextureSample;
+    if (needsDstSample) {
+        DstReadSampleBlock::BeginBlock(
+                keyContext, keyBuilder, /* gatherer= */ nullptr, /* dstTexture= */ nullptr);
+        keyBuilder->endBlock();
+
+    } else if (dstReadReq == DstReadRequirement::kFramebufferFetch) {
+        DstReadFetchBlock::BeginBlock(keyContext, keyBuilder, /* gatherer= */ nullptr);
+        keyBuilder->endBlock();
+    }
 
     if (!fShaderOptions.empty()) {
         PrecompileBase::AddToKey(keyContext, keyBuilder, fShaderOptions, desiredShaderCombination);
@@ -162,10 +192,7 @@ void PaintOptions::createKey(const KeyContext& keyContext,
         PriorOutputBlock::BeginBlock(keyContext, keyBuilder, /* gatherer= */ nullptr);
         keyBuilder->endBlock();
         // dst -- surface color
-        // TODO(b/238757201): Use the surface color as the destination by replacing
-        // SolidColorShaderBlock with a DstColorBlock
-        SolidColorShaderBlock::BeginBlock(
-                keyContext, keyBuilder, /* gatherer= */ nullptr, {1, 1, 1, 1});
+        DstColorBlock::BeginBlock(keyContext, keyBuilder, /* gatherer= */ nullptr);
         keyBuilder->endBlock();
         // blender -- shader based blending
         PrecompileBase::AddToKey(keyContext, keyBuilder, fBlenderOptions, desiredBlendCombination);
@@ -176,13 +203,14 @@ void PaintOptions::createKey(const KeyContext& keyContext,
 void PaintOptions::buildCombinations(
         const KeyContext& keyContext,
         bool addPrimitiveBlender,
+        bool hasCoverage,
         const std::function<void(UniquePaintParamsID)>& processCombination) const {
 
     PaintParamsKeyBuilder builder(keyContext.dict());
 
     int numCombinations = this->numCombinations();
     for (int i = 0; i < numCombinations; ++i) {
-        this->createKey(keyContext, i, &builder, addPrimitiveBlender);
+        this->createKey(keyContext, i, &builder, addPrimitiveBlender, hasCoverage);
 
         // The 'findOrCreate' calls lockAsKey on builder and then destroys the returned
         // PaintParamsKey. This serves to reset the builder.

@@ -121,14 +121,17 @@ export class Textfield extends LitElement {
   private valueInternal = '';
 
 
+  /** @export */
   type: MdTextfieldType = 'text';
   /**
    * When false, will use the darker container designed to sit on app-base. When
    * true, will use the lighter container colored designed for use with
    * app-base-shaded. Purely a cosmetic difference to improve contrast.
+   * @export
    */
   shaded = false;
 
+  /** @export */
   get value() {
     return this.mdTextfield?.value || '';
   }
@@ -144,23 +147,29 @@ export class Textfield extends LitElement {
   /**
    * The visible label above the textfield. This is also used as the aria-label
    * for the internal md-textfield.
+   * @export
    */
   label: string;
   // Properties supported by the MD textfield that are surfaced to the
   // cros-textfield API. These are manually plumbed through as cros-textfield is
   // not a subclass. This is not an exhaustive list, and support should be
   // added by clients as needed.
+  /** @export */
   suffix: string;
+  /** @export */
   disabled: boolean;
+  /** @export */
   hint: string;
   /**
    * Max length of the textfield value. If set to -1 or less, md-textfield will
    * ignore this value when restricting the length of the textfield, and also
    * not render the charCounter.
+   * @export
    */
   maxLength = -1;
-
+  /** @export */
   placeholder = '';
+
   get mdTextfield(): MdFilledTextField|undefined {
     return this.renderRoot?.querySelector('md-filled-text-field') || undefined;
   }
