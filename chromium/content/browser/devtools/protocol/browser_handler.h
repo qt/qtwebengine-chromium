@@ -89,6 +89,7 @@ class BrowserHandler : public DevToolsDomainHandler,
 
   Response Crash() override;
   Response CrashGpuProcess() override;
+  Response Close() override;
 
   // DownloadItem::Observer overrides
   void OnDownloadUpdated(download::DownloadItem* item) override;
