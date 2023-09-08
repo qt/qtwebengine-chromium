@@ -22,10 +22,12 @@
 #include "content/browser/gpu/gpu_process_host.h"
 #include "content/browser/permissions/permission_controller_impl.h"
 #include "content/browser/renderer_host/frame_tree_node.h"
+#include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/download_item_utils.h"
+#include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/user_agent.h"
@@ -552,6 +554,21 @@ Response BrowserHandler::CrashGpuProcess() {
   if (host) {
     host->gpu_service()->Crash();
   }
+  return Response::Success();
+}
+
+Response BrowserHandler::Close() {
+  bool closed = false;
+  for (WebContentsImpl* web_contents : WebContentsImpl::GetAllWebContents()) {
+    if (WebContentsDelegate* delegate = web_contents->GetDelegate()) {
+      delegate->CloseContents(web_contents);
+      closed = true;
+    }
+  }
+
+  if (!closed)
+    return Response::InternalError();
+
   return Response::Success();
 }
 
