@@ -92,6 +92,7 @@ class BrowserHandler : public DevToolsDomainHandler,
 
   Response Crash() override;
   Response CrashGpuProcess() override;
+  Response Close() override;
 
   void AddPrivacySandboxCoordinatorKeyConfig(
       const std::string& in_api,
