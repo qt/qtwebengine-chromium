@@ -19,7 +19,8 @@
             },
             {
                 "domain": "Browser",
-                "include": ["getVersion", "getHistograms", "getHistogram", "getBrowserCommandLine", "grantPermissions", "setDownloadBehavior", "cancelDownload", "resetPermissions", "crash", "crashGpuProcess", "setPermission"],
+                "include": ["getVersion", "getHistograms", "getHistogram", "getBrowserCommandLine", "grantPermissions", "setDownloadBehavior", "cancelDownload", "resetPermissions", "crash", "crashGpuProcess", "setPermission",
+                "close"],
                 "async": ["grantPermissions", "resetPermissions", "setPermission"]
             },
             {
