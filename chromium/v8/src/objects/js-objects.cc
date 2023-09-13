@@ -1680,9 +1680,8 @@ Maybe<bool> JSReceiver::ValidateAndApplyPropertyDescriptor(
               : current->has_set()
                     ? current->set()
                     : Handle<Object>::cast(isolate->factory()->null_value()));
-      MaybeHandle<Object> result =
-          JSObject::DefineOwnAccessorIgnoreAttributes(it, getter, setter,
-                                                      desc->ToAttributes());
+      MaybeHandle<Object> result = JSObject::DefineOwnAccessorIgnoreAttributes(
+          it, getter, setter, attrs);
       if (result.is_null()) return Nothing<bool>();
     }
   }
