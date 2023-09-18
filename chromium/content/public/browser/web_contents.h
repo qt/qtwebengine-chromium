@@ -1393,6 +1393,12 @@ class WebContents : public PageNavigator,
       absl::optional<base::RepeatingCallback<bool(const GURL&)>>
           url_match_predicate = absl::nullopt) = 0;
 
+  // Tag `WebContents` with its owner. Used purely for debugging purposes so it
+  // does not need to be exhaustive or perfectly correct.
+  // TODO(crbug.com/1407197): Remove after bug is fixed.
+  virtual void SetOwnerLocationForDebug(
+      absl::optional<base::Location> owner_location) = 0;
+
  private:
   // This interface should only be implemented inside content.
   friend class WebContentsImpl;
