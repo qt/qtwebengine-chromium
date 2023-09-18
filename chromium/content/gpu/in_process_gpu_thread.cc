@@ -24,7 +24,7 @@
 #include "base/android/jni_android.h"
 #endif
 
-#if BUILDFLAG(IS_WIN)
+#if defined(OS_WIN)
 #include <windows.h>
 #endif
 
@@ -45,7 +45,7 @@ InProcessGpuThread::~InProcessGpuThread() {
 void InProcessGpuThread::Init() {
   base::ThreadPriority io_thread_priority = base::ThreadPriority::NORMAL;
 
-#if BUILDFLAG(IS_WIN)
+#if defined(OS_WIN)
   ImmDisableIME(0);
 #endif
 
