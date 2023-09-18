@@ -27,7 +27,7 @@
 #include "src/pathops/SkPathOpsPoint.h"
 
 #include <cmath>
-#include <limits>
+#include <limits.h>
 #include <utility>
 
 struct SkPath_Storage_Equivalent {
