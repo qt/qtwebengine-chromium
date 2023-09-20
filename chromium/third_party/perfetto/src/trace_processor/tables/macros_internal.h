@@ -140,7 +140,9 @@ class MacroTable : public Table {
 }  // namespace macros_internal
 
 // Ignore GCC warning about a missing argument for a variadic macro parameter.
+#if PERFETTO_BUILDFLAG(PERFETTO_COMPILER_GCC)
 #pragma GCC system_header
+#endif
 
 // Basic helper macros.
 #define PERFETTO_TP_NOOP(...)

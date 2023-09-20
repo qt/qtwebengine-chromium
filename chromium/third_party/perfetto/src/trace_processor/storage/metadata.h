@@ -59,8 +59,10 @@ namespace metadata {
   F(kMulti,  "multi")
 // clang-format
 
+#if PERFETTO_BUILDFLAG(PERFETTO_COMPILER_GCC)
 // Ignore GCC warning about a missing argument for a variadic macro parameter.
 #pragma GCC system_header
+#endif
 
 #define PERFETTO_TP_META_TYPE_ENUM(varname, ...) varname
 enum class KeyType : size_t {
