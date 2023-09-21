@@ -25,6 +25,11 @@ namespace {
 HANDLE TransferHandle(HANDLE handle,
                       base::ProcessHandle from_process,
                       base::ProcessHandle to_process) {
+  // Duplicating INVALID_HANDLE_VALUE passes a process handle. If you intend to
+  // do this, you must open a valid process handle, not pass the result of
+  // GetCurrentProcess(). e.g. https://crbug.com/243339.
+  CHECK(handle != INVALID_HANDLE_VALUE);
+
   BOOL result =
       ::DuplicateHandle(from_process, handle, to_process, &handle, 0, FALSE,
                         DUPLICATE_SAME_ACCESS | DUPLICATE_CLOSE_SOURCE);
