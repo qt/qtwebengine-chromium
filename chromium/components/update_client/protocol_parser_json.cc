@@ -178,7 +178,7 @@ bool ParseUpdateCheck(const base::Value& updatecheck_node,
   }
 
   for (auto kv : updatecheck_node.DictItems()) {
-    if (kv.first.front() == '_' && kv.second.is_string()) {
+    if (!kv.first.empty() && kv.first.front() == '_' && kv.second.is_string()) {
       result->custom_attributes[kv.first] = kv.second.GetString();
     }
   }
