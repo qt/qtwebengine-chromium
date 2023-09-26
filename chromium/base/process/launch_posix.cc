@@ -354,6 +354,27 @@ Process LaunchProcess(const std::vector<std::string>& argv,
     // might do things like block waiting for threads that don't even exist
     // in the child.
 
+#if defined(TOOLKIT_QT)
+    if (options.zygote_control_fd != -1) {
+      // Based on base::SetCloseOnExec().
+      auto RemoveCloseOnExec = [](int fd) -> bool {
+        const int flags = fcntl(fd, F_GETFD);
+        if (flags == -1)
+          return false;
+        if ((flags & FD_CLOEXEC) == 0)
+          return true;
+        if (fcntl(fd, F_SETFD, flags & ~FD_CLOEXEC) == -1)
+          return false;
+        return true;
+      };
+
+      if (!RemoveCloseOnExec(options.zygote_control_fd)) {
+        RAW_LOG(ERROR, "Failed to remove FD_CLOEXEC flag from zygote control file descriptor:");
+        RAW_LOG(ERROR, strerror(errno));
+      }
+    }
+#endif
+
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
     // See comments on the ResetFDOwnership() declaration in
     // base/files/scoped_file.h regarding why this is called early here.
