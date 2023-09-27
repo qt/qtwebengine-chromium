@@ -315,7 +315,7 @@ void AudioToolboxAudioEncoder::DoEncode(AudioBus* input_bus) {
     UInt32 num_packets = 1;
     AudioStreamPacketDescription packet_description = {};
     auto result = AudioConverterFillComplexBuffer(
-        encoder_, ProvideInputCallback, &input_data, &num_packets,
+        encoder_, ProvideInputCallback2, &input_data, &num_packets,
         &output_buffer_list, &packet_description);
 
     // We expect "1 in, 1 out" when feeding packets into the encoder, except
