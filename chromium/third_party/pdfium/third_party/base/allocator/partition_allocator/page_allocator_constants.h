@@ -67,11 +67,6 @@ namespace base {
 // Forward declaration, implementation below
 PAGE_ALLOCATOR_CONSTANTS_DECLARE_CONSTEXPR ALWAYS_INLINE size_t
 PageAllocationGranularity();
-}
-
-namespace {
-
-#if !defined(OS_APPLE)
 
 PAGE_ALLOCATOR_CONSTANTS_DECLARE_CONSTEXPR ALWAYS_INLINE int PageAllocationGranularityShift() {
 #if defined(OS_WIN) || defined(ARCH_CPU_PPC64)
@@ -91,20 +86,18 @@ PAGE_ALLOCATOR_CONSTANTS_DECLARE_CONSTEXPR ALWAYS_INLINE int PageAllocationGranu
     base::internal::page_characteristics.shift.store(shift, std::memory_order_relaxed);
   }
   return shift;
+#elif defined(OS_APPLE)
+  return vm_page_shift;
 #else
   return 12;  // 4kB
 #endif
 }
 
-#endif
-
-}  // namespace
-
-namespace base {
-
 PAGE_ALLOCATOR_CONSTANTS_DECLARE_CONSTEXPR ALWAYS_INLINE size_t
 PageAllocationGranularity() {
 #if defined(OS_APPLE)
+  // This is literally equivalent to |1 << PageAllocationGranularityShift()|
+  // below, but was separated out for OS_APPLE to avoid << on a non-constexpr.
   return vm_page_size;
 #elif defined(OS_LINUX) && defined(ARCH_CPU_ARM64)
   // arm64 supports 4kb, 16kb, and 64kb page sizes. Retrieve from or
