@@ -3551,7 +3551,8 @@
         "dg1",
         "alderlake",
         "alchemist",
-        "raptorlake"
+        "raptorlake",
+        "meteorlake"
       ],
       "features": [
         "supports_two_yuv_hardware_overlays"
