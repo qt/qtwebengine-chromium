@@ -109,7 +109,7 @@ def main():
   # If this is run on non-Linux platforms, just return nothing and indicate
   # success. This allows us to "kind of emulate" a Linux build from other
   # platforms.
-  if "linux" not in sys.platform:
+  if 'linux' not in sys.platform and 'darwin' not in sys.platform:
     print("[[],[],[],[],[]]")
     return 0
 
@@ -136,7 +136,7 @@ def main():
     for regexp in options.strip_out:
       strip_out.append(re.compile(regexp))
 
-  if options.sysroot:
+  if options.sysroot and 'darwin' not in sys.platform:
     libdir = SetConfigPath(options)
     if options.debug:
       sys.stderr.write('PKG_CONFIG_LIBDIR=%s\n' % libdir)
@@ -207,7 +207,7 @@ def main():
 
 
   sysroot = options.sysroot
-  if not sysroot:
+  if not sysroot or 'darwin' in sys.platform:
     sysroot = ''
 
   includes = []
