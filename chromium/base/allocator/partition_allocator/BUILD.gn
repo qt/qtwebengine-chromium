@@ -652,6 +652,8 @@ source_set("raw_ptr") {
   }
   if (use_partition_alloc) {
     public_deps = [ ":partition_alloc" ]
+  } else {
+    public_deps = [ ":partition_alloc_buildflags" ]
   }
   deps = [ ":buildflags" ]
 

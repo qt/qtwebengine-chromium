@@ -159,6 +159,11 @@ SI U32 to_fixed(F f) {  return (U32)cast<I32>(f + 0.5f); }
     }
 #endif
 
+// GCC needs the target on arm32
+#if defined(__GNUC__) && defined(USING_NEON_F16C) && !(defined(__aarch64__) || defined(__ARM64__) || defined(_M_ARM64))
+#pragma GCC push_options
+#pragma GCC target ("fpu=neon-fp16")
+#endif
 
 SI F F_from_Half(U16 half) {
 #if defined(USING_NEON_F16C)
@@ -1385,6 +1390,9 @@ static void exec_ops(const Op* ops, const void** args,
     }
 }
 
+#if defined(__GNUC__) && defined(USING_NEON_F16C) && !(defined(__aarch64__) || defined(__ARM64__) || defined(_M_ARM64))
+#pragma GCC pop_options
+#endif
 
 static void run_program(const Op* program, const void** arguments,
                         const char* src, char* dst, int n,
