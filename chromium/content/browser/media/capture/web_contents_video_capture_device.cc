@@ -41,7 +41,7 @@ class WebContentsVideoCaptureDevice::FrameTracker
                int main_render_frame_id)
       : device_(std::move(device)),
         device_task_runner_(base::ThreadTaskRunnerHandle::Get()),
-        cursor_controller_(cursor_controller) {
+        cursor_controller_(cursor_controller->GetWeakPtr()) {
     DCHECK(device_task_runner_);
     DCHECK(cursor_controller_);
 
@@ -184,7 +184,9 @@ class WebContentsVideoCaptureDevice::FrameTracker
         // Note: MouseCursorOverlayController runs on the UI thread. It's also
         // important that SetTargetView() be called in the current stack while
         // |native_view| is known to be a valid pointer. http://crbug.com/818679
-        cursor_controller_->SetTargetView(native_view);
+        if (cursor_controller_) {
+          cursor_controller_->SetTargetView(native_view);
+        }
       }
     } else {
       device_task_runner_->PostTask(
@@ -192,7 +194,9 @@ class WebContentsVideoCaptureDevice::FrameTracker
           base::BindOnce(
               &WebContentsVideoCaptureDevice::OnTargetPermanentlyLost,
               device_));
-      cursor_controller_->SetTargetView(gfx::NativeView());
+      if (cursor_controller_) {
+        cursor_controller_->SetTargetView(gfx::NativeView());
+      }
     }
   }
 
@@ -200,10 +204,11 @@ class WebContentsVideoCaptureDevice::FrameTracker
   const base::WeakPtr<WebContentsVideoCaptureDevice> device_;
   const scoped_refptr<base::SingleThreadTaskRunner> device_task_runner_;
 
-  // Owned by FrameSinkVideoCaptureDevice. This will be valid for the life of
-  // FrameTracker because the FrameTracker deleter task will be posted to the UI
-  // thread before the MouseCursorOverlayController deleter task.
-  MouseCursorOverlayController* const cursor_controller_;
+  // Owned by FrameSinkVideoCaptureDevice.  This may only be accessed on the
+  // UI thread. This is not guaranteed to be valid and must be checked before
+  // use.
+  // https://crbug.com/1480152
+  const base::WeakPtr<MouseCursorOverlayController> cursor_controller_;
 
   viz::FrameSinkId target_frame_sink_id_;
   gfx::NativeView target_native_view_ = gfx::NativeView();
