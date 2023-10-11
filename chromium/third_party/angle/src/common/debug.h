@@ -273,7 +273,7 @@ std::ostream &FmtHex(std::ostream &os, T value)
 
 // A macro to log a performance event around a scope.
 #if defined(ANGLE_TRACE_ENABLED)
-#    if defined(_MSC_VER)
+#    if defined(_MSC_VER) && (!defined(_MSVC_TRADITIONAL) || _MSVC_TRADITIONAL)
 #        define EVENT(context, entryPoint, message, ...)                                     \
             gl::ScopedPerfEventHelper scopedPerfEventHelper##__LINE__(                       \
                 context, angle::EntryPoint::entryPoint);                                     \
@@ -285,6 +285,19 @@ std::ostream &FmtHex(std::ostream &os, T value)
                         "%s(" message ")", GetEntryPointName(angle::EntryPoint::entryPoint), \
                         __VA_ARGS__);                                                        \
                 }                                                                            \
+            } while (0)
+#    elif defined(_MSC_VER)
+#        define EVENT(context, entryPoint, message, ...)                                          \
+            gl::ScopedPerfEventHelper scopedPerfEventHelper(context,                              \
+                                                            angle::EntryPoint::entryPoint);       \
+            do                                                                                    \
+            {                                                                                     \
+                if (gl::ShouldBeginScopedEvent(context))                                          \
+                {                                                                                 \
+                    scopedPerfEventHelper.begin("%s(" message ")",                                \
+                                                GetEntryPointName(angle::EntryPoint::entryPoint)  \
+                                                __VA_OPT__(,) __VA_ARGS__);                       \
+                }                                                                                 \
             } while (0)
 #    else
 #        define EVENT(context, entryPoint, message, ...)                                          \

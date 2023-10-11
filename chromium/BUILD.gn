@@ -1671,7 +1671,7 @@ group("chromium_builder_perf") {
     data_deps += [ "//tools/perf/clear_system_cache" ]
   }
 
-  if (is_win) {
+  if (is_win && !is_qtwebengine) {
     data_deps += [
       "//chrome/installer/mini_installer:mini_installer",
       "//components:components_perftests",

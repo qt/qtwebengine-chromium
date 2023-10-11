@@ -124,7 +124,13 @@ void Gradient::ResolveNoneParametersForColorStops() {
   }
 
   // Collect all params that are not none.
-  absl::optional<float> params[4][stops_.size()];
+  std::vector<absl::optional<float>> params[4] {
+      std::vector<absl::optional<float>>(stops_.size()),
+      std::vector<absl::optional<float>>(stops_.size()),
+      std::vector<absl::optional<float>>(stops_.size()),
+      std::vector<absl::optional<float>>(stops_.size())
+  };
+
   for (wtf_size_t i = 0; i < stops_.size(); i++) {
     if (!stops_[i].color.Param0IsNone()) {
       params[0][i] = stops_[i].color.Param0();

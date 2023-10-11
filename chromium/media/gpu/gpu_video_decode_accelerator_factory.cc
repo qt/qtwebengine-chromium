@@ -127,11 +127,14 @@ GpuVideoDecodeAcceleratorFactory::CreateVDA(
 #if BUILDFLAG(IS_APPLE)
     &GpuVideoDecodeAcceleratorFactory::CreateVTVDA,
 #endif
+    nullptr
   };
 
   std::unique_ptr<VideoDecodeAccelerator> vda;
 
   for (const auto& create_vda_function : create_vda_fps) {
+    if (!create_vda_function)
+      continue;
     vda = (this->*create_vda_function)(workarounds, gpu_preferences, media_log);
     if (vda && vda->Initialize(config, client))
       return vda;

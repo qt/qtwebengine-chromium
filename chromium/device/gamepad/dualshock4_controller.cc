@@ -35,6 +35,7 @@ const float kDpadMax = 7.0f;
 constexpr uint16_t kTouchDimensionX = 1920;
 constexpr uint16_t kTouchDimensionY = 942;
 
+#pragma pack(push, 1)
 struct ControllerData {
   uint8_t axis_left_x;
   uint8_t axis_left_y;
@@ -71,6 +72,7 @@ struct ControllerData {
   uint8_t padding2 : 2;
   bool extension_detection : 1;
 } ABSL_ATTRIBUTE_PACKED;
+#pragma pack(pop)
 
 static_assert(sizeof(ControllerData) == 30,
               "ControllerData has incorrect size");
@@ -101,6 +103,7 @@ struct Dualshock4InputReportUsb {
 static_assert(sizeof(Dualshock4InputReportUsb) == 64,
               "Dualshock4InputReportUsb has incorrect size");
 
+#pragma pack(push, 1)
 struct Dualshock4InputReportBluetooth {
   uint8_t padding1[2];
   ControllerData controller_data;
@@ -110,6 +113,7 @@ struct Dualshock4InputReportBluetooth {
   uint8_t padding3[2];
   uint32_t crc32;
 } ABSL_ATTRIBUTE_PACKED;
+#pragma pack(pop)
 
 static_assert(sizeof(Dualshock4InputReportBluetooth) == 77,
               "Dualshock4InputReportBluetooth has incorrect size");

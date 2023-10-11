@@ -1098,7 +1098,7 @@ void TileManager::FreeResourcesForTile(Tile* tile) {
 
 void TileManager::FreeResourcesForTileAndNotifyClientIfTileWasReadyToDraw(
     Tile* tile) {
-  TRACE_EVENT0("viz", __PRETTY_FUNCTION__);
+  TRACE_EVENT0("viz", PRETTY_FUNCTION);
   bool was_ready_to_draw = tile->draw_info().IsReadyToDraw();
   FreeResourcesForTile(tile);
   if (was_ready_to_draw)

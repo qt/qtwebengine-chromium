@@ -82,7 +82,7 @@ std::u16string ExtractText(ui::ClipboardBuffer clipboard_buffer,
                                    clipboard_buffer, data_dst.get())) {
     clipboard->ReadText(clipboard_buffer, data_dst.get(), &result);
   } else {
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !defined(TOOLKIT_QT)
     if (clipboard->IsFormatAvailable(ui::ClipboardFormatType::PlainTextAType(),
                                      clipboard_buffer, data_dst.get())) {
       std::string ascii;

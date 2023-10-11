@@ -20,7 +20,6 @@
 #include "gpu/gpu_gles2_export.h"
 #include "skia/buildflags.h"
 #include "third_party/skia/include/core/SkImage.h"
-#include "third_party/skia/include/core/SkPromiseImageTexture.h"
 #include "third_party/skia/include/core/SkSurface.h"
 #include "third_party/skia/include/gpu/GrDirectContext.h"
 #include "third_party/skia/include/gpu/ganesh/SkImageGanesh.h"

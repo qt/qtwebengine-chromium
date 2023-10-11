@@ -205,7 +205,7 @@ class ComputedStyleBase : public GarbageCollected<ComputedStyleBase> {
     {% endfor %}
   }
 
- private:
+ public:
   {% for subgroup in computed_style.subgroups %}
   {{declare_field_group_class(subgroup)|indent(2)}}
 

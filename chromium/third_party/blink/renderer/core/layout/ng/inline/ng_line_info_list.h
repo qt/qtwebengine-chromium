@@ -72,7 +72,8 @@ class NGLineInfoList {
 
  protected:
   NGLineInfoList(NGLineInfo* line_infos_instance, wtf_size_t max_lines)
-      : max_lines_(max_lines) {
+      : max_lines_(max_lines)
+      , line_infos_(line_infos_instance) {
     CHECK_EQ(line_infos_instance, line_infos_);
   }
 
@@ -85,7 +86,7 @@ class NGLineInfoList {
   wtf_size_t size_ = 0;
   wtf_size_t start_index_ = 0;
   const wtf_size_t max_lines_;
-  NGLineInfo line_infos_[0];
+  NGLineInfo *line_infos_;
 };
 
 inline NGLineInfo& NGLineInfoList::Get(const NGInlineBreakToken* break_token,

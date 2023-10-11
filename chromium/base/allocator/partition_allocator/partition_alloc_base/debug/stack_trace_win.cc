@@ -11,6 +11,7 @@
 #include <windows.h>
 
 #include <psapi.h>
+#include <vector>
 
 namespace partition_alloc::internal::base::debug {
 
@@ -23,7 +24,7 @@ void PrintStackTraceInternal(void** trace, size_t count) {
     return;
   }
 
-  bool is_output_trace[count];
+  std::vector<bool> is_output_trace(count);
   for (size_t i = 0; i < count; ++i) {
     is_output_trace[i] = false;
   }

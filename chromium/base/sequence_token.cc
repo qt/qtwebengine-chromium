@@ -15,8 +15,8 @@ base::AtomicSequenceNumber g_sequence_token_generator;
 
 base::AtomicSequenceNumber g_task_token_generator;
 
-ABSL_CONST_INIT thread_local SequenceToken current_sequence_token;
-ABSL_CONST_INIT thread_local TaskToken current_task_token;
+thread_local SequenceToken current_sequence_token;
+thread_local TaskToken current_task_token;
 
 }  // namespace
 

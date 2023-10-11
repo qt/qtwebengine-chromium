@@ -92,8 +92,8 @@ void DelayHandler::ProcessOnlyAudioParams(uint32_t frames_to_process) {
   }
 
   DCHECK_LE(frames_to_process, render_quantum_frames_);
-  float values[render_quantum_frames_];
-  delay_time_->CalculateSampleAccurateValues(values, frames_to_process);
+  std::vector<float> values(render_quantum_frames_);
+  delay_time_->CalculateSampleAccurateValues(values.data(), frames_to_process);
 }
 
 void DelayHandler::Initialize() {

@@ -108,7 +108,11 @@ class CORE_EXPORT SparseVector {
     // Then count the total population of field IDs lower than that one we
     // are looking for. The target field ID should be located at the index of
     // of the total population.
+#ifdef _MSC_VER
+    return __popcnt(fields_bitfield_ & mask);
+#else
     return __builtin_popcount(fields_bitfield_ & mask);
+#endif
   }
 
   Vector<FieldType> fields_;

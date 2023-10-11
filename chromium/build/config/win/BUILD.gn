@@ -89,8 +89,8 @@ config("compiler") {
   cflags_cc = [ "/TP" ]
 
   cflags += [
-    # Work around crbug.com/526851, bug in VS 2015 RTM compiler.
-    "/Zc:sizedDealloc-",
+    "/Zc:preprocessor",
+    "/wd5105",
   ]
 
   if (is_clang) {
