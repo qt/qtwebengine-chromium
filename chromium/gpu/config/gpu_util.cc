@@ -872,6 +872,8 @@ IntelGpuSeriesType GetIntelGpuSeriesType(uint32_t vendor_id,
       case 0x3100:
         return IntelGpuSeriesType::kGeminilake;
       case 0x5900:
+        if (device_id == 0x591C)
+          return IntelGpuSeriesType::kAmberlake;
         return IntelGpuSeriesType::kKabylake;
       case 0x8700:
         if (device_id == 0x87C0)
@@ -894,6 +896,10 @@ IntelGpuSeriesType GetIntelGpuSeriesType(uint32_t vendor_id,
         return IntelGpuSeriesType::kJasperlake;
       case 0x9A00:
         return IntelGpuSeriesType::kTigerlake;
+      case 0x4c00:
+        return IntelGpuSeriesType::kRocketlake;
+      case 0x4900:
+        return IntelGpuSeriesType::kDG1;
       case 0x4600:
         return IntelGpuSeriesType::kAlderlake;
       default:
