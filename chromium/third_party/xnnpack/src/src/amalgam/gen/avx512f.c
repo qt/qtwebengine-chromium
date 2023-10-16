@@ -42,7 +42,7 @@ void xnn_f32_dwconv_minmax_ukernel_25p16c__avx512f(
     size_t output_increment,
     size_t input_offset,
     const float* zero,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -472,7 +472,7 @@ void xnn_f32_dwconv_minmax_ukernel_3p16c__avx512f(
     size_t output_increment,
     size_t input_offset,
     const float* zero,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -572,7 +572,7 @@ void xnn_f32_dwconv_minmax_ukernel_4p16c__avx512f(
     size_t output_increment,
     size_t input_offset,
     const float* zero,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -689,7 +689,7 @@ void xnn_f32_dwconv_minmax_ukernel_5f5m5l32c16s1r__avx512f(
     const float* zero,
     size_t kernel_size,
     float* buffer,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -1242,7 +1242,7 @@ void xnn_f32_dwconv_minmax_ukernel_9p16c__avx512f(
     size_t output_increment,
     size_t input_offset,
     const float* zero,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[ XNN_MIN_ELEMENTS(1)])
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -1432,7 +1432,7 @@ void xnn_f32_gemm_minmax_ukernel_1x16__avx512f_broadcast(
     float* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[ XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 1);
@@ -1497,7 +1497,7 @@ void xnn_f32_gemm_minmax_ukernel_7x16__avx512f_broadcast(
     float* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[ XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 7);
@@ -1660,7 +1660,7 @@ void xnn_f32_igemm_minmax_ukernel_1x16__avx512f_broadcast(
     size_t cn_stride,
     size_t a_offset,
     const float* zero,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 1);
@@ -1741,7 +1741,7 @@ void xnn_f32_igemm_minmax_ukernel_7x16__avx512f_broadcast(
     size_t cn_stride,
     size_t a_offset,
     const float* zero,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 7);
@@ -2005,7 +2005,7 @@ void xnn_f32_rdsum_ukernel_7p7x__avx512f_c64(
     size_t input_stride,
     const float* zero,
     float* output,
-    const union xnn_f32_scale_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_scale_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(rows != 0);
   assert(channels != 0);
@@ -2236,7 +2236,7 @@ void xnn_f32_rmax_ukernel__avx512f_u64_acc4(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -2291,7 +2291,7 @@ void xnn_f32_rminmax_ukernel__avx512f_u64_acc4(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -2364,7 +2364,7 @@ void xnn_f32_rsum_ukernel__avx512f_u64_acc4(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_scale_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_scale_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -2421,7 +2421,7 @@ void xnn_f32_vadd_minmax_ukernel__avx512f_u32(
     const float* input_a,
     const float* input_b,
     float* output,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -2485,7 +2485,7 @@ void xnn_f32_vaddc_minmax_ukernel__avx512f_u32(
     const float* input_a,
     const float* input_b,
     float* output,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -2547,7 +2547,7 @@ void xnn_f32_vdiv_minmax_ukernel__avx512f_u32(
     const float* input_a,
     const float* input_b,
     float* output,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[ XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -2611,7 +2611,7 @@ void xnn_f32_vdivc_minmax_ukernel__avx512f_u32(
     const float* input_a,
     const float* input_b,
     float* output,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[ XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -2673,7 +2673,7 @@ void xnn_f32_vmax_ukernel__avx512f_u32(
     const float* input_a,
     const float* input_b,
     float* output,
-    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params params[ XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -2726,7 +2726,7 @@ void xnn_f32_vmaxc_ukernel__avx512f_u32(
     const float* input_a,
     const float* input_b,
     float* output,
-    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params params[ XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -2777,7 +2777,7 @@ void xnn_f32_vmin_ukernel__avx512f_u32(
     const float* input_a,
     const float* input_b,
     float* output,
-    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params params[ XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -2830,7 +2830,7 @@ void xnn_f32_vminc_ukernel__avx512f_u32(
     const float* input_a,
     const float* input_b,
     float* output,
-    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params params[ XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -2881,7 +2881,7 @@ void xnn_f32_vmul_minmax_ukernel__avx512f_u32(
     const float* input_a,
     const float* input_b,
     float* output,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[ XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -2945,7 +2945,7 @@ void xnn_f32_vmulc_minmax_ukernel__avx512f_u32(
     const float* input_a,
     const float* input_b,
     float* output,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[ XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -3007,7 +3007,7 @@ void xnn_f32_vrdivc_minmax_ukernel__avx512f_u32(
     const float* input_a,
     const float* input_b,
     float* output,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[ XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -3069,7 +3069,7 @@ void xnn_f32_vrsubc_minmax_ukernel__avx512f_u32(
     const float* input_a,
     const float* input_b,
     float* output,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[ XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -3131,7 +3131,7 @@ void xnn_f32_vsqrdiff_ukernel__avx512f_u32(
     const float* input_a,
     const float* input_b,
     float* output,
-    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params params[ XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -3188,7 +3188,7 @@ void xnn_f32_vsqrdiffc_ukernel__avx512f_u32(
     const float* input_a,
     const float* input_b,
     float* output,
-    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params params[ XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -3243,7 +3243,7 @@ void xnn_f32_vsub_minmax_ukernel__avx512f_u32(
     const float* input_a,
     const float* input_b,
     float* output,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[ XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -3307,7 +3307,7 @@ void xnn_f32_vsubc_minmax_ukernel__avx512f_u32(
     const float* input_a,
     const float* input_b,
     float* output,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[ XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -3368,7 +3368,7 @@ void xnn_f32_vclamp_ukernel__avx512f_u16(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[ XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -3407,7 +3407,7 @@ void xnn_f32_velu_ukernel__avx512f_rr1_p6_u128(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_elu_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_elu_params params[ XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -3658,7 +3658,7 @@ void xnn_f32_vhswish_ukernel__avx512f_u16(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_hswish_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_hswish_params params[ XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -3700,7 +3700,7 @@ void xnn_f32_vlrelu_ukernel__avx512f_u16(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_lrelu_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_lrelu_params params[ XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -3739,7 +3739,7 @@ void xnn_f32_vrndd_ukernel__avx512f_u16(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_rnd_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_rnd_params params[ XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -3772,7 +3772,7 @@ void xnn_f32_vrndne_ukernel__avx512f_u16(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_rnd_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_rnd_params params[ XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -3805,7 +3805,7 @@ void xnn_f32_vrndu_ukernel__avx512f_u16(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_rnd_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_rnd_params params[ XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -3838,7 +3838,7 @@ void xnn_f32_vrndz_ukernel__avx512f_u16(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_rnd_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_rnd_params params[ XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -3871,7 +3871,7 @@ void xnn_f32_vrsqrt_ukernel__avx512f_rsqrt_u32(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_rsqrt_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_rsqrt_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -3947,7 +3947,7 @@ void xnn_f32_vsigmoid_ukernel__avx512f_rr2_lut32_p2_perm2_scalef_div_u64(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_sigmoid_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_sigmoid_params params[ XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -4105,7 +4105,7 @@ void xnn_f32_vsigmoid_ukernel__avx512f_rr2_lut32_p2_perm2_scalef_div_u64(
 
 void xnn_f32_vsqrt_ukernel__avx512f_rsqrt_u16(
     size_t batch, const float* input, float* output,
-    const union xnn_f32_sqrt_params params[restrict XNN_MIN_ELEMENTS(1)]) {
+    const union xnn_f32_sqrt_params params[XNN_MIN_ELEMENTS(1)]) {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
   assert(input != NULL);
@@ -4780,7 +4780,7 @@ void xnn_f32_vabs_ukernel__avx512f_u16(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -4814,7 +4814,7 @@ void xnn_f32_vcopysign_ukernel__avx512f_u32(
     const float* mag,
     const float* sign,
     float* output,
-    const union xnn_f32_default_params unused_params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params unused_params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -4875,7 +4875,7 @@ void xnn_f32_vcopysignc_ukernel__avx512f_u32(
     const float* mag,
     const float* sign,
     float* output,
-    const union xnn_f32_default_params unused_params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params unused_params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -4923,7 +4923,7 @@ void xnn_f32_vgelu_ukernel__avx512f_rational_12_10_nr_u32(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_default_params unused_params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params unused_params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -5123,7 +5123,7 @@ void xnn_f32_vlog_ukernel__avx512f_rational_3_3_div_u16(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_default_params unused_params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params unused_params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -5222,7 +5222,7 @@ void xnn_f32_vneg_ukernel__avx512f_u16(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -5256,7 +5256,7 @@ void xnn_f32_vrcopysignc_ukernel__avx512f_u32(
     const float* sign,
     const float* mag,
     float* output,
-    const union xnn_f32_default_params unused_params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params unused_params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -5308,7 +5308,7 @@ void xnn_f32_vsqr_ukernel__avx512f_u16(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -5341,7 +5341,7 @@ void xnn_f32_vtanh_ukernel__avx512f_rational_9_6_nr_u16(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_tanh_params unused_params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_tanh_params unused_params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -5447,7 +5447,7 @@ void xnn_s32_vmul_ukernel__avx512f_u32(
     const int32_t* input_a,
     const int32_t* input_b,
     int32_t* output,
-    const union xnn_s32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_s32_default_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(int32_t) == 0);
@@ -5500,7 +5500,7 @@ void xnn_s32_vmulc_ukernel__avx512f_u32(
     const int32_t* input1,
     const int32_t* input2,
     int32_t* output,
-    const union xnn_s32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_s32_default_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(int32_t) == 0);
