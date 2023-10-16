@@ -32,7 +32,7 @@ void xnn_f16_dwconv_minmax_ukernel_25p8c__fma3_acc2(
     size_t output_increment,
     size_t input_offset,
     const void* zero,
-    const union xnn_f16_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f16_minmax_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -504,7 +504,7 @@ void xnn_f16_dwconv_minmax_ukernel_3p16c__fma3(
     size_t output_increment,
     size_t input_offset,
     const void* zero,
-    const union xnn_f16_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f16_minmax_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -663,7 +663,7 @@ void xnn_f16_dwconv_minmax_ukernel_4p16c__fma3(
     size_t output_increment,
     size_t input_offset,
     const void* zero,
-    const union xnn_f16_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f16_minmax_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -847,7 +847,7 @@ void xnn_f16_dwconv_minmax_ukernel_9p16c__fma3(
     size_t output_increment,
     size_t input_offset,
     const void* zero,
-    const union xnn_f16_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f16_minmax_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -1243,7 +1243,7 @@ void xnn_f16_vmulcaddc_minmax_ukernel_c8__fma3_2x(
     const void*restrict weights,
     void*restrict output,
     size_t output_stride,
-    const union xnn_f16_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f16_minmax_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(rows != 0);
   assert(channels != 0);
@@ -1354,7 +1354,7 @@ void xnn_f16_vtanh_ukernel__fma3_polynomial_p19h9t2_x32(
     size_t batch,
     const void* input,
     void* output,
-    const union xnn_f16_tanh_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f16_tanh_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -1523,7 +1523,7 @@ void xnn_f32_dwconv_minmax_ukernel_25p8c__fma3(
     size_t output_increment,
     size_t input_offset,
     const float* zero,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f32_minmax_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -1965,7 +1965,7 @@ void xnn_f32_dwconv_minmax_ukernel_3p16c__fma3(
     size_t output_increment,
     size_t input_offset,
     const float* zero,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f32_minmax_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -2120,7 +2120,7 @@ void xnn_f32_dwconv_minmax_ukernel_4p16c__fma3(
     size_t output_increment,
     size_t input_offset,
     const float* zero,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f32_minmax_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -2301,7 +2301,7 @@ void xnn_f32_dwconv_minmax_ukernel_5f5m5l8c8s4r__fma3(
     const float* zero,
     size_t kernel_size,
     float* buffer,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f32_minmax_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -2684,7 +2684,7 @@ void xnn_f32_dwconv_minmax_ukernel_9p16c__fma3(
     size_t output_increment,
     size_t input_offset,
     const float* zero,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f32_minmax_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -2983,7 +2983,7 @@ void xnn_f32_gemm_minmax_ukernel_1x16__fma3_broadcast(
     float*restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[ XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 1);
@@ -3075,7 +3075,7 @@ void xnn_f32_gemm_minmax_ukernel_1x16s4__fma3_broadcast(
     float*restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f32_minmax_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(mr != 0);
   assert(mr <= 1);
@@ -3232,7 +3232,7 @@ void xnn_f32_gemm_minmax_ukernel_4x16s4__fma3_broadcast(
     float*restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f32_minmax_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(mr != 0);
   assert(mr <= 4);
@@ -3548,7 +3548,7 @@ void xnn_f32_gemm_minmax_ukernel_5x16__fma3_broadcast(
     float*restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[ XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 5);
@@ -3766,7 +3766,7 @@ void xnn_f32_igemm_minmax_ukernel_1x16__fma3_broadcast(
     size_t cn_stride,
     size_t a_offset,
     const float* zero,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[ XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 1);
@@ -3871,7 +3871,7 @@ void xnn_f32_igemm_minmax_ukernel_1x16s4__fma3_broadcast(
     size_t cn_stride,
     size_t a_offset,
     const float* zero,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f32_minmax_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(mr != 0);
   assert(mr <= 1);
@@ -4042,7 +4042,7 @@ void xnn_f32_igemm_minmax_ukernel_4x16s4__fma3_broadcast(
     size_t cn_stride,
     size_t a_offset,
     const float* zero,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f32_minmax_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(mr != 0);
   assert(mr <= 4);
@@ -4378,7 +4378,7 @@ void xnn_f32_igemm_minmax_ukernel_5x16__fma3_broadcast(
     size_t cn_stride,
     size_t a_offset,
     const float* zero,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[ XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 5);
@@ -4607,7 +4607,7 @@ void xnn_f32_vhswish_ukernel__fma3_x16(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_hswish_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_hswish_params params[ XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -4682,7 +4682,7 @@ void xnn_f32_vtanh_ukernel__fma3_expm1minus_rr1_lut4_p4h3ts_perm_div_x40(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_tanh_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f32_tanh_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);

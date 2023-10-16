@@ -199,7 +199,7 @@ static enum xnn_status setup_max_pooling2d_nhwc(
   void* output,
   uint32_t log2_input_element_size,
   uint32_t log2_output_element_size,
-  const struct xnn_maxpool_config maxpool[restrict XNN_MIN_ELEMENTS(1)],
+  const struct xnn_maxpool_config maxpool[ XNN_MIN_ELEMENTS(1)],
   const void* params,
   size_t params_size,
   size_t num_threads)
