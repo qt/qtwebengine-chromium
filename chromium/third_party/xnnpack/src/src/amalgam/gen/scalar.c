@@ -47,7 +47,7 @@ void xnn_f16_f32_vcvt_ukernel__scalar_u1(
     size_t batch,
     const void* input,
     float* output,
-    const union xnn_f16_f32_cvt_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f16_f32_cvt_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -83,7 +83,7 @@ void xnn_f16_f32_vcvt_ukernel__scalar_u4(
     size_t batch,
     const void* input,
     float* output,
-    const union xnn_f16_f32_cvt_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f16_f32_cvt_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -790,7 +790,7 @@ void xnn_f32_avgpool_minmax_ukernel_9p8x__scalar_c1(
     float* output,
     size_t input_increment,
     size_t output_increment,
-    const union xnn_f32_scaleminmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_scaleminmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(output_pixels != 0);
   assert(kernel_elements > 9);
@@ -1050,7 +1050,7 @@ void xnn_f32_avgpool_minmax_ukernel_9x__scalar_c1(
     float* output,
     size_t input_increment,
     size_t output_increment,
-    const union xnn_f32_scaleminmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_scaleminmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(output_pixels != 0);
   assert(kernel_elements != 0);
@@ -1177,7 +1177,7 @@ void xnn_f32_conv_hwc2chw_ukernel_3x3s2p1c3x4__scalar_1x1(
     size_t output_channels,
     size_t output_height_stride,
     size_t output_channel_stride,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(input_width != 0);
   assert(output_y_end > output_y_start);
@@ -1833,7 +1833,7 @@ void xnn_f32_dwconv_minmax_ukernel_25p1c__scalar_acc2(
     size_t output_increment,
     size_t input_offset,
     const float* zero,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -2096,7 +2096,7 @@ void xnn_f32_dwconv_ukernel_25p1c__scalar_acc2(
     size_t output_increment,
     size_t input_offset,
     const float* zero,
-    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -2357,7 +2357,7 @@ void xnn_f32_dwconv_minmax_ukernel_2f2m2l4c1s1r__scalar_acc2(
     const float* zero,
     size_t kernel_size,
     float* buffer,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -2669,7 +2669,7 @@ void xnn_f32_dwconv_minmax_ukernel_3p1c__scalar_acc2(
     size_t output_increment,
     size_t input_offset,
     const float* zero,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -2734,7 +2734,7 @@ void xnn_f32_dwconv_ukernel_3p1c__scalar_acc2(
     size_t output_increment,
     size_t input_offset,
     const float* zero,
-    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -2795,7 +2795,7 @@ void xnn_f32_dwconv_minmax_ukernel_4p1c__scalar_acc2(
     size_t output_increment,
     size_t input_offset,
     const float* zero,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -2869,7 +2869,7 @@ void xnn_f32_dwconv_ukernel_4p1c__scalar_acc2(
     size_t output_increment,
     size_t input_offset,
     const float* zero,
-    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -2939,7 +2939,7 @@ void xnn_f32_dwconv_minmax_ukernel_9p1c__scalar_acc2(
     size_t output_increment,
     size_t input_offset,
     const float* zero,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -3058,7 +3058,7 @@ void xnn_f32_dwconv_ukernel_9p1c__scalar_acc2(
     size_t output_increment,
     size_t input_offset,
     const float* zero,
-    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -3171,7 +3171,7 @@ void xnn_f32_dwconv2d_chw_ukernel_3x3p1__scalar_2x1_acc2(
     const float* zero,
     float* output,
     uint32_t padding_top,
-    const union xnn_f32_chw_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_chw_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(input_height != 0);
   assert(input_width != 0);
@@ -3320,7 +3320,7 @@ void xnn_f32_dwconv2d_chw_ukernel_3x3p1__scalar_4x1(
     const float* zero,
     float* output,
     uint32_t padding_top,
-    const union xnn_f32_chw_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_chw_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(input_height != 0);
   assert(input_width != 0);
@@ -3533,7 +3533,7 @@ void xnn_f32_dwconv2d_chw_ukernel_3x3s2p1__scalar_1x1_acc2(
     const float* zero,
     float* output,
     uint32_t padding_top,
-    const union xnn_f32_chw_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_chw_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(input_height != 0);
   assert(input_width != 0);
@@ -3655,7 +3655,7 @@ void xnn_f32_dwconv2d_chw_ukernel_3x3s2p1__scalar_2x1_acc2(
     const float* zero,
     float* output,
     uint32_t padding_top,
-    const union xnn_f32_chw_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_chw_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(input_height != 0);
   assert(input_width != 0);
@@ -3827,7 +3827,7 @@ void xnn_f32_dwconv2d_chw_ukernel_5x5p2__scalar_1x1_acc5(
     const float* zero,
     float* output,
     uint32_t padding_top,
-    const union xnn_f32_chw_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_chw_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(input_height != 0);
   assert(input_width != 0);
@@ -4083,7 +4083,7 @@ void xnn_f32_dwconv2d_chw_ukernel_5x5p2__scalar_2x1_acc2(
     const float* zero,
     float* output,
     uint32_t padding_top,
-    const union xnn_f32_chw_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_chw_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(input_height != 0);
   assert(input_width != 0);
@@ -4427,7 +4427,7 @@ void xnn_f32_dwconv2d_chw_ukernel_5x5s2p2__scalar_1x1_acc5(
     const float* zero,
     float* output,
     uint32_t padding_top,
-    const union xnn_f32_chw_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_chw_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(input_height != 0);
   assert(input_width != 0);
@@ -4677,7 +4677,7 @@ void xnn_f32_dwconv2d_chw_ukernel_5x5s2p2__scalar_2x1_acc2(
     const float* zero,
     float* output,
     uint32_t padding_top,
-    const union xnn_f32_chw_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_chw_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(input_height != 0);
   assert(input_width != 0);
@@ -5021,7 +5021,7 @@ void xnn_f32_f16_vcvt_ukernel__scalar_bitcast_u4(
     size_t batch,
     const float* input,
     void* output,
-    const union xnn_f32_f16_cvt_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_f16_cvt_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -5174,7 +5174,7 @@ void xnn_f32_f16_vcvt_ukernel__scalar_fabsf_u2(
     size_t batch,
     const float* input,
     void* output,
-    const union xnn_f32_f16_cvt_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_f16_cvt_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -5287,7 +5287,7 @@ void xnn_f32_gavgpool_cw_ukernel__scalar_u1(
     size_t channels,
     const float* input,
     float* output,
-    const union xnn_f32_gavgpool_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_gavgpool_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(elements != 0);
   assert(elements % sizeof(float) == 0);
@@ -5338,7 +5338,7 @@ void xnn_f32_gavgpool_minmax_ukernel_7p7x__scalar_c1(
     const float* zero,
     float* buffer,
     float* output,
-    const union xnn_f32_scaleminmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_scaleminmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(rows > 7);
   assert(channels != 0);
@@ -5475,7 +5475,7 @@ void xnn_f32_gavgpool_minmax_ukernel_7x__scalar_c1(
     size_t input_stride,
     const float* zero,
     float* output,
-    const union xnn_f32_scaleminmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_scaleminmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(rows != 0);
   assert(rows <= 7);
@@ -5546,7 +5546,7 @@ void xnn_f32_gemm_minmax_ukernel_1x4__scalar(
     float* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 1);
@@ -5633,7 +5633,7 @@ void xnn_f32_gemm_relu_ukernel_1x4__scalar(
     float* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_f32_relu_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_relu_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 1);
@@ -5713,7 +5713,7 @@ void xnn_f32_gemm_ukernel_1x4__scalar(
     float* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 1);
@@ -5789,7 +5789,7 @@ void xnn_f32_gemm_minmax_ukernel_2x4__scalar(
     float* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 2);
@@ -5910,7 +5910,7 @@ void xnn_f32_gemm_relu_ukernel_2x4__scalar(
     float* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_f32_relu_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_relu_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 2);
@@ -6020,7 +6020,7 @@ void xnn_f32_gemm_ukernel_2x4__scalar(
     float* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 2);
@@ -6122,7 +6122,7 @@ void xnn_f32_gemm_minmax_ukernel_4x2__scalar(
     float* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 4);
@@ -6251,7 +6251,7 @@ void xnn_f32_gemm_ukernel_4x2__scalar(
     float* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 4);
@@ -6361,7 +6361,7 @@ void xnn_f32_gemm_minmax_ukernel_4x4__scalar(
     float* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 4);
@@ -6550,7 +6550,7 @@ void xnn_f32_gemm_relu_ukernel_4x4__scalar(
     float* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_f32_relu_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_relu_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 4);
@@ -6720,7 +6720,7 @@ void xnn_f32_gemm_ukernel_4x4__scalar(
     float* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 4);
@@ -7083,7 +7083,7 @@ void xnn_f32_igemm_minmax_ukernel_1x4__scalar(
     size_t cn_stride,
     size_t a_offset,
     const float* zero,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 1);
@@ -7184,7 +7184,7 @@ void xnn_f32_igemm_relu_ukernel_1x4__scalar(
     size_t cn_stride,
     size_t a_offset,
     const float* zero,
-    const union xnn_f32_relu_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_relu_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 1);
@@ -7278,7 +7278,7 @@ void xnn_f32_igemm_ukernel_1x4__scalar(
     size_t cn_stride,
     size_t a_offset,
     const float* zero,
-    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 1);
@@ -7368,7 +7368,7 @@ void xnn_f32_igemm_minmax_ukernel_2x4__scalar(
     size_t cn_stride,
     size_t a_offset,
     const float* zero,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 2);
@@ -7505,7 +7505,7 @@ void xnn_f32_igemm_relu_ukernel_2x4__scalar(
     size_t cn_stride,
     size_t a_offset,
     const float* zero,
-    const union xnn_f32_relu_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_relu_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 2);
@@ -7631,7 +7631,7 @@ void xnn_f32_igemm_ukernel_2x4__scalar(
     size_t cn_stride,
     size_t a_offset,
     const float* zero,
-    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 2);
@@ -7749,7 +7749,7 @@ void xnn_f32_igemm_minmax_ukernel_4x2__scalar(
     size_t cn_stride,
     size_t a_offset,
     const float* zero,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 4);
@@ -7898,7 +7898,7 @@ void xnn_f32_igemm_ukernel_4x2__scalar(
     size_t cn_stride,
     size_t a_offset,
     const float* zero,
-    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 4);
@@ -8028,7 +8028,7 @@ void xnn_f32_igemm_minmax_ukernel_4x4__scalar(
     size_t cn_stride,
     size_t a_offset,
     const float* zero,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 4);
@@ -8237,7 +8237,7 @@ void xnn_f32_igemm_relu_ukernel_4x4__scalar(
     size_t cn_stride,
     size_t a_offset,
     const float* zero,
-    const union xnn_f32_relu_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_relu_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 4);
@@ -8427,7 +8427,7 @@ void xnn_f32_igemm_ukernel_4x4__scalar(
     size_t cn_stride,
     size_t a_offset,
     const float* zero,
-    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 4);
@@ -8598,7 +8598,7 @@ void xnn_f32_maxpool_minmax_ukernel_9p8x__scalar_c1(
     float* output,
     size_t input_increment,
     size_t output_increment,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(output_pixels != 0);
   assert(kernel_elements != 0);
@@ -8764,7 +8764,7 @@ void xnn_f32_pavgpool_minmax_ukernel_9p8x__scalar_c1(
     float* output,
     size_t input_increment,
     size_t output_increment,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(output_pixels != 0);
   assert(kernel_elements > 9);
@@ -9026,7 +9026,7 @@ void xnn_f32_pavgpool_minmax_ukernel_9x__scalar_c1(
     float* output,
     size_t input_increment,
     size_t output_increment,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(output_pixels != 0);
   assert(kernel_elements != 0);
@@ -9239,7 +9239,7 @@ void xnn_f32_qc4w_gemm_minmax_ukernel_1x4__scalar(
     float* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_f32_qc4w_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_qc4w_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 1);
@@ -9365,7 +9365,7 @@ void xnn_f32_qc4w_gemm_minmax_ukernel_4x4__scalar(
     float* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_f32_qc4w_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_qc4w_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 4);
@@ -9635,7 +9635,7 @@ void xnn_f32_qc8w_gemm_minmax_ukernel_1x4__scalar(
     float* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 1);
@@ -9731,7 +9731,7 @@ void xnn_f32_qc8w_gemm_minmax_ukernel_4x4__scalar(
     float* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 4);
@@ -9935,7 +9935,7 @@ void xnn_f32_qs8_vcvt_ukernel__scalar_imagic_u4(
     size_t batch,
     const float* input,
     int8_t* output,
-    const union xnn_f32_qs8_cvt_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_qs8_cvt_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -10014,7 +10014,7 @@ void xnn_f32_qs8_vcvt_ukernel__scalar_lrintf_u4(
     size_t batch,
     const float* input,
     int8_t* output,
-    const union xnn_f32_qs8_cvt_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_qs8_cvt_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -10085,7 +10085,7 @@ void xnn_f32_qu8_vcvt_ukernel__scalar_imagic_u1(
     size_t batch,
     const float* input,
     uint8_t* output,
-    const union xnn_f32_qu8_cvt_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_qu8_cvt_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -10119,7 +10119,7 @@ void xnn_f32_qu8_vcvt_ukernel__scalar_imagic_u4(
     size_t batch,
     const float* input,
     uint8_t* output,
-    const union xnn_f32_qu8_cvt_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_qu8_cvt_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -10198,7 +10198,7 @@ void xnn_f32_qu8_vcvt_ukernel__scalar_lrintf_u4(
     size_t batch,
     const float* input,
     uint8_t* output,
-    const union xnn_f32_qu8_cvt_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_qu8_cvt_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -10271,7 +10271,7 @@ void xnn_f32_raddstoreexpminusmax_ukernel__scalar_rr2_p5_u4_acc2(
     const float* max,
     float* output,
     float* sum,
-    const union xnn_f32_expminus_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_expminus_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -10468,7 +10468,7 @@ void xnn_f32_rmax_ukernel__scalar_u4_acc4(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -10511,7 +10511,7 @@ void xnn_f32_rminmax_ukernel__scalar_u4_acc4(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -10567,7 +10567,7 @@ void xnn_f32_rsum_ukernel__scalar_u4_acc4(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_scale_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_scale_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -10615,7 +10615,7 @@ void xnn_f32_spmm_minmax_ukernel_8x1__scalar(
     const uint32_t* nidx_nnzmap,
     float* output,
     size_t output_stride,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mc != 0);
   assert(mc % sizeof(float) == 0);
@@ -10965,7 +10965,7 @@ void xnn_f32_spmm_minmax_ukernel_8x2__scalar(
     const uint32_t* nidx_nnzmap,
     float* output,
     size_t output_stride,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mc != 0);
   assert(mc % sizeof(float) == 0);
@@ -11398,7 +11398,7 @@ void xnn_f32_spmm_minmax_ukernel_8x4__scalar(
     const uint32_t* nidx_nnzmap,
     float* output,
     size_t output_stride,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mc != 0);
   assert(mc % sizeof(float) == 0);
@@ -11993,7 +11993,7 @@ void xnn_f32_vadd_minmax_ukernel__scalar_u8(
     const float* input_a,
     const float* input_b,
     float* output,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -12081,7 +12081,7 @@ void xnn_f32_vaddc_minmax_ukernel__scalar_u8(
     const float* input_a,
     const float* input_b,
     float* output,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -12159,7 +12159,7 @@ void xnn_f32_vdiv_minmax_ukernel__scalar_u2(
     const float* input_a,
     const float* input_b,
     float* output,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -12209,7 +12209,7 @@ void xnn_f32_vdivc_minmax_ukernel__scalar_u2(
     const float* input_a,
     const float* input_b,
     float* output,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -12255,7 +12255,7 @@ void xnn_f32_vmax_ukernel__scalar_u8(
     const float* input_a,
     const float* input_b,
     float* output,
-    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -12322,7 +12322,7 @@ void xnn_f32_vmaxc_ukernel__scalar_u8(
     const float* input_a,
     const float* input_b,
     float* output,
-    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -12379,7 +12379,7 @@ void xnn_f32_vmin_ukernel__scalar_u8(
     const float* input_a,
     const float* input_b,
     float* output,
-    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -12446,7 +12446,7 @@ void xnn_f32_vminc_ukernel__scalar_u8(
     const float* input_a,
     const float* input_b,
     float* output,
-    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -12503,7 +12503,7 @@ void xnn_f32_vmul_minmax_ukernel__scalar_u8(
     const float* input_a,
     const float* input_b,
     float* output,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -12591,7 +12591,7 @@ void xnn_f32_vmulc_minmax_ukernel__scalar_u8(
     const float* input_a,
     const float* input_b,
     float* output,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -12669,7 +12669,7 @@ void xnn_f32_vrdivc_minmax_ukernel__scalar_u2(
     const float* input_a,
     const float* input_b,
     float* output,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -12715,7 +12715,7 @@ void xnn_f32_vrsubc_minmax_ukernel__scalar_u8(
     const float* input_a,
     const float* input_b,
     float* output,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -12793,7 +12793,7 @@ void xnn_f32_vsqrdiff_ukernel__scalar_u8(
     const float* input_a,
     const float* input_b,
     float* output,
-    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -12869,7 +12869,7 @@ void xnn_f32_vsqrdiffc_ukernel__scalar_u8(
     const float* input_a,
     const float* input_b,
     float* output,
-    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -12935,7 +12935,7 @@ void xnn_f32_vsub_minmax_ukernel__scalar_u8(
     const float* input_a,
     const float* input_b,
     float* output,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -13023,7 +13023,7 @@ void xnn_f32_vsubc_minmax_ukernel__scalar_u8(
     const float* input_a,
     const float* input_b,
     float* output,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -13100,7 +13100,7 @@ void xnn_f32_vclamp_ukernel__scalar_u4(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -13149,7 +13149,7 @@ void xnn_f32_vcmul_ukernel__scalar_u4(
     const float* input_a,
     const float* input_b,
     float* output,
-    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -13231,7 +13231,7 @@ void xnn_f32_velu_ukernel__scalar_rr2_lut16_p3_u2(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_elu_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_elu_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -13357,7 +13357,7 @@ void xnn_f32_velu_ukernel__scalar_rr2_lut16_p3_u4(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_elu_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_elu_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -13533,7 +13533,7 @@ void xnn_f32_vhswish_ukernel__scalar_u4(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_hswish_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_hswish_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -13602,7 +13602,7 @@ void xnn_f32_vlrelu_ukernel__scalar_u4(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_lrelu_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_lrelu_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -13653,7 +13653,7 @@ void xnn_f32_vmulcaddc_minmax_ukernel_c1__scalar_2x(
     const float* restrict weights,
     float* restrict output,
     size_t output_stride,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(rows != 0);
   assert(channels != 0);
@@ -13712,7 +13712,7 @@ void xnn_f32_vrelu_ukernel__scalar_u8(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_relu_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_relu_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -13766,7 +13766,7 @@ void xnn_f32_vrndd_ukernel__scalar_libm_u1(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_rnd_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_rnd_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -13785,7 +13785,7 @@ void xnn_f32_vrndd_ukernel__scalar_libm_u4(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_rnd_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_rnd_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -13824,7 +13824,7 @@ void xnn_f32_vrndne_ukernel__scalar_libm_u1(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_rnd_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_rnd_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -13843,7 +13843,7 @@ void xnn_f32_vrndne_ukernel__scalar_libm_u4(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_rnd_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_rnd_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -13882,7 +13882,7 @@ void xnn_f32_vrndu_ukernel__scalar_libm_u1(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_rnd_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_rnd_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -13901,7 +13901,7 @@ void xnn_f32_vrndu_ukernel__scalar_libm_u4(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_rnd_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_rnd_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -13940,7 +13940,7 @@ void xnn_f32_vrndz_ukernel__scalar_libm_u1(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_rnd_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_rnd_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -13959,7 +13959,7 @@ void xnn_f32_vrndz_ukernel__scalar_libm_u4(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_rnd_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_rnd_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -14000,7 +14000,7 @@ void xnn_f32_vsigmoid_ukernel__scalar_rr2_lut64_p2_div_u2(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_sigmoid_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_sigmoid_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -14113,7 +14113,7 @@ void xnn_f32_vsqrt_ukernel__scalar_sqrt_u1(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_sqrt_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_sqrt_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -14133,7 +14133,7 @@ void xnn_f32_vtanh_ukernel__scalar_expm1minus_rr1_lut8_p4h3ts_div_u4(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_tanh_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f32_tanh_params params[XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -14304,7 +14304,7 @@ void xnn_f32_vabs_ukernel__scalar_u4(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_abs_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_abs_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -14343,7 +14343,7 @@ void xnn_f32_vneg_ukernel__scalar_u4(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_neg_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_neg_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -14382,7 +14382,7 @@ void xnn_f32_vsqr_ukernel__scalar_u4(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_default_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -14869,8 +14869,8 @@ void xnn_qd8_f32_qc8w_gemm_minmax_ukernel_1x2__scalar(
     float* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)],
-    const struct xnn_qd8_quantization_params quantization_params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)],
+    const struct xnn_qd8_quantization_params quantization_params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 1);
@@ -14958,8 +14958,8 @@ void xnn_qd8_f32_qc8w_gemm_minmax_ukernel_1x4__scalar(
     float* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)],
-    const struct xnn_qd8_quantization_params quantization_params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)],
+    const struct xnn_qd8_quantization_params quantization_params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 1);
@@ -15079,8 +15079,8 @@ void xnn_qd8_f32_qc8w_gemm_minmax_ukernel_2x2__scalar(
     float* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)],
-    const struct xnn_qd8_quantization_params quantization_params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)],
+    const struct xnn_qd8_quantization_params quantization_params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 2);
@@ -15198,8 +15198,8 @@ void xnn_qd8_f32_qc8w_gemm_minmax_ukernel_4x4__scalar(
     float* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)],
-    const struct xnn_qd8_quantization_params quantization_params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_minmax_params params[XNN_MIN_ELEMENTS(1)],
+    const struct xnn_qd8_quantization_params quantization_params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 4);
@@ -16159,7 +16159,7 @@ void xnn_qs16_qs8_vcvt_ukernel__scalar_u4(
     size_t batch,
     const int16_t* input,
     int8_t* output,
-    const union xnn_qs16_qs8_cvt_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs16_qs8_cvt_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(int16_t) == 0);
@@ -16222,7 +16222,7 @@ void xnn_qs8_dwconv_minmax_fp32_ukernel_25p1c__scalar_fmagic(
     size_t output_increment,
     size_t input_offset,
     const int8_t* zero,
-    const union xnn_qs8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -16467,7 +16467,7 @@ void xnn_qs8_dwconv_minmax_fp32_ukernel_25p1c__scalar_imagic(
     size_t output_increment,
     size_t input_offset,
     const int8_t* zero,
-    const union xnn_qs8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -16713,7 +16713,7 @@ void xnn_qs8_dwconv_minmax_fp32_ukernel_25p2c__scalar_lrintf(
     size_t output_increment,
     size_t input_offset,
     const int8_t* zero,
-    const union xnn_qs8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -17234,7 +17234,7 @@ void xnn_qs8_dwconv_minmax_fp32_ukernel_9p1c__scalar_fmagic(
     size_t output_increment,
     size_t input_offset,
     const int8_t* zero,
-    const union xnn_qs8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -17351,7 +17351,7 @@ void xnn_qs8_dwconv_minmax_fp32_ukernel_9p2c__scalar_imagic(
     size_t output_increment,
     size_t input_offset,
     const int8_t* zero,
-    const union xnn_qs8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -17589,7 +17589,7 @@ void xnn_qs8_dwconv_minmax_fp32_ukernel_9p2c__scalar_lrintf(
     size_t output_increment,
     size_t input_offset,
     const int8_t* zero,
-    const union xnn_qs8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -17816,7 +17816,7 @@ void xnn_qs8_f32_vcvt_ukernel__scalar_u1(
     size_t batch,
     const int8_t* input,
     float* output,
-    const union xnn_qs8_f32_cvt_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_f32_cvt_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(int8_t) == 0);
@@ -17842,7 +17842,7 @@ void xnn_qs8_f32_vcvt_ukernel__scalar_u4(
     size_t batch,
     const int8_t* input,
     float* output,
-    const union xnn_qs8_f32_cvt_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_f32_cvt_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(int8_t) == 0);
@@ -17902,7 +17902,7 @@ void xnn_qs8_gavgpool_minmax_fp32_ukernel_7p7x__scalar_imagic_c1(
     const int8_t* zero,
     int32_t* buffer,
     int8_t* output,
-    const union xnn_qs8_avgpool_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_avgpool_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(rows > 7);
   assert(channels != 0);
@@ -18044,7 +18044,7 @@ void xnn_qs8_gavgpool_minmax_fp32_ukernel_7p7x__scalar_imagic_c4(
     const int8_t* zero,
     int32_t* buffer,
     int8_t* output,
-    const union xnn_qs8_avgpool_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_avgpool_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(rows > 7);
   assert(channels != 0);
@@ -18402,7 +18402,7 @@ void xnn_qs8_gavgpool_minmax_fp32_ukernel_7x__scalar_imagic_c1(
     size_t input_stride,
     const int8_t* zero,
     int8_t* output,
-    const union xnn_qs8_avgpool_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_avgpool_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(rows != 0);
   assert(rows <= 7);
@@ -18477,7 +18477,7 @@ void xnn_qs8_gavgpool_minmax_fp32_ukernel_7x__scalar_imagic_c4(
     size_t input_stride,
     const int8_t* zero,
     int8_t* output,
-    const union xnn_qs8_avgpool_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_avgpool_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(rows != 0);
   assert(rows <= 7);
@@ -18661,7 +18661,7 @@ void xnn_qs8_gemm_minmax_fp32_ukernel_1x2__scalar_imagic(
     int8_t* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_qs8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 1);
@@ -18745,7 +18745,7 @@ void xnn_qs8_gemm_minmax_fp32_ukernel_1x4__scalar_lrintf(
     int8_t* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_qs8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 1);
@@ -18851,7 +18851,7 @@ void xnn_qs8_gemm_minmax_fp32_ukernel_2x2__scalar_imagic(
     int8_t* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_qs8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 2);
@@ -18965,7 +18965,7 @@ void xnn_qs8_gemm_minmax_fp32_ukernel_3x4__scalar_lrintf(
     int8_t* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_qs8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 3);
@@ -19173,7 +19173,7 @@ void xnn_qs8_igemm_minmax_fp32_ukernel_1x2__scalar_imagic(
     size_t cn_stride,
     size_t a_offset,
     const int8_t* zero,
-    const union xnn_qs8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 1);
@@ -19273,7 +19273,7 @@ void xnn_qs8_igemm_minmax_fp32_ukernel_1x4__scalar_lrintf(
     size_t cn_stride,
     size_t a_offset,
     const int8_t* zero,
-    const union xnn_qs8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 1);
@@ -19395,7 +19395,7 @@ void xnn_qs8_igemm_minmax_fp32_ukernel_2x2__scalar_imagic(
     size_t cn_stride,
     size_t a_offset,
     const int8_t* zero,
-    const union xnn_qs8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 2);
@@ -19527,7 +19527,7 @@ void xnn_qs8_igemm_minmax_fp32_ukernel_3x4__scalar_lrintf(
     size_t cn_stride,
     size_t a_offset,
     const int8_t* zero,
-    const union xnn_qs8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 3);
@@ -19751,7 +19751,7 @@ void xnn_qs8_qc8w_dwconv_minmax_fp32_ukernel_25p1c__scalar_fmagic(
     size_t output_increment,
     size_t input_offset,
     const int8_t* zero,
-    const union xnn_qs8_qc8w_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_qc8w_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -19997,7 +19997,7 @@ void xnn_qs8_qc8w_dwconv_minmax_fp32_ukernel_25p1c__scalar_imagic(
     size_t output_increment,
     size_t input_offset,
     const int8_t* zero,
-    const union xnn_qs8_qc8w_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_qc8w_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -20244,7 +20244,7 @@ void xnn_qs8_qc8w_dwconv_minmax_fp32_ukernel_25p2c__scalar_lrintf(
     size_t output_increment,
     size_t input_offset,
     const int8_t* zero,
-    const union xnn_qs8_qc8w_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_qc8w_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -20769,7 +20769,7 @@ void xnn_qs8_qc8w_dwconv_minmax_fp32_ukernel_3p1c__scalar_fmagic(
     size_t output_increment,
     size_t input_offset,
     const int8_t* zero,
-    const union xnn_qs8_qc8w_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_qc8w_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -20839,7 +20839,7 @@ void xnn_qs8_qc8w_dwconv_minmax_fp32_ukernel_3p2c__scalar_imagic(
     size_t output_increment,
     size_t input_offset,
     const int8_t* zero,
-    const union xnn_qs8_qc8w_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_qc8w_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -20973,7 +20973,7 @@ void xnn_qs8_qc8w_dwconv_minmax_fp32_ukernel_3p2c__scalar_lrintf(
     size_t output_increment,
     size_t input_offset,
     const int8_t* zero,
-    const union xnn_qs8_qc8w_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_qc8w_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -21102,7 +21102,7 @@ void xnn_qs8_qc8w_dwconv_minmax_fp32_ukernel_9p1c__scalar_fmagic(
     size_t output_increment,
     size_t input_offset,
     const int8_t* zero,
-    const union xnn_qs8_qc8w_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_qc8w_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -21220,7 +21220,7 @@ void xnn_qs8_qc8w_dwconv_minmax_fp32_ukernel_9p2c__scalar_imagic(
     size_t output_increment,
     size_t input_offset,
     const int8_t* zero,
-    const union xnn_qs8_qc8w_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_qc8w_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -21462,7 +21462,7 @@ void xnn_qs8_qc8w_dwconv_minmax_fp32_ukernel_9p2c__scalar_lrintf(
     size_t output_increment,
     size_t input_offset,
     const int8_t* zero,
-    const union xnn_qs8_qc8w_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_qc8w_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -21699,7 +21699,7 @@ void xnn_qs8_qc8w_gemm_minmax_fp32_ukernel_1x2__scalar_imagic(
     int8_t* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_qs8_qc8w_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_qc8w_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 1);
@@ -21785,7 +21785,7 @@ void xnn_qs8_qc8w_gemm_minmax_fp32_ukernel_1x4__scalar_lrintf(
     int8_t* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_qs8_qc8w_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_qc8w_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 1);
@@ -21895,7 +21895,7 @@ void xnn_qs8_qc8w_gemm_minmax_fp32_ukernel_2x2__scalar_imagic(
     int8_t* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_qs8_qc8w_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_qc8w_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 2);
@@ -22011,7 +22011,7 @@ void xnn_qs8_qc8w_gemm_minmax_fp32_ukernel_3x4__scalar_lrintf(
     int8_t* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_qs8_qc8w_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_qc8w_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 3);
@@ -22223,7 +22223,7 @@ void xnn_qs8_qc8w_igemm_minmax_fp32_ukernel_1x2__scalar_imagic(
     size_t cn_stride,
     size_t a_offset,
     const int8_t* zero,
-    const union xnn_qs8_qc8w_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_qc8w_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 1);
@@ -22325,7 +22325,7 @@ void xnn_qs8_qc8w_igemm_minmax_fp32_ukernel_1x4__scalar_lrintf(
     size_t cn_stride,
     size_t a_offset,
     const int8_t* zero,
-    const union xnn_qs8_qc8w_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_qc8w_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 1);
@@ -22451,7 +22451,7 @@ void xnn_qs8_qc8w_igemm_minmax_fp32_ukernel_2x2__scalar_imagic(
     size_t cn_stride,
     size_t a_offset,
     const int8_t* zero,
-    const union xnn_qs8_qc8w_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_qc8w_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 2);
@@ -22585,7 +22585,7 @@ void xnn_qs8_qc8w_igemm_minmax_fp32_ukernel_3x4__scalar_lrintf(
     size_t cn_stride,
     size_t a_offset,
     const int8_t* zero,
-    const union xnn_qs8_qc8w_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_qc8w_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 3);
@@ -22808,7 +22808,7 @@ void xnn_qs8_vadd_minmax_ukernel__scalar_u1(
     const int8_t* input_a,
     const int8_t* input_b,
     int8_t* output,
-    const union xnn_qs8_add_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_add_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(int8_t) == 0);
@@ -22843,7 +22843,7 @@ void xnn_qs8_vadd_minmax_ukernel__scalar_u4(
     const int8_t* input_a,
     const int8_t* input_b,
     int8_t* output,
-    const union xnn_qs8_add_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_add_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(int8_t) == 0);
@@ -22928,7 +22928,7 @@ void xnn_qs8_vaddc_minmax_ukernel__scalar_u1(
     const int8_t* input_a,
     const int8_t* input_b,
     int8_t* output,
-    const union xnn_qs8_add_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_add_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(int8_t) == 0);
@@ -22961,7 +22961,7 @@ void xnn_qs8_vaddc_minmax_ukernel__scalar_u4(
     const int8_t* input_a,
     const int8_t* input_b,
     int8_t* output,
-    const union xnn_qs8_add_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_add_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(int8_t) == 0);
@@ -23034,7 +23034,7 @@ void xnn_qs8_vcvt_ukernel__scalar_u1(
     size_t batch,
     const int8_t* input,
     int8_t* output,
-    const union xnn_qs8_cvt_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_cvt_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(int8_t) == 0);
@@ -23060,7 +23060,7 @@ void xnn_qs8_vcvt_ukernel__scalar_u4(
     size_t batch,
     const int8_t* input,
     int8_t* output,
-    const union xnn_qs8_cvt_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_cvt_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(int8_t) == 0);
@@ -23121,7 +23121,7 @@ void xnn_qs8_vlrelu_ukernel__scalar_andxor_u4(
     size_t batch,
     const int8_t* input,
     int8_t* output,
-    const union xnn_qs8_lrelu_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_lrelu_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(int8_t) == 0);
@@ -23205,7 +23205,7 @@ void xnn_qs8_vlrelu_ukernel__scalar_select_u4(
     size_t batch,
     const int8_t* input,
     int8_t* output,
-    const union xnn_qs8_lrelu_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_lrelu_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(int8_t) == 0);
@@ -23280,7 +23280,7 @@ void xnn_qs8_vmul_minmax_fp32_ukernel__scalar_u4(
     const int8_t* input_a,
     const int8_t* input_b,
     int8_t* output,
-    const union xnn_qs8_mul_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_mul_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(int8_t) == 0);
@@ -23368,7 +23368,7 @@ void xnn_qs8_vmulc_minmax_fp32_ukernel__scalar_u4(
     const int8_t* input_a,
     const int8_t* input_b,
     int8_t* output,
-    const union xnn_qs8_mul_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_mul_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(int8_t) == 0);
@@ -23455,7 +23455,7 @@ void xnn_qu8_avgpool_minmax_fp32_ukernel_9p8x__scalar_imagic_c1(
     uint8_t* output,
     size_t input_increment,
     size_t output_increment,
-    const union xnn_qu8_avgpool_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_avgpool_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(output_pixels != 0);
   assert(kernel_elements > 9);
@@ -23725,7 +23725,7 @@ void xnn_qu8_avgpool_minmax_fp32_ukernel_9x__scalar_imagic_c1(
     uint8_t* output,
     size_t input_increment,
     size_t output_increment,
-    const union xnn_qu8_avgpool_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_avgpool_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(output_pixels != 0);
   assert(kernel_elements != 0);
@@ -23856,7 +23856,7 @@ void xnn_qu8_dwconv_minmax_fp32_ukernel_25p1c__scalar_fmagic(
     size_t output_increment,
     size_t input_offset,
     const uint8_t* zero,
-    const union xnn_qu8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -24102,7 +24102,7 @@ void xnn_qu8_dwconv_minmax_fp32_ukernel_25p1c__scalar_imagic(
     size_t output_increment,
     size_t input_offset,
     const uint8_t* zero,
-    const union xnn_qu8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -24349,7 +24349,7 @@ void xnn_qu8_dwconv_minmax_fp32_ukernel_25p2c__scalar_lrintf(
     size_t output_increment,
     size_t input_offset,
     const uint8_t* zero,
-    const union xnn_qu8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -24871,7 +24871,7 @@ void xnn_qu8_dwconv_minmax_fp32_ukernel_9p1c__scalar_fmagic(
     size_t output_increment,
     size_t input_offset,
     const uint8_t* zero,
-    const union xnn_qu8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -24989,7 +24989,7 @@ void xnn_qu8_dwconv_minmax_fp32_ukernel_9p2c__scalar_imagic(
     size_t output_increment,
     size_t input_offset,
     const uint8_t* zero,
-    const union xnn_qu8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -25228,7 +25228,7 @@ void xnn_qu8_dwconv_minmax_fp32_ukernel_9p2c__scalar_lrintf(
     size_t output_increment,
     size_t input_offset,
     const uint8_t* zero,
-    const union xnn_qu8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -25456,7 +25456,7 @@ void xnn_qu8_f32_vcvt_ukernel__scalar_u1(
     size_t batch,
     const uint8_t* input,
     float* output,
-    const union xnn_qu8_f32_cvt_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_f32_cvt_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(uint8_t) == 0);
@@ -25482,7 +25482,7 @@ void xnn_qu8_f32_vcvt_ukernel__scalar_u4(
     size_t batch,
     const uint8_t* input,
     float* output,
-    const union xnn_qu8_f32_cvt_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_f32_cvt_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(uint8_t) == 0);
@@ -25542,7 +25542,7 @@ void xnn_qu8_gavgpool_minmax_fp32_ukernel_7p7x__scalar_imagic_c1(
     const uint8_t* zero,
     int32_t* buffer,
     uint8_t* output,
-    const union xnn_qu8_avgpool_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_avgpool_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(rows > 7);
   assert(channels != 0);
@@ -25684,7 +25684,7 @@ void xnn_qu8_gavgpool_minmax_fp32_ukernel_7p7x__scalar_imagic_c4(
     const uint8_t* zero,
     int32_t* buffer,
     uint8_t* output,
-    const union xnn_qu8_avgpool_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_avgpool_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(rows > 7);
   assert(channels != 0);
@@ -26042,7 +26042,7 @@ void xnn_qu8_gavgpool_minmax_fp32_ukernel_7x__scalar_imagic_c1(
     size_t input_stride,
     const uint8_t* zero,
     uint8_t* output,
-    const union xnn_qu8_avgpool_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_avgpool_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(rows != 0);
   assert(rows <= 7);
@@ -26117,7 +26117,7 @@ void xnn_qu8_gavgpool_minmax_fp32_ukernel_7x__scalar_imagic_c4(
     size_t input_stride,
     const uint8_t* zero,
     uint8_t* output,
-    const union xnn_qu8_avgpool_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_avgpool_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(rows != 0);
   assert(rows <= 7);
@@ -26301,7 +26301,7 @@ void xnn_qu8_gemm_minmax_fp32_ukernel_1x2__scalar_imagic(
     uint8_t* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_qu8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 1);
@@ -26386,7 +26386,7 @@ void xnn_qu8_gemm_minmax_fp32_ukernel_1x4__scalar_lrintf(
     uint8_t* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_qu8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 1);
@@ -26493,7 +26493,7 @@ void xnn_qu8_gemm_minmax_fp32_ukernel_2x2__scalar_imagic(
     uint8_t* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_qu8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 2);
@@ -26608,7 +26608,7 @@ void xnn_qu8_gemm_minmax_fp32_ukernel_3x4__scalar_lrintf(
     uint8_t* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_qu8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 3);
@@ -26817,7 +26817,7 @@ void xnn_qu8_igemm_minmax_fp32_ukernel_1x2__scalar_imagic(
     size_t cn_stride,
     size_t a_offset,
     const uint8_t* zero,
-    const union xnn_qu8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 1);
@@ -26918,7 +26918,7 @@ void xnn_qu8_igemm_minmax_fp32_ukernel_1x4__scalar_lrintf(
     size_t cn_stride,
     size_t a_offset,
     const uint8_t* zero,
-    const union xnn_qu8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 1);
@@ -27041,7 +27041,7 @@ void xnn_qu8_igemm_minmax_fp32_ukernel_2x2__scalar_imagic(
     size_t cn_stride,
     size_t a_offset,
     const uint8_t* zero,
-    const union xnn_qu8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 2);
@@ -27174,7 +27174,7 @@ void xnn_qu8_igemm_minmax_fp32_ukernel_3x4__scalar_lrintf(
     size_t cn_stride,
     size_t a_offset,
     const uint8_t* zero,
-    const union xnn_qu8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 3);
@@ -27394,7 +27394,7 @@ void xnn_qu8_vadd_minmax_ukernel__scalar_u1(
     const uint8_t* input_a,
     const uint8_t* input_b,
     uint8_t* output,
-    const union xnn_qu8_add_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_add_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(uint8_t) == 0);
@@ -27429,7 +27429,7 @@ void xnn_qu8_vadd_minmax_ukernel__scalar_u4(
     const uint8_t* input_a,
     const uint8_t* input_b,
     uint8_t* output,
-    const union xnn_qu8_add_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_add_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(uint8_t) == 0);
@@ -27514,7 +27514,7 @@ void xnn_qu8_vaddc_minmax_ukernel__scalar_u1(
     const uint8_t* input_a,
     const uint8_t* input_b,
     uint8_t* output,
-    const union xnn_qu8_add_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_add_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(uint8_t) == 0);
@@ -27547,7 +27547,7 @@ void xnn_qu8_vaddc_minmax_ukernel__scalar_u4(
     const uint8_t* input_a,
     const uint8_t* input_b,
     uint8_t* output,
-    const union xnn_qu8_add_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_add_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(uint8_t) == 0);
@@ -27620,7 +27620,7 @@ void xnn_qu8_vcvt_ukernel__scalar_u1(
     size_t batch,
     const uint8_t* input,
     uint8_t* output,
-    const union xnn_qu8_cvt_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_cvt_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(uint8_t) == 0);
@@ -27646,7 +27646,7 @@ void xnn_qu8_vcvt_ukernel__scalar_u4(
     size_t batch,
     const uint8_t* input,
     uint8_t* output,
-    const union xnn_qu8_cvt_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_cvt_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(uint8_t) == 0);
@@ -27707,7 +27707,7 @@ void xnn_qu8_vlrelu_ukernel__scalar_andxor_u4(
     size_t batch,
     const uint8_t* input,
     uint8_t* output,
-    const union xnn_qu8_lrelu_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_lrelu_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(uint8_t) == 0);
@@ -27791,7 +27791,7 @@ void xnn_qu8_vlrelu_ukernel__scalar_select_u4(
     size_t batch,
     const uint8_t* input,
     uint8_t* output,
-    const union xnn_qu8_lrelu_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_lrelu_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(uint8_t) == 0);
@@ -27866,7 +27866,7 @@ void xnn_qu8_vmul_minmax_fp32_ukernel__scalar_u4(
     const uint8_t* input_a,
     const uint8_t* input_b,
     uint8_t* output,
-    const union xnn_qu8_mul_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_mul_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(uint8_t) == 0);
@@ -27954,7 +27954,7 @@ void xnn_qu8_vmulc_minmax_fp32_ukernel__scalar_u4(
     const uint8_t* input_a,
     const uint8_t* input_b,
     uint8_t* output,
-    const union xnn_qu8_mul_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_mul_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(uint8_t) == 0);
@@ -28092,7 +28092,7 @@ void xnn_s8_maxpool_minmax_ukernel_9p8x__scalar_c1(
     int8_t* output,
     size_t input_increment,
     size_t output_increment,
-    const union xnn_s8_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_s8_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(output_pixels != 0);
   assert(kernel_elements != 0);
@@ -28252,7 +28252,7 @@ void xnn_s8_vclamp_ukernel__scalar_u4(
     size_t batch,
     const int8_t* input,
     int8_t* output,
-    const union xnn_s8_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_s8_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(int8_t) == 0);
@@ -28397,7 +28397,7 @@ void xnn_u8_maxpool_minmax_ukernel_9p8x__scalar_c1(
     uint8_t* output,
     size_t input_increment,
     size_t output_increment,
-    const union xnn_u8_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_u8_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(output_pixels != 0);
   assert(kernel_elements != 0);
@@ -28586,7 +28586,7 @@ void xnn_u8_vclamp_ukernel__scalar_u4(
     size_t batch,
     const uint8_t* input,
     uint8_t* output,
-    const union xnn_u8_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_u8_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(uint8_t) == 0);
@@ -28639,7 +28639,7 @@ void xnn_x16_transposec_ukernel__2x4_scalar_int(
     size_t output_stride,
     size_t block_width,
     size_t block_height,
-    const union xnn_x16_transpose_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_x16_transpose_params params[XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(output_stride >= block_height * sizeof(int16_t));
   assert(input_stride >= block_width * sizeof(int16_t));
@@ -28706,7 +28706,7 @@ void xnn_x24_transposec_ukernel__1x2_scalar(
     size_t output_stride,
     size_t block_width,
     size_t block_height,
-    const union xnn_x24_transpose_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_x24_transpose_params params[XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(output_stride >= block_height * 3);
   assert(input_stride >= block_width * 3);
@@ -29054,7 +29054,7 @@ void xnn_x32_transposec_ukernel__2x4_scalar_int(
     size_t output_stride,
     size_t block_width,
     size_t block_height,
-    const union xnn_x32_transpose_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_x32_transpose_params params[XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(output_stride >= block_height * sizeof(int));
   assert(input_stride >= block_width * sizeof(int));
@@ -29315,7 +29315,7 @@ void xnn_x8_lut_ukernel__scalar_u1(
     size_t batch,
     const uint8_t* input,
     uint8_t* output,
-    const uint8_t table[restrict XNN_MIN_ELEMENTS(256)])
+    const uint8_t table[XNN_MIN_ELEMENTS(256)])
 {
   assert(batch != 0);
   assert(batch % sizeof(uint8_t) == 0);
@@ -29334,7 +29334,7 @@ void xnn_x8_lut_ukernel__scalar_u4(
     size_t batch,
     const uint8_t* input,
     uint8_t* output,
-    const uint8_t table[restrict XNN_MIN_ELEMENTS(256)])
+    const uint8_t table[XNN_MIN_ELEMENTS(256)])
 {
   assert(batch != 0);
   assert(batch % sizeof(uint8_t) == 0);
@@ -30920,7 +30920,7 @@ void xnn_x8_transposec_ukernel__2x4_scalar_int(
     size_t output_stride,
     size_t block_width,
     size_t block_height,
-    const union xnn_x8_transpose_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_x8_transpose_params params[XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(output_stride >= block_height * sizeof(int8_t));
   assert(input_stride >= block_width * sizeof(int8_t));

@@ -464,7 +464,7 @@ static enum xnn_status reshape_global_average_pooling_nwc(
     size_t* workspace_alignment,
     size_t log2_data_element_size,
     size_t log2_accumulator_element_size,
-    const struct xnn_gavgpool_config gavgpool[restrict XNN_MIN_ELEMENTS(1)],
+    const struct xnn_gavgpool_config gavgpool[ XNN_MIN_ELEMENTS(1)],
     enum xnn_operator_type expected_operator_type,
     const void* params,
     size_t params_size,
