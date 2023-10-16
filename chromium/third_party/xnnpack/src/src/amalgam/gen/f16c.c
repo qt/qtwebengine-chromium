@@ -36,7 +36,7 @@ void xnn_f16_avgpool_minmax_ukernel_9p8x__f16c_c8(
     void* output,
     size_t input_increment,
     size_t output_increment,
-    const union xnn_f16_scaleminmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f16_scaleminmax_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(output_pixels != 0);
   assert(kernel_elements > 9);
@@ -367,7 +367,7 @@ void xnn_f16_avgpool_minmax_ukernel_9x__f16c_c8(
     void* output,
     size_t input_increment,
     size_t output_increment,
-    const union xnn_f16_scaleminmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f16_scaleminmax_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(output_pixels != 0);
   assert(kernel_elements != 0);
@@ -538,7 +538,7 @@ void xnn_f16_f32_vcvt_ukernel__f16c_u16(
     size_t batch,
     const void* input,
     float* output,
-    const union xnn_f16_f32_cvt_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f16_f32_cvt_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -588,7 +588,7 @@ void xnn_f16_f32acc_rsum_ukernel__f16c_u32_acc4(
     size_t batch,
     const void* input,
     void* output,
-    const union xnn_f16_f32acc_scale_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f16_f32acc_scale_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -653,7 +653,7 @@ void xnn_f16_gavgpool_minmax_ukernel_7p7x__f16c_c8(
     const void* zero,
     void* buffer,
     void* output,
-    const union xnn_f16_scaleminmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f16_scaleminmax_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(rows > 7);
   assert(channels != 0);
@@ -829,7 +829,7 @@ void xnn_f16_gavgpool_minmax_ukernel_7x__f16c_c8(
     size_t input_stride,
     const void* zero,
     void* output,
-    const union xnn_f16_scaleminmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f16_scaleminmax_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(rows != 0);
   assert(rows <= 7);
@@ -947,7 +947,7 @@ void xnn_f16_maxpool_minmax_ukernel_9p8x__f16c_c8(
     void* output,
     size_t input_increment,
     size_t output_increment,
-    const union xnn_f16_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f16_minmax_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(output_pixels != 0);
   assert(kernel_elements != 0);
@@ -1335,7 +1335,7 @@ void xnn_f16_rmax_ukernel__f16c_u32(
     size_t batch,
     const void* input,
     void* output,
-    const union xnn_f16_default_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f16_default_params params[XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -1393,7 +1393,7 @@ void xnn_f16_vadd_minmax_ukernel__f16c_u16(
     const void* restrict input_a,
     const void* restrict input_b,
     void* restrict output,
-    const union xnn_f16_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f16_minmax_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -1475,7 +1475,7 @@ void xnn_f16_vaddc_minmax_ukernel__f16c_u16(
     const void* restrict input_a,
     const void* restrict input_b,
     void* restrict output,
-    const union xnn_f16_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f16_minmax_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -1552,7 +1552,7 @@ void xnn_f16_vdiv_minmax_ukernel__f16c_u8(
     const void* restrict input_a,
     const void* restrict input_b,
     void* restrict output,
-    const union xnn_f16_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f16_minmax_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -1612,7 +1612,7 @@ void xnn_f16_vdivc_minmax_ukernel__f16c_u8(
     const void* restrict input_a,
     const void* restrict input_b,
     void* restrict output,
-    const union xnn_f16_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f16_minmax_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -1670,7 +1670,7 @@ void xnn_f16_vmax_ukernel__f16c_u16(
     const void* restrict input_a,
     const void* restrict input_b,
     void* restrict output,
-    const union xnn_f16_default_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f16_default_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -1741,7 +1741,7 @@ void xnn_f16_vmaxc_ukernel__f16c_u16(
     const void* restrict input_a,
     const void* restrict input_b,
     void* restrict output,
-    const union xnn_f16_default_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f16_default_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -1807,7 +1807,7 @@ void xnn_f16_vmin_ukernel__f16c_u16(
     const void* restrict input_a,
     const void* restrict input_b,
     void* restrict output,
-    const union xnn_f16_default_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f16_default_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -1878,7 +1878,7 @@ void xnn_f16_vminc_ukernel__f16c_u16(
     const void* restrict input_a,
     const void* restrict input_b,
     void* restrict output,
-    const union xnn_f16_default_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f16_default_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -1944,7 +1944,7 @@ void xnn_f16_vmul_minmax_ukernel__f16c_u16(
     const void* restrict input_a,
     const void* restrict input_b,
     void* restrict output,
-    const union xnn_f16_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f16_minmax_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -2026,7 +2026,7 @@ void xnn_f16_vmulc_minmax_ukernel__f16c_u16(
     const void* restrict input_a,
     const void* restrict input_b,
     void* restrict output,
-    const union xnn_f16_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f16_minmax_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -2103,7 +2103,7 @@ void xnn_f16_vrdivc_minmax_ukernel__f16c_u8(
     const void* restrict input_a,
     const void* restrict input_b,
     void* restrict output,
-    const union xnn_f16_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f16_minmax_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -2161,7 +2161,7 @@ void xnn_f16_vrsubc_minmax_ukernel__f16c_u16(
     const void* restrict input_a,
     const void* restrict input_b,
     void* restrict output,
-    const union xnn_f16_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f16_minmax_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -2238,7 +2238,7 @@ void xnn_f16_vsqrdiff_ukernel__f16c_u16(
     const void* restrict input_a,
     const void* restrict input_b,
     void* restrict output,
-    const union xnn_f16_default_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f16_default_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -2313,7 +2313,7 @@ void xnn_f16_vsqrdiffc_ukernel__f16c_u16(
     const void* restrict input_a,
     const void* restrict input_b,
     void* restrict output,
-    const union xnn_f16_default_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f16_default_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -2383,7 +2383,7 @@ void xnn_f16_vsub_minmax_ukernel__f16c_u16(
     const void* restrict input_a,
     const void* restrict input_b,
     void* restrict output,
-    const union xnn_f16_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f16_minmax_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -2465,7 +2465,7 @@ void xnn_f16_vsubc_minmax_ukernel__f16c_u16(
     const void* restrict input_a,
     const void* restrict input_b,
     void* restrict output,
-    const union xnn_f16_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f16_minmax_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -2541,7 +2541,7 @@ void xnn_f16_vclamp_ukernel__f16c_u16(
     size_t batch,
     const void* restrict input,
     void* restrict output,
-    const union xnn_f16_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f16_minmax_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -2603,7 +2603,7 @@ void xnn_f16_vhswish_ukernel__f16c_u16(
     size_t batch,
     const void* restrict input,
     void* restrict output,
-    const union xnn_f16_hswish_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f16_hswish_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -2680,7 +2680,7 @@ void xnn_f16_vlrelu_ukernel__f16c_u16(
     size_t batch,
     const void* input,
     void* output,
-    const union xnn_f16_lrelu_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f16_lrelu_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -2742,7 +2742,7 @@ void xnn_f16_vrndd_ukernel__f16c_u16(
     size_t batch,
     const void* input,
     void* output,
-    const union xnn_f16_rnd_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f16_rnd_params params[ XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -2798,7 +2798,7 @@ void xnn_f16_vrndne_ukernel__f16c_u16(
     size_t batch,
     const void* input,
     void* output,
-    const union xnn_f16_rnd_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f16_rnd_params params[ XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -2854,7 +2854,7 @@ void xnn_f16_vrndu_ukernel__f16c_u16(
     size_t batch,
     const void* input,
     void* output,
-    const union xnn_f16_rnd_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f16_rnd_params params[ XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -2910,7 +2910,7 @@ void xnn_f16_vrndz_ukernel__f16c_u16(
     size_t batch,
     const void* input,
     void* output,
-    const union xnn_f16_rnd_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f16_rnd_params params[ XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -3024,7 +3024,7 @@ void xnn_f16_vsqrt_ukernel__f16c_rsqrt_u32(
     size_t batch,
     const void* input,
     void* output,
-    const union xnn_f16_sqrt_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f16_sqrt_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -3101,7 +3101,7 @@ void xnn_f16_vtanh_ukernel__f16c_expm1minus_rr1_p3h2ts_rcp_u72(
     size_t batch,
     const void* input,
     void* output,
-    const union xnn_f16_tanh_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f16_tanh_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -3455,7 +3455,7 @@ void xnn_f16_vsqr_ukernel__f16c_u16(
     size_t batch,
     const void* input,
     void* output,
-    const union xnn_f16_default_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f16_default_params params[ XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -3507,7 +3507,7 @@ void xnn_f32_f16_vcvt_ukernel__f16c_u16(
     size_t batch,
     const float* input,
     void* output,
-    const union xnn_f32_f16_cvt_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_f16_cvt_params params[ XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);

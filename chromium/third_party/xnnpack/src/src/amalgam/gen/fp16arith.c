@@ -19,7 +19,7 @@ void xnn_f16_vdiv_minmax_ukernel__fp16arith_u2(
     const void* restrict input_a,
     const void* restrict input_b,
     void* restrict output,
-    const union xnn_f16_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f16_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float16_t) == 0);
@@ -70,7 +70,7 @@ void xnn_f16_vdivc_minmax_ukernel__fp16arith_u2(
     const void* restrict input_a,
     const void* restrict input_b,
     void* restrict output,
-    const union xnn_f16_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f16_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float16_t) == 0);
@@ -120,7 +120,7 @@ void xnn_f16_vrdivc_minmax_ukernel__fp16arith_u2(
     const void* restrict input_a,
     const void* restrict input_b,
     void* restrict output,
-    const union xnn_f16_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f16_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float16_t) == 0);

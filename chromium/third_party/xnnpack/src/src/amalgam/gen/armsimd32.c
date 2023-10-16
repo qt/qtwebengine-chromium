@@ -25,7 +25,7 @@ void xnn_qs8_qc8w_gemm_minmax_fp32_ukernel_1x2c4__armsimd32(
     int8_t* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_qs8_qc8w_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_qc8w_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 1);
@@ -127,7 +127,7 @@ void xnn_qs8_qc8w_gemm_minmax_fp32_ukernel_2x2c4__armsimd32(
     int8_t* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_qs8_qc8w_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_qc8w_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 2);
@@ -265,7 +265,7 @@ void xnn_qs8_qc8w_igemm_minmax_fp32_ukernel_1x2c4__armsimd32(
     size_t cn_stride,
     size_t a_offset,
     const int8_t* zero,
-    const union xnn_qs8_qc8w_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_qc8w_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 1);
@@ -383,7 +383,7 @@ void xnn_qs8_qc8w_igemm_minmax_fp32_ukernel_2x2c4__armsimd32(
     size_t cn_stride,
     size_t a_offset,
     const int8_t* zero,
-    const union xnn_qs8_qc8w_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qs8_qc8w_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 2);
@@ -529,7 +529,7 @@ void xnn_qs8_vcvt_ukernel__armsimd32_u8(
     size_t batch,
     const int8_t* input,
     int8_t* output,
-    const union xnn_qs8_cvt_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_qs8_cvt_params params[XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(int8_t) == 0);
@@ -629,7 +629,7 @@ void xnn_qs8_vlrelu_ukernel__armsimd32_u4(
     size_t batch,
     const int8_t* input,
     int8_t* output,
-    const union xnn_qs8_lrelu_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_qs8_lrelu_params params[XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(int8_t) == 0);
@@ -708,7 +708,7 @@ void xnn_qu8_gemm_minmax_fp32_ukernel_1x2c4__armsimd32(
     uint8_t* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_qu8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 1);
@@ -809,7 +809,7 @@ void xnn_qu8_gemm_minmax_fp32_ukernel_2x2c4__armsimd32(
     uint8_t* restrict c,
     size_t cm_stride,
     size_t cn_stride,
-    const union xnn_qu8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 2);
@@ -946,7 +946,7 @@ void xnn_qu8_igemm_minmax_fp32_ukernel_1x2c4__armsimd32(
     size_t cn_stride,
     size_t a_offset,
     const uint8_t* zero,
-    const union xnn_qu8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 1);
@@ -1063,7 +1063,7 @@ void xnn_qu8_igemm_minmax_fp32_ukernel_2x2c4__armsimd32(
     size_t cn_stride,
     size_t a_offset,
     const uint8_t* zero,
-    const union xnn_qu8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qu8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(mr != 0);
   assert(mr <= 2);
@@ -1208,7 +1208,7 @@ void xnn_qu8_vcvt_ukernel__armsimd32_u8(
     size_t batch,
     const uint8_t* input,
     uint8_t* output,
-    const union xnn_qu8_cvt_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_qu8_cvt_params params[XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(uint8_t) == 0);
@@ -1308,7 +1308,7 @@ void xnn_qu8_vlrelu_ukernel__armsimd32_u4(
     size_t batch,
     const uint8_t* input,
     uint8_t* output,
-    const union xnn_qu8_lrelu_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_qu8_lrelu_params params[XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(uint8_t) == 0);
