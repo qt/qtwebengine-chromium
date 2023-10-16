@@ -156,7 +156,7 @@ static enum xnn_status setup_channel_shuffle_nc(
     const void* input,
     void* output,
     uint32_t log2_element_size,
-    const struct xnn_zip_config zip[restrict XNN_MIN_ELEMENTS(1)])
+    const struct xnn_zip_config zip[ XNN_MIN_ELEMENTS(1)])
 {
   channel_shuffle_op->state = xnn_run_state_invalid;
 
