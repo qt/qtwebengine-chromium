@@ -172,6 +172,7 @@ static_library("browser") {
 
     public_deps -= [
       "//components/sync/protocol",
+      "//components/sync_device_info",
     ]
 
     deps -= [

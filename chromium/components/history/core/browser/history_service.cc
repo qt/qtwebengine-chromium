@@ -413,6 +413,7 @@ void HistoryService::RemoveObserver(HistoryServiceObserver* observer) {
   observers_.RemoveObserver(observer);
 }
 
+#if !defined(TOOLKIT_QT)
 void HistoryService::SetDeviceInfoServices(
     syncer::DeviceInfoTracker* device_info_tracker,
     syncer::LocalDeviceInfoProvider* local_device_info_provider) {
@@ -495,6 +496,7 @@ void HistoryService::SendLocalDeviceOriginatorCacheGuidToBackend() {
       base::BindOnce(&HistoryBackend::SetLocalDeviceOriginatorCacheGuid,
                      history_backend_, std::move(guid)));
 }
+#endif  // !defined(TOOLKIT_QT)
 
 base::CancelableTaskTracker::TaskId HistoryService::ScheduleDBTask(
     const base::Location& from_here,
@@ -1271,6 +1273,7 @@ base::CancelableTaskTracker::TaskId HistoryService::GetVisibleVisitCountToHost(
     base::CancelableTaskTracker* tracker) {
   DCHECK(backend_task_runner_) << "History service being called after cleanup";
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+#if !defined(TOOLKIT_QT)
   if (origin_queried_closure_for_testing_) {
     callback = base::BindOnce(
         [](base::OnceClosure origin_queried_closure,
@@ -1281,6 +1284,7 @@ base::CancelableTaskTracker::TaskId HistoryService::GetVisibleVisitCountToHost(
         },
         std::move(origin_queried_closure_for_testing_), std::move(callback));
   }
+#endif  // !defined(TOOLKIT_QT)
   return tracker->PostTaskAndReplyWithResult(
       backend_task_runner_.get(), FROM_HERE,
       base::BindOnce(&HistoryBackend::GetVisibleVisitCountToHost,
@@ -1343,11 +1347,13 @@ void HistoryService::Cleanup() {
   // Clear `backend_task_runner_` to make sure it's not used after Cleanup().
   backend_task_runner_ = nullptr;
 
+#if !defined(TOOLKIT_QT)
   local_device_info_available_subscription_ = {};
   local_device_info_provider_ = nullptr;
 
   device_info_tracker_observation_.Reset();
   device_info_tracker_ = nullptr;
+#endif  // !defined(TOOLKIT_QT)
 }
 
 bool HistoryService::Init(

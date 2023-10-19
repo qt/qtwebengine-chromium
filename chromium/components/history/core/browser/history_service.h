@@ -93,8 +93,11 @@ class WebHistoryService;
 
 // The history service records page titles, visit times, and favicons, as well
 // as information about downloads.
-class HistoryService : public KeyedService,
-                       public syncer::DeviceInfoTracker::Observer {
+class HistoryService : public KeyedService
+#if !defined(TOOLKIT_QT)
+                     , public syncer::DeviceInfoTracker::Observer
+#endif
+{
  public:
   // Must call Init after construction. The empty constructor provided only for
   // unit tests. When using the full constructor, `history_client` may only be
@@ -673,6 +676,7 @@ class HistoryService : public KeyedService,
 
   // Generic Stuff -------------------------------------------------------------
 
+#if !defined(TOOLKIT_QT)
   // Sets the history service's device info tracker and local device info
   // provider.
   void SetDeviceInfoServices(
@@ -687,6 +691,7 @@ class HistoryService : public KeyedService,
   void OnDeviceInfoChange() override;
 
   void OnDeviceInfoShutdown() override;
+#endif  // !defined(TOOLKIT_QT)
 
   // Schedules a HistoryDBTask for running on the history backend. See
   // HistoryDBTask for details on what this does. Takes ownership of `task`.
@@ -770,7 +775,6 @@ class HistoryService : public KeyedService,
   // Sends the SyncService's TransportState `state` to the backend, which will
   // pass it on to the HistorySyncBridge.
   void SetSyncTransportState(syncer::SyncService::TransportState state);
-#endif // !defined(TOOLKIT_QT)
 
   // Override `backend_task_runner_` for testing; needs to be called before
   // Init.
@@ -783,6 +787,7 @@ class HistoryService : public KeyedService,
   void set_origin_queried_closure_for_testing(base::OnceClosure closure) {
     origin_queried_closure_for_testing_ = std::move(closure);
   }
+#endif  // !defined(TOOLKIT_QT)
 
  protected:
   // These are not currently used, hopefully we can do something in the future
@@ -1118,7 +1123,6 @@ class HistoryService : public KeyedService,
 
 #if !defined(TOOLKIT_QT)
   std::unique_ptr<DeleteDirectiveHandler> delete_directive_handler_;
-#endif
 
   base::OnceClosure origin_queried_closure_for_testing_;
 
@@ -1134,6 +1138,7 @@ class HistoryService : public KeyedService,
 
   raw_ptr<syncer::LocalDeviceInfoProvider> local_device_info_provider_ =
       nullptr;
+#endif  // !defined(TOOLKIT_QT)
 
   // All vended weak pointers are invalidated in Cleanup().
   base::WeakPtrFactory<HistoryService> weak_ptr_factory_{this};

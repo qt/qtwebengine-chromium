@@ -591,8 +591,10 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
 
   // Generic operations --------------------------------------------------------
 
+#if !defined(TOOLKIT_QT)
   // Sets the device information for all syncing devices.
   void SetSyncDeviceInfo(SyncDeviceInfoMap sync_device_info);
+#endif
 
   // Sets the local device Originator Cache GUID.
   void SetLocalDeviceOriginatorCacheGuid(

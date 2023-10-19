@@ -106,8 +106,10 @@ namespace history {
 
 namespace {
 
+#if !defined(TOOLKIT_QT)
 using OsType = syncer::DeviceInfo::OsType;
 using FormFactor = syncer::DeviceInfo::FormFactor;
+#endif
 
 #if DCHECK_IS_ON()
 // Use to keep track of paths used to host HistoryBackends. This class
@@ -249,7 +251,6 @@ class DeleteForeignVisitsDBTask : public HistoryDBTask {
 
   void DoneRunOnMainThread() override {}
 };
-#endif  // !defined(TOOLKIT_QT)
 
 // On iOS devices, Returns true if the device that created the foreign visit is
 // an Android or iOS device, and has a mobile form factor.
@@ -293,6 +294,7 @@ bool CanAddForeignVisitToSegments(
   return false;
 #endif
 }
+#endif  // !defined(TOOLKIT_QT)
 
 }  // namespace
 
@@ -612,6 +614,7 @@ SegmentID HistoryBackend::CalculateSegmentID(
 }
 
 void HistoryBackend::UpdateSegmentForExistingForeignVisit(VisitRow& visit_row) {
+#if !defined(TOOLKIT_QT)
   CHECK(can_add_foreign_visits_to_segments_);
   CHECK(!visit_row.originator_cache_guid.empty());
 
@@ -655,6 +658,7 @@ void HistoryBackend::UpdateSegmentForExistingForeignVisit(VisitRow& visit_row) {
   visit_row.segment_id = new_segment_id;
 
   db_->SetSegmentID(visit_row.visit_id, new_segment_id);
+#endif  // !defined(TOOLKIT_QT)
 }
 
 void HistoryBackend::UpdateWithPageEndTime(ContextID context_id,
@@ -1718,12 +1722,14 @@ VisitID HistoryBackend::AddSyncedVisit(
 
   db_->SetMayContainForeignVisits(true);
 
+#if !defined(TOOLKIT_QT)
   if (can_add_foreign_visits_to_segments_ &&
       CanAddForeignVisitToSegments(visit, local_device_originator_cache_guid_,
                                    sync_device_info_)) {
     AssignSegmentForNewVisit(url, visit.referring_visit, visit_id,
                              visit.transition, visit.visit_time);
   }
+#endif
 
   ScheduleCommit();
   return visit_id;
@@ -1797,9 +1803,11 @@ VisitID HistoryBackend::UpdateSyncedVisit(
     return kInvalidVisitID;
   }
 
+#if !defined(TOOLKIT_QT)
   if (can_add_foreign_visits_to_segments_) {
     UpdateSegmentForExistingForeignVisit(updated_row);
   }
+#endif
 
   // If provided, add or update the ContextAnnotations.
   if (context_annotations) {
@@ -3506,9 +3514,11 @@ void HistoryBackend::KillHistoryDatabase() {
   CloseAllDatabases();
 }
 
+#if !defined(TOOLKIT_QT)
 void HistoryBackend::SetSyncDeviceInfo(SyncDeviceInfoMap sync_device_info) {
   sync_device_info_ = std::move(sync_device_info);
 }
+#endif
 
 void HistoryBackend::SetLocalDeviceOriginatorCacheGuid(
     std::string local_device_originator_cache_guid) {
