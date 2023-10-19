@@ -194,7 +194,7 @@ void LogRequestAction(RequestAction action) {
 // |event_name| is an invalid event, returns EventTypes::kInvalidEvent.
 ExtensionWebRequestEventRouter::EventTypes GetEventTypeFromEventName(
     base::StringPiece event_name) {
-  constexpr auto kRequestStageMap = base::MakeFixedFlatMap<
+  auto kRequestStageMap = base::MakeFixedFlatMap<
       base::StringPiece, ExtensionWebRequestEventRouter::EventTypes>(
       {{keys_wra::kOnBeforeRequest,
         ExtensionWebRequestEventRouter::kOnBeforeRequest},
@@ -213,7 +213,7 @@ ExtensionWebRequestEventRouter::EventTypes GetEventTypeFromEventName(
        {keys_wra::kOnCompleted, ExtensionWebRequestEventRouter::kOnCompleted}});
   static_assert(kRequestStageMap.size() == std::size(kWebRequestEvents));
 
-  static constexpr size_t kWebRequestEventPrefixLen =
+  static size_t kWebRequestEventPrefixLen =
       std::char_traits<char>::length(kWebRequestEventPrefix);
   static const size_t kWebViewEventPrefixLen =
       strlen(webview::kWebViewEventPrefix);
