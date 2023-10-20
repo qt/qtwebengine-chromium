@@ -6,8 +6,10 @@
 
 #include <algorithm>
 #include <iterator>
+#include <limits>
 #include <utility>
 
+#include "base/optional.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
@@ -42,6 +44,10 @@ namespace blink {
 namespace {
 
 const char kBufferTooBig[] = "The data buffer exceeded its maximum size.";
+const char kPacketLengthsTooBig[] =
+    "The total packet length exceeded the maximum size.";
+const char kBufferSizeMismatch[] =
+    "The data buffer size must match the total packet length.";
 const char kDetachedBuffer[] = "The data buffer has been detached.";
 const char kDeviceStateChangeInProgress[] =
     "An operation that changes the device state is in progress.";
@@ -177,6 +183,20 @@ bool ConvertBufferSource(const ArrayBufferOrArrayBufferView& buffer_source,
                    static_cast<wtf_size_t>(view->byteLengthAsSizeT()));
   }
   return true;
+}
+
+// Returns the sum of `packet_lengths`, or nullopt if the sum would overflow.
+base::Optional<uint32_t> TotalPacketLength(
+    const Vector<unsigned>& packet_lengths) {
+  uint32_t total_bytes = 0;
+  for (const auto packet_length : packet_lengths) {
+    // Check for overflow.
+    if (std::numeric_limits<uint32_t>::max() - total_bytes < packet_length) {
+      return base::nullopt;
+    }
+    total_bytes += packet_length;
+  }
+  return total_bytes;
 }
 
 }  // namespace
@@ -549,6 +569,14 @@ ScriptPromise USBDevice::isochronousTransferIn(
     Vector<unsigned> packet_lengths) {
   auto* resolver = MakeGarbageCollected<ScriptPromiseResolver>(script_state);
   ScriptPromise promise = resolver->Promise();
+
+  base::Optional<uint32_t> total_bytes = TotalPacketLength(packet_lengths);
+  if (!total_bytes.has_value()) {
+    resolver->Reject(MakeGarbageCollected<DOMException>(
+        DOMExceptionCode::kDataError, kPacketLengthsTooBig));
+    return promise;
+  }
+
   if (EnsureEndpointAvailable(true /* in */, endpoint_number, resolver)) {
     device_requests_.insert(resolver);
     device_->IsochronousTransferIn(
@@ -568,6 +596,20 @@ ScriptPromise USBDevice::isochronousTransferOut(
   ScriptPromise promise = resolver->Promise();
   if (!EnsureEndpointAvailable(false /* out */, endpoint_number, resolver))
     return promise;
+
+  base::Optional<uint32_t> total_bytes = TotalPacketLength(packet_lengths);
+  if (!total_bytes.has_value()) {
+    resolver->Reject(MakeGarbageCollected<DOMException>(
+        DOMExceptionCode::kDataError, kPacketLengthsTooBig));
+    return promise;
+  }
+
+  DOMArrayBuffer* array_buffer = data.GetAsArrayBuffer();
+  if (total_bytes.value() != static_cast<uint32_t>(array_buffer->ByteLengthAsSizeT())) {
+     resolver->Reject(MakeGarbageCollected<DOMException>(
+        DOMExceptionCode::kDataError, kBufferSizeMismatch));
+    return promise;
+  }
 
   Vector<uint8_t> buffer;
   if (!ConvertBufferSource(data, &buffer, resolver))
