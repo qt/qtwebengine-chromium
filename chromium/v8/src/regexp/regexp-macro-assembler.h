@@ -334,7 +334,7 @@ class NativeRegExpMacroAssembler: public RegExpMacroAssembler {
                                   Address* return_address,
                                   InstructionStream re_code, Address* subject,
                                   const byte** input_start,
-                                  const byte** input_end);
+                                  const byte** input_end, uintptr_t gap);
 
   static Address word_character_map_address() {
     return reinterpret_cast<Address>(&word_character_map[0]);
