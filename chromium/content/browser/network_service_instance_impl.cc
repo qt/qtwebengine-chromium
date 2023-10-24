@@ -619,6 +619,10 @@ class NetworkServiceInstancePrivate {
   }
 };
 
+bool IsNetworkServiceCreated() {
+  return g_observed_network_service;
+}
+
 network::mojom::NetworkService* GetNetworkService() {
   if (!g_observed_network_service) {
     g_observed_network_service =
