@@ -572,6 +572,10 @@ class NetworkServiceInstancePrivate {
   }
 };
 
+bool IsNetworkServiceCreated() {
+  return g_network_service_remote;
+}
+
 network::mojom::NetworkService* GetNetworkService() {
   if (!g_network_service_remote)
     g_network_service_remote = new mojo::Remote<network::mojom::NetworkService>;
