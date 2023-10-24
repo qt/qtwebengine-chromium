@@ -817,11 +817,12 @@ Handle<HeapObject> RegExpMacroAssemblerX64::GetCode(Handle<String> source) {
     __ movq(r9, rsp);
     __ Move(kScratchRegister, stack_limit);
     __ subq(r9, Operand(kScratchRegister, 0));
+    Immediate extra_space_for_variables(num_registers_ * kSystemPointerSize);
     // Handle it if the stack pointer is already below the stack limit.
     __ j(below_equal, &stack_limit_hit);
     // Check if there is room for the variable number of registers above
     // the stack limit.
-    __ cmpq(r9, Immediate(num_registers_ * kSystemPointerSize));
+    __ cmpq(r9, extra_space_for_variables);
     __ j(above_equal, &stack_ok);
     // Exit with OutOfMemory exception. There is not enough space on the stack
     // for our working registers.
@@ -831,7 +832,8 @@ Handle<HeapObject> RegExpMacroAssemblerX64::GetCode(Handle<String> source) {
     __ bind(&stack_limit_hit);
     __ Move(code_object_pointer(), masm_.CodeObject());
     __ pushq(backtrack_stackpointer());
-    CallCheckStackGuardState();  // Preserves no registers beside rbp and rsp.
+    // CallCheckStackGuardState preserves no registers beside rbp and rsp.
+    CallCheckStackGuardState(extra_space_for_variables);
     __ popq(backtrack_stackpointer());
     __ testq(rax, rax);
     // If returned value is non-zero, we exit with the returned value as result.
@@ -1242,33 +1244,37 @@ void RegExpMacroAssemblerX64::ClearRegisters(int reg_from, int reg_to) {
 
 // Private methods:
 
-void RegExpMacroAssemblerX64::CallCheckStackGuardState() {
+void RegExpMacroAssemblerX64::CallCheckStackGuardState(Immediate extra_space) {
   // This function call preserves no register values. Caller should
   // store anything volatile in a C call or overwritten by this function.
-  static const int num_arguments = 3;
+  static const int num_arguments = 4;
   __ PrepareCallCFunction(num_arguments);
 #ifdef V8_TARGET_OS_WIN
-  // Second argument: Code of self. (Do this before overwriting r8).
-  __ movq(rdx, code_object_pointer());
+  // Fourth argument: Extra space for variables.
+  __ movq(arg_reg_4, extra_space);
+  // Second argument: Code of self. (Do this before overwriting
+  // r8 (arg_reg_3)).
+  __ movq(arg_reg_2, code_object_pointer());
   // Third argument: RegExp code frame pointer.
-  __ movq(r8, rbp);
+  __ movq(arg_reg_3, rbp);
   // First argument: Next address on the stack (will be address of
   // return address).
-  __ leaq(rcx, Operand(rsp, -kSystemPointerSize));
+  __ leaq(arg_reg_1, Operand(rsp, -kSystemPointerSize));
 #else
+  // Fourth argument: Extra space for variables.
+  __ movq(arg_reg_4, extra_space);
   // Third argument: RegExp code frame pointer.
-  __ movq(rdx, rbp);
+  __ movq(arg_reg_3, rbp);
   // Second argument: Code of self.
-  __ movq(rsi, code_object_pointer());
+  __ movq(arg_reg_2, code_object_pointer());
   // First argument: Next address on the stack (will be address of
   // return address).
-  __ leaq(rdi, Operand(rsp, -kSystemPointerSize));
+  __ leaq(arg_reg_1, Operand(rsp, -kSystemPointerSize));
 #endif
   ExternalReference stack_check =
       ExternalReference::re_check_stack_guard_state();
   __ CallCFunction(stack_check, num_arguments);
 }
-
 
 // Helper function for reading a value out of a stack frame.
 template <typename T>
@@ -1284,7 +1290,8 @@ static T* frame_entry_address(Address re_frame, int frame_offset) {
 
 int RegExpMacroAssemblerX64::CheckStackGuardState(Address* return_address,
                                                   Address raw_code,
-                                                  Address re_frame) {
+                                                  Address re_frame,
+                                                  uintptr_t extra_space) {
   Code re_code = Code::cast(Object(raw_code));
   return NativeRegExpMacroAssembler::CheckStackGuardState(
       frame_entry<Isolate*>(re_frame, kIsolate),
@@ -1293,7 +1300,8 @@ int RegExpMacroAssemblerX64::CheckStackGuardState(Address* return_address,
       return_address, re_code,
       frame_entry_address<Address>(re_frame, kInputString),
       frame_entry_address<const byte*>(re_frame, kInputStart),
-      frame_entry_address<const byte*>(re_frame, kInputEnd));
+      frame_entry_address<const byte*>(re_frame, kInputEnd),
+      extra_space);
 }
 
 

@@ -780,11 +780,13 @@ Handle<HeapObject> RegExpMacroAssemblerIA32::GetCode(Handle<String> source) {
         ExternalReference::address_of_jslimit(isolate());
     __ mov(eax, esp);
     __ sub(eax, StaticVariable(stack_limit));
+    Immediate extra_space_for_variables(num_registers_ * kSystemPointerSize);
+
     // Handle it if the stack pointer is already below the stack limit.
     __ j(below_equal, &stack_limit_hit);
     // Check if there is room for the variable number of registers above
     // the stack limit.
-    __ cmp(eax, num_registers_ * kSystemPointerSize);
+    __ cmp(eax, extra_space_for_variables);
     __ j(above_equal, &stack_ok);
     // Exit with OutOfMemory exception. There is not enough space on the stack
     // for our working registers.
@@ -793,7 +795,7 @@ Handle<HeapObject> RegExpMacroAssemblerIA32::GetCode(Handle<String> source) {
 
     __ bind(&stack_limit_hit);
     __ push(backtrack_stackpointer());
-    CallCheckStackGuardState(ebx);
+    CallCheckStackGuardState(ebx, extra_space_for_variables);
     __ pop(backtrack_stackpointer());
     __ or_(eax, eax);
     // If returned value is non-zero, we exit with the returned value as result.
@@ -1186,9 +1188,12 @@ void RegExpMacroAssemblerIA32::ClearRegisters(int reg_from, int reg_to) {
 
 // Private methods:
 
-void RegExpMacroAssemblerIA32::CallCheckStackGuardState(Register scratch) {
-  static const int num_arguments = 3;
+void RegExpMacroAssemblerIA32::CallCheckStackGuardState(Register scratch,
+                                                        Immediate extra_space) {
+  static const int num_arguments = 4;
   __ PrepareCallCFunction(num_arguments, scratch);
+  // Extra space for variables.
+  __ mov(Operand(esp, 3 * kSystemPointerSize), extra_space);
   // RegExp code frame pointer.
   __ mov(Operand(esp, 2 * kSystemPointerSize), ebp);
   // Code of self.
@@ -1219,7 +1224,8 @@ static T* frame_entry_address(Address re_frame, int frame_offset) {
 
 int RegExpMacroAssemblerIA32::CheckStackGuardState(Address* return_address,
                                                    Address raw_code,
-                                                   Address re_frame) {
+                                                   Address re_frame,
+                                                   uintptr_t extra_space) {
   Code re_code = Code::cast(Object(raw_code));
   return NativeRegExpMacroAssembler::CheckStackGuardState(
       frame_entry<Isolate*>(re_frame, kIsolate),
@@ -1228,7 +1234,8 @@ int RegExpMacroAssemblerIA32::CheckStackGuardState(Address* return_address,
       return_address, re_code,
       frame_entry_address<Address>(re_frame, kInputString),
       frame_entry_address<const byte*>(re_frame, kInputStart),
-      frame_entry_address<const byte*>(re_frame, kInputEnd));
+      frame_entry_address<const byte*>(re_frame, kInputEnd),
+      extra_space);
 }
 
 
