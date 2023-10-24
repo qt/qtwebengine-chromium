@@ -168,14 +168,15 @@ bool NativeRegExpMacroAssembler::CanReadUnaligned() {
 int NativeRegExpMacroAssembler::CheckStackGuardState(
     Isolate* isolate, int start_index, RegExp::CallOrigin call_origin,
     Address* return_address, Code re_code, Address* subject,
-    const byte** input_start, const byte** input_end) {
+    const byte** input_start, const byte** input_end,
+    uintptr_t gap) {
   DisallowHeapAllocation no_gc;
   Address old_pc = PointerAuthentication::AuthenticatePC(return_address, 0);
   DCHECK_LE(re_code.raw_instruction_start(), old_pc);
   DCHECK_LE(old_pc, re_code.raw_instruction_end());
 
   StackLimitCheck check(isolate);
-  bool js_has_overflowed = check.JsHasOverflowed();
+  bool js_has_overflowed = check.JsHasOverflowed(gap);
 
   if (call_origin == RegExp::CallOrigin::kFromJs) {
     // Direct calls from JavaScript can be interrupted in two ways:

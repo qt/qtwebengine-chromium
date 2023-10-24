@@ -261,7 +261,7 @@ class NativeRegExpMacroAssembler: public RegExpMacroAssembler {
                                   RegExp::CallOrigin call_origin,
                                   Address* return_address, Code re_code,
                                   Address* subject, const byte** input_start,
-                                  const byte** input_end);
+                                  const byte** input_end, uintptr_t gap);
 
   // Byte map of one byte characters with a 0xff if the character is a word
   // character (digit, letter or underscore) and 0x00 otherwise.

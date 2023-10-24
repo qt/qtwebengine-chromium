@@ -88,7 +88,7 @@ class V8_EXPORT_PRIVATE RegExpMacroAssemblerIA32
   // returning.
   // {raw_code} is an Address because this is called via ExternalReference.
   static int CheckStackGuardState(Address* return_address, Address raw_code,
-                                  Address re_frame);
+                                  Address re_frame, uintptr_t extra_space);
 
  private:
   Operand StaticVariable(const ExternalReference& ext);
@@ -133,7 +133,8 @@ class V8_EXPORT_PRIVATE RegExpMacroAssemblerIA32
   void CheckStackLimit();
 
   // Generate a call to CheckStackGuardState.
-  void CallCheckStackGuardState(Register scratch);
+  void CallCheckStackGuardState(Register scratch,
+                                Immediate extra_space = Immediate(0));
 
   // The ebp-relative location of a regexp register.
   Operand register_location(int register_index);

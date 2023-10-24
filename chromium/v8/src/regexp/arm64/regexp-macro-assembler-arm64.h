@@ -97,7 +97,8 @@ class V8_EXPORT_PRIVATE RegExpMacroAssemblerARM64
   static int CheckStackGuardState(Address* return_address, Address raw_code,
                                   Address re_frame, int start_offset,
                                   const byte** input_start,
-                                  const byte** input_end);
+                                  const byte** input_end,
+                                  uintptr_t extra_space);
 
  private:
   // Above the frame pointer - Stored registers and stack passed parameters.
@@ -145,7 +146,8 @@ class V8_EXPORT_PRIVATE RegExpMacroAssemblerARM64
   void CheckStackLimit();
 
   // Generate a call to CheckStackGuardState.
-  void CallCheckStackGuardState(Register scratch);
+  void CallCheckStackGuardState(Register scratch,
+                                Operand extra_space = Operand(0));
 
   // Location of a 32 bit position register.
   MemOperand register_location(int register_index);

@@ -89,7 +89,7 @@ class V8_EXPORT_PRIVATE RegExpMacroAssemblerARM
   // returning.
   // {raw_code} is an Address because this is called via ExternalReference.
   static int CheckStackGuardState(Address* return_address, Address raw_code,
-                                  Address re_frame);
+                                  Address re_frame, uintptr_t extra_space);
 
  private:
   // Offsets from frame_pointer() of function parameters and stored registers.
@@ -134,7 +134,8 @@ class V8_EXPORT_PRIVATE RegExpMacroAssemblerARM
 
 
   // Generate a call to CheckStackGuardState.
-  void CallCheckStackGuardState();
+  void CallCheckStackGuardState(
+      Operand extra_space_for_variables = Operand::Zero());
 
   // The ebp-relative location of a regexp register.
   MemOperand register_location(int register_index);
