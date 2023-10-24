@@ -125,7 +125,7 @@ class LocationArbitrator : public LocationProvider {
   mojom::GeopositionResultPtr result_;
 
   // Used to track if all providers had a chance to provide a location.
-  std::set<raw_ptr<const LocationProvider*>> providers_polled_;
+  std::set<raw_ptr<const LocationProvider>> providers_polled_;
 };
 
 // Factory functions for the various types of location provider to abstract

@@ -133,7 +133,7 @@ void LocationArbitrator::OnLocationUpdate(
     result_ = std::move(new_result);
   }
   // Don't fail until all providers had their say.
-  if ((result && ValidateGeoposition(result_->get_position())) || (providers_polled_.size() == providers_.size()))
+  if ((result_->is_position() && ValidateGeoposition(*result_->get_position())) || (providers_polled_.size() == providers_.size()))
     arbitrator_update_callback_.Run(this, result_.Clone());
 }
 

@@ -197,9 +197,11 @@ void NetworkLocationProvider::StartProvider(bool high_accuracy) {
 
   // No point in sending requests without an API key.
   if (request_->api_key().empty()) {
-      mojom::Geoposition pos;
-      pos.error_code = mojom::Geoposition::ErrorCode::POSITION_UNAVAILABLE;
-      location_provider_update_callback_.Run(this, pos);
+      device::mojom::GeopositionResultPtr result =
+          device::mojom::GeopositionResult::NewError(
+              mojom::GeopositionError::New(
+                  mojom::GeopositionErrorCode::kPositionUnavailable, "", ""));
+      location_provider_update_callback_.Run(this, std::move(result));
       return;
   }
 
