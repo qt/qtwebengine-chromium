@@ -57,7 +57,8 @@
 #include "third_party/blink/renderer/bindings/modules/v8/v8_canvas_rendering_context_2d_settings.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_canvas_will_read_frequently.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_typedefs.h"
-#include "third_party/blink/renderer/bindings/modules/v8/v8_union_canvasrenderingcontext2d_gpucanvascontext_imagebitmaprenderingcontext_webgl2renderingcontext_webglrenderingcontext.h"
+#include "third_party/blink/renderer/modules/shorter_includes.h"
+#include SHORT_INCLUDE_FILE(third_party/blink/renderer/bindings/modules/v8/v8_union,canvasrenderingcontext2d_gpucanvascontext_imagebitmaprenderingcontext_webgl2renderingcontext_webglrenderingcontext)
 #include "third_party/blink/renderer/core/accessibility/ax_object_cache.h"
 #include "third_party/blink/renderer/core/css/css_property_names.h"
 #include "third_party/blink/renderer/core/css/css_property_value_set.h"

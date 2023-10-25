@@ -36,7 +36,7 @@ class PathManager(object):
     _is_initialized = False
 
     @classmethod
-    def init(cls, root_src_dir, root_gen_dir, component_reldirs):
+    def init(cls, root_src_dir, root_gen_dir, component_reldirs, enable_shorter_filenames):
         """
         Args:
             root_src_dir: Project's root directory, which corresponds to "//"
@@ -61,6 +61,7 @@ class PathManager(object):
             for component, rel_dir in component_reldirs.items()
         }
         cls._is_initialized = True
+        cls._enable_shorter_filenames = enable_shorter_filenames
 
     @classmethod
     def component_path(cls, component, filepath):
@@ -146,6 +147,8 @@ class PathManager(object):
             # "int_32_array".
             filename = "v8_union_{}".format("_".join(
                 idl_definition.member_tokens)).lower()
+            if self._enable_shorter_filenames:
+                filename = self._make_shorter(filename, len(idl_definition.member_tokens) + 2)
             self._api_basename = filename
             self._impl_basename = filename
             self._blink_dir = None
@@ -207,3 +210,12 @@ class PathManager(object):
         if ext is not None:
             filename = posixpath.extsep.join([filename, ext])
         return posixpath.join(dirpath, filename)
+
+    @staticmethod
+    def _make_shorter(filename, num_of_tokens):
+        if len(filename) < 120:
+            return filename
+        else:
+            t = num_of_tokens - 4
+            r = '_'.join(filename.split('_', t)[:t]) + '_'
+            return r

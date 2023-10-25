@@ -8,7 +8,8 @@
 #include "base/memory/scoped_refptr.h"  // IWYU pragma: keep (https://github.com/clangd/clangd/issues/2052)
 #include "base/notreached.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_typedefs.h"
-#include "third_party/blink/renderer/bindings/modules/v8/v8_union_cssimagevalue_htmlcanvaselement_htmlimageelement_htmlvideoelement_imagebitmap_offscreencanvas_svgimageelement_videoframe.h"
+#include "third_party/blink/renderer/modules/shorter_includes.h"
+#include SHORT_INCLUDE_FILE(third_party/blink/renderer/bindings/modules/v8/v8_union,cssimagevalue_htmlcanvaselement_htmlimageelement_htmlvideoelement_imagebitmap_offscreencanvas_svgimageelement_videoframe)
 #include "third_party/blink/renderer/core/css/cssom/css_style_image_value.h"  // IWYU pragma: keep (https://github.com/clangd/clangd/issues/2044)
 #include "third_party/blink/renderer/core/html/canvas/canvas_image_source.h"
 #include "third_party/blink/renderer/core/html/canvas/html_canvas_element.h"
