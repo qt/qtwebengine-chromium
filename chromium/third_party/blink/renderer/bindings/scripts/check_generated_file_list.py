@@ -64,6 +64,11 @@ def parse_options():
                         required=True,
                         type=str,
                         help="filepath of the check results")
+    parser.add_argument(
+         "--keep_shorter_filenames",
+         action="store_true",
+         default=False,
+         help="workaround to not generate long file names")
 
     options = parser.parse_args()
 
@@ -82,7 +87,8 @@ def main():
                   root_src_dir=options.root_src_dir,
                   root_gen_dir=options.root_gen_dir,
                   component_reldirs=component_reldirs,
-                  enable_style_format=False)
+                  enable_style_format=False,
+                  enable_shorter_filenames=options.keep_shorter_filenames)
     web_idl_database = bind_gen.package_initializer.package_initializer(
     ).web_idl_database()
     idl_definitions = {
