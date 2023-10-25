@@ -73,6 +73,11 @@ def parse_options(valid_tasks):
                         nargs='+',
                         choices=valid_tasks,
                         help='types to generate')
+    parser.add_argument(
+        '--keep_shorter_filenames',
+        action="store_true",
+        default=False,
+        help='workaround to not generate long file names')
 
     options = parser.parse_args()
 
@@ -108,7 +113,8 @@ def main():
         root_gen_dir=options.root_gen_dir,
         component_reldirs=component_reldirs,
         enable_style_format=options.format_generated_files,
-        enable_code_generation_tracing=options.enable_code_generation_tracing)
+        enable_code_generation_tracing=options.enable_code_generation_tracing,
+        enable_shorter_filenames=options.keep_shorter_filenames)
 
     task_queue = bind_gen.TaskQueue(single_process=options.single_process)
 
