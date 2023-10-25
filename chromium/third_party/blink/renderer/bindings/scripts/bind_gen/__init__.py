@@ -46,7 +46,7 @@ from .union import generate_unions
 
 
 def init(web_idl_database_path, root_src_dir, root_gen_dir, component_reldirs,
-         enable_style_format):
+         enable_style_format, enable_shorter_filenames):
     """
     Args:
         web_idl_database_path: File path to the web_idl.Database.
@@ -62,4 +62,5 @@ def init(web_idl_database_path, root_src_dir, root_gen_dir, component_reldirs,
                              root_src_dir=root_src_dir,
                              root_gen_dir=root_gen_dir,
                              component_reldirs=component_reldirs,
-                             enable_style_format=enable_style_format)
+                             enable_style_format=enable_style_format,
+                             enable_shorter_filenames=enable_shorter_filenames)
