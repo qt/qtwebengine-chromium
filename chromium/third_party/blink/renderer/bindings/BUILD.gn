@@ -170,6 +170,9 @@ template("generate_bindings") {
     if (blink_enable_generated_code_formatting) {
       args += [ "--format_generated_files" ]
     }
+    if (is_msvc) {
+      args += [ "--keep_shorter_filenames" ]
+    }
     args += invoker.targets
 
     deps = [ ":web_idl_database" ]
@@ -382,6 +385,9 @@ action_with_pydeps("check_generated_file_list") {
     "--output",
     rebase_path(result_file, root_build_dir),
   ]
+  if (is_msvc) {
+      args += [ "--keep_shorter_filenames" ]
+  }
 
   deps = [
     # A lot of C++ compile tasks are waiting for the completion of the
