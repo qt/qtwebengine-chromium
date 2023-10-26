@@ -166,11 +166,11 @@ void ImagePaintTimingDetector::NotifyImageRemoved(
     const ImageResourceContent* cached_image) {
   if (!is_recording_)
     return;
-  RecordId record_id = std::make_pair(&object, cached_image);
-  records_manager_.RemoveImageFinishedRecord(record_id);
-  if (!records_manager_.IsRecordedVisibleImage(record_id))
+  MediaRecordIdHash record_id_hash = MediaRecordId::GenerateHash(&object, cached_image);
+  records_manager_.RemoveImageFinishedRecord(record_id_hash);
+  if (!records_manager_.IsRecordedVisibleImage(record_id_hash))
     return;
-  records_manager_.RemoveVisibleRecord(record_id);
+  records_manager_.RemoveVisibleRecord(record_id_hash);
   need_update_timing_at_frame_end_ = true;
 }
 
@@ -224,9 +224,11 @@ void ImagePaintTimingDetector::RecordImage(
   if (records_manager_.IsRecordedInvisibleImage(object))
     return;
 
-  RecordId record_id = std::make_pair(&object, &cached_image);
+  MediaRecordId record_id(&object, &cached_image);
+  MediaRecordIdHash record_id_hash = record_id.GetHash();
+
   bool is_recorded_visible_image =
-      records_manager_.IsRecordedVisibleImage(record_id);
+      records_manager_.IsRecordedVisibleImage(record_id_hash);
   if (int depth = IgnorePaintTimingScope::IgnoreDepth()) {
     // Record the largest loaded image that is hidden due to documentElement
     // being invisible but by no other reason (i.e. IgnoreDepth() needs to be
@@ -242,9 +244,9 @@ void ImagePaintTimingDetector::RecordImage(
   }
 
   if (is_recorded_visible_image &&
-      !records_manager_.IsVisibleImageLoaded(record_id) &&
+      !records_manager_.IsVisibleImageLoaded(record_id_hash) &&
       cached_image.IsLoaded()) {
-    records_manager_.OnImageLoaded(record_id, frame_index_, style_image);
+    records_manager_.OnImageLoaded(record_id_hash, frame_index_, style_image);
     need_update_timing_at_frame_end_ = true;
     if (base::Optional<PaintTimingVisualizer>& visualizer =
             frame_view_->GetPaintTimingDetector().Visualizer()) {
@@ -272,7 +274,7 @@ void ImagePaintTimingDetector::RecordImage(
   } else {
     records_manager_.RecordVisible(record_id, rect_size);
     if (cached_image.IsLoaded()) {
-      records_manager_.OnImageLoaded(record_id, frame_index_, style_image);
+      records_manager_.OnImageLoaded(record_id_hash, frame_index_, style_image);
       need_update_timing_at_frame_end_ = true;
     }
   }
@@ -306,8 +308,7 @@ uint64_t ImagePaintTimingDetector::ComputeImageRectSize(
 void ImagePaintTimingDetector::NotifyImageFinished(
     const LayoutObject& object,
     const ImageResourceContent* cached_image) {
-  RecordId record_id = std::make_pair(&object, cached_image);
-  records_manager_.NotifyImageFinished(record_id);
+  records_manager_.NotifyImageFinished(MediaRecordId::GenerateHash(&object, cached_image));
 }
 
 void ImagePaintTimingDetector::ReportLargestIgnoredImage() {
@@ -318,13 +319,13 @@ void ImagePaintTimingDetector::ReportLargestIgnoredImage() {
 ImageRecordsManager::ImageRecordsManager(LocalFrameView* frame_view)
     : size_ordered_set_(&LargeImageFirst), frame_view_(frame_view) {}
 
-void ImageRecordsManager::OnImageLoaded(const RecordId& record_id,
+void ImageRecordsManager::OnImageLoaded(MediaRecordIdHash record_id_hash,
                                         unsigned current_frame_index,
                                         const StyleFetchedImage* style_image) {
-  base::WeakPtr<ImageRecord> record = FindVisibleRecord(record_id);
+  base::WeakPtr<ImageRecord> record = FindVisibleRecord(record_id_hash);
   DCHECK(record);
   if (!style_image) {
-    record->load_time = image_finished_times_.at(record_id);
+    record->load_time = image_finished_times_.at(record_id_hash);
     DCHECK(!record->load_time.is_null());
   } else {
     Document* document = frame_view_->GetFrame().GetDocument();
@@ -348,10 +349,9 @@ void ImageRecordsManager::ReportLargestIgnoredImage(
     largest_ignored_image_.reset();
     return;
   }
-  RecordId record_id = std::make_pair(node->GetLayoutObject(),
-                                      largest_ignored_image_->cached_image);
+  MediaRecordId record_id(node->GetLayoutObject(), largest_ignored_image_->cached_image);
   size_ordered_set_.insert(record);
-  visible_images_.insert(record_id, std::move(largest_ignored_image_));
+  visible_images_.insert(record_id.GetHash(), std::move(largest_ignored_image_));
   OnImageLoadedInternal(record, current_frame_index);
 }
 
@@ -363,22 +363,22 @@ void ImageRecordsManager::OnImageLoadedInternal(
 }
 
 void ImageRecordsManager::MaybeUpdateLargestIgnoredImage(
-    const RecordId& record_id,
+    const MediaRecordId& record_id,
     const uint64_t& visual_size) {
   if (visual_size && (!largest_ignored_image_ ||
                       visual_size > largest_ignored_image_->first_size)) {
     largest_ignored_image_ =
-        CreateImageRecord(*record_id.first, record_id.second, visual_size);
+        CreateImageRecord(*record_id.GetLayoutObject(), record_id.GetImageResourceContent(), visual_size);
     largest_ignored_image_->load_time = base::TimeTicks::Now();
   }
 }
 
-void ImageRecordsManager::RecordVisible(const RecordId& record_id,
+void ImageRecordsManager::RecordVisible(const MediaRecordId& record_id,
                                         const uint64_t& visual_size) {
   std::unique_ptr<ImageRecord> record =
-      CreateImageRecord(*record_id.first, record_id.second, visual_size);
+      CreateImageRecord(*record_id.GetLayoutObject(), record_id.GetImageResourceContent(), visual_size);
   size_ordered_set_.insert(record->AsWeakPtr());
-  visible_images_.insert(record_id, std::move(record));
+  visible_images_.insert(record_id.GetHash(), std::move(record));
 }
 
 std::unique_ptr<ImageRecord> ImageRecordsManager::CreateImageRecord(

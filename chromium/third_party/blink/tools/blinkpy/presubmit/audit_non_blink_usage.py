@@ -36,6 +36,7 @@ _CONFIG = [
             'base::CreateSequencedTaskRunner',
             'base::DefaultTickClock',
             'base::ElapsedTimer',
+            'base::HashInts',
             'base::JobDelegate',
             'base::JobHandle',
             'base::PostJob',

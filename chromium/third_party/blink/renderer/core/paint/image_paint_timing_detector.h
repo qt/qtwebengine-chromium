@@ -13,6 +13,7 @@
 #include "third_party/blink/public/web/web_widget_client.h"
 #include "third_party/blink/renderer/core/dom/dom_node_ids.h"
 #include "third_party/blink/renderer/core/loader/resource/image_resource_content.h"
+#include "third_party/blink/renderer/core/paint/media_record_id.h"
 #include "third_party/blink/renderer/core/paint/paint_timing_detector.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
 #include "third_party/blink/renderer/platform/wtf/hash_set.h"
@@ -53,8 +54,6 @@ class ImageRecord : public base::SupportsWeakPtr<ImageRecord> {
   bool loaded = false;
 };
 
-typedef std::pair<const LayoutObject*, const ImageResourceContent*> RecordId;
-
 // |ImageRecordsManager| is the manager of all of the images that Largest Image
 // Paint cares about. Note that an image does not necessarily correspond to a
 // node; it can also be one of the background images attached to a node.
@@ -80,13 +79,13 @@ class CORE_EXPORT ImageRecordsManager {
     invisible_images_.erase(&object);
   }
 
-  inline void RemoveImageFinishedRecord(const RecordId& record_id) {
-    image_finished_times_.erase(record_id);
+  inline void RemoveImageFinishedRecord(MediaRecordIdHash record_id_hash) {
+    image_finished_times_.erase(record_id_hash);
   }
 
-  inline void RemoveVisibleRecord(const RecordId& record_id) {
+  inline void RemoveVisibleRecord(MediaRecordIdHash record_id_hash) {
     base::WeakPtr<ImageRecord> record =
-        visible_images_.find(record_id)->value->AsWeakPtr();
+        visible_images_.find(record_id_hash)->value->AsWeakPtr();
     if (!record->paint_time.is_null()) {
       DCHECK_GT(record->first_size, 0u);
       if (record->first_size > largest_removed_image_size_) {
@@ -100,7 +99,7 @@ class CORE_EXPORT ImageRecordsManager {
       }
     }
     size_ordered_set_.erase(record);
-    visible_images_.erase(record_id);
+    visible_images_.erase(record_id_hash);
     // Leave out |images_queued_for_paint_time_| intentionally because the null
     // record will be removed in |AssignPaintTimeToRegisteredQueuedRecords|.
   }
@@ -108,29 +107,29 @@ class CORE_EXPORT ImageRecordsManager {
   inline void RecordInvisible(const LayoutObject& object) {
     invisible_images_.insert(&object);
   }
-  void RecordVisible(const RecordId& record_id, const uint64_t& visual_size);
-  bool IsRecordedVisibleImage(const RecordId& record_id) const {
-    return visible_images_.Contains(record_id);
+  void RecordVisible(const MediaRecordId& record_id, const uint64_t& visual_size);
+  bool IsRecordedVisibleImage(const MediaRecordIdHash record_id_hash) const {
+    return visible_images_.Contains(record_id_hash);
   }
   bool IsRecordedInvisibleImage(const LayoutObject& object) const {
     return invisible_images_.Contains(&object);
   }
 
-  void NotifyImageFinished(const RecordId& record_id) {
+  void NotifyImageFinished(MediaRecordIdHash record_id_hash) {
     // TODO(npm): Ideally NotifyImageFinished() would only be called when the
     // record has not yet been inserted in |image_finished_times_| but that's
     // not currently the case. If we plumb some information from
     // ImageResourceContent we may be able to ensure that this call does not
     // require the Contains() check, which would save time.
-    if (!image_finished_times_.Contains(record_id))
-      image_finished_times_.insert(record_id, base::TimeTicks::Now());
+    if (!image_finished_times_.Contains(record_id_hash))
+      image_finished_times_.insert(record_id_hash, base::TimeTicks::Now());
   }
 
-  inline bool IsVisibleImageLoaded(const RecordId& record_id) const {
-    DCHECK(visible_images_.Contains(record_id));
-    return visible_images_.at(record_id)->loaded;
+  inline bool IsVisibleImageLoaded(MediaRecordIdHash record_id_hash) const {
+    DCHECK(visible_images_.Contains(record_id_hash));
+    return visible_images_.at(record_id_hash)->loaded;
   }
-  void OnImageLoaded(const RecordId&,
+  void OnImageLoaded(MediaRecordIdHash,
                      unsigned current_frame_index,
                      const StyleFetchedImage*);
   void OnImageLoadedInternal(base::WeakPtr<ImageRecord>&,
@@ -139,7 +138,7 @@ class CORE_EXPORT ImageRecordsManager {
   // Receives a candidate image painted under opacity 0 but without nested
   // opacity. May update |largest_ignored_image_| if the new candidate has a
   // larger size.
-  void MaybeUpdateLargestIgnoredImage(const RecordId&,
+  void MaybeUpdateLargestIgnoredImage(const MediaRecordId&,
                                       const uint64_t& visual_size);
   void ReportLargestIgnoredImage(unsigned current_frame_index);
 
@@ -175,9 +174,9 @@ class CORE_EXPORT ImageRecordsManager {
  private:
   // Find the image record of an visible image.
   inline base::WeakPtr<ImageRecord> FindVisibleRecord(
-      const RecordId& record_id) const {
-    DCHECK(visible_images_.Contains(record_id));
-    return visible_images_.find(record_id)->value->AsWeakPtr();
+      const MediaRecordIdHash record_id_hash) const {
+    DCHECK(visible_images_.Contains(record_id_hash));
+    return visible_images_.find(record_id_hash)->value->AsWeakPtr();
   }
   std::unique_ptr<ImageRecord> CreateImageRecord(
       const LayoutObject& object,
@@ -192,7 +191,7 @@ class CORE_EXPORT ImageRecordsManager {
     record->loaded = true;
   }
 
-  HashMap<RecordId, std::unique_ptr<ImageRecord>> visible_images_;
+  HashMap<MediaRecordIdHash, std::unique_ptr<ImageRecord>> visible_images_;
   HashSet<const LayoutObject*> invisible_images_;
 
   // This stores the image records, which are ordered by size.
@@ -202,7 +201,7 @@ class CORE_EXPORT ImageRecordsManager {
   Deque<base::WeakPtr<ImageRecord>> images_queued_for_paint_time_;
   // Map containing timestamps of when LayoutObject::ImageNotifyFinished is
   // first called.
-  HashMap<RecordId, base::TimeTicks> image_finished_times_;
+  HashMap<MediaRecordIdHash, base::TimeTicks> image_finished_times_;
 
   Member<LocalFrameView> frame_view_;
 
