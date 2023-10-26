@@ -104,7 +104,18 @@ class CC_PAINT_EXPORT PaintOpWriter {
 
  private:
   template <typename T>
-  static constexpr size_t SerializedSizeSimple();
+  static constexpr size_t SerializedSizeSimple() {
+    static_assert(!std::is_pointer_v<T>);
+
+    // size_t is always serialized as two uint32_ts to make the serialized
+    // result portable between 32bit and 64bit processes. size_t is always
+    // serialized as two uint32_ts to make the serialized result
+    if constexpr (std::is_same_v<T, size_t>) {
+      return base::bits::AlignUp(2 * sizeof(uint32_t), kDefaultAlignment);
+    }
+
+    return base::bits::AlignUp(sizeof(T), kDefaultAlignment);
+  }
 
  public:
   // SerializedSize() returns the maximum serialized size of the given type or
@@ -115,7 +126,10 @@ class CC_PAINT_EXPORT PaintOpWriter {
   // deserialization, and make it possible to allow dynamic sizing for some
   // data types (see the specialized/overloaded functions).
   template <typename T>
-  static constexpr size_t SerializedSize();
+  static constexpr size_t SerializedSize() {
+    static_assert(std::is_arithmetic_v<T> || std::is_enum_v<T>);
+    return SerializedSizeSimple<T>();
+  }
   template <typename T>
   static constexpr size_t SerializedSize(const T& data);
   static size_t SerializedSize(const PaintImage& image);
@@ -360,19 +374,6 @@ class CC_PAINT_EXPORT PaintOpWriter {
   const bool enable_security_constraints_;
 };
 
-template <typename T>
-constexpr size_t PaintOpWriter::SerializedSizeSimple() {
-  static_assert(!std::is_pointer_v<T>);
-  return base::bits::AlignUp(sizeof(T), kDefaultAlignment);
-}
-
-// size_t is always serialized as two uint32_ts to make the serialized result
-// portable between 32bit and 64bit processes.
-template <>
-constexpr size_t PaintOpWriter::SerializedSizeSimple<size_t>() {
-  return base::bits::AlignUp(2 * sizeof(uint32_t), kDefaultAlignment);
-}
-
 template <>
 constexpr size_t PaintOpWriter::SerializedSize<SkGainmapInfo>() {
   return SerializedSizeSimple<SkColor4f>() +  // fGainmapRatioMin
@@ -385,11 +386,6 @@ constexpr size_t PaintOpWriter::SerializedSize<SkGainmapInfo>() {
          SerializedSizeSimple<uint32_t>();    // fBaseImageType
 }
 
-template <typename T>
-constexpr size_t PaintOpWriter::SerializedSize() {
-  static_assert(std::is_arithmetic_v<T> || std::is_enum_v<T>);
-  return SerializedSizeSimple<T>();
-}
 template <typename T>
 constexpr size_t PaintOpWriter::SerializedSize(const T& data) {
   return SerializedSizeSimple<T>();
