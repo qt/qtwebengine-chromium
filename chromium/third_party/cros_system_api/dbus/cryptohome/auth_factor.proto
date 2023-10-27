@@ -166,7 +166,10 @@ message PinMetadata {
   bool auth_locked = 1;
 }
 
-message CryptohomeRecoveryMetadata {}
+message CryptohomeRecoveryMetadata {
+  // Public key of the mediator for Cryptohome recovery flow.
+  bytes mediator_pub_key = 1;
+}
 
 message KioskMetadata {}
 

@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -312,6 +312,7 @@ enum class DnsType : uint16_t {
   kANY = 255,  // Only allowed for QTYPE
 };
 
+// TODO(mfoltz): Move definition so we don't have to inline.
 inline std::ostream& operator<<(std::ostream& output, DnsType type) {
   switch (type) {
     case DnsType::kA:
@@ -330,9 +331,9 @@ inline std::ostream& operator<<(std::ostream& output, DnsType type) {
       return output << "NSEC";
     case DnsType::kANY:
       return output << "ANY";
+    default:
+      return output << "OTHER";
   }
-
-  OSP_NOTREACHED();
 }
 
 constexpr std::array<DnsType, 7> kSupportedDnsTypes = {

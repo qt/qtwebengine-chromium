@@ -67,15 +67,17 @@
 #define {{API}}_NULLABLE
 #endif
 
+#define WGPU_BREAKING_CHANGE_COUNT_RENAME
+
 #include <stdint.h>
 #include <stddef.h>
-#include <stdbool.h>
 
 {% for constant in by_category["constant"] %}
     #define {{API}}_{{constant.name.SNAKE_CASE()}} {{constant.value}}
 {% endfor %}
 
 typedef uint32_t {{API}}Flags;
+typedef uint32_t {{API}}Bool;
 
 {% for type in by_category["object"] %}
     typedef struct {{as_cType(type.name)}}Impl* {{as_cType(type.name)}} {{API}}_OBJECT_ATTRIBUTE;
@@ -178,6 +180,7 @@ extern "C" {
     {% endfor %}
 
 {% endfor %}
+
 #endif  // !defined({{API}}_SKIP_PROCS)
 
 #if !defined({{API}}_SKIP_DECLARATIONS)
@@ -204,6 +207,7 @@ extern "C" {
     {% endfor %}
 
 {% endfor %}
+
 #endif  // !defined({{API}}_SKIP_DECLARATIONS)
 
 #ifdef __cplusplus

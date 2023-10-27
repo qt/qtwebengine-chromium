@@ -14,7 +14,7 @@
 
 load("//tools/build_defs/apple:ios.bzl", "ios_unit_test")
 load("//tools/build_defs/swift:swift_library.bzl", "swift_library")
-load("//third_party/nearby:minimum_os.bzl", "IOS_MINIMUM_OS", "IOS_MINIMUM_TEST_RUNNER")
+load("//third_party/nearby:minimum_os.bzl", "IOS_LATEST_TEST_RUNNER", "IOS_MINIMUM_OS")
 
 licenses(["notice"])
 
@@ -36,7 +36,6 @@ objc_library(
         "//internal/platform:base",
         "//internal/platform/implementation/apple",  # buildcleaner: keep
         "//third_party/apple_frameworks:Foundation",
-        "//third_party/apple_frameworks:ObjectiveC",
         "//third_party/objective_c/google_toolbox_for_mac:GTM_Logger",
     ],
 )
@@ -54,7 +53,7 @@ swift_library(
 ios_unit_test(
     name = "Tests",
     minimum_os_version = IOS_MINIMUM_OS,
-    runner = IOS_MINIMUM_TEST_RUNNER,
+    runner = IOS_LATEST_TEST_RUNNER,
     deps = [
         ":TestsLib",
     ],

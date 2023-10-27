@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,10 +7,10 @@
 #include <algorithm>
 #include <utility>
 
-#include "absl/types/span.h"
 #include "cast/streaming/constants.h"
 #include "cast/streaming/receiver_packet_router.h"
 #include "cast/streaming/session_config.h"
+#include "platform/base/span.h"
 #include "platform/base/trivial_clock_traits.h"
 #include "util/chrono_helpers.h"
 #include "util/osp_logging.h"
@@ -43,16 +43,15 @@ Receiver::Receiver(Environment* environment,
       rtp_timebase_(config.rtp_timebase),
       crypto_(config.aes_secret_key, config.aes_iv_mask),
       is_pli_enabled_(config.is_pli_enabled),
-      rtcp_buffer_capacity_(environment->GetMaxPacketSize()),
-      rtcp_buffer_(new uint8_t[rtcp_buffer_capacity_]),
       rtcp_alarm_(environment->now_function(), environment->task_runner()),
       smoothed_clock_offset_(ClockDriftSmoother::kDefaultTimeConstant),
       consumption_alarm_(environment->now_function(),
                          environment->task_runner()) {
   OSP_DCHECK(packet_router_);
   OSP_DCHECK_EQ(checkpoint_frame(), FrameId::leader());
-  OSP_CHECK_GT(rtcp_buffer_capacity_, 0);
-  OSP_CHECK(rtcp_buffer_);
+
+  rtcp_buffer_.assign(environment->GetMaxPacketSize(), 0);
+  OSP_CHECK_GT(rtcp_buffer_.size(), 0);
 
   rtcp_builder_.SetPlayoutDelay(config.target_playout_delay);
   playout_delay_changes_.emplace_back(FrameId::leader(),
@@ -348,9 +347,8 @@ void Receiver::SendRtcp() {
   rtcp_builder_.IncludeFeedbackInNextPacket(std::move(packet_nacks),
                                             std::move(frame_acks));
   last_rtcp_send_time_ = now_();
-  packet_router_->SendRtcpPacket(rtcp_builder_.BuildPacket(
-      last_rtcp_send_time_,
-      absl::Span<uint8_t>(rtcp_buffer_.get(), rtcp_buffer_capacity_)));
+  packet_router_->SendRtcpPacket(
+      rtcp_builder_.BuildPacket(last_rtcp_send_time_, rtcp_buffer_));
 
   // Schedule the automatic sending of another RTCP packet, if this method is
   // not called within some bounded amount of time. While incomplete frames

@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -25,7 +25,8 @@ SessionConfig::SessionConfig(Ssrc sender_ssrc,
                              std::chrono::milliseconds target_playout_delay,
                              std::array<uint8_t, 16> aes_secret_key,
                              std::array<uint8_t, 16> aes_iv_mask,
-                             bool is_pli_enabled)
+                             bool is_pli_enabled,
+                             StreamType stream_type)
     : sender_ssrc(sender_ssrc),
       receiver_ssrc(receiver_ssrc),
       rtp_timebase(rtp_timebase),
@@ -33,7 +34,8 @@ SessionConfig::SessionConfig(Ssrc sender_ssrc,
       target_playout_delay(target_playout_delay),
       aes_secret_key(std::move(aes_secret_key)),
       aes_iv_mask(std::move(aes_iv_mask)),
-      is_pli_enabled(is_pli_enabled) {}
+      is_pli_enabled(is_pli_enabled),
+      stream_type(stream_type) {}
 
 SessionConfig::SessionConfig(const SessionConfig& other) = default;
 SessionConfig::SessionConfig(SessionConfig&& other) noexcept = default;

@@ -279,7 +279,7 @@ MaybeError PipelineLayout::Initialize() {
     // data should start.
     uint32_t dynamicStorageBufferLengthsShaderRegisterOffset = 0;
     for (BindGroupIndex group : IterateBitSet(GetBindGroupLayoutsMask())) {
-        const BindGroupLayoutBase* bgl = GetBindGroupLayout(group);
+        const BindGroupLayoutInternalBase* bgl = GetBindGroupLayout(group);
 
         mDynamicStorageBufferLengthInfo[group].firstRegisterOffset =
             dynamicStorageBufferLengthsShaderRegisterOffset;

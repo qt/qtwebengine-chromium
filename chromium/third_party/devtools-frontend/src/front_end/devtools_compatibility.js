@@ -408,6 +408,7 @@ const EnumeratedHistogram = {
   DeveloperResourceScheme: 'DevTools.DeveloperResourceScheme',
   ElementsSidebarTabShown: 'DevTools.Elements.SidebarTabShown',
   ExperimentDisabled: 'DevTools.ExperimentDisabled',
+  ExperimentDisabledAtLaunch: 'DevTools.ExperimentDisabledAtLaunch',
   ExperimentEnabled: 'DevTools.ExperimentEnabled',
   ExperimentEnabledAtLaunch: 'DevTools.ExperimentEnabledAtLaunch',
   IssueCreated: 'DevTools.IssueCreated',
@@ -447,6 +448,8 @@ const EnumeratedHistogram = {
   BreakpointsRestoredFromStorageCount: 'DevTools.BreakpointsRestoredFromStorageCount',
   SwatchActivated: 'DevTools.SwatchActivated',
   BadgeActivated: 'DevTools.BadgeActivated',
+  AnimationPlaybackRateChanged: 'DevTools.AnimationPlaybackRateChanged',
+  AnimationPointDragged: 'DevTools.AnimationPointDragged',
 };
 
 /**
@@ -1054,6 +1057,14 @@ const InspectorFrontendHostImpl = class {
   initialTargetId() {
     return DevToolsAPI._initialTargetIdPromise;
   }
+
+  /**
+   * @param {string} request
+   * @param {function(!InspectorFrontendHostAPI.DoAidaConversationResult): void} cb
+   */
+  doAidaConversation(request, cb) {
+    DevToolsAPI.sendMessageToEmbedder('doAidaConversation', [request], cb);
+  }
 };
 
 window.InspectorFrontendHost = new InspectorFrontendHostImpl();
@@ -1198,6 +1209,7 @@ function installObjectObserve() {
     'automaticallyIgnoreListKnownThirdPartyScripts',
     'skipStackFramesPattern',
     'sourceMapInfobarDisabled',
+    'sourceMapSkippedInfobarDisabled',
     'sourcesPanelDebuggerSidebarSplitViewState',
     'sourcesPanelNavigatorSplitViewState',
     'sourcesPanelSplitSidebarRatio',

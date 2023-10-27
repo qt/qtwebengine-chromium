@@ -43,7 +43,7 @@ export class WidgetElement extends HTMLDivElement {
   override __widget!: Widget|null;
   // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
   // eslint-disable-next-line @typescript-eslint/naming-convention, rulesdir/no_underscored_properties
-  __widgetCounter!: number|null;
+  override __widgetCounter!: number|null;
   constructor() {
     super();
   }
@@ -255,6 +255,9 @@ export class Widget {
   onLayout(): void {
   }
 
+  onDetach(): void {
+  }
+
   async ownerViewDisposed(): Promise<void> {
   }
 
@@ -366,6 +369,7 @@ export class Widget {
       // Force legal removal
       Widget.decrementWidgetCounter(parentElement, this.element);
       DOMExtension.DOMExtension.originalRemoveChild.call(parentElement, this.element);
+      this.onDetach();
     } else {
       this.element.classList.add('hidden');
     }

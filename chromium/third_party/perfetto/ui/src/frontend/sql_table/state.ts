@@ -14,14 +14,21 @@
 
 import {arrayEquals} from '../../base/array_utils';
 import {SortDirection} from '../../base/comparison_utils';
+import {sqliteString} from '../../base/string_utils';
 import {EngineProxy} from '../../common/engine';
 import {NUM, Row} from '../../common/query_result';
-import {globals} from '../globals';
-import {constraintsToQueryFragment} from '../sql_utils';
+import {raf} from '../../core/raf_scheduler';
+import {
+  constraintsToQueryPrefix,
+  constraintsToQuerySuffix,
+  SQLConstraints,
+} from '../sql_utils';
 
 import {
   Column,
   columnFromSqlTableColumn,
+  formatSqlProjection,
+  SqlProjection,
   sqlProjectionsForColumn,
 } from './column';
 import {SqlTableDescription, startsHidden} from './table_description';
@@ -43,6 +50,18 @@ interface Data {
   error?: string;
 }
 
+// In the common case, filter is an expression which evaluates to a boolean.
+// However, when filtering args, it's substantially (10x) cheaper to do a
+// join with the args table, as it means that trace processor can cache the
+// query on the key instead of invoking a function for each row of the entire
+// `slice` table.
+export type Filter = string|{
+  type: 'arg_filter',
+  argSetIdColumn: string,
+  argName: string,
+  op: string,
+}
+
 interface RowCount {
   // Total number of rows in view, excluding the pagination.
   // Undefined if the query returned an error.
@@ -50,12 +69,13 @@ interface RowCount {
   // Filters which were used to compute this row count.
   // We need to recompute the totalRowCount only when filters change and not
   // when the set of columns / order by changes.
-  filters: string[];
+  filters: Filter[];
 }
 
 export class SqlTableState {
   private readonly engine_: EngineProxy;
   private readonly table_: SqlTableDescription;
+  private readonly additionalImports: string[];
 
   get engine() {
     return this.engine_;
@@ -64,7 +84,7 @@ export class SqlTableState {
     return this.table_;
   }
 
-  private filters: string[];
+  private filters: Filter[];
   private columns: Column[];
   private orderBy: ColumnOrderClause[];
   private offset = 0;
@@ -72,9 +92,11 @@ export class SqlTableState {
   private rowCount?: RowCount;
 
   constructor(
-      engine: EngineProxy, table: SqlTableDescription, filters?: string[]) {
+      engine: EngineProxy, table: SqlTableDescription, filters?: Filter[],
+      imports?: string[]) {
     this.engine_ = engine;
     this.table_ = table;
+    this.additionalImports = imports || [];
 
     this.filters = filters || [];
     this.columns = [];
@@ -87,56 +109,102 @@ export class SqlTableState {
     this.reload();
   }
 
-  // Compute the actual columns to fetch.
-  private getSQLProjections(): string[] {
-    const result = new Set<string>();
+  // Compute the actual columns to fetch. Some columns can appear multiple times
+  // (e.g. we might need "ts" to be able to show it, as well as a dependency for
+  // "slice_id" to be able to jump to it, so this function will deduplicate
+  // projections by alias.
+  private getSQLProjections(): SqlProjection[] {
+    const projections = [];
+    const aliases = new Set<string>();
     for (const column of this.columns) {
       for (const p of sqlProjectionsForColumn(column)) {
-        result.add(p);
+        if (aliases.has(p.alias)) continue;
+        aliases.add(p.alias);
+        projections.push(p);
       }
     }
-    return Array.from(result);
+    return projections;
+  }
+
+  getQueryConstraints(): SQLConstraints {
+    const result: SQLConstraints = {
+      commonTableExpressions: {},
+      joins: [],
+      filters: [],
+    };
+    let cteId = 0;
+    for (const filter of this.filters) {
+      if (typeof filter === 'string') {
+        result.filters!.push(filter);
+      } else {
+        const cteName = `arg_sets_${cteId++}`;
+        result.commonTableExpressions![cteName] = `
+          SELECT DISTINCT arg_set_id
+          FROM args
+          WHERE key = ${sqliteString(filter.argName)}
+            AND display_value ${filter.op}
+        `;
+        result.joins!.push(`JOIN ${cteName} ON ${cteName}.arg_set_id = ${
+            this.table.name}.${filter.argSetIdColumn}`);
+      }
+    }
+    return result;
   }
 
   private getSQLImports() {
-    return (this.table.imports || [])
+    const tableImports = this.table.imports || [];
+    return [...tableImports, ...this.additionalImports]
         .map((i) => `SELECT IMPORT("${i}");`)
         .join('\n');
   }
 
   private getCountRowsSQLQuery(): string {
+    const constraints = this.getQueryConstraints();
     return `
       ${this.getSQLImports()}
 
+      ${constraintsToQueryPrefix(constraints)}
       SELECT
         COUNT() AS count
       FROM ${this.table.name}
-      ${constraintsToQueryFragment({
-      filters: this.filters,
-    })}
+      ${constraintsToQuerySuffix(constraints)}
     `;
   }
 
-  getNonPaginatedSQLQuery(): string {
+  buildSqlSelectStatement(): {
+    selectStatement: string,
+    columns: string[],
+  } {
+    const projections = this.getSQLProjections();
     const orderBy = this.orderBy.map((c) => ({
                                        fieldName: c.column.alias,
                                        direction: c.direction,
                                      }));
+    const constraints = this.getQueryConstraints();
+    constraints.orderBy = orderBy;
+    const statement = `
+      ${constraintsToQueryPrefix(constraints)}
+      SELECT
+        ${projections.map(formatSqlProjection).join(',\n')}
+      FROM ${this.table.name}
+      ${constraintsToQuerySuffix(constraints)}
+    `;
+    return {
+      selectStatement: statement,
+      columns: projections.map((p) => p.alias),
+    };
+  }
+
+  getNonPaginatedSQLQuery(): string {
     return `
       ${this.getSQLImports()}
 
-      SELECT
-        ${this.getSQLProjections().join(',\n')}
-      FROM ${this.table.name}
-      ${constraintsToQueryFragment({
-      filters: this.filters,
-      orderBy: orderBy,
-    })}
+      ${this.buildSqlSelectStatement().selectStatement}
     `;
   }
 
-  getPaginatedSQLQuery():
-      string {  // We fetch one more row to determine if we can go forward.
+  getPaginatedSQLQuery(): string {
+    // We fetch one more row to determine if we can go forward.
     return `
       ${this.getNonPaginatedSQLQuery()}
       LIMIT ${ROW_LIMIT + 1}
@@ -213,14 +281,14 @@ export class SqlTableState {
 
     // Delay the visual update by 50ms to avoid flickering (if the query returns
     // before the data is loaded.
-    setTimeout(() => globals.rafScheduler.scheduleFullRedraw(), 50);
+    setTimeout(() => raf.scheduleFullRedraw(), 50);
 
     if (updateRowCount) {
       this.rowCount = await this.loadRowCount();
     }
     this.data = await this.loadData();
 
-    globals.rafScheduler.scheduleFullRedraw();
+    raf.scheduleFullRedraw();
   }
 
   getTotalRowCount(): number|undefined {
@@ -239,8 +307,10 @@ export class SqlTableState {
     return this.data === undefined;
   }
 
-  removeFilter(filter: string) {
-    this.filters.splice(this.filters.indexOf(filter), 1);
+  // Filters are compared by reference, so the caller is required to pass an
+  // object which was previously returned by getFilters.
+  removeFilter(filter: Filter) {
+    this.filters = this.filters.filter((f) => f !== filter);
     this.reload();
   }
 
@@ -249,7 +319,7 @@ export class SqlTableState {
     this.reload();
   }
 
-  getFilters(): string[] {
+  getFilters(): Filter[] {
     return this.filters;
   }
 

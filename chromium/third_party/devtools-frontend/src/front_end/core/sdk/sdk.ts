@@ -42,7 +42,6 @@ import * as DOMDebuggerModel from './DOMDebuggerModel.js';
 import * as DOMModel from './DOMModel.js';
 import * as EmulationModel from './EmulationModel.js';
 import * as EventBreakpointsModel from './EventBreakpointsModel.js';
-import * as FilmStripModel from './FilmStripModel.js';
 import * as FrameAssociated from './FrameAssociated.js';
 import * as FrameManager from './FrameManager.js';
 import * as HeapProfilerModel from './HeapProfilerModel.js';
@@ -79,9 +78,6 @@ import * as StorageBucketsModel from './StorageBucketsModel.js';
 import * as StorageKeyManager from './StorageKeyManager.js';
 import * as Target from './Target.js';
 import * as TargetManager from './TargetManager.js';
-import * as TraceSDKServices from './TraceSDKServices.js';
-import * as TracingManager from './TracingManager.js';
-import * as TracingModel from './TracingModel.js';
 import * as WebAuthnModel from './WebAuthnModel.js';
 
 export {
@@ -117,7 +113,6 @@ export {
   DOMModel,
   EmulationModel,
   EventBreakpointsModel,
-  FilmStripModel,
   FrameAssociated,
   FrameManager,
   HeapProfilerModel,
@@ -154,8 +149,5 @@ export {
   StorageKeyManager,
   Target,
   TargetManager,
-  TraceSDKServices,
-  TracingManager,
-  TracingModel,
   WebAuthnModel,
 };

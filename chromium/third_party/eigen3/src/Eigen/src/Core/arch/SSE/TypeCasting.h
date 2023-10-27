@@ -17,60 +17,18 @@ namespace Eigen {
 namespace internal {
 
 #ifndef EIGEN_VECTORIZE_AVX
-template <>
-struct type_casting_traits<float, bool> {
-  enum {
-    VectorizedCast = 1,
-    SrcCoeffRatio = 4,
-    TgtCoeffRatio = 1
-  };
-};
+template<> struct type_casting_traits<float, bool> : vectorized_type_casting_traits<float, bool> {};
+template<> struct type_casting_traits<bool, float> : vectorized_type_casting_traits<bool, float> {};
 
-template <>
-struct type_casting_traits<float, double> {
-  enum {
-    VectorizedCast = 1,
-    SrcCoeffRatio = 1,
-    TgtCoeffRatio = 2
-  };
-};
+template<> struct type_casting_traits<float, int> : vectorized_type_casting_traits<float, int> {};
+template<> struct type_casting_traits<int, float> : vectorized_type_casting_traits<int, float> {};
+
+template<> struct type_casting_traits<float, double> : vectorized_type_casting_traits<float, double> {};
+template<> struct type_casting_traits<double, float> : vectorized_type_casting_traits<double, float> {};
+
+template<> struct type_casting_traits<double, int> : vectorized_type_casting_traits<double, int> {};
+template<> struct type_casting_traits<int, double> : vectorized_type_casting_traits<int, double> {};
 #endif
-
-template <>
-struct type_casting_traits<int, float> {
-  enum {
-    VectorizedCast = 1,
-    SrcCoeffRatio = 1,
-    TgtCoeffRatio = 1
-  };
-};
-
-template <>
-struct type_casting_traits<float, int> {
-  enum {
-    VectorizedCast = 1,
-    SrcCoeffRatio = 1,
-    TgtCoeffRatio = 1
-  };
-};
-
-template <>
-struct type_casting_traits<double, int> {
-  enum {
-    VectorizedCast = 1,
-    SrcCoeffRatio = 2,
-    TgtCoeffRatio = 1
-  };
-};
-
-template <>
-struct type_casting_traits<double, float> {
-  enum {
-    VectorizedCast = 1,
-    SrcCoeffRatio = 2,
-    TgtCoeffRatio = 1
-  };
-};
 
 template <>
 EIGEN_STRONG_INLINE Packet16b pcast<Packet4f, Packet16b>(const Packet4f& a,
@@ -88,8 +46,29 @@ EIGEN_STRONG_INLINE Packet16b pcast<Packet4f, Packet16b>(const Packet4f& a,
   return _mm_and_si128(merged, _mm_set1_epi8(1));
 }
 
+template <>
+EIGEN_STRONG_INLINE Packet4f pcast<Packet16b, Packet4f>(const Packet16b& a) {
+  const __m128 cst_one = _mm_set_ps1(1.0f);
+  #ifdef EIGEN_VECTORIZE_SSE4_1
+  __m128i a_extended = _mm_cvtepi8_epi32(a);
+  __m128i abcd = _mm_cmpeq_epi32(a_extended, _mm_setzero_si128());
+  #else
+  __m128i abcd_efhg_ijkl_mnop = _mm_cmpeq_epi8(a, _mm_setzero_si128());
+  __m128i aabb_ccdd_eeff_gghh = _mm_unpacklo_epi8(abcd_efhg_ijkl_mnop, abcd_efhg_ijkl_mnop);
+  __m128i abcd = _mm_unpacklo_epi8(aabb_ccdd_eeff_gghh, aabb_ccdd_eeff_gghh);
+  #endif
+  __m128 result = _mm_andnot_ps(_mm_castsi128_ps(abcd), cst_one);
+  return result;
+}
+
 template<> EIGEN_STRONG_INLINE Packet4i pcast<Packet4f, Packet4i>(const Packet4f& a) {
   return _mm_cvttps_epi32(a);
+}
+
+template<> EIGEN_STRONG_INLINE Packet4i pcast<Packet2d, Packet4i>(const Packet2d& a, const Packet2d& b) {
+  return _mm_castps_si128(_mm_shuffle_ps(_mm_castsi128_ps(_mm_cvttpd_epi32(a)),
+                                         _mm_castsi128_ps(_mm_cvttpd_epi32(b)),
+                                         (1 << 2) | (1 << 6)));
 }
 
 template<> EIGEN_STRONG_INLINE Packet4f pcast<Packet4i, Packet4f>(const Packet4i& a) {
@@ -100,10 +79,9 @@ template<> EIGEN_STRONG_INLINE Packet4f pcast<Packet2d, Packet4f>(const Packet2d
   return _mm_shuffle_ps(_mm_cvtpd_ps(a), _mm_cvtpd_ps(b), (1 << 2) | (1 << 6));
 }
 
-template<> EIGEN_STRONG_INLINE Packet4i pcast<Packet2d, Packet4i>(const Packet2d& a, const Packet2d& b) {
-  return _mm_castps_si128(_mm_shuffle_ps(_mm_castsi128_ps(_mm_cvttpd_epi32(a)),
-                                         _mm_castsi128_ps(_mm_cvttpd_epi32(b)),
-                                         (1 << 2) | (1 << 6)));
+template<> EIGEN_STRONG_INLINE Packet2d pcast<Packet4i, Packet2d>(const Packet4i& a) {
+  // Simply discard the second half of the input
+  return _mm_cvtepi32_pd(a);
 }
 
 template<> EIGEN_STRONG_INLINE Packet2d pcast<Packet4f, Packet2d>(const Packet4f& a) {
@@ -135,6 +113,13 @@ template<> EIGEN_STRONG_INLINE Packet4i preinterpret<Packet4i,Packet2d>(const Pa
   return _mm_castpd_si128(a);
 }
 
+template<> EIGEN_STRONG_INLINE Packet4ui preinterpret<Packet4ui, Packet4i>(const Packet4i& a) {
+  return Packet4ui(a);
+}
+
+template<> EIGEN_STRONG_INLINE Packet4i preinterpret<Packet4i, Packet4ui>(const Packet4ui& a) {
+  return Packet4i(a);
+}
 // Disable the following code since it's broken on too many platforms / compilers.
 //#elif defined(EIGEN_VECTORIZE_SSE) && (!EIGEN_ARCH_x86_64) && (!EIGEN_COMP_MSVC)
 #if 0

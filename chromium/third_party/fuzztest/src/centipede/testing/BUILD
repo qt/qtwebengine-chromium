@@ -38,6 +38,10 @@ centipede_fuzz_target(
 )
 
 centipede_fuzz_target(
+    name = "expensive_startup_fuzz_target",
+)
+
+centipede_fuzz_target(
     name = "minimize_me_fuzz_target",
 )
 
@@ -71,6 +75,13 @@ centipede_fuzz_target(
     sancov = "trace-pc",
 )
 
+# Target instrumented with -fsanitize-coverage=inline-8bit-counters.
+centipede_fuzz_target(
+    name = "abort_fuzz_target_inline_8bit_counters",
+    srcs = ["abort_fuzz_target.cc"],
+    sancov = "inline-8bit-counters,pc-table",
+)
+
 # Test fuzz target with lots of threads.
 centipede_fuzz_target(
     name = "threaded_fuzz_target",
@@ -88,6 +99,32 @@ centipede_fuzz_target(
     srcs = ["clusterfuzz_format_target.cc"],
     copts = ["-fsanitize=address"],
     linkopts = ["-fsanitize=address"],
+)
+
+# Helper DSO for :multi_dso_target
+cc_library(
+    name = "multi_dso_target_lib",
+    srcs = ["multi_dso_target_lib.cc"],
+    hdrs = ["multi_dso_target_lib.h"],
+    copts = [
+        "-fsanitize-coverage=trace-pc-guard,pc-table,control-flow",
+        "-gline-tables-only",
+    ],
+)
+
+# A fuzz target with an instrumented DSO dependency (:multi_dso_target_lib).
+cc_binary(
+    name = "multi_dso_target",
+    srcs = ["multi_dso_target_main.cc"],
+    copts = [
+        "-fsanitize-coverage=trace-pc-guard,pc-table,control-flow",
+        "-gline-tables-only",
+    ],
+    linkstatic = False,
+    deps = [
+        ":multi_dso_target_lib",
+        "@com_google_fuzztest//centipede:centipede_runner",
+    ],
 )
 
 # A standalone binary with main() that is worth fuzzing.
@@ -130,14 +167,16 @@ cc_test(
     deps = [
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings",
+        "@com_google_fuzztest//centipede:binary_info",
         "@com_google_fuzztest//centipede:centipede_interface",
         "@com_google_fuzztest//centipede:control_flow",
         "@com_google_fuzztest//centipede:coverage",
         "@com_google_fuzztest//centipede:defs",
         "@com_google_fuzztest//centipede:environment",
-        "@com_google_fuzztest//centipede:execution_result",
         "@com_google_fuzztest//centipede:feature",
         "@com_google_fuzztest//centipede:logging",
+        "@com_google_fuzztest//centipede:pc_info",
+        "@com_google_fuzztest//centipede:runner_result",
         "@com_google_fuzztest//centipede:test_util",
         "@com_google_fuzztest//centipede:util",
         "@com_google_googletest//:gtest_main",
@@ -162,9 +201,9 @@ cc_test(
         "@com_google_fuzztest//centipede:corpus",
         "@com_google_fuzztest//centipede:defs",
         "@com_google_fuzztest//centipede:environment",
-        "@com_google_fuzztest//centipede:execution_result",
         "@com_google_fuzztest//centipede:feature",
         "@com_google_fuzztest//centipede:logging",
+        "@com_google_fuzztest//centipede:runner_result",
         "@com_google_fuzztest//centipede:shard_reader",
         "@com_google_fuzztest//centipede:test_util",
         "@com_google_fuzztest//centipede:util",
@@ -181,6 +220,7 @@ sh_test(
         ":abort_fuzz_target",
         ":test_fuzz_target",
         "@com_google_fuzztest//centipede",
+        "@com_google_fuzztest//centipede:test_fuzzing_util_sh",
         "@com_google_fuzztest//centipede:test_util_sh",
     ],
 )
@@ -205,10 +245,39 @@ sh_test(
 )
 
 sh_test(
+    name = "dump_binary_info_test",
+    srcs = ["dump_binary_info_test.sh"],
+    data = [
+        ":multi_dso_target",
+        "@com_google_fuzztest//centipede:test_util_sh",
+    ],
+)
+
+sh_test(
+    name = "multi_dso_test",
+    srcs = ["multi_dso_test.sh"],
+    data = [
+        ":multi_dso_target",
+        "@com_google_fuzztest//centipede",
+        "@com_google_fuzztest//centipede:test_util_sh",
+    ],
+)
+
+sh_test(
     name = "trace_pc_test",
     srcs = ["trace_pc_test.sh"],
     data = [
         ":abort_fuzz_target_trace_pc",
+        "@com_google_fuzztest//centipede",
+        "@com_google_fuzztest//centipede:test_util_sh",
+    ],
+)
+
+sh_test(
+    name = "inline_8bit_counters_test",
+    srcs = ["inline_8bit_counters_test.sh"],
+    data = [
+        ":abort_fuzz_target_inline_8bit_counters",
         "@com_google_fuzztest//centipede",
         "@com_google_fuzztest//centipede:test_util_sh",
     ],
@@ -229,6 +298,16 @@ sh_test(
     srcs = ["user_defined_features_test.sh"],
     data = [
         ":user_defined_features_target",
+        "@com_google_fuzztest//centipede",
+        "@com_google_fuzztest//centipede:test_util_sh",
+    ],
+)
+
+sh_test(
+    name = "no_startup_features_test",
+    srcs = ["no_startup_features_test.sh"],
+    data = [
+        ":expensive_startup_fuzz_target",
         "@com_google_fuzztest//centipede",
         "@com_google_fuzztest//centipede:test_util_sh",
     ],

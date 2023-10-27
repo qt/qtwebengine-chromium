@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -403,6 +403,29 @@ TEST_F(SenderSessionTest, HandlesValidAnswer) {
   NegotiateMirroringWithValidConfigs();
   std::string answer = ConstructAnswerFromOffer(CastMode::kMirroring);
 
+  EXPECT_CALL(client_, OnNegotiated(session_.get(), _, _));
+  message_port_->ReceiveMessage(answer);
+}
+
+TEST_F(SenderSessionTest, HandlesStreamTypes) {
+  NegotiateMirroringWithValidConfigs();
+  std::string answer = ConstructAnswerFromOffer(CastMode::kMirroring);
+
+  // Valid and successful negotiations should result in senders that are
+  // configured with the proper StreamType.
+  ON_CALL(client_, OnNegotiated(session_.get(), _, _))
+      .WillByDefault(
+          Invoke([&](const SenderSession* sender_session,
+                     SenderSession::ConfiguredSenders senders,
+                     capture_recommendations::Recommendations recommendations) {
+            StreamType audio_stream_type =
+                senders.audio_sender->config().stream_type;
+            StreamType video_stream_type =
+                senders.video_sender->config().stream_type;
+
+            EXPECT_EQ(audio_stream_type, StreamType::kAudio);
+            EXPECT_EQ(video_stream_type, StreamType::kVideo);
+          }));
   EXPECT_CALL(client_, OnNegotiated(session_.get(), _, _));
   message_port_->ReceiveMessage(answer);
 }

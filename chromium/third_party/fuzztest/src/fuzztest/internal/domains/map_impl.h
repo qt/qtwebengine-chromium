@@ -26,6 +26,7 @@
 #include "./fuzztest/internal/domains/serialization_helpers.h"
 #include "./fuzztest/internal/meta.h"
 #include "./fuzztest/internal/serialization.h"
+#include "./fuzztest/internal/status.h"
 #include "./fuzztest/internal/type_support.h"
 
 namespace fuzztest::internal {
@@ -83,12 +84,19 @@ class MapImpl : public DomainBase<MapImpl<Mapper, Inner...>,
     return SerializeWithDomainTuple(inner_, v);
   }
 
-  bool ValidateCorpusValue(const corpus_type& corpus_value) const {
-    return ApplyIndex<sizeof...(Inner)>([&](auto... I) {
-      return (
-          std::get<I>(inner_).ValidateCorpusValue(std::get<I>(corpus_value)) &&
+  absl::Status ValidateCorpusValue(const corpus_type& corpus_value) const {
+    absl::Status result = absl::OkStatus();
+    ApplyIndex<sizeof...(Inner)>([&](auto... I) {
+      (
+          [&] {
+            if (!result.ok()) return;
+            const absl::Status s = std::get<I>(inner_).ValidateCorpusValue(
+                std::get<I>(corpus_value));
+            result = Prefix(s, "Invalid value for Map()-ed domain");
+          }(),
           ...);
     });
+    return result;
   }
 
  private:
@@ -110,7 +118,7 @@ class BidiMapImpl
   static_assert(
       std::is_invocable_v<InvMapper, const value_type&> &&
       std::is_same_v<std::invoke_result_t<InvMapper, const value_type&>,
-                     std::tuple<value_type_t<Inner>...>>);
+                     std::optional<std::tuple<value_type_t<Inner>...>>>);
 
   explicit BidiMapImpl(Mapper mapper, InvMapper inv_mapper, Inner... inner)
       : mapper_(std::move(mapper)),
@@ -148,20 +156,30 @@ class BidiMapImpl
     return SerializeWithDomainTuple(inner_, v);
   }
 
-  bool ValidateCorpusValue(const corpus_type& corpus_value) const {
-    return ApplyIndex<sizeof...(Inner)>([&](auto... I) {
-      return (
-          std::get<I>(inner_).ValidateCorpusValue(std::get<I>(corpus_value)) &&
+  absl::Status ValidateCorpusValue(const corpus_type& corpus_value) const {
+    absl::Status result = absl::OkStatus();
+    ApplyIndex<sizeof...(Inner)>([&](auto... I) {
+      (
+          [&] {
+            if (!result.ok()) return;
+            const absl::Status s = std::get<I>(inner_).ValidateCorpusValue(
+                std::get<I>(corpus_value));
+            if (!s.ok()) {
+              result = Prefix(s, "Invalid value for BidiMap()-ed domain");
+            }
+          }(),
           ...);
     });
+    return result;
   }
 
   std::optional<corpus_type> FromValue(const value_type& v) const {
     auto inner_v = std::invoke(inv_mapper_, v);
+    if (!inner_v.has_value()) return std::nullopt;
     return ApplyIndex<sizeof...(Inner)>(
         [&](auto... I) -> std::optional<corpus_type> {
           auto inner_corpus_vals = std::tuple{
-              std::get<I>(inner_).FromValue(std::get<I>(inner_v))...};
+              std::get<I>(inner_).FromValue(std::get<I>(*inner_v))...};
           bool has_nullopt =
               (!std::get<I>(inner_corpus_vals).has_value() || ...);
           if (has_nullopt) return std::nullopt;

@@ -47,6 +47,7 @@
 #include "./fuzztest/internal/domains/variant_of_impl.h"
 #include "./fuzztest/internal/meta.h"
 #include "./fuzztest/internal/serialization.h"
+#include "./fuzztest/internal/status.h"
 #include "./fuzztest/internal/table_of_recent_compares.h"
 #include "./fuzztest/internal/type_support.h"
 
@@ -73,8 +74,8 @@ class ArbitraryImpl<T, std::enable_if_t<is_monostate_v<T>>>
 
   void Mutate(value_type&, absl::BitGenRef, bool) {}
 
-  bool ValidateCorpusValue(const value_type&) const {
-    return true;  // Nothing to validate.
+  absl::Status ValidateCorpusValue(const value_type&) const {
+    return absl::OkStatus();  // Nothing to validate.
   }
 
   auto GetPrinter() const { return MonostatePrinter{}; }
@@ -97,8 +98,8 @@ class ArbitraryImpl<bool> : public DomainBase<ArbitraryImpl<bool>> {
     }
   }
 
-  bool ValidateCorpusValue(const value_type&) const {
-    return true;  // Nothing to validate.
+  absl::Status ValidateCorpusValue(const value_type&) const {
+    return absl::OkStatus();  // Nothing to validate.
   }
 
   auto GetPrinter() const { return IntegralPrinter{}; }
@@ -178,8 +179,8 @@ class ArbitraryImpl<T, std::enable_if_t<!std::is_const_v<T> &&
     }
   }
 
-  bool ValidateCorpusValue(const value_type&) const {
-    return true;  // Nothing to validate.
+  absl::Status ValidateCorpusValue(const value_type&) const {
+    return absl::OkStatus();  // Nothing to validate.
   }
 
   auto GetPrinter() const { return IntegralPrinter{}; }
@@ -217,8 +218,8 @@ class ArbitraryImpl<std::byte> : public DomainBase<ArbitraryImpl<std::byte>> {
     val = std::byte{u8};
   }
 
-  bool ValidateCorpusValue(const corpus_type&) const {
-    return true;  // Nothing to validate.
+  absl::Status ValidateCorpusValue(const corpus_type&) const {
+    return absl::OkStatus();  // Nothing to validate.
   }
 
   auto GetPrinter() const { return IntegralPrinter{}; }
@@ -270,8 +271,8 @@ class ArbitraryImpl<T, std::enable_if_t<std::is_floating_point_v<T>>>
     } while (val == prev || (std::isnan(prev) && std::isnan(val)));
   }
 
-  bool ValidateCorpusValue(const value_type&) const {
-    return true;  // Nothing to validate.
+  absl::Status ValidateCorpusValue(const value_type&) const {
+    return absl::OkStatus();  // Nothing to validate.
   }
 
   auto GetPrinter() const { return FloatingPrinter{}; }
@@ -341,8 +342,8 @@ class ArbitraryImpl<std::basic_string_view<Char>>
     return IRObject::FromCorpus(v);
   }
 
-  bool ValidateCorpusValue(const corpus_type&) const {
-    return true;  // Nothing to validate.
+  absl::Status ValidateCorpusValue(const corpus_type&) const {
+    return absl::OkStatus();  // Nothing to validate.
   }
 
  private:
@@ -450,18 +451,27 @@ class ArbitraryImpl<std::shared_ptr<T>>
 // Arbitrary for absl::Duration.
 template <>
 class ArbitraryImpl<absl::Duration>
-    : public OneOfImpl<ElementOfImpl<absl::Duration>,
-                       MapImpl<absl::Duration (*)(int64_t, uint32_t),
-                               ArbitraryImpl<int64_t>, InRangeImpl<uint32_t>>> {
+    : public OneOfImpl<
+          ElementOfImpl<absl::Duration>,
+          BidiMapImpl<absl::Duration (*)(int64_t, uint32_t),
+                      std::optional<std::tuple<int64_t, uint32_t>> (*)(
+                          absl::Duration),
+                      ArbitraryImpl<int64_t>, InRangeImpl<uint32_t>>> {
  public:
   ArbitraryImpl()
       : OneOfImpl(
             ElementOfImpl<absl::Duration>(
                 {absl::InfiniteDuration(), -absl::InfiniteDuration()}),
-            MapImpl<absl::Duration (*)(int64_t, uint32_t),
-                    ArbitraryImpl<int64_t>, InRangeImpl<uint32_t>>(
+            BidiMapImpl<absl::Duration (*)(int64_t, uint32_t),
+                        std::optional<std::tuple<int64_t, uint32_t>> (*)(
+                            absl::Duration),
+                        ArbitraryImpl<int64_t>, InRangeImpl<uint32_t>>(
                 [](int64_t secs, uint32_t ticks) {
                   return MakeDuration(secs, ticks);
+                },
+                [](absl::Duration duration) {
+                  auto [secs, ticks] = GetSecondsAndTicks(duration);
+                  return std::optional{std::tuple{secs, ticks}};
                 },
                 ArbitraryImpl<int64_t>(),
                 // ticks is 1/4 of a nanosecond and has a range of [0, 4B - 1]
@@ -471,13 +481,20 @@ class ArbitraryImpl<absl::Duration>
 // Arbitrary for absl::Time.
 template <>
 class ArbitraryImpl<absl::Time>
-    : public MapImpl<absl::Time (*)(absl::Duration),
-                     ArbitraryImpl<absl::Duration>> {
+    : public BidiMapImpl<absl::Time (*)(absl::Duration),
+                         std::optional<std::tuple<absl::Duration>> (*)(
+                             absl::Time),
+                         ArbitraryImpl<absl::Duration>> {
  public:
   ArbitraryImpl()
-      : MapImpl<absl::Time (*)(absl::Duration), ArbitraryImpl<absl::Duration>>(
+      : BidiMapImpl<absl::Time (*)(absl::Duration),
+                    std::optional<std::tuple<absl::Duration>> (*)(absl::Time),
+                    ArbitraryImpl<absl::Duration>>(
             [](absl::Duration duration) {
               return absl::UnixEpoch() + duration;
+            },
+            [](absl::Time time) {
+              return std::optional{std::tuple{time - absl::UnixEpoch()}};
             },
             ArbitraryImpl<absl::Duration>()) {}
 };

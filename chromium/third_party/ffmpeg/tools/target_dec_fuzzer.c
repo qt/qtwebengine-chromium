@@ -278,6 +278,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     case AV_CODEC_ID_SCPR:        maxpixels  /= 32;    break;
     case AV_CODEC_ID_SCREENPRESSO:maxpixels  /= 64;    break;
     case AV_CODEC_ID_SIMBIOSIS_IMX:maxpixels /= 16384; break;
+    case AV_CODEC_ID_SPEEX:       maxsamples /= 128;   break;
     case AV_CODEC_ID_SMACKAUDIO:  maxsamples /= 4096;  break;
     case AV_CODEC_ID_SMACKVIDEO:  maxpixels  /= 64;    break;
     case AV_CODEC_ID_SNOW:        maxpixels  /= 128;   break;
@@ -427,6 +428,10 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
             ctx->err_recognition |= AV_EF_CRCCHECK;
 
         ctx->workaround_bugs = bytestream2_get_le32(&gbc);
+
+        if (c->p.max_lowres) {
+            ctx->lowres = bytestream2_get_byte(&gbc) % (c->p.max_lowres+1);
+        }
 
         if (extradata_size < size) {
             ctx->extradata = av_mallocz(extradata_size + AV_INPUT_BUFFER_PADDING_SIZE);

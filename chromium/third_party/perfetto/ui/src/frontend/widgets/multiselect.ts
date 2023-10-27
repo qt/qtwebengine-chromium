@@ -13,8 +13,10 @@
 // limitations under the License.
 
 import m from 'mithril';
-import {globals} from '../globals';
+
+import {raf} from '../../core/raf_scheduler';
 import {DESELECT, SELECT_ALL} from '../icons';
+
 import {Button} from './button';
 import {Checkbox} from './checkbox';
 import {EmptyState} from './empty_state';
@@ -36,14 +38,18 @@ export interface MultiSelectDiff {
 }
 
 export interface MultiSelectAttrs {
-  icon?: string;
-  minimal?: boolean;
-  compact?: boolean;
-  label: string;
   options: Option[];
   onChange?: (diffs: MultiSelectDiff[]) => void;
   repeatCheckedItemsAtTop?: boolean;
   showNumSelected?: boolean;
+  fixedSize?: boolean;
+}
+
+export type PopupMultiSelectAttrs = MultiSelectAttrs&{
+  minimal?: boolean;
+  compact?: boolean;
+  icon?: string;
+  label: string;
   popupPosition?: PopupPosition;
 }
 
@@ -51,48 +57,16 @@ export interface MultiSelectAttrs {
 // select from the list which ones they want to be selected.
 // Also provides search functionality.
 // This component is entirely controlled and callbacks must be supplied for when
-// the selected items changes, and when the search term changes.
+// the selected items list changes, and when the search term changes.
 // There is an optional boolean flag to enable repeating the selected items at
 // the top of the list for easy access - defaults to false.
 export class MultiSelect implements m.ClassComponent<MultiSelectAttrs> {
   private searchText: string = '';
+
   view({attrs}: m.CVnode<MultiSelectAttrs>) {
     const {
-      icon,
-      popupPosition = PopupPosition.Auto,
-      minimal,
-      compact,
-    } = attrs;
-
-    return m(
-        Popup,
-        {
-          trigger:
-              m(Button, {label: this.labelText(attrs), icon, minimal, compact}),
-          position: popupPosition,
-        },
-        this.renderPopup(attrs),
-    );
-  }
-
-  private labelText(attrs: MultiSelectAttrs): string {
-    const {
       options,
-      showNumSelected,
-      label,
-    } = attrs;
-
-    if (showNumSelected) {
-      const numSelected = options.filter(({checked}) => checked).length;
-      return `${label} (${numSelected} selected)`;
-    } else {
-      return label;
-    }
-  }
-
-  private renderPopup(attrs: MultiSelectAttrs) {
-    const {
-      options,
+      fixedSize = true,
     } = attrs;
 
     const filteredItems = options.filter(({name}) => {
@@ -100,7 +74,8 @@ export class MultiSelect implements m.ClassComponent<MultiSelectAttrs> {
     });
 
     return m(
-        '.pf-multiselect-popup',
+        fixedSize ? '.pf-multiselect-panel.pf-multi-select-fixed-size' :
+                    '.pf-multiselect-panel',
         this.renderSearchBox(),
         this.renderListOfItems(attrs, filteredItems),
     );
@@ -139,7 +114,7 @@ export class MultiSelect implements m.ClassComponent<MultiSelectAttrs> {
                               options.filter(({checked}) => checked)
                                   .map(({id}) => ({id, checked: false}));
                           onChange(diffs);
-                          globals.rafScheduler.scheduleFullRedraw();
+                          raf.scheduleFullRedraw();
                         },
                         disabled: !anyChecked,
                       }),
@@ -163,7 +138,7 @@ export class MultiSelect implements m.ClassComponent<MultiSelectAttrs> {
                       const diffs = options.filter(({checked}) => !checked)
                                         .map(({id}) => ({id, checked: true}));
                       onChange(diffs);
-                      globals.rafScheduler.scheduleFullRedraw();
+                      raf.scheduleFullRedraw();
                     },
                     disabled: allChecked,
                   }),
@@ -177,7 +152,7 @@ export class MultiSelect implements m.ClassComponent<MultiSelectAttrs> {
                       const diffs = options.filter(({checked}) => checked)
                                         .map(({id}) => ({id, checked: false}));
                       onChange(diffs);
-                      globals.rafScheduler.scheduleFullRedraw();
+                      raf.scheduleFullRedraw();
                     },
                     disabled: !anyChecked,
                   }),
@@ -195,7 +170,7 @@ export class MultiSelect implements m.ClassComponent<MultiSelectAttrs> {
           oninput: (event: Event) => {
             const eventTarget = event.target as HTMLTextAreaElement;
             this.searchText = eventTarget.value;
-            globals.rafScheduler.scheduleFullRedraw();
+            raf.scheduleFullRedraw();
           },
           value: this.searchText,
           placeholder: 'Filter options...',
@@ -210,7 +185,7 @@ export class MultiSelect implements m.ClassComponent<MultiSelectAttrs> {
       return m(Button, {
         onclick: () => {
           this.searchText = '';
-          globals.rafScheduler.scheduleFullRedraw();
+          raf.scheduleFullRedraw();
         },
         label: '',
         icon: 'close',
@@ -235,9 +210,48 @@ export class MultiSelect implements m.ClassComponent<MultiSelectAttrs> {
         classes: 'pf-multiselect-item',
         onchange: () => {
           onChange([{id, checked: !checked}]);
-          globals.rafScheduler.scheduleFullRedraw();
+          raf.scheduleFullRedraw();
         },
       });
     });
+  }
+}
+
+// The same multi-select component that functions as a drop-down instead of
+// a list.
+export class PopupMultiSelect implements
+    m.ClassComponent<PopupMultiSelectAttrs> {
+  view({attrs}: m.CVnode<PopupMultiSelectAttrs>) {
+    const {
+      icon,
+      popupPosition = PopupPosition.Auto,
+      minimal,
+      compact,
+    } = attrs;
+
+    return m(
+        Popup,
+        {
+          trigger:
+              m(Button, {label: this.labelText(attrs), icon, minimal, compact}),
+          position: popupPosition,
+        },
+        m(MultiSelect, attrs as MultiSelectAttrs),
+    );
+  }
+
+  private labelText(attrs: PopupMultiSelectAttrs): string {
+    const {
+      options,
+      showNumSelected,
+      label,
+    } = attrs;
+
+    if (showNumSelected) {
+      const numSelected = options.filter(({checked}) => checked).length;
+      return `${label} (${numSelected} selected)`;
+    } else {
+      return label;
+    }
   }
 }

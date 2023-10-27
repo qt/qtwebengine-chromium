@@ -39,6 +39,7 @@ import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import * as Logs from '../../models/logs/logs.js';
+import * as TraceEngine from '../../models/trace/trace.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import * as NetworkForward from '../../panels/network/forward/forward.js';
 import * as IconButton from '../../ui/components/icon_button/icon_button.js';
@@ -48,15 +49,13 @@ import * as MobileThrottling from '../mobile_throttling/mobile_throttling.js';
 import * as Search from '../search/search.js';
 
 import {BlockedURLsPane} from './BlockedURLsPane.js';
-
 import {Events, type RequestActivatedEvent} from './NetworkDataGridNode.js';
 import {NetworkItemView} from './NetworkItemView.js';
 import {NetworkLogView} from './NetworkLogView.js';
 import {NetworkOverview} from './NetworkOverview.js';
 import networkPanelStyles from './networkPanel.css.js';
 import {NetworkSearchScope} from './NetworkSearchScope.js';
-
-import {NetworkTransferTimeCalculator, type NetworkTimeCalculator} from './NetworkTimeCalculator.js';
+import {type NetworkTimeCalculator, NetworkTransferTimeCalculator} from './NetworkTimeCalculator.js';
 
 const UIStrings = {
   /**
@@ -94,7 +93,7 @@ const UIStrings = {
   /**
    *@description Text in Network Panel of the Network panel
    */
-  useLargeRequestRows: 'Use large request rows',
+  useLargeRequestRows: 'Big request rows',
   /**
    *@description Tooltip text for network request overview setting
    */
@@ -102,7 +101,7 @@ const UIStrings = {
   /**
    *@description Text in Network Panel of the Network panel
    */
-  showOverview: 'Show overview',
+  showOverview: 'Overview',
   /**
    *@description Tooltip for group by frame network setting
    */
@@ -118,7 +117,7 @@ const UIStrings = {
   /**
    *@description Text to take screenshots
    */
-  captureScreenshots: 'Capture screenshots',
+  captureScreenshots: 'Screenshots',
   /**
    * @description Tooltip text that appears when hovering over the largeicon load button in the
    * Network Panel. This action prompts the user to select a HAR file to upload to DevTools.
@@ -496,21 +495,14 @@ export class NetworkPanel extends UI.Panel.Panel implements UI.ContextMenu.Provi
     }
   }
 
-  private filmStripAvailable(filmStripModel: SDK.FilmStripModel.FilmStripModel|null): void {
-    if (!filmStripModel) {
-      return;
-    }
-    const calculator = this.networkLogView.timeCalculator();
+  private filmStripAvailable(filmStrip: TraceEngine.Extras.FilmStrip.Data): void {
     if (this.filmStripView) {
-      this.filmStripView.setModel(
-          filmStripModel, calculator.minimumBoundary() * 1000, calculator.boundarySpan() * 1000);
+      this.filmStripView.setModel(filmStrip);
     }
-    this.networkOverview.setFilmStripModel(filmStripModel);
-    const timestamps = filmStripModel.frames().map(mapTimestamp);
-
-    function mapTimestamp(frame: SDK.FilmStripModel.Frame): number {
-      return frame.timestamp / 1000;
-    }
+    const timestamps = filmStrip.frames.map(frame => {
+      // The network view works in seconds.
+      return TraceEngine.Helpers.Timing.microSecondsToSeconds(frame.screenshotEvent.ts);
+    });
 
     this.networkLogView.addFilmStripFrames(timestamps);
   }
@@ -571,7 +563,6 @@ export class NetworkPanel extends UI.Panel.Panel implements UI.ContextMenu.Provi
     const toggled = this.networkRecordFilmStripSetting.get();
     if (toggled && !this.filmStripRecorder) {
       this.filmStripView = new PerfUI.FilmStripView.FilmStripView();
-      this.filmStripView.setMode(PerfUI.FilmStripView.Modes.FrameBased);
       this.filmStripView.element.classList.add('network-film-strip');
       this.filmStripRecorder = new FilmStripRecorder(this.networkLogView.timeCalculator(), this.filmStripView);
       this.filmStripView.show(this.filmStripPlaceholderElement);
@@ -639,6 +630,7 @@ export class NetworkPanel extends UI.Panel.Panel implements UI.ContextMenu.Provi
     await UI.ViewManager.ViewManager.instance().showView('network');
     this.networkLogView.selectRequest(request, options);
     this.showRequestPanel(shownTab);
+    this.networkLogView.revealAndHighlightRequest(request);
     return this.networkItemView;
   }
 
@@ -786,7 +778,9 @@ export class NetworkPanel extends UI.Panel.Panel implements UI.ContextMenu.Provi
     const request = event.data;
     this.calculator.updateBoundaries(request);
     // FIXME: Unify all time units across the frontend!
-    this.overviewPane.setBounds(this.calculator.minimumBoundary() * 1000, this.calculator.maximumBoundary() * 1000);
+    this.overviewPane.setBounds(
+        TraceEngine.Types.Timing.MilliSeconds(this.calculator.minimumBoundary() * 1000),
+        TraceEngine.Types.Timing.MilliSeconds(this.calculator.maximumBoundary() * 1000));
     this.networkOverview.updateRequest(request);
     this.overviewPane.scheduleUpdate();
   }
@@ -883,15 +877,21 @@ export class NetworkLogWithFilterRevealer implements Common.Revealer.Revealer {
   }
 }
 
-export class FilmStripRecorder implements SDK.TracingManager.TracingManagerClient {
-  private tracingManager: SDK.TracingManager.TracingManager|null;
+export class FilmStripRecorder implements TraceEngine.TracingManager.TracingManagerClient {
+  private tracingManager: TraceEngine.TracingManager.TracingManager|null;
   private resourceTreeModel: SDK.ResourceTreeModel.ResourceTreeModel|null;
   private readonly timeCalculator: NetworkTimeCalculator;
   private readonly filmStripView: PerfUI.FilmStripView.FilmStripView;
-  private tracingModel: SDK.TracingModel.TracingModel|null;
-  private callback: ((arg0: SDK.FilmStripModel.FilmStripModel|null) => void)|null;
+  private tracingModel: TraceEngine.Legacy.TracingModel|null;
+  private callback: ((filmStrip: TraceEngine.Extras.FilmStrip.Data) => void)|null;
+  // Used to fetch screenshots of the page load and show them in the panel.
+  #traceEngine: TraceEngine.TraceModel.Model<TraceEngine.Extras.FilmStrip.HandlersWithFilmStrip>;
 
   constructor(timeCalculator: NetworkTimeCalculator, filmStripView: PerfUI.FilmStripView.FilmStripView) {
+    this.#traceEngine = new TraceEngine.TraceModel.Model({
+      Screenshots: TraceEngine.Handlers.ModelHandlers.Screenshots,
+    });
+
     this.tracingManager = null;
     this.resourceTreeModel = null;
     this.timeCalculator = timeCalculator;
@@ -900,23 +900,41 @@ export class FilmStripRecorder implements SDK.TracingManager.TracingManagerClien
     this.callback = null;
   }
 
-  traceEventsCollected(events: SDK.TracingManager.EventPayload[]): void {
+  traceEventsCollected(events: TraceEngine.TracingManager.EventPayload[]): void {
     if (this.tracingModel) {
       this.tracingModel.addEvents(events);
     }
   }
 
-  tracingComplete(): void {
+  async tracingComplete(): Promise<void> {
     if (!this.tracingModel || !this.tracingManager) {
       return;
     }
     this.tracingModel.tracingComplete();
     this.tracingManager = null;
+    await this.#traceEngine.parse(
+        // OPP's data layer uses `EventPayload` as the type to represent raw JSON from the trace.
+        // When we pass this into the new data engine, we need to tell TS to use the new TraceEventData type.
+        this.tracingModel.allRawEvents() as unknown as TraceEngine.Types.TraceEvents.TraceEventData[],
+    );
+
+    const data = this.#traceEngine.traceParsedData(this.#traceEngine.size() - 1);
+    if (!data) {
+      return;
+    }
+    const zeroTimeInSeconds = TraceEngine.Types.Timing.Seconds(this.timeCalculator.minimumBoundary());
+    const filmStrip = TraceEngine.Extras.FilmStrip.fromTraceData(
+        data, TraceEngine.Helpers.Timing.secondsToMicroseconds(zeroTimeInSeconds));
+
     if (this.callback) {
-      this.callback(
-          new SDK.FilmStripModel.FilmStripModel(this.tracingModel, this.timeCalculator.minimumBoundary() * 1000));
+      this.callback(filmStrip);
     }
     this.callback = null;
+    // Now we have created the film strip and stored the data, we need to reset
+    // the trace processor so that it is ready to record again if the user
+    // refreshes the page.
+    this.#traceEngine.resetProcessor();
+
     if (this.resourceTreeModel) {
       this.resourceTreeModel.resumeReload();
     }
@@ -933,14 +951,14 @@ export class FilmStripRecorder implements SDK.TracingManager.TracingManagerClien
     this.filmStripView.reset();
     this.filmStripView.setStatusText(i18nString(UIStrings.recordingFrames));
     const tracingManager =
-        SDK.TargetManager.TargetManager.instance().scopeTarget()?.model(SDK.TracingManager.TracingManager);
+        SDK.TargetManager.TargetManager.instance().scopeTarget()?.model(TraceEngine.TracingManager.TracingManager);
     if (this.tracingManager || !tracingManager) {
       return;
     }
 
     this.tracingManager = tracingManager;
     this.resourceTreeModel = this.tracingManager.target().model(SDK.ResourceTreeModel.ResourceTreeModel);
-    this.tracingModel = new SDK.TracingModel.TracingModel();
+    this.tracingModel = new TraceEngine.Legacy.TracingModel();
     void this.tracingManager.start(this, '-*,disabled-by-default-devtools.screenshot', '');
 
     Host.userMetrics.actionTaken(Host.UserMetrics.Action.FilmStripStartedRecording);
@@ -950,7 +968,7 @@ export class FilmStripRecorder implements SDK.TracingManager.TracingManagerClien
     return Boolean(this.tracingManager);
   }
 
-  stopRecording(callback: (arg0: SDK.FilmStripModel.FilmStripModel|null) => void): void {
+  stopRecording(callback: (filmStrip: TraceEngine.Extras.FilmStrip.Data) => void): void {
     if (!this.tracingManager) {
       return;
     }
@@ -1038,7 +1056,12 @@ export class RequestLocationRevealer implements Common.Revealer.Revealer {
       return;
     }
     if (location.searchMatch) {
-      await view.revealResponseBody(location.searchMatch.lineNumber);
+      const {lineNumber, columnNumber, matchLength} = location.searchMatch;
+      const revealPosition = {
+        from: {lineNumber, columnNumber},
+        to: {lineNumber, columnNumber: columnNumber + matchLength},
+      };
+      await view.revealResponseBody(revealPosition);
     }
     if (location.header) {
       view.revealHeader(location.header.section, location.header.header?.name);
@@ -1050,7 +1073,7 @@ let searchNetworkViewInstance: SearchNetworkView;
 
 export class SearchNetworkView extends Search.SearchView.SearchView {
   private constructor() {
-    super('network');
+    super('network', new Common.Throttler.Throttler(/* timeoutMs */ 200));
   }
 
   static instance(opts: {
@@ -1071,7 +1094,7 @@ export class SearchNetworkView extends Search.SearchView.SearchView {
     return searchView;
   }
 
-  override createScope(): Search.SearchConfig.SearchScope {
-    return new NetworkSearchScope();
+  override createScope(): Search.SearchScope.SearchScope {
+    return new NetworkSearchScope(Logs.NetworkLog.NetworkLog.instance());
   }
 }

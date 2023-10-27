@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "dawn/common/Constants.h"
+#include "dawn/common/ContentLessObjectCacheable.h"
 #include "dawn/common/ityp_array.h"
 #include "dawn/common/ityp_bitset.h"
 #include "dawn/native/BindingInfo.h"
@@ -49,7 +50,9 @@ struct StageAndDescriptor {
     ConstantEntry const* constants = nullptr;
 };
 
-class PipelineLayoutBase : public ApiObjectBase, public CachedObject {
+class PipelineLayoutBase : public ApiObjectBase,
+                           public CachedObject,
+                           public ContentLessObjectCacheable<PipelineLayoutBase> {
   public:
     PipelineLayoutBase(DeviceBase* device,
                        const PipelineLayoutDescriptor* descriptor,
@@ -64,8 +67,10 @@ class PipelineLayoutBase : public ApiObjectBase, public CachedObject {
 
     ObjectType GetType() const override;
 
-    const BindGroupLayoutBase* GetBindGroupLayout(BindGroupIndex group) const;
-    BindGroupLayoutBase* GetBindGroupLayout(BindGroupIndex group);
+    const BindGroupLayoutBase* GetFrontendBindGroupLayout(BindGroupIndex group) const;
+    BindGroupLayoutBase* GetFrontendBindGroupLayout(BindGroupIndex group);
+    const BindGroupLayoutInternalBase* GetBindGroupLayout(BindGroupIndex group) const;
+    BindGroupLayoutInternalBase* GetBindGroupLayout(BindGroupIndex group);
     const BindGroupLayoutMask& GetBindGroupLayoutsMask() const;
 
     // Utility functions to compute inherited bind groups.

@@ -19,6 +19,7 @@ import {BigintMath} from '../base/bigint_math';
 import {Actions} from '../common/actions';
 import {QueryResponse} from '../common/queries';
 import {Row} from '../common/query_result';
+import {Duration, Time} from '../common/time';
 
 import {Anchor} from './anchor';
 import {copyToClipboard, queryResponseToClipboard} from './clipboard';
@@ -30,7 +31,6 @@ import {reveal} from './scroll_helper';
 import {Button} from './widgets/button';
 import {Callout} from './widgets/callout';
 import {DetailsShell} from './widgets/details_shell';
-import {exists} from './widgets/utils';
 
 interface QueryTableRowAttrs {
   row: Row;
@@ -111,6 +111,7 @@ class QueryTableRow implements m.ClassComponent<QueryTableRowAttrs> {
             // account for cases when dblclick fires late.
             ondblclick: () => this.highlightSlice(row),
             clickable: true,
+            title: 'Go to slice',
           },
           cells);
     } else {
@@ -137,12 +138,12 @@ class QueryTableRow implements m.ClassComponent<QueryTableRowAttrs> {
 
   private highlightSlice(row: Row&Sliceish, nextTab?: string) {
     const trackId = Number(row.track_id);
-    const sliceStart = BigInt(row.ts);
+    const sliceStart = Time.fromRaw(BigInt(row.ts));
     // row.dur can be negative. Clamp to 1ns.
     const sliceDur = BigintMath.max(BigInt(row.dur), 1n);
     const uiTrackId = globals.state.uiTrackIdByTraceTrackId[trackId];
     if (uiTrackId !== undefined) {
-      reveal(uiTrackId, sliceStart, sliceStart + sliceDur, true);
+      reveal(uiTrackId, sliceStart, Time.add(sliceStart, sliceDur), true);
       const sliceId = getSliceId(row);
       if (sliceId !== undefined) {
         this.selectSlice(sliceId, uiTrackId, nextTab);
@@ -156,7 +157,7 @@ class QueryTableRow implements m.ClassComponent<QueryTableRowAttrs> {
       trackId: uiTrackId,
       table: 'slice',
     });
-    globals.makeSelection(action, nextTab);
+    globals.makeSelection(action, {tab: nextTab});
   }
 }
 
@@ -223,11 +224,12 @@ export class QueryTable extends Panel<QueryTableAttrs> {
   }
 
   renderTitle(resp?: QueryResponse) {
-    if (exists(resp)) {
-      return `Query result - ${Math.round(resp.durationMs)} ms`;
-    } else {
+    if (!resp) {
       return 'Query - running';
     }
+    const result = resp.error ? 'error' : `${resp.rows.length} rows`;
+    const dur = Duration.humanise(Duration.fromMillis(resp.durationMs));
+    return `Query result (${result}) - ${dur}`;
   }
 
   renderButtons(

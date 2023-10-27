@@ -197,7 +197,8 @@ bool KeyboardEventManager::HandleAccessKey(const WebKeyboardEvent& evt) {
   if (!elem)
     return false;
   elem->Focus(FocusParams(SelectionBehaviorOnFocus::kReset,
-                          mojom::blink::FocusType::kAccessKey, nullptr));
+                          mojom::blink::FocusType::kAccessKey, nullptr,
+                          FocusOptions::Create(), FocusTrigger::kUserGesture));
   elem->AccessKeyAction(SimulatedClickCreationScope::kFromUserAgent);
   return true;
 }
@@ -390,7 +391,7 @@ WebInputEventResult KeyboardEventManager::KeyEvent(
       break;
     }
     default:
-      NOTREACHED();
+      NOTREACHED_NORETURN();
   }
   return event_handling_util::ToWebInputEventResult(dispatch_result);
 }
@@ -646,9 +647,11 @@ void KeyboardEventManager::DefaultEscapeEventHandler(KeyboardEvent* event) {
     }
   }
 
-  auto* target_node = event->GetEventPath()[0].Target()->ToNode();
-  DCHECK(target_node);
-  HTMLElement::HandlePopoverLightDismiss(*event, *target_node);
+  if (!RuntimeEnabledFeatures::CloseWatcherEnabled()) {
+    auto* target_node = event->GetEventPath()[0].Target()->ToNode();
+    DCHECK(target_node);
+    HTMLElement::HandlePopoverLightDismiss(*event, *target_node);
+  }
 }
 
 void KeyboardEventManager::DefaultEnterEventHandler(KeyboardEvent* event) {

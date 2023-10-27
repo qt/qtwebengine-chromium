@@ -341,13 +341,16 @@ export function oneULPF64(target: number, mode: FlushMode = 'flush'): number {
 
   target = mode === 'flush' ? flushSubnormalNumberF64(target) : target;
 
-  // For values at the edge of the range or beyond ulp(x) is defined as the
+  // For values out of bounds for f64 ulp(x) is defined as the
   // distance between the two nearest f64 representable numbers to the
-  // appropriate edge.
-  if (target === Number.POSITIVE_INFINITY || target >= kValue.f64.positive.max) {
-    return kValue.f64.positive.max - kValue.f64.positive.nearest_max;
-  } else if (target === Number.NEGATIVE_INFINITY || target <= kValue.f64.negative.min) {
-    return kValue.f64.negative.nearest_min - kValue.f64.negative.min;
+  // appropriate edge, which also happens to be the maximum possible ULP.
+  if (
+    target === Number.POSITIVE_INFINITY ||
+    target >= kValue.f64.positive.max ||
+    target === Number.NEGATIVE_INFINITY ||
+    target <= kValue.f64.negative.min
+  ) {
+    return kValue.f64.max_ulp;
   }
 
   // ulp(x) is min(after - before), where
@@ -379,13 +382,16 @@ export function oneULPF32(target: number, mode: FlushMode = 'flush'): number {
 
   target = mode === 'flush' ? flushSubnormalNumberF32(target) : target;
 
-  // For values at the edge of the range or beyond ulp(x) is defined as the
+  // For values out of bounds for f32 ulp(x) is defined as the
   // distance between the two nearest f32 representable numbers to the
-  // appropriate edge.
-  if (target === Number.POSITIVE_INFINITY || target >= kValue.f32.positive.max) {
-    return kValue.f32.positive.max - kValue.f32.positive.nearest_max;
-  } else if (target === Number.NEGATIVE_INFINITY || target <= kValue.f32.negative.min) {
-    return kValue.f32.negative.nearest_min - kValue.f32.negative.min;
+  // appropriate edge, which also happens to be the maximum possible ULP.
+  if (
+    target === Number.POSITIVE_INFINITY ||
+    target >= kValue.f32.positive.max ||
+    target === Number.NEGATIVE_INFINITY ||
+    target <= kValue.f32.negative.min
+  ) {
+    return kValue.f32.max_ulp;
   }
 
   // ulp(x) is min(after - before), where
@@ -422,13 +428,16 @@ export function oneULPF16(target: number, mode: FlushMode = 'flush'): number {
 
   target = mode === 'flush' ? flushSubnormalNumberF16(target) : target;
 
-  // For values at the edge of the range or beyond ulp(x) is defined as the
+  // For values out of bounds for f16 ulp(x) is defined as the
   // distance between the two nearest f16 representable numbers to the
-  // appropriate edge.
-  if (target === Number.POSITIVE_INFINITY || target >= kValue.f16.positive.max) {
-    return kValue.f16.positive.max - kValue.f16.positive.nearest_max;
-  } else if (target === Number.NEGATIVE_INFINITY || target <= kValue.f16.negative.min) {
-    return kValue.f16.negative.nearest_min - kValue.f16.negative.min;
+  // appropriate edge, which also happens to be the maximum possible ULP.
+  if (
+    target === Number.POSITIVE_INFINITY ||
+    target >= kValue.f16.positive.max ||
+    target === Number.NEGATIVE_INFINITY ||
+    target <= kValue.f16.negative.min
+  ) {
+    return kValue.f16.max_ulp;
   }
 
   // ulp(x) is min(after - before), where
@@ -487,40 +496,60 @@ export function correctlyRoundedF64(n: number): number[] {
  * This function does not consider flushing mode, so subnormals are maintained.
  * The caller is responsible to flushing before and after as appropriate.
  *
- * Out of range values return the appropriate infinity and edge value.
+ * Out of bounds values need to consider how they interact with the overflow
+ * rules.
+ *  * If a value is OOB but not too far out, an implementation may choose to round
+ * to nearest finite value or the correct infinity. This boundary is at
+ * 2^(f32.emax + 1) and -(2^(f32.emax + 1)) respectively.
+ * Values that are at or beyond these limits must be rounded towards the
+ * appropriate infinity.
  *
  * @param n number to be quantized
  * @returns all of the acceptable roundings for quantizing to 32-bits in
  *          ascending order.
  */
 export function correctlyRoundedF32(n: number): number[] {
-  assert(!Number.isNaN(n), `correctlyRoundedF32 not defined for NaN`);
-  // Above f32 range
-  if (n === Number.POSITIVE_INFINITY || n > kValue.f32.positive.max) {
-    return [kValue.f32.positive.max, Number.POSITIVE_INFINITY];
-  }
-
-  // Below f32 range
-  if (n === Number.NEGATIVE_INFINITY || n < kValue.f32.negative.min) {
-    return [Number.NEGATIVE_INFINITY, kValue.f32.negative.min];
-  }
-
-  const n_32 = new Float32Array([n])[0];
-  const converted: number = n_32;
-  if (n === converted) {
-    // n is precisely expressible as a f32, so should not be rounded
+  if (Number.isNaN(n)) {
     return [n];
   }
 
-  if (converted > n) {
-    // n_32 rounded towards +inf, so is after n
-    const other = nextAfterF32(n_32, 'negative', 'no-flush');
-    return [other, converted];
-  } else {
-    // n_32 rounded towards -inf, so is before n
-    const other = nextAfterF32(n_32, 'positive', 'no-flush');
-    return [converted, other];
+  // Greater than or equal to the upper overflow boundry
+  if (n >= 2 ** (kValue.f32.emax + 1)) {
+    return [Number.POSITIVE_INFINITY];
   }
+
+  // OOB, but less than the upper overflow boundary
+  if (n > kValue.f32.positive.max) {
+    return [kValue.f32.positive.max, Number.POSITIVE_INFINITY];
+  }
+
+  // f32 finite
+  if (n <= kValue.f32.positive.max && n >= kValue.f32.negative.min) {
+    const n_32 = new Float32Array([n])[0];
+    const converted: number = n_32;
+    if (n === converted) {
+      // n is precisely expressible as a f32, so should not be rounded
+      return [n];
+    }
+
+    if (converted > n) {
+      // n_32 rounded towards +inf, so is after n
+      const other = nextAfterF32(n_32, 'negative', 'no-flush');
+      return [other, converted];
+    } else {
+      // n_32 rounded towards -inf, so is before n
+      const other = nextAfterF32(n_32, 'positive', 'no-flush');
+      return [converted, other];
+    }
+  }
+
+  // OOB, but greater the lower overflow boundary
+  if (n > -(2 ** (kValue.f32.emax + 1))) {
+    return [Number.NEGATIVE_INFINITY, kValue.f32.negative.min];
+  }
+
+  // Less than or equal to the lower overflow boundary
+  return [Number.NEGATIVE_INFINITY];
 }
 
 /**
@@ -536,40 +565,60 @@ export function correctlyRoundedF32(n: number): number[] {
  * This function does not consider flushing mode, so subnormals are maintained.
  * The caller is responsible to flushing before and after as appropriate.
  *
- * Out of range values return the appropriate infinity and edge value.
+ * Out of bounds values need to consider how they interact with the overflow
+ * rules.
+ *  * If a value is OOB but not too far out, an implementation may choose to round
+ * to nearest finite value or the correct infinity. This boundary is at
+ * 2^(f16.emax + 1) and -(2^(f16.emax + 1)) respectively.
+ * Values that are at or beyond these limits must be rounded towards the
+ * appropriate infinity.
  *
  * @param n number to be quantized
  * @returns all of the acceptable roundings for quantizing to 16-bits in
  *          ascending order.
  */
 export function correctlyRoundedF16(n: number): number[] {
-  assert(!Number.isNaN(n), `correctlyRoundedF16 not defined for NaN`);
-  // Above f16 range
-  if (n === Number.POSITIVE_INFINITY || n > kValue.f16.positive.max) {
-    return [kValue.f16.positive.max, Number.POSITIVE_INFINITY];
-  }
-
-  // Below f16 range
-  if (n === Number.NEGATIVE_INFINITY || n < kValue.f16.negative.min) {
-    return [Number.NEGATIVE_INFINITY, kValue.f16.negative.min];
-  }
-
-  const n_16 = new Float16Array([n])[0];
-  const converted: number = n_16;
-  if (n === converted) {
-    // n is precisely expressible as a f16, so should not be rounded
+  if (Number.isNaN(n)) {
     return [n];
   }
 
-  if (converted > n) {
-    // n_16 rounded towards +inf, so is after n
-    const other = nextAfterF16(n_16, 'negative', 'no-flush');
-    return [other, converted];
-  } else {
-    // n_16 rounded towards -inf, so is before n
-    const other = nextAfterF16(n_16, 'positive', 'no-flush');
-    return [converted, other];
+  // Greater than or equal to the upper overflow boundry
+  if (n >= 2 ** (kValue.f16.emax + 1)) {
+    return [Number.POSITIVE_INFINITY];
   }
+
+  // OOB, but less than the upper overflow boundary
+  if (n > kValue.f16.positive.max) {
+    return [kValue.f16.positive.max, Number.POSITIVE_INFINITY];
+  }
+
+  // f16 finite
+  if (n <= kValue.f16.positive.max && n >= kValue.f16.negative.min) {
+    const n_16 = new Float16Array([n])[0];
+    const converted: number = n_16;
+    if (n === converted) {
+      // n is precisely expressible as a f16, so should not be rounded
+      return [n];
+    }
+
+    if (converted > n) {
+      // n_16 rounded towards +inf, so is after n
+      const other = nextAfterF16(n_16, 'negative', 'no-flush');
+      return [other, converted];
+    } else {
+      // n_16 rounded towards -inf, so is before n
+      const other = nextAfterF16(n_16, 'positive', 'no-flush');
+      return [converted, other];
+    }
+  }
+
+  // OOB, but greater the lower overflow boundary
+  if (n > -(2 ** (kValue.f16.emax + 1))) {
+    return [Number.NEGATIVE_INFINITY, kValue.f16.negative.min];
+  }
+
+  // Less than or equal to the lower overflow boundary
+  return [Number.NEGATIVE_INFINITY];
 }
 
 /**
@@ -1131,13 +1180,16 @@ const kInterestingF32Values: number[] = [
   kValue.f32.negative.min,
   -10.0,
   -1.0,
+  -0.125,
   kValue.f32.negative.max,
   kValue.f32.subnormal.negative.min,
   kValue.f32.subnormal.negative.max,
+  -0.0,
   0.0,
   kValue.f32.subnormal.positive.min,
   kValue.f32.subnormal.positive.max,
   kValue.f32.positive.min,
+  0.125,
   1.0,
   10.0,
   kValue.f32.positive.max,
@@ -1364,13 +1416,16 @@ const kInterestingF16Values: number[] = [
   kValue.f16.negative.min,
   -10.0,
   -1.0,
+  -0.125,
   kValue.f16.negative.max,
   kValue.f16.subnormal.negative.min,
   kValue.f16.subnormal.negative.max,
+  -0.0,
   0.0,
   kValue.f16.subnormal.positive.min,
   kValue.f16.subnormal.positive.max,
   kValue.f16.positive.min,
+  0.125,
   1.0,
   10.0,
   kValue.f16.positive.max,
@@ -1590,6 +1645,87 @@ export function sparseMatrixF16Range(c: number, r: number): number[][][] {
     'sparseMatrixF16Range only accepts row counts of 2, 3, and 4'
   );
   return kSparseMatrixF16Values[c][r];
+}
+
+/** Short list of f64 values of interest to test against */
+const kInterestingF64Values: number[] = [
+  kValue.f64.negative.min,
+  -10.0,
+  -1.0,
+  -0.125,
+  kValue.f64.negative.max,
+  kValue.f64.subnormal.negative.min,
+  kValue.f64.subnormal.negative.max,
+  -0.0,
+  0.0,
+  kValue.f64.subnormal.positive.min,
+  kValue.f64.subnormal.positive.max,
+  kValue.f64.positive.min,
+  0.125,
+  1.0,
+  10.0,
+  kValue.f64.positive.max,
+];
+
+/** @returns minimal F64 values that cover the entire range of F64 behaviours
+ *
+ * Has specially selected values that cover edge cases, normals, and subnormals.
+ * This is used instead of fullF64Range when the number of test cases being
+ * generated is a super linear function of the length of F64 values which is
+ * leading to time outs.
+ *
+ * These values have been chosen to attempt to test the widest range of F64
+ * behaviours in the lowest number of entries, so may potentially miss function
+ * specific values of interest. If there are known values of interest they
+ * should be appended to this list in the test generation code.
+ */
+export function sparseF64Range(): number[] {
+  return kInterestingF64Values;
+}
+
+const kVectorF64Values = {
+  2: sparseF64Range().flatMap(f => [
+    [f, 1.0],
+    [1.0, f],
+    [f, -1.0],
+    [-1.0, f],
+  ]),
+  3: sparseF64Range().flatMap(f => [
+    [f, 1.0, 2.0],
+    [1.0, f, 2.0],
+    [1.0, 2.0, f],
+    [f, -1.0, -2.0],
+    [-1.0, f, -2.0],
+    [-1.0, -2.0, f],
+  ]),
+  4: sparseF64Range().flatMap(f => [
+    [f, 1.0, 2.0, 3.0],
+    [1.0, f, 2.0, 3.0],
+    [1.0, 2.0, f, 3.0],
+    [1.0, 2.0, 3.0, f],
+    [f, -1.0, -2.0, -3.0],
+    [-1.0, f, -2.0, -3.0],
+    [-1.0, -2.0, f, -3.0],
+    [-1.0, -2.0, -3.0, f],
+  ]),
+};
+
+/**
+ * Returns set of vectors, indexed by dimension containing interesting float
+ * values.
+ *
+ * The tests do not do the simple option for coverage of computing the cartesian
+ * product of all of the interesting float values N times for vecN tests,
+ * because that creates a huge number of tests for vec3 and vec4, leading to
+ * time outs.
+ *
+ * Instead they insert the interesting F64 values into each location of the
+ * vector to get a spread of testing over the entire range. This reduces the
+ * number of cases being run substantially, but maintains coverage.
+ */
+export function vectorF64Range(dim: number): number[][] {
+  assert(dim === 2 || dim === 3 || dim === 4, 'vectorF64Range only accepts dimensions 2, 3, and 4');
+  return kVectorF64Values[dim];
 }
 
 /**

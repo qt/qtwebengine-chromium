@@ -1,6 +1,7 @@
 import { assert, ErrorWithExtra, unreachable } from '../../../common/util/util.js';
 import { kTextureFormatInfo, EncodableTextureFormat } from '../../format_info.js';
 import { GPUTest } from '../../gpu_test.js';
+import { numbersApproximatelyEqual } from '../conversion.js';
 import { generatePrettyTable } from '../pretty_diff_tables.js';
 import { reifyExtent3D, reifyOrigin3D } from '../unions.js';
 
@@ -158,7 +159,7 @@ function comparePerComponent(
     const act = actual[k]!;
     const exp = expected[k];
     if (exp === undefined) return false;
-    return Math.abs(act - exp) <= maxDiff;
+    return numbersApproximatelyEqual(act, exp, maxDiff);
   });
 }
 
@@ -199,7 +200,7 @@ function* fullSubrectCoordinates(
   }
 }
 
-function findFailedPixels(
+export function findFailedPixels(
   format: EncodableTextureFormat,
   subrectOrigin: Required<GPUOrigin3DDict>,
   subrectSize: Required<GPUExtent3DDict>,

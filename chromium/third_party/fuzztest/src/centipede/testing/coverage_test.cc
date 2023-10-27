@@ -32,13 +32,15 @@
 #include "gtest/gtest.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/strings/str_cat.h"
+#include "./centipede/binary_info.h"
 #include "./centipede/centipede_interface.h"
 #include "./centipede/control_flow.h"
 #include "./centipede/defs.h"
 #include "./centipede/environment.h"
-#include "./centipede/execution_result.h"
 #include "./centipede/feature.h"
 #include "./centipede/logging.h"
+#include "./centipede/pc_info.h"
+#include "./centipede/runner_result.h"
 #include "./centipede/symbol_table.h"
 #include "./centipede/test_util.h"
 #include "./centipede/util.h"
@@ -214,7 +216,7 @@ class TestCallbacks : public CentipedeCallbacks {
     CHECK_EQ(EXIT_SUCCESS, result);
     return true;
   }
-  void Mutate(const std::vector<ByteArray> &inputs, size_t num_mutants,
+  void Mutate(const std::vector<MutationInputRef> &inputs, size_t num_mutants,
               std::vector<ByteArray> &mutants) override {}
 };
 
@@ -253,14 +255,13 @@ TEST(Coverage, CoverageFeatures) {
   EXPECT_NE(features[0], features[1]);
   // Get pc_table and symbols.
   bool uses_legacy_trace_pc_instrumentation = {};
-  auto pc_table = GetPcTableFromBinary(GetTargetPath(), GetObjDumpPath(),
-                                       GetTempFilePath(0),
-                                       &uses_legacy_trace_pc_instrumentation);
+  BinaryInfo binary_info;
+  binary_info.InitializeFromSanCovBinary(GetTargetPath(), GetObjDumpPath(),
+                                         GetLLVMSymbolizerPath(),
+                                         GetTestTempDir());
+  const auto &pc_table = binary_info.pc_table;
   EXPECT_FALSE(uses_legacy_trace_pc_instrumentation);
-  SymbolTable symbols;
-  symbols.GetSymbolsFromBinary(pc_table, GetTargetPath(),
-                               GetLLVMSymbolizerPath(), GetTempFilePath(0),
-                               GetTempFilePath(1));
+  const SymbolTable &symbols = binary_info.symbols;
   // pc_table and symbols should have the same size.
   EXPECT_EQ(pc_table.size(), symbols.size());
   // Check what's covered.
@@ -438,15 +439,17 @@ TEST(Coverage, PathFeatures) {
 
 TEST(Coverage, FunctionFilter) {
   // Initialize coverage data.
-  bool uses_legacy_trace_pc_instrumentation = false;
-  PCTable pc_table = GetPcTableFromBinary(
-      GetTargetPath(), GetObjDumpPath(), GetTempFilePath(0),
-      &uses_legacy_trace_pc_instrumentation);
-  EXPECT_FALSE(uses_legacy_trace_pc_instrumentation);
+  BinaryInfo binary_info;
+  binary_info.InitializeFromSanCovBinary(GetTargetPath(), GetObjDumpPath(),
+                                         GetLLVMSymbolizerPath(),
+                                         GetTestTempDir());
+
+  const PCTable &pc_table = binary_info.pc_table;
+  EXPECT_FALSE(binary_info.uses_legacy_trace_pc_instrumentation);
+  const DsoTable dso_table = {{GetTargetPath(), pc_table.size()}};
   SymbolTable symbols;
-  symbols.GetSymbolsFromBinary(pc_table, GetTargetPath(),
-                               GetLLVMSymbolizerPath(), GetTempFilePath(0),
-                               GetTempFilePath(1));
+  symbols.GetSymbolsFromBinary(pc_table, dso_table, GetLLVMSymbolizerPath(),
+                               GetTempFilePath(0), GetTempFilePath(1));
   // Empty filter.
   FunctionFilter empty_filter("", symbols);
   EXPECT_EQ(empty_filter.count(), 0);

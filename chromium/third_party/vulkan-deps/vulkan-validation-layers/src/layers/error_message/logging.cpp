@@ -22,10 +22,11 @@
 #include <debugapi.h>
 #endif
 
-#include "generated/vk_enum_string_helper.h"
+#include <vulkan/vk_enum_string_helper.h>
 #include "generated/vk_safe_struct.h"
 #include "generated/vk_validation_error_messages.h"
 #include "external/xxhash.h"
+#include "error_location.h"
 
 VKAPI_ATTR void SetDebugUtilsSeverityFlags(std::vector<VkLayerDbgFunctionState> &callbacks, debug_report_data *debug_data) {
     // For all callback in list, return their complete set of severities and modes
@@ -91,13 +92,20 @@ static bool debug_log_msg(const debug_report_data *debug_data, VkFlags msg_flags
     // stability for pushed strings.
     object_labels.reserve(objects.object_list.size());
 
-    std::vector<VkDebugUtilsObjectNameInfoEXT> object_name_info;
-    object_name_info.resize(objects.object_list.size());
+    std::vector<VkDebugUtilsObjectNameInfoEXT> object_name_infos;
+    object_name_infos.reserve(objects.object_list.size());
     for (uint32_t i = 0; i < objects.object_list.size(); i++) {
-        object_name_info[i] = LvlInitStruct<VkDebugUtilsObjectNameInfoEXT>();
-        object_name_info[i].objectType = ConvertVulkanObjectToCoreObject(objects.object_list[i].type);
-        object_name_info[i].objectHandle = objects.object_list[i].handle;
-        object_name_info[i].pObjectName = NULL;
+        // If only one VkDevice was created, it is just noise to print it out in the error message.
+        // Also avoid printing unknown objects, likely if new function is calling error with null LogObjectList
+        if ((objects.object_list[i].type == kVulkanObjectTypeDevice && debug_data->device_created <= 1) ||
+            (objects.object_list[i].type == kVulkanObjectTypeUnknown) || (objects.object_list[i].handle == 0)) {
+            continue;
+        }
+
+        auto object_name_info = LvlInitStruct<VkDebugUtilsObjectNameInfoEXT>();
+        object_name_info.objectType = ConvertVulkanObjectToCoreObject(objects.object_list[i].type);
+        object_name_info.objectHandle = objects.object_list[i].handle;
+        object_name_info.pObjectName = nullptr;
 
         std::string object_label = {};
         // Look for any debug utils or marker names to use for this object
@@ -107,25 +115,27 @@ static bool debug_log_msg(const debug_report_data *debug_data, VkFlags msg_flags
         }
         if (!object_label.empty()) {
             object_labels.push_back(std::move(object_label));
-            object_name_info[i].pObjectName = object_labels.back().c_str();
+            object_name_info.pObjectName = object_labels.back().c_str();
         }
 
         // If this is a queue, add any queue labels to the callback data.
-        if (VK_OBJECT_TYPE_QUEUE == object_name_info[i].objectType) {
-            auto label_iter = debug_data->debugUtilsQueueLabels.find(reinterpret_cast<VkQueue>(object_name_info[i].objectHandle));
+        if (VK_OBJECT_TYPE_QUEUE == object_name_info.objectType) {
+            auto label_iter = debug_data->debugUtilsQueueLabels.find(reinterpret_cast<VkQueue>(object_name_info.objectHandle));
             if (label_iter != debug_data->debugUtilsQueueLabels.end()) {
                 auto found_queue_labels = label_iter->second->Export();
                 queue_labels.insert(queue_labels.end(), found_queue_labels.begin(), found_queue_labels.end());
             }
             // If this is a command buffer, add any command buffer labels to the callback data.
-        } else if (VK_OBJECT_TYPE_COMMAND_BUFFER == object_name_info[i].objectType) {
+        } else if (VK_OBJECT_TYPE_COMMAND_BUFFER == object_name_info.objectType) {
             auto label_iter =
-                debug_data->debugUtilsCmdBufLabels.find(reinterpret_cast<VkCommandBuffer>(object_name_info[i].objectHandle));
+                debug_data->debugUtilsCmdBufLabels.find(reinterpret_cast<VkCommandBuffer>(object_name_info.objectHandle));
             if (label_iter != debug_data->debugUtilsCmdBufLabels.end()) {
                 auto found_cmd_buf_labels = label_iter->second->Export();
                 cmd_buf_labels.insert(cmd_buf_labels.end(), found_cmd_buf_labels.begin(), found_cmd_buf_labels.end());
             }
         }
+
+        object_name_infos.push_back(object_name_info);
     }
 
     const uint32_t message_id_number = text_vuid ? vvl_vuid_hash(text_vuid) : 0U;
@@ -139,8 +149,8 @@ static bool debug_log_msg(const debug_report_data *debug_data, VkFlags msg_flags
     callback_data.pQueueLabels = queue_labels.empty() ? nullptr : queue_labels.data();
     callback_data.cmdBufLabelCount = static_cast<uint32_t>(cmd_buf_labels.size());
     callback_data.pCmdBufLabels = cmd_buf_labels.empty() ? nullptr : cmd_buf_labels.data();
-    callback_data.objectCount = static_cast<uint32_t>(object_name_info.size());
-    callback_data.pObjects = object_name_info.data();
+    callback_data.objectCount = static_cast<uint32_t>(object_name_infos.size());
+    callback_data.pObjects = object_name_infos.data();
 
     std::ostringstream oss;
     if (msg_flags & kErrorBit) {
@@ -158,7 +168,7 @@ static bool debug_log_msg(const debug_report_data *debug_data, VkFlags msg_flags
         oss << "[ " << text_vuid << " ] ";
     }
     uint32_t index = 0;
-    for (const auto &src_object : object_name_info) {
+    for (const auto &src_object : object_name_infos) {
         if (0 != src_object.objectHandle) {
             oss << "Object " << index++ << ": handle = 0x" << std::hex << src_object.objectHandle;
             if (src_object.pObjectName) {
@@ -201,9 +211,15 @@ static bool debug_log_msg(const debug_report_data *debug_data, VkFlags msg_flags
             }
         } else if (!current_callback.IsUtils() && (current_callback.debug_report_msg_flags & msg_flags)) {
             // VK_EXT_debug_report callback (deprecated)
+            if (object_name_infos.empty()) {
+                VkDebugUtilsObjectNameInfoEXT null_object_name = {VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT, nullptr,
+                                                                  VK_OBJECT_TYPE_UNKNOWN, 0, nullptr};
+                // need to have at least one object
+                object_name_infos.emplace_back(null_object_name);
+            }
             if (current_callback.debug_report_callback_function_ptr(
-                    msg_flags, convertCoreObjectToDebugReportObject(object_name_info[0].objectType),
-                    object_name_info[0].objectHandle, message_id_number, 0, layer_prefix, composite.c_str(),
+                    msg_flags, convertCoreObjectToDebugReportObject(object_name_infos[0].objectType),
+                    object_name_infos[0].objectHandle, message_id_number, 0, layer_prefix, composite.c_str(),
                     current_callback.pUserData)) {
                 bail = true;
             }
@@ -324,8 +340,7 @@ static bool LogMsgEnabled(const debug_report_data *debug_data, std::string_view 
     }
     // If message is in filter list, bail out very early
     const uint32_t message_id = vvl_vuid_hash(vuid_text);
-    if (std::find(debug_data->filter_message_ids.begin(), debug_data->filter_message_ids.end(), message_id)
-        != debug_data->filter_message_ids.end()) {
+    if (debug_data->filter_message_ids.find(message_id) != debug_data->filter_message_ids.end()) {
         return false;
     }
     if ((debug_data->duplicate_message_limit > 0) && UpdateLogMsgCounts(debug_data, static_cast<int32_t>(message_id))) {
@@ -335,7 +350,7 @@ static bool LogMsgEnabled(const debug_report_data *debug_data, std::string_view 
     return true;
 }
 
-VKAPI_ATTR bool LogMsg(const debug_report_data *debug_data, VkFlags msg_flags, const LogObjectList &objects,
+VKAPI_ATTR bool LogMsg(const debug_report_data *debug_data, VkFlags msg_flags, const LogObjectList &objects, const Location *loc,
                        std::string_view vuid_text, const char *format, va_list argptr) {
     assert(*(vuid_text.data() + vuid_text.size()) == '\0');
 
@@ -379,6 +394,11 @@ VKAPI_ATTR bool LogMsg(const debug_report_data *debug_data, VkFlags msg_flags, c
         result = vsnprintf(str_plus_spec_text.data(), str_plus_spec_text.size(), format, argptr);
         // remove the `\0' character from the string
         str_plus_spec_text.resize(result);
+    }
+
+    // TODO - make Location a reference once old LogError is gone
+    if (loc) {
+        str_plus_spec_text = loc->Message() + " " + str_plus_spec_text;
     }
 
     // Append the spec error text to the error message, unless it contains a word treated as special

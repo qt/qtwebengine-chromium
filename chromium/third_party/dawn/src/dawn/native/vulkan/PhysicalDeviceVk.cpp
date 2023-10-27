@@ -216,6 +216,10 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
         EnableFeature(Feature::IndirectFirstInstance);
     }
 
+    if (mDeviceInfo.features.dualSrcBlend == VK_TRUE) {
+        EnableFeature(Feature::DualSourceBlending);
+    }
+
     if (mDeviceInfo.HasExt(DeviceExt::ShaderFloat16Int8) &&
         mDeviceInfo.HasExt(DeviceExt::_16BitStorage) &&
         mDeviceInfo.shaderFloat16Int8Features.shaderFloat16 == VK_TRUE &&
@@ -256,6 +260,23 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
         EnableFeature(Feature::BGRA8UnormStorage);
     }
 
+    bool norm16TextureFormatsSupported = true;
+    for (const auto& norm16Format :
+         {VK_FORMAT_R16_UNORM, VK_FORMAT_R16G16_UNORM, VK_FORMAT_R16G16B16A16_UNORM,
+          VK_FORMAT_R16_SNORM, VK_FORMAT_R16G16_SNORM, VK_FORMAT_R16G16B16A16_SNORM}) {
+        VkFormatProperties norm16Properties;
+        mVulkanInstance->GetFunctions().GetPhysicalDeviceFormatProperties(
+            mVkPhysicalDevice, norm16Format, &norm16Properties);
+        norm16TextureFormatsSupported &= IsSubset(
+            static_cast<VkFormatFeatureFlags>(VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
+                                              VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT |
+                                              VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT),
+            norm16Properties.optimalTilingFeatures);
+    }
+    if (norm16TextureFormatsSupported) {
+        EnableFeature(Feature::Norm16TextureFormats);
+    }
+
     // 32 bit float channel formats.
     VkFormatProperties r32Properties;
     VkFormatProperties rg32Properties;
@@ -274,14 +295,55 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
         EnableFeature(Feature::Float32Filterable);
     }
 
-#if DAWN_PLATFORM_IS(ANDROID) || DAWN_PLATFORM_IS(CHROMEOS)
-    // TODO(chromium:1258986): Precisely enable the feature by querying the device's format
-    // features.
-    EnableFeature(Feature::MultiPlanarFormats);
-#endif  // DAWN_PLATFORM_IS(ANDROID) || DAWN_PLATFORM_IS(CHROMEOS)
+    // Multiplanar formats.
+    constexpr VkFormat multiplanarFormats[] = {
+        VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,
+    };
+
+    bool allMultiplanarFormatsSupported = true;
+    for (const auto multiplanarFormat : multiplanarFormats) {
+        VkFormatProperties multiplanarProps;
+        mVulkanInstance->GetFunctions().GetPhysicalDeviceFormatProperties(
+            mVkPhysicalDevice, multiplanarFormat, &multiplanarProps);
+
+        if (!IsSubset(static_cast<VkFormatFeatureFlagBits>(
+                          VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
+                          VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
+                          VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT),
+                      multiplanarProps.optimalTilingFeatures)) {
+            allMultiplanarFormatsSupported = false;
+        }
+    }
+
+    if (allMultiplanarFormatsSupported) {
+        EnableFeature(Feature::DawnMultiPlanarFormats);
+        EnableFeature(Feature::MultiPlanarFormatExtendedUsages);
+    }
 
     EnableFeature(Feature::SurfaceCapabilities);
     EnableFeature(Feature::TransientAttachments);
+
+    // Enable ChromiumExperimentalSubgroups feature if:
+    // 1. Vulkan API version is 1.1 or later, and
+    // 2. subgroupSupportedStages includes compute stage bit, and
+    // 3. subgroupSupportedOperations includes basic and ballot bits, and
+    // 4. VK_EXT_subgroup_size_control extension is valid, and both subgroupSizeControl
+    //    and computeFullSubgroups is TRUE in VkPhysicalDeviceSubgroupSizeControlFeaturesEXT.
+    if ((mDeviceInfo.properties.apiVersion >= VK_API_VERSION_1_1) &&
+        (mDeviceInfo.subgroupProperties.supportedStages & VK_SHADER_STAGE_COMPUTE_BIT) &&
+        (mDeviceInfo.subgroupProperties.supportedOperations & VK_SUBGROUP_FEATURE_BALLOT_BIT) &&
+        (mDeviceInfo.HasExt(DeviceExt::SubgroupSizeControl)) &&
+        (mDeviceInfo.subgroupSizeControlFeatures.subgroupSizeControl == VK_TRUE) &&
+        (mDeviceInfo.subgroupSizeControlFeatures.computeFullSubgroups == VK_TRUE)) {
+        EnableFeature(Feature::ChromiumExperimentalSubgroups);
+    }
+    // Enable ChromiumExperimentalSubgroupUniformControlFlow if
+    // VK_KHR_shader_subgroup_uniform_control_flow is supported.
+    if (mDeviceInfo.HasExt(DeviceExt::ShaderSubgroupUniformControlFlow) &&
+        (mDeviceInfo.shaderSubgroupUniformControlFlowFeatures.shaderSubgroupUniformControlFlow ==
+         VK_TRUE)) {
+        EnableFeature(Feature::ChromiumExperimentalSubgroupUniformControlFlow);
+    }
 }
 
 MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits) {
@@ -462,22 +524,32 @@ bool PhysicalDevice::SupportsFeatureLevel(FeatureLevel) const {
     return true;
 }
 
+void PhysicalDevice::SetupBackendAdapterToggles(TogglesState* adpterToggles) const {}
+
 void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) const {
     // TODO(crbug.com/dawn/857): tighten this workaround when this issue is fixed in both
     // Vulkan SPEC and drivers.
     deviceToggles->Default(Toggle::UseTemporaryBufferInCompressedTextureToTextureCopy, true);
 
     if (IsAndroidQualcomm()) {
-        // dawn:1564: Clearing a depth/stencil buffer in a render pass and then sampling it in a
-        // compute pass in the same command buffer causes a crash on Qualcomm GPUs. To work around
-        // that bug, split the command buffer any time we can detect that situation.
-        deviceToggles->Default(
-            Toggle::VulkanSplitCommandBufferOnDepthStencilComputeSampleAfterRenderPass, true);
+        // dawn:1564, dawn:1897: Recording a compute pass after a render pass in the same command
+        // buffer frequently causes a crash on Qualcomm GPUs. To work around that bug, split the
+        // command buffer any time we are about to record a compute pass when a render pass has
+        // already been recorded.
+        deviceToggles->Default(Toggle::VulkanSplitCommandBufferOnComputePassAfterRenderPass, true);
 
         // dawn:1569: Qualcomm devices have a bug resolving into a non-zero level of an array
         // texture. Work around it by resolving into a single level texture and then copying into
         // the intended layer.
         deviceToggles->Default(Toggle::AlwaysResolveIntoZeroLevelAndLayer, true);
+    }
+
+    if (IsAndroidARM()) {
+        // dawn:1550: Resolving multiple color targets in a single pass fails on ARM GPUs. To
+        // work around the issue, passes that resolve to multiple color targets will instead be
+        // forced to store the multisampled targets and do the resolves as separate passes injected
+        // after the original one.
+        deviceToggles->Default(Toggle::ResolveMultipleAttachmentInSeparatePasses, true);
     }
 
     if (IsIntelMesa() && gpu_info::IsIntelGen12LP(GetVendorId(), GetDeviceId())) {
@@ -503,10 +575,12 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
         // Intel Mesa driver has a bug where vkCmdCopyQueryPoolResults fails to write overlapping
         // queries to a same buffer after the buffer is accessed by a compute shader with correct
         // resource barriers, which may caused by flush and memory coherency issue on Intel Gen12
-        // GPUs. Workaround for it to clear the buffer before vkCmdCopyQueryPoolResults.
-        // TODO(crbug.com/dawn/1823): Remove the workaround when the bug is fixed in Mesa driver.
+        // GPUs. Workaround for it to clear the buffer before vkCmdCopyQueryPoolResults on Mesa
+        // driver version < 23.1.3.
         const gpu_info::DriverVersion kBuggyDriverVersion = {21, 2, 0, 0};
-        if (gpu_info::CompareIntelMesaDriverVersion(GetDriverVersion(), kBuggyDriverVersion) >= 0) {
+        const gpu_info::DriverVersion kFixedDriverVersion = {23, 1, 3, 0};
+        if (gpu_info::CompareIntelMesaDriverVersion(GetDriverVersion(), kBuggyDriverVersion) >= 0 &&
+            gpu_info::CompareIntelMesaDriverVersion(GetDriverVersion(), kFixedDriverVersion) < 0) {
             deviceToggles->Default(Toggle::ClearBufferBeforeResolveQueries, true);
         }
     }
@@ -561,6 +635,15 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
     // By default try to skip robustness transform on textures according to the Vulkan extension
     // VK_EXT_robustness2.
     deviceToggles->Default(Toggle::VulkanUseImageRobustAccess2, true);
+    // The environment can only request to use VK_EXT_robustness2 when the extension is available.
+    // Override the decision if it is not applicable or robustBufferAccess2 is false.
+    if (!GetDeviceInfo().HasExt(DeviceExt::Robustness2) ||
+        GetDeviceInfo().robustness2Features.robustBufferAccess2 == VK_FALSE) {
+        deviceToggles->ForceSet(Toggle::VulkanUseBufferRobustAccess2, false);
+    }
+    // By default try to disable index clamping on the runtime-sized arrays on storage buffers in
+    // Tint robustness transform according to the Vulkan extension VK_EXT_robustness2.
+    deviceToggles->Default(Toggle::VulkanUseBufferRobustAccess2, true);
 }
 
 ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(AdapterBase* adapter,
@@ -579,6 +662,15 @@ MaybeError PhysicalDevice::ValidateFeatureSupportedWithTogglesImpl(
 bool PhysicalDevice::IsAndroidQualcomm() const {
 #if DAWN_PLATFORM_IS(ANDROID)
     return gpu_info::IsQualcomm(GetVendorId());
+#else
+    return false;
+#endif
+}
+
+// Android devices with ARM GPUs have known issues. (dawn:1550)
+bool PhysicalDevice::IsAndroidARM() const {
+#if DAWN_PLATFORM_IS(ANDROID)
+    return gpu_info::IsARM(GetVendorId());
 #else
     return false;
 #endif

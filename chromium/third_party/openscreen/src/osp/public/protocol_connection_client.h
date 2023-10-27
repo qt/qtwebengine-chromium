@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -44,9 +44,9 @@ class ProtocolConnectionClient {
    public:
     ConnectRequest();
     ConnectRequest(ProtocolConnectionClient* parent, uint64_t request_id);
-    ConnectRequest(ConnectRequest&& other);
+    ConnectRequest(ConnectRequest&& other) noexcept;
     ~ConnectRequest();
-    ConnectRequest& operator=(ConnectRequest&& other);
+    ConnectRequest& operator=(ConnectRequest&& other) noexcept;
 
     explicit operator bool() const { return request_id_; }
 

@@ -305,6 +305,11 @@ $bottom-tab-padding: 10px;
     }
     &[clickable] {
       cursor: pointer;
+      &:active {
+        background-color: hsl(206, 19%, 75%);
+        box-shadow: inset 1px 1px 4px #00000040;
+        transition: none;
+      }
     }
   }
 }
@@ -312,8 +317,10 @@ $bottom-tab-padding: 10px;
 .query-error {
   padding: 20px 10px;
   color: hsl(-10, 50%, 50%);
-  font-family: "Roboto Condensed", sans-serif;
+  font-family: "Roboto Mono", sans-serif;
+  font-size: 12px;
   font-weight: 300;
+  white-space: pre;
 }
 
 .dropdown {

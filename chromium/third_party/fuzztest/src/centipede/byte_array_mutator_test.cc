@@ -102,39 +102,24 @@ TEST(DictEntry, DictEntry) {
 
 TEST(CmpDictionary, CmpDictionary) {
   CmpDictionary dict;
-  ByteArray cmp_data = {
-      2,               // size
-      1,  2,           // a
-      3,  4,           // b
-      3,               // size
-      5,  6,  7,       // a
-      8,  9,  10,      // b
-      4,               // size
-      11, 12, 13, 14,  // a
-      15, 16, 17, 18,  // b
-      3,               // size
-      20, 21, 22,      // a
-      15, 16, 17,      // b
-      3,               // size
-      15, 16, 20,      // a
-      30, 40, 50,      // b
-  };
-
-  // malformed input - not enough bytes.
-  EXPECT_FALSE(dict.SetFromCmpData({3, 1, 2, 3}));
-  // malformed input - not enough bytes.
-  EXPECT_FALSE(dict.SetFromCmpData({3, 1, 2, 3, 4, 5}));
-  // malformed input - size is too large.
-  EXPECT_FALSE(dict.SetFromCmpData({
-      16,                                                     // size
-      0,  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  // a
-      0,  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  // b
-  }));
-  // malformed input - entry size is too small.
-  EXPECT_FALSE(dict.SetFromCmpData({1, 3, 4}));
-
-  // Good input.
-  EXPECT_TRUE(dict.SetFromCmpData(cmp_data));
+  ExecutionMetadata metadata{.cmp_data = {
+                                 2,               // size
+                                 1,  2,           // a
+                                 3,  4,           // b
+                                 3,               // size
+                                 5,  6,  7,       // a
+                                 8,  9,  10,      // b
+                                 4,               // size
+                                 11, 12, 13, 14,  // a
+                                 15, 16, 17, 18,  // b
+                                 3,               // size
+                                 20, 21, 22,      // a
+                                 15, 16, 17,      // b
+                                 3,               // size
+                                 15, 16, 20,      // a
+                                 30, 40, 50,      // b
+                             }};
+  EXPECT_TRUE(dict.SetFromMetadata(metadata));
 
   using S = ByteSpan;
 
@@ -217,7 +202,7 @@ void TestMutatorFn(ByteArrayMutator::Fn fn, const ByteArray &seed,
   EXPECT_TRUE(mutator.set_size_alignment(size_alignment));
   EXPECT_TRUE(mutator.set_max_len(max_len));
   mutator.AddToDictionary(dictionary);
-  mutator.SetCmpDictionary(cmp_data);
+  mutator.SetMetadata({.cmp_data = {cmp_data.begin(), cmp_data.end()}});
   absl::flat_hash_set<ByteArray> expected(expected_mutants.begin(),
                                           expected_mutants.end());
   absl::flat_hash_set<ByteArray> unexpected(unexpected_mutants.begin(),
@@ -633,6 +618,31 @@ TEST(ByteArrayMutator, OverwriteFromCmpDictionary) {
                 {/*args1*/ 2, 1, 2, 3, 4, /*args2*/ 3, 10, 20, 30, 40, 50, 60});
 }
 
+TEST(ByteArrayMutator, OverwriteFromCmpDictionaryAndSkipLongEntry) {
+  TestMutatorFn(
+      &ByteArrayMutator::OverwriteFromCmpDictionary,
+      {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19},
+      /*expected_mutants=*/
+      {{100, 101, 102, 103, 4,  5,  6,  7,  8,  9,
+        10,  11,  12,  13,  14, 15, 16, 17, 18, 19}},
+      /*unexpected_mutants=*/
+      {{100, 101, 102, 103, 104, 105, 106, 107, 108, 109,
+        110, 111, 112, 113, 114, 115, 116, 117, 118, 119}},
+      /*size_alignment=*/1,
+      /*max_len=*/std::numeric_limits<size_t>::max(),
+      /*dictionary=*/
+      {},
+      /*cmp_data=*/
+      {/*size*/ 20, /*lhs*/ 0, 1,   2,   3,   4,           5,
+       6,           7,         8,   9,   10,  11,          12,
+       13,          14,        15,  16,  17,  18,          19,
+       /*rhs*/ 100, 101,       102, 103, 104, 105,         106,
+       107,         108,       109, 110, 111, 112,         113,
+       114,         115,       116, 117, 118, 119,
+       /*size*/ 4,  /*lhs*/ 0, 1,   2,   3,   /*rhs*/ 100, 101,
+       102,         103});
+}
+
 TEST(ByteArrayMutator, InsertFromDictionary) {
   TestMutatorFn(&ByteArrayMutator::InsertFromDictionary, {1, 2, 3},
                 /*expected_mutants=*/
@@ -889,7 +899,8 @@ TEST(ByteArrayMutator, MutateManyWithAlignedInputs) {
       {0, 1, 2, 3, 4, 5, 6, 7},
       {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11},
   };
-  mutator.MutateMany(aligned_inputs, kNumMutantsToGenerate, mutants);
+  mutator.MutateMany(GetMutationInputRefsFromDataInputs(aligned_inputs),
+                     kNumMutantsToGenerate, mutants);
   EXPECT_EQ(mutants.size(), kNumMutantsToGenerate);
   for (const ByteArray &mutant : mutants) {
     EXPECT_EQ(mutant.size() % kSizeAlignment, 0);
@@ -918,7 +929,8 @@ TEST(ByteArrayMutator, MutateManyWithUnalignedInputs) {
       {0, 1, 2, 3, 4, 5, 6, 7, 8, 9},
       {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
   };
-  mutator.MutateMany(unaligned_inputs, kNumMutantsToGenerate, mutants);
+  mutator.MutateMany(GetMutationInputRefsFromDataInputs(unaligned_inputs),
+                     kNumMutantsToGenerate, mutants);
   EXPECT_EQ(mutants.size(), kNumMutantsToGenerate);
   for (const ByteArray &mutant : mutants) {
     if (mutant.size() % kSizeAlignment != 0) {
@@ -941,7 +953,8 @@ TEST(ByteArrayMutator, MutateManyWithMaxLen) {
       {0, 1, 2},
       {0, 1, 2, 3},
   };
-  mutator.MutateMany(inputs, kNumMutantsToGenerate, mutants);
+  mutator.MutateMany(GetMutationInputRefsFromDataInputs(inputs),
+                     kNumMutantsToGenerate, mutants);
   EXPECT_EQ(mutants.size(), kNumMutantsToGenerate);
 
   for (const ByteArray &mutant : mutants) {
@@ -960,7 +973,8 @@ TEST(ByteArrayMutator, MutateManyWithMaxLenWithStartingLargeInput) {
   const std::vector<ByteArray> large_input = {
       {0, 1, 2, 3, 4, 5, 6, 7}, {0}, {0, 1}, {0, 1, 2}, {0, 1, 2, 3},
   };
-  mutator.MutateMany(large_input, kNumMutantsToGenerate, mutants);
+  mutator.MutateMany(GetMutationInputRefsFromDataInputs(large_input),
+                     kNumMutantsToGenerate, mutants);
   EXPECT_EQ(mutants.size(), kNumMutantsToGenerate);
 
   for (const ByteArray &mutant : mutants) {

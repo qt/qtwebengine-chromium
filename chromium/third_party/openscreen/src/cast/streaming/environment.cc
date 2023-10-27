@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -64,6 +64,10 @@ void Environment::SetSocketSubscriber(SocketSubscriber* subscriber) {
   socket_subscriber_ = subscriber;
 }
 
+void Environment::SetStatisticsCollector(StatisticsCollector* collector) {
+  statistics_collector_ = collector;
+}
+
 void Environment::ConsumeIncomingPackets(PacketConsumer* packet_consumer) {
   OSP_DCHECK(packet_consumer);
   OSP_DCHECK(!packet_consumer_);
@@ -89,11 +93,14 @@ int Environment::GetMaxPacketSize() const {
   }
 }
 
-void Environment::SendPacket(ByteView packet) {
+void Environment::SendPacket(ByteView packet, PacketMetadata metadata) {
   OSP_DCHECK(remote_endpoint_.address);
   OSP_DCHECK_NE(remote_endpoint_.port, 0);
   if (socket_) {
     socket_->SendMessage(packet.data(), packet.size(), remote_endpoint_);
+  }
+  if (statistics_collector_) {
+    statistics_collector_->CollectPacketSentEvent(packet, metadata);
   }
 }
 

@@ -34,6 +34,7 @@ struct Exception {
                              // illegal chars
   };
   bool Ok() const { return value == kSuccess; }
+  explicit operator bool() const { return Ok(); }
   bool Raised() const { return !Ok(); }
   bool Raised(Value val) const { return value == val; }
   Value value{kFailed};
@@ -104,6 +105,26 @@ class ExceptionOr {
 
  private:
   T result_{};
+  Exception exception_{Exception::kFailed};
+};
+
+template <>
+class ExceptionOr<bool> {
+ public:
+  explicit ExceptionOr() = default;
+  explicit ExceptionOr(bool result)
+      : exception_{result ? Exception::kSuccess : Exception::kFailed} {}
+  explicit ExceptionOr(Exception::Value exception) : exception_{exception} {}
+  explicit ExceptionOr(Exception exception) : exception_{exception} {}
+
+  bool ok() const { return exception_.Ok(); }
+  explicit operator bool() const { return ok(); }
+  bool result() const { return ok(); }
+  Exception::Value exception() const { return exception_.value; }
+  bool GetResult() const { return ok(); }
+  Exception GetException() const { return exception_; }
+
+ private:
   Exception exception_{Exception::kFailed};
 };
 

@@ -137,11 +137,20 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     EnableFeature(Feature::DepthClipControl);
     EnableFeature(Feature::TextureCompressionBC);
     EnableFeature(Feature::SurfaceCapabilities);
+    EnableFeature(Feature::D3D11MultithreadProtected);
+    EnableFeature(Feature::MSAARenderToSingleSampled);
+    EnableFeature(Feature::DualSourceBlending);
+    EnableFeature(Feature::Norm16TextureFormats);
 
     // To import multi planar textures, we need to at least tier 2 support.
     if (mDeviceInfo.supportsSharedResourceCapabilityTier2) {
-        EnableFeature(Feature::MultiPlanarFormats);
+        EnableFeature(Feature::DawnMultiPlanarFormats);
+        EnableFeature(Feature::MultiPlanarFormatP010);
     }
+
+    EnableFeature(Feature::SharedTextureMemoryDXGISharedHandle);
+    EnableFeature(Feature::SharedTextureMemoryD3D11Texture2D);
+    EnableFeature(Feature::SharedFenceDXGISharedHandle);
 }
 
 MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits) {
@@ -163,8 +172,6 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
                                     ? D3D11_1_UAV_SLOT_COUNT
                                     : D3D11_PS_CS_UAV_REGISTER_COUNT;
     mUAVSlotCount = maxUAVsAllStages;
-    ASSERT(maxUAVsAllStages / 4 > limits->v1.maxStorageTexturesPerShaderStage);
-    ASSERT(maxUAVsAllStages / 4 > limits->v1.maxStorageBuffersPerShaderStage);
     uint32_t maxUAVsPerStage = maxUAVsAllStages / 2;
 
     // Reserve one slot for builtin constants.
@@ -174,14 +181,15 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
 
     // Allocate half of the UAVs to storage buffers, and half to storage textures.
     limits->v1.maxStorageTexturesPerShaderStage = maxUAVsPerStage / 2;
-    limits->v1.maxStorageBuffersPerShaderStage = maxUAVsPerStage - maxUAVsPerStage / 2;
+    limits->v1.maxStorageBuffersPerShaderStage = maxUAVsPerStage / 2;
     limits->v1.maxSampledTexturesPerShaderStage = D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT;
     limits->v1.maxSamplersPerShaderStage = D3D11_COMMONSHADER_SAMPLER_SLOT_COUNT;
     limits->v1.maxColorAttachments = D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT;
 
-    // TODO(dawn:1721): support dynamic uniform buffers and storage buffers?
-    limits->v1.maxDynamicUniformBuffersPerPipelineLayout = 0;
-    limits->v1.maxDynamicStorageBuffersPerPipelineLayout = 0;
+    limits->v1.maxDynamicUniformBuffersPerPipelineLayout =
+        limits->v1.maxUniformBuffersPerShaderStage;
+    limits->v1.maxDynamicStorageBuffersPerPipelineLayout =
+        limits->v1.maxStorageBuffersPerShaderStage;
 
     // https://docs.microsoft.com/en-us/windows/win32/direct3dhlsl/sm5-attributes-numthreads
     limits->v1.maxComputeWorkgroupSizeX = D3D11_CS_THREAD_GROUP_MAX_X;
@@ -223,13 +231,15 @@ MaybeError PhysicalDevice::ValidateFeatureSupportedWithTogglesImpl(
     return {};
 }
 
+void PhysicalDevice::SetupBackendAdapterToggles(TogglesState* adpterToggles) const {
+    // D3D11 must use FXC, not DXC.
+    adpterToggles->ForceSet(Toggle::UseDXC, false);
+}
+
 void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) const {
     // D3D11 can only clear RTV with float values.
     deviceToggles->Default(Toggle::ApplyClearBigIntegerColorValueWithDraw, true);
-    // TODO(dawn:1848): Support depth-stencil texture write.
     deviceToggles->Default(Toggle::UseBlitForBufferToStencilTextureCopy, true);
-    // D3D11 must use FXC, not DXC.
-    deviceToggles->ForceSet(Toggle::UseDXC, false);
 }
 
 ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(AdapterBase* adapter,

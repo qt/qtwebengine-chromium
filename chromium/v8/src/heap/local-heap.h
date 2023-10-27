@@ -18,6 +18,7 @@
 #include "src/handles/persistent-handles.h"
 #include "src/heap/concurrent-allocator.h"
 #include "src/heap/gc-callbacks.h"
+
 namespace v8 {
 namespace internal {
 
@@ -38,8 +39,7 @@ class Safepoint;
 //            some time or for blocking operations like locking a mutex.
 class V8_EXPORT_PRIVATE LocalHeap {
  public:
-  using GCEpilogueCallback = void(LocalIsolate*, GCType, GCCallbackFlags,
-                                  void*);
+  using GCEpilogueCallback = void(void*);
 
   explicit LocalHeap(
       Heap* heap, ThreadKind kind,
@@ -114,10 +114,6 @@ class V8_EXPORT_PRIVATE LocalHeap {
     return shared_old_space_allocator_.get();
   }
 
-  void RegisterCodeObject(Handle<Code> code) {
-    heap()->RegisterCodeObject(code);
-  }
-
   // Mark/Unmark linear allocation areas black. Used for black allocation.
   void MarkLinearAllocationAreaBlack();
   void UnmarkLinearAllocationArea();
@@ -157,6 +153,14 @@ class V8_EXPORT_PRIVATE LocalHeap {
       AllocationOrigin origin = AllocationOrigin::kRuntime,
       AllocationAlignment alignment = kTaggedAligned);
 
+  // Allocate an uninitialized object.
+  enum AllocationRetryMode { kLightRetry, kRetryOrFail };
+  template <AllocationRetryMode mode>
+  Tagged<HeapObject> AllocateRawWith(
+      int size_in_bytes, AllocationType allocation,
+      AllocationOrigin origin = AllocationOrigin::kRuntime,
+      AllocationAlignment alignment = kTaggedAligned);
+
   // Allocates an uninitialized object and crashes when object
   // cannot be allocated.
   V8_WARN_UNUSED_RESULT inline Address AllocateRawOrFail(
@@ -164,11 +168,12 @@ class V8_EXPORT_PRIVATE LocalHeap {
       AllocationOrigin origin = AllocationOrigin::kRuntime,
       AllocationAlignment alignment = kTaggedAligned);
 
-  void NotifyObjectSizeChange(HeapObject object, int old_size, int new_size,
+  void NotifyObjectSizeChange(Tagged<HeapObject> object, int old_size,
+                              int new_size,
                               ClearRecordedSlots clear_recorded_slots);
 
   bool is_main_thread() const { return is_main_thread_; }
-  bool is_in_trampoline() const { return is_in_trampoline_; }
+  bool is_in_trampoline() const { return heap_->stack().IsMarkerSet(); }
   bool deserialization_complete() const {
     return heap_->deserialization_complete();
   }
@@ -179,10 +184,8 @@ class V8_EXPORT_PRIVATE LocalHeap {
   // resumes. The callback must not allocate or make any other calls that
   // can trigger GC.
   void AddGCEpilogueCallback(GCEpilogueCallback* callback, void* data,
-                             GCType gc_type = static_cast<v8::GCType>(
-                                 GCType::kGCTypeMarkSweepCompact |
-                                 GCType::kGCTypeScavenge |
-                                 GCType::kGCTypeMinorMarkCompact));
+                             GCCallbacksInSafepoint::GCType gc_type =
+                                 GCCallbacksInSafepoint::GCType::kAll);
   void RemoveGCEpilogueCallback(GCEpilogueCallback* callback, void* data);
 
   // Weakens StrongDescriptorArray objects into regular DescriptorArray objects.
@@ -297,17 +300,14 @@ class V8_EXPORT_PRIVATE LocalHeap {
 
   // Slow path of allocation that performs GC and then retries allocation in
   // loop.
-  Address PerformCollectionAndAllocateAgain(int object_size,
-                                            AllocationType type,
-                                            AllocationOrigin origin,
-                                            AllocationAlignment alignment);
+  AllocationResult PerformCollectionAndAllocateAgain(
+      int object_size, AllocationType type, AllocationOrigin origin,
+      AllocationAlignment alignment);
 
   bool IsMainThreadOfClientIsolate() const;
 
   template <typename Callback>
   V8_INLINE void ExecuteWithStackMarker(Callback callback);
-  template <typename Callback>
-  V8_INLINE void ExecuteWithStackMarkerReentrant(Callback callback);
   template <typename Callback>
   V8_INLINE void ExecuteWithStackMarkerIfNeeded(Callback callback);
 
@@ -340,8 +340,8 @@ class V8_EXPORT_PRIVATE LocalHeap {
 
   void EnsurePersistentHandles();
 
-  void InvokeGCEpilogueCallbacksInSafepoint(GCType gc_type,
-                                            GCCallbackFlags flags);
+  void InvokeGCEpilogueCallbacksInSafepoint(
+      GCCallbacksInSafepoint::GCType gc_type);
 
   void SetUpMainThread();
   void SetUp();
@@ -349,7 +349,6 @@ class V8_EXPORT_PRIVATE LocalHeap {
 
   Heap* heap_;
   bool is_main_thread_;
-  bool is_in_trampoline_;
 
   AtomicThreadState state_;
 
@@ -363,7 +362,7 @@ class V8_EXPORT_PRIVATE LocalHeap {
   std::unique_ptr<PersistentHandles> persistent_handles_;
   std::unique_ptr<MarkingBarrier> marking_barrier_;
 
-  GCCallbacks<LocalIsolate, DisallowGarbageCollection> gc_epilogue_callbacks_;
+  GCCallbacksInSafepoint gc_epilogue_callbacks_;
 
   std::unique_ptr<ConcurrentAllocator> old_space_allocator_;
   std::unique_ptr<ConcurrentAllocator> code_space_allocator_;

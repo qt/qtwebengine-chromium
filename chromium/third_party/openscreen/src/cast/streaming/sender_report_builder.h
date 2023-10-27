@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,11 +9,11 @@
 
 #include <utility>
 
-#include "absl/types/span.h"
 #include "cast/streaming/rtcp_common.h"
 #include "cast/streaming/rtcp_session.h"
 #include "cast/streaming/rtp_defines.h"
 #include "platform/api/time.h"
+#include "platform/base/span.h"
 
 namespace openscreen {
 namespace cast {
@@ -28,9 +28,9 @@ class SenderReportBuilder {
   // |buffer| (which must be kRequiredBufferSize in size). Returns the subspan
   // of |buffer| that contains the result and a StatusReportId the receiver
   // might use in its own reports to reference this specific report.
-  std::pair<absl::Span<uint8_t>, StatusReportId> BuildPacket(
+  std::pair<ByteBuffer, StatusReportId> BuildPacket(
       const RtcpSenderReport& sender_report,
-      absl::Span<uint8_t> buffer) const;
+      ByteBuffer buffer) const;
 
   // Returns the approximate reference time from a recently-built Sender Report,
   // based on the given |report_id| and maximum possible reference time.

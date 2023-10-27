@@ -6,6 +6,7 @@
 #define V8_DEBUG_DEBUG_H_
 
 #include <memory>
+#include <unordered_map>
 #include <vector>
 
 #include "src/base/enum-set.h"
@@ -19,7 +20,6 @@
 #include "src/handles/handles.h"
 #include "src/objects/debug-objects.h"
 #include "src/objects/shared-function-info.h"
-#include "src/utils/identity-map.h"
 
 namespace v8 {
 namespace internal {
@@ -91,7 +91,7 @@ class BreakLocation {
 
   debug::BreakLocationType type() const;
 
-  JSGeneratorObject GetGeneratorObjectForSuspendedFrame(
+  Tagged<JSGeneratorObject> GetGeneratorObjectForSuspendedFrame(
       JavaScriptFrame* frame) const;
 
  private:
@@ -178,29 +178,24 @@ class V8_EXPORT_PRIVATE BreakIterator {
 //
 // DebugInfos are held strongly through global handles.
 //
-// TODO(jgruber): If we had a map-like data structure that supports fast
-// deletion-during-iteration, the list-like part of this data structure could
-// be removed. However, that's a no-go with IdentityMap.
+// TODO(jgruber): Now that we use an unordered_map as the map-like structure,
+// which supports deletion-during-iteration, the list-like part of this data
+// structure could be removed.
 class DebugInfoCollection final {
   using HandleLocation = Address*;
+  using SFIUniqueId = uint32_t;  // The type of SFI::unique_id.
 
  public:
-  explicit DebugInfoCollection(Isolate* isolate)
-      : isolate_(isolate), map_(isolate->heap()) {}
+  explicit DebugInfoCollection(Isolate* isolate) : isolate_(isolate) {}
 
-  void Insert(SharedFunctionInfo sfi, DebugInfo debug_info);
+  void Insert(Tagged<SharedFunctionInfo> sfi, Tagged<DebugInfo> debug_info);
 
-  bool Contains(SharedFunctionInfo sfi) const;
-  MaybeHandle<DebugInfo> Find(SharedFunctionInfo sfi) const;
+  bool Contains(Tagged<SharedFunctionInfo> sfi) const;
+  base::Optional<DebugInfo> Find(Tagged<SharedFunctionInfo> sfi) const;
 
-  void DeleteSlow(SharedFunctionInfo sfi);
+  void DeleteSlow(Tagged<SharedFunctionInfo> sfi);
 
   size_t Size() const { return list_.size(); }
-
-  void TearDown() {
-    list_.clear();
-    map_.Clear();
-  }
 
   class Iterator final {
    public:
@@ -211,10 +206,10 @@ class DebugInfoCollection final {
       return index_ < static_cast<int>(collection_->list_.size());
     }
 
-    Handle<DebugInfo> Next() const {
+    Tagged<DebugInfo> Next() const {
       DCHECK_GE(index_, 0);
       if (!HasNext()) return {};
-      return collection_->EntryAsHandle(index_);
+      return collection_->EntryAsDebugInfo(index_);
     }
 
     void Advance() {
@@ -236,36 +231,12 @@ class DebugInfoCollection final {
   };
 
  private:
-  Handle<DebugInfo> EntryAsHandle(size_t index) const {
-    DCHECK_LT(index, list_.size());
-    return Handle<DebugInfo>(list_[index]);
-  }
+  V8_EXPORT_PRIVATE Tagged<DebugInfo> EntryAsDebugInfo(size_t index) const;
   void DeleteIndex(size_t index);
 
   Isolate* const isolate_;
   std::vector<HandleLocation> list_;
-  IdentityMap<HandleLocation, FreeStoreAllocationPolicy> map_;
-};
-
-class DebugFeatureTracker {
- public:
-  enum Feature {
-    kActive = 1,
-    kBreakPoint = 2,
-    kStepping = 3,
-    kHeapSnapshot = 4,
-    kAllocationTracking = 5,
-    kProfiler = 6,
-    kLiveEdit = 7,
-  };
-
-  explicit DebugFeatureTracker(Isolate* isolate)
-      : isolate_(isolate), bitfield_(0) {}
-  void Track(Feature feature);
-
- private:
-  Isolate* isolate_;
-  uint32_t bitfield_;
+  std::unordered_map<SFIUniqueId, HandleLocation> map_;
 };
 
 // This class contains the debugger support. The main purpose is to handle
@@ -285,7 +256,7 @@ class V8_EXPORT_PRIVATE Debug {
                     debug::BreakReasons break_reasons = {});
   debug::DebugDelegate::ActionAfterInstrumentation OnInstrumentationBreak();
 
-  base::Optional<Object> OnThrow(Handle<Object> exception)
+  base::Optional<Tagged<Object>> OnThrow(Handle<Object> exception)
       V8_WARN_UNUSED_RESULT;
   void OnPromiseReject(Handle<Object> promise, Handle<Object> value);
   void OnCompileError(Handle<Script> script);
@@ -300,6 +271,13 @@ class V8_EXPORT_PRIVATE Debug {
 
   // Scripts handling.
   Handle<FixedArray> GetLoadedScripts();
+
+  // DebugInfo accessors.
+  base::Optional<DebugInfo> TryGetDebugInfo(Tagged<SharedFunctionInfo> sfi);
+  bool HasDebugInfo(Tagged<SharedFunctionInfo> sfi);
+  bool HasCoverageInfo(Tagged<SharedFunctionInfo> sfi);
+  bool HasBreakInfo(Tagged<SharedFunctionInfo> sfi);
+  bool BreakAtEntry(Tagged<SharedFunctionInfo> sfi);
 
   // Break point handling.
   enum BreakPointKind { kRegular, kInstrumentation };
@@ -344,7 +322,7 @@ class V8_EXPORT_PRIVATE Debug {
   void SetBreakOnNextFunctionCall();
   void ClearBreakOnNextFunctionCall();
 
-  void DiscardBaselineCode(SharedFunctionInfo shared);
+  void DiscardBaselineCode(Tagged<SharedFunctionInfo> shared);
   void DiscardAllBaselineCode();
 
   void DeoptimizeFunction(Handle<SharedFunctionInfo> shared);
@@ -449,8 +427,10 @@ class V8_EXPORT_PRIVATE Debug {
   StackFrameId break_frame_id() { return thread_local_.break_frame_id_; }
 
   Handle<Object> return_value_handle();
-  Object return_value() { return thread_local_.return_value_; }
-  void set_return_value(Object value) { thread_local_.return_value_ = value; }
+  Tagged<Object> return_value() { return thread_local_.return_value_; }
+  void set_return_value(Tagged<Object> value) {
+    thread_local_.return_value_ = value;
+  }
 
   // Support for embedding into generated code.
   Address is_active_address() { return reinterpret_cast<Address>(&is_active_); }
@@ -488,8 +468,6 @@ class V8_EXPORT_PRIVATE Debug {
 
   inline bool break_disabled() const { return break_disabled_; }
 
-  DebugFeatureTracker* feature_tracker() { return &feature_tracker_; }
-
   // For functions in which we cannot set a break point, use a canonical
   // source position for break points.
   static const int kBreakAtEntryPosition = 0;
@@ -512,13 +490,6 @@ class V8_EXPORT_PRIVATE Debug {
   void UpdateState();
   void UpdateHookOnFunctionCall();
   void Unload();
-
-  void TearDown() {
-    Unload();
-    // Must be done explicitly prior to Heap::TearDown to avoid double-freeing
-    // the registered strong roots.
-    debug_infos_.TearDown();
-  }
 
   // Return the number of virtual frames below debugger entry.
   int CurrentFrameCount();
@@ -622,9 +593,6 @@ class V8_EXPORT_PRIVATE Debug {
   std::unique_ptr<TemporaryObjectsTracker> temporary_objects_;
 
   Handle<RegExpMatchInfo> regexp_match_info_;
-
-  // Used to collect histogram data on debugger feature usage.
-  DebugFeatureTracker feature_tracker_;
 
   // Per-thread data.
   class ThreadLocal {

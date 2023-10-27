@@ -24,6 +24,7 @@ cc_library(
         "//internal:__pkg__",
         "//internal:__subpackages__",
         "//location/nearby/cpp/sharing:__subpackages__",
+        "//third_party/nearby/sharing:__subpackages__",
     ],
     deps = [
         "//internal/platform:types",
@@ -50,13 +51,11 @@ cc_library(
         "//internal:__pkg__",
         "//internal:__subpackages__",
         "//location/nearby/cpp/sharing:__subpackages__",
+        "//third_party/nearby/sharing:__subpackages__",
     ],
     deps = [
         ":types",
-        "//internal/flags:nearby_flags",
-        "//internal/platform:logging",
         "//internal/platform:types",
-        "//internal/platform/flags:platform_flags",
         "//internal/platform/implementation:platform",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/container:flat_hash_map",

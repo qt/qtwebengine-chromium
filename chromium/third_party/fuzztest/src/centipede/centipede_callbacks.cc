@@ -24,65 +24,48 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
 #include "absl/strings/str_split.h"
+#include "./centipede/binary_info.h"
 #include "./centipede/command.h"
 #include "./centipede/control_flow.h"
 #include "./centipede/defs.h"
-#include "./centipede/execution_request.h"
-#include "./centipede/execution_result.h"
 #include "./centipede/logging.h"
+#include "./centipede/runner_request.h"
+#include "./centipede/runner_result.h"
 #include "./centipede/util.h"
 
 namespace centipede {
 
 void CentipedeCallbacks::PopulateBinaryInfo(BinaryInfo &binary_info) {
-  // Running in main thread, create our own temp dir.
-  if (!std::filesystem::exists(temp_dir_)) {
-    CreateLocalDirRemovedAtExit(temp_dir_);
-  }
-
-  // Load PC table.
-  std::string pc_table_path =
-      std::filesystem::path(temp_dir_).append("pc_table");
-  binary_info.pc_table = GetPcTableFromBinary(
-      env_.coverage_binary, env_.objdump_path, pc_table_path,
-      &binary_info.uses_legacy_trace_pc_instrumentation);
+  binary_info.InitializeFromSanCovBinary(
+      env_.coverage_binary, env_.objdump_path, env_.symbolizer_path, temp_dir_);
+  // Check the PC table.
   if (binary_info.pc_table.empty()) {
     if (env_.require_pc_table) {
-      LOG(INFO) << "Could not get PCTable, exiting (override with "
-                   "--require_pc_table=0)";
+      LOG(ERROR) << "Could not get PC table; exiting (override with "
+                    "--require_pc_table=false)";
       exit(EXIT_FAILURE);
     }
-    LOG(INFO)
-        << "Could not get PCTable, CFTable and debug symbols will not be used";
+    LOG(WARNING) << "Could not get PC table; CF table and debug symbols will "
+                    "not be used";
     return;
   }
-  // Load CF table.
-  std::string cf_table_path =
-      std::filesystem::path(temp_dir_).append("cf_table");
-  binary_info.cf_table =
-      GetCfTableFromBinary(env_.coverage_binary, cf_table_path);
+  // Check CF table.
   if (binary_info.cf_table.empty()) {
-    LOG(INFO) << "Could not get CFTable from " << env_.coverage_binary
-              << "\nThe binary should be built with clang 16 and with "
-                 "-fsanitize-coverage=control-flow flag.";
+    LOG(WARNING)
+        << "Could not get CF table; binary should be built with Clang 16 (or "
+           "later) and with -fsanitize-coverage=control-flow flag";
   } else {
-    // Construct call-graph and cfg using loaded cf_table.
-    binary_info.control_flow_graph.InitializeControlFlowGraph(
-        binary_info.cf_table, binary_info.pc_table);
-
-    binary_info.call_graph.InitializeCallGraph(binary_info.cf_table,
-                                               binary_info.pc_table);
+    // Construct call-graph and cfg using loaded cf_table and pc_table.
+    // TODO(b/284044008): These two are currently used only inside
+    //  `CoverageFrontier`, so we can mask the bug's failure by conditionally
+    //  initilizing them like this.
+    if (env_.use_coverage_frontier) {
+      binary_info.control_flow_graph.InitializeControlFlowGraph(
+          binary_info.cf_table, binary_info.pc_table);
+      binary_info.call_graph.InitializeCallGraph(binary_info.cf_table,
+                                                 binary_info.pc_table);
+    }
   }
-
-  // Load Symbols.
-  std::vector<std::string> coverage_binary_argv = absl::StrSplit(
-      env_.coverage_binary, absl::ByAnyChar{" \t\n"}, absl::SkipWhitespace{});
-  CHECK(!coverage_binary_argv.empty());
-  std::string binary_name = coverage_binary_argv[0];
-  std::string tmp1 = std::filesystem::path(temp_dir_).append("sym-tmp1");
-  std::string tmp2 = std::filesystem::path(temp_dir_).append("sym-tmp2");
-  binary_info.symbols.GetSymbolsFromBinary(binary_info.pc_table, binary_name,
-                                           env_.symbolizer_path, tmp1, tmp2);
 }
 
 std::string CentipedeCallbacks::ConstructRunnerFlags(
@@ -100,8 +83,7 @@ std::string CentipedeCallbacks::ConstructRunnerFlags(
     if (env_.use_pc_features) flags.emplace_back("use_pc_features");
     if (env_.use_counter_features) flags.emplace_back("use_counter_features");
     if (env_.use_cmp_features) flags.emplace_back("use_cmp_features");
-    if (env_.use_callstack_features)
-      flags.emplace_back("use_callstack_features");
+    flags.emplace_back(absl::StrCat("callstack_level=", env_.callstack_level));
     if (env_.use_auto_dictionary) flags.emplace_back("use_auto_dictionary");
     if (env_.use_dataflow_features) flags.emplace_back("use_dataflow_features");
   }
@@ -127,7 +109,8 @@ Command &CentipedeCallbacks::GetOrCreateCommandForBinary(
                 binary) != env_.extra_binaries.end();
 
   std::vector<std::string> env = {ConstructRunnerFlags(
-      absl::StrCat(":shmem:arg1=", shmem_name1_, ":arg2=", shmem_name2_,
+      absl::StrCat(":shmem:arg1=", inputs_blobseq_.path(),
+                   ":arg2=", outputs_blobseq_.path(),
                    ":failure_description_path=", failure_description_path_,
                    ":"),
       disable_coverage)};
@@ -154,6 +137,7 @@ Command &CentipedeCallbacks::GetOrCreateCommandForBinary(
 int CentipedeCallbacks::ExecuteCentipedeSancovBinaryWithShmem(
     std::string_view binary, const std::vector<ByteArray> &inputs,
     BatchResult &batch_result) {
+  auto start_time = absl::Now();
   batch_result.ClearAndResize(inputs.size());
 
   // Reset the blobseqs.
@@ -169,7 +153,7 @@ int CentipedeCallbacks::ExecuteCentipedeSancovBinaryWithShmem(
   } else {
     // Feed the inputs to inputs_blobseq_.
     num_inputs_written =
-        execution_request::RequestExecution(inputs, inputs_blobseq_);
+        runner_request::RequestExecution(inputs, inputs_blobseq_);
   }
 
   if (num_inputs_written != inputs.size()) {
@@ -219,18 +203,23 @@ int CentipedeCallbacks::ExecuteCentipedeSancovBinaryWithShmem(
     // failed execution.
     std::filesystem::remove(failure_description_path_);
   }
+  VLOG(1) << __FUNCTION__ << " took " << (absl::Now() - start_time);
   return retval;
 }
 
 // See also: MutateInputsFromShmem().
 bool CentipedeCallbacks::MutateViaExternalBinary(
-    std::string_view binary, const std::vector<ByteArray> &inputs,
+    std::string_view binary, const std::vector<MutationInputRef> &inputs,
     std::vector<ByteArray> &mutants) {
+  CHECK(!env_.has_input_wildcards)
+      << "Standalone binary does not support custom mutator";
+
+  auto start_time = absl::Now();
   inputs_blobseq_.Reset();
   outputs_blobseq_.Reset();
 
-  size_t num_inputs_written = execution_request::RequestMutation(
-      mutants.size(), inputs, inputs_blobseq_);
+  size_t num_inputs_written =
+      runner_request::RequestMutation(mutants.size(), inputs, inputs_blobseq_);
   LOG_IF(INFO, num_inputs_written != inputs.size())
       << VV(num_inputs_written) << VV(inputs.size());
 
@@ -249,6 +238,7 @@ bool CentipedeCallbacks::MutateViaExternalBinary(
     mutants[i].assign(blob.data, blob.data + blob.size);
   }
   outputs_blobseq_.ReleaseSharedMemory();  // Outputs are already consumed.
+  VLOG(1) << __FUNCTION__ << " took " << (absl::Now() - start_time);
   return retval == 0;
 }
 
@@ -261,7 +251,9 @@ size_t CentipedeCallbacks::LoadDictionary(std::string_view dictionary_path) {
   ReadFromLocalFile(dictionary_path, text);
   std::vector<ByteArray> entries;
   if (ParseAFLDictionary(text, entries) && !entries.empty()) {
-    byte_array_mutator_.AddToDictionary(entries);
+    env_.use_legacy_default_mutator
+        ? byte_array_mutator_.AddToDictionary(entries)
+        : fuzztest_mutator_.AddToDictionary(entries);
     LOG(INFO) << "Loaded " << entries.size()
               << " dictionary entries from AFL/libFuzzer dictionary "
               << dictionary_path;
@@ -273,7 +265,9 @@ size_t CentipedeCallbacks::LoadDictionary(std::string_view dictionary_path) {
   UnpackBytesFromAppendFile(packed_dictionary, &unpacked_dictionary);
   CHECK(!unpacked_dictionary.empty())
       << "Empty or corrupt dictionary file: " << dictionary_path;
-  byte_array_mutator_.AddToDictionary(unpacked_dictionary);
+  env_.use_legacy_default_mutator
+      ? byte_array_mutator_.AddToDictionary(unpacked_dictionary)
+      : fuzztest_mutator_.AddToDictionary(unpacked_dictionary);
   LOG(INFO) << "Loaded " << unpacked_dictionary.size()
             << " dictionary entries from " << dictionary_path;
   return unpacked_dictionary.size();

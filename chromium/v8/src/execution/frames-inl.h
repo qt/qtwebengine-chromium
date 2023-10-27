@@ -127,7 +127,7 @@ inline ExitFrame::ExitFrame(StackFrameIteratorBase* iterator)
 inline BuiltinExitFrame::BuiltinExitFrame(StackFrameIteratorBase* iterator)
     : ExitFrame(iterator) {}
 
-inline Object BuiltinExitFrame::receiver_slot_object() const {
+inline Tagged<Object> BuiltinExitFrame::receiver_slot_object() const {
   // The receiver is the first argument on the frame.
   // fp[1]: return address.
   // ------- fixed extra builtin arguments -------
@@ -141,17 +141,17 @@ inline Object BuiltinExitFrame::receiver_slot_object() const {
   return Object(base::Memory<Address>(fp() + receiverOffset));
 }
 
-inline Object BuiltinExitFrame::argc_slot_object() const {
+inline Tagged<Object> BuiltinExitFrame::argc_slot_object() const {
   return Object(
       base::Memory<Address>(fp() + BuiltinExitFrameConstants::kArgcOffset));
 }
 
-inline Object BuiltinExitFrame::target_slot_object() const {
+inline Tagged<Object> BuiltinExitFrame::target_slot_object() const {
   return Object(
       base::Memory<Address>(fp() + BuiltinExitFrameConstants::kTargetOffset));
 }
 
-inline Object BuiltinExitFrame::new_target_slot_object() const {
+inline Tagged<Object> BuiltinExitFrame::new_target_slot_object() const {
   return Object(base::Memory<Address>(
       fp() + BuiltinExitFrameConstants::kNewTargetOffset));
 }
@@ -170,6 +170,10 @@ inline FullObjectSlot ApiCallbackExitFrame::argc_slot() const {
   return FullObjectSlot(fp() + ApiCallbackExitFrameConstants::kArgcOffset);
 }
 
+inline FullObjectSlot ApiCallbackExitFrame::context_slot() const {
+  return FullObjectSlot(fp() + ApiCallbackExitFrameConstants::kContextOffset);
+}
+
 inline FullObjectSlot ApiCallbackExitFrame::target_slot() const {
   return FullObjectSlot(fp() + ApiCallbackExitFrameConstants::kTargetOffset);
 }
@@ -181,11 +185,11 @@ inline FullObjectSlot ApiCallbackExitFrame::new_target_slot() const {
 inline CommonFrame::CommonFrame(StackFrameIteratorBase* iterator)
     : StackFrame(iterator) {}
 
-inline Object CommonFrame::GetExpression(int index) const {
+inline Tagged<Object> CommonFrame::GetExpression(int index) const {
   return Object(base::Memory<Address>(GetExpressionAddress(index)));
 }
 
-inline void CommonFrame::SetExpression(int index, Object value) {
+inline void CommonFrame::SetExpression(int index, Tagged<Object> value) {
   base::Memory<Address>(GetExpressionAddress(index)) = value.ptr();
 }
 
@@ -201,7 +205,8 @@ inline Address CommonFrame::caller_pc() const {
 inline bool CommonFrameWithJSLinkage::IsConstructFrame(Address fp) {
   intptr_t frame_type =
       base::Memory<intptr_t>(fp + TypedFrameConstants::kFrameTypeOffset);
-  return frame_type == StackFrame::TypeToMarker(StackFrame::CONSTRUCT);
+  return frame_type == StackFrame::TypeToMarker(StackFrame::CONSTRUCT) ||
+         frame_type == StackFrame::TypeToMarker(StackFrame::FAST_CONSTRUCT);
 }
 
 inline JavaScriptFrame::JavaScriptFrame(StackFrameIteratorBase* iterator)
@@ -219,11 +224,11 @@ inline int CommonFrameWithJSLinkage::GetActualArgumentCount() const {
   return 0;
 }
 
-inline void JavaScriptFrame::set_receiver(Object value) {
+inline void JavaScriptFrame::set_receiver(Tagged<Object> value) {
   base::Memory<Address>(GetParameterSlot(-1)) = value.ptr();
 }
 
-inline Object JavaScriptFrame::function_slot_object() const {
+inline Tagged<Object> JavaScriptFrame::function_slot_object() const {
   const int offset = StandardFrameConstants::kFunctionOffset;
   return Object(base::Memory<Address>(fp() + offset));
 }
@@ -292,6 +297,9 @@ inline InternalFrame::InternalFrame(StackFrameIteratorBase* iterator)
     : TypedFrame(iterator) {}
 
 inline ConstructFrame::ConstructFrame(StackFrameIteratorBase* iterator)
+    : InternalFrame(iterator) {}
+
+inline FastConstructFrame::FastConstructFrame(StackFrameIteratorBase* iterator)
     : InternalFrame(iterator) {}
 
 inline BuiltinContinuationFrame::BuiltinContinuationFrame(

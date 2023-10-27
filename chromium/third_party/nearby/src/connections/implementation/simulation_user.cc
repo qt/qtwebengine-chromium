@@ -76,7 +76,7 @@ void SimulationUser::OnPayloadProgress(absl::string_view endpoint_id,
 }
 
 bool SimulationUser::WaitForProgress(
-    std::function<bool(const PayloadProgressInfo&)> predicate,
+    absl::AnyInvocable<bool(const PayloadProgressInfo&)> predicate,
     absl::Duration timeout) {
   Future<bool> future;
   {
@@ -127,6 +127,12 @@ void SimulationUser::StartDiscovery(const std::string& service_id,
                                   &SimulationUser::OnEndpointLost, this),
                           })
           .Ok());
+}
+
+void SimulationUser::StopDiscovery() { mgr_.StopDiscovery(&client_); }
+
+Status SimulationUser::UpdateDiscoveryOptions(absl::string_view service_id) {
+  return mgr_.UpdateDiscoveryOptions(&client_, service_id, discovery_options_);
 }
 
 void SimulationUser::InjectEndpoint(

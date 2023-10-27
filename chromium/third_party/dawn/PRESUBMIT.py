@@ -119,7 +119,8 @@ def _NonInclusiveFileFilter(file):
         "src/dawn/tests/end2end/DepthBiasTests.cpp",  # External URL
         "src/tint/transform/canonicalize_entry_point_io.cc",  # External URL
         "test/tint/samples/compute_boids.wgsl",  # External URL
-        "third_party/khronos/KHR/khrplatform.h",  # Third party file
+        "third_party/gn/dxc/BUILD.gn",  # Third party file
+        "third_party/khronos/EGL-Registry/api/KHR/khrplatform.h",  # Third party file
         "tools/roll-all",  # Branch name
         "tools/src/container/key.go",  # External URL
         "go.sum",  # External URL
@@ -149,6 +150,8 @@ def _CheckNoStaleGen(input_api, output_api):
 
 def _DoCommonChecks(input_api, output_api):
     results = []
+    results.extend(
+        input_api.canned_checks.CheckForCommitObjects(input_api, output_api))
     results.extend(_CheckNoStaleGen(input_api, output_api))
     results.extend(
         input_api.canned_checks.CheckChangedLUCIConfigs(input_api, output_api))

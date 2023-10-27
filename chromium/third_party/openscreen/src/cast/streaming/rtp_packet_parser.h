@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,11 +8,11 @@
 #include <chrono>
 
 #include "absl/types/optional.h"
-#include "absl/types/span.h"
 #include "cast/streaming/frame_id.h"
 #include "cast/streaming/rtp_defines.h"
 #include "cast/streaming/rtp_time.h"
 #include "cast/streaming/ssrc.h"
+#include "platform/base/span.h"
 
 namespace openscreen {
 namespace cast {
@@ -45,7 +45,7 @@ class RtpPacketParser {
     // Portion of the |packet| that was passed into Parse() that contains the
     // payload. WARNING: This memory region is only valid while the original
     // |packet| memory remains valid.
-    absl::Span<const uint8_t> payload;
+    ByteView payload;
 
     ParseResult();
     ~ParseResult();
@@ -57,7 +57,7 @@ class RtpPacketParser {
   // Parses the packet. The caller should use InspectPacketForRouting()
   // beforehand to ensure that the packet is meant to be parsed by this
   // instance. Returns absl::nullopt if the |packet| was corrupt.
-  absl::optional<ParseResult> Parse(absl::Span<const uint8_t> packet);
+  absl::optional<ParseResult> Parse(ByteView packet);
 
  private:
   const Ssrc sender_ssrc_;

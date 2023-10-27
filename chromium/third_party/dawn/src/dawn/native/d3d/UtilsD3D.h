@@ -33,6 +33,7 @@ uint64_t MakeDXCVersion(uint64_t majorVersion, uint64_t minorVersion);
 DXGI_FORMAT DXGITypelessTextureFormat(wgpu::TextureFormat format);
 
 DXGI_FORMAT DXGITextureFormat(wgpu::TextureFormat format);
+ResultOrError<wgpu::TextureFormat> FromUncompressedColorDXGITextureFormat(DXGI_FORMAT format);
 
 DXGI_FORMAT DXGIVertexFormat(wgpu::VertexFormat format);
 

@@ -32,8 +32,7 @@
 #include "core/fxge/fx_font.h"
 #include "third_party/base/check.h"
 #include "third_party/base/check_op.h"
-#include "third_party/base/cxx17_backports.h"
-#include "third_party/base/span.h"
+#include "third_party/base/containers/span.h"
 
 namespace {
 
@@ -142,7 +141,7 @@ int FTPosToCBoxInt(FT_Pos pos) {
   // Boundary values to avoid integer overflow when multiplied by 1000.
   constexpr FT_Pos kMinCBox = -2147483;
   constexpr FT_Pos kMaxCBox = 2147483;
-  return static_cast<int>(pdfium::clamp(pos, kMinCBox, kMaxCBox));
+  return static_cast<int>(std::clamp(pos, kMinCBox, kMaxCBox));
 }
 
 #if !BUILDFLAG(IS_WIN)
@@ -888,10 +887,12 @@ const uint8_t* CPDF_CIDFont::GetCIDTransform(uint16_t cid) const {
   if (m_Charset != CIDSET_JAPAN1 || m_pFontFile)
     return nullptr;
 
-  const auto* pEnd = kJapan1VerticalCIDs + std::size(kJapan1VerticalCIDs);
+  const auto* pBegin = std::begin(kJapan1VerticalCIDs);
+  const auto* pEnd = std::end(kJapan1VerticalCIDs);
   const auto* pTransform = std::lower_bound(
-      kJapan1VerticalCIDs, pEnd, cid,
+      pBegin, pEnd, cid,
       [](const CIDTransform& entry, uint16_t cid) { return entry.cid < cid; });
+
   return (pTransform < pEnd && cid == pTransform->cid) ? &pTransform->a
                                                        : nullptr;
 }

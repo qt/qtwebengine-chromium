@@ -148,6 +148,9 @@ enum RmadErrorCode {
 
   // No USB found when performing a task that requires a USB.
   RMAD_ERROR_USB_NOT_FOUND = 45;
+
+  // No Diagnostics app found in external or internal storage.
+  RMAD_ERROR_DIAGNOSTICS_APP_NOT_FOUND = 46;
 }
 
 // Defined Rmad components.
@@ -671,4 +674,23 @@ enum WpDisableMethod {
   RMAD_WP_DISABLE_METHOD_RSU = 2;
   RMAD_WP_DISABLE_METHOD_PHYSICAL_ASSEMBLE_DEVICE = 3;
   RMAD_WP_DISABLE_METHOD_PHYSICAL_KEEP_DEVICE_OPEN = 4;
+}
+
+// Reply for ExtractExternalDiagnosticsApp.
+message ExtractExternalDiagnosticsAppReply {
+  RmadErrorCode error = 1;
+  string diagnostics_app_swbn_path = 2;
+  string diagnostics_app_crx_path = 3;
+}
+
+// Reply for InstallExtractedDiagnosticsApp.
+message InstallExtractedDiagnosticsAppReply {
+  RmadErrorCode error = 1;
+}
+
+// Reply for GetInstalledDiagnosticsApp.
+message GetInstalledDiagnosticsAppReply {
+  RmadErrorCode error = 1;
+  string diagnostics_app_swbn_path = 2;
+  string diagnostics_app_crx_path = 3;
 }

@@ -4003,6 +4003,8 @@ template<> EIGEN_STRONG_INLINE Packet2d prsqrt(const Packet2d& a) {
 
 template<> EIGEN_STRONG_INLINE Packet2d psqrt(const Packet2d& _x){ return vsqrtq_f64(_x); }
 
+#endif // EIGEN_ARCH_ARM64 && !EIGEN_APPLE_DOUBLE_NEON_BUG
+
 // Do we have an fp16 types and supporting Neon intrinsics?
 #if EIGEN_HAS_ARM64_FP16_VECTOR_ARITHMETIC
 typedef float16x4_t Packet4hf;
@@ -4650,8 +4652,6 @@ EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void ptranspose(PacketBlock<Packet8hf, 8>&
   kernel.packet[7] = T_3[3].val[1];
 }
 #endif // end EIGEN_HAS_ARM64_FP16_VECTOR_ARITHMETIC
-
-#endif // EIGEN_ARCH_ARM64
 
 } // end namespace internal
 

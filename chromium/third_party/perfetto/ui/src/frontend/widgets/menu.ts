@@ -13,10 +13,12 @@
 // limitations under the License.
 
 import m from 'mithril';
+
+import {hasChildren} from '../../base/mithril_utils';
 import {classNames} from '../classnames';
+
 import {Icon} from './icon';
-import {Popup, PopupPosition} from './popup';
-import {hasChildren} from './utils';
+import {Popup, PopupAttrs, PopupPosition} from './popup';
 
 export interface MenuItemAttrs {
   // Text to display on the menu button.
@@ -55,7 +57,7 @@ export class MenuItem implements m.ClassComponent<MenuItemAttrs> {
   }
 
   private renderNested({attrs, children}: m.CVnode<MenuItemAttrs>) {
-    const {rightIcon = 'arrow_right', closePopupOnClick = false, ...rest} =
+    const {rightIcon = 'chevron_right', closePopupOnClick = false, ...rest} =
         attrs;
 
     return m(
@@ -63,12 +65,13 @@ export class MenuItem implements m.ClassComponent<MenuItemAttrs> {
         {
           popupPosition: PopupPosition.RightStart,
           trigger: m(MenuItem, {
-            rightIcon: rightIcon ?? 'arrow_right',
+            rightIcon: rightIcon,
             closePopupOnClick,
             ...rest,
           }),
           showArrow: false,
           createNewGroup: false,
+          edgeOffset: 5,  // Adjust for popup padding & border.
         },
         children,
     );
@@ -116,7 +119,7 @@ export class Menu implements m.ClassComponent {
   }
 };
 
-interface PopupMenu2Attrs {
+interface PopupMenu2Attrs extends PopupAttrs {
   // The trigger is mithril component which is used to toggle the popup when
   // clicked, and provides the anchor on the page which the popup shall hover
   // next to, and to which the popup's arrow shall point. The popup shall move

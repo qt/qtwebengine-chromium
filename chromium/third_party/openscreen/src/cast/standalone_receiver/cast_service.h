@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,9 +16,10 @@
 #include "discovery/common/reporting_client.h"
 #include "discovery/public/dns_sd_service_factory.h"
 #include "discovery/public/dns_sd_service_publisher.h"
-#include "platform/api/serial_delete_ptr.h"
+#include "platform/api/task_runner_deleter.h"
 #include "platform/base/error.h"
 #include "platform/base/ip_address.h"
+#include "util/serial_delete_ptr.h"
 
 namespace openscreen {
 
@@ -65,7 +66,8 @@ class CastService final : public discovery::ReportingClient {
   ~CastService() final;
 
  private:
-  using LazyDeletedDiscoveryService = SerialDeletePtr<discovery::DnsSdService>;
+  using LazyDeletedDiscoveryService =
+      std::unique_ptr<discovery::DnsSdService, TaskRunnerDeleter>;
   using LazyDeletedDiscoveryPublisher =
       SerialDeletePtr<discovery::DnsSdServicePublisher<ReceiverInfo>>;
 

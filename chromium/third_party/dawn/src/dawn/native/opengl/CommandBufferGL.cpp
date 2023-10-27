@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <utility>
 #include <vector>
 
 #include "dawn/native/BindGroup.h"
@@ -221,11 +222,13 @@ class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
     void OnSetPipeline(RenderPipeline* pipeline) {
         BindGroupTrackerBase::OnSetPipeline(pipeline);
         mPipeline = pipeline;
+        ResetInternalUniformDataDirtyRange();
     }
 
     void OnSetPipeline(ComputePipeline* pipeline) {
         BindGroupTrackerBase::OnSetPipeline(pipeline);
         mPipeline = pipeline;
+        ResetInternalUniformDataDirtyRange();
     }
 
     void Apply(const OpenGLFunctions& gl) {
@@ -233,6 +236,7 @@ class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
         for (BindGroupIndex index : IterateBitSet(mDirtyBindGroupsObjectChangedOrIsDynamic)) {
             ApplyBindGroup(gl, index, mBindGroups[index], mDynamicOffsets[index]);
         }
+        ApplyInternalUniforms(gl);
         AfterApply();
     }
 
@@ -335,6 +339,11 @@ class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
                             }
                         }
                     }
+
+                    // Some texture builtin function data needs emulation to update into the
+                    // internal uniform buffer.
+                    UpdateTextureBuiltinsUniformData(gl, view, groupIndex, bindingIndex);
+
                     break;
                 }
 
@@ -348,6 +357,12 @@ class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
                     switch (bindingInfo.storageTexture.access) {
                         case wgpu::StorageTextureAccess::WriteOnly:
                             access = GL_WRITE_ONLY;
+                            break;
+                        case wgpu::StorageTextureAccess::ReadWrite:
+                            access = GL_READ_WRITE;
+                            break;
+                        case wgpu::StorageTextureAccess::ReadOnly:
+                            access = GL_READ_ONLY;
                             break;
                         case wgpu::StorageTextureAccess::Undefined:
                             UNREACHABLE();
@@ -378,7 +393,79 @@ class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
         }
     }
 
+    void UpdateTextureBuiltinsUniformData(const OpenGLFunctions& gl,
+                                          const TextureView* view,
+                                          BindGroupIndex groupIndex,
+                                          BindingIndex bindingIndex) {
+        const auto& bindingInfo = mPipeline->GetBindingPointBuiltinDataInfo();
+        if (bindingInfo.empty()) {
+            return;
+        }
+
+        auto iter = bindingInfo.find(tint::BindingPoint{static_cast<uint32_t>(groupIndex),
+                                                        static_cast<uint32_t>(bindingIndex)});
+        if (iter == bindingInfo.end()) {
+            return;
+        }
+
+        // Update data by retrieving information from texture view object.
+        const tint::TextureBuiltinsFromUniformOptions::Field field = iter->second.first;
+        const size_t byteOffset = static_cast<size_t>(iter->second.second);
+
+        uint32_t data;
+        switch (field) {
+            case tint::TextureBuiltinsFromUniformOptions::Field::TextureNumLevels:
+                data = view->GetLevelCount();
+                break;
+            case tint::TextureBuiltinsFromUniformOptions::Field::TextureNumSamples:
+                data = view->GetTexture()->GetSampleCount();
+                break;
+        }
+
+        if (byteOffset >= mInternalUniformBufferData.size()) {
+            mInternalUniformBufferData.resize(byteOffset + sizeof(uint32_t));
+        }
+        memcpy(mInternalUniformBufferData.data() + byteOffset, &data, sizeof(uint32_t));
+
+        // Updating dirty range of the data vector
+        mDirtyRange.first = std::min(mDirtyRange.first, byteOffset);
+        mDirtyRange.second = std::max(mDirtyRange.second, byteOffset + sizeof(uint32_t));
+    }
+
+    void ResetInternalUniformDataDirtyRange() {
+        mDirtyRange = {mInternalUniformBufferData.size(), 0};
+    }
+
+    void ApplyInternalUniforms(const OpenGLFunctions& gl) {
+        const Buffer* internalUniformBuffer = mPipeline->GetInternalUniformBuffer();
+        if (!internalUniformBuffer) {
+            return;
+        }
+
+        GLuint internalUniformBufferHandle = internalUniformBuffer->GetHandle();
+        if (mDirtyRange.first >= mDirtyRange.second) {
+            // Early return if no dirty uniform range needs updating.
+            return;
+        }
+
+        gl.BindBuffer(GL_UNIFORM_BUFFER, internalUniformBufferHandle);
+        gl.BufferSubData(GL_UNIFORM_BUFFER, mDirtyRange.first,
+                         mDirtyRange.second - mDirtyRange.first,
+                         mInternalUniformBufferData.data() + mDirtyRange.first);
+        gl.BindBuffer(GL_UNIFORM_BUFFER, 0);
+
+        ResetInternalUniformDataDirtyRange();
+    }
+
     PipelineGL* mPipeline = nullptr;
+
+    // The data used for mPipeline's internal uniform buffer from current bind group.
+    // Expecting no more than 4 texture bindings called as textureNumLevels/textureNumSamples
+    // argument in a pipeline. Initialize the vector to this size to avoid frequent resizing.
+    std::vector<uint8_t> mInternalUniformBufferData = std::vector<uint8_t>(4 * sizeof(uint32_t));
+    // Tracking dirty byte range of the mInternalUniformBufferData that needs to call bufferSubData
+    // to update to the internal uniform buffer of mPipeline. Range it represents: [first, second)
+    std::pair<size_t, size_t> mDirtyRange;
 };
 
 void ResolveMultisampledRenderTargets(const OpenGLFunctions& gl,
@@ -439,10 +526,6 @@ Extent3D ComputeTextureCopyExtent(const TextureCopy& textureCopy, const Extent3D
     return validTextureCopyExtent;
 }
 
-bool TextureFormatIsSnorm(wgpu::TextureFormat format) {
-    return format == wgpu::TextureFormat::RGBA8Snorm || format == wgpu::TextureFormat::RG8Snorm ||
-           format == wgpu::TextureFormat::R8Snorm;
-}
 }  // namespace
 
 CommandBuffer::CommandBuffer(CommandEncoder* encoder, const CommandBufferDescriptor* descriptor)
@@ -582,12 +665,7 @@ MaybeError CommandBuffer::Execute() {
                 const GLFormat& format = texture->GetGLFormat();
                 GLenum target = texture->GetGLTarget();
 
-                // TODO(crbug.com/dawn/667): Implement validation in WebGPU/Compat to
-                // avoid this codepath. OpenGL does not support readback from non-renderable
-                // texture formats.
-                if (formatInfo.isCompressed ||
-                    (TextureFormatIsSnorm(formatInfo.format) &&
-                     GetDevice()->IsToggleEnabled(Toggle::DisableSnormRead))) {
+                if (formatInfo.isCompressed) {
                     UNREACHABLE();
                 }
 

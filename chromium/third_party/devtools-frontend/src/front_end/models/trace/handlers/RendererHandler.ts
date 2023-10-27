@@ -4,19 +4,41 @@
 
 import * as Platform from '../../../core/platform/platform.js';
 import * as Helpers from '../helpers/helpers.js';
-
-import {data as metaHandlerData} from './MetaHandler.js';
-
-import {KnownEventName, KNOWN_EVENTS, type TraceEventHandlerName, HandlerState} from './types.js';
 import * as Types from '../types/types.js';
 
+import {data as metaHandlerData, type FrameProcessData} from './MetaHandler.js';
+import {data as samplesHandlerData} from './SamplesHandler.js';
+import {HandlerState, type TraceEventHandlerName} from './types.js';
+
+/**
+ * This handler builds the hierarchy of trace events and profile calls
+ * on each thread on each process.
+ *
+ * Throughout the code, trace events and profile calls are referred to
+ * as "entries", but note they are different types of data. Trace events
+ * come directly from the backend and it's the type the engine commonly
+ * refers to. Profile calls on the other hand are built in the frontend,
+ * and, for compatibility purposes, typed as an extension to the trace
+ * event type.
+ */
+
 const processes = new Map<Types.TraceEvents.ProcessID, RendererProcess>();
-const traceEventToNode = new Map<RendererTraceEvent, RendererEventNode>();
-const allRendererEvents: RendererTraceEvent[] = [];
+
+// We track the compositor tile worker thread name events so that at the end we
+// can return these keyed by the process ID. These are used in the frontend to
+// show the user the rasterization thread(s) on the main frame as tracks.
+const compositorTileWorkers = Array<{
+  pid: Types.TraceEvents.ProcessID,
+  tid: Types.TraceEvents.ThreadID,
+}>();
+const entryToNode = new Map<RendererEntry, RendererEntryNode>();
+const allRendererEvents: Types.TraceEvents.TraceEventRendererEvent[] = [];
 let nodeIdCount = 0;
-const makeRendererEventNodeId = (): RendererEventNodeId => (++nodeIdCount) as RendererEventNodeId;
+const makeRendererEntrytNodeId = (): RendererEntryNodeId => (++nodeIdCount) as RendererEntryNodeId;
+const completeEventStack: (Types.TraceEvents.TraceEventSyntheticCompleteEvent)[] = [];
 
 let handlerState = HandlerState.UNINITIALIZED;
+let config: Types.Configuration.Configuration = Types.Configuration.DEFAULT;
 
 const makeRendererProcess = (): RendererProcess => ({
   url: null,
@@ -26,17 +48,17 @@ const makeRendererProcess = (): RendererProcess => ({
 
 const makeRendererThread = (): RendererThread => ({
   name: null,
-  events: [],
+  entries: [],
 });
 
-const makeEmptyRendererEventTree = (): RendererEventTree => ({
+const makeEmptyRendererTree = (): RendererTree => ({
   nodes: new Map(),
   roots: new Set(),
   maxDepth: 0,
 });
 
-const makeEmptyRendererEventNode = (event: RendererTraceEvent, id: RendererEventNodeId): RendererEventNode => ({
-  event,
+const makeEmptyRendererEventNode = (entry: RendererEntry, id: RendererEntryNodeId): RendererEntryNode => ({
+  entry,
   id,
   parentId: null,
   childrenIds: new Set(),
@@ -53,10 +75,16 @@ const getOrCreateRendererThread = (process: RendererProcess, tid: Types.TraceEve
   return Platform.MapUtilities.getWithDefault(process.threads, tid, makeRendererThread);
 };
 
+export function handleUserConfig(userConfig: Types.Configuration.Configuration): void {
+  config = userConfig;
+}
+
 export function reset(): void {
   processes.clear();
-  traceEventToNode.clear();
+  entryToNode.clear();
   allRendererEvents.length = 0;
+  completeEventStack.length = 0;
+  compositorTileWorkers.length = 0;
   nodeIdCount = -1;
   handlerState = HandlerState.UNINITIALIZED;
 }
@@ -74,10 +102,29 @@ export function handleEvent(event: Types.TraceEvents.TraceEventData): void {
     throw new Error('Renderer Handler is not initialized');
   }
 
+  if (Types.TraceEvents.isThreadName(event) && event.args.name?.startsWith('CompositorTileWorker')) {
+    compositorTileWorkers.push({
+      pid: event.pid,
+      tid: event.tid,
+    });
+  }
+
+  if (Types.TraceEvents.isTraceEventBegin(event) || Types.TraceEvents.isTraceEventEnd(event)) {
+    const process = getOrCreateRendererProcess(processes, event.pid);
+    const thread = getOrCreateRendererThread(process, event.tid);
+    const completeEvent = makeCompleteEvent(event);
+    if (!completeEvent) {
+      return;
+    }
+    thread.entries.push(completeEvent);
+    allRendererEvents.push(completeEvent);
+    return;
+  }
+
   if (Types.TraceEvents.isTraceEventInstant(event) || Types.TraceEvents.isTraceEventComplete(event)) {
     const process = getOrCreateRendererProcess(processes, event.pid);
     const thread = getOrCreateRendererThread(process, event.tid);
-    thread.events.push(event);
+    thread.entries.push(event);
     allRendererEvents.push(event);
   }
 }
@@ -90,7 +137,7 @@ export async function finalize(): Promise<void> {
   const {mainFrameId, rendererProcessesByFrame, threadsInProcess} = metaHandlerData();
   assignMeta(processes, mainFrameId, rendererProcessesByFrame, threadsInProcess);
   sanitizeProcesses(processes);
-  buildHierarchy(processes, {filter: KNOWN_EVENTS});
+  buildHierarchy(processes);
   sanitizeThreads(processes);
 
   handlerState = HandlerState.FINALIZED;
@@ -103,9 +150,20 @@ export function data(): RendererHandlerData {
 
   return {
     processes: new Map(processes),
-    traceEventToNode: new Map(traceEventToNode),
+    compositorTileWorkers: new Map(gatherCompositorThreads()),
+    entryToNode: new Map(entryToNode),
     allRendererEvents: [...allRendererEvents],
   };
+}
+
+function gatherCompositorThreads(): Map<Types.TraceEvents.ProcessID, Types.TraceEvents.ThreadID[]> {
+  const threadsByProcess = new Map<Types.TraceEvents.ProcessID, Types.TraceEvents.ThreadID[]>();
+  for (const worker of compositorTileWorkers) {
+    const byProcess = threadsByProcess.get(worker.pid) || [];
+    byProcess.push(worker.tid);
+    threadsByProcess.set(worker.pid, byProcess);
+  }
+  return threadsByProcess;
 }
 
 /**
@@ -116,11 +174,11 @@ export function data(): RendererHandlerData {
  */
 export function assignMeta(
     processes: Map<Types.TraceEvents.ProcessID, RendererProcess>, mainFrameId: string,
-    rendererProcessesByFrame: Map<string, Map<Types.TraceEvents.ProcessID, {frame: Types.TraceEvents.TraceFrame}>>,
+    rendererProcessesByFrame: FrameProcessData,
     threadsInProcess:
         Map<Types.TraceEvents.ProcessID, Map<Types.TraceEvents.ThreadID, Types.TraceEvents.TraceEventThreadName>>):
     void {
-  assignOrigin(processes, mainFrameId, rendererProcessesByFrame);
+  assignOrigin(processes, rendererProcessesByFrame);
   assignIsMainFrame(processes, mainFrameId, rendererProcessesByFrame);
   assignThreadName(processes, rendererProcessesByFrame, threadsInProcess);
 }
@@ -130,24 +188,27 @@ export function assignMeta(
  * @see assignMeta
  */
 export function assignOrigin(
-    processes: Map<Types.TraceEvents.ProcessID, RendererProcess>, mainFrameId: string,
-    rendererProcessesByFrame: Map<string, Map<Types.TraceEvents.ProcessID, {frame: Types.TraceEvents.TraceFrame}>>):
-    void {
-  for (const [frameId, renderProcessesByPid] of rendererProcessesByFrame) {
-    for (const [pid, processInfo] of renderProcessesByPid) {
-      const process = getOrCreateRendererProcess(processes, pid);
-      // Sometimes a single process is responsible with rendering multiple
-      // frames at the same time. For example, see https://crbug.com/1334563.
-      // When this happens, we'd still like to assign a single url per process
-      // so: 1) use the first frame rendered by this process as the url source
-      // and 2) if there's a more "important" frame found, us its url instead.
-      if (process.url === null /* first frame */ || frameId === mainFrameId /* more important frame */) {
-        // If we are here, it's because we care about this process and the URL. But before we store it, we check if it is a valid URL by trying to create a URL object. If it isn't, we won't set it, and this process will be filtered out later.
-        try {
-          new URL(processInfo.frame.url);
-          process.url = processInfo.frame.url;
-        } catch (e) {
-          process.url = null;
+    processes: Map<Types.TraceEvents.ProcessID, RendererProcess>, rendererProcessesByFrame: FrameProcessData): void {
+  for (const renderProcessesByPid of rendererProcessesByFrame.values()) {
+    for (const [pid, processWindows] of renderProcessesByPid) {
+      for (const processInfo of processWindows.flat()) {
+        const process = getOrCreateRendererProcess(processes, pid);
+        // Sometimes a single process is responsible with rendering multiple
+        // frames at the same time. For example, see https://crbug.com/1334563.
+        // When this happens, we'd still like to assign a single url per process
+        // so: 1) use the first frame rendered by this process as the url source
+        // and 2) if the last url is "about:blank", use the next frame's url,
+        // data from about:blank is irrelevant.
+        if (process.url === null || process.url === 'about:blank') {
+          // If we are here, it's because we care about this process and the URL. But before we store
+          // it, we check if it is a valid URL by trying to create a URL object. If it isn't, we won't
+          // set it, and this process will be filtered out later.
+          try {
+            new URL(processInfo.frame.url);
+            process.url = processInfo.frame.url;
+          } catch (e) {
+            process.url = null;
+          }
         }
       }
     }
@@ -160,8 +221,7 @@ export function assignOrigin(
  */
 export function assignIsMainFrame(
     processes: Map<Types.TraceEvents.ProcessID, RendererProcess>, mainFrameId: string,
-    rendererProcessesByFrame: Map<string, Map<Types.TraceEvents.ProcessID, {frame: Types.TraceEvents.TraceFrame}>>):
-    void {
+    rendererProcessesByFrame: FrameProcessData): void {
   for (const [frameId, renderProcessesByPid] of rendererProcessesByFrame) {
     for (const [pid] of renderProcessesByPid) {
       const process = getOrCreateRendererProcess(processes, pid);
@@ -181,8 +241,7 @@ export function assignIsMainFrame(
  * @see assignMeta
  */
 export function assignThreadName(
-    processes: Map<Types.TraceEvents.ProcessID, RendererProcess>,
-    rendererProcessesByFrame: Map<string, Map<Types.TraceEvents.ProcessID, {frame: Types.TraceEvents.TraceFrame}>>,
+    processes: Map<Types.TraceEvents.ProcessID, RendererProcess>, rendererProcessesByFrame: FrameProcessData,
     threadsInProcess:
         Map<Types.TraceEvents.ProcessID, Map<Types.TraceEvents.ThreadID, Types.TraceEvents.TraceEventThreadName>>):
     void {
@@ -227,7 +286,7 @@ export function sanitizeProcesses(processes: Map<Types.TraceEvents.ProcessID, Re
 export function sanitizeThreads(processes: Map<Types.TraceEvents.ProcessID, RendererProcess>): void {
   for (const [, process] of processes) {
     for (const [tid, thread] of process.threads) {
-      // If the thread has no roots, also delete it. Otherwise, there's going to
+      // If the thread has no roots, delete it. Otherwise, there's going to
       // be space taken, even though nothing is rendered in the track manager.
       if (!thread.tree?.roots.size) {
         process.threads.delete(tid);
@@ -260,48 +319,63 @@ export function sanitizeThreads(processes: Map<Types.TraceEvents.ProcessID, Rend
  */
 export function buildHierarchy(
     processes: Map<Types.TraceEvents.ProcessID, RendererProcess>,
-    options: {filter: {has: (name: KnownEventName) => boolean}}): void {
-  for (const [, process] of processes) {
-    for (const [, thread] of process.threads) {
+    options?: {filter: {has: (name: Types.TraceEvents.KnownEventName) => boolean}}): void {
+  for (const [pid, process] of processes) {
+    for (const [tid, thread] of process.threads) {
+      if (!thread.entries.length) {
+        thread.tree = makeEmptyRendererTree();
+        continue;
+      }
       // Step 1. Massage the data.
-      Helpers.Trace.sortTraceEventsInPlace(thread.events);
-      // Step 2. Build the tree.
-      thread.tree = treify(thread.events, options);
+      Helpers.Trace.sortTraceEventsInPlace(thread.entries);
+      // Step 2. Inject profile calls from samples
+      const cpuProfile = samplesHandlerData().profilesInProcess.get(pid)?.get(tid)?.parsedProfile;
+      const samplesIntegrator = cpuProfile && new Helpers.SamplesIntegrator.SamplesIntegrator(cpuProfile, pid, tid, {
+        showNativeFunctionsInJSProfile: config.settings.showNativeFunctionsInJSProfile,
+      });
+      const profileCalls = samplesIntegrator?.buildProfileCalls(thread.entries);
+      if (profileCalls) {
+        thread.entries = Helpers.Trace.mergeEventsInOrder(thread.entries, profileCalls);
+      }
+      // Step 3. Build the tree.
+      thread.tree = treify(thread.entries, options);
     }
   }
 }
 
 /**
- * Builds a hierarchy of the trace events in a particular thread of a
- * particular process, assuming that they're sorted, by iterating through all of
- * the events in order.
+ * Builds a hierarchy of the entries (trace events and profile calls) in
+ * a particular thread of a particular process, assuming that they're
+ * sorted, by iterating through all of the events in order.
  *
- * The approach is analogous to how a parser would be implemented. A stack
- * maintains local context. A scanner peeks and pops from the data stream.
- * Various "tokens" (events) are treated as "whitespace" (ignored).
+ * The approach is analogous to how a parser would be implemented. A
+ * stack maintains local context. A scanner peeks and pops from the data
+ * stream. Various "tokens" (events) are treated as "whitespace"
+ * (ignored).
  *
- * The tree starts out empty and is populated as the hierarchy is built. The
- * nodes are also assumed to be created empty, with no known parent or children.
+ * The tree starts out empty and is populated as the hierarchy is built.
+ * The nodes are also assumed to be created empty, with no known parent
+ * or children.
  *
  * Complexity: O(n), where n = number of events
  */
 export function treify(
-    events: RendererTraceEvent[], options: {filter: {has: (name: KnownEventName) => boolean}}): RendererEventTree {
+    entries: RendererEntry[],
+    options?: {filter: {has: (name: Types.TraceEvents.KnownEventName) => boolean}}): RendererTree {
   const stack = [];
   // Reset the node id counter for every new renderer.
   nodeIdCount = -1;
-  const tree = makeEmptyRendererEventTree();
-  for (let i = 0; i < events.length; i++) {
-    const event = events[i];
-
+  const tree = makeEmptyRendererTree();
+  for (let i = 0; i < entries.length; i++) {
+    const event = entries[i];
     // If the current event should not be part of the tree, then simply proceed
     // with the next event.
-    if (!options.filter.has(event.name as KnownEventName)) {
+    if (options && !options.filter.has(event.name as Types.TraceEvents.KnownEventName)) {
       continue;
     }
 
     const duration = event.dur || 0;
-    const nodeId = makeRendererEventNodeId();
+    const nodeId = makeRendererEntrytNodeId();
     const node = makeEmptyRendererEventNode(event, nodeId);
 
     // If the parent stack is empty, then the current event is a root. Create a
@@ -312,7 +386,7 @@ export function treify(
       event.selfTime = Types.Timing.MicroSeconds(duration);
       stack.push(node);
       tree.maxDepth = Math.max(tree.maxDepth, stack.length);
-      traceEventToNode.set(event, node);
+      entryToNode.set(event, node);
       continue;
     }
 
@@ -321,7 +395,7 @@ export function treify(
       throw new Error('Impossible: no parent node found in the stack');
     }
 
-    const parentEvent = parentNode.event;
+    const parentEvent = parentNode.entry;
 
     const begin = event.ts;
     const parentBegin = parentEvent.ts;
@@ -353,12 +427,13 @@ export function treify(
       nodeIdCount--;
       continue;
     }
-
-    // 3. If the current event starts during the parent event, but ends after
-    //    it, then the data is messed up some way.
+    // 3. If the current event starts during the parent event, but ends
+    //    after it, then the data is messed up some way, for example a
+    //    profile call was sampled too late after its start, ignore the
+    //    problematic event.
     const endsAfterParent = end > parentEnd;
     if (endsAfterParent) {
-      throw new Error('Impossible: current event starts during the parent event');
+      continue;
     }
 
     // 4. The only remaining case is the common case, where the current event is
@@ -375,19 +450,43 @@ export function treify(
     }
     stack.push(node);
     tree.maxDepth = Math.max(tree.maxDepth, stack.length);
-    traceEventToNode.set(event, node);
+    entryToNode.set(event, node);
   }
   return tree;
 }
 
-export const FORCED_LAYOUT_EVENT_NAMES = new Set([
-  KnownEventName.Layout,
-]);
+export function makeCompleteEvent(event: Types.TraceEvents.TraceEventBegin|Types.TraceEvents.TraceEventEnd):
+    Types.TraceEvents.TraceEventSyntheticCompleteEvent|null {
+  if (Types.TraceEvents.isTraceEventEnd(event)) {
+    // Quietly ignore unbalanced close events, they're legit (we could
+    // have missed start one).
+    const beginEvent = completeEventStack.pop();
+    if (!beginEvent) {
+      return null;
+    }
+    if (beginEvent.name !== event.name || beginEvent.cat !== event.cat) {
+      console.error(
+          'Begin/End events mismatch at ' + beginEvent.ts + ' (' + beginEvent.name + ') vs. ' + event.ts + ' (' +
+          event.name + ')');
+      return null;
+    }
+    // Update the begin event's duration using the timestamp of the end
+    // event.
+    beginEvent.dur = Types.Timing.MicroSeconds(event.ts - beginEvent.ts);
+    return null;
+  }
 
-export const FORCED_RECALC_STYLE_EVENTS = new Set([
-  KnownEventName.RecalculateStyles,
-  KnownEventName.UpdateLayoutTree,
-]);
+  // Create a synthetic event using the begin event, when we find the
+  // matching end event later we will update its duration.
+  const syntheticComplete: Types.TraceEvents.TraceEventSyntheticCompleteEvent = {
+    ...event,
+    ph: Types.TraceEvents.Phase.COMPLETE,
+    dur: Types.Timing.MicroSeconds(0),
+  };
+
+  completeEventStack.push(syntheticComplete);
+  return syntheticComplete;
+}
 
 export function deps(): TraceEventHandlerName[] {
   return ['Meta', 'Samples'];
@@ -395,8 +494,17 @@ export function deps(): TraceEventHandlerName[] {
 
 export interface RendererHandlerData {
   processes: Map<Types.TraceEvents.ProcessID, RendererProcess>;
-  traceEventToNode: Map<RendererTraceEvent, RendererEventNode>;
-  allRendererEvents: RendererTraceEvent[];
+  /**
+   * A map of all compositor workers (which we show in the UI as Rasterizers)
+   * by the process ID.
+   */
+  compositorTileWorkers: Map<Types.TraceEvents.ProcessID, Types.TraceEvents.ThreadID[]>;
+  entryToNode: Map<RendererEntry, RendererEntryNode>;
+  /**
+   * All trace events and synthetic profile calls made from
+   * samples.
+   */
+  allRendererEvents: Types.TraceEvents.TraceEventRendererEvent[];
 }
 
 export interface RendererProcess {
@@ -409,35 +517,32 @@ export interface RendererProcess {
 
 export interface RendererThread {
   name: string|null;
-  events: RendererTraceEvent[];
-  tree?: RendererEventTree;
+  /**
+   * Contains trace events and synthetic profile calls made from
+   * samples.
+   */
+  entries: RendererEntry[];
+  tree?: RendererTree;
 }
 
-interface RendererEventData {
-  selfTime: Types.Timing.MicroSeconds;
-  initiator: RendererTraceEvent;
-  parent?: RendererTraceEvent;
-  hotFunctionsStackTraces: Types.TraceEvents.TraceEventCallFrame[][];
-}
+export type RendererEntry = Types.TraceEvents.SyntheticRendererEvent|Types.TraceEvents.TraceEventSyntheticProfileCall;
 
-export type RendererTraceEvent = Types.TraceEvents.TraceEventRendererData&Partial<RendererEventData>;
-
-export interface RendererEventTree {
-  nodes: Map<RendererEventNodeId, RendererEventNode>;
-  roots: Set<RendererEventNodeId>;
+export interface RendererTree {
+  nodes: Map<RendererEntryNodeId, RendererEntryNode>;
+  roots: Set<RendererEntryNodeId>;
   maxDepth: number;
 }
 
-export interface RendererEventNode {
-  event: RendererTraceEvent;
+export interface RendererEntryNode {
+  entry: RendererEntry;
   depth: number;
-  id: RendererEventNodeId;
-  parentId?: RendererEventNodeId|null;
-  childrenIds: Set<RendererEventNodeId>;
+  id: RendererEntryNodeId;
+  parentId?: RendererEntryNodeId|null;
+  childrenIds: Set<RendererEntryNodeId>;
 }
 
 class RendererEventNodeIdTag {
   /* eslint-disable-next-line no-unused-private-class-members */
   readonly #tag: (symbol|undefined);
 }
-export type RendererEventNodeId = number&RendererEventNodeIdTag;
+export type RendererEntryNodeId = number&RendererEventNodeIdTag;

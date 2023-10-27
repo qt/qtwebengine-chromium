@@ -17,6 +17,15 @@
   "core/audits/accessibility/aria-allowed-attr.js | title": {
     "message": "Os atributos `[aria-*]` correspondem às próprias funções"
   },
+  "core/audits/accessibility/aria-allowed-role.js | description": {
+    "message": "ARIA `role`s enable assistive technologies to know the role of each element on the web page. If the `role` values are misspelled, not existing ARIA `role` values, or abstract roles, then the purpose of the element will not be communicated to users of assistive technologies. [Learn more about ARIA roles](https://dequeuniversity.com/rules/axe/4.7/aria-allowed-roles)."
+  },
+  "core/audits/accessibility/aria-allowed-role.js | failureTitle": {
+    "message": "Values assigned to `role=\"\"` are not valid ARIA roles."
+  },
+  "core/audits/accessibility/aria-allowed-role.js | title": {
+    "message": "Values assigned to `role=\"\"` are valid ARIA roles."
+  },
   "core/audits/accessibility/aria-command-name.js | description": {
     "message": "Quando um elemento não tem um nome acessível, os leitores de tela o anunciam com um nome genérico, fazendo com que os usuários que dependem desses leitores não possam usá-lo. [Aprenda a tornar os elementos de comando mais acessíveis](https://dequeuniversity.com/rules/axe/4.7/aria-command-name)."
   },
@@ -25,6 +34,15 @@
   },
   "core/audits/accessibility/aria-command-name.js | title": {
     "message": "Os elementos `button`, `link` e `menuitem` têm nomes acessíveis"
+  },
+  "core/audits/accessibility/aria-dialog-name.js | description": {
+    "message": "Elementos de caixa de diálogo ARIA sem nomes acessíveis podem impedir que usuários de leitores de tela entendam a finalidade desses elementos. [Saiba como tornar os elementos da caixa de diálogo ARIA mais acessíveis](https://dequeuniversity.com/rules/axe/4.7/aria-dialog-name)."
+  },
+  "core/audits/accessibility/aria-dialog-name.js | failureTitle": {
+    "message": "Elementos com `role=\"dialog\"` ou `role=\"alertdialog\"` não têm nomes acessíveis."
+  },
+  "core/audits/accessibility/aria-dialog-name.js | title": {
+    "message": "Elementos com `role=\"dialog\"` ou `role=\"alertdialog\"` têm nomes acessíveis."
   },
   "core/audits/accessibility/aria-hidden-body.js | description": {
     "message": "As tecnologias adaptativas, como leitores de tela, funcionam de maneira inconsistente quando o `aria-hidden=\"true\"` está configurado no documento `<body>`. [Aprenda como o `aria-hidden` afeta o corpo do documento](https://dequeuniversity.com/rules/axe/4.7/aria-hidden-body)."
@@ -106,6 +124,15 @@
   },
   "core/audits/accessibility/aria-roles.js | title": {
     "message": "Os valores de `[role]` são válidos"
+  },
+  "core/audits/accessibility/aria-text.js | description": {
+    "message": "Adicionar `role=text` ao redor de um nó de texto dividido por marcação permite que o VoiceOver trate isso como uma frase, mas os descendentes focalizáveis do elemento não vão ser anunciados. [Saiba mais sobre o atributo `role=text`](https://dequeuniversity.com/rules/axe/4.7/aria-text)."
+  },
+  "core/audits/accessibility/aria-text.js | failureTitle": {
+    "message": "Os elementos com o atributo `role=text` têm descendentes focalizáveis."
+  },
+  "core/audits/accessibility/aria-text.js | title": {
+    "message": "Os elementos com o atributo `role=text` não têm descendentes focalizáveis."
   },
   "core/audits/accessibility/aria-toggle-field-name.js | description": {
     "message": "Quando um campo de alternância não tem um nome acessível, os leitores de tela o anunciam com um nome genérico, fazendo com que os usuários com leitores de tela não possam usá-lo. [Saiba mais sobre campos de alternância](https://dequeuniversity.com/rules/axe/4.7/aria-toggle-field-name)."
@@ -227,6 +254,15 @@
   "core/audits/accessibility/duplicate-id-aria.js | title": {
     "message": "Os códigos ARIA são únicos"
   },
+  "core/audits/accessibility/empty-heading.js | description": {
+    "message": "Um cabeçalho sem conteúdo ou com texto inacessível impede que usuários de leitores de tela acessem informações sobre a estrutura da página. [Saiba mais sobre cabeçalhos](https://dequeuniversity.com/rules/axe/4.7/empty-heading)."
+  },
+  "core/audits/accessibility/empty-heading.js | failureTitle": {
+    "message": "Os elementos de <heading> não têm conteúdo."
+  },
+  "core/audits/accessibility/empty-heading.js | title": {
+    "message": "Todos os elementos de <heading> têm conteúdo."
+  },
   "core/audits/accessibility/form-field-multiple-labels.js | description": {
     "message": "Os campos de formulários com vários rótulos podem ser anunciados de maneira confusa por tecnologias adaptativas como leitores de tela, que usam o primeiro, o último ou todos os rótulos. [Aprenda a usar os rótulos de formulários](https://dequeuniversity.com/rules/axe/4.7/form-field-multiple-labels)."
   },
@@ -272,6 +308,24 @@
   "core/audits/accessibility/html-lang-valid.js | title": {
     "message": "O elemento `<html>` tem um valor válido para o atributo `[lang]`"
   },
+  "core/audits/accessibility/html-xml-lang-mismatch.js | description": {
+    "message": "Se a página da Web não especificar um idioma consistente, talvez o leitor de tela não anuncie o texto dela corretamente. [Saiba mais sobre o atributo `lang`.](https://dequeuniversity.com/rules/axe/4.7/html-xml-lang-mismatch)"
+  },
+  "core/audits/accessibility/html-xml-lang-mismatch.js | failureTitle": {
+    "message": "O elemento `<html>` não tem um atributo `[xml:lang]` com o mesmo idioma base do atributo `[lang]`."
+  },
+  "core/audits/accessibility/html-xml-lang-mismatch.js | title": {
+    "message": "O elemento `<html>` tem um atributo `[xml:lang]` com o mesmo idioma base que o atributo `[lang]`."
+  },
+  "core/audits/accessibility/identical-links-same-purpose.js | description": {
+    "message": "Links com o mesmo destino devem ter a mesma descrição, para ajudar os usuários a entender a finalidade do link e decidir se devem ou não clicar nele. [Saiba mais sobre links idênticos](https://dequeuniversity.com/rules/axe/4.7/identical-links-same-purpose)."
+  },
+  "core/audits/accessibility/identical-links-same-purpose.js | failureTitle": {
+    "message": "Links idênticos não têm a mesma finalidade."
+  },
+  "core/audits/accessibility/identical-links-same-purpose.js | title": {
+    "message": "Links idênticos têm a mesma finalidade."
+  },
   "core/audits/accessibility/image-alt.js | description": {
     "message": "O texto de elementos informativos precisa ser alternativo, breve e descritivo. Elementos decorativos podem ser ignorados com um atributo alternativo vazio. [Saiba mais sobre o atributo `alt`](https://dequeuniversity.com/rules/axe/4.7/image-alt)."
   },
@@ -280,6 +334,24 @@
   },
   "core/audits/accessibility/image-alt.js | title": {
     "message": "Os elementos de imagem têm atributos `[alt]`"
+  },
+  "core/audits/accessibility/image-redundant-alt.js | description": {
+    "message": "Informative elements should aim for short, descriptive alternative text. Alternative text that is exactly the same as the text adjacent to the link or image is potentially confusing for screen reader users, because the text will be read twice. [Learn more about the `alt` attribute](https://dequeuniversity.com/rules/axe/4.7/image-redundant-alt)."
+  },
+  "core/audits/accessibility/image-redundant-alt.js | failureTitle": {
+    "message": "Image elements have `[alt]` attributes that are redundant text."
+  },
+  "core/audits/accessibility/image-redundant-alt.js | title": {
+    "message": "Image elements do not have `[alt]` attributes that are redundant text."
+  },
+  "core/audits/accessibility/input-button-name.js | description": {
+    "message": "A adição de texto compreensível e acessível a botões de entrada pode ajudar os usuários de leitores de tela a entender a finalidade do botão. [Saiba mais sobre botões de entrada.](https://dequeuniversity.com/rules/axe/4.7/input-button-name)"
+  },
+  "core/audits/accessibility/input-button-name.js | failureTitle": {
+    "message": "Os botões de entrada não têm texto compreensível."
+  },
+  "core/audits/accessibility/input-button-name.js | title": {
+    "message": "Os botões de entrada têm texto compreensível."
   },
   "core/audits/accessibility/input-image-alt.js | description": {
     "message": "Quando uma imagem é usada como um botão `<input>`, a oferta de texto alternativo ajuda o usuário do leitor de tela a entender a finalidade do botão. [Saiba mais sobre texto alternativo para imagens de entrada](https://dequeuniversity.com/rules/axe/4.7/input-image-alt)."
@@ -290,6 +362,15 @@
   "core/audits/accessibility/input-image-alt.js | title": {
     "message": "Os elementos `<input type=\"image\">` têm texto `[alt]`"
   },
+  "core/audits/accessibility/label-content-name-mismatch.js | description": {
+    "message": "Visible text labels that do not match the accessible name can result in a confusing experience for screen reader users. [Learn more about accessible names](https://dequeuniversity.com/rules/axe/4.7/label-content-name-mismatch)."
+  },
+  "core/audits/accessibility/label-content-name-mismatch.js | failureTitle": {
+    "message": "Elements with visible text labels do not have matching accessible names."
+  },
+  "core/audits/accessibility/label-content-name-mismatch.js | title": {
+    "message": "Elements with visible text labels have matching accessible names."
+  },
   "core/audits/accessibility/label.js | description": {
     "message": "Os marcadores garantem que os controles de formulário sejam enunciados corretamente por tecnologias adaptativas, como, por exemplo, leitores de tela. [Saiba mais sobre marcadores de elementos de formulários](https://dequeuniversity.com/rules/axe/4.7/label)."
   },
@@ -298,6 +379,24 @@
   },
   "core/audits/accessibility/label.js | title": {
     "message": "Os elementos de formulário têm etiquetas associadas"
+  },
+  "core/audits/accessibility/landmark-one-main.js | description": {
+    "message": "Um ponto de referência principal ajuda os usuários de leitores de tela a navegar em uma página da Web. [Saiba mais sobre pontos de referência](https://dequeuniversity.com/rules/axe/4.7/landmark-one-main)."
+  },
+  "core/audits/accessibility/landmark-one-main.js | failureTitle": {
+    "message": "O documento não tem um ponto de referência principal."
+  },
+  "core/audits/accessibility/landmark-one-main.js | title": {
+    "message": "O documento tem um ponto de referência principal."
+  },
+  "core/audits/accessibility/link-in-text-block.js | description": {
+    "message": "Para muitos usuários, é difícil ou impossível ler textos com baixo contraste. Textos de link perceptíveis melhoram a experiência dos usuários com baixa visão. [Saiba como tornar os links diferenciáveis](https://dequeuniversity.com/rules/axe/4.7/link-in-text-block)."
+  },
+  "core/audits/accessibility/link-in-text-block.js | failureTitle": {
+    "message": "Os links dependem da cor para serem distinguíveis."
+  },
+  "core/audits/accessibility/link-in-text-block.js | title": {
+    "message": "Os links são distinguíveis sem depender da cor."
   },
   "core/audits/accessibility/link-name.js | description": {
     "message": "Textos de link (e textos alternativos de imagens, quando utilizados como link) compreensíveis, únicos e focalizáveis melhoram a experiência de navegação para usuários de leitores de tela. [Aprenda a deixar os links mais acessíveis](https://dequeuniversity.com/rules/axe/4.7/link-name)."
@@ -353,6 +452,24 @@
   "core/audits/accessibility/object-alt.js | title": {
     "message": "Os elementos `<object>` têm texto alternativo"
   },
+  "core/audits/accessibility/select-name.js | description": {
+    "message": "Elementos de <form> sem rótulos eficazes podem criar experiências frustrantes para usuários de leitores de tela. [Saiba mais sobre o elemento `select`](https://dequeuniversity.com/rules/axe/4.7/select-name)."
+  },
+  "core/audits/accessibility/select-name.js | failureTitle": {
+    "message": "Os elementos de seleção não têm elementos de <label> associados."
+  },
+  "core/audits/accessibility/select-name.js | title": {
+    "message": "Os elementos de <select> têm elementos de <label> associados."
+  },
+  "core/audits/accessibility/skip-link.js | description": {
+    "message": "Including a skip link can help users skip to the main content to save time. [Learn more about skip links](https://dequeuniversity.com/rules/axe/4.7/skip-link)."
+  },
+  "core/audits/accessibility/skip-link.js | failureTitle": {
+    "message": "Skip links are not focusable."
+  },
+  "core/audits/accessibility/skip-link.js | title": {
+    "message": "Skip links are focusable."
+  },
   "core/audits/accessibility/tabindex.js | description": {
     "message": "Um valor maior que 0 indica uma ordem explícita de navegação. Embora tecnicamente válido, isso costuma gerar experiências frustrantes para os usuários que utilizam tecnologias adaptativas. [Saiba mais sobre o atributo `tabindex`](https://dequeuniversity.com/rules/axe/4.7/tabindex)."
   },
@@ -361,6 +478,42 @@
   },
   "core/audits/accessibility/tabindex.js | title": {
     "message": "Nenhum elemento tem um valor de `[tabindex]` maior que 0"
+  },
+  "core/audits/accessibility/table-duplicate-name.js | description": {
+    "message": "The summary attribute should describe the table structure, while `<caption>` should have the onscreen title. Accurate table mark-up helps users of screen readers. [Learn more about summary and caption](https://dequeuniversity.com/rules/axe/4.7/table-duplicate-name)."
+  },
+  "core/audits/accessibility/table-duplicate-name.js | failureTitle": {
+    "message": "Tables have the same content in the summary attribute and `<caption>.`"
+  },
+  "core/audits/accessibility/table-duplicate-name.js | title": {
+    "message": "Tables have different content in the summary attribute and `<caption>`."
+  },
+  "core/audits/accessibility/table-fake-caption.js | description": {
+    "message": "Os leitores de tela têm recursos para facilitar a navegação em tabelas. Garantir que as tabelas usem o elemento de legenda em vez de células com o atributo `[colspan]` pode melhorar a experiência dos usuários de leitores de tela. [Saiba mais sobre legendas.](https://dequeuniversity.com/rules/axe/4.7/table-fake-caption)"
+  },
+  "core/audits/accessibility/table-fake-caption.js | failureTitle": {
+    "message": "As tabelas não usam `<caption>` em vez de células com o atributo `[colspan]` para indicar uma legenda."
+  },
+  "core/audits/accessibility/table-fake-caption.js | title": {
+    "message": "As tabelas usam `<caption>` em vez de células com o atributo `[colspan]` para indicar uma legenda."
+  },
+  "core/audits/accessibility/target-size.js | description": {
+    "message": "Touch targets with sufficient size and spacing help users who may have difficulty targeting small controls to activate the targets. [Learn more about touch targets](https://dequeuniversity.com/rules/axe/4.7/target-size)."
+  },
+  "core/audits/accessibility/target-size.js | failureTitle": {
+    "message": "As áreas de toque não têm tamanho ou espaçamento suficiente."
+  },
+  "core/audits/accessibility/target-size.js | title": {
+    "message": "As áreas de toque têm tamanho e espaçamento suficientes."
+  },
+  "core/audits/accessibility/td-has-header.js | description": {
+    "message": "Os leitores de tela têm recursos para facilitar a navegação em tabelas. Garantir que os elementos `<td>` em uma tabela grande (com largura e altura de três ou mais células) tenham um cabeçalho associado pode melhorar a experiência dos usuários de leitores de tela. [Saiba mais sobre cabeçalhos da tabela.](https://dequeuniversity.com/rules/axe/4.7/td-has-header)"
+  },
+  "core/audits/accessibility/td-has-header.js | failureTitle": {
+    "message": "Os elementos `<td>` em uma `<table>` grande não têm cabeçalhos de tabela."
+  },
+  "core/audits/accessibility/td-has-header.js | title": {
+    "message": "Os elementos `<td>` em uma `<table>` grande têm um ou mais cabeçalhos de tabela."
   },
   "core/audits/accessibility/td-headers-attr.js | description": {
     "message": "Os leitores de tela têm recursos para facilitar a navegação em tabelas. Para melhorar a experiência dos usuários de leitores de tela, as células `<td>` que usam o atributo `[headers]` devem referenciar apenas outras células na mesma tabela. [Saiba mais sobre o atributo `headers`](https://dequeuniversity.com/rules/axe/4.7/td-headers-attr)."
@@ -858,7 +1011,7 @@
     "message": "Motivo da falha"
   },
   "core/audits/installable-manifest.js | description": {
-    "message": "O service worker é a tecnologia que permite que seu app use muitos recursos do Progressive Web App, como disponibilidade off-line, adição à tela inicial e notificações push. Com implementações de manifesto e service worker adequadas, os navegadores podem solicitar proativamente que os usuários adicionem seu app à tela inicial deles, o que pode aumentar o engajamento. [Saiba mais sobre os requisitos de instalação do manifesto](https://developer.chrome.com/docs/lighthouse/pwa/installable-manifest/)."
+    "message": "O service worker é a tecnologia que permite que seu app use muitos recursos do App Web Progressivo, como disponibilidade off-line, adição à tela inicial e notificações push. Com implementações de manifesto e service worker adequadas, os navegadores podem solicitar proativamente que os usuários adicionem seu app à tela inicial deles, o que pode aumentar o engajamento. [Saiba mais sobre os requisitos de instalação do manifesto](https://developer.chrome.com/docs/lighthouse/pwa/installable-manifest/)."
   },
   "core/audits/installable-manifest.js | displayValue": {
     "message": "{itemCount,plural, =1{1 motivo}one{# motivo}other{# motivos}}"
@@ -902,9 +1055,6 @@
   "core/audits/installable-manifest.js | no-manifest": {
     "message": "A página não tem um URL de manifesto <link>"
   },
-  "core/audits/installable-manifest.js | no-matching-service-worker": {
-    "message": "Nenhum service worker correspondente foi detectado. Pode ser necessário atualizar a página ou conferir se o escopo do service worker da página atual inclui o escopo e o URL de início do manifesto."
-  },
   "core/audits/installable-manifest.js | no-url-for-service-worker": {
     "message": "Não foi possível verificar o service worker sem um campo \"start_url\" no manifesto"
   },
@@ -933,7 +1083,7 @@
     "message": "prefer_related_applications só é compatível no Android com Canais Beta e Stable do Chrome."
   },
   "core/audits/installable-manifest.js | protocol-timeout": {
-    "message": "O Lighthouse não conseguiu determinar se havia um service worker. Tente de novo com uma versão mais recente do Chrome."
+    "message": "Lighthouse could not determine if the page is installable. Please try with a newer version of Chrome."
   },
   "core/audits/installable-manifest.js | scheme-not-supported-for-webapk": {
     "message": "O Android não tem suporte ao esquema de URL do manifesto ({scheme})."
@@ -1076,14 +1226,14 @@
   "core/audits/metrics/cumulative-layout-shift.js | description": {
     "message": "\"Mudança de layout cumulativa\" mede o movimento de elementos visíveis na janela de visualização. [Saiba mais sobre a métrica \"Mudança de layout cumulativa\"](https://web.dev/cls/)."
   },
-  "core/audits/metrics/experimental-interaction-to-next-paint.js | description": {
-    "message": "A métrica \"Interação com a próxima exibição\" mede a capacidade de resposta da página, ou seja, quanto tempo a página leva para responder de maneira visível à entrada do usuário. [Saiba mais sobre a métrica \"Interação com a próxima exibição\"](https://web.dev/inp/)."
-  },
   "core/audits/metrics/first-contentful-paint.js | description": {
     "message": "\"Primeira exibição de conteúdo\" marca o momento em que o primeiro texto ou imagem é disponibilizado. [Saiba mais sobre a métrica \"Primeira exibição de conteúdo\"](https://developer.chrome.com/docs/lighthouse/performance/first-contentful-paint/)."
   },
   "core/audits/metrics/first-meaningful-paint.js | description": {
     "message": "\"Primeira exibição significativa\" marca o momento em que o conteúdo principal de uma página se torna visível. [Saiba mais sobre a métrica \"Primeira exibição significativa\"](https://developer.chrome.com/docs/lighthouse/performance/first-meaningful-paint/)."
+  },
+  "core/audits/metrics/interaction-to-next-paint.js | description": {
+    "message": "A métrica \"Interação com a próxima exibição\" mede a capacidade de resposta da página, ou seja, quanto tempo a página leva para responder de maneira visível à entrada do usuário. [Saiba mais sobre a métrica \"Interação com a próxima exibição\"](https://web.dev/inp/)."
   },
   "core/audits/metrics/interactive.js | description": {
     "message": "\"Tempo para interação da página\" é o período necessário para que uma página fique totalmente interativa. [Saiba mais sobre a métrica \"Tempo para interação da página\"](https://developer.chrome.com/docs/lighthouse/performance/interactive/)."
@@ -1177,15 +1327,6 @@
   },
   "core/audits/redirects.js | title": {
     "message": "Evite redirecionamentos múltiplos de página"
-  },
-  "core/audits/resource-summary.js | description": {
-    "message": "Para definir orçamentos para a quantidade e o tamanho dos recursos da página, adicione um arquivo budget.json. [Saiba mais sobre montantes de desempenho](https://web.dev/use-lighthouse-for-performance-budgets/)."
-  },
-  "core/audits/resource-summary.js | displayValue": {
-    "message": "{requestCount,plural, =1{1 solicitação • {byteCount, number, bytes} KiB}one{# solicitação • {byteCount, number, bytes} KiB}other{# solicitações • {byteCount, number, bytes} KiB}}"
-  },
-  "core/audits/resource-summary.js | title": {
-    "message": "Mantenha as contagens de solicitações baixas e os tamanhos de transferência pequenos"
   },
   "core/audits/seo/canonical.js | description": {
     "message": "Os links canônicos sugerem o URL a ser exibido nos resultados da pesquisa. [Saiba mais sobre links canônicos](https://developer.chrome.com/docs/lighthouse/seo/canonical/)."
@@ -1375,27 +1516,6 @@
   },
   "core/audits/server-response-time.js | title": {
     "message": "O tempo de resposta inicial do servidor foi curto"
-  },
-  "core/audits/service-worker.js | description": {
-    "message": "O service worker é a tecnologia que permite que seu app use muitos recursos do Progressive Web App, por exemplo, disponibilidade off-line, adicionar à tela inicial e notificações de push. [Saiba mais sobre os service workers](https://developer.chrome.com/docs/lighthouse/pwa/service-worker/)."
-  },
-  "core/audits/service-worker.js | explanationBadManifest": {
-    "message": "Esta página é controlada por um service worker, no entanto, nenhum `start_url` foi encontrado porque o manifesto não foi analisado como um JSON válido."
-  },
-  "core/audits/service-worker.js | explanationBadStartUrl": {
-    "message": "Esta página é controlada por um service worker, no entanto, a `start_url` ({startUrl}) não está no escopo dele ({scopeUrl})"
-  },
-  "core/audits/service-worker.js | explanationNoManifest": {
-    "message": "Esta página é controlada por um service worker, no entanto, nenhuma `start_url` foi encontrada porque nenhum manifesto foi recuperado."
-  },
-  "core/audits/service-worker.js | explanationOutOfScope": {
-    "message": "Esta origem tem um ou mais service workers, no entanto, a página ({pageUrl}) não está em escopo."
-  },
-  "core/audits/service-worker.js | failureTitle": {
-    "message": "Não há registro de um service worker que controle a página e `start_url`"
-  },
-  "core/audits/service-worker.js | title": {
-    "message": "Há registro de um service worker que controla a página e `start_url`"
   },
   "core/audits/splash-screen.js | description": {
     "message": "Uma tela de apresentação personalizada garante uma experiência de alta qualidade quando os usuários abrem o aplicativo na tela inicial. [Saiba mais sobre telas de apresentação](https://developer.chrome.com/docs/lighthouse/pwa/splash-screen/)."
@@ -1587,7 +1707,7 @@
     "message": "Práticas recomendadas"
   },
   "core/config/default-config.js | a11yCategoryDescription": {
-    "message": "Essas verificações destacam oportunidades para [melhorar a acessibilidade do seu app da Web](https://developer.chrome.com/docs/lighthouse/accessibility/). Somente um subconjunto de problemas de acessibilidade pode ser detectado automaticamente, portanto, testes manuais também devem ser realizados."
+    "message": "These checks highlight opportunities to [improve the accessibility of your web app](https://developer.chrome.com/docs/lighthouse/accessibility/). Automatic detection can only detect a subset of issues and does not guarantee the accessibility of your web app, so [manual testing](https://web.dev/how-to-review/) is also encouraged."
   },
   "core/config/default-config.js | a11yCategoryManualDescription": {
     "message": "Esses itens se referem a áreas que uma ferramenta de teste automatizada não pode cobrir. Saiba mais no nosso guia sobre [como realizar uma avaliação de acessibilidade](https://web.dev/how-to-review/)."
@@ -1677,7 +1797,7 @@
     "message": "Desempenho"
   },
   "core/config/default-config.js | pwaCategoryDescription": {
-    "message": "Essas verificações validam os aspectos de um Progressive Web App. [Aprenda a criar um bom Progressive Web App](https://web.dev/pwa-checklist/)."
+    "message": "Essas verificações validam os aspectos de um App Web Progressivo. [Aprenda a criar um bom App Web Progressivo](https://web.dev/pwa-checklist/)."
   },
   "core/config/default-config.js | pwaCategoryManualDescription": {
     "message": "Essas verificações são solicitadas pela [Lista de verificação de PWA](https://web.dev/pwa-checklist/) de referência, mas não são automaticamente realizadas pelo Lighthouse. Elas não afetam sua pontuação, mas é importante verificá-las manualmente."
@@ -1751,6 +1871,9 @@
   "core/lib/bf-cache-strings.js | appBanner": {
     "message": "No momento, as páginas que solicitaram um AppBanner não estão qualificadas para o cache de avanço e retorno."
   },
+  "core/lib/bf-cache-strings.js | authorizationHeader": {
+    "message": "O cache de avanço e retorno foi desativado devido a um pedido de sinal de atividade."
+  },
   "core/lib/bf-cache-strings.js | backForwardCacheDisabled": {
     "message": "O cache de avanço e retorno foi desativado por flags. Acesse chrome://flags/#back-forward-cache para ativá-lo localmente no dispositivo."
   },
@@ -1816,6 +1939,9 @@
   },
   "core/lib/bf-cache-strings.js | contentWebUSB": {
     "message": "As páginas que usam a API WebUSB não são qualificadas para o cache de avanço e retorno."
+  },
+  "core/lib/bf-cache-strings.js | cookieDisabled": {
+    "message": "O cache de avanço e retorno foi desativado porque os cookies também foram em uma página que usa `Cache-Control: no-store`."
   },
   "core/lib/bf-cache-strings.js | dedicatedWorkerOrWorklet": {
     "message": "No momento, as páginas que usam um worker ou worklet dedicados não estão qualificadas para o cache de avanço e retorno."
@@ -1892,20 +2018,23 @@
   "core/lib/bf-cache-strings.js | indexedDBConnection": {
     "message": "No momento, as páginas com uma conexão IndexedDB aberta não estão qualificadas para o cache de avanço e retorno."
   },
+  "core/lib/bf-cache-strings.js | indexedDBEvent": {
+    "message": "O cache de avanço e retorno foi desativado devido a um evento IndexedDB."
+  },
   "core/lib/bf-cache-strings.js | ineligibleAPI": {
     "message": "APIs não qualificadas foram usadas."
   },
   "core/lib/bf-cache-strings.js | injectedJavascript": {
-    "message": "No momento, as páginas que tiveram o JavaScript injetado por extensões não estão qualificadas para o cache de avanço e retorno."
+    "message": "No momento, as páginas que tiveram uma injeção de `JavaScript` por extensões não estão qualificadas para o cache de avanço e retorno."
   },
   "core/lib/bf-cache-strings.js | injectedStyleSheet": {
-    "message": "No momento, as páginas que tiveram folhas de estilo injetadas por extensões não estão qualificadas para o cache de avanço e retorno."
+    "message": "No momento, as páginas que tiveram uma injeção de `StyleSheet` por extensões não estão qualificadas para o cache de avanço e retorno."
   },
   "core/lib/bf-cache-strings.js | internalError": {
     "message": "Ocorreu um erro interno."
   },
   "core/lib/bf-cache-strings.js | keepaliveRequest": {
-    "message": "O cache de avanço e retorno foi desativado devido a uma solicitação de sinal de atividade."
+    "message": "O cache de avanço e retorno foi desativado devido a um pedido de sinal de atividade."
   },
   "core/lib/bf-cache-strings.js | keyboardLock": {
     "message": "No momento, as páginas que usam o bloqueio de teclado não estão qualificadas para o cache de avanço e retorno."
@@ -2137,6 +2266,192 @@
   },
   "core/lib/csp-evaluator.js | unsafeInlineFallback": {
     "message": "Adicione \"unsafe-inline\", ignorado por navegadores compatíveis com nonces/hashes, para oferecer compatibilidade com versões anteriores dos navegadores."
+  },
+  "core/lib/deprecation-description.js | feature": {
+    "message": "Verifique a página de status do recurso para saber mais detalhes."
+  },
+  "core/lib/deprecation-description.js | milestone": {
+    "message": "Esta mudança vai entrar em vigor com a versão principal {milestone}."
+  },
+  "core/lib/deprecation-description.js | title": {
+    "message": "Um recurso descontinuado foi usado"
+  },
+  "core/lib/deprecations-strings.js | AuthorizationCoveredByWildcard": {
+    "message": "A autorização não será coberta pelo caractere curinga (*) no gerenciamento do CORS de `Access-Control-Allow-Headers`."
+  },
+  "core/lib/deprecations-strings.js | CSSSelectorInternalMediaControlsOverlayCastButton": {
+    "message": "Use o atributo `disableRemotePlayback` para desativar a integração padrão do Google Cast em vez de usar o seletor `-internal-media-controls-overlay-cast-button`."
+  },
+  "core/lib/deprecations-strings.js | CanRequestURLHTTPContainingNewline": {
+    "message": "Solicitações de recursos com URLs que contêm caracteres `(n|r|t)` de espaço em branco removido e caracteres \"menor que\" (`<`) estão bloqueadas. Remova novas linhas e codifique caracteres \"menor que\" em lugares como valores de atributos de elementos para carregar esses recursos."
+  },
+  "core/lib/deprecations-strings.js | ChromeLoadTimesConnectionInfo": {
+    "message": "O uso de `chrome.loadTimes()` foi descontinuado. Use a API padronizada Navigation Timing 2."
+  },
+  "core/lib/deprecations-strings.js | ChromeLoadTimesFirstPaintAfterLoadTime": {
+    "message": "O uso de `chrome.loadTimes()` foi descontinuado. Use a API padronizada Paint Timing."
+  },
+  "core/lib/deprecations-strings.js | ChromeLoadTimesWasAlternateProtocolAvailable": {
+    "message": "O uso de `chrome.loadTimes()` foi descontinuado. Use a API padronizada `nextHopProtocol` na Navigation Timing 2."
+  },
+  "core/lib/deprecations-strings.js | CookieWithTruncatingChar": {
+    "message": "Cookies contendo um caractere `(0|r|n)` serão rejeitados em vez de truncados."
+  },
+  "core/lib/deprecations-strings.js | CrossOriginAccessBasedOnDocumentDomain": {
+    "message": "O relaxamento de políticas da mesma origem com a definição de `document.domain` foi descontinuado e será desativado por padrão. Este alerta de descontinuação é para um acesso de origem cruzada que foi ativado ao configurar `document.domain`."
+  },
+  "core/lib/deprecations-strings.js | CrossOriginWindowAlert": {
+    "message": "O acionamento de window.alert de iframes de origem cruzada foi descontinuado e será removido."
+  },
+  "core/lib/deprecations-strings.js | CrossOriginWindowConfirm": {
+    "message": "O acionamento de window.confirm de iframes de origem cruzada foi descontinuado e será removido."
+  },
+  "core/lib/deprecations-strings.js | DOMMutationEvents": {
+    "message": "Eventos de mutação DOM, incluindo `DOMSubtreeModified`, `DOMNodeInserted`, `DOMNodeRemoved`, `DOMNodeRemovedFromDocument`, `DOMNodeInsertedIntoDocument` e `DOMCharacterDataModified`, foram descontinuados (https://w3c.github.io/uievents/#legacy-event-types, link em inglês) e serão removidos. Use `MutationObserver`."
+  },
+  "core/lib/deprecations-strings.js | DataUrlInSvgUse": {
+    "message": "Suporte a dados: os URLs no elemento SVG <use> foram descontinuados e serão removidos."
+  },
+  "core/lib/deprecations-strings.js | DocumentDomainSettingWithoutOriginAgentClusterHeader": {
+    "message": "O relaxamento de políticas da mesma origem com a definição de `document.domain` foi descontinuado e será desativado por padrão. Para continuar usando esse recurso, desative os clusters de agente com origin-key, enviando um cabeçalho `Origin-Agent-Cluster: ?0` junto à resposta HTTP para o documento e os frames. Confira mais detalhes em https://developer.chrome.com/blog/immutable-document-domain/ (link em inglês)."
+  },
+  "core/lib/deprecations-strings.js | ExpectCTHeader": {
+    "message": "O cabeçalho `Expect-CT` foi descontinuado e vai ser removido. O Chrome exige Transparência dos certificados para todos os certificados considerados confiáveis emitidos depois de 30 de abril de 2018."
+  },
+  "core/lib/deprecations-strings.js | GeolocationInsecureOrigin": {
+    "message": "`getCurrentPosition()` e `watchPosition()` não funcionam mais em origens não seguras. Para usar esse recurso, troque a origem do seu aplicativo por outra que seja segura, por exemplo, HTTPS. Consulte https://goo.gle/chrome-insecure-origins para ver mais detalhes."
+  },
+  "core/lib/deprecations-strings.js | GeolocationInsecureOriginDeprecatedNotRemoved": {
+    "message": "O uso de `getCurrentPosition()` e `watchPosition()` foi descontinuado em origens não seguras. Para usar esse recurso, troque a origem do seu aplicativo por outra que seja segura, por exemplo, HTTPS. Consulte https://goo.gle/chrome-insecure-origins para ver mais detalhes."
+  },
+  "core/lib/deprecations-strings.js | GetUserMediaInsecureOrigin": {
+    "message": "`getUserMedia()` não funciona mais em origens não seguras. Para usar esse recurso, troque a origem do seu aplicativo por outra que seja segura, por exemplo, HTTPS. Consulte https://goo.gle/chrome-insecure-origins para ver mais detalhes."
+  },
+  "core/lib/deprecations-strings.js | HostCandidateAttributeGetter": {
+    "message": "O uso de `RTCPeerConnectionIceErrorEvent.hostCandidate` foi descontinuado. Use `RTCPeerConnectionIceErrorEvent.address` ou `RTCPeerConnectionIceErrorEvent.port`."
+  },
+  "core/lib/deprecations-strings.js | IdentityInCanMakePaymentEvent": {
+    "message": "A origem do comerciante e os dados arbitrários do evento do service worker `canmakepayment` foram descontinuados e vão ser removidos: `topOrigin`, `paymentRequestOrigin`, `methodData`, `modifiers`."
+  },
+  "core/lib/deprecations-strings.js | InsecurePrivateNetworkSubresourceRequest": {
+    "message": "O site solicitou um recurso secundário de uma rede que ele só conseguiu acessar devido à posição privilegiada na rede que os usuários dele têm. Essas solicitações expõem para a Internet dispositivos e servidores particulares, aumentando o risco de ataques de falsificação de solicitações entre sites (CSRF, na sigla em inglês) e/ou de vazamento de informações. Para reduzir os riscos, o Chrome descontinua solicitações para recursos secundários particulares quando iniciadas em contextos não seguros e vai começar a fazer o bloqueio delas."
+  },
+  "core/lib/deprecations-strings.js | InterestGroupDailyUpdateUrl": {
+    "message": "O campo `dailyUpdateUrl` de `InterestGroups` transmitido para `joinAdInterestGroup()` foi renomeado como `updateUrl` para refletir o comportamento com mais precisão."
+  },
+  "core/lib/deprecations-strings.js | LocalCSSFileExtensionRejected": {
+    "message": "O CSS não pode ser carregado usando URLs `file:`, a menos que eles terminem com uma extensão de arquivo `.css`."
+  },
+  "core/lib/deprecations-strings.js | MediaSourceAbortRemove": {
+    "message": "O uso de `SourceBuffer.abort()` para cancelar a remoção de intervalo assíncrono de `remove()` foi descontinuado devido a uma mudança na especificação. O suporte será removido futuramente. Como alternativa, você precisa detectar o evento `updateend`. O uso de `abort()` tem como objetivo cancelar um anexo de mídia assíncrono ou redefinir o estado do analisador."
+  },
+  "core/lib/deprecations-strings.js | MediaSourceDurationTruncatingBuffered": {
+    "message": "A definição de `MediaSource.duration` abaixo do carimbo de data/hora mais alto da apresentação de frames codificados em buffer foi descontinuada por causa de uma mudança na especificação. O suporte para remoção implícita de mídia truncada em buffer será removido no futuro. Faça uma `remove(newDuration, oldDuration)` explícita em todos os `sourceBuffers`, em que `newDuration < oldDuration`."
+  },
+  "core/lib/deprecations-strings.js | NoSysexWebMIDIWithoutPermission": {
+    "message": "A Web MIDI pede permissão de uso mesmo que o sysex não esteja especificado em `MIDIOptions`."
+  },
+  "core/lib/deprecations-strings.js | NonStandardDeclarativeShadowDOM": {
+    "message": "O atributo `shadowroot` não padronizado foi descontinuado e *não vai mais funcionar* na versão M119. Use o novo atributo `shadowrootmode` padronizado."
+  },
+  "core/lib/deprecations-strings.js | NotificationInsecureOrigin": {
+    "message": "A API Notification não pode mais ser usada em origens não seguras. Troque a origem do seu aplicativo para uma que seja segura, como HTTPS. Consulte https://goo.gle/chrome-insecure-origins para ver mais detalhes."
+  },
+  "core/lib/deprecations-strings.js | NotificationPermissionRequestedIframe": {
+    "message": "A permissão para a API Notification não pode mais ser solicitada em um iframe de origem cruzada. Solicite a permissão em um frame de nível superior ou abra uma nova janela."
+  },
+  "core/lib/deprecations-strings.js | ObsoleteCreateImageBitmapImageOrientationNone": {
+    "message": "A opção `imageOrientation: 'none'` em createImageBitmap foi descontinuada. Em vez dela, use createImageBitmap com a opção \\{imageOrientation: 'from-image'\\}."
+  },
+  "core/lib/deprecations-strings.js | ObsoleteWebRtcCipherSuite": {
+    "message": "Seu parceiro está negociando uma versão (D)TLS obsoleta. Fale com ele para que isso seja corrigido."
+  },
+  "core/lib/deprecations-strings.js | OverflowVisibleOnReplacedElement": {
+    "message": "Especificar `overflow: visible` em tags de img, video e canvas pode fazer com que elas produzam conteúdo visual fora dos limites do elemento. Consulte https://github.com/WICG/shared-element-transitions/blob/main/debugging_overflow_on_images.md (em inglês) para saber mais."
+  },
+  "core/lib/deprecations-strings.js | PaymentInstruments": {
+    "message": "O uso de `paymentManager.instruments` foi descontinuado. Use uma instalação just-in-time para gerenciadores de pagamento."
+  },
+  "core/lib/deprecations-strings.js | PaymentRequestCSPViolation": {
+    "message": "Sua chamada `PaymentRequest` ignorou a diretiva `connect-src` da Política de Segurança de Conteúdo (CSP). Essa ação foi descontinuada. Adicione o identificador da forma de pagamento da API `PaymentRequest` (no campo `supportedMethods`) à diretiva `connect-src` da CSP."
+  },
+  "core/lib/deprecations-strings.js | PersistentQuotaType": {
+    "message": "O uso de `StorageType.persistent` foi descontinuado. Use o `navigator.storage` padronizado."
+  },
+  "core/lib/deprecations-strings.js | PictureSourceSrc": {
+    "message": "O elemento `<source src>` com um pai `<picture>` é inválido e será ignorado. Use `<source srcset>`."
+  },
+  "core/lib/deprecations-strings.js | PrefixedCancelAnimationFrame": {
+    "message": "O webkitCancelAnimationFrame é específico para fornecedores. Em vez dele, use o cancelAnimationFrame padrão."
+  },
+  "core/lib/deprecations-strings.js | PrefixedRequestAnimationFrame": {
+    "message": "O webkitRequestAnimationFrame é específico para fornecedores. Em vez dele, use o requestAnimationFrame padrão."
+  },
+  "core/lib/deprecations-strings.js | PrefixedVideoDisplayingFullscreen": {
+    "message": "O uso de HTMLVideoElement.webkitDisplayingFullscreen foi descontinuado. Use Document.fullElement."
+  },
+  "core/lib/deprecations-strings.js | PrefixedVideoEnterFullScreen": {
+    "message": "O uso de HTMLVideoElement.webkitEnterFullScreen() foi descontinuado. Use Element.requestFullscreen()."
+  },
+  "core/lib/deprecations-strings.js | PrefixedVideoEnterFullscreen": {
+    "message": "O uso de HTMLVideoElement.webkitEnterFullscreen() foi descontinuado. Use Element.requestFullscreen()."
+  },
+  "core/lib/deprecations-strings.js | PrefixedVideoExitFullScreen": {
+    "message": "O uso de HTMLVideoElement.webkitExitFullScreen() foi descontinuado. Use Document.exitFullscreen()."
+  },
+  "core/lib/deprecations-strings.js | PrefixedVideoExitFullscreen": {
+    "message": "O uso de HTMLVideoElement.webkitExitFullscreen() foi descontinuado. Use Document.exitFullscreen()."
+  },
+  "core/lib/deprecations-strings.js | PrefixedVideoSupportsFullscreen": {
+    "message": "O uso de HTMLVideoElement.webkitSupportsFullscreen foi descontinuado. Use Document.fullscreenEnabled."
+  },
+  "core/lib/deprecations-strings.js | PrivacySandboxExtensionsAPI": {
+    "message": "Estamos descontinuando a API `chrome.privacy.websites.privacySandboxEnabled`, embora ela continue ativa para compatibilidade com versões anteriores até a versão M113. Use `chrome.privacy.websites.topicsEnabled`, `chrome.privacy.websites.fledgeEnabled` e `chrome.privacy.websites.adMeasurementEnabled`. Consulte https://developer.chrome.com/docs/extensions/reference/privacy/#property-websites-privacySandboxEnabled."
+  },
+  "core/lib/deprecations-strings.js | RTCConstraintEnableDtlsSrtpFalse": {
+    "message": "A restrição `DtlsSrtpKeyAgreement` foi removida. Você especificou um valor `false` para essa restrição. Essa ação foi interpretada como uma tentativa de usar o método `SDES key negotiation` removido. Essa funcionalidade foi removida. Use um serviço que tenha suporte à `DTLS key negotiation`."
+  },
+  "core/lib/deprecations-strings.js | RTCConstraintEnableDtlsSrtpTrue": {
+    "message": "A restrição `DtlsSrtpKeyAgreement` foi removida. Você especificou um valor `true` para essa restrição. Essa ação não teve efeito, mas você pode remover a restrição para manter a organização."
+  },
+  "core/lib/deprecations-strings.js | RTCPeerConnectionGetStatsLegacyNonCompliant": {
+    "message": "O getStats() baseado em callback foi descontinuado e será removido. Use o getStats() que obedece às especificações."
+  },
+  "core/lib/deprecations-strings.js | RangeExpand": {
+    "message": "O uso de Range.expand() foi descontinuado. Use Selection.modify()."
+  },
+  "core/lib/deprecations-strings.js | RequestedSubresourceWithEmbeddedCredentials": {
+    "message": "As solicitações de recursos secundários com URLs que contêm credenciais incorporadas (como `https://user:pass@host/`) estão bloqueadas."
+  },
+  "core/lib/deprecations-strings.js | RtcpMuxPolicyNegotiate": {
+    "message": "A opção `rtcpMuxPolicy` foi descontinuada e vai ser removida."
+  },
+  "core/lib/deprecations-strings.js | SharedArrayBufferConstructedWithoutIsolation": {
+    "message": "`SharedArrayBuffer` requer isolamento de origem cruzada. Consulte https://developer.chrome.com/blog/enabling-shared-array-buffer/ (link em inglês) para ver mais detalhes."
+  },
+  "core/lib/deprecations-strings.js | TextToSpeech_DisallowedByAutoplay": {
+    "message": "A API `speechSynthesis.speak()` sem ativação do usuário foi descontinuada e será removida."
+  },
+  "core/lib/deprecations-strings.js | V8SharedArrayBufferConstructedInExtensionWithoutIsolation": {
+    "message": "As extensões precisam ativar o isolamento de origem cruzada para continuar usando o recurso `SharedArrayBuffer`. Consulte https://developer.chrome.com/docs/extensions/mv3/cross-origin-isolation/ (link em inglês)."
+  },
+  "core/lib/deprecations-strings.js | WebSQL": {
+    "message": "O SQL da Web foi descontinuado. Use o SQLite WebAssembly ou o banco de dados indexado"
+  },
+  "core/lib/deprecations-strings.js | WindowPlacementPermissionDescriptorUsed": {
+    "message": "O descritor de permissão `window-placement` foi descontinuado. Use `window-management`. Para receber mais ajuda, consulte https://bit.ly/window-placement-rename (link em inglês)."
+  },
+  "core/lib/deprecations-strings.js | WindowPlacementPermissionPolicyParsed": {
+    "message": "A política de permissão `window-placement` foi descontinuada. Use `window-management`. Para receber mais ajuda, consulte https://bit.ly/window-placement-rename (link em inglês)."
+  },
+  "core/lib/deprecations-strings.js | XHRJSONEncodingDetection": {
+    "message": "Não há suporte da resposta JSON para UTF-16 no `XMLHttpRequest`"
+  },
+  "core/lib/deprecations-strings.js | XMLHttpRequestSynchronousInNonWorkerOutsideBeforeUnload": {
+    "message": "A `XMLHttpRequest` síncrona na linha de execução principal foi descontinuada por causa dos efeitos prejudiciais à experiência do usuário final. Para receber mais ajuda, acesse https://xhr.spec.whatwg.org/ (link em inglês)."
+  },
+  "core/lib/deprecations-strings.js | XRSupportsSession": {
+    "message": "O uso de `supportsSession()` foi descontinuado. Use `isSessionSupported()` e verifique o valor booleano resolvido."
   },
   "core/lib/i18n/i18n.js | columnBlockingTime": {
     "message": "Tempo de bloqueio da linha de execução principal"
@@ -2373,7 +2688,7 @@
     "message": "Desempenho"
   },
   "flow-report/src/i18n/ui-strings.js | categoryProgressiveWebApp": {
-    "message": "Progressive Web App"
+    "message": "App Web Progressivo"
   },
   "flow-report/src/i18n/ui-strings.js | categorySeo": {
     "message": "SEO"
@@ -2403,13 +2718,13 @@
     "message": "Medir o desempenho de carregamento de página, como, por exemplo, Maior exibição de conteúdo e Índice de velocidade."
   },
   "flow-report/src/i18n/ui-strings.js | helpUseCaseNavigation3": {
-    "message": "Avaliar os recursos do Progressive Web App."
+    "message": "Avaliar os recursos do App Web Progressivo."
   },
   "flow-report/src/i18n/ui-strings.js | helpUseCaseSnapshot1": {
     "message": "Localizar problemas de acessibilidade em aplicativos de página única ou formulários complexos."
   },
   "flow-report/src/i18n/ui-strings.js | helpUseCaseSnapshot2": {
-    "message": "Avaliar práticas recomendadas de menus e elementos da IU ocultos nas interações."
+    "message": "Avaliar práticas recomendadas de menus e elementos da interface ocultos nas interações."
   },
   "flow-report/src/i18n/ui-strings.js | helpUseCaseTimespan1": {
     "message": "Medir as mudanças de layout e o tempo de execução em JavaScript em uma série de interações."
@@ -2538,7 +2853,7 @@
     "message": "Instale [um módulo Drupal](https://www.drupal.org/project/project_module?f%5B0%5D=&f%5B1%5D=&f%5B2%5D=im_vid_3%3A67&f%5B3%5D=&f%5B4%5D=sm_field_project_type%3Afull&f%5B5%5D=&f%5B6%5D=&text=%22lazy+load%22&solrsort=iss_project_release_usage+desc&op=Search) que possa carregar imagens lentamente. Esses módulos oferecem a capacidade de adiar qualquer imagem fora da tela para melhorar o desempenho."
   },
   "node_modules/lighthouse-stack-packs/packs/drupal.js | render-blocking-resources": {
-    "message": "Use um módulo para CSS e JavaScript in-line essenciais ou carregue recursos de forma assíncrona via JavaScript, como o módulo [Agregação CSS/JS avançada](https://www.drupal.org/project/advagg). As otimizações oferecidas por esse módulo podem corromper seu site, então é provável que você precise fazer modificações no código."
+    "message": "Consider using a module to inline critical CSS and JavaScript, and use the defer attribute for non-critical CSS or JavaScript."
   },
   "node_modules/lighthouse-stack-packs/packs/drupal.js | server-response-time": {
     "message": "Todas as especificações de servidor, temas e módulos contribuem para o tempo de resposta do servidor. Recomendamos que você use um tema mais otimizado, selecionando cuidadosamente um módulo de otimização e/ou fazendo upgrade do seu servidor. Seu servidor de hospedagem precisa usar armazenamento em cache com código de operação PHP, memória cache para reduzir o tempo de consulta de banco de dados, como no Redis ou Memcached, além de otimizar a aplicação lógica para preparar as páginas mais rapidamente."
@@ -2547,10 +2862,10 @@
     "message": "Use [Estilo de Imagem Responsiva](https://www.drupal.org/docs/8/mobile-guide/responsive-images-in-drupal-8) para reduzir o tamanho das imagens carregadas na sua página. Se estiver usando \"Visualização\" para mostrar vários conteúdos em uma página, implemente a paginação para limitar o número de itens mostrados em uma determinada página."
   },
   "node_modules/lighthouse-stack-packs/packs/drupal.js | unminified-css": {
-    "message": "Não esqueça de ativar o \"Agregar documentos CSS\" na página \"Administração » Configurações » Desenvolvimento\". É possível também configurar opções de agregação mais avançadas pelos [módulos adicionais](https://www.drupal.org/project/project_module?f%5B0%5D=&f%5B1%5D=&f%5B2%5D=im_vid_3%3A123&f%5B3%5D=&f%5B4%5D=sm_field_project_type%3Afull&f%5B5%5D=&f%5B6%5D=&text=css+aggregation&solrsort=iss_project_release_usage+desc&op=Search) para acelerar seu site por concatenação, minificação, e compactação dos estilos CSS."
+    "message": "Ensure you have enabled \"Aggregate CSS files\" in the \"Administration » Configuration » Development\" page.  Ensure your Drupal site is running at least Drupal 10.1 for improved asset aggregation support."
   },
   "node_modules/lighthouse-stack-packs/packs/drupal.js | unminified-javascript": {
-    "message": "Não esqueça de ativar \"Agregar documentos JavaScript\" na página \"Administração » Configurações » Desenvolvimento\". É possível também configurar opções de agregação mais avançadas pelos [módulos adicionais](https://www.drupal.org/project/project_module?f%5B0%5D=&f%5B1%5D=&f%5B2%5D=im_vid_3%3A123&f%5B3%5D=&f%5B4%5D=sm_field_project_type%3Afull&f%5B5%5D=&f%5B6%5D=&text=javascript+aggregation&solrsort=iss_project_release_usage+desc&op=Search) para acelerar seu site por concatenação, minificação, e compactação dos recursos JavaScript."
+    "message": "Ensure you have enabled \"Aggregate JavaScript files\" in the \"Administration » Configuration » Development\" page.  Ensure your Drupal site is running at least Drupal 10.1 for improved asset aggregation support."
   },
   "node_modules/lighthouse-stack-packs/packs/drupal.js | unused-css-rules": {
     "message": "Remova as regras não utilizadas do CSS e anexe apenas as bibliotecas Drupal necessárias para a página ou para o componente da página. Veja o [link do documento Drupal](https://www.drupal.org/docs/8/creating-custom-modules/adding-stylesheets-css-and-javascript-js-to-a-drupal-8-module#library) para mais detalhes. Para identificar bibliotecas anexas que estão adicionando CSS externo, execute a [cobertura de código](https://developers.google.com/web/updates/2017/04/devtools-release-notes#coverage) no Chrome DevTools. É possível identificar o tema/módulo responsável pelo URL da folha de estilo quando a agregação do CSS está desativada no seu site Drupal. Procure temas/módulos que tenham muitas folhas de estilo na lista, apresentando um nível alto de vermelho na cobertura do código. Um tema/módulo só deverá colocar uma folha de estilo na fila se ela for realmente usada na página."
@@ -2750,6 +3065,48 @@
   "node_modules/lighthouse-stack-packs/packs/next.js | uses-text-compression": {
     "message": "Ative a compressão no seu servidor Next.js. [Saiba mais](https://nextjs.org/docs/api-reference/next.config.js/compression)."
   },
+  "node_modules/lighthouse-stack-packs/packs/nitropack.js | dom-size": {
+    "message": "Contact your account manager to enable [`HTML Lazy Load`](https://support.nitropack.io/hc/en-us/articles/17144942904337). Configuring it will prioritize and optimize your page rendering performance."
+  },
+  "node_modules/lighthouse-stack-packs/packs/nitropack.js | font-display": {
+    "message": "Use the [`Override Font Rendering Behavior`](https://support.nitropack.io/hc/en-us/articles/16547358865041) option in NitroPack to set a desired value for the CSS font-display rule."
+  },
+  "node_modules/lighthouse-stack-packs/packs/nitropack.js | modern-image-formats": {
+    "message": "Use [`Image Optimization`](https://support.nitropack.io/hc/en-us/articles/16547237162513) to automatically convert your images to WebP."
+  },
+  "node_modules/lighthouse-stack-packs/packs/nitropack.js | offscreen-images": {
+    "message": "Defer offscreen images by enabling [`Automatic Image Lazy Loading`](https://support.nitropack.io/hc/en-us/articles/12457493524369-NitroPack-Lazy-Loading-Feature-for-Images)."
+  },
+  "node_modules/lighthouse-stack-packs/packs/nitropack.js | render-blocking-resources": {
+    "message": "Enable [`Remove render-blocking resources`](https://support.nitropack.io/hc/en-us/articles/13820893500049-How-to-Deal-with-Render-Blocking-Resources-in-NitroPack) in NitroPack for faster initial load times."
+  },
+  "node_modules/lighthouse-stack-packs/packs/nitropack.js | server-response-time": {
+    "message": "Improve server response time and optimize perceived performance by activating [`Instant Load`](https://support.nitropack.io/hc/en-us/articles/16547340617361)."
+  },
+  "node_modules/lighthouse-stack-packs/packs/nitropack.js | unminified-css": {
+    "message": "Enable [`Minify resources`](https://support.nitropack.io/hc/en-us/articles/360061059394-Minify-Resources) in your Caching settings to reduce the size of your CSS, HTML, and JavaScript files for faster load times."
+  },
+  "node_modules/lighthouse-stack-packs/packs/nitropack.js | unminified-javascript": {
+    "message": "Enable [`Minify resources`](https://support.nitropack.io/hc/en-us/articles/360061059394-Minify-Resources) in your Caching settings to reduce the size of your JS, HTML, and CSS files for faster load times."
+  },
+  "node_modules/lighthouse-stack-packs/packs/nitropack.js | unused-css-rules": {
+    "message": "Enable [`Reduce Unused CSS`](https://support.nitropack.io/hc/en-us/articles/360020418457-Reduce-Unused-CSS) to remove CSS rules that are not applicable to this page."
+  },
+  "node_modules/lighthouse-stack-packs/packs/nitropack.js | unused-javascript": {
+    "message": "Configure [`Delayed Scripts`](https://support.nitropack.io/hc/en-us/articles/1500002600942-Delayed-Scripts) in NitroPack to delay loading of scripts until they are needed."
+  },
+  "node_modules/lighthouse-stack-packs/packs/nitropack.js | uses-long-cache-ttl": {
+    "message": "Go to the [`Improve Server Response Time`](https://support.nitropack.io/hc/en-us/articles/1500002321821-Improve-Server-Response-Time) feature in the `Caching` menu and adjust your page cache expiration time to improve loading times and user experience."
+  },
+  "node_modules/lighthouse-stack-packs/packs/nitropack.js | uses-optimized-images": {
+    "message": "Automatically compress, optimize, and convert your images into WebP by enabling the [`Image Optimization`](https://support.nitropack.io/hc/en-us/articles/14177271695121-How-to-serve-images-in-next-gen-formats-using-NitroPack) setting."
+  },
+  "node_modules/lighthouse-stack-packs/packs/nitropack.js | uses-responsive-images": {
+    "message": "Enable [`Adaptive Image Sizing`](https://support.nitropack.io/hc/en-us/articles/10123833029905-How-to-Enable-Adaptive-Image-Sizing-For-Your-Site) to preemptively optimize your images and make them match the dimensions of the containers they’re displayed in across all devices."
+  },
+  "node_modules/lighthouse-stack-packs/packs/nitropack.js | uses-text-compression": {
+    "message": "Use [`Gzip compression`](https://support.nitropack.io/hc/en-us/articles/13229297479313-Enabling-GZIP-compression) in NitroPack to reduce the size of the files that are sent to the browser."
+  },
   "node_modules/lighthouse-stack-packs/packs/nuxt.js | modern-image-formats": {
     "message": "Use o componente `nuxt/image` e o defina como `format=\"webp\"`. [Saiba mais](https://image.nuxtjs.org/components/nuxt-img#format)."
   },
@@ -2830,6 +3187,21 @@
   },
   "node_modules/lighthouse-stack-packs/packs/react.js | user-timings": {
     "message": "Use o React DevTools Profiler, que usa a API Profiler, para medir o desempenho de renderização dos componentes. [Saiba mais.](https://reactjs.org/blog/2018/09/10/introducing-the-react-profiler.html)"
+  },
+  "node_modules/lighthouse-stack-packs/packs/wix.js | efficient-animated-content": {
+    "message": "Coloque vídeos dentro de `VideoBoxes`, personalize eles usando `Video Masks` ou adicione `Transparent Videos`. [Saiba mais](https://support.wix.com/en/article/wix-video-about-wix-video)."
+  },
+  "node_modules/lighthouse-stack-packs/packs/wix.js | modern-image-formats": {
+    "message": "Faça upload de imagens usando `Wix Media Manager` para garantir que elas sejam veiculadas automaticamente como WebP. Descubra [mais maneiras de otimizar](https://support.wix.com/en/article/site-performance-optimizing-your-media) as mídias do seu site."
+  },
+  "node_modules/lighthouse-stack-packs/packs/wix.js | render-blocking-resources": {
+    "message": "Ao [adicionar um código de terceiros](https://support.wix.com/en/article/site-performance-using-third-party-code-on-your-site) na guia `Custom Code` do painel do site, confira se ele foi adiado ou carregado no final do corpo do código. Sempre que possível, use as [integrações](https://support.wix.com/en/article/about-marketing-integrations) do Wix para incorporar ferramentas de marketing ao seu site. "
+  },
+  "node_modules/lighthouse-stack-packs/packs/wix.js | server-response-time": {
+    "message": "O Wix usa CDNs e armazenamento em cache para oferecer respostas o mais rápido possível para a maioria dos visitantes. Considere [ativar manualmente o armazenamento em cache](https://support.wix.com/en/article/site-performance-caching-pages-to-optimize-loading-speed) para seu site, principalmente se estiver usando `Velo`."
+  },
+  "node_modules/lighthouse-stack-packs/packs/wix.js | unused-javascript": {
+    "message": "Revise o código de terceiros que você adicionou ao site na guia `Custom Code` do painel e mantenha apenas os serviços necessários. [Saiba mais](https://support.wix.com/en/article/site-performance-removing-unused-javascript)."
   },
   "node_modules/lighthouse-stack-packs/packs/wordpress.js | efficient-animated-content": {
     "message": "Faça upload do seu GIF para um serviço que o disponibilizará para incorporação como um vídeo HTML5."
@@ -2935,6 +3307,9 @@
   },
   "report/renderer/report-utils.js | dropdownSaveJSON": {
     "message": "Salvar como JSON"
+  },
+  "report/renderer/report-utils.js | dropdownViewUnthrottledTrace": {
+    "message": "View Unthrottled Trace"
   },
   "report/renderer/report-utils.js | dropdownViewer": {
     "message": "Abrir no visualizador"
@@ -3055,9 +3430,6 @@
   },
   "report/renderer/report-utils.js | varianceDisclaimer": {
     "message": "Os valores são estimados e podem variar. O [índice de desempenho é calculado](https://developer.chrome.com/docs/lighthouse/performance/performance-scoring/) diretamente por essas métricas."
-  },
-  "report/renderer/report-utils.js | viewOriginalTraceLabel": {
-    "message": "Ver rastro original"
   },
   "report/renderer/report-utils.js | viewTraceLabel": {
     "message": "Ver rastro"

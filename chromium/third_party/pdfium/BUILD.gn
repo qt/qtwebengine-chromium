@@ -9,7 +9,10 @@ import("pdfium.gni")
 
 group("default") {
   testonly = true
-  deps = [ ":pdfium_all" ]
+  deps = [ ":pdfium" ]
+  if (pdf_is_standalone) {
+    deps += [ ":pdfium_all" ]
+  }
 }
 
 group("freetype_common") {
@@ -42,6 +45,9 @@ config("pdfium_common_config") {
 
   if (pdf_use_partition_alloc) {
     defines += [ "PDF_USE_PARTITION_ALLOC" ]
+  }
+  if (pdf_use_partition_alloc_new_location) {
+    defines += [ "PDF_USE_PARTITION_ALLOC_NEW_LOCATION" ]
   }
 
   if (is_win) {
@@ -388,7 +394,6 @@ component("pdfium") {
     "fpdfsdk/formfiller",
     "fxjs",
     "third_party:pdfium_base",
-    "third_party:skia_shared",
   ]
 
   public_deps = [
@@ -468,18 +473,15 @@ test("pdfium_unittests") {
     "//testing/gtest",
   ]
   configs += [ ":pdfium_core_config" ]
-
   if (is_android) {
     use_raw_android_executable = true
   }
-
   if (pdf_enable_v8) {
     configs += [ "//v8:external_startup_data" ]
     deps += [
       "fxjs:unittests",
       "//v8",
     ]
-
     if (pdf_enable_xfa) {
       deps += [
         "core/fxcrt/css:unittests",
@@ -559,6 +561,7 @@ test("pdfium_embeddertests") {
 }
 
 executable("pdfium_diff") {
+  visibility += [ "testing/tools:test_runner_py" ]
   testonly = true
   sources = [ "testing/image_diff/image_diff.cpp" ]
   deps = [
@@ -570,30 +573,18 @@ executable("pdfium_diff") {
   configs += [ ":pdfium_strict_config" ]
 }
 
-if (pdf_is_standalone) {
-  source_set("samples") {
-    testonly = true
-    deps = [ "//samples" ]
-  }
-
-  group("fuzzers") {
-    testonly = true
-    deps = [ "//testing/fuzzers" ]
-  }
-}
-
 group("pdfium_all") {
   testonly = true
   deps = [
     ":pdfium_diff",
     ":pdfium_embeddertests",
     ":pdfium_unittests",
+    "samples",
+    "testing/fuzzers",
   ]
+
   if (pdf_is_standalone) {
-    deps += [
-      ":fuzzers",
-      ":samples",
-    ]
+    deps += [ "testing/tools:test_runner_py" ]
   }
 }
 

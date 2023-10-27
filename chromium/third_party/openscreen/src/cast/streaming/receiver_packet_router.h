@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,9 +10,9 @@
 #include <utility>
 #include <vector>
 
-#include "absl/types/span.h"
 #include "cast/streaming/environment.h"
 #include "cast/streaming/ssrc.h"
+#include "platform/base/span.h"
 #include "util/flat_map.h"
 
 namespace openscreen {
@@ -42,7 +42,7 @@ class ReceiverPacketRouter final : public Environment::PacketConsumer {
   // Called by a Receiver to send a RTCP packet back to the source from which
   // earlier packets were received, or does nothing if OnReceivedPacket() has
   // not been called yet.
-  void SendRtcpPacket(absl::Span<const uint8_t> packet);
+  void SendRtcpPacket(ByteView packet);
 
  private:
   // Environment::PacketConsumer implementation.

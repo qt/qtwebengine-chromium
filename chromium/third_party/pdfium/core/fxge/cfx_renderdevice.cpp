@@ -33,7 +33,7 @@
 #include "core/fxge/text_glyph_pos.h"
 #include "third_party/base/check.h"
 #include "third_party/base/check_op.h"
-#include "third_party/base/span.h"
+#include "third_party/base/containers/span.h"
 
 #if defined(_SKIA_SUPPORT_)
 #include "third_party/skia/include/core/SkTypes.h"  // nogncheck
@@ -426,7 +426,7 @@ bool GetZeroAreaPath(pdfium::span<const CFX_Path::Point> points,
   for (size_t i = 0; i < points.size(); i++) {
     CFX_Path::Point::Type point_type = points[i].m_Type;
     if (point_type == CFX_Path::Point::Type::kMove) {
-      DCHECK_EQ(0, i);
+      DCHECK_EQ(0u, i);
       continue;
     }
 
@@ -1001,6 +1001,10 @@ bool CFX_RenderDevice::SetBitsWithMask(const RetainPtr<CFX_DIBBase>& pBitmap,
                                        BlendMode blend_type) {
   return m_pDeviceDriver->SetBitsWithMask(pBitmap, pMask, left, top,
                                           bitmap_alpha, blend_type);
+}
+
+bool CFX_RenderDevice::SyncInternalBitmaps() {
+  return m_pDeviceDriver->SyncInternalBitmaps();
 }
 #endif
 

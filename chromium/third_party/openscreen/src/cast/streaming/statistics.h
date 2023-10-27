@@ -8,11 +8,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <string>
 #include <utility>
 #include <vector>
 
 #include "cast/streaming/frame_id.h"
 #include "cast/streaming/rtp_time.h"
+#include "json/value.h"
 #include "platform/api/time.h"
 #include "util/enum_name_table.h"
 
@@ -23,8 +25,6 @@ enum class StatisticType {
   // Frame enqueuing rate.
   kEnqueueFps = 0,
 
-  // TODO(https://issuetracker.google.com/285417419): providable through this
-  // API? support TBD.
   // Average capture latency in milliseconds.
   kAvgCaptureLatencyMs,
 
@@ -84,6 +84,10 @@ enum class StatisticType {
   kNumTypes = kLastEventTimeMs + 1
 };
 
+extern const EnumNameTable<StatisticType,
+                           static_cast<size_t>(StatisticType::kNumTypes)>
+    kStatisticTypeNames;
+
 enum class HistogramType {
   // Histogram representing the capture latency (in milliseconds).
   kCaptureLatencyMs,
@@ -110,6 +114,10 @@ enum class HistogramType {
   kNumTypes = kFrameLatenessMs + 1
 };
 
+extern const EnumNameTable<HistogramType,
+                           static_cast<size_t>(HistogramType::kNumTypes)>
+    kHistogramTypeNames;
+
 struct SimpleHistogram {
   // This will create N+2 buckets where N = (max - min) / width:
   // Underflow bucket: < min
@@ -123,19 +131,30 @@ struct SimpleHistogram {
 
   SimpleHistogram();
   SimpleHistogram(int64_t min, int64_t max, int64_t width);
-  SimpleHistogram(const SimpleHistogram&) = delete;
+  SimpleHistogram(const SimpleHistogram&);
   SimpleHistogram(SimpleHistogram&&) noexcept;
-  SimpleHistogram& operator=(const SimpleHistogram&) = delete;
+  SimpleHistogram& operator=(const SimpleHistogram&);
   SimpleHistogram& operator=(SimpleHistogram&&);
   ~SimpleHistogram();
 
   void Add(int64_t sample);
   void Reset();
 
+  // Creates a copy of this histogram with same min, max, width, and samples.
+  SimpleHistogram Copy();
+  Json::Value ToJson() const;
+  std::string ToString() const;
+
   int64_t min = 1;
   int64_t max = 1;
   int64_t width = 1;
   std::vector<int> buckets;
+
+ private:
+  SimpleHistogram(int64_t min,
+                  int64_t max,
+                  int64_t width,
+                  std::vector<int> buckets);
 };
 
 struct SenderStats {
@@ -156,11 +175,15 @@ struct SenderStats {
 
   // The current video histograms.
   HistogramsList video_histograms;
+
+  Json::Value ToJson() const;
+  std::string ToString() const;
 };
 
 // The consumer may provide a statistics client if they are interested in
 // getting statistics about the ongoing session.
 class SenderStatsClient {
+ public:
   // Gets called regularly with updated statistics while they are being
   // generated.
   virtual void OnStatisticsUpdated(const SenderStats& updated_stats) = 0;

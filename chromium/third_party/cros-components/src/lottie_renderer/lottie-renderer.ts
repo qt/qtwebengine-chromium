@@ -6,9 +6,11 @@
 
 import {css, CSSResultGroup, html, LitElement, PropertyValues} from 'lit';
 
+// TODO(b/295990177): Make these absolute.
 import {waitForEvent} from '../async_helpers/async_helpers';
-import {assertExists, castExists, hexToRgb} from '../helpers/helpers';
+import {assertExists, hexToRgb} from '../helpers/helpers';
 
+import {addColorSchemeChangeListener, removeColorSchemeChangeListener} from './event_binders';
 import {getWorker} from './worker';
 
 /**
@@ -31,6 +33,23 @@ const CROS_TOKENS = new Set<string>([
   'cros.sys.illo.color6',
   'cros.sys.illo.base',
   'cros.sys.illo.secondary',
+
+  /**
+   * These are colors outside of the standard illo palette. Some animations
+   * need to modify the base background color depending on the surface so
+   * contain tokens for app base, card color etc,
+   */
+  'cros.sys.app_base',
+  'cros.sys.app_base_shaded',
+  'cros.sys.app_base_elevated',
+  'cros.sys.illo.card.color4',
+  'cros.sys.illo.card.on_color4',
+  'cros.sys.illo.card.color3',
+  'cros.sys.illo.card.on_color3',
+  'cros.sys.illo.card.color2',
+  'cros.sys.illo.card.on_color2',
+  'cros.sys.illo.card.color1',
+  'cros.sys.illo.card.on_color1',
 ]);
 
 interface MessageData {
@@ -88,18 +107,29 @@ interface ResizeDetail {
 }
 
 /**
- * Helper function for converting between the hexadecimal RGBA string we get
- * from the computed style to the format that lottie expects, which is an array
- * of four floats. Since these come directly from the computed style and color
- * pipeline, we can be confident that we are only going to be parsing 8 digit
- * hexadecimal strings.
+ * Helper function for converting between the hexadecimal string we get from the
+ * computed style to the format that lottie expects, which is an array of four
+ * floats. Since these come directly from the computed style and color pipeline,
+ * we can be confident that we are only going to be parsing 8 digit hexadecimal
+ * strings.
  */
 function convertHexToLottieRGBA(hexString: string): number[] {
-  const hexRgb = hexString.slice(0, -2);
-  const alphaString = hexString.slice(-2);
-  const [r, g, b] = hexToRgb(hexRgb);
+  let r;
+  let g;
+  let b;
+  let alpha;
+  if (hexString.length === 9) {
+    // Assume #rrggbbaa format.
+    const hexRgb = hexString.slice(0, -2);
+    const alphaString = hexString.slice(-2);
+    [r, g, b] = hexToRgb(hexRgb);
+    alpha = Number(`0x${alphaString}`);
+  } else {
+    // Assume #rrggbb format.
+    [r, g, b] = hexToRgb(hexString);
+    alpha = 255;
+  }
 
-  const alpha = Number(`0x${alphaString}`);
   return [r / 255, g / 255, b / 255, alpha / 255];
 }
 
@@ -149,7 +179,7 @@ export class LottieRenderer extends LitElement {
    * The path to the lottie asset JSON file.
    * @export
    */
-  assetUrl!: string;
+  assetUrl: string;
 
   /**
    * When true, animation will begin to play as soon as it's loaded.
@@ -175,6 +205,16 @@ export class LottieRenderer extends LitElement {
   get onscreenCanvas(): HTMLCanvasElement|null {
     return this.renderRoot.querySelector('#onscreen-canvas');
   }
+
+  /**
+   * Temporary public API to ensure component color resolution works.
+   * TODO(b/290864323): Remove legacy usages of this function and then make
+   * private.
+   */
+  onColorSchemeChanged = () => {
+    if (!this.dynamic) return;
+    this.refreshAnimationColors();
+  };
 
   /** The worker thread running the lottie library. */
   private worker: Worker|null = null;
@@ -230,6 +270,7 @@ export class LottieRenderer extends LitElement {
 
   constructor() {
     super();
+    this.assetUrl = '';
     this.autoplay = true;
     this.loop = true;
 
@@ -258,6 +299,8 @@ export class LottieRenderer extends LitElement {
       this.worker = getWorker();
       this.worker.onmessage = (e) => void this.onMessage(e);
     }
+
+    addColorSchemeChangeListener(this.onColorSchemeChanged);
   }
 
   override firstUpdated() {
@@ -280,6 +323,7 @@ export class LottieRenderer extends LitElement {
     if (this.resizeObserver) {
       this.resizeObserver.disconnect();
     }
+    removeColorSchemeChangeListener(this.onColorSchemeChanged);
   }
 
   override updated(changedProperties: PropertyValues<LottieRenderer>) {
@@ -325,29 +369,30 @@ export class LottieRenderer extends LitElement {
     return waitForEvent(this, CrosLottieEvent.STOPPED);
   }
 
-  /**
-   * Temporary public API to ensure component color resolution works.
-   * TODO(b/276079531): Remove, bind refreshAnimColors to color change event.
-   */
-  onColorSchemeChanged() {
-    if (!this.dynamic) return;
-    this.refreshAnimationColors();
-  }
-
   private async refreshAnimationColors() {
     // We must await update here to ensure the computed style will be up to date
     // with the new color scheme.
     // TODO(b/276079531): Investigate if this can be removed when using events.
     this.requestUpdate();
     await this.updateComplete;
-    const animationData = castExists(
-        this.animationData, 'cros-lottie has no animation data to refresh.');
+    if (!this.animationData) {
+      console.info('Refresh animation colors failed: No animation data.');
+      return;
+    }
     this.updateColorsInAnimationData();
-    this.sendAnimationToWorker(animationData);
+    this.sendAnimationToWorker(this.animationData);
   }
 
   private sendAnimationToWorker(animationData: JSON) {
-    assertExists(this.worker, 'lottie-renderer has no web worker.');
+    // There are some edge cases where the renderer has been removed from the
+    // DOM in between initialization and this function running, which causes
+    // the worker to have been terminated. In these cases, we can just early
+    // exit without attempting to send anything to the worker.
+    if (!this.worker) {
+      console.info('lottie-renderer has no web worker.');
+      return;
+    }
+
     const animationConfig: MessageData = ({
       animationData,
       drawSize: this.getCanvasDrawBufferSize(),
@@ -376,9 +421,14 @@ export class LottieRenderer extends LitElement {
 
   /**
    * Load the animation data from `assetUrl` and begin the color token
-   * resolution work.
+   * resolution work. If no `assetUrl` was provided, we don't need to try and
+   * fetch or send anything to the worker.
    */
   private async initAnimation() {
+    if (!this.assetUrl) {
+      console.info('No assetUrl provided.');
+      return;
+    }
     try {
       // In chromium you are not allowed to use `fetch` with `chrome://` URLs,
       // as such we use XMLHttpRequest here.
@@ -397,8 +447,11 @@ export class LottieRenderer extends LitElement {
     } catch (error) {
       console.info(`Unable to load JSON from ${this.assetUrl}`, error);
     }
-    const animationData = castExists(
-        this.animationData, 'cros-lottie-renderer fetched null animation data');
+
+    if (!this.animationData) {
+      console.info('cros-lottie-renderer fetched null animation data');
+      return;
+    }
 
     // For apps using this component without the Jelly flag, they should ignore
     // the dynamic palette and just use the GM2 colors that are inside the
@@ -410,7 +463,7 @@ export class LottieRenderer extends LitElement {
       // find all shapes that are mapped to tokens, as these will need to
       // receive color updates. `colors` is the internal list of all known
       // shapes, and will be modified by this function.
-      traverse(animationData, this.colors);
+      traverse(this.animationData, this.colors);
 
       if (this.colors.size === 0) {
         console.warn(
@@ -421,7 +474,7 @@ export class LottieRenderer extends LitElement {
     }
 
     this.updateColorsInAnimationData();
-    this.sendAnimationToWorker(animationData);
+    this.sendAnimationToWorker(this.animationData);
   }
 
   /**

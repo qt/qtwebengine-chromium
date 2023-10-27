@@ -36,9 +36,8 @@ cc_library(
     deps = [
         "//fastpair/common",
         "//fastpair/repository",
-        "//fastpair/server_access",
         "//internal/base",
-        "//internal/platform:logging",
+        "//internal/platform:types",
         "@com_google_absl//absl/functional:any_invocable",
         "@com_google_absl//absl/strings",
     ],
@@ -88,7 +87,8 @@ cc_test(
     deps = [
         ":fake_fast_pair_ui",
         ":fast_pair_ui",
-        "//fastpair/repository",
+        "//fastpair/common",
+        "//internal/platform:types",
         "//internal/platform/implementation/g3",  # build_cleaner: keep
         "@com_github_protobuf_matchers//protobuf-matchers",
         "@com_google_googletest//:gtest_main",
@@ -105,7 +105,6 @@ cc_test(
         ":fast_pair_ui",
         "//fastpair/common",
         "//fastpair/proto:fastpair_cc_proto",
-        "//fastpair/server_access:test_support",
         "//internal/platform:types",
         "//internal/platform/implementation/g3",  # build_cleaner: keep
         "@com_github_protobuf_matchers//protobuf-matchers",

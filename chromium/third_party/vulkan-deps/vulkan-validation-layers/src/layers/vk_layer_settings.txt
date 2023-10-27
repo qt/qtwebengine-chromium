@@ -76,15 +76,9 @@ khronos_validation.enables =
 
 # Check descriptor indexing accesses
 # =====================
-# <LayerIdentifier>.gpuav_descriptor_indexing
-# Enable descriptor indexing access checking
-#khronos_validation.gpuav_descriptor_indexing = true
-
-# Check Out of Bounds
-# =====================
-# <LayerIdentifier>.gpuav_buffer_oob
-# Enable buffer out of bounds checking
-#khronos_validation.gpuav_buffer_oob = true
+# <LayerIdentifier>.gpuav_descriptor_checks
+# Enable descriptor indexing and buffer out of bounds checking
+#khronos_validation.gpuav_descriptor_checks = true
 
 # Check Draw Indirect Count Buffers and firstInstance values
 # =====================
@@ -103,6 +97,12 @@ khronos_validation.enables =
 # <LayerIdentifier>.gpuav_vma_linear_output
 # Use VMA linear memory allocations for GPU-AV output buffers
 #khronos_validation.vma_linear_output = true
+
+# Specify the maximum number of buffer device addresses in simultaneous use
+# =====================
+# <LayerIdentifier>.gpuav_max_buffer_device_addresses
+# Specify the maximum number of buffer device addresses to allow GPU-AV allocate resources
+#khronos_validation.gpuav_max_buffer_device_addresses = 10000
 
 # Fine Grained Locking
 # =====================

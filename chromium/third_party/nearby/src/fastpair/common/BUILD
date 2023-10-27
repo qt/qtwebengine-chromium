@@ -17,10 +17,12 @@ cc_library(
         "account_key_filter.h",
         "battery_notification.h",
         "constant.h",
+        "device_metadata.h",
         "fast_pair_device.h",
         "fast_pair_http_result.h",
         "fast_pair_prefs.h",
         "fast_pair_switches.h",
+        "fast_pair_version.h",
         "non_discoverable_advertisement.h",
         "pair_failure.h",
         "protocol.h",
@@ -29,8 +31,9 @@ cc_library(
         "//fastpair:__subpackages__",
     ],
     deps = [
-        "//internal/crypto",
-        "//internal/platform:logging",
+        "//fastpair/proto:fastpair_cc_proto",
+        "//internal/crypto_cros",
+        "//internal/platform:types",
         "//internal/preferences",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/container:flat_hash_map",
@@ -64,9 +67,9 @@ cc_test(
     shard_count = 16,
     deps = [
         ":common",
+        "//fastpair/proto:fastpair_cc_proto",
         "//internal/platform/implementation/g3",  # build_cleaner: keep
         "@com_github_protobuf_matchers//protobuf-matchers",
-        "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
     ],
 )

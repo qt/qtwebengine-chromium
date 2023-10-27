@@ -19,8 +19,8 @@
 -- containing bounds of jank CUJs.
 SELECT RUN_METRIC('android/android_jank_cuj.sql');
 
-SELECT IMPORT('android.slices');
-SELECT IMPORT('android.binder');
+INCLUDE PERFETTO MODULE android.slices;
+INCLUDE PERFETTO MODULE android.binder;
 
 -- Jank "J<*>" and latency "L<*>" cujs are put together in android_cujs table.
 -- They are computed separately as latency ones are slightly different, don't
@@ -89,8 +89,6 @@ SELECT DISTINCT
     tx.client_upid as upid
 FROM android_sync_binder_metrics_by_txn AS tx
          JOIN slice AS s ON s.id = tx.binder_txn_id
-        -- Keeps only slices in cuj processes.
-         JOIN android_cujs ON tx.client_upid = android_cujs.upid
 WHERE is_main_thread AND aidl_name IS NOT NULL;
 
 
@@ -98,7 +96,7 @@ DROP TABLE IF EXISTS android_blocking_calls_cuj_calls;
 CREATE TABLE android_blocking_calls_cuj_calls AS
 WITH all_main_thread_relevant_slices AS (
     SELECT DISTINCT
-        ANDROID_STANDARDIZE_SLICE_NAME(s.name) AS name,
+        android_standardize_slice_name(s.name) AS name,
         s.ts,
         s.track_id,
         s.dur,
@@ -110,7 +108,6 @@ WITH all_main_thread_relevant_slices AS (
         JOIN thread_track ON s.track_id = thread_track.id
         JOIN thread USING (utid)
         JOIN process USING (upid)
-        JOIN android_cujs USING (upid) -- Keeps only slices in cuj processes.
     WHERE
         thread.is_main_thread AND (
                s.name = 'measure'
@@ -173,9 +170,9 @@ FROM all_main_thread_relevant_slices s
 SELECT
     name,
     COUNT(*) AS occurrences,
-    CAST(MAX(dur) / 1e6 AS INT) AS max_dur_ms,
-    CAST(MIN(dur) / 1e6 AS INT) AS min_dur_ms,
-    CAST(SUM(dur) / 1e6 AS INT) AS total_dur_ms,
+    MAX(dur) AS max_dur_ns,
+    MIN(dur) AS min_dur_ns,
+    SUM(dur) AS total_dur_ns,
     upid,
     cuj_id,
     cuj_name,
@@ -198,17 +195,20 @@ SELECT AndroidBlockingCallsCujMetric('cuj', (
             'dur', cuj.dur,
             'blocking_calls', (
                 SELECT RepeatedField(
-                     AndroidBlockingCallsCujMetric_BlockingCall(
+                    AndroidBlockingCall(
                         'name', b.name,
                         'cnt', b.occurrences,
-                        'total_dur_ms', b.total_dur_ms,
-                        'max_dur_ms', b.max_dur_ms,
-                        'min_dur_ms', b.min_dur_ms
+                        'total_dur_ms', CAST(total_dur_ns / 1e6 AS INT),
+                        'max_dur_ms', CAST(max_dur_ns / 1e6 AS INT),
+                        'min_dur_ms', CAST(min_dur_ns / 1e6 AS INT),
+                        'total_dur_ns', b.total_dur_ns,
+                        'max_dur_ns', b.max_dur_ns,
+                        'min_dur_ns', b.min_dur_ns
                     )
                 )
                 FROM android_blocking_calls_cuj_calls b
                 WHERE b.cuj_id = cuj.cuj_id and b.upid = cuj.upid
-                ORDER BY total_dur_ms DESC
+                ORDER BY total_dur_ns DESC
             )
         )
     )

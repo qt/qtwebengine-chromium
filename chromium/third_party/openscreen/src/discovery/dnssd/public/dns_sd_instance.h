@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -48,12 +48,12 @@ class DnsSdInstance {
                       std::vector<Subtype>{std::move(subtypes)...}) {}
 
   DnsSdInstance(const DnsSdInstance& other);
-  DnsSdInstance(DnsSdInstance&& other);
+  DnsSdInstance(DnsSdInstance&& other) noexcept;
 
   virtual ~DnsSdInstance();
 
   DnsSdInstance& operator=(const DnsSdInstance& rhs);
-  DnsSdInstance& operator=(DnsSdInstance&& rhs);
+  DnsSdInstance& operator=(DnsSdInstance&& rhs) noexcept;
 
   // Returns the instance name for this DNS-SD record.
   const std::string& instance_id() const { return instance_id_; }

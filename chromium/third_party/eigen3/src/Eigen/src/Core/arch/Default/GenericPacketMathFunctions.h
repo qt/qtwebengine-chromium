@@ -1997,9 +1997,9 @@ struct exponent_helper<ScalarExponent, true> {
   // consider the (rare) case where `exp` is an int32_t: abs(-2147483648) != 2147483648
   using safe_abs_type = typename numext::get_integer_by_size<sizeof(ScalarExponent)>::unsigned_type;
   static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE safe_abs_type safe_abs(const ScalarExponent& exp) {
-    ScalarExponent mask = exp ^ numext::abs(exp);
-    safe_abs_type result = static_cast<safe_abs_type>(exp);
-    return result ^ mask;
+    ScalarExponent mask = numext::signbit(exp);
+    safe_abs_type result = safe_abs_type(exp ^ mask);
+    return result + safe_abs_type(ScalarExponent(1) & mask);
   }
   static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE bool is_odd(const safe_abs_type& exp) {
     return exp % safe_abs_type(2) != safe_abs_type(0);

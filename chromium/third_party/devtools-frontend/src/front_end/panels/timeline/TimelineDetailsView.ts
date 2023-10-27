@@ -8,7 +8,7 @@ import * as SDK from '../../core/sdk/sdk.js';
 import * as TimelineModel from '../../models/timeline_model/timeline_model.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
-import type * as TraceEngine from '../../models/trace/trace.js';
+import * as TraceEngine from '../../models/trace/trace.js';
 
 import {EventsTimelineTreeView} from './EventsTimelineTreeView.js';
 
@@ -41,20 +41,6 @@ const UIStrings = {
    */
   eventLog: 'Event Log',
   /**
-   *@description The label for estimated total blocking time in the performance panel
-   */
-  estimated: 'estimated',
-  /**
-   *@description Label for the total blocking time in the Performance Panel
-   *@example {320.23} PH1
-   *@example {(estimated)} PH2
-   */
-  totalBlockingTimeSmss: 'Total blocking time: {PH1}ms{PH2}',
-  /**
-   *@description Text that is usually a hyperlink to more documentation
-   */
-  learnMore: 'Learn more',
-  /**
    *@description Title of the Layers tool
    */
   layers: 'Layers',
@@ -77,15 +63,14 @@ export class TimelineDetailsView extends UI.Widget.VBox {
   private readonly defaultDetailsWidget: UI.Widget.VBox;
   private readonly defaultDetailsContentElement: HTMLElement;
   private rangeDetailViews: Map<string, TimelineTreeView>;
-  private readonly additionalMetricsToolbar: UI.Toolbar.Toolbar;
   private model!: PerformanceModel;
-  #selectedEvents?: SDK.TracingModel.CompatibleTraceEvent[]|null;
+  #selectedEvents?: TraceEngine.Legacy.CompatibleTraceEvent[]|null;
   private lazyPaintProfilerView?: TimelinePaintProfilerView|null;
   private lazyLayersView?: TimelineLayersView|null;
   private preferredTabId?: string;
   private selection?: TimelineSelection|null;
   #traceEngineData: TraceEngine.Handlers.Migration.PartialTraceData|null = null;
-  #filmStripModel: SDK.FilmStripModel.FilmStripModel|null = null;
+  #filmStrip: TraceEngine.Extras.FilmStrip.Data|null = null;
 
   constructor(delegate: TimelineModeViewDelegate) {
     super();
@@ -117,16 +102,16 @@ export class TimelineDetailsView extends UI.Widget.VBox {
     this.appendTab(Tab.EventLog, i18nString(UIStrings.eventLog), eventsView);
     this.rangeDetailViews.set(Tab.EventLog, eventsView);
 
-    this.additionalMetricsToolbar = new UI.Toolbar.Toolbar('timeline-additional-metrics');
-    this.element.appendChild(this.additionalMetricsToolbar.element);
-
     this.tabbedPane.addEventListener(UI.TabbedPane.Events.TabSelected, this.tabSelected, this);
   }
 
-  setModel(
+  getDetailsContentElementForTest(): HTMLElement {
+    return this.defaultDetailsContentElement;
+  }
+
+  async setModel(
       model: PerformanceModel|null, traceEngineData: TraceEngine.Handlers.Migration.PartialTraceData|null,
-      filmStripModel: SDK.FilmStripModel.FilmStripModel|null,
-      selectedEvents: SDK.TracingModel.CompatibleTraceEvent[]|null): void {
+      selectedEvents: TraceEngine.Legacy.CompatibleTraceEvent[]|null): Promise<void> {
     if (this.model !== model) {
       if (this.model) {
         this.model.removeEventListener(Events.WindowChanged, this.onWindowChanged, this);
@@ -137,32 +122,17 @@ export class TimelineDetailsView extends UI.Widget.VBox {
       }
     }
     this.#traceEngineData = traceEngineData;
+    if (traceEngineData) {
+      this.#filmStrip = TraceEngine.Extras.FilmStrip.fromTraceData(traceEngineData);
+    }
     this.#selectedEvents = selectedEvents;
-    this.#filmStripModel = filmStripModel;
     this.tabbedPane.closeTabs([Tab.PaintProfiler, Tab.LayerViewer], false);
     for (const view of this.rangeDetailViews.values()) {
       view.setModelWithEvents(model, selectedEvents, traceEngineData);
     }
     this.lazyPaintProfilerView = null;
     this.lazyLayersView = null;
-    this.setSelection(null);
-
-    // Add TBT info to the footer.
-    this.additionalMetricsToolbar.removeToolbarItems();
-    if (model && model.timelineModel()) {
-      const {estimated, time} = model.timelineModel().totalBlockingTime();
-      const isEstimate = estimated ? ` (${i18nString(UIStrings.estimated)})` : '';
-      const message = i18nString(UIStrings.totalBlockingTimeSmss, {PH1: time.toFixed(2), PH2: isEstimate});
-
-      const warning = document.createElement('span');
-      const clsLink = UI.XLink.XLink.create('https://web.dev/tbt/', i18nString(UIStrings.learnMore));
-      // Prevent focus ring from being cut off.
-      clsLink.style.margin = '3px';
-      warning.appendChild(clsLink);
-
-      this.additionalMetricsToolbar.appendText(message);
-      this.additionalMetricsToolbar.appendToolbarItem(new UI.Toolbar.ToolbarItem(warning));
-    }
+    await this.setSelection(null);
   }
 
   private setContent(node: Node): void {
@@ -215,17 +185,24 @@ export class TimelineDetailsView extends UI.Widget.VBox {
     this.updateContents();
   }
 
-  #getFilmStripFrame(frame: TimelineModel.TimelineFrameModel.TimelineFrame): SDK.FilmStripModel.Frame|null {
-    if (!this.#filmStripModel) {
+  #getFilmStripFrame(frame: TimelineModel.TimelineFrameModel.TimelineFrame): TraceEngine.Extras.FilmStrip.Frame|null {
+    if (!this.#filmStrip) {
       return null;
     }
-    // For idle frames, look at the state at the beginning of the frame.
-    const screenshotTime = frame.idle ? frame.startTime : frame.endTime;
-    const filmStripFrame = this.#filmStripModel.frameByTimestamp(screenshotTime);
-    return filmStripFrame && filmStripFrame.timestamp - frame.endTime < 10 ? filmStripFrame : null;
+    const screenshotTime = TraceEngine.Types.Timing.MilliSeconds(frame.idle ? frame.startTime : frame.endTime);
+    const screenshotTimeMicroSeconds = TraceEngine.Helpers.Timing.millisecondsToMicroseconds(screenshotTime);
+
+    const filmStripFrame =
+        TraceEngine.Extras.FilmStrip.frameClosestToTimestamp(this.#filmStrip, screenshotTimeMicroSeconds);
+    if (!filmStripFrame) {
+      return null;
+    }
+    const frameTimeMilliSeconds =
+        TraceEngine.Helpers.Timing.microSecondsToMilliseconds(filmStripFrame.screenshotEvent.ts);
+    return frameTimeMilliSeconds - frame.endTime < 10 ? filmStripFrame : null;
   }
 
-  setSelection(selection: TimelineSelection|null): void {
+  async setSelection(selection: TimelineSelection|null): Promise<void> {
     this.detailsLinkifier.reset();
     this.selection = selection;
     if (!this.selection) {
@@ -233,15 +210,20 @@ export class TimelineDetailsView extends UI.Widget.VBox {
       return;
     }
     const selectionObject = this.selection.object;
-    if (TimelineSelection.isTraceEventSelection(selectionObject)) {
+    if (TimelineSelection.isSyntheticNetworkRequestDetailsEventSelection(selectionObject)) {
       const event = selectionObject;
-      void TimelineUIUtils
-          .buildTraceEventDetails(event, this.model.timelineModel(), this.detailsLinkifier, true, this.#traceEngineData)
-          .then(fragment => this.appendDetailsTabsForTraceEventAndShowDetails(event, fragment));
+      const networkDetails = await TimelineUIUtils.buildSyntheticNetworkRequestDetails(
+          event, this.model.timelineModel(), this.detailsLinkifier);
+      this.setContent(networkDetails);
+    } else if (TimelineSelection.isTraceEventSelection(selectionObject)) {
+      const event = selectionObject;
+      const traceEventDetails = await TimelineUIUtils.buildTraceEventDetails(
+          event, this.model.timelineModel(), this.detailsLinkifier, true, this.#traceEngineData);
+      this.appendDetailsTabsForTraceEventAndShowDetails(event, traceEventDetails);
     } else if (TimelineSelection.isFrameObject(selectionObject)) {
       const frame = selectionObject;
-      const filmStripFrame = this.#getFilmStripFrame(frame);
-      this.setContent(TimelineUIUtils.generateDetailsContentForFrame(frame, filmStripFrame));
+      const matchedFilmStripFrame = this.#getFilmStripFrame(frame);
+      this.setContent(TimelineUIUtils.generateDetailsContentForFrame(frame, this.#filmStrip, matchedFilmStripFrame));
       if (frame.layerTree) {
         const layersView = this.layersView();
         layersView.showLayerTree(frame.layerTree);
@@ -249,10 +231,6 @@ export class TimelineDetailsView extends UI.Widget.VBox {
           this.appendTab(Tab.LayerViewer, i18nString(UIStrings.layers), layersView);
         }
       }
-    } else if (TimelineSelection.isNetworkRequestSelection(selectionObject)) {
-      const request = selectionObject;
-      void TimelineUIUtils.buildNetworkRequestDetails(request, this.model.timelineModel(), this.detailsLinkifier)
-          .then(this.setContent.bind(this));
     } else if (TimelineSelection.isRangeSelection(selectionObject)) {
       this.updateSelectedRangeStats(this.selection.startTime, this.selection.endTime);
     }
@@ -294,10 +272,10 @@ export class TimelineDetailsView extends UI.Widget.VBox {
     this.tabbedPane.selectTab(Tab.PaintProfiler, true);
   }
 
-  private appendDetailsTabsForTraceEventAndShowDetails(event: SDK.TracingModel.CompatibleTraceEvent, content: Node):
+  private appendDetailsTabsForTraceEventAndShowDetails(event: TraceEngine.Legacy.CompatibleTraceEvent, content: Node):
       void {
     this.setContent(content);
-    if (SDK.TracingModel.eventIsFromNewEngine(event)) {
+    if (TraceEngine.Legacy.eventIsFromNewEngine(event)) {
       // TODO(crbug.com/1386091): Add support for this use case in the
       // new engine.
       return;
@@ -308,7 +286,7 @@ export class TimelineDetailsView extends UI.Widget.VBox {
     }
   }
 
-  private showEventInPaintProfiler(event: SDK.TracingModel.Event): void {
+  private showEventInPaintProfiler(event: TraceEngine.Legacy.Event): void {
     const paintProfilerModel =
         SDK.TargetManager.TargetManager.instance().models(SDK.PaintProfiler.PaintProfilerModel)[0];
     if (!paintProfilerModel) {

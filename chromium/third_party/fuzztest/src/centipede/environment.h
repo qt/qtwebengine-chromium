@@ -17,6 +17,7 @@
 
 #include <cstddef>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "absl/time/time.h"
@@ -60,6 +61,7 @@ struct Environment {
   size_t max_len;
   size_t batch_size;
   size_t mutate_batch_size;
+  bool use_legacy_default_mutator;
   size_t load_other_shard_frequency;
   bool serialize_shard_loads;
   size_t seed;
@@ -74,11 +76,11 @@ struct Environment {
   bool use_corpus_weights;
   bool use_coverage_frontier;
   size_t max_corpus_size;
-  int crossover_level;
+  size_t crossover_level;
   bool use_pc_features;
   size_t path_level;
   bool use_cmp_features;
-  bool use_callstack_features;
+  size_t callstack_level;
   bool use_auto_dictionary;
   bool use_dataflow_features;
   bool use_counter_features;
@@ -87,6 +89,7 @@ struct Environment {
   bool require_pc_table;
   int telemetry_frequency;
   bool print_runner_log;
+  bool distill;
   size_t distill_shards;
   size_t log_features_shards;
   std::string knobs_file;
@@ -106,14 +109,13 @@ struct Environment {
   size_t max_num_crash_reports;
   std::string minimize_crash_file_path;
   size_t shmem_size_mb;
+  bool use_posix_shmem = false;
   bool dry_run = false;
 
   // Command line-related fields -----------------------------------------------
 
   std::string exec_name;          // copied from argv[0]
   std::vector<std::string> args;  // copied from argv[1:].
-  // The command to execute the binary (may contain arguments).
-  const std::string cmd;
   const std::string binary_name;  // Name of `coverage_binary`, w/o directories.
   const std::string binary_hash;  // Hash of the `coverage_binary` file.
   bool has_input_wildcards = false;  // Set to true iff `binary` contains "@@".
@@ -161,6 +163,11 @@ struct Environment {
   // Non-default `annotation` becomes a part of the returned filename.
   // `annotation` must not start with a '.'.
   std::string MakeCorpusStatsPath(std::string_view annotation = "") const;
+  // Returns the path for the fuzzing progress stats report file for
+  // `my_shard_index`.
+  // Non-default `annotation` becomes a part of the returned filename.
+  // `annotation` must not start with a '.'.
+  std::string MakeFuzzingStatsPath(std::string_view annotation = "") const;
   // Returns the path to the source-based coverage report directory.
   std::string MakeSourceBasedCoverageReportPath(
       std::string_view annotation = "") const;

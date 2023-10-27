@@ -20,7 +20,7 @@
 #include "absl/strings/str_format.h"
 #include "dawn/common/BitSetIterator.h"
 #include "dawn/common/Constants.h"
-#include "dawn/native/BindGroupLayout.h"
+#include "dawn/native/BindGroupLayoutInternal.h"
 #include "dawn/native/ChainUtils.h"
 #include "dawn/native/CompilationMessages.h"
 #include "dawn/native/Device.h"
@@ -28,6 +28,7 @@
 #include "dawn/native/Pipeline.h"
 #include "dawn/native/PipelineLayout.h"
 #include "dawn/native/RenderPipeline.h"
+#include "dawn/native/SpirvValidation.h"
 #include "dawn/native/TintUtils.h"
 
 #include "tint/tint.h"
@@ -65,6 +66,8 @@ BindingInfoType TintResourceTypeToBindingInfoType(
         case tint::inspector::ResourceBinding::ResourceType::kDepthMultisampledTexture:
             return BindingInfoType::Texture;
         case tint::inspector::ResourceBinding::ResourceType::kWriteOnlyStorageTexture:
+        case tint::inspector::ResourceBinding::ResourceType::kReadOnlyStorageTexture:
+        case tint::inspector::ResourceBinding::ResourceType::kReadWriteStorageTexture:
             return BindingInfoType::StorageTexture;
         case tint::inspector::ResourceBinding::ResourceType::kExternalTexture:
             return BindingInfoType::ExternalTexture;
@@ -208,6 +211,10 @@ ResultOrError<wgpu::StorageTextureAccess> TintResourceTypeToStorageTextureAccess
     switch (resource_type) {
         case tint::inspector::ResourceBinding::ResourceType::kWriteOnlyStorageTexture:
             return wgpu::StorageTextureAccess::WriteOnly;
+        case tint::inspector::ResourceBinding::ResourceType::kReadOnlyStorageTexture:
+            return wgpu::StorageTextureAccess::ReadOnly;
+        case tint::inspector::ResourceBinding::ResourceType::kReadWriteStorageTexture:
+            return wgpu::StorageTextureAccess::ReadWrite;
         default:
             return DAWN_VALIDATION_ERROR("Attempted to convert non-storage texture resource type");
     }
@@ -301,7 +308,7 @@ EntryPointMetadata::Override::Type FromTintOverrideType(tint::inspector::Overrid
 ResultOrError<tint::Program> ParseWGSL(const tint::Source::File* file,
                                        OwnedCompilationMessages* outMessages) {
 #if TINT_BUILD_WGSL_READER
-    tint::Program program = tint::reader::wgsl::Parse(file);
+    tint::Program program = tint::wgsl::reader::Parse(file);
     if (outMessages != nullptr) {
         DAWN_TRY(outMessages->AddMessages(program.Diagnostics()));
     }
@@ -319,11 +326,11 @@ ResultOrError<tint::Program> ParseWGSL(const tint::Source::File* file,
 ResultOrError<tint::Program> ParseSPIRV(const std::vector<uint32_t>& spirv,
                                         OwnedCompilationMessages* outMessages,
                                         const DawnShaderModuleSPIRVOptionsDescriptor* optionsDesc) {
-    tint::reader::spirv::Options options;
+    tint::spirv::reader::Options options;
     if (optionsDesc) {
         options.allow_non_uniform_derivatives = optionsDesc->allowNonUniformDerivatives;
     }
-    tint::Program program = tint::reader::spirv::Parse(spirv, options);
+    tint::Program program = tint::spirv::reader::Read(spirv, options);
     if (outMessages != nullptr) {
         DAWN_TRY(outMessages->AddMessages(program.Diagnostics()));
     }
@@ -337,7 +344,7 @@ ResultOrError<tint::Program> ParseSPIRV(const std::vector<uint32_t>& spirv,
 #endif  // TINT_BUILD_SPV_READER
 
 std::vector<uint64_t> GetBindGroupMinBufferSizes(const BindingGroupInfoMap& shaderBindings,
-                                                 const BindGroupLayoutBase* layout) {
+                                                 const BindGroupLayoutInternalBase* layout) {
     std::vector<uint64_t> requiredBufferSizes(layout->GetUnverifiedBufferCount());
     uint32_t packedIdx = 0;
 
@@ -365,11 +372,11 @@ std::vector<uint64_t> GetBindGroupMinBufferSizes(const BindingGroupInfoMap& shad
 }
 
 MaybeError ValidateCompatibilityOfSingleBindingWithLayout(const DeviceBase* device,
-                                                          const BindGroupLayoutBase* layout,
+                                                          const BindGroupLayoutInternalBase* layout,
                                                           SingleShaderStage entryPointStage,
                                                           BindingNumber bindingNumber,
                                                           const ShaderBindingInfo& shaderInfo) {
-    const BindGroupLayoutBase::BindingMap& layoutBindings = layout->GetBindingMap();
+    const BindGroupLayoutInternalBase::BindingMap& layoutBindings = layout->GetBindingMap();
 
     // An external texture binding found in the shader will later be expanded into multiple
     // bindings at compile time. This expansion will have already happened in the bgl - so
@@ -381,7 +388,7 @@ MaybeError ValidateCompatibilityOfSingleBindingWithLayout(const DeviceBase* devi
         // key in the ExternalTextureBindingExpansions map.
         ExternalTextureBindingExpansionMap expansions =
             layout->GetExternalTextureBindingExpansionMap();
-        std::map<BindingNumber, dawn_native::ExternalTextureBindingExpansion>::iterator it =
+        std::map<BindingNumber, dawn::native::ExternalTextureBindingExpansion>::iterator it =
             expansions.find(bindingNumber);
         // TODO(dawn:563): Provide info about the binding types.
         DAWN_INVALID_IF(it == expansions.end(),
@@ -419,8 +426,16 @@ MaybeError ValidateCompatibilityOfSingleBindingWithLayout(const DeviceBase* devi
                 layoutInfo.texture.multisampled, shaderInfo.texture.multisampled);
 
             // TODO(dawn:563): Provide info about the sample types.
-            DAWN_INVALID_IF(!(SampleTypeToSampleTypeBit(layoutInfo.texture.sampleType) &
-                              shaderInfo.texture.compatibleSampleTypes),
+            SampleTypeBit requiredType;
+            if (layoutInfo.texture.sampleType == kInternalResolveAttachmentSampleType) {
+                // If the layout's texture's sample type is kInternalResolveAttachmentSampleType,
+                // then the shader's compatible sample types must contain float.
+                requiredType = SampleTypeBit::UnfilterableFloat;
+            } else {
+                requiredType = SampleTypeToSampleTypeBit(layoutInfo.texture.sampleType);
+            }
+
+            DAWN_INVALID_IF(!(shaderInfo.texture.compatibleSampleTypes & requiredType),
                             "The sample type in the shader is not compatible with the "
                             "sample type of the layout.");
 
@@ -499,7 +514,7 @@ MaybeError ValidateCompatibilityOfSingleBindingWithLayout(const DeviceBase* devi
 MaybeError ValidateCompatibilityWithBindGroupLayout(DeviceBase* device,
                                                     BindGroupIndex group,
                                                     const EntryPointMetadata& entryPoint,
-                                                    const BindGroupLayoutBase* layout) {
+                                                    const BindGroupLayoutInternalBase* layout) {
     // Iterate over all bindings used by this group in the shader, and find the
     // corresponding binding in the BindGroupLayout, if it exists.
     for (const auto& [bindingId, bindingInfo] : entryPoint.bindings[group]) {
@@ -523,7 +538,7 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
     // error in metadata.infringedLimits. This is to delay the emission of these validation
     // errors until the entry point is used.
 #define DelayedInvalidIf(invalid, ...)                                              \
-    ([&]() {                                                                        \
+    ([&] {                                                                          \
         if (invalid) {                                                              \
             metadata->infringedLimitErrors.push_back(absl::StrFormat(__VA_ARGS__)); \
         }                                                                           \
@@ -733,7 +748,6 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
                                     !device->HasFeature(Feature::BGRA8UnormStorage),
                                 "BGRA8Unorm storage textures are not supported if optional feature "
                                 "bgra8unorm-storage is not supported.");
-
                 break;
             case BindingInfoType::ExternalTexture:
                 break;
@@ -901,83 +915,88 @@ class TintSource {
     tint::Source::File file;
 };
 
+// A WGSL (or SPIR-V, if enabled) subdescriptor is required, and a Dawn-specific SPIR-V options
+// descriptor is allowed when using SPIR-V.
+#if TINT_BUILD_SPV_READER
+using ShaderModuleDescriptorBranches =
+    BranchList<Branch<ShaderModuleWGSLDescriptor>,
+               Branch<ShaderModuleSPIRVDescriptor, DawnShaderModuleSPIRVOptionsDescriptor>>;
+#else
+using ShaderModuleDescriptorBranches = BranchList<Branch<ShaderModuleWGSLDescriptor>>;
+#endif
+
 MaybeError ValidateAndParseShaderModule(DeviceBase* device,
                                         const ShaderModuleDescriptor* descriptor,
                                         ShaderModuleParseResult* parseResult,
                                         OwnedCompilationMessages* outMessages) {
     ASSERT(parseResult != nullptr);
 
-    const ChainedStruct* chainedDescriptor = descriptor->nextInChain;
-    DAWN_INVALID_IF(chainedDescriptor == nullptr,
-                    "Shader module descriptor missing chained descriptor");
-
-// A WGSL (or SPIR-V, if enabled) subdescriptor is required, and a Dawn-specific SPIR-V options
-// descriptor is allowed when using SPIR-V.
-#if TINT_BUILD_SPV_READER
-    DAWN_TRY(ValidateSTypes(
-        chainedDescriptor,
-        {{wgpu::SType::ShaderModuleSPIRVDescriptor, wgpu::SType::ShaderModuleWGSLDescriptor},
-         {wgpu::SType::DawnShaderModuleSPIRVOptionsDescriptor}}));
-#else
-    DAWN_TRY(ValidateSingleSType(chainedDescriptor, wgpu::SType::ShaderModuleWGSLDescriptor));
-#endif
+    UnpackedShaderModuleDescriptorChain unpacked;
+    DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpackChain(descriptor));
+    wgpu::SType moduleType;
+    DAWN_TRY_ASSIGN(moduleType, (ValidateBranches<ShaderModuleDescriptorBranches>(unpacked)));
+    ASSERT(moduleType != wgpu::SType::Invalid);
 
     ScopedTintICEHandler scopedICEHandler(device);
 
+    // Multiple paths may use a WGSL descriptor so declare it here now.
     const ShaderModuleWGSLDescriptor* wgslDesc = nullptr;
-    FindInChain(chainedDescriptor, &wgslDesc);
-
-    const DawnShaderModuleSPIRVOptionsDescriptor* spirvOptions = nullptr;
-    FindInChain(chainedDescriptor, &spirvOptions);
-
-    DAWN_INVALID_IF(wgslDesc != nullptr && spirvOptions != nullptr,
-                    "SPIR-V options descriptor not valid with WGSL descriptor");
-
-#if TINT_BUILD_SPV_READER
-    const ShaderModuleSPIRVDescriptor* spirvDesc = nullptr;
-    FindInChain(chainedDescriptor, &spirvDesc);
-
-    DAWN_INVALID_IF(spirvOptions != nullptr && spirvDesc == nullptr,
-                    "SPIR-V options descriptor can only be used with SPIR-V input");
-
-    // We have a temporary toggle to force the SPIRV ingestion to go through a WGSL
-    // intermediate step. It is done by switching the spirvDesc for a wgslDesc below.
-    ShaderModuleWGSLDescriptor newWgslDesc;
-    std::string newWgslCode;
-    if (spirvDesc && device->IsToggleEnabled(Toggle::ForceWGSLStep)) {
 #if TINT_BUILD_WGSL_WRITER
-        std::vector<uint32_t> spirv(spirvDesc->code, spirvDesc->code + spirvDesc->codeSize);
-        tint::Program program;
-        DAWN_TRY_ASSIGN(program, ParseSPIRV(spirv, outMessages, spirvOptions));
-
-        tint::writer::wgsl::Options options;
-        auto result = tint::writer::wgsl::Generate(&program, options);
-        DAWN_INVALID_IF(!result.success, "Tint WGSL failure: Generator: %s", result.error);
-
-        newWgslCode = std::move(result.wgsl);
-        newWgslDesc.code = newWgslCode.c_str();
-
-        spirvDesc = nullptr;
-        wgslDesc = &newWgslDesc;
-#else
-        device->EmitLog(
-            WGPULoggingType_Info,
-            "Toggle::ForceWGSLStep skipped because TINT_BUILD_WGSL_WRITER is not defined\n");
+    ShaderModuleWGSLDescriptor newWgslDesc = {};
+    std::string newWgslCode;
 #endif  // TINT_BUILD_WGSL_WRITER
-    }
 
-    if (spirvDesc) {
-        DAWN_INVALID_IF(device->IsToggleEnabled(Toggle::DisallowSpirv), "SPIR-V is disallowed.");
+    switch (moduleType) {
+#if TINT_BUILD_SPV_READER
+        case wgpu::SType::ShaderModuleSPIRVDescriptor: {
+            DAWN_INVALID_IF(device->IsToggleEnabled(Toggle::DisallowSpirv),
+                            "SPIR-V is disallowed.");
+            const auto* spirvDesc = std::get<const ShaderModuleSPIRVDescriptor*>(unpacked);
+            const auto* spirvOptions =
+                std::get<const DawnShaderModuleSPIRVOptionsDescriptor*>(unpacked);
 
-        std::vector<uint32_t> spirv(spirvDesc->code, spirvDesc->code + spirvDesc->codeSize);
-        tint::Program program;
-        DAWN_TRY_ASSIGN(program, ParseSPIRV(spirv, outMessages, spirvOptions));
-        parseResult->tintProgram = std::make_unique<tint::Program>(std::move(program));
+            // We have a temporary toggle to force the SPIRV ingestion to go through a WGSL
+            // intermediate step. It is done by switching the spirvDesc for a wgslDesc below.
+            if (device->IsToggleEnabled(Toggle::ForceWGSLStep)) {
+#if TINT_BUILD_WGSL_WRITER
+                std::vector<uint32_t> spirv(spirvDesc->code, spirvDesc->code + spirvDesc->codeSize);
+                tint::Program program;
+                DAWN_TRY_ASSIGN(program, ParseSPIRV(spirv, outMessages, spirvOptions));
 
-        return {};
-    }
+                tint::wgsl::writer::Options options;
+                auto result = tint::wgsl::writer::Generate(&program, options);
+                DAWN_INVALID_IF(!result, "Tint WGSL failure: Generator: %s", result.Failure());
+
+                newWgslCode = std::move(result->wgsl);
+                newWgslDesc.code = newWgslCode.c_str();
+                wgslDesc = &newWgslDesc;
+                break;
+#else
+                device->EmitLog(WGPULoggingType_Info,
+                                "Toggle::ForceWGSLStep skipped because TINT_BUILD_WGSL_WRITER is "
+                                "not defined\n");
+#endif  // TINT_BUILD_WGSL_WRITER
+            }
+
+            std::vector<uint32_t> spirv(spirvDesc->code, spirvDesc->code + spirvDesc->codeSize);
+#ifdef DAWN_ENABLE_SPIRV_VALIDATION
+            const bool dumpSpirv = device->IsToggleEnabled(Toggle::DumpShaders);
+            DAWN_TRY(ValidateSpirv(device, spirv.data(), spirv.size(), dumpSpirv));
+#endif  // DAWN_ENABLE_SPIRV_VALIDATION
+            tint::Program program;
+            DAWN_TRY_ASSIGN(program, ParseSPIRV(spirv, outMessages, spirvOptions));
+            parseResult->tintProgram = std::make_unique<tint::Program>(std::move(program));
+
+            return {};
+        }
 #endif  // TINT_BUILD_SPV_READER
-
+        case wgpu::SType::ShaderModuleWGSLDescriptor: {
+            wgslDesc = std::get<const ShaderModuleWGSLDescriptor*>(unpacked);
+            break;
+        }
+        default:
+            UNREACHABLE();
+    }
     ASSERT(wgslDesc != nullptr);
 
     auto tintSource = std::make_unique<TintSource>("", wgslDesc->code);
@@ -1007,12 +1026,12 @@ RequiredBufferSizes ComputeRequiredBufferSizesForLayout(const EntryPointMetadata
     return bufferSizes;
 }
 
-ResultOrError<tint::Program> RunTransforms(tint::transform::Manager* transformManager,
+ResultOrError<tint::Program> RunTransforms(tint::ast::transform::Manager* transformManager,
                                            const tint::Program* program,
-                                           const tint::transform::DataMap& inputs,
-                                           tint::transform::DataMap* outputs,
+                                           const tint::ast::transform::DataMap& inputs,
+                                           tint::ast::transform::DataMap* outputs,
                                            OwnedCompilationMessages* outMessages) {
-    tint::transform::DataMap transform_outputs;
+    tint::ast::transform::DataMap transform_outputs;
     tint::Program result = transformManager->Run(program, inputs, transform_outputs);
     if (outMessages != nullptr) {
         DAWN_TRY(outMessages->AddMessages(result.Diagnostics()));
@@ -1043,13 +1062,15 @@ MaybeError ValidateCompatibilityWithPipelineLayout(DeviceBase* device,
 
     // Validate that filtering samplers are not used with unfilterable textures.
     for (const auto& pair : entryPoint.samplerTexturePairs) {
-        const BindGroupLayoutBase* samplerBGL = layout->GetBindGroupLayout(pair.sampler.group);
+        const BindGroupLayoutInternalBase* samplerBGL =
+            layout->GetBindGroupLayout(pair.sampler.group);
         const BindingInfo& samplerInfo =
             samplerBGL->GetBindingInfo(samplerBGL->GetBindingIndex(pair.sampler.binding));
         if (samplerInfo.sampler.type != wgpu::SamplerBindingType::Filtering) {
             continue;
         }
-        const BindGroupLayoutBase* textureBGL = layout->GetBindGroupLayout(pair.texture.group);
+        const BindGroupLayoutInternalBase* textureBGL =
+            layout->GetBindGroupLayout(pair.texture.group);
         const BindingInfo& textureInfo =
             textureBGL->GetBindingInfo(textureBGL->GetBindingIndex(pair.texture.binding));
 
@@ -1116,10 +1137,7 @@ ShaderModuleBase::ShaderModuleBase(DeviceBase* device, ObjectBase::ErrorTag tag,
 ShaderModuleBase::~ShaderModuleBase() = default;
 
 void ShaderModuleBase::DestroyImpl() {
-    if (IsCachedReference()) {
-        // Do not uncache the actual cached object if we are a blueprint.
-        GetDevice()->UncacheShaderModule(this);
-    }
+    Uncache();
 }
 
 // static

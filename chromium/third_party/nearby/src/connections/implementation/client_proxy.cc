@@ -14,6 +14,7 @@
 
 #include "connections/implementation/client_proxy.h"
 
+#include <cstdint>
 #include <cstdlib>
 #include <functional>
 #include <ios>
@@ -26,12 +27,15 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
+#include "absl/functional/any_invocable.h"
 #include "absl/strings/escaping.h"
-#include "absl/strings/str_format.h"
+#include "absl/strings/string_view.h"
+#include "connections/implementation/flags/nearby_connections_feature_flags.h"
 #include "connections/v3/bandwidth_info.h"
 #include "connections/v3/connection_listening_options.h"
 #include "connections/v3/connections_device_provider.h"
 #include "internal/analytics/event_logger.h"
+#include "internal/flags/nearby_flags.h"
 #include "internal/platform/error_code_recorder.h"
 #include "internal/platform/feature_flags.h"
 #include "internal/platform/implementation/platform.h"
@@ -66,6 +70,12 @@ ClientProxy::ClientProxy(::nearby::analytics::EventLogger* event_logger)
       });
   local_os_info_.set_type(
       OSNameToOsInfoType(api::ImplementationPlatform::GetCurrentOS()));
+  supports_safe_to_disconnect_ = NearbyFlags::GetInstance().GetBoolFlag(
+      config_package_nearby::nearby_connections_feature::
+          kEnableSafeToDisconnect);
+  local_safe_to_disconnect_version_ = NearbyFlags::GetInstance().GetInt64Flag(
+      config_package_nearby::nearby_connections_feature::
+          kSafeToDisconnectVersion);
 }
 
 ClientProxy::~ClientProxy() { Reset(); }
@@ -77,23 +87,25 @@ std::string ClientProxy::GetLocalEndpointId() {
   if (!local_endpoint_id_.empty()) {
     return local_endpoint_id_;
   }
-  if (device_provider_ == nullptr) {
+  if (external_device_provider_ == nullptr) {
     local_endpoint_id_ = GenerateLocalEndpointId();
   } else {
-    local_endpoint_id_ = device_provider_->GetLocalDevice()->GetEndpointId();
+    local_endpoint_id_ =
+        external_device_provider_->GetLocalDevice()->GetEndpointId();
   }
   return local_endpoint_id_;
 }
 
 const NearbyDevice* ClientProxy::GetLocalDevice() {
-  if (device_provider_ == nullptr) {
+  if (external_device_provider_ == nullptr &&
+      connections_device_provider_ == nullptr) {
     // TODO(b/285602283): Plug in actual endpoint info once available.
     auto provider =
         v3::ConnectionsDeviceProvider(GetLocalEndpointId(), "V3 endpoint", {});
-    RegisterDeviceProvider(
+    RegisterConnectionsDeviceProvider(
         std::make_unique<v3::ConnectionsDeviceProvider>(provider));
   }
-  return device_provider_->GetLocalDevice();
+  return GetLocalDeviceProvider()->GetLocalDevice();
 }
 
 std::string ClientProxy::GetConnectionToken(const std::string& endpoint_id) {
@@ -316,8 +328,11 @@ void ClientProxy::OnEndpointFound(
   MutexLock lock(&mutex_);
 
   NEARBY_LOGS(INFO) << "ClientProxy [Endpoint Found]: [enter] id="
-                    << endpoint_id << "; service=" << service_id << "; info="
-                    << absl::BytesToHexString(endpoint_info.data());
+                    << endpoint_id << "; service=" << service_id
+                    << "; info=" << absl::BytesToHexString(endpoint_info.data())
+                    << "; medium="
+                    << location::nearby::proto::connections::Medium_Name(
+                           medium);
   if (!IsDiscoveringServiceId(service_id)) {
     NEARBY_LOGS(INFO) << "ClientProxy [Endpoint Found]: Ignoring event for id="
                       << endpoint_id
@@ -362,6 +377,12 @@ void ClientProxy::OnEndpointLost(const std::string& service_id,
 
   discovered_endpoint_ids_.erase(it);
   discovery_info_.listener.endpoint_lost_cb(endpoint_id);
+}
+
+void ClientProxy::OnRequestConnection(
+    const Strategy& strategy, const std::string& endpoint_id,
+    const ConnectionOptions& connection_options) {
+  analytics_recorder_->OnRequestConnection(strategy, endpoint_id);
 }
 
 void ClientProxy::OnConnectionInitiated(
@@ -543,7 +564,7 @@ bool ClientProxy::IsConnectedToEndpoint(const std::string& endpoint_id) const {
 }
 
 std::vector<std::string> ClientProxy::GetMatchingEndpoints(
-    std::function<bool(const Connection&)> pred) const {
+    absl::AnyInvocable<bool(const Connection&)> pred) const {
   MutexLock lock(&mutex_);
 
   std::vector<std::string> connected_endpoints;
@@ -709,6 +730,35 @@ bool ClientProxy::RemoteConnectionIsAccepted(std::string endpoint_id) const {
       endpoint_id, ClientProxy::Connection::kRemoteEndpointAccepted);
 }
 
+bool ClientProxy::AutoUpgradeBandwidth() const {
+  bool result = false;
+  if (IsAdvertising() && (GetAdvertisingOptions().strategy.IsNone() ||
+                          GetAdvertisingOptions().auto_upgrade_bandwidth)) {
+    result |= true;
+  }
+  if (IsListeningForIncomingConnections() &&
+      (GetListeningOptions().strategy.IsNone() ||
+       GetListeningOptions().auto_upgrade_bandwidth)) {
+    result |= true;
+  }
+  return result;
+}
+
+bool ClientProxy::ShouldEnforceTopologyConstraints() const {
+  bool result = false;
+  if (IsAdvertising() &&
+      (GetAdvertisingOptions().strategy.IsNone() ||
+       GetAdvertisingOptions().enforce_topology_constraints)) {
+    result |= true;
+  }
+  if (IsListeningForIncomingConnections() &&
+      (GetListeningOptions().strategy.IsNone() ||
+       GetListeningOptions().enforce_topology_constraints)) {
+    result |= true;
+  }
+  return result;
+}
+
 void ClientProxy::AddCancellationFlag(const std::string& endpoint_id) {
   // Don't insert the CancellationFlag to the map if feature flag is disabled.
   if (!FeatureFlags::GetInstance().GetFlags().enable_cancellation_flag) {
@@ -748,9 +798,7 @@ void ClientProxy::CancelEndpoint(const std::string& endpoint_id) {
   }
 }
 
-const OsInfo& ClientProxy::GetLocalOsInfo() const {
-  return local_os_info_;
-}
+const OsInfo& ClientProxy::GetLocalOsInfo() const { return local_os_info_; }
 
 std::optional<OsInfo> ClientProxy::GetRemoteOsInfo(
     absl::string_view endpoint_id) const {
@@ -768,6 +816,44 @@ void ClientProxy::SetRemoteOsInfo(absl::string_view endpoint_id,
     item->first.os_info.emplace(remote_os_info);
   }
 }
+
+std::optional<std::int32_t> ClientProxy::GetRemoteSafeToDisconnectVersion(
+    absl::string_view endpoint_id) const {
+  const ConnectionPair* item = LookupConnection(endpoint_id);
+  if (item != nullptr) {
+    return item->first.safe_to_disconnect_version;
+  }
+  return std::nullopt;
+}
+
+void ClientProxy::SetRemoteSafeToDisconnectVersion(
+    absl::string_view endpoint_id,
+    const std::int32_t& safe_to_disconnect_version) {
+  ConnectionPair* item = LookupConnection(endpoint_id);
+  if (item != nullptr) {
+    item->first.safe_to_disconnect_version = safe_to_disconnect_version;
+  }
+}
+
+bool ClientProxy::IsSafeToDisconnectEnabled(absl::string_view endpoint_id) {
+  return IsSupportSafeToDisconnect() &&
+         GetRemoteSafeToDisconnectVersion(endpoint_id).has_value() &&
+         (GetRemoteSafeToDisconnectVersion(endpoint_id) >=
+          FeatureFlags::GetInstance()
+              .GetFlags()
+              .min_nc_version_supports_safe_to_disconnect);
+}
+
+bool ClientProxy::IsPayloadReceivedAckEnabled(absl::string_view endpoint_id) {
+  return IsSupportSafeToDisconnect() &&
+         GetRemoteSafeToDisconnectVersion(endpoint_id).has_value() &&
+         (GetRemoteSafeToDisconnectVersion(endpoint_id) >=
+          FeatureFlags::GetInstance()
+              .GetFlags()
+              .min_nc_version_supports_payload_received_ack);
+}
+
+
 void ClientProxy::CancelAllEndpoints() {
   for (const auto& item : cancellation_flags_) {
     CancellationFlag* cancellation_flag = item.second.get();

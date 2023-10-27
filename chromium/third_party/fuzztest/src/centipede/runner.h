@@ -30,13 +30,15 @@
 #include "./centipede/callstack.h"
 #include "./centipede/concurrent_bitset.h"
 #include "./centipede/concurrent_byteset.h"
-#include "./centipede/execution_result.h"
 #include "./centipede/feature.h"
+#include "./centipede/hashed_ring_buffer.h"
 #include "./centipede/knobs.h"
 #include "./centipede/pc_info.h"
 #include "./centipede/reverse_pc_table.h"
 #include "./centipede/runner_cmp_trace.h"
 #include "./centipede/runner_dl_info.h"
+#include "./centipede/runner_result.h"
+#include "./centipede/runner_sancov_object.h"
 
 namespace centipede {
 
@@ -57,7 +59,7 @@ struct RunTimeFlags {
   uint64_t use_pc_features : 1;
   uint64_t use_dataflow_features : 1;
   uint64_t use_cmp_features : 1;
-  uint64_t use_callstack_features : 1;
+  uint64_t callstack_level : 8;
   uint64_t use_counter_features : 1;
   uint64_t use_auto_dictionary : 1;
   uint64_t timeout_per_input;
@@ -70,6 +72,13 @@ struct RunTimeFlags {
 // There is no CTOR, since we don't want to use the brittle and lazy TLS CTORs.
 // All data members are zero-initialized during thread creation.
 struct ThreadLocalRunnerState {
+  // Traces the memory comparison of `n` bytes at `s1` and `s2` called at
+  // `caller_pc` with `is_equal` indicating whether the two memory regions have
+  // equal contents. May add cmp features and auto-dictionary entries if
+  // enabled.
+  void TraceMemCmp(uintptr_t caller_pc, const uint8_t *s1, const uint8_t *s2,
+                   size_t n, bool is_equal);
+
   // Intrusive doubly-linked list of TLS objects.
   // Guarded by state.tls_list_mu.
   ThreadLocalRunnerState *next, *prev;
@@ -128,6 +137,7 @@ struct GlobalRunnerState {
   const char *centipede_runner_flags = getenv("CENTIPEDE_RUNNER_FLAGS");
   const char *arg1 = GetStringFlag(":arg1=");
   const char *arg2 = GetStringFlag(":arg2=");
+  const char *arg3 = GetStringFlag(":arg3=");
   // The path to a file where the runner may write the description of failure.
   const char *failure_description_path =
       GetStringFlag(":failure_description_path=");
@@ -135,17 +145,17 @@ struct GlobalRunnerState {
   // Flags.
   RunTimeFlags run_time_flags = {
       .path_level = std::min(ThreadLocalRunnerState::kBoundedPathLength,
-                             HasFlag(":path_level=", 0)),
+                             HasIntFlag(":path_level=", 0)),
       .use_pc_features = HasFlag(":use_pc_features:"),
       .use_dataflow_features = HasFlag(":use_dataflow_features:"),
       .use_cmp_features = HasFlag(":use_cmp_features:"),
-      .use_callstack_features = HasFlag(":use_callstack_features:"),
+      .callstack_level = HasIntFlag(":callstack_level=", 0),
       .use_counter_features = HasFlag(":use_counter_features:"),
       .use_auto_dictionary = HasFlag(":use_auto_dictionary:"),
-      .timeout_per_input = HasFlag(":timeout_per_input=", 0),
-      .timeout_per_batch = HasFlag(":timeout_per_batch=", 0),
-      .rss_limit_mb = HasFlag(":rss_limit_mb=", 0),
-      .crossover_level = HasFlag(":crossover_level=", 50)};
+      .timeout_per_input = HasIntFlag(":timeout_per_input=", 0),
+      .timeout_per_batch = HasIntFlag(":timeout_per_batch=", 0),
+      .rss_limit_mb = HasIntFlag(":rss_limit_mb=", 0),
+      .crossover_level = HasIntFlag(":crossover_level=", 50)};
 
   // Returns true iff `flag` is present.
   // Typical usage: pass ":some_flag:", i.e. the flag name surrounded with ':'.
@@ -157,7 +167,7 @@ struct GlobalRunnerState {
   // If a flag=value pair is present, returns value,
   // otherwise returns `default_value`.
   // Typical usage: pass ":some_flag=".
-  uint64_t HasFlag(const char *flag, uint64_t default_value) const {
+  uint64_t HasIntFlag(const char *flag, uint64_t default_value) const {
     if (!centipede_runner_flags) return default_value;
     const char *beg = strstr(centipede_runner_flags, flag);
     if (!beg) return default_value;
@@ -208,8 +218,7 @@ struct GlobalRunnerState {
 
   // State for SanitizerCoverage.
   // See https://clang.llvm.org/docs/SanitizerCoverage.html.
-  const PCInfo *pcs_beg, *pcs_end;
-  const uintptr_t *cfs_beg, *cfs_end;
+  SanCovObjectArray sancov_objects;
   static const size_t kBitSetSize = 1 << 18;  // Arbitrary large size.
   ConcurrentBitSet<kBitSetSize> data_flow_feature_set{absl::kConstInit};
 
@@ -228,9 +237,19 @@ struct GlobalRunnerState {
   static const size_t kCallStackFeatureSetSize = 1 << 24;
   ConcurrentBitSet<kCallStackFeatureSetSize> callstack_set{absl::kConstInit};
 
-  // trace-pc-guard callbacks (edge instrumentation).
-  // https://clang.llvm.org/docs/SanitizerCoverage.html#tracing-pcs-with-guards
-  //
+  // kMaxNumPcs is the maximum number of instrumented PCs in the binary.
+  // We can be generous here since the unused memory will not cost anything.
+  // `pc_counter_set` is a static byte set supporting up to kMaxNumPcs PCs.
+  static constexpr size_t kMaxNumPcs = 1 << 28;
+  TwoLayerConcurrentByteSet<kMaxNumPcs> pc_counter_set{absl::kConstInit};
+  // This is the actual number of PCs, aligned up to
+  // pc_counter_set::kSizeMultiple, computed at startup.
+  size_t actual_pc_counter_set_size_aligned;
+
+  // Initialized in CTOR from the __centipede_extra_features section.
+  feature_t *user_defined_begin;
+  feature_t *user_defined_end;
+
   // We use edge instrumentation w/ callbacks to implement bounded-path
   // coverage.
   // * The current PC is converted to an offset (a PC index).
@@ -245,25 +264,6 @@ struct GlobalRunnerState {
   // * Play with the length of the path (kBoundedPathLength)
   // * Use call stacks instead of paths (via unwinding or other
   // instrumentation).
-
-  // These fields must not be initialized in CTOR.
-  // The global state object will have them initialized to zero anyway.
-  // The actual initialization may happen before the CTOR is called.
-  PCGuard *pc_guard_start;  // from __sanitizer_cov_trace_pc_guard_init.
-  PCGuard *pc_guard_stop;   // from __sanitizer_cov_trace_pc_guard_init.
-
-  // kMaxNumPcs is the maximum number of instrumented PCs in the binary.
-  // We can be generous here since the unused memory will not cost anything.
-  // `pc_counter_set` is a static byte set supporting up to kMaxNumPcs PCs.
-  static constexpr size_t kMaxNumPcs = 1 << 28;
-  TwoLayerConcurrentByteSet<kMaxNumPcs> pc_counter_set{absl::kConstInit};
-  // This is the actual number of PCs, aligned up to
-  // pc_counter_set::kSizeMultiple, computed at startup.
-  size_t actual_pc_counter_set_size_aligned;
-
-  // Initialized in CTOR from the __centipede_extra_features section.
-  feature_t *user_defined_begin;
-  feature_t *user_defined_end;
 
   static const size_t kPathBitSetSize = 1 << 25;  // Arbitrary very large size.
   // Observed paths. The total number of observed paths for --path_level=N
@@ -298,6 +298,11 @@ struct GlobalRunnerState {
 
   // The Watchdog thread sets this to true.
   std::atomic<bool> watchdog_thread_started;
+
+  // An arbitrary large size.
+  static const size_t kMaxFeatures = 1 << 20;
+  // FeatureArray used to accumulate features from all sources.
+  FeatureArray<kMaxFeatures> g_features;
 };
 
 extern GlobalRunnerState state;

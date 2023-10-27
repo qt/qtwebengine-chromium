@@ -102,6 +102,7 @@ TEST_P(PcpManagerTest, CanDiscover) {
   EXPECT_TRUE(latch.Await(absl::Milliseconds(1000)).result());
   EXPECT_EQ(user_b.GetDiscovered().service_id, kServiceId);
   EXPECT_EQ(user_b.GetDiscovered().endpoint_info, user_a.GetInfo());
+  user_b.StopDiscovery();
   env_.Stop();
 }
 
@@ -218,6 +219,16 @@ TEST_F(PcpManagerTest, InjectEndpoint) {
                                             ByteArray(kFakeMacAddress),
                                     });
   user_a.Stop();
+  env_.Stop();
+}
+
+TEST_F(PcpManagerTest, TestUpdateDiscoveryFailsWithoutPcpHandler) {
+  BooleanMediumSelector selector;
+  selector.SetAll(true);
+  env_.Start();
+  SimulationUser user_a(kDeviceA, selector);
+  EXPECT_EQ(user_a.UpdateDiscoveryOptions(kServiceId).value,
+            Status::Value::kOutOfOrderApiCall);
   env_.Stop();
 }
 

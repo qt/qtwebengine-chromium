@@ -1132,9 +1132,8 @@ static int64_t rd_pick_intra4x4block(VP9_COMP *cpi, MACROBLOCK *x, int row,
             const int coeff_ctx =
                 combine_entropy_contexts(tempa[idx], templ[idy]);
             vp9_highbd_fwht4x4(src_diff, coeff, 8);
-            vpx_highbd_quantize_b(coeff, 4 * 4, p->zbin, p->round, p->quant,
-                                  p->quant_shift, qcoeff, dqcoeff, pd->dequant,
-                                  eob, so->scan, so->iscan);
+            vpx_highbd_quantize_b(coeff, 4 * 4, p, qcoeff, dqcoeff, pd->dequant,
+                                  eob, so);
             ratey += cost_coeffs(x, 0, block, TX_4X4, coeff_ctx, so->scan,
                                  so->neighbors, cpi->sf.use_fast_coef_costing);
             tempa[idx] = templ[idy] = (x->plane[0].eobs[block] > 0 ? 1 : 0);
@@ -1152,9 +1151,8 @@ static int64_t rd_pick_intra4x4block(VP9_COMP *cpi, MACROBLOCK *x, int row,
               vpx_highbd_fdct4x4(src_diff, coeff, 8);
             else
               vp9_highbd_fht4x4(src_diff, coeff, 8, tx_type);
-            vpx_highbd_quantize_b(coeff, 4 * 4, p->zbin, p->round, p->quant,
-                                  p->quant_shift, qcoeff, dqcoeff, pd->dequant,
-                                  eob, so->scan, so->iscan);
+            vpx_highbd_quantize_b(coeff, 4 * 4, p, qcoeff, dqcoeff, pd->dequant,
+                                  eob, so);
             ratey += cost_coeffs(x, 0, block, TX_4X4, coeff_ctx, so->scan,
                                  so->neighbors, cpi->sf.use_fast_coef_costing);
             distortion += vp9_highbd_block_error_dispatch(
@@ -1239,9 +1237,8 @@ static int64_t rd_pick_intra4x4block(VP9_COMP *cpi, MACROBLOCK *x, int row,
           const int coeff_ctx =
               combine_entropy_contexts(tempa[idx], templ[idy]);
           vp9_fwht4x4(src_diff, coeff, 8);
-          vpx_quantize_b(coeff, 4 * 4, p->zbin, p->round, p->quant,
-                         p->quant_shift, qcoeff, dqcoeff, pd->dequant, eob,
-                         so->scan, so->iscan);
+          vpx_quantize_b(coeff, 4 * 4, p, qcoeff, dqcoeff, pd->dequant, eob,
+                         so);
           ratey += cost_coeffs(x, 0, block, TX_4X4, coeff_ctx, so->scan,
                                so->neighbors, cpi->sf.use_fast_coef_costing);
           tempa[idx] = templ[idy] = (x->plane[0].eobs[block] > 0) ? 1 : 0;
@@ -1256,9 +1253,8 @@ static int64_t rd_pick_intra4x4block(VP9_COMP *cpi, MACROBLOCK *x, int row,
           const int coeff_ctx =
               combine_entropy_contexts(tempa[idx], templ[idy]);
           vp9_fht4x4(src_diff, coeff, 8, tx_type);
-          vpx_quantize_b(coeff, 4 * 4, p->zbin, p->round, p->quant,
-                         p->quant_shift, qcoeff, dqcoeff, pd->dequant, eob,
-                         so->scan, so->iscan);
+          vpx_quantize_b(coeff, 4 * 4, p, qcoeff, dqcoeff, pd->dequant, eob,
+                         so);
           ratey += cost_coeffs(x, 0, block, TX_4X4, coeff_ctx, so->scan,
                                so->neighbors, cpi->sf.use_fast_coef_costing);
           tempa[idx] = templ[idy] = (x->plane[0].eobs[block] > 0) ? 1 : 0;
@@ -1710,14 +1706,12 @@ static int64_t encode_inter_mb_segment(VP9_COMP *cpi, MACROBLOCK *x,
       x->fwd_txfm4x4(vp9_raster_block_offset_int16(BLOCK_8X8, k, p->src_diff),
                      coeff, 8);
 #if CONFIG_VP9_HIGHBITDEPTH
-      vpx_highbd_quantize_b(coeff, 4 * 4, p->zbin, p->round, p->quant,
-                            p->quant_shift, qcoeff, dqcoeff, pd->dequant, eob,
-                            so->scan, so->iscan);
+      vpx_highbd_quantize_b(coeff, 4 * 4, p, qcoeff, dqcoeff, pd->dequant, eob,
+                            so);
       thisdistortion += vp9_highbd_block_error_dispatch(
           coeff, BLOCK_OFFSET(pd->dqcoeff, k), 16, &ssz, bd);
 #else
-      vpx_quantize_b(coeff, 4 * 4, p->zbin, p->round, p->quant, p->quant_shift,
-                     qcoeff, dqcoeff, pd->dequant, eob, so->scan, so->iscan);
+      vpx_quantize_b(coeff, 4 * 4, p, qcoeff, dqcoeff, pd->dequant, eob, so);
       thisdistortion +=
           vp9_block_error(coeff, BLOCK_OFFSET(pd->dqcoeff, k), 16, &ssz);
 #endif  // CONFIG_VP9_HIGHBITDEPTH
@@ -2841,9 +2835,8 @@ static int64_t handle_inter_mode(
 #else
   DECLARE_ALIGNED(16, uint8_t, tmp_buf[MAX_MB_PLANE * 64 * 64]);
 #endif  // CONFIG_VP9_HIGHBITDEPTH
-  int pred_exists = 0;
   int intpel_mv;
-  int64_t rd, tmp_rd, best_rd = INT64_MAX;
+  int64_t rd, tmp_rd = INT64_MAX, best_rd = INT64_MAX;
   int best_needs_copy = 0;
   uint8_t *orig_dst[MAX_MB_PLANE];
   int orig_dst_stride[MAX_MB_PLANE];
@@ -3003,7 +2996,6 @@ static int64_t handle_inter_mode(
       mi->mode != NEARESTMV)
     return INT64_MAX;
 
-  pred_exists = 0;
   // Are all MVs integer pel for Y and UV
   intpel_mv = !mv_has_subpel(&mi->mv[0].as_mv);
   if (is_comp_pred) intpel_mv &= !mv_has_subpel(&mi->mv[1].as_mv);
@@ -3111,7 +3103,6 @@ static int64_t handle_inter_mode(
         if ((cm->interp_filter == SWITCHABLE && newbest) ||
             (cm->interp_filter != SWITCHABLE &&
              cm->interp_filter == mi->interp_filter)) {
-          pred_exists = 1;
           tmp_rd = best_rd;
 
           skip_txfm_sb = tmp_skip_sb;
@@ -3131,7 +3122,7 @@ static int64_t handle_inter_mode(
       cm->interp_filter != SWITCHABLE ? cm->interp_filter : best_filter;
   rs = cm->interp_filter == SWITCHABLE ? vp9_get_switchable_rate(cpi, xd) : 0;
 
-  if (pred_exists) {
+  if (tmp_rd != INT64_MAX) {
     if (best_needs_copy) {
       // again temporarily set the buffers to local memory to prevent a memcpy
       for (i = 0; i < MAX_MB_PLANE; i++) {

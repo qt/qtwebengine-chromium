@@ -9,12 +9,11 @@ import * as Platform from '../platform/platform.js';
 import {CSSContainerQuery} from './CSSContainerQuery.js';
 import {CSSLayer} from './CSSLayer.js';
 import {CSSMedia} from './CSSMedia.js';
-import {CSSScope} from './CSSScope.js';
-import {CSSSupports} from './CSSSupports.js';
-
 import {type CSSModel, type Edit} from './CSSModel.js';
+import {CSSScope} from './CSSScope.js';
 import {CSSStyleDeclaration, Type} from './CSSStyleDeclaration.js';
 import {type CSSStyleSheetHeader} from './CSSStyleSheetHeader.js';
+import {CSSSupports} from './CSSSupports.js';
 
 export class CSSRule {
   readonly cssModelInternal: CSSModel;
@@ -70,6 +69,10 @@ export class CSSRule {
     return this.origin === Protocol.CSS.StyleSheetOrigin.Regular;
   }
 
+  isKeyframeRule(): boolean {
+    return false;
+  }
+
   cssModel(): CSSModel {
     return this.cssModelInternal;
   }
@@ -111,6 +114,7 @@ export class CSSStyleRule extends CSSRule {
   supports: CSSSupports[];
   scopes: CSSScope[];
   layers: CSSLayer[];
+  ruleTypes: Protocol.CSS.CSSRuleType[];
   wasUsed: boolean;
   constructor(cssModel: CSSModel, payload: Protocol.CSS.CSSRule, wasUsed?: boolean) {
     super(cssModel, {origin: payload.origin, style: payload.style, styleSheetId: payload.styleSheetId});
@@ -123,6 +127,7 @@ export class CSSStyleRule extends CSSRule {
     this.scopes = payload.scopes ? CSSScope.parseScopesPayload(cssModel, payload.scopes) : [];
     this.supports = payload.supports ? CSSSupports.parseSupportsPayload(cssModel, payload.supports) : [];
     this.layers = payload.layers ? CSSLayer.parseLayerPayload(cssModel, payload.layers) : [];
+    this.ruleTypes = payload.ruleTypes || [];
     this.wasUsed = wasUsed || false;
   }
 
@@ -215,6 +220,29 @@ export class CSSStyleRule extends CSSRule {
   }
 }
 
+export class CSSPropertyRule extends CSSRule {
+  #name: CSSValue;
+  constructor(cssModel: CSSModel, payload: Protocol.CSS.CSSPropertyRule) {
+    super(cssModel, {origin: payload.origin, style: payload.style, styleSheetId: payload.styleSheetId});
+    this.#name = new CSSValue(payload.propertyName);
+  }
+
+  propertyName(): CSSValue {
+    return this.#name;
+  }
+
+  initialValue(): string|null {
+    return this.style.hasActiveProperty('initial-value') ? this.style.getPropertyValue('initial-value') : null;
+  }
+
+  syntax(): string {
+    return this.style.getPropertyValue('syntax');
+  }
+  inherits(): boolean {
+    return this.style.getPropertyValue('inherits') === 'true';
+  }
+}
+
 export class CSSKeyframesRule {
   readonly #animationName: CSSValue;
   readonly #keyframesInternal: CSSKeyframeRule[];
@@ -258,6 +286,10 @@ export class CSSKeyframeRule extends CSSRule {
     }
 
     super.rebase(edit);
+  }
+
+  override isKeyframeRule(): boolean {
+    return true;
   }
 
   setKeyText(newKeyText: string): Promise<boolean> {

@@ -84,6 +84,9 @@ message NetworkDevice {
   // object associated with this physical interface, e.g., Cellular multiplexed
   // PDN connections. Only valid for ARC virtual devices and otherwise empty for
   // virtual devices tracking the default logical or physical networks.
+  // TODO(b/273744897): Replace the ifname here by the patchpanel Network id
+  // and/or add the DBus path of the shill Device tracked by this virtual
+  // Device.
   string phys_ifname = 5;
 
   // The name of the interface inside the guest. Only available for ARC virtual
@@ -150,10 +153,24 @@ message TerminaVmStartupRequest {
 // Information required by Concierge to continue the Termina VM startup.
 message TerminaVmStartupResponse {
   // The TAP device to be used for the VM.
-  NetworkDevice device = 1;
+  string tap_device_ifname = 1;
 
-  // The container subnet to be used for the lxd bridge.
-  IPv4Subnet container_subnet = 2;
+  // The IPv4 subnet assigned to the VM.
+  IPv4Subnet ipv4_subnet = 2;
+
+  // The IPv4 address assigned to the VM, represented as 4 bytes in network
+  // order, contained inside |ipv4_subnet|.
+  bytes ipv4_address = 3;
+
+  // The IPv4 next hop gateway address for the VM, represented as 4 bytes in
+  // network order, contained inside |ipv4_subnet|.
+  bytes gateway_ipv4_address = 4;
+
+  // The container IPv4 subnet to be used for the LXD bridge.
+  IPv4Subnet container_ipv4_subnet = 5;
+
+  // The container IPv4 address, contained inside |container_ipv4_subnet|.
+  bytes container_ipv4_address = 6;
 };
 
 // Notification that the Termina VM is shutting down.
@@ -183,7 +200,14 @@ message ParallelsVmStartupRequest {
 // Information required by Concierge to continue the Parallels VM startup.
 message ParallelsVmStartupResponse {
   // The TAP device to be used for the VM.
-  NetworkDevice device = 1;
+  string tap_device_ifname = 1;
+
+  // The IPv4 subnet assigned to the VM.
+  IPv4Subnet ipv4_subnet = 2;
+
+  // The IPv4 address assigned to the VM, represented as 4 bytes in network
+  // order, contained inside |ipv4_subnet|.
+  bytes ipv4_address = 3;
 };
 
 // Notification that the Parallels VM is shutting down.
@@ -239,11 +263,13 @@ message ConnectNamespaceRequest {
   // namespace which is not associated with any process will be created.
   int32 pid = 1;
 
-  // If the client sets this field to the name of a physical network device
-  // managed by shill, the namespace egress traffic routed outside the device
-  // will be routed using the routing table specific to that physical device.
-  // If left empty, the namespace will be routed through the system highest
-  // priority interface (physical or virtual).
+  // If the client sets this field to the name of a physical or VPN network
+  // interface managed by shill, the namespace egress traffic routed outside the
+  // host will be routed using the routing table specific to that physical or
+  // VPN network interface . If left empty, the namespace will be routed through
+  // the system highest priority interface (physical or virtual).
+  // TODO(b/273744897): Replace this interface name by the patchpanel Network
+  // id.
   string outbound_physical_device = 2;
 
   // If true, traffic originated from managed OSs (Termina VMs, ARC, Parallels
@@ -262,6 +288,10 @@ message ConnectNamespaceRequest {
   // This field is required. The default behavior will be to treat unspecified
   // and UNKNOWN sources as SYSTEM traffic for accounting purposes.
   TrafficCounter.Source traffic_source = 5;
+
+  // This field specifies whether IPv6 should be created statically behind NAT66
+  // or through SLAAC.
+  bool static_ipv6 = 6;
 }
 
 // Response to a ConnectNamespaceRequest. If the operation failed then all
@@ -381,6 +411,10 @@ message ModifyPortRuleRequest {
 
   // A network interface name, or empty if unspecified. This is optional for
   // ACCESS and FORWARDING, and is ignored for other rule types.
+  // b/273741099: Port rule requests are only allowed for WiFi and Ethernet
+  // networks. Multiplexed Cellular interfaces can be ignored.
+  // TODO(b/273744897): Replace this interface name argument by the patchpanel
+  // Network id.
   string input_ifname = 4;
 
   // An IPv4 address, or empty if unspecified. This is optional for FORWARDING,
@@ -571,12 +605,20 @@ enum DownstreamNetworkResult {
   SUCCESS = 0;
   // The request was invalid.
   INVALID_ARGUMENT = 1;
-  // The network interfaces specified for the request are already in use.
+  // The network interface specified for the downstream network is already in
+  // use.
   INTERFACE_USED = 2;
-  // The request failed.
+  // The request failed due to an internal error.
   ERROR = 3;
-  // Fails to start the DHCP server.
+  // The DHCP server could not start successfully.
   DHCP_SERVER_FAILURE = 4;
+  // The network interface specified for the upstream network is unknown
+  // (tethering only).
+  UPSTREAM_UNKNOWN = 5;
+  // The datapath could not be configured.
+  DATAPATH_ERROR = 6;
+  // The request could not be parsed.
+  INVALID_REQUEST = 7;
 }
 
 message DownstreamNetwork {

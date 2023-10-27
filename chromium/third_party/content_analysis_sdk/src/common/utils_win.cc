@@ -50,7 +50,7 @@ std::string BuildPipeName(const char* prefix,
   std::string pipename = prefix;
 
   // If the agent is not user-specific, the assumption is that it runs with
-  // administrator provileges.  Create the pipe in a location only available
+  // administrator privileges.  Create the pipe in a location only available
   // to administrators.
   if (!user_specific)
     pipename += "ProtectedPrefix\\Administrators\\";
@@ -153,6 +153,20 @@ bool GetProcessPath(unsigned long pid, std::string* binary_path) {
 
   *binary_path = path;
   return true;
+}
+
+ScopedOverlapped::ScopedOverlapped() {
+  memset(&overlapped_, 0, sizeof(overlapped_));
+  overlapped_.hEvent = CreateEvent(/*securityAttr=*/nullptr,
+                                   /*manualReset=*/TRUE,
+                                   /*initialState=*/FALSE,
+                                   /*name=*/nullptr);
+}
+
+ScopedOverlapped::~ScopedOverlapped() {
+  if (overlapped_.hEvent != nullptr) {
+    CloseHandle(overlapped_.hEvent);
+  }
 }
 
 }  // internal

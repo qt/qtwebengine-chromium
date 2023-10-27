@@ -311,7 +311,7 @@ class V8_EXPORT_PRIVATE Type {
 static_assert(sizeof(Type) == 24);
 
 template <size_t Bits>
-class EXPORT_TEMPLATE_DECLARE(V8_EXPORT_PRIVATE) WordType : public Type {
+class WordType : public Type {
   static_assert(Bits == 32 || Bits == 64);
   friend class Type;
   static constexpr int kMaxInlineSetSize = 2;
@@ -389,7 +389,7 @@ class EXPORT_TEMPLATE_DECLARE(V8_EXPORT_PRIVATE) WordType : public Type {
     } else {
       // Allocate storage in the zone.
       Payload_OutlineSet p;
-      p.array = zone->NewArray<word_t>(elements.size());
+      p.array = zone->AllocateArray<word_t>(elements.size());
       DCHECK_NOT_NULL(p.array);
       for (size_t i = 0; i < elements.size(); ++i) p.array[i] = elements[i];
       return WordType{SubKind::kSet, static_cast<uint8_t>(elements.size()), p};
@@ -491,8 +491,11 @@ class EXPORT_TEMPLATE_DECLARE(V8_EXPORT_PRIVATE) WordType : public Type {
       : Type(KIND, static_cast<uint8_t>(sub_kind), set_size, 0, 0, payload) {}
 };
 
+extern template class EXPORT_TEMPLATE_DECLARE(V8_EXPORT_PRIVATE) WordType<32>;
+extern template class EXPORT_TEMPLATE_DECLARE(V8_EXPORT_PRIVATE) WordType<64>;
+
 template <size_t Bits>
-class EXPORT_TEMPLATE_DECLARE(V8_EXPORT_PRIVATE) FloatType : public Type {
+class FloatType : public Type {
   static_assert(Bits == 32 || Bits == 64);
   friend class Type;
   static constexpr int kMaxInlineSetSize = 2;
@@ -596,7 +599,7 @@ class EXPORT_TEMPLATE_DECLARE(V8_EXPORT_PRIVATE) FloatType : public Type {
     } else {
       // Allocate storage in the zone.
       Payload_OutlineSet p;
-      p.array = zone->NewArray<float_t>(elements.size());
+      p.array = zone->AllocateArray<float_t>(elements.size());
       DCHECK_NOT_NULL(p.array);
       for (size_t i = 0; i < elements.size(); ++i) {
         p.array[i] = elements[i];
@@ -791,6 +794,9 @@ class EXPORT_TEMPLATE_DECLARE(V8_EXPORT_PRIVATE) FloatType : public Type {
   }
 };
 
+extern template class EXPORT_TEMPLATE_DECLARE(V8_EXPORT_PRIVATE) FloatType<32>;
+extern template class EXPORT_TEMPLATE_DECLARE(V8_EXPORT_PRIVATE) FloatType<64>;
+
 class TupleType : public Type {
  public:
   static constexpr int kMaxTupleSize = std::numeric_limits<uint8_t>::max();
@@ -799,7 +805,7 @@ class TupleType : public Type {
   static TupleType Tuple(const Type& element0, const Type& element1,
                          Zone* zone) {
     Payload p;
-    p.array = zone->NewArray<Type>(2);
+    p.array = zone->AllocateArray<Type>(2);
     DCHECK_NOT_NULL(p.array);
     p.array[0] = element0;
     p.array[1] = element1;
@@ -809,7 +815,7 @@ class TupleType : public Type {
   static TupleType Tuple(base::Vector<Type> elements, Zone* zone) {
     DCHECK_LE(elements.size(), kMaxTupleSize);
     Payload p;
-    p.array = zone->NewArray<Type>(elements.size());
+    p.array = zone->AllocateArray<Type>(elements.size());
     DCHECK_NOT_NULL(p.array);
     for (size_t i = 0; i < elements.size(); ++i) {
       p.array[i] = elements[i];
@@ -912,32 +918,6 @@ struct fast_hash<Type> {
     // return fast_hash_combine(v.header_, v.payload_[0], v.payload_[1]);
   }
 };
-
-// The below exports of the explicitly instantiated template instances produce
-// build errors on v8_linux64_gcc_light_compile_dbg build with
-//
-// error: type attributes ignored after type is already defined
-// [-Werror=attributes] extern template class
-// EXPORT_TEMPLATE_DECLARE(V8_EXPORT_PRIVATE) WordType<32>;
-//
-// No combination of export macros seems to be able to resolve this issue
-// although they seem to work for other classes. A temporary workaround is to
-// disable this warning here locally.
-// TODO(nicohartmann@): Ideally, we would find a better solution than to disable
-// the warning.
-#if V8_CC_GNU
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wattributes"
-#endif  // V8_CC_GNU
-
-extern template class EXPORT_TEMPLATE_DECLARE(V8_EXPORT_PRIVATE) WordType<32>;
-extern template class EXPORT_TEMPLATE_DECLARE(V8_EXPORT_PRIVATE) WordType<64>;
-extern template class EXPORT_TEMPLATE_DECLARE(V8_EXPORT_PRIVATE) FloatType<32>;
-extern template class EXPORT_TEMPLATE_DECLARE(V8_EXPORT_PRIVATE) FloatType<64>;
-
-#if V8_CC_GNU
-#pragma GCC diagnostic pop
-#endif  // V8_CC_GNU
 
 }  // namespace v8::internal::compiler::turboshaft
 

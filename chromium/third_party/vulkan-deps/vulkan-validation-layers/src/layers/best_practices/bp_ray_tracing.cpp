@@ -25,20 +25,20 @@ bool BestPractices::PreCallValidateCmdBuildAccelerationStructureNV(VkCommandBuff
                                                                    VkBuffer instanceData, VkDeviceSize instanceOffset,
                                                                    VkBool32 update, VkAccelerationStructureNV dst,
                                                                    VkAccelerationStructureNV src, VkBuffer scratch,
-                                                                   VkDeviceSize scratchOffset) const {
+                                                                   VkDeviceSize scratchOffset, const ErrorObject& error_obj) const {
     return ValidateBuildAccelerationStructure(commandBuffer);
 }
 
 bool BestPractices::PreCallValidateCmdBuildAccelerationStructuresIndirectKHR(
     VkCommandBuffer commandBuffer, uint32_t infoCount, const VkAccelerationStructureBuildGeometryInfoKHR* pInfos,
-    const VkDeviceAddress* pIndirectDeviceAddresses, const uint32_t* pIndirectStrides,
-    const uint32_t* const* ppMaxPrimitiveCounts) const {
+    const VkDeviceAddress* pIndirectDeviceAddresses, const uint32_t* pIndirectStrides, const uint32_t* const* ppMaxPrimitiveCounts,
+    const ErrorObject& error_obj) const {
     return ValidateBuildAccelerationStructure(commandBuffer);
 }
 
 bool BestPractices::PreCallValidateCmdBuildAccelerationStructuresKHR(
     VkCommandBuffer commandBuffer, uint32_t infoCount, const VkAccelerationStructureBuildGeometryInfoKHR* pInfos,
-    const VkAccelerationStructureBuildRangeInfoKHR* const* ppBuildRangeInfos) const {
+    const VkAccelerationStructureBuildRangeInfoKHR* const* ppBuildRangeInfos, const ErrorObject& error_obj) const {
     return ValidateBuildAccelerationStructure(commandBuffer);
 }
 
@@ -59,8 +59,9 @@ bool BestPractices::ValidateBuildAccelerationStructure(VkCommandBuffer commandBu
     return skip;
 }
 
-bool BestPractices::PreCallValidateBindAccelerationStructureMemoryNV(
-    VkDevice device, uint32_t bindInfoCount, const VkBindAccelerationStructureMemoryInfoNV* pBindInfos) const {
+bool BestPractices::PreCallValidateBindAccelerationStructureMemoryNV(VkDevice device, uint32_t bindInfoCount,
+                                                                     const VkBindAccelerationStructureMemoryInfoNV* pBindInfos,
+                                                                     const ErrorObject& error_obj) const {
     bool skip = false;
 
     for (uint32_t i = 0; i < bindInfoCount; i++) {
@@ -73,7 +74,7 @@ bool BestPractices::PreCallValidateBindAccelerationStructureMemoryNV(
                 device, kVUID_BestPractices_BindAccelNV_NoMemReqQuery,
                 "vkBindAccelerationStructureMemoryNV(): "
                 "Binding memory to %s but vkGetAccelerationStructureMemoryRequirementsNV() has not been called on that structure.",
-                report_data->FormatHandle(pBindInfos[i].accelerationStructure).c_str());
+                FormatHandle(pBindInfos[i].accelerationStructure).c_str());
         }
     }
 

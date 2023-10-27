@@ -43,9 +43,9 @@
 #include "core/fxge/cfx_graphstatedata.h"
 #include "third_party/base/check.h"
 #include "third_party/base/containers/contains.h"
+#include "third_party/base/containers/span.h"
 #include "third_party/base/no_destructor.h"
 #include "third_party/base/notreached.h"
-#include "third_party/base/span.h"
 
 namespace {
 
@@ -654,8 +654,7 @@ void CPDF_StreamContentParser::Handle_BeginImage() {
     if (m_pSyntax->GetWord() == "EI")
       break;
   }
-  CPDF_ImageObject* pObj =
-      AddImageFromStream(std::move(pStream), /*resource_name=*/"");
+  CPDF_ImageObject* pObj = AddImageFromStream(std::move(pStream), /*name=*/"");
   // Record the bounding box of this image, so rendering code can draw it
   // properly.
   if (pObj && pObj->GetImage()->IsMask())

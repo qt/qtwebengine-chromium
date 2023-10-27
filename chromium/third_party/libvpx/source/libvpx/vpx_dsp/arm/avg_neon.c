@@ -90,6 +90,8 @@ void vpx_int_pro_row_neon(int16_t hbuf[16], uint8_t const *ref,
   sum_lo[1] = vaddl_u8(vget_low_u8(r2), vget_low_u8(r3));
   sum_hi[1] = vaddl_u8(vget_high_u8(r2), vget_high_u8(r3));
 
+  ref += 4 * ref_stride;
+
   for (i = 4; i < height; i += 4) {
     r0 = vld1q_u8(ref + 0 * ref_stride);
     r1 = vld1q_u8(ref + 1 * ref_stride);

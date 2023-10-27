@@ -19,12 +19,13 @@
 
 #include "best_practices/best_practices_validation.h"
 #include "best_practices/best_practices_error_enums.h"
-#include "core_checks/cc_shader.h"
 
 bool BestPractices::PreCallValidateAllocateDescriptorSets(VkDevice device, const VkDescriptorSetAllocateInfo* pAllocateInfo,
-                                                          VkDescriptorSet* pDescriptorSets, void* ads_state_data) const {
+                                                          VkDescriptorSet* pDescriptorSets, const ErrorObject& error_obj,
+                                                          void* ads_state_data) const {
     bool skip = false;
-    skip |= ValidationStateTracker::PreCallValidateAllocateDescriptorSets(device, pAllocateInfo, pDescriptorSets, ads_state_data);
+    skip |= ValidationStateTracker::PreCallValidateAllocateDescriptorSets(device, pAllocateInfo, pDescriptorSets, error_obj,
+                                                                          ads_state_data);
 
     if (!skip) {
         const auto pool_state = Get<bp_state::DescriptorPool>(pAllocateInfo->descriptorPool);
@@ -45,7 +46,7 @@ bool BestPractices::PreCallValidateAllocateDescriptorSets(VkDevice device, const
                                    "vkAllocateDescriptorSets(): Unable to allocate %" PRIu32
                                    " descriptorSets from %s"
                                    ". This pool only has %" PRIu32 " descriptorSets remaining.",
-                                   pAllocateInfo->descriptorSetCount, report_data->FormatHandle(pool_state->Handle()).c_str(),
+                                   pAllocateInfo->descriptorSetCount, FormatHandle(*pool_state).c_str(),
                                    pool_state->GetAvailableSets());
             }
 
@@ -73,8 +74,9 @@ bool BestPractices::PreCallValidateAllocateDescriptorSets(VkDevice device, const
 }
 
 void BestPractices::ManualPostCallRecordAllocateDescriptorSets(VkDevice device, const VkDescriptorSetAllocateInfo* pAllocateInfo,
-                                                               VkDescriptorSet* pDescriptorSets, VkResult result, void* ads_state) {
-    if (result == VK_SUCCESS) {
+                                                               VkDescriptorSet* pDescriptorSets, const RecordObject& record_obj,
+                                                               void* ads_state) {
+    if (record_obj.result == VK_SUCCESS) {
         auto pool_state = Get<bp_state::DescriptorPool>(pAllocateInfo->descriptorPool);
         if (pool_state) {
             // we record successful allocations by subtracting the allocation count from the last recorded free count
@@ -90,9 +92,10 @@ void BestPractices::ManualPostCallRecordAllocateDescriptorSets(VkDevice device, 
 }
 
 void BestPractices::PostCallRecordFreeDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool, uint32_t descriptorSetCount,
-                                                     const VkDescriptorSet* pDescriptorSets, VkResult result) {
-    ValidationStateTracker::PostCallRecordFreeDescriptorSets(device, descriptorPool, descriptorSetCount, pDescriptorSets, result);
-    if (result == VK_SUCCESS) {
+                                                     const VkDescriptorSet* pDescriptorSets, const RecordObject& record_obj) {
+    ValidationStateTracker::PostCallRecordFreeDescriptorSets(device, descriptorPool, descriptorSetCount, pDescriptorSets,
+                                                             record_obj);
+    if (record_obj.result == VK_SUCCESS) {
         auto pool_state = Get<bp_state::DescriptorPool>(descriptorPool);
         // we want to track frees because we're interested in suggesting re-use
         if (pool_state) {
@@ -102,7 +105,8 @@ void BestPractices::PostCallRecordFreeDescriptorSets(VkDevice device, VkDescript
 }
 
 bool BestPractices::PreCallValidateCreateSampler(VkDevice device, const VkSamplerCreateInfo* pCreateInfo,
-                                                 const VkAllocationCallbacks* pAllocator, VkSampler* pSampler) const {
+                                                 const VkAllocationCallbacks* pAllocator, VkSampler* pSampler,
+                                                 const ErrorObject& error_obj) const {
     bool skip = false;
 
     if (VendorCheckEnabled(kBPVendorArm)) {
@@ -166,7 +170,8 @@ bool BestPractices::PreCallValidateCreateSampler(VkDevice device, const VkSample
 
 bool BestPractices::PreCallValidateUpdateDescriptorSets(VkDevice device, uint32_t descriptorWriteCount,
                                                         const VkWriteDescriptorSet* pDescriptorWrites, uint32_t descriptorCopyCount,
-                                                        const VkCopyDescriptorSet* pDescriptorCopies) const {
+                                                        const VkCopyDescriptorSet* pDescriptorCopies,
+                                                        const ErrorObject& error_obj) const {
     bool skip = false;
     if (VendorCheckEnabled(kBPVendorAMD)) {
         if (descriptorCopyCount > 0) {
@@ -182,7 +187,8 @@ bool BestPractices::PreCallValidateUpdateDescriptorSets(VkDevice device, uint32_
 bool BestPractices::PreCallValidateCreateDescriptorUpdateTemplate(VkDevice device,
                                                                   const VkDescriptorUpdateTemplateCreateInfo* pCreateInfo,
                                                                   const VkAllocationCallbacks* pAllocator,
-                                                                  VkDescriptorUpdateTemplate* pDescriptorUpdateTemplate) const {
+                                                                  VkDescriptorUpdateTemplate* pDescriptorUpdateTemplate,
+                                                                  const ErrorObject& error_obj) const {
     bool skip = false;
     if (VendorCheckEnabled(kBPVendorAMD)) {
         skip |= LogPerformanceWarning(device, kVUID_BestPractices_UpdateDescriptors_PreferNonTemplate,

@@ -14,7 +14,7 @@
 
 #include "dawn/native/TintUtils.h"
 
-#include "dawn/native/BindGroupLayout.h"
+#include "dawn/native/BindGroupLayoutInternal.h"
 #include "dawn/native/Device.h"
 #include "dawn/native/Pipeline.h"
 #include "dawn/native/PipelineLayout.h"
@@ -28,17 +28,11 @@ namespace {
 
 thread_local DeviceBase* tlDevice = nullptr;
 
-void TintICEReporter(const tint::diag::List& diagnostics) {
+void TintICEReporter(const tint::InternalCompilerError& err) {
     if (tlDevice) {
-        tlDevice->HandleError(DAWN_INTERNAL_ERROR(diagnostics.str()));
+        tlDevice->HandleError(DAWN_INTERNAL_ERROR(err.Error()));
 #if DAWN_ENABLE_ASSERTS
-        for (const tint::diag::Diagnostic& diag : diagnostics) {
-            if (diag.severity >= tint::diag::Severity::InternalCompilerError) {
-                HandleAssertionFailure(
-                    diag.source.file ? diag.source.file->path.c_str() : "<unknown>", "",
-                    diag.source.range.begin.line, diag.message.c_str());
-            }
-        }
+        HandleAssertionFailure(err.File(), "", err.Line(), err.Message().c_str());
 #endif
     }
 }
@@ -147,11 +141,11 @@ ScopedTintICEHandler::~ScopedTintICEHandler() {
     tlDevice = nullptr;
 }
 
-tint::writer::ExternalTextureOptions BuildExternalTextureTransformBindings(
+tint::ExternalTextureOptions BuildExternalTextureTransformBindings(
     const PipelineLayoutBase* layout) {
-    tint::writer::ExternalTextureOptions options;
+    tint::ExternalTextureOptions options;
     for (BindGroupIndex i : IterateBitSet(layout->GetBindGroupLayoutsMask())) {
-        const BindGroupLayoutBase* bgl = layout->GetBindGroupLayout(i);
+        const BindGroupLayoutInternalBase* bgl = layout->GetBindGroupLayout(i);
         for (const auto& [_, expansion] : bgl->GetExternalTextureBindingExpansionMap()) {
             options.bindings_map[{static_cast<uint32_t>(i),
                                   static_cast<uint32_t>(expansion.plane0)}] = {

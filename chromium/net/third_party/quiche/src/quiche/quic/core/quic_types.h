@@ -158,10 +158,19 @@ struct QUIC_EXPORT_PRIVATE WriteResult {
   QUIC_EXPORT_PRIVATE friend std::ostream& operator<<(std::ostream& os,
                                                       const WriteResult& s);
 
+  WriteResult& set_batch_id(uint32_t new_batch_id) {
+    batch_id = new_batch_id;
+    return *this;
+  }
+
   WriteStatus status;
   // Number of packets dropped as a result of this write.
   // Only used by batch writers. Otherwise always 0.
   uint16_t dropped_packets = 0;
+  // The batch id the packet being written belongs to. For debugging only.
+  // Only used by batch writers. Only valid if the packet being written started
+  // a new batch, or added to an existing batch.
+  uint32_t batch_id = 0;
   // The delta between a packet's ideal and actual send time:
   //     actual_send_time = ideal_send_time + send_time_offset
   //                      = (now + release_time_delay) + send_time_offset
@@ -706,6 +715,13 @@ enum AckResult {
   PACKETS_ACKED_IN_WRONG_PACKET_NUMBER_SPACE,
 };
 
+// Used to return the result of processing a received NEW_CID frame.
+enum class NewConnectionIdResult : uint8_t {
+  kOk,
+  kDuplicateFrame,  // Not an error.
+  kProtocolViolation,
+};
+
 // Indicates the fate of a serialized packet in WritePacket().
 enum SerializedPacketFate : uint8_t {
   DISCARD,         // Discard the packet.
@@ -875,12 +891,12 @@ enum QuicEcnCodepoint {
   // The NOT-ECT codepoint, indicating the packet sender is not using (or the
   // network has disabled) ECN.
   ECN_NOT_ECT = 0,
-  // The ECT(0) codepoint, indicating the packet sender is using classic ECN
-  // (RFC3168).
-  ECN_ECT0 = 1,
   // The ECT(1) codepoint, indicating the packet sender is using Low Latency,
   // Low Loss, Scalable Throughput (L4S) ECN (RFC9330).
-  ECN_ECT1 = 2,
+  ECN_ECT1 = 1,
+  // The ECT(0) codepoint, indicating the packet sender is using classic ECN
+  // (RFC3168).
+  ECN_ECT0 = 2,
   // The CE ("Congestion Experienced") codepoint, indicating the packet sender
   // is using ECN, and a router is experiencing congestion.
   ECN_CE = 3,

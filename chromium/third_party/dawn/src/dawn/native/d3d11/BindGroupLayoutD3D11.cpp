@@ -20,24 +20,21 @@ namespace dawn::native::d3d11 {
 
 ResultOrError<Ref<BindGroupLayout>> BindGroupLayout::Create(
     Device* device,
-    const BindGroupLayoutDescriptor* descriptor,
-    PipelineCompatibilityToken pipelineCompatibilityToken) {
-    return AcquireRef(new BindGroupLayout(device, descriptor, pipelineCompatibilityToken));
+    const BindGroupLayoutDescriptor* descriptor) {
+    return AcquireRef(new BindGroupLayout(device, descriptor));
 }
 
-BindGroupLayout::BindGroupLayout(Device* device,
-                                 const BindGroupLayoutDescriptor* descriptor,
-                                 PipelineCompatibilityToken pipelineCompatibilityToken)
-    : BindGroupLayoutBase(device, descriptor, pipelineCompatibilityToken),
+BindGroupLayout::BindGroupLayout(Device* device, const BindGroupLayoutDescriptor* descriptor)
+    : BindGroupLayoutInternalBase(device, descriptor),
       mBindGroupAllocator(MakeFrontendBindGroupAllocator<BindGroup>(4096)) {}
 
 Ref<BindGroup> BindGroupLayout::AllocateBindGroup(Device* device,
                                                   const BindGroupDescriptor* descriptor) {
-    return AcquireRef(mBindGroupAllocator.Allocate(device, descriptor));
+    return AcquireRef(mBindGroupAllocator->Allocate(device, descriptor));
 }
 
 void BindGroupLayout::DeallocateBindGroup(BindGroup* bindGroup) {
-    mBindGroupAllocator.Deallocate(bindGroup);
+    mBindGroupAllocator->Deallocate(bindGroup);
 }
 
 }  // namespace dawn::native::d3d11

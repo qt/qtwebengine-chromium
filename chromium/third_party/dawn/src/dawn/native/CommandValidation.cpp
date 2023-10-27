@@ -59,13 +59,21 @@ MaybeError ValidateSyncScopeResourceUsage(const SyncScopeResourceUsage& scope) {
             [&](const SubresourceRange&, const wgpu::TextureUsage& usage) -> MaybeError {
                 bool readOnly = IsSubset(usage, kReadOnlyTextureUsages);
                 bool singleUse = wgpu::HasZeroOrOneBits(usage);
-                if (!readOnly && !singleUse) {
-                    return DAWN_VALIDATION_ERROR(
-                        "%s usage (%s) includes writable usage and another usage in the same "
-                        "synchronization scope.",
-                        scope.textures[i], usage);
+                if (readOnly || singleUse) {
+                    return {};
                 }
-                return {};
+                // kResolveTextureLoadAndStoreUsages are kResolveAttachmentLoadingUsage &
+                // RenderAttachment usage used in the same pass.
+                // This is accepted because kResolveAttachmentLoadingUsage is an internal loading
+                // operation for blitting a resolve target to an MSAA attachment. And there won't be
+                // and read-after-write hazard.
+                if (usage == kResolveTextureLoadAndStoreUsages) {
+                    return {};
+                }
+                return DAWN_VALIDATION_ERROR(
+                    "%s usage (%s) includes writable usage and another usage in the same "
+                    "synchronization scope.",
+                    scope.textures[i], usage);
             }));
     }
     return {};
@@ -77,12 +85,10 @@ MaybeError ValidateTimestampQuery(const DeviceBase* device,
                                   Feature requiredFeature) {
     DAWN_TRY(device->ValidateObject(querySet));
 
-    DAWN_INVALID_IF(!device->HasFeature(requiredFeature),
-                    "Timestamp queries used without the %s feature enabled.",
-                    device->GetPhysicalDevice()
-                        ->GetInstance()
-                        ->GetFeatureInfo(FeatureEnumToAPIFeature(requiredFeature))
-                        ->name);
+    DAWN_INVALID_IF(
+        !device->HasFeature(requiredFeature),
+        "Timestamp queries used without the %s feature enabled.",
+        device->GetPhysicalDevice()->GetInstance()->GetFeatureInfo(ToAPI(requiredFeature))->name);
 
     DAWN_INVALID_IF(querySet->GetQueryType() != wgpu::QueryType::Timestamp,
                     "The type of %s is not %s.", querySet, wgpu::QueryType::Timestamp);
@@ -394,8 +400,9 @@ ResultOrError<Aspect> SingleAspectUsedByImageCopyTexture(const ImageCopyTexture&
             ASSERT(format.aspects & Aspect::Stencil);
             return Aspect::Stencil;
         case wgpu::TextureAspect::Plane0Only:
+            return Aspect::Plane0;
         case wgpu::TextureAspect::Plane1Only:
-            break;
+            return Aspect::Plane1;
     }
     UNREACHABLE();
 }
@@ -533,6 +540,15 @@ MaybeError ValidateColorAttachmentBytesPerSample(DeviceBase* device,
         "Total color attachment bytes per sample (%u) exceeds maximum (%u) with formats (%s).",
         totalByteSize, maxColorAttachmentBytesPerSample, TextureFormatsToString(formats));
 
+    return {};
+}
+
+MaybeError ValidateHasPLSFeature(const DeviceBase* device) {
+    DAWN_INVALID_IF(
+        !(device->HasFeature(Feature::PixelLocalStorageCoherent) ||
+          device->HasFeature(Feature::PixelLocalStorageNonCoherent)),
+        "Pixel Local Storage feature used without either of the pixel-local-storage-coherent or "
+        "pixel-local-storage-non-coherent features enabled.");
     return {};
 }
 

@@ -70,7 +70,8 @@ static avifBool avifPrepareReformatState(const avifImage * image, const avifRGBI
         return AVIF_FALSE;
     }
 
-    if ((image->matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_IDENTITY) && (image->yuvFormat != AVIF_PIXEL_FORMAT_YUV444)) {
+    if ((image->matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_IDENTITY) && (image->yuvFormat != AVIF_PIXEL_FORMAT_YUV444) &&
+        (image->yuvFormat != AVIF_PIXEL_FORMAT_YUV400)) {
         return AVIF_FALSE;
     }
 
@@ -384,7 +385,9 @@ avifResult avifImageRGBToYUV(avifImage * image, const avifRGBImage * rgb)
                 }
 
                 // Populate any subsampled channels with averages from the 2x2 block
-                if (image->yuvFormat == AVIF_PIXEL_FORMAT_YUV420) {
+                if (image->yuvFormat == AVIF_PIXEL_FORMAT_YUV400) {
+                    // Do nothing on chroma planes.
+                } else if (image->yuvFormat == AVIF_PIXEL_FORMAT_YUV420) {
                     // YUV420, average 4 samples (2x2)
 
                     float sumU = 0.0f;
@@ -478,7 +481,7 @@ avifResult avifImageRGBToYUV(avifImage * image, const avifRGBImage * rgb)
 
 // Allocates and fills look-up tables for going from YUV limited/full unorm -> full range RGB FP32.
 // Review this when implementing YCgCo limited range support.
-static avifBool avifCreateYUVToRGBLookUpTables(float ** unormFloatTableY, float ** unormFloatTableUV, int depth, const avifReformatState * state)
+static avifBool avifCreateYUVToRGBLookUpTables(float ** unormFloatTableY, float ** unormFloatTableUV, uint32_t depth, const avifReformatState * state)
 {
     const size_t cpCount = (size_t)1 << depth;
 
@@ -746,9 +749,9 @@ static avifResult avifImageYUVAnyToRGBAnySlow(const avifImage * image,
                     const int Cg = (int)avifRoundf(Cb * yuvMaxChannel);
                     const int Co = (int)avifRoundf(Cr * yuvMaxChannel);
                     const int t = YY - (Cg >> 1);
-                    G = AVIF_CLAMP(t + Cg, 0, state->rgbMaxChannel);
-                    B = AVIF_CLAMP(t - (Co >> 1), 0, state->rgbMaxChannel);
-                    R = AVIF_CLAMP(B + Co, 0, state->rgbMaxChannel);
+                    G = (float)AVIF_CLAMP(t + Cg, 0, state->rgbMaxChannel);
+                    B = (float)AVIF_CLAMP(t - (Co >> 1), 0, state->rgbMaxChannel);
+                    R = (float)AVIF_CLAMP(B + Co, 0, state->rgbMaxChannel);
                     G /= rgbMaxChannelF;
                     B /= rgbMaxChannelF;
                     R /= rgbMaxChannelF;
@@ -760,7 +763,7 @@ static avifResult avifImageYUVAnyToRGBAnySlow(const avifImage * image,
                     G = Y - ((2 * ((kr * (1 - kr) * Cr) + (kb * (1 - kb) * Cb))) / kg);
                 }
             } else {
-                // Monochrome: just populate all channels with luma (identity mode is irrelevant)
+                // Monochrome: just populate all channels with luma (state->mode is irrelevant)
                 R = Y;
                 G = Y;
                 B = Y;
@@ -1622,7 +1625,7 @@ avifResult avifImageYUVToRGB(const avifImage * image, avifRGBImage * rgb)
     v = (((v * (MAXLIMITEDY - MINLIMITEDY)) + (FULLY / 2)) / FULLY) + MINLIMITEDY; \
     v = AVIF_CLAMP(v, MINLIMITEDY, MAXLIMITEDY)
 
-int avifLimitedToFullY(int depth, int v)
+int avifLimitedToFullY(uint32_t depth, int v)
 {
     switch (depth) {
         case 8:
@@ -1638,7 +1641,7 @@ int avifLimitedToFullY(int depth, int v)
     return v;
 }
 
-int avifLimitedToFullUV(int depth, int v)
+int avifLimitedToFullUV(uint32_t depth, int v)
 {
     switch (depth) {
         case 8:
@@ -1654,7 +1657,7 @@ int avifLimitedToFullUV(int depth, int v)
     return v;
 }
 
-int avifFullToLimitedY(int depth, int v)
+int avifFullToLimitedY(uint32_t depth, int v)
 {
     switch (depth) {
         case 8:
@@ -1670,7 +1673,7 @@ int avifFullToLimitedY(int depth, int v)
     return v;
 }
 
-int avifFullToLimitedUV(int depth, int v)
+int avifFullToLimitedUV(uint32_t depth, int v)
 {
     switch (depth) {
         case 8:

@@ -20,11 +20,13 @@
 #define THIRD_PARTY_CENTIPEDE_CENTIPEDE_DEFAULT_CALLBACKS_H_
 
 #include <cstddef>
+#include <memory>
+#include <optional>
 #include <string_view>
 #include <vector>
 
 #include "./centipede/centipede_interface.h"
-#include "./centipede/execution_result.h"
+#include "./centipede/runner_result.h"
 
 namespace centipede {
 
@@ -34,11 +36,11 @@ class CentipedeDefaultCallbacks : public CentipedeCallbacks {
   explicit CentipedeDefaultCallbacks(const Environment &env);
   bool Execute(std::string_view binary, const std::vector<ByteArray> &inputs,
                BatchResult &batch_result) override;
-  void Mutate(const std::vector<ByteArray> &inputs, size_t num_mutants,
+  void Mutate(const std::vector<MutationInputRef> &inputs, size_t num_mutants,
               std::vector<ByteArray> &mutants) override;
 
  private:
-  bool custom_mutator_is_usable_ = false;
+  std::optional<bool> custom_mutator_is_usable_ = std::nullopt;
 };
 
 }  // namespace centipede

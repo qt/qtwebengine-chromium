@@ -31,6 +31,7 @@
 #include "dawn/native/vulkan/UtilsVulkan.h"
 #include "dawn/native/vulkan/VulkanError.h"
 #include "dawn/platform/DawnPlatform.h"
+#include "dawn/platform/metrics/HistogramMacros.h"
 #include "dawn/platform/tracing/TraceEvent.h"
 #include "tint/tint.h"
 
@@ -166,8 +167,8 @@ ShaderModule::~ShaderModule() = default;
 #define SPIRV_COMPILATION_REQUEST_MEMBERS(X)                                                     \
     X(SingleShaderStage, stage)                                                                  \
     X(const tint::Program*, inputProgram)                                                        \
-    X(tint::writer::BindingRemapperOptions, bindingRemapper)                                     \
-    X(tint::writer::ExternalTextureOptions, externalTextureOptions)                              \
+    X(tint::BindingRemapperOptions, bindingRemapper)                                             \
+    X(tint::ExternalTextureOptions, externalTextureOptions)                                      \
     X(std::optional<tint::ast::transform::SubstituteOverride::Config>, substituteOverrideConfig) \
     X(LimitsForCompilationRequest, limits)                                                       \
     X(std::string_view, entryPointName)                                                          \
@@ -177,7 +178,8 @@ ShaderModule::~ShaderModule() = default;
     X(bool, useZeroInitializeWorkgroupMemoryExtension)                                           \
     X(bool, clampFragDepth)                                                                      \
     X(bool, disableImageRobustness)                                                              \
-    X(CacheKey::UnsafeUnkeyedValue<dawn::platform::Platform*>, tracePlatform)
+    X(bool, disableRuntimeSizedArrayIndexClamping)                                               \
+    X(CacheKey::UnsafeUnkeyedValue<dawn::platform::Platform*>, platform)
 
 DAWN_MAKE_CACHE_REQUEST(SpirvCompilationRequest, SPIRV_COMPILATION_REQUEST_MEMBERS);
 #undef SPIRV_COMPILATION_REQUEST_MEMBERS
@@ -205,9 +207,9 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
     // Creation of module and spirv is deferred to this point when using tint generator
 
     // Remap BindingNumber to BindingIndex in WGSL shader
-    using BindingPoint = tint::writer::BindingPoint;
+    using BindingPoint = tint::BindingPoint;
 
-    tint::writer::BindingRemapperOptions bindingRemapper;
+    tint::BindingRemapperOptions bindingRemapper;
 
     const BindingInfoArray& moduleBindingInfo =
         GetEntryPoint(programmableStage.entryPoint.c_str()).bindings;
@@ -230,9 +232,9 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
 
     // Transform external textures into the binding locations specified in the bgl
     // TODO(dawn:1082): Replace this block with BuildExternalTextureTransformBindings.
-    tint::writer::ExternalTextureOptions externalTextureOptions;
+    tint::ExternalTextureOptions externalTextureOptions;
     for (BindGroupIndex i : IterateBitSet(layout->GetBindGroupLayoutsMask())) {
-        const BindGroupLayoutBase* bgl = layout->GetBindGroupLayout(i);
+        const BindGroupLayoutInternalBase* bgl = layout->GetBindGroupLayout(i);
 
         for (const auto& [_, expansion] : bgl->GetExternalTextureBindingExpansionMap()) {
             externalTextureOptions
@@ -264,7 +266,11 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
         GetDevice()->IsToggleEnabled(Toggle::VulkanUseZeroInitializeWorkgroupMemoryExtension);
     req.clampFragDepth = clampFragDepth;
     req.disableImageRobustness = GetDevice()->IsToggleEnabled(Toggle::VulkanUseImageRobustAccess2);
-    req.tracePlatform = UnsafeUnkeyedValue(GetDevice()->GetPlatform());
+    // Currently we can disable index clamping on all runtime-sized arrays in Tint robustness
+    // transform as unsized arrays can only be declared on storage address space.
+    req.disableRuntimeSizedArrayIndexClamping =
+        GetDevice()->IsToggleEnabled(Toggle::VulkanUseBufferRobustAccess2);
+    req.platform = UnsafeUnkeyedValue(GetDevice()->GetPlatform());
     req.substituteOverrideConfig = std::move(substituteOverrideConfig);
 
     const CombinedLimits& limits = GetDevice()->GetLimits();
@@ -274,8 +280,8 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
     DAWN_TRY_LOAD_OR_RUN(
         compilation, GetDevice(), std::move(req), CompiledSpirv::FromBlob,
         [](SpirvCompilationRequest r) -> ResultOrError<CompiledSpirv> {
-            tint::transform::Manager transformManager;
-            tint::transform::DataMap transformInputs;
+            tint::ast::transform::Manager transformManager;
+            tint::ast::transform::DataMap transformInputs;
 
             // Many Vulkan drivers can't handle multi-entrypoint shader modules.
             // Run before the renamer so that the entry point name matches `entryPointName` still.
@@ -297,9 +303,9 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
             }
 
             tint::Program program;
-            tint::transform::DataMap transformOutputs;
+            tint::ast::transform::DataMap transformOutputs;
             {
-                TRACE_EVENT0(r.tracePlatform.UnsafeGetValue(), General, "RunTransforms");
+                TRACE_EVENT0(r.platform.UnsafeGetValue(), General, "RunTransforms");
                 DAWN_TRY_ASSIGN(program,
                                 RunTransforms(&transformManager, r.inputProgram, transformInputs,
                                               &transformOutputs, nullptr));
@@ -326,7 +332,7 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
                                        program, remappedEntryPoint.c_str(), r.limits));
             }
 
-            tint::writer::spirv::Options options;
+            tint::spirv::writer::Options options;
             options.clamp_frag_depth = r.clampFragDepth;
             options.disable_robustness = !r.isRobustnessEnabled;
             options.emit_vertex_point_size = true;
@@ -336,18 +342,20 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
             options.binding_remapper_options = r.bindingRemapper;
             options.external_texture_options = r.externalTextureOptions;
             options.disable_image_robustness = r.disableImageRobustness;
+            options.disable_runtime_sized_array_index_clamping =
+                r.disableRuntimeSizedArrayIndexClamping;
 
-            TRACE_EVENT0(r.tracePlatform.UnsafeGetValue(), General,
-                         "tint::writer::spirv::Generate()");
-            auto tintResult = tint::writer::spirv::Generate(&program, options);
-            DAWN_INVALID_IF(!tintResult.success, "An error occured while generating SPIR-V: %s.",
-                            tintResult.error);
+            TRACE_EVENT0(r.platform.UnsafeGetValue(), General, "tint::spirv::writer::Generate()");
+            auto tintResult = tint::spirv::writer::Generate(&program, options);
+            DAWN_INVALID_IF(!tintResult, "An error occured while generating SPIR-V: %s.",
+                            tintResult.Failure());
 
             CompiledSpirv result;
-            result.spirv = std::move(tintResult.spirv);
+            result.spirv = std::move(tintResult.Get().spirv);
             result.remappedEntryPoint = remappedEntryPoint;
             return result;
-        });
+        },
+        "Vulkan.CompileShaderToSPIRV");
 
 #ifdef DAWN_ENABLE_SPIRV_VALIDATION
     DAWN_TRY(ValidateSpirv(GetDevice(), compilation->spirv.data(), compilation->spirv.size(),

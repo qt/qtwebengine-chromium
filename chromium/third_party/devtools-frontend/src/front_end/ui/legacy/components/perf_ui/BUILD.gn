@@ -39,6 +39,7 @@ devtools_module("perf_ui") {
     "OverviewGrid.ts",
     "PieChart.ts",
     "TimelineGrid.ts",
+    "TimelineOverviewCalculator.ts",
     "TimelineOverviewPane.ts",
   ]
 
@@ -49,6 +50,7 @@ devtools_module("perf_ui") {
     "../../../../core/platform:bundle",
     "../../../../core/sdk:bundle",
     "../../../../models/bindings:bundle",
+    "../../../../models/cpu_profile:bundle",
     "../../../../models/timeline_model:bundle",
     "../../../../models/workspace:bundle",
     "../../../../ui/legacy:bundle",

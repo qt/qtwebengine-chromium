@@ -42,7 +42,7 @@ export const Utils = {
   // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
   // eslint-disable-next-line @typescript-eslint/naming-convention
   get _regexFilterRegex(): RegExp {
-    return /(?:^|\s)(\-)?\/([^\s]+)\//;
+    return /(?:^|\s)(\-)?\/([^\/\\]+(\\.[^\/]+)*)\//;
   },
   // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
   // eslint-disable-next-line @typescript-eslint/naming-convention
@@ -284,6 +284,10 @@ export const isMinified = function(text: string): boolean {
   return (text.length - lineCount) / lineCount >= 80;
 };
 
+/**
+ * @returns One {@link SearchMatch} per match. Multiple matches on the same line each
+ * result in their own `SearchMatchExact` instance.
+ */
 export const performSearchInContent = function(
     content: string, query: string, caseSensitive: boolean, isRegex: boolean): SearchMatch[] {
   const regex = Platform.StringUtilities.createSearchRegex(query, caseSensitive, isRegex);
@@ -292,14 +296,35 @@ export const performSearchInContent = function(
   const result = [];
   for (let i = 0; i < text.lineCount(); ++i) {
     const lineContent = text.lineAt(i);
-    regex.lastIndex = 0;
-    const match = regex.exec(lineContent);
-    if (match) {
-      result.push(new SearchMatch(i, lineContent, match.index));
+    const matches = lineContent.matchAll(regex);
+    for (const match of matches) {
+      result.push(new SearchMatch(i, lineContent, match.index as number, match[0].length));
     }
   }
   return result;
 };
+
+/**
+ * Similar to {@link performSearchInContent} but doesn't search in a whole text but rather
+ * finds the exact matches on a prelminiary search result (i.e. lines with known matches).
+ * @param matches is deliberatedly typed as an object literal so we can pass the
+ *                CDP search result type.
+ */
+export const performSearchInSearchMatches = function(
+    matches: {lineNumber: number, lineContent: string}[], query: string, caseSensitive: boolean,
+    isRegex: boolean): SearchMatch[] {
+  const regex = Platform.StringUtilities.createSearchRegex(query, caseSensitive, isRegex);
+  const result = [];
+
+  for (const {lineNumber, lineContent} of matches) {
+    const matches = lineContent.matchAll(regex);
+    for (const match of matches) {
+      result.push(new SearchMatch(lineNumber, lineContent, match.index as number, match[0].length));
+    }
+  }
+  return result;
+};
+
 export interface ParsedFilter {
   key?: string;
   text?: string|null;

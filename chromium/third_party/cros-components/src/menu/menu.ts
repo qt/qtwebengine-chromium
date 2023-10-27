@@ -6,8 +6,8 @@
 
 import '@material/web/menu/menu.js';
 
-import {Corner, DefaultFocusState} from '@material/web/menu/menu.js';
-import {css, CSSResultGroup, html, LitElement} from 'lit';
+import {Corner, DefaultFocusState, MdMenu} from '@material/web/menu/menu.js';
+import {css, CSSResultGroup, html, LitElement, PropertyValues} from 'lit';
 
 export {Corner, DefaultFocusState} from '@material/web/menu/menu.js';
 
@@ -21,20 +21,30 @@ export class Menu extends LitElement {
   static override styles: CSSResultGroup = css`
     :host {
       display: inline-block;
+      --cros-menu-width: 96px;
     }
     md-menu {
-      --md-focus-ring-color: var(--cros-sys-focus_ring);
-      --md-list-container-color: var(--cros-sys-on_primary);
-      --md-menu-item-list-item-container-color: var(--cros-sys-on_primary);
-      --md-list-item-list-item-label-text-type: var(--cros-typography-button2);
-      --md-list-item-list-item-one-line-container-height: 36px;
+      --md-menu-container-color: var(--cros-bg-color-elevation-3);
+      --md-menu-item-container-color: var(--cros-bg-color-elevation-3);
+      --md-list-item-label-text-type: var(--cros-button-2-font);
+      --md-list-item-one-line-container-height: 36px;
       --md-menu-container-shape: 8px;
       --md-menu-container-surface-tint-layer-color: white;
+      min-width: max(var(--cros-menu-width), 96px);
+    }
+    md-menu::part(elevation) {
+      --md-menu-container-elevation: 0;
+      box-shadow: 0px 12px 12px 0px rgba(var(--cros-sys-shadow-rgb), 0.2);
+    }
+    md-menu::part(focus-ring) {
+      --md-focus-ring-color: var(--cros-sys-focus_ring);
+      --md-focus-ring-width: 2px;
+      --md-focus-ring-active-width: 2px;
     }
   `;
   /** @nocollapse */
   static override properties = {
-    anchor: {type: Object, attribute: false},
+    anchor: {type: String},
     anchorCorner: {type: String, attribute: 'anchor-corner'},
     hasOverflow: {type: Boolean, attribute: 'has-overflow'},
     open: {type: Boolean},
@@ -42,15 +52,39 @@ export class Menu extends LitElement {
     menuCorner: {type: String, attribute: 'menu-corner'},
     defaultFocus: {type: String, attribute: 'default-focus'},
     skipRestoreFocus: {type: Boolean, attribute: 'skip-restore-focus'},
+    stayOpenOnFocusout: {type: Boolean, attribute: 'stay-open-on-focus-out'},
+    stayOpenOnOutsideClick:
+        {type: Boolean, attribute: 'stay-open-on-outside-click'},
   };
+
   /** @nocollapse */
   static override shadowRootOptions = {
     ...LitElement.shadowRootOptions,
     delegatesFocus: true
   };
 
+  private readonly anchorKeydownListener = (e: KeyboardEvent) => {
+    if (e.key === 'ArrowDown') {
+      this.focusFirstItem();
+    } else if (e.key === 'ArrowUp') {
+      this.focusLastItem();
+    }
+  };
+
+  async focusFirstItem() {
+    this.mdMenu.defaultFocus = 'FIRST_ITEM';
+    await this.mdMenu.updateComplete;
+    this.show();
+  }
+
+  async focusLastItem() {
+    this.mdMenu.defaultFocus = 'LAST_ITEM';
+    await this.mdMenu.updateComplete;
+    this.show();
+  }
+
   /** @export */
-  anchor: HTMLElement|null;
+  anchor: string;
   /** @export */
   anchorCorner: Corner;
   /** @export */
@@ -86,10 +120,44 @@ export class Menu extends LitElement {
    * @export
    */
   skipRestoreFocus: boolean;
+  /**
+   * Keeps the menu open when focus leaves the menu's composed subtree.
+   * @export
+   */
+  stayOpenOnFocusout: boolean;
+  /**
+   * Keeps the menu open even if user clicks outside window.
+   * @export
+   */
+  stayOpenOnOutsideClick: boolean;
+
+  get mdMenu(): MdMenu {
+    return this.renderRoot.querySelector('md-menu') as MdMenu;
+  }
+
+  /** @private */
+  currentAnchorElement: HTMLElement|null = null;
+
+  /** @export */
+  get anchorElement(): HTMLElement|null {
+    if (this.anchor) {
+      return (this.getRootNode() as Document | ShadowRoot)
+          .querySelector(`#${this.anchor}`);
+    }
+
+    return this.currentAnchorElement;
+  }
+
+  /** @export */
+  set anchorElement(element: HTMLElement|null) {
+    this.currentAnchorElement = element;
+    this.requestUpdate('anchorElement');
+  }
 
   constructor() {
     super();
-    this.anchor = null;
+    this.anchor = '';
+    this.anchorElement = null;
     this.anchorCorner = 'END_START';
     this.hasOverflow = false;
     this.open = false;
@@ -97,6 +165,43 @@ export class Menu extends LitElement {
     this.menuCorner = 'START_START';
     this.defaultFocus = 'LIST_ROOT';
     this.skipRestoreFocus = false;
+    this.stayOpenOnFocusout = false;
+    this.stayOpenOnOutsideClick = false;
+  }
+
+  override firstUpdated() {
+    // Per spec, the submenu needs to be offset to account for the 8px padding
+    // at the top of the menu. This way the first element of the submenu is
+    // inline with the parent (anchor) sub-menu-item as per spec.
+    if (this.slot === 'submenu') {
+      this.mdMenu.yOffset = -8;
+    }
+  }
+
+  // We add the listener & aria-expanded here instead of
+  // connectedCallback/firstUpdated in case the anchor is added after initial
+  // menu render.
+  override updated(changedProperties: PropertyValues<this>) {
+    super.updated(changedProperties);
+
+    const anchorElement = this.anchorElement;
+
+    if ((changedProperties.has('anchor') ||
+         changedProperties.has('anchorElement')) &&
+        anchorElement) {
+      anchorElement.addEventListener('keydown', this.anchorKeydownListener);
+      anchorElement.setAttribute('aria-expanded', 'false');
+      anchorElement.setAttribute('role', 'button');
+      anchorElement.setAttribute('aria-haspopup', 'menu');
+    }
+  }
+
+  override disconnectedCallback() {
+    const anchorElement = this.anchorElement;
+    if (anchorElement) {
+      anchorElement.removeEventListener('keydown', this.anchorKeydownListener);
+    }
+    super.disconnectedCallback();
   }
 
   /**
@@ -105,18 +210,17 @@ export class Menu extends LitElement {
    */
   get items() {
     // This accessor is required for keyboard navigation
-    const menu = this.renderRoot.querySelector('md-menu');
-    if (!menu) {
+    if (!this.mdMenu) {
       return [];
     }
 
-    return menu.items;
+    return this.mdMenu.items;
   }
 
   override render() {
     return html`
       <md-menu
-          .anchor=${this.anchor}
+          .anchorElement=${this.anchorElement}
           .open=${this.open}
           .hasOverflow=${this.hasOverflow}
           .anchorCorner=${this.anchorCorner}
@@ -127,7 +231,9 @@ export class Menu extends LitElement {
           @closed=${this.close}
           @opened=${this.show}
           @closing=${this.onClosing}
-          @opening=${this.onOpening}>
+          @opening=${this.onOpening}
+          .stayOpenOnFocusout=${this.stayOpenOnFocusout}
+          .stayOpenOnOutsideClick=${this.stayOpenOnOutsideClick}>
         <slot></slot>
       </md-menu>
     `;
@@ -136,13 +242,19 @@ export class Menu extends LitElement {
   show() {
     this.open = true;
     // these non-bubbling events need to be re-dispatched for keyboard
-    // navigation to work on submenus
+    // navigation to work on submenus.
     this.dispatchEvent(new Event('opened'));
+    this.anchorElement?.setAttribute('aria-expanded', 'true');
   }
 
   close() {
     this.open = false;
     this.dispatchEvent(new Event('closed'));
+    // Set default focus back to entire menu. Default for keyboard navigation
+    // apart from arrow up/down. We avoid doing this in focusFirstItem() to
+    // avoid race conditions with menu open.
+    this.renderRoot.querySelector('md-menu')!.defaultFocus = 'LIST_ROOT';
+    this.anchorElement?.setAttribute('aria-expanded', 'false');
   }
 
   private onClosing() {

@@ -62,7 +62,7 @@ class Name : public TorqueGeneratedName<Name, PrimitiveHeapObject> {
   inline bool TryGetHash(uint32_t* hash) const;
 
   // Equality operations.
-  inline bool Equals(Name other);
+  inline bool Equals(Tagged<Name> other);
   inline static bool Equals(Isolate* isolate, Handle<Name> one,
                             Handle<Name> two);
 
@@ -87,8 +87,6 @@ class Name : public TorqueGeneratedName<Name, PrimitiveHeapObject> {
   // If the name is a private brand, it should behave like a private name
   // symbol but is filtered out when generating list of private fields.
   DECL_GETTER(IsPrivateBrand, bool)
-
-  DECL_GETTER(IsUniqueName, bool)
 
   static inline bool ContainsCachedArrayIndex(uint32_t hash);
 
@@ -209,6 +207,9 @@ class Name : public TorqueGeneratedName<Name, PrimitiveHeapObject> {
  private:
   inline uint32_t GetRawHashFromForwardingTable(uint32_t raw_hash) const;
 };
+
+inline bool IsUniqueName(Tagged<Name> obj);
+inline bool IsUniqueName(Tagged<Name> obj, PtrComprCageBase cage_base);
 
 // ES6 symbols.
 class Symbol : public TorqueGeneratedSymbol<Symbol, Name> {

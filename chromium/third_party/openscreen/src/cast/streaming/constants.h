@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -104,6 +104,9 @@ constexpr int kSupportedRemotingVersion = 2;
 // "REMOTE_AUDIO" or "REMOTE_VIDEO").
 enum class AudioCodec { kAac, kOpus, kNotSpecified };
 enum class VideoCodec { kH264, kVp8, kHevc, kNotSpecified, kVp9, kAv1 };
+
+// The type (audio, video, or unknown) of the stream.
+enum class StreamType { kUnknown, kAudio, kVideo };
 
 enum class CastMode : uint8_t { kMirroring, kRemoting };
 

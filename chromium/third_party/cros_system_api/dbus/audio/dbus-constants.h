@@ -59,6 +59,8 @@ const char kSetSpeakOnMuteDetection[] = "SetSpeakOnMuteDetection";
 const char kSpeakOnMuteDetectionEnabled[] = "SpeakOnMuteDetectionEnabled";
 const char kSetForceRespectUiGains[] = "SetForceRespectUiGains";
 const char kGetNumStreamIgnoreUiGains[] = "GetNumStreamIgnoreUiGains";
+const char kSetHfpMicSrEnabled[] = "SetHfpMicSrEnabled";
+const char kIsHfpMicSrSupported[] = "IsHfpMicSrSupported";
 
 // Names of properties returned by GetNodes() and GetNodeInfos()
 const char kIsInputProperty[] = "IsInput";
@@ -81,6 +83,7 @@ const char kNumberOfUnderrunsProperty[] = "NumberOfUnderruns";
 const char kNumberOfSevereUnderrunsProperty[] = "NumberOfSevereUnderruns";
 enum AudioEffectType {
   EFFECT_TYPE_NOISE_CANCELLATION = 1 << 0,
+  EFFECT_TYPE_HFP_MIC_SR = 1 << 1,
 };
 // Screen Rotation in clock-wise degrees.
 // This enum corresponds to enum Rotation in chromium ui/display/display.h

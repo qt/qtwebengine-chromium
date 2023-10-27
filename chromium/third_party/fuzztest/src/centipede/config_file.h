@@ -25,19 +25,6 @@
 
 namespace centipede::config {
 
-// A set of overloads to cast argv between vector<string> and main()-compatible
-// vector<char*> or argc/argv pair in both directions. The result can be used
-// like this:
-//   AugmentedArgvWithCleanup new_argv{CastArgv(argc, argv), ...};
-//   std::vector<std::string> leftover_argv =
-//       CastArgv(absl::ParseCommandLine(
-//           new_argv.argc(), CastArgv(new_argv.argv()).data());
-std::vector<std::string> CastArgv(int argc, char** argv);
-std::vector<std::string> CastArgv(const std::vector<char*>& argv);
-// WARNING: Beware of the lifetimes. The returned vector<char*> referenced the
-// passed `argv`, so `argv` must outlive it.
-std::vector<char*> CastArgv(const std::vector<std::string>& argv);
-
 // Constructs an augmented copy of `argv` with any substrings appearing in the
 // original elements replaced according to a list replacements.
 // TODO(ussuri): Make more robust. What we really want is replace any possible
@@ -104,21 +91,14 @@ AugmentedArgvWithCleanup LocalizeConfigFilesInArgv(
 std::filesystem::path MaybeSaveConfigToFile(
     const std::vector<std::string>& leftover_argv);
 
-// The main runtime initialization sequence of steps. Should parse the command
-// line, e.g. by calling absl::ParseCommandLine(), and return the leftover
-// positional arguments.
-using MainRuntimeInit =
-    std::function<std::vector<std::string>(int argc, char** argv)>;
-
 // Initializes Centipede:
-// - Calls `main_runtime_init` at the right time to initialize the runtime
+// - Calls `InitRuntime()` at the right time to initialize the runtime
 //   subsystems and perform the initial flag parsing.
 // - Handles config-related flags: loads the config from --config, if any,
 //   and saves it to --save_config (or --update_config), if any.
 // - Logs the final resolved config.
 // - Returns the leftover positional command line arguments in
-[[nodiscard]] std::vector<std::string> InitCentipede(
-    int argc, char** argv, const MainRuntimeInit& main_runtime_init);
+[[nodiscard]] std::vector<std::string> InitCentipede(int argc, char** argv);
 
 }  // namespace centipede::config
 

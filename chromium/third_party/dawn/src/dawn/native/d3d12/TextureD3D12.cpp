@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "absl/numeric/bits.h"
 #include "dawn/common/Constants.h"
 #include "dawn/common/Math.h"
 #include "dawn/native/DynamicUploader.h"
@@ -32,6 +33,8 @@
 #include "dawn/native/d3d12/Forward.h"
 #include "dawn/native/d3d12/HeapD3D12.h"
 #include "dawn/native/d3d12/ResourceAllocatorManagerD3D12.h"
+#include "dawn/native/d3d12/SharedFenceD3D12.h"
+#include "dawn/native/d3d12/SharedTextureMemoryD3D12.h"
 #include "dawn/native/d3d12/StagingDescriptorAllocatorD3D12.h"
 #include "dawn/native/d3d12/TextureCopySplitter.h"
 #include "dawn/native/d3d12/UtilsD3D12.h"
@@ -56,9 +59,8 @@ D3D12_RESOURCE_STATES D3D12TextureUsage(wgpu::TextureUsage usage, const Format& 
     if (usage & wgpu::TextureUsage::CopyDst) {
         resourceState |= D3D12_RESOURCE_STATE_COPY_DEST;
     }
-    if (usage & (wgpu::TextureUsage::TextureBinding)) {
-        resourceState |= (D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE |
-                          D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    if (usage & (wgpu::TextureUsage::TextureBinding | kReadOnlyStorageTexture)) {
+        resourceState |= D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE;
     }
     if (usage & wgpu::TextureUsage::StorageBinding) {
         resourceState |= D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
@@ -162,8 +164,7 @@ MaybeError ValidateVideoTextureCanBeShared(Device* device, DXGI_FORMAT textureFo
 
 // static
 ResultOrError<Ref<Texture>> Texture::Create(Device* device, const TextureDescriptor* descriptor) {
-    Ref<Texture> dawnTexture =
-        AcquireRef(new Texture(device, descriptor, TextureState::OwnedInternal));
+    Ref<Texture> dawnTexture = AcquireRef(new Texture(device, descriptor));
 
     DAWN_INVALID_IF(dawnTexture->GetFormat().IsMultiPlanar(),
                     "Cannot create a multi-planar formatted texture directly");
@@ -179,9 +180,7 @@ ResultOrError<Ref<Texture>> Texture::CreateExternalImage(Device* device,
                                                          std::vector<Ref<d3d::Fence>> waitFences,
                                                          bool isSwapChainTexture,
                                                          bool isInitialized) {
-    Ref<Texture> dawnTexture =
-        AcquireRef(new Texture(device, descriptor, TextureState::OwnedExternal));
-
+    Ref<Texture> dawnTexture = AcquireRef(new Texture(device, descriptor));
     DAWN_TRY(dawnTexture->InitializeAsExternalTexture(std::move(d3dTexture), std::move(waitFences),
                                                       isSwapChainTexture));
 
@@ -201,10 +200,20 @@ ResultOrError<Ref<Texture>> Texture::CreateExternalImage(Device* device,
 ResultOrError<Ref<Texture>> Texture::Create(Device* device,
                                             const TextureDescriptor* descriptor,
                                             ComPtr<ID3D12Resource> d3d12Texture) {
-    Ref<Texture> dawnTexture =
-        AcquireRef(new Texture(device, descriptor, TextureState::OwnedExternal));
+    Ref<Texture> dawnTexture = AcquireRef(new Texture(device, descriptor));
     DAWN_TRY(dawnTexture->InitializeAsSwapChainTexture(std::move(d3d12Texture)));
     return std::move(dawnTexture);
+}
+
+// static
+ResultOrError<Ref<Texture>> Texture::CreateFromSharedTextureMemory(
+    SharedTextureMemory* memory,
+    const TextureDescriptor* descriptor) {
+    Device* device = ToBackend(memory->GetDevice());
+    Ref<Texture> texture = AcquireRef(new Texture(device, descriptor));
+    DAWN_TRY(texture->InitializeAsExternalTexture(memory->GetD3DResource(), {}, false));
+    texture->mSharedTextureMemoryState = memory->GetState();
+    return texture;
 }
 
 MaybeError Texture::InitializeAsExternalTexture(ComPtr<IUnknown> d3dTexture,
@@ -215,6 +224,7 @@ MaybeError Texture::InitializeAsExternalTexture(ComPtr<IUnknown> d3dTexture,
 
     D3D12_RESOURCE_DESC desc = d3d12Texture->GetDesc();
     mD3D12ResourceFlags = desc.Flags;
+    ASSERT(mD3D12ResourceFlags & D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS);
 
     AllocationInfo info;
     info.mMethod = AllocationMethod::kExternal;
@@ -242,9 +252,16 @@ MaybeError Texture::InitializeAsInternalTexture() {
     resourceDescriptor.DepthOrArraySize = size.depthOrArrayLayers;
 
     Device* device = ToBackend(GetDevice());
+    // When the depth stencil texture is created on a not-zeroed heap, its first usage will also be
+    // copy destination when it is initialized with a non-zero value, which also triggered the issue
+    // about copying data into a placed depth stencil texture with a dirty memory, so in this
+    // situation the workaround should also be enabled.
     bool applyForceClearCopyableDepthStencilTextureOnCreationToggle =
         device->IsToggleEnabled(Toggle::D3D12ForceClearCopyableDepthStencilTextureOnCreation) &&
-        GetFormat().HasDepthOrStencil() && (GetInternalUsage() & wgpu::TextureUsage::CopyDst);
+        GetFormat().HasDepthOrStencil() &&
+        ((GetInternalUsage() & wgpu::TextureUsage::CopyDst) ||
+         (device->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting) &&
+          device->IsToggleEnabled(Toggle::D3D12CreateNotZeroedHeap)));
     if (applyForceClearCopyableDepthStencilTextureOnCreationToggle) {
         AddInternalUsage(wgpu::TextureUsage::RenderAttachment);
     }
@@ -285,18 +302,15 @@ MaybeError Texture::InitializeAsInternalTexture() {
 
     SetLabelImpl();
 
-    if (applyForceClearCopyableDepthStencilTextureOnCreationToggle) {
+    if (applyForceClearCopyableDepthStencilTextureOnCreationToggle ||
+        device->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting)) {
         CommandRecordingContext* commandContext;
         DAWN_TRY_ASSIGN(commandContext, device->GetPendingCommandContext());
-        DAWN_TRY(ClearTexture(commandContext, GetAllSubresources(), TextureBase::ClearValue::Zero));
-    }
-
-    if (device->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting)) {
-        CommandRecordingContext* commandContext;
-        DAWN_TRY_ASSIGN(commandContext, device->GetPendingCommandContext());
-
-        DAWN_TRY(
-            ClearTexture(commandContext, GetAllSubresources(), TextureBase::ClearValue::NonZero));
+        ClearValue clearValue =
+            device->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting)
+                ? ClearValue::NonZero
+                : ClearValue::Zero;
+        DAWN_TRY(ClearTexture(commandContext, GetAllSubresources(), clearValue));
     }
 
     return {};
@@ -305,6 +319,10 @@ MaybeError Texture::InitializeAsInternalTexture() {
 MaybeError Texture::InitializeAsSwapChainTexture(ComPtr<ID3D12Resource> d3d12Texture) {
     AllocationInfo info;
     info.mMethod = AllocationMethod::kExternal;
+
+    D3D12_RESOURCE_DESC desc = d3d12Texture->GetDesc();
+    mD3D12ResourceFlags = desc.Flags;
+
     // When creating the ResourceHeapAllocation, the resource heap is set to nullptr because the
     // texture is owned externally. The texture's owning entity must remain responsible for
     // memory management.
@@ -315,13 +333,8 @@ MaybeError Texture::InitializeAsSwapChainTexture(ComPtr<ID3D12Resource> d3d12Tex
     return {};
 }
 
-Texture::Texture(Device* device, const TextureDescriptor* descriptor, TextureState state)
-    : Base(device, descriptor, state),
-      mSubresourceStateAndDecay(
-          GetFormat().aspects,
-          GetArrayLayers(),
-          GetNumMipLevels(),
-          {D3D12_RESOURCE_STATES::D3D12_RESOURCE_STATE_COMMON, kMaxExecutionSerial, false}) {}
+Texture::Texture(Device* device, const TextureDescriptor* descriptor)
+    : Base(device, descriptor), mSubresourceStateAndDecay(InitialSubresourceStateAndDecay()) {}
 
 Texture::~Texture() = default;
 
@@ -333,6 +346,8 @@ void Texture::DestroyImpl() {
 }
 
 ResultOrError<ExecutionSerial> Texture::EndAccess() {
+    ASSERT(mD3D12ResourceFlags & D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS);
+
     Device* device = ToBackend(GetDevice());
     // Synchronize if texture access wasn't synchronized already due to ExecuteCommandLists.
     if (!mSignalFenceValue.has_value()) {
@@ -400,6 +415,21 @@ MaybeError Texture::SynchronizeImportedTextureBeforeUse() {
         device->ReferenceUntilUnused(static_cast<Fence*>(fence.Get())->GetD3D12Fence());
     }
     mWaitFences.clear();
+
+    SharedTextureMemoryBase::PendingFenceList fences;
+    SharedTextureMemoryState* memoryState = GetSharedTextureMemoryState();
+    if (memoryState != nullptr) {
+        memoryState->AcquirePendingFences(&fences);
+        memoryState->SetLastUsageSerial(GetDevice()->GetPendingCommandSerial());
+    }
+
+    for (const auto& fence : fences) {
+        DAWN_TRY(CheckHRESULT(device->GetCommandQueue()->Wait(
+                                  ToBackend(fence.object)->GetD3DFence(), fence.signaledValue),
+                              "D3D12 fence wait"));
+        // Keep D3D12 fence alive until commands complete.
+        device->ReferenceUntilUnused(ToBackend(fence.object)->GetD3DFence());
+    }
     return {};
 }
 
@@ -428,17 +458,6 @@ void Texture::TrackUsageAndTransitionNow(CommandRecordingContext* commandContext
     TrackUsageAndTransitionNow(commandContext, D3D12TextureUsage(usage, GetFormat()), range);
 }
 
-void Texture::TrackAllUsageAndTransitionNow(CommandRecordingContext* commandContext,
-                                            wgpu::TextureUsage usage) {
-    TrackUsageAndTransitionNow(commandContext, D3D12TextureUsage(usage, GetFormat()),
-                               GetAllSubresources());
-}
-
-void Texture::TrackAllUsageAndTransitionNow(CommandRecordingContext* commandContext,
-                                            D3D12_RESOURCE_STATES newState) {
-    TrackUsageAndTransitionNow(commandContext, newState, GetAllSubresources());
-}
-
 void Texture::TrackUsageAndTransitionNow(CommandRecordingContext* commandContext,
                                          D3D12_RESOURCE_STATES newState,
                                          const SubresourceRange& range) {
@@ -450,13 +469,7 @@ void Texture::TrackUsageAndTransitionNow(CommandRecordingContext* commandContext
 
     std::vector<D3D12_RESOURCE_BARRIER> barriers;
 
-    // TODO(enga): Consider adding a Count helper.
-    uint32_t aspectCount = 0;
-    for (Aspect aspect : IterateEnumMask(range.aspects)) {
-        aspectCount++;
-        DAWN_UNUSED(aspect);
-    }
-
+    uint32_t aspectCount = absl::popcount(static_cast<uint8_t>(range.aspects));
     barriers.reserve(range.levelCount * range.layerCount * aspectCount);
 
     TransitionUsageAndGetResourceBarrier(commandContext, &barriers, newState, range);
@@ -514,16 +527,17 @@ void Texture::TransitionSubresourceRange(std::vector<D3D12_RESOURCE_BARRIER>* ba
     // Update the tracked state.
     state->lastState = newState;
 
+    // All simultaneous-access textures are qualified for an implicit promotion.
     // Destination states that qualify for an implicit promotion for a
     // non-simultaneous-access texture: NON_PIXEL_SHADER_RESOURCE,
     // PIXEL_SHADER_RESOURCE, COPY_SRC, COPY_DEST.
     {
         const D3D12_RESOURCE_STATES kD3D12PromotableReadOnlyStates =
-            D3D12_RESOURCE_STATE_COPY_SOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE |
-            D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+            D3D12_RESOURCE_STATE_COPY_SOURCE | D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE;
 
         if (lastState == D3D12_RESOURCE_STATE_COMMON) {
-            if (IsSubset(newState, kD3D12PromotableReadOnlyStates)) {
+            if (IsSubset(newState, kD3D12PromotableReadOnlyStates) ||
+                mD3D12ResourceFlags & D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS) {
                 // Implicit texture state decays can only occur when the texture was implicitly
                 // transitioned to a read-only state. isValidToDecay is needed to differentiate
                 // between resources that were implictly or explicitly transitioned to a
@@ -545,10 +559,13 @@ void Texture::TransitionSubresourceRange(std::vector<D3D12_RESOURCE_BARRIER>* ba
     barrier.Transition.StateBefore = lastState;
     barrier.Transition.StateAfter = newState;
 
-    bool isFullRange = range.baseArrayLayer == 0 && range.baseMipLevel == 0 &&
-                       range.layerCount == GetArrayLayers() &&
-                       range.levelCount == GetNumMipLevels() &&
-                       range.aspects == GetFormat().aspects;
+    // Currently Stencil8 is implemented with DXGI_FORMAT_D24_UNORM_S8_UINT, while we can only
+    // choose the stencil aspect for Stencil8 textures, so actually we cannot select the full
+    // subresource range on the Stencil8 textures.
+    bool isFullRange =
+        range.baseArrayLayer == 0 && range.baseMipLevel == 0 &&
+        range.layerCount == GetArrayLayers() && range.levelCount == GetNumMipLevels() &&
+        range.aspects == GetFormat().aspects && GetFormat().format != wgpu::TextureFormat::Stencil8;
 
     // Use a single transition for all subresources if possible.
     if (isFullRange) {
@@ -624,6 +641,17 @@ void Texture::TrackUsageAndGetResourceBarrierForPass(CommandRecordingContext* co
             D3D12_RESOURCE_STATES newState = D3D12TextureUsage(usage, GetFormat());
             TransitionSubresourceRange(barriers, mergeRange, state, newState, pendingCommandSerial);
         });
+}
+
+SubresourceStorage<Texture::StateAndDecay> Texture::InitialSubresourceStateAndDecay() const {
+    return {GetFormat().aspects,
+            GetArrayLayers(),
+            GetNumMipLevels(),
+            {D3D12_RESOURCE_STATES::D3D12_RESOURCE_STATE_COMMON, kMaxExecutionSerial, false}};
+}
+
+void Texture::ResetSubresourceStateAndDecayToCommon() {
+    mSubresourceStateAndDecay = InitialSubresourceStateAndDecay();
 }
 
 D3D12_RENDER_TARGET_VIEW_DESC Texture::GetRTVDescriptor(const Format& format,

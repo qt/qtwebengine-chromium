@@ -15,21 +15,20 @@
 import {BigintMath} from '../../base/bigint_math';
 import {assertFalse} from '../../base/logging';
 import {colorForTid} from '../../common/colorizer';
-import {PluginContext} from '../../common/plugin_api';
 import {NUM} from '../../common/query_result';
-import {TPDuration, TPTime} from '../../common/time';
-import {TrackData} from '../../common/track_data';
-import {LIMIT} from '../../common/track_data';
+import {duration, Time, time} from '../../common/time';
+import {LIMIT, TrackData} from '../../common/track_data';
 import {TrackController} from '../../controller/track_controller';
 import {checkerboardExcept} from '../../frontend/checkerboard';
 import {globals} from '../../frontend/globals';
 import {NewTrackArgs, Track} from '../../frontend/track';
+import {Plugin, PluginContext, PluginInfo} from '../../public';
 
 export const PROCESS_SUMMARY_TRACK = 'ProcessSummaryTrack';
 
 // TODO(dproy): Consider deduping with CPU summary data.
 export interface Data extends TrackData {
-  bucketSize: TPDuration;
+  bucketSize: duration;
   utilizations: Float64Array;
 }
 
@@ -45,7 +44,7 @@ class ProcessSummaryTrackController extends TrackController<Config, Data> {
   static readonly kind = PROCESS_SUMMARY_TRACK;
   private setup = false;
 
-  async onBoundsChange(start: TPTime, end: TPTime, resolution: TPDuration):
+  async onBoundsChange(start: time, end: time, resolution: duration):
       Promise<Data> {
     assertFalse(resolution === 0n, 'Resolution cannot be 0');
 
@@ -87,7 +86,7 @@ class ProcessSummaryTrackController extends TrackController<Config, Data> {
     // |resolution| is in ns/px we want # ns for 10px window:
     // Max value with 1 so we don't end up with resolution 0.
     const bucketSize = resolution * 10n;
-    const windowStart = BigintMath.quant(start, bucketSize);
+    const windowStart = Time.quant(start, bucketSize);
     const windowDur = BigintMath.max(1n, end - windowStart);
 
     await this.query(`update ${this.tableName('window')} set
@@ -100,8 +99,8 @@ class ProcessSummaryTrackController extends TrackController<Config, Data> {
   }
 
   private async computeSummary(
-      start: TPTime, end: TPTime, resolution: TPDuration,
-      bucketSize: TPDuration): Promise<Data> {
+      start: time, end: time, resolution: duration,
+      bucketSize: duration): Promise<Data> {
     const duration = end - start;
     const numBuckets = Math.min(Number(duration / bucketSize), LIMIT);
 
@@ -175,8 +174,8 @@ class ProcessSummaryTrack extends Track<Config, Data> {
         this.getHeight(),
         windowSpan.start,
         windowSpan.end,
-        visibleTimeScale.tpTimeToPx(data.start),
-        visibleTimeScale.tpTimeToPx(data.end));
+        visibleTimeScale.timeToPx(data.start),
+        visibleTimeScale.timeToPx(data.end));
 
     this.renderSummary(ctx, data);
   }
@@ -201,9 +200,9 @@ class ProcessSummaryTrack extends Track<Config, Data> {
     for (let i = 0; i < data.utilizations.length; i++) {
       // TODO(dproy): Investigate why utilization is > 1 sometimes.
       const utilization = Math.min(data.utilizations[i], 1);
-      const startTime = BigInt(i) * data.bucketSize + data.start;
+      const startTime = Time.fromRaw(BigInt(i) * data.bucketSize + data.start);
 
-      lastX = Math.floor(visibleTimeScale.tpTimeToPx(startTime));
+      lastX = Math.floor(visibleTimeScale.timeToPx(startTime));
 
       ctx.lineTo(lastX, lastY);
       lastY = MARGIN_TOP + Math.round(SUMMARY_HEIGHT * (1 - utilization));
@@ -215,12 +214,14 @@ class ProcessSummaryTrack extends Track<Config, Data> {
   }
 }
 
-export function activate(ctx: PluginContext) {
-  ctx.registerTrack(ProcessSummaryTrack);
-  ctx.registerTrackController(ProcessSummaryTrackController);
+class ProcessSummaryPlugin implements Plugin {
+  onActivate(ctx: PluginContext): void {
+    ctx.registerTrack(ProcessSummaryTrack);
+    ctx.registerTrackController(ProcessSummaryTrackController);
+  }
 }
 
-export const plugin = {
+export const plugin: PluginInfo = {
   pluginId: 'perfetto.ProcessSummary',
-  activate,
+  plugin: ProcessSummaryPlugin,
 };

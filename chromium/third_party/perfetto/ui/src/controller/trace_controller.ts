@@ -30,8 +30,10 @@ import {
   getEnabledMetatracingCategories,
   isMetatracingEnabled,
 } from '../common/metatracing';
+import {pluginManager} from '../common/plugins';
 import {
   LONG,
+  LONG_NULL,
   NUM,
   NUM_NULL,
   QueryError,
@@ -45,10 +47,13 @@ import {
   PendingDeeplinkState,
   ProfileType,
 } from '../common/state';
-import {Span} from '../common/time';
 import {
-  TPTime,
-  TPTimeSpan,
+  Duration,
+  duration,
+  Span,
+  time,
+  Time,
+  TimeSpan,
 } from '../common/time';
 import {resetEngineWorker, WasmEngineProxy} from '../common/wasm_engine_proxy';
 import {BottomTabList} from '../frontend/bottom_tab';
@@ -66,6 +71,7 @@ import {
   publishOverviewData,
   publishThreads,
 } from '../frontend/publish';
+import {runQueryInNewTab} from '../frontend/query_result_tab';
 import {Router} from '../frontend/router';
 
 import {
@@ -103,7 +109,6 @@ import {
 import {FtraceController} from './ftrace_controller';
 import {LoadingManager} from './loading_manager';
 import {LogsController} from './logs_controller';
-import {MetricsController} from './metrics_controller';
 import {
   PIVOT_TABLE_REDUX_FLAG,
   PivotTableController,
@@ -137,7 +142,8 @@ const METRICS = [
   'android_batt',
   'android_other_traces',
   'chrome_dropped_frames',
-  'chrome_long_latency',
+  // TODO(289365196): Reenable:
+  // 'chrome_long_latency',
   'trace_metadata',
   'android_trusty_workqueues',
 ];
@@ -330,8 +336,7 @@ export class TraceController extends Controller<States> {
             Child('ftrace', FtraceController, {engine, app: globals}));
 
         childControllers.push(
-          Child('traceError', TraceErrorController, {engine}));
-        childControllers.push(Child('metrics', MetricsController, {engine}));
+            Child('traceError', TraceErrorController, {engine}));
 
         return childControllers;
 
@@ -342,6 +347,7 @@ export class TraceController extends Controller<States> {
   }
 
   onDestroy() {
+    pluginManager.onTraceClose();
     globals.engines.delete(this.engineId);
   }
 
@@ -463,6 +469,8 @@ export class TraceController extends Controller<States> {
       }
     }
 
+    pluginManager.onTraceLoad(engine);
+
     const emptyOmniboxState = {
       omnibox: '',
       mode: globals.state.omniboxState.mode || 'SEARCH',
@@ -478,10 +486,10 @@ export class TraceController extends Controller<States> {
         traceTime.start, traceTime.end, isJsonTrace, this.engine);
     // We don't know the resolution at this point. However this will be
     // replaced in 50ms so a guess is fine.
-    const resolution = visibleTimeSpan.duration.divide(1000).toTPTime();
+    const resolution = visibleTimeSpan.duration.divide(1000).toTime();
     actions.push(Actions.setVisibleTraceTime({
-      start: visibleTimeSpan.start.toTPTime(),
-      end: visibleTimeSpan.end.toTPTime(),
+      start: visibleTimeSpan.start.toTime(),
+      end: visibleTimeSpan.end.toTime(),
       lastUpdate: Date.now() / 1000,
       resolution: BigintMath.max(resolution, 1n),
     }));
@@ -532,6 +540,14 @@ export class TraceController extends Controller<States> {
     if (pendingDeeplink !== undefined) {
       globals.dispatch(Actions.clearPendingDeeplink({}));
       await this.selectPendingDeeplink(pendingDeeplink);
+      if (pendingDeeplink.visStart !== undefined &&
+          pendingDeeplink.visEnd !== undefined) {
+        this.zoomPendingDeeplink(
+            pendingDeeplink.visStart, pendingDeeplink.visEnd);
+      }
+      if (pendingDeeplink.query !== undefined) {
+        runQueryInNewTab(pendingDeeplink.query, 'Deeplink Query');
+      }
     }
 
     // If the trace was shared via a permalink, it might already have a
@@ -590,7 +606,7 @@ export class TraceController extends Controller<States> {
     const profile = await assertExists(this.engine).query(query);
     if (profile.numRows() !== 1) return;
     const row = profile.firstRow({ts: LONG, type: STR, upid: NUM});
-    const ts = row.ts;
+    const ts = Time.fromRaw(row.ts);
     const type = profileType(row.type);
     const upid = row.upid;
     globals.dispatch(Actions.selectHeapProfile({id: 0, upid, ts, type}));
@@ -619,6 +635,7 @@ export class TraceController extends Controller<States> {
       from slice
       where ${conditions.join(' and ')}
     ;`;
+
 
     const result = await assertExists(this.engine).query(query);
     if (result.numRows() > 0) {
@@ -685,19 +702,20 @@ export class TraceController extends Controller<States> {
     publishThreads(threads);
   }
 
-  private async loadTimelineOverview(trace: Span<TPTime>) {
+  private async loadTimelineOverview(trace: Span<time, duration>) {
     clearOverviewData();
 
     const engine = assertExists<Engine>(this.engine);
-    const stepSize = BigintMath.max(1n, trace.duration / 100n);
+    const stepSize = Duration.max(1n, trace.duration / 100n);
     let hasSchedOverview = false;
-    for (let start = trace.start; start < trace.end; start += stepSize) {
+    for (let start = trace.start; start < trace.end;
+         start = Time.add(start, stepSize)) {
       const progress = start - trace.start;
       const ratio = Number(progress) / Number(trace.duration);
       this.updateStatus(
           'Loading overview ' +
           `${Math.round(ratio * 100)}%`);
-      const end = start + stepSize;
+      const end = Time.add(start, stepSize);
 
       // Sched overview.
       const schedResult = await engine.query(
@@ -746,8 +764,8 @@ export class TraceController extends Controller<States> {
       const upid = it.upid;
       const load = it.load;
 
-      const start = trace.start + stepSize * bucket;
-      const end = start + stepSize;
+      const start = Time.add(trace.start, stepSize * bucket);
+      const end = Time.add(start, stepSize);
 
       const upidStr = upid.toString();
       let loadArray = slicesData[upidStr];
@@ -839,7 +857,6 @@ export class TraceController extends Controller<States> {
     for (const it = metricsResult.iter({name: STR}); it.valid(); it.next()) {
       availableMetrics.push(it.name);
     }
-    globals.dispatch(Actions.setAvailableMetrics({availableMetrics}));
 
     const availableMetricsSet = new Set<string>(availableMetrics);
     for (const [flag, metric] of FLAGGED_METRICS) {
@@ -851,7 +868,7 @@ export class TraceController extends Controller<States> {
       try {
         // We don't care about the actual result of metric here as we are just
         // interested in the annotation tracks.
-        await engine.computeMetric([metric]);
+        await engine.computeMetric([metric], 'proto');
       } catch (e) {
         if (e instanceof QueryError) {
           publishMetricError('MetricError: ' + e.message);
@@ -963,50 +980,84 @@ export class TraceController extends Controller<States> {
       timestamp: Date.now() / 1000,
     }));
   }
+
+  private zoomPendingDeeplink(visStart: string, visEnd: string) {
+    const visualStart = Time.fromRaw(BigInt(visStart));
+    const visualEnd = Time.fromRaw(BigInt(visEnd));
+    const traceTime = globals.stateTraceTimeTP();
+
+    if (!(visualStart < visualEnd && traceTime.start <= visualStart &&
+          visualEnd <= traceTime.end)) {
+      return;
+    }
+
+    const res = (visualEnd - visualStart) / 1000n;
+
+    globals.dispatch(Actions.setVisibleTraceTime({
+      start: visualStart,
+      end: visualEnd,
+      resolution: BigintMath.max(res, 1n),
+      lastUpdate: Date.now() / 1000,
+    }));
+  }
 }
 
-async function computeTraceReliableRangeStart(engine: Engine): Promise<TPTime> {
+async function computeFtraceBounds(engine: Engine): Promise<TimeSpan|null> {
+  const result = await engine.query(`
+    SELECT min(ts) as start, max(ts) as end FROM ftrace_event;
+  `);
+  const {start, end} = result.firstRow({start: LONG_NULL, end: LONG_NULL});
+  if (start !== null && end !== null) {
+    return new TimeSpan(Time.fromRaw(start), Time.fromRaw(end));
+  }
+  return null;
+}
+
+async function computeTraceReliableRangeStart(engine: Engine): Promise<time> {
   const result =
     await engine.query(`SELECT RUN_METRIC('chrome/chrome_reliable_range.sql');
        SELECT start FROM chrome_reliable_range`);
   const bounds = result.firstRow({start: LONG});
-  return bounds.start;
+  return Time.fromRaw(bounds.start);
 }
 
 async function computeVisibleTime(
-    traceStart: TPTime, traceEnd: TPTime, isJsonTrace: boolean, engine: Engine):
+    traceStart: time, traceEnd: time, isJsonTrace: boolean, engine: Engine):
     Promise<Span<HighPrecisionTime>> {
   // if we have non-default visible state, update the visible time to it
   const previousVisibleState = globals.stateVisibleTime();
   const defaultTraceSpan =
-      new TPTimeSpan(defaultTraceTime.start, defaultTraceTime.end);
+      new TimeSpan(defaultTraceTime.start, defaultTraceTime.end);
   if (!(previousVisibleState.start === defaultTraceSpan.start &&
         previousVisibleState.end === defaultTraceSpan.end) &&
       (previousVisibleState.start >= traceStart &&
        previousVisibleState.end <= traceEnd)) {
-    return HighPrecisionTimeSpan.fromTpTime(
+    return HighPrecisionTimeSpan.fromTime(
         previousVisibleState.start, previousVisibleState.end);
   }
 
   // initialise visible time to the trace time bounds
-  let visibleStartSec = traceStart;
-  let visibleEndSec = traceEnd;
+  let visibleStart = traceStart;
+  let visibleEnd = traceEnd;
 
   // compare start and end with metadata computed by the trace processor
   const mdTime = await engine.getTracingMetadataTimeBounds();
   // make sure the bounds hold
-  if (BigintMath.max(visibleStartSec, mdTime.start) <
-      BigintMath.min(visibleEndSec, mdTime.end)) {
-    visibleStartSec = BigintMath.max(visibleStartSec, mdTime.start);
-    visibleEndSec = BigintMath.min(visibleEndSec, mdTime.end);
+  if (Time.max(visibleStart, mdTime.start) < Time.min(visibleEnd, mdTime.end)) {
+    visibleStart = Time.max(visibleStart, mdTime.start);
+    visibleEnd = Time.min(visibleEnd, mdTime.end);
   }
 
   // Trace Processor doesn't support the reliable range feature for JSON
   // traces.
   if (!isJsonTrace && ENABLE_CHROME_RELIABLE_RANGE_ZOOM_FLAG.get()) {
     const reliableRangeStart = await computeTraceReliableRangeStart(engine);
-    visibleStartSec = BigintMath.max(visibleStartSec, reliableRangeStart);
+    visibleStart = Time.max(visibleStart, reliableRangeStart);
   }
 
-  return HighPrecisionTimeSpan.fromTpTime(visibleStartSec, visibleEndSec);
+  const ftraceBounds = await computeFtraceBounds(engine);
+  if (ftraceBounds !== null) {
+    visibleStart = ftraceBounds.start;
+  }
+  return HighPrecisionTimeSpan.fromTime(visibleStart, visibleEnd);
 }

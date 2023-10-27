@@ -149,6 +149,9 @@ void BluetoothClassicMedium::OnScanModeChanged(
                        << ": OnScanModeChanged exception: " << ex.code() << ": "
                        << winrt::to_string(ex.message());
     return;
+  } catch (...) {
+    NEARBY_LOGS(ERROR) << __func__ << ": Unknown exception.";
+    return;
   }
 }
 
@@ -220,6 +223,8 @@ void BluetoothClassicMedium::InitializeDeviceWatcher() {
     NEARBY_LOGS(ERROR) << __func__
                        << ": InitializeDeviceWatcher exception: " << ex.code()
                        << ": " << winrt::to_string(ex.message());
+  } catch (...) {
+    NEARBY_LOGS(ERROR) << __func__ << ": Unknown exception.";
   }
 }
 
@@ -306,7 +311,10 @@ std::unique_ptr<api::BluetoothSocket> BluetoothClassicMedium::ConnectToService(
     RfcommDeviceService requested_service(
         GetRequestedService(current_device, service));
 
-    if (!CheckSdp(requested_service)) {
+    if (!FeatureFlags::GetInstance()
+             .GetFlags()
+             .skip_service_discovery_before_connecting_to_rfcomm &&
+        !CheckSdp(requested_service)) {
       NEARBY_LOGS(ERROR) << __func__ << ": Invalid SDP.";
       return nullptr;
     }
@@ -343,6 +351,9 @@ std::unique_ptr<api::BluetoothSocket> BluetoothClassicMedium::ConnectToService(
                        << ex.code()
                        << ", error message: " << winrt::to_string(ex.message());
     return nullptr;
+  } catch (...) {
+    NEARBY_LOGS(ERROR) << __func__ << ": Unknown exception.";
+    return nullptr;
   }
 }
 
@@ -373,6 +384,8 @@ std::unique_ptr<api::BluetoothPairing> BluetoothClassicMedium::CreatePairing(
                        << ": Failed to create pairing. WinRT exception: "
                        << error.code() << ": "
                        << winrt::to_string(error.message());
+  } catch (...) {
+    NEARBY_LOGS(ERROR) << __func__ << ": Unknown exception.";
   }
   return nullptr;
 }
@@ -807,6 +820,18 @@ bool BluetoothClassicMedium::StartAdvertising(bool radio_discoverable) {
     }
 
     return false;
+  } catch (...) {
+    NEARBY_LOGS(ERROR) << __func__ << ": Unknown exception.";
+    if (server_socket_ != nullptr) {
+      server_socket_->Close();
+      server_socket_ = nullptr;
+    }
+
+    if (rfcomm_provider_ != nullptr) {
+      rfcomm_provider_ = nullptr;
+    }
+
+    return false;
   }
 }
 
@@ -835,6 +860,9 @@ bool BluetoothClassicMedium::StopAdvertising() {
     NEARBY_LOGS(ERROR) << __func__
                        << ": StopAdvertising exception: " << ex.code() << ": "
                        << winrt::to_string(ex.message());
+    return false;
+  } catch (...) {
+    NEARBY_LOGS(ERROR) << __func__ << ": Unknown exception.";
     return false;
   }
 }

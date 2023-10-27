@@ -14,22 +14,14 @@
 
 import m from 'mithril';
 
-import {BigintMath} from '../base/bigint_math';
-import {sqliteString} from '../base/string_utils';
-import {Actions} from '../common/actions';
+import {exists} from '../base/utils';
 import {EngineProxy} from '../common/engine';
 import {runQuery} from '../common/queries';
 import {LONG, LONG_NULL, NUM, STR_NULL} from '../common/query_result';
-import {
-  formatDuration,
-  TPDuration,
-  TPTime,
-} from '../common/time';
-import {ArgNode, convertArgsToTree, Key} from '../controller/args_parser';
+import {duration, Time} from '../common/time';
+import {addDebugTrack} from '../tracks/debug/slice_track';
 
-import {Anchor} from './anchor';
 import {
-  addTab,
   BottomTab,
   bottomTabRegistry,
   NewBottomTabArgs,
@@ -38,117 +30,99 @@ import {FlowPoint, globals} from './globals';
 import {PanelSize} from './panel';
 import {runQueryInNewTab} from './query_result_tab';
 import {Icons} from './semantic_icons';
-import {Arg} from './sql/args';
+import {renderArguments} from './slice_args';
+import {renderDetails} from './slice_details';
 import {getSlice, SliceDetails, SliceRef} from './sql/slice';
-import {SqlTableTab} from './sql_table/tab';
-import {SqlTables} from './sql_table/well_known_tables';
-import {asSliceSqlId, asTPTimestamp} from './sql_types';
-import {getProcessName, getThreadName} from './thread_and_process_info';
+import {asSliceSqlId} from './sql_types';
 import {Button} from './widgets/button';
 import {DetailsShell} from './widgets/details_shell';
-import {Duration} from './widgets/duration';
-import {Column, GridLayout} from './widgets/grid_layout';
+import {DurationWidget} from './widgets/duration';
+import {GridLayout, GridLayoutColumn} from './widgets/grid_layout';
 import {MenuItem, PopupMenu2} from './widgets/menu';
 import {Section} from './widgets/section';
-import {SqlRef} from './widgets/sql_ref';
-import {Timestamp} from './widgets/timestamp';
 import {Tree, TreeNode} from './widgets/tree';
-import {exists} from './widgets/utils';
 
 interface ContextMenuItem {
   name: string;
   shouldDisplay(slice: SliceDetails): boolean;
-  getAction(slice: SliceDetails): void;
+  run(slice: SliceDetails): void;
+}
+
+function getTidFromSlice(slice: SliceDetails): number|undefined {
+  return slice.thread?.tid;
+}
+
+function getPidFromSlice(slice: SliceDetails): number|undefined {
+  return slice.process?.pid;
+}
+
+function getProcessNameFromSlice(slice: SliceDetails): string|undefined {
+  return slice.process?.name;
+}
+
+function getThreadNameFromSlice(slice: SliceDetails): string|undefined {
+  return slice.thread?.name;
+}
+
+function hasName(slice: SliceDetails): boolean {
+  return slice.name !== undefined;
+}
+
+function hasTid(slice: SliceDetails): boolean {
+  return getTidFromSlice(slice) !== undefined;
+}
+
+function hasPid(slice: SliceDetails): boolean {
+  return getPidFromSlice(slice) !== undefined;
+}
+
+function hasProcessName(slice: SliceDetails): boolean {
+  return getProcessNameFromSlice(slice) !== undefined;
+}
+
+function hasThreadName(slice: SliceDetails): boolean {
+  return getThreadNameFromSlice(slice) !== undefined;
 }
 
 const ITEMS: ContextMenuItem[] = [
   {
-    name: 'Average duration',
-    shouldDisplay: (slice: SliceDetails) => slice.name !== undefined,
-    getAction: (slice: SliceDetails) => runQueryInNewTab(
+    name: 'Average duration of slice name',
+    shouldDisplay: (slice: SliceDetails) => hasName(slice),
+    run: (slice: SliceDetails) => runQueryInNewTab(
         `SELECT AVG(dur) / 1e9 FROM slice WHERE name = '${slice.name!}'`,
         `${slice.name} average dur`,
         ),
   },
   {
-    name: 'Binder by TXN',
-    shouldDisplay: () => true,
-    getAction: () => runQueryInNewTab(
-        `SELECT IMPORT('android.binder');
-
-         SELECT *
-         FROM android_sync_binder_metrics_by_txn
-         ORDER BY client_dur DESC`,
-        'Binder by TXN',
-        ),
-  },
-  {
-    name: 'Binder call names',
-    shouldDisplay: () => true,
-    getAction: (slice: SliceDetails) => {
+    name: 'Binder call names on thread',
+    shouldDisplay: (slice) => hasProcessName(slice) && hasThreadName(slice) &&
+        hasTid(slice) && hasPid(slice),
+    run: (slice: SliceDetails) => {
       const engine = getEngine();
       if (engine === undefined) return;
       runQuery(`SELECT IMPORT('android.binder');`, engine)
           .then(
-              () => runQueryInNewTab(
-                  `
-                SELECT s.ts, s.dur, tx.aidl_name AS name, s.id
-                FROM android_sync_binder_metrics_by_txn tx
-                  JOIN slice s ON tx.binder_txn_id = s.id
-                  JOIN thread_track ON s.track_id = thread_track.id
-                  JOIN thread USING (utid)
-                  JOIN process USING (upid)
-                WHERE aidl_name IS NOT NULL
-                  AND pid = ${slice.process?.pid}
-                  AND tid = ${slice.thread?.tid}`,
-                  `Binder names (${slice.process?.name}:${slice.thread?.tid})`,
+              () => addDebugTrack(
+                  engine,
+                  {
+                    sqlSource: `
+                            SELECT s.ts, s.dur, tx.aidl_name AS name
+                            FROM android_sync_binder_metrics_by_txn tx
+                              JOIN slice s ON tx.binder_txn_id = s.id
+                              JOIN thread_track ON s.track_id = thread_track.id
+                              JOIN thread USING (utid)
+                              JOIN process USING (upid)
+                            WHERE aidl_name IS NOT NULL
+                              AND pid = ${getPidFromSlice(slice)}
+                              AND tid = ${getTidFromSlice(slice)}`,
+                    columns: ['ts', 'dur', 'name'],
+                  },
+                  `Binder names (${getProcessNameFromSlice(slice)}:${
+                      getThreadNameFromSlice(slice)})`,
+                  {ts: 'ts', dur: 'dur', name: 'name'},
+                  [],
                   ));
     },
-  },
-  {
-    name: 'Lock graph',
-    shouldDisplay: (slice: SliceDetails) => slice.id !== undefined,
-    getAction: (slice: SliceDetails) => runQueryInNewTab(
-        `SELECT IMPORT('android.monitor_contention');
-         DROP TABLE IF EXISTS FAST;
-         CREATE TABLE FAST
-         AS
-         WITH slice_process AS (
-         SELECT process.name, process.upid FROM slice
-         JOIN thread_track ON thread_track.id = slice.track_id
-         JOIN thread USING(utid)
-         JOIN process USING(upid)
-         WHERE slice.id = ${slice.id}
-         )
-         SELECT *,
-         IIF(blocked_thread_name LIKE 'binder:%', 'binder', blocked_thread_name)
-          AS blocked_thread_name_norm,
-         IIF(blocking_thread_name LIKE 'binder:%', 'binder', blocking_thread_name)
-          AS blocking_thread_name_norm
-         FROM android_monitor_contention_chain, slice_process
-         WHERE android_monitor_contention_chain.upid = slice_process.upid;
-
-         WITH
-         R AS (
-         SELECT
-           id,
-           dur,
-           CAT_STACKS(blocked_thread_name_norm || ':' || short_blocked_method,
-             blocking_thread_name_norm || ':' || short_blocking_method) AS stack
-         FROM FAST
-         WHERE parent_id IS NULL
-         UNION ALL
-         SELECT
-         c.id,
-         c.dur AS dur,
-         CAT_STACKS(stack, blocking_thread_name_norm || ':' || short_blocking_method) AS stack
-         FROM FAST c, R AS p
-         WHERE p.id = c.parent_id
-         )
-         SELECT TITLE.process_name, EXPERIMENTAL_PROFILE(stack, 'duration', 'ns', dur) AS pprof
-         FROM R, (SELECT process_name FROM FAST LIMIT 1) TITLE;`,
-        'Lock graph',
-        ),
   },
 ];
 
@@ -163,121 +137,6 @@ function getEngine(): EngineProxy|undefined {
   }
   const engine = globals.engines.get(engineId)?.getProxy('SlicePanel');
   return engine;
-}
-
-function renderArgKey(key: string, value?: Arg): m.Children {
-  if (value === undefined) {
-    return key;
-  } else {
-    const {key: fullKey, displayValue} = value;
-    return m(
-        PopupMenu2,
-        {trigger: m(Anchor, {icon: Icons.ContextMenu}, key)},
-        m(MenuItem, {
-          label: 'Copy full key',
-          icon: 'content_copy',
-          onclick: () => navigator.clipboard.writeText(fullKey),
-        }),
-        value && m(MenuItem, {
-          label: 'Find slices with same arg value',
-          icon: 'search',
-          onclick: () => {
-            runQueryInNewTab(
-                `
-              select slice.*
-              from slice
-              join args using (arg_set_id)
-              where key=${sqliteString(fullKey)} and display_value=${
-                    sqliteString(displayValue)}
-          `,
-                `Arg: ${sqliteString(fullKey)}=${sqliteString(displayValue)}`);
-          },
-        }),
-        value && m(MenuItem, {
-          label: 'Visualise argument values',
-          icon: 'query_stats',
-          onclick: () => {
-            globals.dispatch(Actions.addVisualisedArg({argName: fullKey}));
-          },
-        }),
-    );
-  }
-}
-
-function isWebLink(value: unknown): value is string {
-  return typeof value === 'string' &&
-      (value.startsWith('http://') || value.startsWith('https://'));
-}
-
-// Try to render arg value as a special value, otherwise just render the text.
-function renderArgValue({value}: Arg): m.Children {
-  if (isWebLink(value)) {
-    return renderWebLink(value);
-  } else {
-    return `${value}`;
-  }
-}
-
-function renderWebLink(url: string): m.Children {
-  return m(Anchor, {href: url, target: '_blank', icon: 'open_in_new'}, url);
-}
-
-function renderSummary(children: ArgNode<Arg>[]): m.Children {
-  const summary = children.slice(0, 2).map(({key}) => key).join(', ');
-  const remaining = children.length - 2;
-  if (remaining > 0) {
-    return `{${summary}, ... (${remaining} more items)}`;
-  } else {
-    return `{${summary}}`;
-  }
-}
-
-// Format any number of keys into a composite key with standardized formatting.
-function stringifyKey(...key: Key[]): string {
-  return key
-      .map((element, index) => {
-        if (typeof element === 'number') {
-          return `[${element}]`;
-        } else {
-          return (index === 0 ? '' : '.') + element;
-        }
-      })
-      .join('');
-}
-
-function renderArgTreeNodes(
-    engine: EngineProxy, args: ArgNode<Arg>[]): m.Children {
-  return args.map((arg) => {
-    const {key, value, children} = arg;
-    if (children && children.length === 1) {
-      // If we only have one child, collapse into self and combine keys
-      const child = children[0];
-      const compositeArg = {
-        ...child,
-        key: stringifyKey(key, child.key),
-      };
-      return renderArgTreeNodes(engine, [compositeArg]);
-    } else {
-      return m(
-          TreeNode,
-          {
-            left: renderArgKey(stringifyKey(key), value),
-            right: exists(value) && renderArgValue(value),
-            summary: children && renderSummary(children),
-          },
-          children && renderArgTreeNodes(engine, children),
-      );
-    }
-  });
-}
-
-function computeDuration(ts: TPTime, dur: TPDuration): m.Children {
-  if (dur === -1n) {
-    const minDuration = globals.state.traceTime.end - ts;
-    return `${formatDuration(minDuration)} (Did not end)`;
-  } else {
-    return m(Duration, {dur});
-  }
 }
 
 async function getAnnotationSlice(
@@ -309,7 +168,7 @@ async function getAnnotationSlice(
   return {
     id: asSliceSqlId(it.id),
     name: it.name ?? 'null',
-    ts: asTPTimestamp(it.ts),
+    ts: Time.fromRaw(it.ts),
     dur: it.dur,
     sqlTrackId: it.trackId,
     threadDur: it.threadDur ?? undefined,
@@ -371,7 +230,7 @@ export class ChromeSliceDetailsTab extends
           },
           m(
               GridLayout,
-              this.renderDetails(slice),
+              renderDetails(slice),
               this.renderRhs(this.engine, slice),
               ),
       );
@@ -387,105 +246,14 @@ export class ChromeSliceDetailsTab extends
   private renderRhs(engine: EngineProxy, slice: SliceDetails): m.Children {
     const precFlows = this.renderPrecedingFlows(slice);
     const followingFlows = this.renderFollowingFlows(slice);
-    const args = this.renderArguments(engine, slice);
+    const args = renderArguments(engine, slice);
     if (precFlows ?? followingFlows ?? args) {
       return m(
-          Column,
+          GridLayoutColumn,
           precFlows,
           followingFlows,
           args,
       );
-    } else {
-      return undefined;
-    }
-  }
-
-  private renderDetails(slice: SliceDetails) {
-    return m(
-        Section,
-        {title: 'Details'},
-        m(
-            Tree,
-            m(TreeNode, {
-              left: 'Name',
-              right: m(
-                  PopupMenu2,
-                  {
-                    trigger: m(Anchor, slice.name),
-                  },
-                  m(MenuItem, {
-                    label: 'Slices with the same name',
-                    onclick: () => {
-                      addTab({
-                        kind: SqlTableTab.kind,
-                        config: {
-                          table: SqlTables.slice,
-                          displayName: 'slice',
-                          filters: [`name = ${sqliteString(slice.name)}`],
-                        },
-                      });
-                    },
-                  }),
-                  ),
-            }),
-            m(TreeNode, {
-              left: 'Category',
-              right: !slice.category || slice.category === '[NULL]' ?
-                  'N/A' :
-                  slice.category,
-            }),
-            m(TreeNode, {
-              left: 'Start time',
-              right: m(Timestamp, {ts: asTPTimestamp(slice.ts)}),
-            }),
-            exists(slice.absTime) &&
-                m(TreeNode, {left: 'Absolute Time', right: slice.absTime}),
-            m(TreeNode, {
-              left: 'Duration',
-              right: computeDuration(slice.ts, slice.dur),
-            }),
-            this.renderThreadDuration(slice),
-            slice.thread && m(TreeNode, {
-              left: 'Thread',
-              right: getThreadName(slice.thread),
-            }),
-            slice.process && m(TreeNode, {
-              left: 'Process',
-              right: getProcessName(slice.process),
-            }),
-            slice.process && exists(slice.process.uid) && m(TreeNode, {
-              left: 'User ID',
-              right: slice.process.uid,
-            }),
-            slice.process && slice.process.packageName && m(TreeNode, {
-              left: 'Package name',
-              right: slice.process.packageName,
-            }),
-            slice.process && exists(slice.process.versionCode) && m(TreeNode, {
-              left: 'Version code',
-              right: slice.process.versionCode,
-            }),
-            m(TreeNode, {
-              left: 'SQL ID',
-              right: m(SqlRef, {table: 'slice', id: slice.id}),
-            }),
-            ));
-  }
-
-  private renderThreadDuration(sliceInfo: SliceDetails) {
-    if (exists(sliceInfo.threadTs) && exists(sliceInfo.threadDur)) {
-      // If we have valid thread duration, also display a percentage of
-      // |threadDur| compared to |dur|.
-      const ratio = BigintMath.ratio(sliceInfo.threadDur, sliceInfo.dur);
-      const threadDurFractionSuffix =
-          sliceInfo.threadDur === -1n ? '' : ` (${(ratio * 100).toFixed(2)}%)`;
-      return m(TreeNode, {
-        left: 'Thread duration',
-        right: [
-          computeDuration(sliceInfo.threadTs, sliceInfo.threadDur),
-          threadDurFractionSuffix,
-        ],
-      });
     } else {
       return undefined;
     }
@@ -534,8 +302,7 @@ export class ChromeSliceDetailsTab extends
   }
 
   private renderFlow(
-      flow: FlowPoint, dur: TPDuration,
-      includeProcessName: boolean): m.Children {
+      flow: FlowPoint, dur: duration, includeProcessName: boolean): m.Children {
     const description = flow.sliceChromeCustomName === undefined ?
         flow.sliceName :
         flow.sliceChromeCustomName;
@@ -556,22 +323,9 @@ export class ChromeSliceDetailsTab extends
             sqlTrackId: flow.trackId,
           }),
         }),
-        m(TreeNode, {left: 'Delay', right: m(Duration, {dur})}),
+        m(TreeNode, {left: 'Delay', right: m(DurationWidget, {dur})}),
         m(TreeNode, {left: 'Thread', right: threadName}),
     );
-  }
-
-  private renderArguments(engine: EngineProxy, slice: SliceDetails):
-      m.Children {
-    if (slice.args && slice.args.length > 0) {
-      const tree = convertArgsToTree(slice.args);
-      return m(
-          Section,
-          {title: 'Arguments'},
-          m(Tree, renderArgTreeNodes(engine, tree)));
-    } else {
-      return undefined;
-    }
   }
 
   private renderContextButton(sliceInfo: SliceDetails): m.Children {
@@ -587,8 +341,8 @@ export class ChromeSliceDetailsTab extends
           PopupMenu2,
           {trigger},
           contextMenuItems.map(
-              ({name, getAction}) =>
-                  m(MenuItem, {label: name, onclick: getAction})),
+              ({name, run}) =>
+                  m(MenuItem, {label: name, onclick: () => run(sliceInfo)})),
       );
     } else {
       return undefined;

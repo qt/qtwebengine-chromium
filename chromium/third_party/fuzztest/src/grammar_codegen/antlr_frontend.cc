@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "absl/strings/ascii.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "./grammar_codegen/generated_antlr_parser/ANTLRv4Lexer.h"
 #include "./grammar_codegen/grammar_info.h"
@@ -57,7 +58,7 @@ std::string ConstructCharSetString(std::string_view raw_str,
   FUZZTEST_INTERNAL_CHECK(
       raw_str.size() > 2 && raw_str.front() == '[' && raw_str.back() == ']',
       "Passed argument is not a range string: `" + std::string(raw_str) + "`");
-  std::string result = EscapeString(raw_str);
+  std::string result(raw_str);
   if (is_not_set) {
     result = absl::StrFormat("[^%s]", result.substr(1, result.size() - 2));
   }
@@ -165,10 +166,11 @@ GrammarRule GrammarInfoBuilder::ConstructGrammarRule(
 Range GrammarInfoBuilder::ParseRange(std::string_view s) {
   return (s == "?")   ? Range::kOptional
          : (s == "+") ? Range::kNonEmpty
-         : (s == "*") ? Range::kUnlimited
-                      : (FUZZTEST_INTERNAL_CHECK(
-                             false, absl::StrCat("Unhandled case: ", s)),
-                         Range::kNoRange);
+         : (s == "*" || s == "+?" || s == "*?")
+             ? Range::kUnlimited
+             : (FUZZTEST_INTERNAL_CHECK(false,
+                                        absl::StrCat("Unhandled case: ", s)),
+                Range::kNoRange);
 }
 
 Block GrammarInfoBuilder::ConstructBlock(
@@ -192,6 +194,7 @@ Block GrammarInfoBuilder::ConstructBlock(ANTLRv4Parser::AtomContext* atom_ctx) {
   } else if (atom_ctx->terminal()) {
     auto& terminal_node = constructed_block.element.emplace<kTerminal>();
     terminal_node.type = TerminalType::kStringLiteral;
+    node_name = EscapeString(node_name);
     ChangeStringQuote(node_name);
     terminal_node.content = node_name;
   } else {
@@ -257,7 +260,8 @@ GrammarRule GrammarInfoBuilder::ConstructGrammarRule(
 }
 
 Grammar GrammarInfoBuilder::BuildGrammarInfo(
-    const std::vector<std::string>& input_grammar_specs) {
+    const std::vector<std::string>& input_grammar_specs,
+    std::optional<std::string> grammar_name) {
   FUZZTEST_INTERNAL_CHECK_PRECONDITION(!input_grammar_specs.empty(),
                                        "No input files!");
   for (auto& input_grammar_spec : input_grammar_specs) {
@@ -276,6 +280,9 @@ Grammar GrammarInfoBuilder::BuildGrammarInfo(
       // catch everything here.
       FUZZTEST_INTERNAL_CHECK(false, "Unknown errors!");
     }
+  }
+  if (grammar_name.has_value()) {
+    grammar_name_ = *grammar_name;
   }
   FUZZTEST_INTERNAL_CHECK(!grammar_name_.empty() && !rules_.empty(),
                           "Wrong grammar file!");

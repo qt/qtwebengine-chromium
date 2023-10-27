@@ -40,6 +40,11 @@ message FeatureOverride {
 message SeedDetails {
   // Last known "safe" seed represented as the serialized form of the
   // variations.VariationsSeed protobuf.
+  // NOTE: Despite the name, this is decompressed -- it comes from
+  // VariationsSeedStore::LoadSeed.
+  // It is infeasible to rename this field, as we would need to first land the
+  // rename in platform2 (as this is where the proto lives) and then it would
+  // uprev into chromium without the necessary changes to the code that uses it.
   bytes compressed_data = 1;
   // The active client locale that was successfully used in association with the
   // last known "safe" seed.

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {MdFilledTextField} from '@material/web/textfield/filled-text-field';
+import {MdOutlinedTextField} from '@material/web/textfield/outlined-text-field';
 import {cast} from 'google3/javascript/common/asserts/asserts';
 import {isInstanceOf} from 'google3/javascript/common/asserts/guards';
 import {TextFieldHarness} from 'google3/third_party/javascript/material/web/textfield/harness';
@@ -12,10 +12,10 @@ import {TextFieldHarness} from 'google3/third_party/javascript/material/web/text
 import {Textfield} from './textfield';
 
 /** Get the internal `md-textfield` element. */
-export function getMdTextfield(textfield: Textfield): MdFilledTextField {
+export function getMdTextfield(textfield: Textfield): MdOutlinedTextField {
   return cast(
-      textfield.renderRoot.querySelector('md-filled-text-field'),
-      isInstanceOf(MdFilledTextField));
+      textfield.renderRoot.querySelector('md-outlined-text-field'),
+      isInstanceOf(MdOutlinedTextField));
 }
 
 /** Get a harness for the `cros-textfield` element. */

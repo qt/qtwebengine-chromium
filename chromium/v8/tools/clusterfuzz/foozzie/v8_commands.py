@@ -10,8 +10,6 @@ import subprocess
 import sys
 from threading import Event, Timer
 
-import v8_fuzz_config
-
 PYTHON3 = sys.version_info >= (3, 0)
 
 # List of default flags passed to each d8 run.
@@ -23,6 +21,7 @@ DEFAULT_FLAGS = [
     '--invoke-weak-callbacks',
     '--omit-quit',
     '--harmony',
+    '--js-staging',
     '--wasm-staging',
     '--no-wasm-async-compilation',
     # Limit wasm memory to just below 2GiB, to avoid differences between 32-bit

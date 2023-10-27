@@ -6,8 +6,7 @@ import * as Common from '../common/common.js';
 import * as Platform from '../platform/platform.js';
 import type * as ProtocolClient from '../protocol_client/protocol_client.js';
 import type * as Protocol from '../../generated/protocol.js';
-import {Type as TargetType} from './Target.js';
-import {Target} from './Target.js';
+import {Type as TargetType, Target} from './Target.js';
 import {SDKModel} from './SDKModel.js';
 import * as Root from '../root/root.js';
 import * as Host from '../host/host.js';
@@ -64,6 +63,11 @@ export class TargetManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes
   }
 
   onInspectedURLChange(target: Target): void {
+    if (target !== this.#scopeTarget) {
+      return;
+    }
+    Host.InspectorFrontendHost.InspectorFrontendHostInstance.inspectedURLChanged(
+        target.inspectedURL() || Platform.DevToolsPath.EmptyUrlString);
     this.dispatchEventToListeners(Events.InspectedURLChanged, target);
   }
 
@@ -395,6 +399,9 @@ export class TargetManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes
     }
     for (const scopeChangeListener of this.#scopeChangeListeners) {
       scopeChangeListener();
+    }
+    if (scopeTarget && scopeTarget.inspectedURL()) {
+      this.onInspectedURLChange(scopeTarget);
     }
   }
 

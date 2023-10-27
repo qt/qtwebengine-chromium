@@ -17,6 +17,8 @@ import m from 'mithril';
 import {Actions} from '../common/actions';
 import {randomColor} from '../common/colorizer';
 import {AreaNote, Note} from '../common/state';
+import {Time} from '../common/time';
+import {raf} from '../core/raf_scheduler';
 
 import {
   BottomTab,
@@ -35,7 +37,6 @@ import {
 import {Panel, PanelSize} from './panel';
 import {Icons} from './semantic_icons';
 import {isTraceLoaded} from './sidebar';
-import {asTPTimestamp} from './sql_types';
 import {Button} from './widgets/button';
 import {Timestamp} from './widgets/timestamp';
 
@@ -62,15 +63,15 @@ export class NotesPanel extends Panel {
   oncreate({dom}: m.CVnodeDOM) {
     dom.addEventListener('mousemove', (e: Event) => {
       this.hoveredX = (e as PerfettoMouseEvent).layerX - TRACK_SHELL_WIDTH;
-      globals.rafScheduler.scheduleRedraw();
+      raf.scheduleRedraw();
     }, {passive: true});
     dom.addEventListener('mouseenter', (e: Event) => {
       this.hoveredX = (e as PerfettoMouseEvent).layerX - TRACK_SHELL_WIDTH;
-      globals.rafScheduler.scheduleRedraw();
+      raf.scheduleRedraw();
     });
     dom.addEventListener('mouseout', () => {
       this.hoveredX = null;
-      globals.dispatch(Actions.setHoveredNoteTimestamp({ts: -1n}));
+      globals.dispatch(Actions.setHoveredNoteTimestamp({ts: Time.INVALID}));
     }, {passive: true});
   }
 
@@ -124,14 +125,15 @@ export class NotesPanel extends Panel {
     ctx.rect(TRACK_SHELL_WIDTH, 0, size.width - TRACK_SHELL_WIDTH, size.height);
     ctx.clip();
 
-    const span = globals.frontendLocalState.visibleWindow.timestampSpan;
+    const span = globals.frontendLocalState.visibleTimeSpan;
     const {visibleTimeScale} = globals.frontendLocalState;
     if (size.width > TRACK_SHELL_WIDTH && span.duration > 0n) {
       const maxMajorTicks = getMaxMajorTicks(size.width - TRACK_SHELL_WIDTH);
       const map = timeScaleForVisibleWindow(TRACK_SHELL_WIDTH, size.width);
-      for (const {type, time} of new TickGenerator(
-               span, maxMajorTicks, globals.state.traceTime.start)) {
-        const px = Math.floor(map.tpTimeToPx(time));
+      const offset = globals.timestampOffset();
+      const tickGen = new TickGenerator(span, maxMajorTicks, offset);
+      for (const {type, time} of tickGen) {
+        const px = Math.floor(map.timeToPx(time));
         if (type === TickType.MAJOR) {
           ctx.fillRect(px, 0, 1, size.height);
         }
@@ -159,7 +161,7 @@ export class NotesPanel extends Panel {
       const isSelected = selection !== null &&
           ((selection.kind === 'NOTE' && selection.id === note.id) ||
            (selection.kind === 'AREA' && selection.noteId === note.id));
-      const x = visibleTimeScale.tpTimeToPx(timestamp);
+      const x = visibleTimeScale.timeToPx(timestamp);
       const left = Math.floor(x + TRACK_SHELL_WIDTH);
 
       // Draw flag or marker.
@@ -168,8 +170,7 @@ export class NotesPanel extends Panel {
         this.drawAreaMarker(
             ctx,
             left,
-            Math.floor(
-                visibleTimeScale.tpTimeToPx(area.end) + TRACK_SHELL_WIDTH),
+            Math.floor(visibleTimeScale.timeToPx(area.end) + TRACK_SHELL_WIDTH),
             note.color,
             isSelected);
       } else {
@@ -191,15 +192,15 @@ export class NotesPanel extends Panel {
     // A real note is hovered so we don't need to see the preview line.
     // TODO(hjd): Change cursor to pointer here.
     if (aNoteIsHovered) {
-      globals.dispatch(Actions.setHoveredNoteTimestamp({ts: -1n}));
+      globals.dispatch(Actions.setHoveredNoteTimestamp({ts: Time.INVALID}));
     }
 
     // View preview note flag when hovering on notes panel.
     if (!aNoteIsHovered && this.hoveredX !== null) {
-      const timestamp = visibleTimeScale.pxToHpTime(this.hoveredX).toTPTime();
+      const timestamp = visibleTimeScale.pxToHpTime(this.hoveredX).toTime();
       if (span.contains(timestamp)) {
         globals.dispatch(Actions.setHoveredNoteTimestamp({ts: timestamp}));
-        const x = visibleTimeScale.tpTimeToPx(timestamp);
+        const x = visibleTimeScale.timeToPx(timestamp);
         const left = Math.floor(x + TRACK_SHELL_WIDTH);
         this.drawFlag(ctx, left, size.height, '#aaa', /* fill */ true);
       }
@@ -269,7 +270,7 @@ export class NotesPanel extends Panel {
   private onClick(x: number, _: number) {
     if (x < 0) return;
     const {visibleTimeScale} = globals.frontendLocalState;
-    const timestamp = visibleTimeScale.pxToHpTime(x).toTPTime();
+    const timestamp = visibleTimeScale.pxToHpTime(x).toTime();
     for (const note of Object.values(globals.state.notes)) {
       if (this.hoveredX && this.mouseOverNote(this.hoveredX, note)) {
         if (note.noteType === 'AREA') {
@@ -287,12 +288,12 @@ export class NotesPanel extends Panel {
 
   private mouseOverNote(x: number, note: AreaNote|Note): boolean {
     const timeScale = globals.frontendLocalState.visibleTimeScale;
-    const noteX = timeScale.tpTimeToPx(getStartTimestamp(note));
+    const noteX = timeScale.timeToPx(getStartTimestamp(note));
     if (note.noteType === 'AREA') {
       const noteArea = globals.state.areas[note.areaId];
       return (noteX <= x && x < noteX + AREA_TRIANGLE_WIDTH) ||
-          (timeScale.tpTimeToPx(noteArea.end) > x &&
-           x > timeScale.tpTimeToPx(noteArea.end) - AREA_TRIANGLE_WIDTH);
+          (timeScale.timeToPx(noteArea.end) > x &&
+           x > timeScale.timeToPx(noteArea.end) - AREA_TRIANGLE_WIDTH);
     } else {
       const width = FLAG_WIDTH;
       return noteX <= x && x < noteX + width;
@@ -332,11 +333,8 @@ export class NotesEditorTab extends BottomTab<NotesEditorTabConfig> {
         m('.notes-editor-panel-heading-bar',
           m('.notes-editor-panel-heading',
             `Annotation at `,
-            m(Timestamp, {ts: asTPTimestamp(startTime)})),
+            m(Timestamp, {ts: startTime})),
           m('input[type=text]', {
-            onkeydown: (e: Event) => {
-              e.stopImmediatePropagation();
-            },
             value: note.text,
             onchange: (e: InputEvent) => {
               const newText = (e.target as HTMLInputElement).value;
@@ -363,7 +361,7 @@ export class NotesEditorTab extends BottomTab<NotesEditorTabConfig> {
             onclick: () => {
               globals.dispatch(Actions.removeNote({id: this.config.id}));
               globals.dispatch(Actions.setCurrentTab({tab: undefined}));
-              globals.rafScheduler.scheduleFullRedraw();
+              raf.scheduleFullRedraw();
             },
           })),
     );

@@ -6,10 +6,9 @@ import * as Protocol from '../../generated/protocol.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
 
 import {cssMetadata, VariableRegex} from './CSSMetadata.js';
-
 import {type CSSModel} from './CSSModel.js';
 import {type CSSProperty} from './CSSProperty.js';
-import {CSSKeyframesRule, CSSPositionFallbackRule, CSSStyleRule} from './CSSRule.js';
+import {CSSKeyframesRule, CSSPositionFallbackRule, CSSPropertyRule, CSSStyleRule} from './CSSRule.js';
 import {CSSStyleDeclaration, Type} from './CSSStyleDeclaration.js';
 import {type DOMNode} from './DOMModel.js';
 
@@ -33,6 +32,66 @@ interface CSSMatchedStylesPayload {
   animationsPayload: Protocol.CSS.CSSKeyframesRule[];
   parentLayoutNodeId: Protocol.DOM.NodeId|undefined;
   positionFallbackRules: Protocol.CSS.CSSPositionFallbackRule[];
+  propertyRules: Protocol.CSS.CSSPropertyRule[];
+  cssPropertyRegistrations: Protocol.CSS.CSSPropertyRegistration[];
+}
+
+export class CSSRegisteredProperty {
+  #registration: Protocol.CSS.CSSPropertyRegistration|CSSPropertyRule;
+  #cssModel: CSSModel;
+  #style: CSSStyleDeclaration|undefined;
+  constructor(cssModel: CSSModel, registration: CSSPropertyRule|Protocol.CSS.CSSPropertyRegistration) {
+    this.#cssModel = cssModel;
+    this.#registration = registration;
+  }
+
+  isAtProperty(): boolean {
+    return this.#registration instanceof CSSPropertyRule;
+  }
+
+  propertyName(): string {
+    return this.#registration instanceof CSSPropertyRule ? this.#registration.propertyName().text :
+                                                           this.#registration.propertyName;
+  }
+
+  initialValue(): string|null {
+    return this.#registration instanceof CSSPropertyRule ? this.#registration.initialValue() :
+                                                           this.#registration.initialValue?.text ?? null;
+  }
+
+  inherits(): boolean {
+    return this.#registration instanceof CSSPropertyRule ? this.#registration.inherits() : this.#registration.inherits;
+  }
+
+  syntax(): string {
+    return this.#registration instanceof CSSPropertyRule ? this.#registration.syntax() :
+                                                           `"${this.#registration.syntax}"`;
+  }
+
+  #asCSSProperties(): Protocol.CSS.CSSProperty[] {
+    if (this.#registration instanceof CSSPropertyRule) {
+      return [];
+    }
+    const {inherits, initialValue, syntax} = this.#registration;
+    const properties = [
+      {name: 'inherits', value: `${inherits}`},
+      {name: 'syntax', value: `"${syntax}"`},
+    ];
+    if (initialValue !== undefined) {
+      properties.push({name: 'initial-value', value: initialValue.text});
+    }
+    return properties;
+  }
+
+  style(): CSSStyleDeclaration {
+    if (!this.#style) {
+      this.#style = this.#registration instanceof CSSPropertyRule ?
+          this.#registration.style :
+          new CSSStyleDeclaration(
+              this.#cssModel, null, {cssProperties: this.#asCSSProperties(), shorthandEntries: []}, Type.Pseudo);
+    }
+    return this.#style;
+  }
 }
 
 export class CSSMatchedStyles {
@@ -41,6 +100,8 @@ export class CSSMatchedStyles {
   readonly #addedStyles: Map<CSSStyleDeclaration, DOMNode>;
   readonly #matchingSelectors: Map<number, Map<string, boolean>>;
   readonly #keyframesInternal: CSSKeyframesRule[];
+  readonly #registeredProperties: CSSRegisteredProperty[];
+  readonly #registeredPropertyMap = new Map<string, CSSRegisteredProperty>();
   readonly #nodeForStyleInternal: Map<CSSStyleDeclaration, DOMNode|null>;
   readonly #inheritedStyles: Set<CSSStyleDeclaration>;
   readonly #mainDOMCascade: DOMInheritanceCascade;
@@ -62,11 +123,17 @@ export class CSSMatchedStyles {
     animationsPayload,
     parentLayoutNodeId,
     positionFallbackRules,
+    propertyRules,
+    cssPropertyRegistrations,
   }: CSSMatchedStylesPayload) {
     this.#cssModelInternal = cssModel;
     this.#nodeInternal = node;
     this.#addedStyles = new Map();
     this.#matchingSelectors = new Map();
+    this.#registeredProperties = [
+      ...propertyRules.map(rule => new CSSPropertyRule(cssModel, rule)),
+      ...cssPropertyRegistrations,
+    ].map(r => new CSSRegisteredProperty(cssModel, r));
     this.#keyframesInternal = [];
     if (animationsPayload) {
       this.#keyframesInternal = animationsPayload.map(rule => new CSSKeyframesRule(cssModel, rule));
@@ -93,6 +160,10 @@ export class CSSMatchedStyles {
       for (const style of domCascade.styles()) {
         this.#styleToDOMCascade.set(style, domCascade);
       }
+    }
+
+    for (const prop of this.#registeredProperties) {
+      this.#registeredPropertyMap.set(prop.propertyName(), prop);
     }
 
     function cleanUserAgentPayload(payload: Protocol.CSS.RuleMatch[]): Protocol.CSS.RuleMatch[] {
@@ -228,7 +299,7 @@ export class CSSMatchedStyles {
       nodeCascades.push(new NodeCascade(this, inheritedStyles, true /* #isInherited */));
     }
 
-    return new DOMInheritanceCascade(nodeCascades);
+    return new DOMInheritanceCascade(nodeCascades, this.#registeredProperties);
 
     function containsStyle(
         styles: CSSStyleDeclaration[]|Set<CSSStyleDeclaration>, query: CSSStyleDeclaration): boolean {
@@ -413,11 +484,12 @@ export class CSSMatchedStyles {
     // Now that we've built the arrays of NodeCascades for each pseudo type, convert them into
     // DOMInheritanceCascades.
     for (const [pseudoType, nodeCascade] of pseudoCascades.entries()) {
-      pseudoInheritanceCascades.set(pseudoType, new DOMInheritanceCascade(nodeCascade));
+      pseudoInheritanceCascades.set(pseudoType, new DOMInheritanceCascade(nodeCascade, this.#registeredProperties));
     }
 
     for (const [highlightName, nodeCascade] of customHighlightPseudoCascades.entries()) {
-      customHighlightPseudoInheritanceCascades.set(highlightName, new DOMInheritanceCascade(nodeCascade));
+      customHighlightPseudoInheritanceCascades.set(
+          highlightName, new DOMInheritanceCascade(nodeCascade, this.#registeredProperties));
     }
 
     return [pseudoInheritanceCascades, customHighlightPseudoInheritanceCascades];
@@ -539,6 +611,14 @@ export class CSSMatchedStyles {
 
   nodeStyles(): CSSStyleDeclaration[] {
     return this.#mainDOMCascade.styles();
+  }
+
+  registeredProperties(): CSSRegisteredProperty[] {
+    return this.#registeredProperties;
+  }
+
+  getRegisteredProperty(name: string): CSSRegisteredProperty|undefined {
+    return this.#registeredPropertyMap.get(name);
   }
 
   keyframes(): CSSKeyframesRule[] {
@@ -685,6 +765,15 @@ class NodeCascade {
           continue;
         }
 
+        // If the custom property was registered with `inherits: false;`, inherited properties are invalid.
+        if (this.#isInherited) {
+          const registration = this.#matchedStyles.getRegisteredProperty(property.name);
+          if (registration && !registration.inherits()) {
+            this.propertiesState.set(property, PropertyState.Overloaded);
+            continue;
+          }
+        }
+
         const canonicalName = metadata.canonicalPropertyName(property.name);
         this.updatePropertyState(property, canonicalName);
         for (const longhand of property.getLonghandProperties()) {
@@ -718,12 +807,14 @@ class DOMInheritanceCascade {
   readonly #computedCSSVariables: Map<NodeCascade, Map<string, string|null>>;
   #initialized: boolean;
   readonly #styleToNodeCascade: Map<CSSStyleDeclaration, NodeCascade>;
-  constructor(nodeCascades: NodeCascade[]) {
+  #registeredProperties: CSSRegisteredProperty[];
+  constructor(nodeCascades: NodeCascade[], registeredProperties: CSSRegisteredProperty[]) {
     this.#nodeCascades = nodeCascades;
     this.#propertiesState = new Map();
     this.#availableCSSVariables = new Map();
     this.#computedCSSVariables = new Map();
     this.#initialized = false;
+    this.#registeredProperties = registeredProperties;
 
     this.#styleToNodeCascade = new Map();
     for (const nodeCascade of nodeCascades) {
@@ -909,6 +1000,7 @@ class DOMInheritanceCascade {
 
     // Work inheritance chain backwards to compute visible CSS Variables.
     const accumulatedCSSVariables = new Map<string, string|null>();
+    this.#registeredProperties.forEach(rule => accumulatedCSSVariables.set(rule.propertyName(), rule.initialValue()));
     for (let i = this.#nodeCascades.length - 1; i >= 0; --i) {
       const nodeCascade = this.#nodeCascades[i];
       const variableNames = [];

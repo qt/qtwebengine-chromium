@@ -15,9 +15,11 @@
  */
 
 #include "src/trace_processor/db/query_executor.h"
+#include "src/trace_processor/db/overlays/arrangement_overlay.h"
 #include "src/trace_processor/db/overlays/null_overlay.h"
 #include "src/trace_processor/db/overlays/selector_overlay.h"
 #include "src/trace_processor/db/storage/numeric_storage.h"
+#include "src/trace_processor/db/storage/string_storage.h"
 #include "test/gtest_and_gmock.h"
 
 namespace perfetto {
@@ -27,7 +29,9 @@ namespace {
 using OverlaysVec = base::SmallVector<const overlays::StorageOverlay*,
                                       QueryExecutor::kMaxOverlayCount>;
 using NumericStorage = storage::NumericStorage;
+using StringStorage = storage::StringStorage;
 using SimpleColumn = QueryExecutor::SimpleColumn;
+using ArrangementOverlay = overlays::ArrangementOverlay;
 using NullOverlay = overlays::NullOverlay;
 using SelectorOverlay = overlays::SelectorOverlay;
 
@@ -38,10 +42,10 @@ TEST(QueryExecutor, OnlyStorageRange) {
 
   Constraint c{0, FilterOp::kGe, SqlValue::Long(3)};
   RowMap rm(0, 5);
-  RowMap res = QueryExecutor::BoundedColumnFilterForTesting(c, col, &rm);
+  QueryExecutor::BoundedColumnFilterForTesting(c, col, &rm);
 
-  ASSERT_EQ(res.size(), 3u);
-  ASSERT_EQ(res.Get(0), 2u);
+  ASSERT_EQ(rm.size(), 3u);
+  ASSERT_EQ(rm.Get(0), 2u);
 }
 
 TEST(QueryExecutor, OnlyStorageRangeIsNull) {
@@ -51,9 +55,9 @@ TEST(QueryExecutor, OnlyStorageRangeIsNull) {
 
   Constraint c{0, FilterOp::kIsNull, SqlValue::Long(3)};
   RowMap rm(0, 5);
-  RowMap res = QueryExecutor::BoundedColumnFilterForTesting(c, col, &rm);
+  QueryExecutor::BoundedColumnFilterForTesting(c, col, &rm);
 
-  ASSERT_EQ(res.size(), 0u);
+  ASSERT_EQ(rm.size(), 0u);
 }
 
 TEST(QueryExecutor, OnlyStorageIndex) {
@@ -101,11 +105,11 @@ TEST(QueryExecutor, NullOverlayBounds) {
 
   Constraint c{0, FilterOp::kGe, SqlValue::Long(3)};
   RowMap rm(0, 10);
-  RowMap res = QueryExecutor::BoundedColumnFilterForTesting(c, col, &rm);
+  QueryExecutor::BoundedColumnFilterForTesting(c, col, &rm);
 
-  ASSERT_EQ(res.size(), 2u);
-  ASSERT_EQ(res.Get(0), 4u);
-  ASSERT_EQ(res.Get(1), 8u);
+  ASSERT_EQ(rm.size(), 2u);
+  ASSERT_EQ(rm.Get(0), 4u);
+  ASSERT_EQ(rm.Get(1), 8u);
 }
 
 TEST(QueryExecutor, NullOverlayRangeIsNull) {
@@ -121,14 +125,14 @@ TEST(QueryExecutor, NullOverlayRangeIsNull) {
 
   Constraint c{0, FilterOp::kIsNull, SqlValue::Long(3)};
   RowMap rm(0, 10);
-  RowMap res = QueryExecutor::BoundedColumnFilterForTesting(c, col, &rm);
+  QueryExecutor::BoundedColumnFilterForTesting(c, col, &rm);
 
-  ASSERT_EQ(res.size(), 5u);
-  ASSERT_EQ(res.Get(0), 2u);
-  ASSERT_EQ(res.Get(1), 5u);
-  ASSERT_EQ(res.Get(2), 6u);
-  ASSERT_EQ(res.Get(3), 7u);
-  ASSERT_EQ(res.Get(4), 9u);
+  ASSERT_EQ(rm.size(), 5u);
+  ASSERT_EQ(rm.Get(0), 2u);
+  ASSERT_EQ(rm.Get(1), 5u);
+  ASSERT_EQ(rm.Get(2), 6u);
+  ASSERT_EQ(rm.Get(3), 7u);
+  ASSERT_EQ(rm.Get(4), 9u);
 }
 
 TEST(QueryExecutor, NullOverlayIndex) {
@@ -193,10 +197,10 @@ TEST(QueryExecutor, SelectorOverlayBounds) {
 
   Constraint c{0, FilterOp::kGt, SqlValue::Long(1)};
   RowMap rm(0, 3);
-  RowMap res = QueryExecutor::BoundedColumnFilterForTesting(c, col, &rm);
+  QueryExecutor::BoundedColumnFilterForTesting(c, col, &rm);
 
-  ASSERT_EQ(res.size(), 1u);
-  ASSERT_EQ(res.Get(0), 2u);
+  ASSERT_EQ(rm.size(), 1u);
+  ASSERT_EQ(rm.Get(0), 2u);
 }
 
 TEST(QueryExecutor, SelectorOverlayIndex) {
@@ -221,6 +225,48 @@ TEST(QueryExecutor, SelectorOverlayIndex) {
   ASSERT_EQ(res.Get(0), 2u);
   ASSERT_EQ(res.Get(1), 3u);
   ASSERT_EQ(res.Get(2), 5u);
+}
+
+TEST(QueryExecutor, ArrangementOverlayBounds) {
+  std::vector<int64_t> storage_data(5);
+  std::iota(storage_data.begin(), storage_data.end(), 0);
+  NumericStorage storage(storage_data.data(), 5, ColumnType::kInt64);
+
+  std::vector<uint32_t> arrangement{4, 1, 2, 2, 3};
+  overlays::ArrangementOverlay overlay(&arrangement);
+  OverlaysVec overlays_vec;
+  overlays_vec.emplace_back(&overlay);
+
+  SimpleColumn col{overlays_vec, &storage};
+
+  Constraint c{0, FilterOp::kGe, SqlValue::Long(3)};
+  RowMap rm(0, 5);
+  QueryExecutor::BoundedColumnFilterForTesting(c, col, &rm);
+
+  ASSERT_EQ(rm.size(), 2u);
+  ASSERT_EQ(rm.Get(0), 0u);
+  ASSERT_EQ(rm.Get(1), 4u);
+}
+
+TEST(QueryExecutor, ArrangmentOverlayIndex) {
+  std::vector<int64_t> storage_data(5);
+  std::iota(storage_data.begin(), storage_data.end(), 0);
+  NumericStorage storage(storage_data.data(), 5, ColumnType::kInt64);
+
+  std::vector<uint32_t> arrangement{4, 1, 2, 2, 3};
+  overlays::ArrangementOverlay overlay(&arrangement);
+  OverlaysVec overlays_vec;
+  overlays_vec.emplace_back(&overlay);
+
+  SimpleColumn col{overlays_vec, &storage};
+
+  Constraint c{0, FilterOp::kGe, SqlValue::Long(3)};
+  RowMap rm(0, 5);
+  RowMap res = QueryExecutor::IndexedColumnFilterForTesting(c, col, &rm);
+
+  ASSERT_EQ(res.size(), 2u);
+  ASSERT_EQ(res.Get(0), 0u);
+  ASSERT_EQ(res.Get(1), 4u);
 }
 
 TEST(QueryExecutor, SingleConstraintWithNullAndSelector) {
@@ -253,7 +299,37 @@ TEST(QueryExecutor, SingleConstraintWithNullAndSelector) {
   ASSERT_EQ(res.Get(1), 5u);
 }
 
-TEST(QueryExecutor, IsNull) {
+TEST(QueryExecutor, SingleConstraintWithNullAndArrangement) {
+  std::vector<int64_t> storage_data{0, 1, 2, 3, 0, 1, 2, 3};
+  NumericStorage storage(storage_data.data(), 10, ColumnType::kInt64);
+
+  // Current vector
+  // 0, 1, NULL, 2, 3, 0, NULL, NULL, 1, 2, 3, NULL
+  BitVector null_bv{1, 1, 0, 1, 1, 1, 0, 0, 1, 1, 1, 0};
+  NullOverlay null_overlay(&null_bv);
+
+  // Final vector
+  // NULL, 3, NULL, NULL, 3, NULL
+  std::vector<uint32_t> arrangement{2, 4, 6, 2, 4, 6};
+  ArrangementOverlay arrangement_overlay(&arrangement);
+
+  // Create the column.
+  OverlaysVec overlays_vec;
+  overlays_vec.emplace_back(&arrangement_overlay);
+  overlays_vec.emplace_back(&null_overlay);
+  SimpleColumn col{overlays_vec, &storage};
+
+  // Filter.
+  Constraint c{0, FilterOp::kGe, SqlValue::Long(1)};
+  QueryExecutor exec({col}, 6);
+  RowMap res = exec.Filter({c});
+
+  ASSERT_EQ(res.size(), 2u);
+  ASSERT_EQ(res.Get(0), 1u);
+  ASSERT_EQ(res.Get(1), 4u);
+}
+
+TEST(QueryExecutor, IsNullWithSelector) {
   std::vector<int64_t> storage_data{0, 1, 2, 3, 0, 1, 2, 3};
   NumericStorage storage(storage_data.data(), 10, ColumnType::kInt64);
 
@@ -285,7 +361,7 @@ TEST(QueryExecutor, IsNull) {
 
 TEST(QueryExecutor, BinarySearch) {
   std::vector<int64_t> storage_data{0, 1, 2, 3, 4, 5, 6};
-  NumericStorage storage(storage_data.data(), 7, ColumnType::kInt64);
+  NumericStorage storage(storage_data.data(), 7, ColumnType::kInt64, true);
 
   // Add nulls - {0, 1, NULL, NULL, 2, 3, NULL, NULL, 4, 5, 6, NULL}
   BitVector null_bv{1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 1, 0};
@@ -299,7 +375,7 @@ TEST(QueryExecutor, BinarySearch) {
   OverlaysVec overlays_vec;
   overlays_vec.emplace_back(&selector_overlay);
   overlays_vec.emplace_back(&null_overlay);
-  SimpleColumn col{overlays_vec, &storage, true};
+  SimpleColumn col{overlays_vec, &storage};
 
   // Filter.
   Constraint c{0, FilterOp::kGe, SqlValue::Long(3)};
@@ -313,7 +389,7 @@ TEST(QueryExecutor, BinarySearch) {
 
 TEST(QueryExecutor, BinarySearchIsNull) {
   std::vector<int64_t> storage_data{0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-  NumericStorage storage(storage_data.data(), 10, ColumnType::kInt64);
+  NumericStorage storage(storage_data.data(), 10, ColumnType::kInt64, true);
 
   // Select 6 elements from storage, resulting in a vector {0, 1, 3, 4, 6, 7}.
   BitVector selector_bv{1, 1, 0, 1, 1, 0, 1, 1, 0, 0};
@@ -327,7 +403,7 @@ TEST(QueryExecutor, BinarySearchIsNull) {
   OverlaysVec overlays_vec;
   overlays_vec.emplace_back(&null_overlay);
   overlays_vec.emplace_back(&selector_overlay);
-  SimpleColumn col{overlays_vec, &storage, true};
+  SimpleColumn col{overlays_vec, &storage};
 
   // Filter.
   Constraint c{0, FilterOp::kIsNull, SqlValue::Long(0)};
@@ -339,6 +415,95 @@ TEST(QueryExecutor, BinarySearchIsNull) {
   ASSERT_EQ(res.Get(1), 1u);
   ASSERT_EQ(res.Get(2), 2u);
 }
+
+TEST(QueryExecutor, StringBinarySearchIsNull) {
+  StringPool pool;
+  std::vector<std::string> strings{"cheese",  "pasta", "pizza",
+                                   "pierogi", "onion", "fries"};
+  std::vector<StringPool::Id> ids;
+  for (const auto& string : strings) {
+    ids.push_back(pool.InternString(base::StringView(string)));
+  }
+  ids.insert(ids.begin() + 3, StringPool::Id::Null());
+  StringStorage storage(&pool, ids.data(), 7);
+
+  // Final vec {"cheese", "pasta", "NULL", "pierogi", "fries"}.
+  BitVector selector_bv{1, 1, 0, 1, 1, 0, 1};
+  SelectorOverlay selector_overlay(&selector_bv);
+
+  // Create the column.
+  OverlaysVec overlays_vec;
+  overlays_vec.emplace_back(&selector_overlay);
+  SimpleColumn col{overlays_vec, &storage};
+
+  // Filter.
+  Constraint c{0, FilterOp::kIsNull, SqlValue::Long(0)};
+  QueryExecutor exec({col}, 5);
+  RowMap res = exec.Filter({c});
+
+  ASSERT_EQ(res.size(), 1u);
+  ASSERT_EQ(res.Get(0), 2u);
+}
+
+#if !PERFETTO_BUILDFLAG(PERFETTO_OS_WIN)
+TEST(QueryExecutor, StringBinarySearchRegex) {
+  StringPool pool;
+  std::vector<std::string> strings{"cheese",  "pasta", "pizza",
+                                   "pierogi", "onion", "fries"};
+  std::vector<StringPool::Id> ids;
+  for (const auto& string : strings) {
+    ids.push_back(pool.InternString(base::StringView(string)));
+  }
+  ids.insert(ids.begin() + 3, StringPool::Id::Null());
+  StringStorage storage(&pool, ids.data(), 7);
+
+  // Final vec {"cheese", "pasta", "NULL", "pierogi", "fries"}.
+  BitVector selector_bv{1, 1, 0, 1, 1, 0, 1};
+  SelectorOverlay selector_overlay(&selector_bv);
+
+  // Create the column.
+  OverlaysVec overlays_vec;
+  overlays_vec.emplace_back(&selector_overlay);
+  SimpleColumn col{overlays_vec, &storage};
+
+  // Filter.
+  Constraint c{0, FilterOp::kRegex, SqlValue::String("p.*")};
+  QueryExecutor exec({col}, 5);
+  RowMap res = exec.Filter({c});
+
+  ASSERT_EQ(res.size(), 2u);
+  ASSERT_EQ(res.Get(0), 1u);
+  ASSERT_EQ(res.Get(1), 3u);
+}
+
+TEST(QueryExecutor, StringBinarySearchRegexWithNum) {
+  StringPool pool;
+  std::vector<std::string> strings{"cheese",  "pasta", "pizza",
+                                   "pierogi", "onion", "fries"};
+  std::vector<StringPool::Id> ids;
+  for (const auto& string : strings) {
+    ids.push_back(pool.InternString(base::StringView(string)));
+  }
+  ids.insert(ids.begin() + 3, StringPool::Id::Null());
+  StringStorage storage(&pool, ids.data(), 7);
+
+  // Final vec {"cheese", "pasta", "NULL", "pierogi", "fries"}.
+  BitVector selector_bv{1, 1, 0, 1, 1, 0, 1};
+  SelectorOverlay selector_overlay(&selector_bv);
+
+  // Create the column.
+  OverlaysVec overlays_vec;
+  overlays_vec.emplace_back(&selector_overlay);
+  SimpleColumn col{overlays_vec, &storage};
+
+  // Filter.
+  Constraint c{0, FilterOp::kRegex, SqlValue::Long(4)};
+  QueryExecutor exec({col}, 5);
+  RowMap res = exec.Filter({c});
+
+  ASSERT_EQ(res.size(), 0u);
+}
+#endif
 
 }  // namespace
 }  // namespace trace_processor

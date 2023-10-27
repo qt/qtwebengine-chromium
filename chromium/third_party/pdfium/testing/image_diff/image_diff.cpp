@@ -21,7 +21,6 @@
 #include "core/fxcrt/fx_memory.h"
 #include "testing/image_diff/image_diff_png.h"
 #include "testing/utils/path_service.h"
-#include "third_party/base/cxx17_backports.h"
 #include "third_party/base/numerics/safe_conversions.h"
 
 #if BUILDFLAG(IS_WIN)
@@ -351,9 +350,9 @@ bool SubtractImages(const Image& image1, const Image& image2, Image* out) {
       int32_t delta_b = b1 - b2;
       same &= (delta_r == 0 && delta_g == 0 && delta_b == 0);
 
-      delta_r = pdfium::clamp(128 + delta_r * 8, 0, 255);
-      delta_g = pdfium::clamp(128 + delta_g * 8, 0, 255);
-      delta_b = pdfium::clamp(128 + delta_b * 8, 0, 255);
+      delta_r = std::clamp(128 + delta_r * 8, 0, 255);
+      delta_g = std::clamp(128 + delta_g * 8, 0, 255);
+      delta_b = std::clamp(128 + delta_b * 8, 0, 255);
 
       uint32_t new_pixel = RGBA_ALPHA;
       new_pixel |= delta_r;
@@ -369,11 +368,17 @@ int DiffImages(const std::string& binary_name,
                const std::string& file1,
                const std::string& file2,
                const std::string& out_file,
-               bool do_subtraction) {
+               bool do_subtraction,
+               bool reverse_byte_order) {
   Image actual_image;
   Image baseline_image;
 
-  if (!actual_image.CreateFromFilename(file1)) {
+  bool actual_load_result =
+      reverse_byte_order
+          ? actual_image.CreateFromFilenameWithReverseByteOrder(file1)
+          : actual_image.CreateFromFilename(file1);
+
+  if (!actual_load_result) {
     fprintf(stderr, "%s: Unable to open file \"%s\"\n", binary_name.c_str(),
             file1.c_str());
     return kStatusError;
@@ -451,7 +456,7 @@ int main(int argc, const char* argv[]) {
   if (produce_diff_image || produce_image_subtraction) {
     if (!diff_filename.empty()) {
       return DiffImages(binary_name, filename1, filename2, diff_filename,
-                        produce_image_subtraction);
+                        produce_image_subtraction, reverse_byte_order);
     }
   } else if (!filename2.empty()) {
     return CompareImages(binary_name, filename1, filename2, histograms,

@@ -179,15 +179,27 @@ struct scalar_cast_op {
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE const NewType operator() (const Scalar& a) const { return cast<Scalar, NewType>(a); }
 };
 
-template <typename Scalar>
-struct scalar_cast_op<Scalar, bool> {
-  typedef bool result_type;
-  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE bool operator()(const Scalar& a) const { return a != Scalar(0); }
-};
-
 template<typename Scalar, typename NewType>
 struct functor_traits<scalar_cast_op<Scalar,NewType> >
 { enum { Cost = is_same<Scalar, NewType>::value ? 0 : NumTraits<NewType>::AddCost, PacketAccess = false }; };
+
+/** \internal
+ * `core_cast_op` serves to distinguish the vectorized implementation from that of the legacy `scalar_cast_op` for backwards
+ * compatibility. The manner in which packet ops are handled is defined by the specialized unary_evaluator:
+ * `unary_evaluator<CwiseUnaryOp<core_cast_op<SrcType, DstType>, ArgType>, IndexBased>` in CoreEvaluators.h
+ * Otherwise, the non-vectorized behavior is identical to that of `scalar_cast_op`
+ */
+template <typename SrcType, typename DstType>
+struct core_cast_op : scalar_cast_op<SrcType, DstType> {};
+
+template <typename SrcType, typename DstType>
+struct functor_traits<core_cast_op<SrcType, DstType>> {
+  using CastingTraits = type_casting_traits<SrcType, DstType>;
+  enum {
+    Cost = is_same<SrcType, DstType>::value ? 0 : NumTraits<DstType>::AddCost,
+    PacketAccess = CastingTraits::VectorizedCast && (CastingTraits::SrcCoeffRatio <= 8)
+  };
+};
 
 /** \internal
   * \brief Template functor to arithmetically shift a scalar right by a number of bits
@@ -797,7 +809,7 @@ struct functor_traits<scalar_round_op<Scalar> >
 {
   enum {
     Cost = NumTraits<Scalar>::MulCost,
-    PacketAccess = packet_traits<Scalar>::HasRound
+    PacketAccess = packet_traits<Scalar>::HasRound || NumTraits<Scalar>::IsInteger
   };
 };
 
@@ -815,7 +827,7 @@ struct functor_traits<scalar_floor_op<Scalar> >
 {
   enum {
     Cost = NumTraits<Scalar>::MulCost,
-    PacketAccess = packet_traits<Scalar>::HasFloor
+    PacketAccess = packet_traits<Scalar>::HasFloor || NumTraits<Scalar>::IsInteger
   };
 };
 
@@ -833,7 +845,7 @@ struct functor_traits<scalar_rint_op<Scalar> >
 {
   enum {
     Cost = NumTraits<Scalar>::MulCost,
-    PacketAccess = packet_traits<Scalar>::HasRint
+    PacketAccess = packet_traits<Scalar>::HasRint || NumTraits<Scalar>::IsInteger
   };
 };
 
@@ -851,7 +863,7 @@ struct functor_traits<scalar_ceil_op<Scalar> >
 {
   enum {
     Cost = NumTraits<Scalar>::MulCost,
-    PacketAccess = packet_traits<Scalar>::HasCeil
+    PacketAccess = packet_traits<Scalar>::HasCeil || NumTraits<Scalar>::IsInteger
   };
 };
 

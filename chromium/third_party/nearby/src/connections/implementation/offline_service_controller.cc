@@ -161,16 +161,19 @@ void OfflineServiceController::DisconnectFromEndpoint(
 Status OfflineServiceController::UpdateAdvertisingOptions(
     ClientProxy* client, absl::string_view service_id,
     const AdvertisingOptions& advertising_options) {
-  // TODO(b/284048592): Implement.
-  return {Status::kError};
+  if (stop_) return {Status::kOutOfOrderApiCall};
+  return pcp_manager_.UpdateAdvertisingOptions(client, service_id,
+                                               advertising_options);
 }
 
 Status OfflineServiceController::UpdateDiscoveryOptions(
     ClientProxy* client, absl::string_view service_id,
     const DiscoveryOptions& discovery_options) {
-  // TODO(b/284048592): Implement.
-  return {Status::kError};
+  if (stop_) return {Status::kOutOfOrderApiCall};
+  return pcp_manager_.UpdateDiscoveryOptions(client, service_id,
+                                             discovery_options);
 }
+
 void OfflineServiceController::SetCustomSavePath(ClientProxy* client,
                                                  const std::string& path) {
   if (stop_) return;

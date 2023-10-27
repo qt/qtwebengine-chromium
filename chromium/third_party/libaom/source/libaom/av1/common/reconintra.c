@@ -1696,7 +1696,7 @@ void av1_predict_intra_block_facade(const AV1_COMMON *cm, MACROBLOCKD *xd,
     } else {
       cfl_load_dc_pred(xd, dst, dst_stride, tx_size, pred_plane);
     }
-    cfl_predict_block(xd, dst, dst_stride, tx_size, plane);
+    av1_cfl_predict_block(xd, dst, dst_stride, tx_size, plane);
     return;
   }
   av1_predict_intra_block(

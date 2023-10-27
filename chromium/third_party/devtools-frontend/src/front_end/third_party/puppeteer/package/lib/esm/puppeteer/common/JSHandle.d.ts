@@ -18,17 +18,12 @@ import { JSHandle } from '../api/JSHandle.js';
 import { CDPSession } from './Connection.js';
 import type { CDPElementHandle } from './ElementHandle.js';
 import { ExecutionContext } from './ExecutionContext.js';
-import { EvaluateFunc, HandleFor, HandleOr } from './types.js';
-declare const __JSHandleSymbol: unique symbol;
+import { EvaluateFuncWith, HandleFor, HandleOr } from './types.js';
 /**
  * @internal
  */
-export declare class CDPJSHandle<T> extends JSHandle<T> {
+export declare class CDPJSHandle<T = unknown> extends JSHandle<T> {
     #private;
-    /**
-     * Used for nominally typing {@link JSHandle}.
-     */
-    [__JSHandleSymbol]?: T;
     get disposed(): boolean;
     constructor(context: ExecutionContext, remoteObject: Protocol.Runtime.RemoteObject);
     executionContext(): ExecutionContext;
@@ -36,29 +31,23 @@ export declare class CDPJSHandle<T> extends JSHandle<T> {
     /**
      * @see {@link ExecutionContext.evaluate} for more details.
      */
-    evaluate<Params extends unknown[], Func extends EvaluateFunc<[this, ...Params]> = EvaluateFunc<[
-        this,
-        ...Params
-    ]>>(pageFunction: Func | string, ...args: Params): Promise<Awaited<ReturnType<Func>>>;
+    evaluate<Params extends unknown[], Func extends EvaluateFuncWith<T, Params> = EvaluateFuncWith<T, Params>>(pageFunction: Func | string, ...args: Params): Promise<Awaited<ReturnType<Func>>>;
     /**
      * @see {@link ExecutionContext.evaluateHandle} for more details.
      */
-    evaluateHandle<Params extends unknown[], Func extends EvaluateFunc<[this, ...Params]> = EvaluateFunc<[
-        this,
-        ...Params
-    ]>>(pageFunction: Func | string, ...args: Params): Promise<HandleFor<Awaited<ReturnType<Func>>>>;
+    evaluateHandle<Params extends unknown[], Func extends EvaluateFuncWith<T, Params> = EvaluateFuncWith<T, Params>>(pageFunction: Func | string, ...args: Params): Promise<HandleFor<Awaited<ReturnType<Func>>>>;
     getProperty<K extends keyof T>(propertyName: HandleOr<K>): Promise<HandleFor<T[K]>>;
     getProperty(propertyName: string): Promise<JSHandle<unknown>>;
     getProperties(): Promise<Map<string, JSHandle>>;
     jsonValue(): Promise<T>;
     /**
-     * @returns Either `null` or the handle itself if the handle is an
+     * Either `null` or the handle itself if the handle is an
      * instance of {@link ElementHandle}.
      */
     asElement(): CDPElementHandle<Node> | null;
     dispose(): Promise<void>;
     toString(): string;
+    get id(): string | undefined;
     remoteObject(): Protocol.Runtime.RemoteObject;
 }
-export {};
 //# sourceMappingURL=JSHandle.d.ts.map

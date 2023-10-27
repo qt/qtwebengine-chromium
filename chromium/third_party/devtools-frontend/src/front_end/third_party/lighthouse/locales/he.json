@@ -17,6 +17,15 @@
   "core/audits/accessibility/aria-allowed-attr.js | title": {
     "message": "מאפייני ה-`[aria-*]`‎ תואמים לתפקידים שלהם"
   },
+  "core/audits/accessibility/aria-allowed-role.js | description": {
+    "message": "ARIA `role`s enable assistive technologies to know the role of each element on the web page. If the `role` values are misspelled, not existing ARIA `role` values, or abstract roles, then the purpose of the element will not be communicated to users of assistive technologies. [Learn more about ARIA roles](https://dequeuniversity.com/rules/axe/4.7/aria-allowed-roles)."
+  },
+  "core/audits/accessibility/aria-allowed-role.js | failureTitle": {
+    "message": "Values assigned to `role=\"\"` are not valid ARIA roles."
+  },
+  "core/audits/accessibility/aria-allowed-role.js | title": {
+    "message": "Values assigned to `role=\"\"` are valid ARIA roles."
+  },
   "core/audits/accessibility/aria-command-name.js | description": {
     "message": "כשאין לרכיב תווית נגישות, קוראי מסך מציינים שם גנרי, ובמצב כזה הרכיב לא שימושי לאנשים שמסתמכים על קוראי מסך. [איך לשפר את הנגישות של רכיבי פקודות](https://dequeuniversity.com/rules/axe/4.7/aria-command-name)?"
   },
@@ -25,6 +34,15 @@
   },
   "core/audits/accessibility/aria-command-name.js | title": {
     "message": "לרכיבים `button`, `link` וגם `menuitem` יש שמות נגישים"
+  },
+  "core/audits/accessibility/aria-dialog-name.js | description": {
+    "message": "רכיבים של תיבת דו-שיח מסוג ARIA שאין בהם תוויות נגישות עלולים למנוע ממשתמשים בקורא מסך להבין מה מטרת הרכיבים האלה. [כך משפרים את הנגישות ברכיבים של תיבת דו-שיח מסוג ARIA](https://dequeuniversity.com/rules/axe/4.7/aria-dialog-name)"
+  },
+  "core/audits/accessibility/aria-dialog-name.js | failureTitle": {
+    "message": "לרכיבים עם `role=\"dialog\"` או `role=\"alertdialog\"` אין תוויות נגישות."
+  },
+  "core/audits/accessibility/aria-dialog-name.js | title": {
+    "message": "לרכיבים עם `role=\"dialog\"` או `role=\"alertdialog\"` יש תוויות נגישות."
   },
   "core/audits/accessibility/aria-hidden-body.js | description": {
     "message": "טכנולוגיות מסייעות, כמו קוראי מסך, פועלות באופן לא עקבי כשמוגדר `aria-hidden=\"true\"` ב-`<body>` של המסמך. [מה ההשפעה של `aria-hidden` על גוף המסמך](https://dequeuniversity.com/rules/axe/4.7/aria-hidden-body)?"
@@ -106,6 +124,15 @@
   },
   "core/audits/accessibility/aria-roles.js | title": {
     "message": "ערכי ה-`[role]` חוקיים"
+  },
+  "core/audits/accessibility/aria-text.js | description": {
+    "message": "הוספת `role=text` מסביב לפיצול טקסט לצמתים באמצעות תגי עיצוב מאפשרת ל-VoiceOver להתייחס לטקסט כביטוי יחיד, אבל לא תתבצע הקראה של צאצאי הרכיב שניתן להתמקד בהם. [מידע נוסף על המאפיין `role=text`](https://dequeuniversity.com/rules/axe/4.7/aria-text)"
+  },
+  "core/audits/accessibility/aria-text.js | failureTitle": {
+    "message": "ברכיבים עם המאפיין `role=text` יש צאצאים שניתן להתמקד בהם."
+  },
+  "core/audits/accessibility/aria-text.js | title": {
+    "message": "ברכיבים עם המאפיין `role=text` אין צאצאים שניתן להתמקד בהם."
   },
   "core/audits/accessibility/aria-toggle-field-name.js | description": {
     "message": "כשאין לשדה החלפת מצב תווית נגישות, קוראי מסך מציינים שם גנרי, ובמצב כזה אנשים שמסתמכים על קוראי מסך יתקשו להשתמש בשדה כזה. [מידע נוסף על שדות החלפת מצב](https://dequeuniversity.com/rules/axe/4.7/aria-toggle-field-name)"
@@ -227,6 +254,15 @@
   "core/audits/accessibility/duplicate-id-aria.js | title": {
     "message": "מזהי ה-ARIA ייחודיים"
   },
+  "core/audits/accessibility/empty-heading.js | description": {
+    "message": "כותרת ללא תוכן או טקסט לא נגיש מונעים ממשתמשים בקורא מסך לגשת למידע שבמבנה הדף. [מידע נוסף על כותרות](https://dequeuniversity.com/rules/axe/4.7/empty-heading)"
+  },
+  "core/audits/accessibility/empty-heading.js | failureTitle": {
+    "message": "אין תוכן ברכיבי הכותרת."
+  },
+  "core/audits/accessibility/empty-heading.js | title": {
+    "message": "יש תוכן בכל רכיבי הכותרת."
+  },
   "core/audits/accessibility/form-field-multiple-labels.js | description": {
     "message": "טכנולוגיות מסייעות עלולות להקריא באופן מבלבל שדות טופס עם תוויות מרובות. קוראי מסך, למשל, מקריאים את התווית הראשונה, האחרונה או את כולן. [כאן מוסבר איך משתמשים בתוויות של טפסים](https://dequeuniversity.com/rules/axe/4.7/form-field-multiple-labels)."
   },
@@ -272,6 +308,24 @@
   "core/audits/accessibility/html-lang-valid.js | title": {
     "message": "לרכיב `<html>` יש ערך חוקי עבור המאפיין `[lang]`"
   },
+  "core/audits/accessibility/html-xml-lang-mismatch.js | description": {
+    "message": "אם בדף האינטרנט לא מצוינת שפה עקבית, יכול להיות שקורא המסך לא יקריא את הטקסט שבדף בצורה נכונה. [מידע נוסף על המאפיין `lang`](https://dequeuniversity.com/rules/axe/4.7/html-xml-lang-mismatch)"
+  },
+  "core/audits/accessibility/html-xml-lang-mismatch.js | failureTitle": {
+    "message": "לרכיב `<html>` אין מאפיין `[xml:lang]` ששפת הבסיס שלו זהה לשפה במאפיין `[lang]`."
+  },
+  "core/audits/accessibility/html-xml-lang-mismatch.js | title": {
+    "message": "לרכיב `<html>` יש מאפיין `[xml:lang]` ששפת הבסיס שלו זהה לשפה במאפיין `[lang]`."
+  },
+  "core/audits/accessibility/identical-links-same-purpose.js | description": {
+    "message": "לקישורים עם אותו יעד צריך להיות תיאור זהה, כדי לעזור למשתמשים להבין מה מטרת הקישור ולהחליט אם לנווט אליו. [מידע נוסף על קישורים זהים](https://dequeuniversity.com/rules/axe/4.7/identical-links-same-purpose)"
+  },
+  "core/audits/accessibility/identical-links-same-purpose.js | failureTitle": {
+    "message": "לקישורים זהים אין מטרה זהה."
+  },
+  "core/audits/accessibility/identical-links-same-purpose.js | title": {
+    "message": "לקישורים זהים יש מטרה זהה."
+  },
   "core/audits/accessibility/image-alt.js | description": {
     "message": "רכיבים אינפורמטיביים צריכים לכלול טקסט חלופי קצר ותיאורי. אפשר להתעלם מרכיבי עיצוב עם מאפיין alt ריק. [מידע נוסף על המאפיין `alt`](https://dequeuniversity.com/rules/axe/4.7/image-alt)"
   },
@@ -280,6 +334,24 @@
   },
   "core/audits/accessibility/image-alt.js | title": {
     "message": "לרכיבי תמונה יש מאפייני `[alt]`"
+  },
+  "core/audits/accessibility/image-redundant-alt.js | description": {
+    "message": "Informative elements should aim for short, descriptive alternative text. Alternative text that is exactly the same as the text adjacent to the link or image is potentially confusing for screen reader users, because the text will be read twice. [Learn more about the `alt` attribute](https://dequeuniversity.com/rules/axe/4.7/image-redundant-alt)."
+  },
+  "core/audits/accessibility/image-redundant-alt.js | failureTitle": {
+    "message": "Image elements have `[alt]` attributes that are redundant text."
+  },
+  "core/audits/accessibility/image-redundant-alt.js | title": {
+    "message": "Image elements do not have `[alt]` attributes that are redundant text."
+  },
+  "core/audits/accessibility/input-button-name.js | description": {
+    "message": "הוספה של טקסט נגיש וברור ללחצני קלט עשויה לעזור למשתמשים בקורא מסך להבין את המטרה של לחצן הקלט. [מידע נוסף על לחצני קלט](https://dequeuniversity.com/rules/axe/4.7/input-button-name)"
+  },
+  "core/audits/accessibility/input-button-name.js | failureTitle": {
+    "message": "אין טקסט ברור בלחצני הקלט"
+  },
+  "core/audits/accessibility/input-button-name.js | title": {
+    "message": "יש טקסט ברור בלחצני הקלט"
   },
   "core/audits/accessibility/input-image-alt.js | description": {
     "message": "כשתמונה משמשת כלחצן `<input>`, הוספה של טקסט חלופי יכולה לעזור למשתמשים הנעזרים בקוראי מסך להבין מה מטרת הלחצן. [מידע על טקסט חלופי של תמונה בקלט](https://dequeuniversity.com/rules/axe/4.7/input-image-alt)"
@@ -290,6 +362,15 @@
   "core/audits/accessibility/input-image-alt.js | title": {
     "message": "לרכיבים מסוג `<input type=\"image\">` יש טקסט `[alt]`"
   },
+  "core/audits/accessibility/label-content-name-mismatch.js | description": {
+    "message": "Visible text labels that do not match the accessible name can result in a confusing experience for screen reader users. [Learn more about accessible names](https://dequeuniversity.com/rules/axe/4.7/label-content-name-mismatch)."
+  },
+  "core/audits/accessibility/label-content-name-mismatch.js | failureTitle": {
+    "message": "Elements with visible text labels do not have matching accessible names."
+  },
+  "core/audits/accessibility/label-content-name-mismatch.js | title": {
+    "message": "Elements with visible text labels have matching accessible names."
+  },
   "core/audits/accessibility/label.js | description": {
     "message": "בעזרת תוויות אפשר לוודא ששמות של פקדי טפסים מוקראים באופן תקין על-ידי טכנולוגיות מסייעות, כמו קוראי מסך. [מידע נוסף על תוויות של רכיבי טפסים](https://dequeuniversity.com/rules/axe/4.7/label)"
   },
@@ -298,6 +379,24 @@
   },
   "core/audits/accessibility/label.js | title": {
     "message": "לרכיבי טופס יש תוויות המשויכות אליהם"
+  },
+  "core/audits/accessibility/landmark-one-main.js | description": {
+    "message": "מאפיין עיקרי אחד של ARIA עוזר למשתמשים בקורא מסך לנווט בדף אינטרנט. [מידע נוסף על מאפיינים של ARIA](https://dequeuniversity.com/rules/axe/4.7/landmark-one-main)"
+  },
+  "core/audits/accessibility/landmark-one-main.js | failureTitle": {
+    "message": "אין במסמך מאפיין עיקרי של ARIA."
+  },
+  "core/audits/accessibility/landmark-one-main.js | title": {
+    "message": "המסמך הוא מאפיין עיקרי של ARIA."
+  },
+  "core/audits/accessibility/link-in-text-block.js | description": {
+    "message": "למשתמשים רבים קשה או בלתי אפשרי לקרוא טקסט עם ניגודיות נמוכה. כשקל להבדיל בין טקסט רגיל לבין טקסט של קישור, זה משפר את החוויה של משתמשים עם ליקויי ראייה. [כך מגדירים קישורים שניתן להבדיל ביניהם](https://dequeuniversity.com/rules/axe/4.7/link-in-text-block)"
+  },
+  "core/audits/accessibility/link-in-text-block.js | failureTitle": {
+    "message": "לקישורים יש צבעים שונים כדי שניתן יהיה להבדיל ביניהם."
+  },
+  "core/audits/accessibility/link-in-text-block.js | title": {
+    "message": "ניתן להבדיל בין קישורים בלי להסתמך על צבע."
   },
   "core/audits/accessibility/link-name.js | description": {
     "message": "כשהטקסט של הקישור מובן וייחודי וניתן למיקוד, משתמשים שנעזרים בקורא מסך נהנים מחוויית ניווט משופרת. המצב הזה נכון גם לגבי טקסט חלופי של תמונות כשנעשה בהן שימוש כקישורים. [כך מגדירים קישורים נגישים](https://dequeuniversity.com/rules/axe/4.7/link-name)."
@@ -353,6 +452,24 @@
   "core/audits/accessibility/object-alt.js | title": {
     "message": "לרכיבי `<object>` יש טקסט חלופי"
   },
+  "core/audits/accessibility/select-name.js | description": {
+    "message": "רכיבי טופס שאין בהם תוויות מועילות יכולים לגרום לתסכול בחוויות של משתמשים בקורא מסך. [מידע נוסף על רכיבים מסוג `select`](https://dequeuniversity.com/rules/axe/4.7/select-name)"
+  },
+  "core/audits/accessibility/select-name.js | failureTitle": {
+    "message": "לרכיבים נבחרים אין רכיבי תווית משויכים."
+  },
+  "core/audits/accessibility/select-name.js | title": {
+    "message": "לרכיבים נבחרים יש רכיבי תווית משויכים."
+  },
+  "core/audits/accessibility/skip-link.js | description": {
+    "message": "Including a skip link can help users skip to the main content to save time. [Learn more about skip links](https://dequeuniversity.com/rules/axe/4.7/skip-link)."
+  },
+  "core/audits/accessibility/skip-link.js | failureTitle": {
+    "message": "Skip links are not focusable."
+  },
+  "core/audits/accessibility/skip-link.js | title": {
+    "message": "Skip links are focusable."
+  },
   "core/audits/accessibility/tabindex.js | description": {
     "message": "ערך גדול מ-0 מציין סדר ניווט מפורש. למרות שאפשרות זו תקינה מבחינה טכנית, במקרים רבים היא מובילה לחוויה מתסכלת בקרב משתמשים שמסתמכים על טכנולוגיות מסייעות. [מידע נוסף על המאפיין `tabindex`](https://dequeuniversity.com/rules/axe/4.7/tabindex)"
   },
@@ -361,6 +478,42 @@
   },
   "core/audits/accessibility/tabindex.js | title": {
     "message": "לאף רכיב אין ערך `[tabindex]` גדול מ-0"
+  },
+  "core/audits/accessibility/table-duplicate-name.js | description": {
+    "message": "The summary attribute should describe the table structure, while `<caption>` should have the onscreen title. Accurate table mark-up helps users of screen readers. [Learn more about summary and caption](https://dequeuniversity.com/rules/axe/4.7/table-duplicate-name)."
+  },
+  "core/audits/accessibility/table-duplicate-name.js | failureTitle": {
+    "message": "Tables have the same content in the summary attribute and `<caption>.`"
+  },
+  "core/audits/accessibility/table-duplicate-name.js | title": {
+    "message": "Tables have different content in the summary attribute and `<caption>`."
+  },
+  "core/audits/accessibility/table-fake-caption.js | description": {
+    "message": "קוראי מסך כוללים תכונות שעוזרות לנווט בטבלאות. כדאי לוודא שבטבלאות יש שימוש ברכיב הכיתוב בפועל במקום בתאים עם המאפיין `[colspan]`, כדי לשפר את החוויה של המשתמשים בקורא מסך. [מידע נוסף על רכיבי כיתוב](https://dequeuniversity.com/rules/axe/4.7/table-fake-caption)"
+  },
+  "core/audits/accessibility/table-fake-caption.js | failureTitle": {
+    "message": "אין שימוש במאפיין `<caption>` במקום בתאים עם המאפיין `[colspan]` כדי לציין כיתוב בטבלאות."
+  },
+  "core/audits/accessibility/table-fake-caption.js | title": {
+    "message": "יש שימוש במאפיין `<caption>` במקום בתאים עם המאפיין `[colspan]` כדי לציין כיתוב בטבלאות."
+  },
+  "core/audits/accessibility/target-size.js | description": {
+    "message": "Touch targets with sufficient size and spacing help users who may have difficulty targeting small controls to activate the targets. [Learn more about touch targets](https://dequeuniversity.com/rules/axe/4.7/target-size)."
+  },
+  "core/audits/accessibility/target-size.js | failureTitle": {
+    "message": "משטחי המגע לא גדולים ומרווחים מספיק."
+  },
+  "core/audits/accessibility/target-size.js | title": {
+    "message": "משטחי המגע גדולים ומרווחים מספיק."
+  },
+  "core/audits/accessibility/td-has-header.js | description": {
+    "message": "קוראי מסך כוללים תכונות שעוזרות לנווט בטבלאות. בטבלאות גדולות (3 תאים לפחות ברוחב ובגובה), כדאי להקפיד לשייך לרכיבי `<td>` כותרת טבלה כדי לשפר את החוויה של המשתמשים בקורא מסך. [מידע נוסף על כותרות של טבלאות](https://dequeuniversity.com/rules/axe/4.7/td-has-header)"
+  },
+  "core/audits/accessibility/td-has-header.js | failureTitle": {
+    "message": "לרכיבי `<td>` במאפיין `<table>` גדול אין כותרות של טבלאות."
+  },
+  "core/audits/accessibility/td-has-header.js | title": {
+    "message": "לרכיבי `<td>` במאפיין `<table>` גדול יש כותרת טבלה אחת או יותר."
   },
   "core/audits/accessibility/td-headers-attr.js | description": {
     "message": "קוראי מסך כוללים תכונות שעוזרות לנווט בטבלאות. כשתאי `<td>` שמשתמשים במאפיין `[headers]` מתייחסים רק לתאים אחרים באותה טבלה, משתמשים הנעזרים בקוראי מסך יכולים ליהנות מחוויה טובה יותר. [מידע נוסף על המאפיין `headers`](https://dequeuniversity.com/rules/axe/4.7/td-headers-attr)"
@@ -902,9 +1055,6 @@
   "core/audits/installable-manifest.js | no-manifest": {
     "message": "אין לדף כתובת URL של מניפסט <link>"
   },
-  "core/audits/installable-manifest.js | no-matching-service-worker": {
-    "message": "לא נמצא קובץ שירות (service worker) תואם. ייתכן שצריך לטעון מחדש את הדף, או לבדוק אם ההיקף של קובץ השירות (service worker) של הדף הנוכחי כולל את ההיקף ואת כתובת ה-URL להתחלה של קובץ המניפסט."
-  },
   "core/audits/installable-manifest.js | no-url-for-service-worker": {
     "message": "לא ניתן לבדוק את קובץ השירות (service worker) ללא השדה 'כתובת url להתחלה'"
   },
@@ -933,7 +1083,7 @@
     "message": "התכונה prefer_related_applications נתמכת רק בגרסת הבטא של Chrome ובערוצים יציבים ב-Android."
   },
   "core/audits/installable-manifest.js | protocol-timeout": {
-    "message": "במסגרת Lighthouse לא ניתן לקבוע אם היה קובץ שירות (service worker). צריך לנסות שוב בגרסה חדשה יותר של Chrome."
+    "message": "Lighthouse could not determine if the page is installable. Please try with a newer version of Chrome."
   },
   "core/audits/installable-manifest.js | scheme-not-supported-for-webapk": {
     "message": "הסכימה של כתובת ה-URL של המניפסט ({scheme}) אינה נתמכת ב-Android."
@@ -1076,14 +1226,14 @@
   "core/audits/metrics/cumulative-layout-shift.js | description": {
     "message": "המדד Cumulative Layout Shift ‏(CLS) מודד את התנועה של הרכיבים הגלויים בתוך אזור התצוגה. [מידע נוסף על המדד Cumulative Layout Shift ‏(CLS)](https://web.dev/cls/)"
   },
-  "core/audits/metrics/experimental-interaction-to-next-paint.js | description": {
-    "message": "המדד 'מאינטראקציה ועד הצגת התגובה' מודד את רמת הרספונסיביות של הדף – כמה זמן נדרש עד להצגת תגובה בדף לקלט של משתמש. [מידע נוסף על המדד 'מאינטראקציה ועד הצגת התגובה'](https://web.dev/inp/)"
-  },
   "core/audits/metrics/first-contentful-paint.js | description": {
     "message": "המדד 'הצגת תוכן ראשוני (FCP)' מציין את הזמן שבו הטקסט או התמונה הראשונים מוצגים. [מידע נוסף על המדד 'הצגת תוכן ראשוני (FCP)'](https://developer.chrome.com/docs/lighthouse/performance/first-contentful-paint/)"
   },
   "core/audits/metrics/first-meaningful-paint.js | description": {
     "message": "המדד 'הצגת התוכן העיקרי (FMP)' מציין מתי מוצג התוכן העיקרי של הדף. [מידע נוסף על המדד 'הצגת התוכן העיקרי (FMP)'](https://developer.chrome.com/docs/lighthouse/performance/first-meaningful-paint/)"
+  },
+  "core/audits/metrics/interaction-to-next-paint.js | description": {
+    "message": "המדד 'מאינטראקציה ועד הצגת התגובה' מודד את רמת הרספונסיביות של הדף – כמה זמן נדרש עד להצגת תגובה בדף לקלט של משתמש. [מידע נוסף על המדד 'מאינטראקציה ועד הצגת התגובה'](https://web.dev/inp/)"
   },
   "core/audits/metrics/interactive.js | description": {
     "message": "ה'זמן עד לפעילות מלאה' הוא משך הזמן שחולף עד שהדף מאפשר אינטראקציה מלאה. [מידע נוסף על הערך 'הזמן עד לפעילות מלאה'](https://developer.chrome.com/docs/lighthouse/performance/interactive/)"
@@ -1177,15 +1327,6 @@
   },
   "core/audits/redirects.js | title": {
     "message": "יש להימנע מהפניות אוטומטיות מרובות"
-  },
-  "core/audits/resource-summary.js | description": {
-    "message": "כדי להגדיר תקציבים עבור הכמות והגודל של משאבי הדף, יש להוסיף קובץ budget.json. [מידע נוסף על תקציבי ביצועים](https://web.dev/use-lighthouse-for-performance-budgets/)"
-  },
-  "core/audits/resource-summary.js | displayValue": {
-    "message": "{requestCount,plural, =1{בקשה אחת • ‎{byteCount, number, bytes} KiB}one{# בקשות • ‎{byteCount, number, bytes} KiB}two{# בקשות • ‎{byteCount, number, bytes} KiB}other{# בקשות • ‎{byteCount, number, bytes} KiB}}"
-  },
-  "core/audits/resource-summary.js | title": {
-    "message": "יש לצמצם ככל האפשר את מספר הבקשות ואת גודל ההעברות"
   },
   "core/audits/seo/canonical.js | description": {
     "message": "קישורים קנוניים מציעים את כתובת ה-URL שיש להציג בתוצאות החיפוש. [מידע נוסף על קישורים קנוניים](https://developer.chrome.com/docs/lighthouse/seo/canonical/)"
@@ -1375,27 +1516,6 @@
   },
   "core/audits/server-response-time.js | title": {
     "message": "זמן התגובה הראשונית של השרת היה קצר"
-  },
-  "core/audits/service-worker.js | description": {
-    "message": "קובץ השירות (service worker) הוא הטכנולוגיה שמאפשרת לאפליקציה שלך להשתמש בתכונות רבות של Progressive Web App כמו 'מצב אופליין', 'הוספה למסך הבית' ו'התראות'. [מידע נוסף על קובצי שירות (service worker)](https://developer.chrome.com/docs/lighthouse/pwa/service-worker/)"
-  },
-  "core/audits/service-worker.js | explanationBadManifest": {
-    "message": "דף זה נשלט על ידי קובץ שירות (service worker), אך לא נמצא `start_url` כי לא ניתן היה לנתח את המניפסט בתור JSON תקף"
-  },
-  "core/audits/service-worker.js | explanationBadStartUrl": {
-    "message": "דף זה נשלט על ידי קובץ שירות (service worker), אך ה-`start_url` ({startUrl}) לא נמצא בטווח ({scopeUrl}) של קובץ השירות"
-  },
-  "core/audits/service-worker.js | explanationNoManifest": {
-    "message": "דף זה נשלט על ידי קובץ שירות (service worker), אך לא נמצא `start_url` כי לא אוחזר מניפסט."
-  },
-  "core/audits/service-worker.js | explanationOutOfScope": {
-    "message": "למקור זה יש לפחות קובץ שירות (service worker) אחד, אך הדף ({pageUrl}) לא נמצא בטווח."
-  },
-  "core/audits/service-worker.js | failureTitle": {
-    "message": "לא רושם קובץ שירות (service worker) ששולט בדף וב-`start_url`"
-  },
-  "core/audits/service-worker.js | title": {
-    "message": "רושם קובץ שירות (service worker) ששולט בדף וב-`start_url`"
   },
   "core/audits/splash-screen.js | description": {
     "message": "מסך פתיחה מעוצב מבטיח חוויה באיכות גבוהה כשמשתמשים מפעילים את האפליקציה שלך ממסכי הבית שלהם. [מידע נוסף על מסכי פתיחה](https://developer.chrome.com/docs/lighthouse/pwa/splash-screen/)"
@@ -1587,7 +1707,7 @@
     "message": "שיטות מומלצות"
   },
   "core/config/default-config.js | a11yCategoryDescription": {
-    "message": "הבדיקות האלה מדגישות הזדמנויות [לשפר את הנגישות של אפליקציית האינטרנט](https://developer.chrome.com/docs/lighthouse/accessibility/). אפשר לזהות באופן אוטומטי רק חלק מבעיות הנגישות, ולכן מומלץ לבצע גם בדיקות ידניות."
+    "message": "These checks highlight opportunities to [improve the accessibility of your web app](https://developer.chrome.com/docs/lighthouse/accessibility/). Automatic detection can only detect a subset of issues and does not guarantee the accessibility of your web app, so [manual testing](https://web.dev/how-to-review/) is also encouraged."
   },
   "core/config/default-config.js | a11yCategoryManualDescription": {
     "message": "הפריטים האלה בודקים תחומים שלא ניתן לבדוק באמצעות כלי בדיקה אוטומטיים. מידע נוסף זמין במדריך שלנו שבו מוסבר [איך לערוך בדיקת נגישות](https://web.dev/how-to-review/)."
@@ -1751,6 +1871,9 @@
   "core/lib/bf-cache-strings.js | appBanner": {
     "message": "בשלב זה, דפים שנשלחה מהם בקשה ל-AppBanner לא מתאימים לשמירה במטמון לדף הקודם/הבא."
   },
+  "core/lib/bf-cache-strings.js | authorizationHeader": {
+    "message": "התכונה 'מטמון לדף הקודם/הבא' הושבתה עקב בקשה מסוג הודעת keep-alive."
+  },
   "core/lib/bf-cache-strings.js | backForwardCacheDisabled": {
     "message": "התכונה 'מטמון לדף הקודם/הבא' הושבתה על ידי תכונות ניסיוניות. צריך לעבור לכתובת chrome://flags/#back-forward-cache כדי להפעיל אותה באופן מקומי במכשיר הזה."
   },
@@ -1816,6 +1939,9 @@
   },
   "core/lib/bf-cache-strings.js | contentWebUSB": {
     "message": "דפים שנעשה בהם שימוש ב-WebUSB API לא מתאימים לשמירה במטמון לדף הקודם/הבא."
+  },
+  "core/lib/bf-cache-strings.js | cookieDisabled": {
+    "message": "התכונה 'מטמון לדף הקודם/הבא' הושבתה כי קובצי cookie הושבתו בדף עם שימוש ב-`Cache-Control: no-store`."
   },
   "core/lib/bf-cache-strings.js | dedicatedWorkerOrWorklet": {
     "message": "בשלב זה, דפים שנעשה בהם שימוש ב-worker או ב-worklet ייעודיים לא מתאימים לשמירה במטמון לדף הקודם/הבא."
@@ -1892,14 +2018,17 @@
   "core/lib/bf-cache-strings.js | indexedDBConnection": {
     "message": "בשלב זה, דפים שיש בהם חיבור IndexedDB פתוח לא מתאימים לשמירה במטמון לדף הקודם/הבא."
   },
+  "core/lib/bf-cache-strings.js | indexedDBEvent": {
+    "message": "התכונה 'מטמון לדף הקודם/הבא' הושבתה בגלל אירוע מסוג IndexedDB."
+  },
   "core/lib/bf-cache-strings.js | ineligibleAPI": {
     "message": "נעשה שימוש בממשקי API לא מתאימים."
   },
   "core/lib/bf-cache-strings.js | injectedJavascript": {
-    "message": "בשלב זה, דפים שמוחדר אליהם JavaScript באמצעות תוספים לא מתאימים לשמירה במטמון לדף הקודם/הבא."
+    "message": "בשלב זה, דפים שמחדירים אליהם `JavaScript` באמצעות תוספים לא מתאימים לשמירה במטמון לדף הקודם/הבא."
   },
   "core/lib/bf-cache-strings.js | injectedStyleSheet": {
-    "message": "בשלב זה, דפים שמוחדר אליהם גיליון סגנונות באמצעות תוספים לא מתאימים לשמירה במטמון לדף הקודם/הבא."
+    "message": "בשלב זה, דפים שמחדירים אליהם `StyleSheet` באמצעות תוספים לא מתאימים לשמירה במטמון לדף הקודם/הבא."
   },
   "core/lib/bf-cache-strings.js | internalError": {
     "message": "שגיאה פנימית."
@@ -2137,6 +2266,192 @@
   },
   "core/lib/csp-evaluator.js | unsafeInlineFallback": {
     "message": "כדאי להוסיף רכיב 'unsafe-inline' (דפדפנים שתומכים בגיבובים/צפנים חד-פעמיים יתעלמו ממנו) לצורך תאימות לאחור עם דפדפנים ישנים."
+  },
+  "core/lib/deprecation-description.js | feature": {
+    "message": "פרטים נוספים זמינים בדף של סטטוס התכונה."
+  },
+  "core/lib/deprecation-description.js | milestone": {
+    "message": "השינוי הזה ייכנס לתוקף בגרסה {milestone}."
+  },
+  "core/lib/deprecation-description.js | title": {
+    "message": "נעשה שימוש בתכונה שהוצאה משימוש"
+  },
+  "core/lib/deprecations-strings.js | AuthorizationCoveredByWildcard": {
+    "message": "ההרשאה לא תיכלל עם השימוש בסמל של התו הכללי לחיפוש (*) בהגדרות לטיפול ב-`Access-Control-Allow-Headers` של CORS."
+  },
+  "core/lib/deprecations-strings.js | CSSSelectorInternalMediaControlsOverlayCastButton": {
+    "message": "יש להשתמש במאפיין `disableRemotePlayback` כדי להשבית את שילוב ההעברה (cast) המוגדר כברירת מחדל במקום להשתמש בבורר `-internal-media-controls-overlay-cast-button`."
+  },
+  "core/lib/deprecations-strings.js | CanRequestURLHTTPContainingNewline": {
+    "message": "בקשות למשאבים שכתובות ה-URL שלהן מכילות גם תווי `(n|r|t)` של רווח לבן מחוק וגם תווי 'פחות מ-' (`<`) חסומות. כדי לטעון את המשאבים האלה, יש להסיר תווי 'פחות מ-' מקודדים ושורות חדשות ממקומות כמו ערכי מאפיינים של רכיבים."
+  },
+  "core/lib/deprecations-strings.js | ChromeLoadTimesConnectionInfo": {
+    "message": "האפשרות `chrome.loadTimes()` הוצאה משימוש. במקומה יש להשתמש ב-API הסטנדרטי: תזמון ניווט 2."
+  },
+  "core/lib/deprecations-strings.js | ChromeLoadTimesFirstPaintAfterLoadTime": {
+    "message": "האפשרות `chrome.loadTimes()` הוצאה משימוש. במקומה יש להשתמש ב-API הסטנדרטי: תזמון המרת תמונה וקטורית למפת סיביות."
+  },
+  "core/lib/deprecations-strings.js | ChromeLoadTimesWasAlternateProtocolAvailable": {
+    "message": "האפשרות `chrome.loadTimes()` הוצאה משימוש. במקומה יש להשתמש ב-API הסטנדרטי: `nextHopProtocol` בתזמון ניווט 2."
+  },
+  "core/lib/deprecations-strings.js | CookieWithTruncatingChar": {
+    "message": "קובצי cookie המכילים תו `(0|r|n)` יידחו במקום להיחתך."
+  },
+  "core/lib/deprecations-strings.js | CrossOriginAccessBasedOnDocumentDomain": {
+    "message": "האפשרות למתן את מדיניות המקור הזהה על ידי הגדרת `document.domain` הוצאה משימוש, ותושבת כברירת מחדל. האזהרה הזו על הוצאה משימוש מתייחסת לגישה ממקורות שונים שהופעלה על ידי הגדרת `document.domain`."
+  },
+  "core/lib/deprecations-strings.js | CrossOriginWindowAlert": {
+    "message": "האפשרות להפעיל את הפונקציה window.alert דרך רכיבי iframe ממקורות שונים הוצאה משימוש ותוסר בעתיד."
+  },
+  "core/lib/deprecations-strings.js | CrossOriginWindowConfirm": {
+    "message": "האפשרות להפעיל את הפונקציה window.confirm דרך רכיבי iframe ממקורות שונים הוצאה משימוש ותוסר בעתיד."
+  },
+  "core/lib/deprecations-strings.js | DOMMutationEvents": {
+    "message": "אירועי מוטציה של DOM, כולל `DOMSubtreeModified`,‏ `DOMNodeInserted`,‏ `DOMNodeRemoved`,‏ `DOMNodeRemovedFromDocument`,‏ `DOMNodeInsertedIntoDocument` ו-`DOMCharacterDataModified` הוצאו משימוש (https://w3c.github.io/uievents/#legacy-event-types) ויוסרו בעתיד. במקומם יש להשתמש ב-`MutationObserver`."
+  },
+  "core/lib/deprecations-strings.js | DataUrlInSvgUse": {
+    "message": "התמיכה בהקצאת כתובות URL מסוג data:‎ לרכיב <use> מסוג SVG הוצאה משימוש ותוסר בעתיד."
+  },
+  "core/lib/deprecations-strings.js | DocumentDomainSettingWithoutOriginAgentClusterHeader": {
+    "message": "האפשרות למתן את מדיניות המקור הזהה על ידי הגדרת `document.domain` הוצאה משימוש, ותושבת כברירת מחדל. כדי להמשיך להשתמש בתכונה הזו, יש לבטל את ההסכמה לאשכולות סוכנים המשויכים למקור על ידי שליחת כותרת `Origin-Agent-Cluster: ?0` עם תגובת HTTP למסמך ולמסגרות. פרטים נוספים זמינים בכתובת https://developer.chrome.com/blog/immutable-document-domain/‎."
+  },
+  "core/lib/deprecations-strings.js | ExpectCTHeader": {
+    "message": "הכותרת `Expect-CT` הוצאה משימוש ותוסר. ב-Chrome נדרשת שקיפות לגבי כל האישורים הציבוריים המהימנים שהונפקו אחרי 30 באפריל 2018."
+  },
+  "core/lib/deprecations-strings.js | GeolocationInsecureOrigin": {
+    "message": "האפשרויות `getCurrentPosition()` ו-`watchPosition()` לא פועלות יותר במקורות לא מאובטחים. כדי להשתמש בתכונה הזו, כדאי להעביר את האפליקציה למקור מאובטח כמו HTTPS. פרטים נוספים זמינים בכתובת https://goo.gle/chrome-insecure-origins."
+  },
+  "core/lib/deprecations-strings.js | GeolocationInsecureOriginDeprecatedNotRemoved": {
+    "message": "האפשרויות `getCurrentPosition()` ו-`watchPosition()` הוצאו משימוש במקורות שאינם מאובטחים. כדי להשתמש בתכונה הזו, כדאי להעביר את האפליקציה למקור מאובטח כמו HTTPS. פרטים נוספים זמינים בכתובת https://goo.gle/chrome-insecure-origins."
+  },
+  "core/lib/deprecations-strings.js | GetUserMediaInsecureOrigin": {
+    "message": "האפשרות `getUserMedia()` לא פועלת יותר במקורות לא מאובטחים. כדי להשתמש בתכונה הזו, כדאי להעביר את האפליקציה למקור מאובטח כמו HTTPS. פרטים נוספים זמינים בכתובת https://goo.gle/chrome-insecure-origins."
+  },
+  "core/lib/deprecations-strings.js | HostCandidateAttributeGetter": {
+    "message": "האפשרות `RTCPeerConnectionIceErrorEvent.hostCandidate` הוצאה משימוש. במקומה יש להשתמש באפשרות `RTCPeerConnectionIceErrorEvent.address` או באפשרות `RTCPeerConnectionIceErrorEvent.port`."
+  },
+  "core/lib/deprecations-strings.js | IdentityInCanMakePaymentEvent": {
+    "message": "המקור של המוכר ונתונים שרירותיים מאירוע של קובץ השירות (service worker)‏ `canmakepayment` הוצאו משימוש ויוסרו: `topOrigin`‏, `paymentRequestOrigin`‏, `methodData`‏, `modifiers`."
+  },
+  "core/lib/deprecations-strings.js | InsecurePrivateNetworkSubresourceRequest": {
+    "message": "האתר שלח בקשה למשאב משנה מרשת שיש לו גישה אליה רק בגלל שלמשתמשים שלו יש הרשאות למיקום הרשת. הבקשות האלה חושפות שרתים ומכשירים שלא גלויים לכולם לאינטרנט, ומגבירות את הסיכון למתקפת Cross-Site Request Forgery‏ (CSRF) ולדליפת מידע. כדי להפחית את הסיכונים האלה, מערכת Chrome מוציאה משימוש בקשות למשאבי משנה שאינם גלויים לכולם כשהן מגיעות מהקשרים לא מאובטחים, ובקרוב המערכת תתחיל לחסום אותן."
+  },
+  "core/lib/deprecations-strings.js | InterestGroupDailyUpdateUrl": {
+    "message": "שם השדה `dailyUpdateUrl` של `InterestGroups` שהועבר אל `joinAdInterestGroup()` שונה לשם `updateUrl` כדי לשקף את ההתנהגות בצורה מדויקת יותר."
+  },
+  "core/lib/deprecations-strings.js | LocalCSSFileExtensionRejected": {
+    "message": "לא ניתן לטעון CSS מכתובות URL של `file:` אלא אם הן מסתיימות בסיומת הקובץ `.css`."
+  },
+  "core/lib/deprecations-strings.js | MediaSourceAbortRemove": {
+    "message": "האפשרות לבטל את הסרת הטווח האסינכרוני של `remove()` באמצעות `SourceBuffer.abort()` הוצאה משימוש עקב שינוי במפרט. התמיכה באפשרות הזו תוסר בעתיד. במקום זאת, יש להפעיל listener לאירוע של `updateend`. ניתן להשתמש ב-`abort()` רק כדי לבטל צירוף מדיה אסינכרוני או לאפס מצב מנתח."
+  },
+  "core/lib/deprecations-strings.js | MediaSourceDurationTruncatingBuffered": {
+    "message": "האפשרות להגדיר את `MediaSource.duration` מתחת לערך הגבוה ביותר של חותמת הזמן להצגה של כל המסגרות המקודדות השמורות במאגר נתונים זמני הוצאה משימוש עקב שינוי במפרט. בעתיד תוסר התמיכה בהסרה מרומזת של מדיה חתוכה ששמורה במאגר נתונים זמני. במקום זאת, יש להשתמש באפשרות `remove(newDuration, oldDuration)` מפורשת בכל `sourceBuffers`, ולהגדיר `newDuration < oldDuration`."
+  },
+  "core/lib/deprecations-strings.js | NoSysexWebMIDIWithoutPermission": {
+    "message": "תתקבל מ-Web MIDI בקשת הרשאה לשימוש גם אם לא צוין sysex ב-`MIDIOptions`."
+  },
+  "core/lib/deprecations-strings.js | NonStandardDeclarativeShadowDOM": {
+    "message": "המאפיין `shadowroot` שהוא ישן יותר ולא סטנדרטי הוצא משימוש, ו*לא יפעל יותר* בגרסה M119. במקומו צריך להשתמש במאפיין `shadowrootmode` שהוא חדש וסטנדרטי."
+  },
+  "core/lib/deprecations-strings.js | NotificationInsecureOrigin": {
+    "message": "אי אפשר יותר להשתמש ב-Notification API ממקורות לא מאובטחים. כדאי להעביר את האפליקציה למקור מאובטח, כמו HTTPS. פרטים נוספים זמינים בכתובת https://goo.gle/chrome-insecure-origins."
+  },
+  "core/lib/deprecations-strings.js | NotificationPermissionRequestedIframe": {
+    "message": "לא ניתן יותר לבקש הרשאה ל-Notification API מ-iframe ממקורות שונים. במקום זאת, כדאי לבקש הרשאה ממסגרת ברמה עליונה או לפתוח חלון חדש."
+  },
+  "core/lib/deprecations-strings.js | ObsoleteCreateImageBitmapImageOrientationNone": {
+    "message": "האפשרות `imageOrientation: 'none'` ב-createImageBitmap הוצאה משימוש. במקומה צריך להשתמש ב-createImageBitmap ולהוסיף את האפשרות ‎\\{imageOrientation: 'from-image'\\}."
+  },
+  "core/lib/deprecations-strings.js | ObsoleteWebRtcCipherSuite": {
+    "message": "השותף שלך מנהל משא ומתן על גרסת ‎(D)TLS מיושנת. עליך לפנות לשותף שלך כדי לתקן זאת."
+  },
+  "core/lib/deprecations-strings.js | OverflowVisibleOnReplacedElement": {
+    "message": "ציון של '`overflow: visible`' בתגי img,‏ video ו-canvas עלול לגרום להופעת תוכן חזותי מחוץ לגבולות הרכיב. פרטים נוספים זמינים בכתובת https://github.com/WICG/shared-element-transitions/blob/main/debugging_overflow_on_images.md."
+  },
+  "core/lib/deprecations-strings.js | PaymentInstruments": {
+    "message": "האפשרות `paymentManager.instruments` הוצאה משימוש. במקום זאת, אפשר להשתמש בהתקנה בזמן ריצה עבור רכיבי handler של תשלומים."
+  },
+  "core/lib/deprecations-strings.js | PaymentRequestCSPViolation": {
+    "message": "הקריאה `PaymentRequest` עקפה את ההוראה `connect-src` של Content-Security-Policy ‏(CSP). המעקף הזה הוצא משימוש. יש להוסיף את מזהה אמצעי התשלום מ-`PaymentRequest` API (בשדה `supportedMethods`) להוראה `connect-src` של CSP."
+  },
+  "core/lib/deprecations-strings.js | PersistentQuotaType": {
+    "message": "האפשרות `StorageType.persistent` הוצאה משימוש. במקומו יש להשתמש ב-`navigator.storage` רגיל."
+  },
+  "core/lib/deprecations-strings.js | PictureSourceSrc": {
+    "message": "רכיב `<source src>` עם הורה מסוג `<picture>` נחשב ללא תקין, והמערכת מתעלמת ממנו. במקומו יש להשתמש במאפיין `<source srcset>`."
+  },
+  "core/lib/deprecations-strings.js | PrefixedCancelAnimationFrame": {
+    "message": "הפונקציה webkitCancelAnimationFrame היא ספציפית לספק. במקומה צריך להשתמש בפונקציה הסטנדרטית cancelAnimationFrame."
+  },
+  "core/lib/deprecations-strings.js | PrefixedRequestAnimationFrame": {
+    "message": "הפונקציה webkitRequestAnimationFrame היא ספציפית לספק. במקומה צריך להשתמש בפונקציה הסטנדרטית requestAnimationFrame."
+  },
+  "core/lib/deprecations-strings.js | PrefixedVideoDisplayingFullscreen": {
+    "message": "ה-API‏ HTMLVideoElement.webkitDisplayingFullscreen הוצא משימוש. במקומו צריך להשתמש ב-Document.fullscreenElement."
+  },
+  "core/lib/deprecations-strings.js | PrefixedVideoEnterFullScreen": {
+    "message": "ה-API‏ HTMLVideoElement.webkitEnterFullScreen()‎ הוצא משימוש. במקומו צריך להשתמש ב-Element.requestFullscreen()‎."
+  },
+  "core/lib/deprecations-strings.js | PrefixedVideoEnterFullscreen": {
+    "message": "ה-API‏ HTMLVideoElement.webkitEnterFullscreen()‎ הוצא משימוש. במקומו צריך להשתמש ב-Element.requestFullscreen()‎."
+  },
+  "core/lib/deprecations-strings.js | PrefixedVideoExitFullScreen": {
+    "message": "ה-API‏ HTMLVideoElement.webkitExitFullScreen()‎ הוצא משימוש. במקומו צריך להשתמש ב-Document.exitFullscreen()‎."
+  },
+  "core/lib/deprecations-strings.js | PrefixedVideoExitFullscreen": {
+    "message": "ה-API‏ HTMLVideoElement.webkitExitFullscreen()‎ הוצא משימוש. במקומו צריך להשתמש ב-Document.exitFullscreen()‎."
+  },
+  "core/lib/deprecations-strings.js | PrefixedVideoSupportsFullscreen": {
+    "message": "ה-API‏ HTMLVideoElement.webkitSupportsFullscreen הוצא משימוש. במקומו צריך להשתמש ב-Document.fullscreenEnabled."
+  },
+  "core/lib/deprecations-strings.js | PrivacySandboxExtensionsAPI": {
+    "message": "אנחנו מוציאים משימוש את ה-API‏ `chrome.privacy.websites.privacySandboxEnabled`, אבל הוא ימשיך לפעול לצורך תאימות לאחור עד גרסה M113. במקומו צריך להשתמש ב-`chrome.privacy.websites.topicsEnabled`, ב-`chrome.privacy.websites.fledgeEnabled` וב-`chrome.privacy.websites.adMeasurementEnabled`. פרטים נוספים זמינים בכתובת https://developer.chrome.com/docs/extensions/reference/privacy/#property-websites-privacySandboxEnabled."
+  },
+  "core/lib/deprecations-strings.js | RTCConstraintEnableDtlsSrtpFalse": {
+    "message": "המגבלה `DtlsSrtpKeyAgreement` הוסרה. ציינת ערך `false` למגבלה הזו, והוא מפורש כניסיון להשתמש בשיטה `SDES key negotiation` שהוסרה. הפונקציונליות הזו הוסרה. במקומה יש להשתמש בשירות שתומך ב-`DTLS key negotiation`."
+  },
+  "core/lib/deprecations-strings.js | RTCConstraintEnableDtlsSrtpTrue": {
+    "message": "המגבלה `DtlsSrtpKeyAgreement` הוסרה. ציינת ערך `true` למגבלה הזו ואין לו השפעה, אבל אפשר להסיר את המגבלה הזו כדי לשמור על סדר."
+  },
+  "core/lib/deprecations-strings.js | RTCPeerConnectionGetStatsLegacyNonCompliant": {
+    "message": "הפונקציה getStats()‎ שמבוססת על קריאה חוזרת (callback) הוצאה משימוש ותוסר. במקומה אפשר להשתמש בפונקציה getStats()‎ שתואמת למפרט."
+  },
+  "core/lib/deprecations-strings.js | RangeExpand": {
+    "message": "ה-API‏ Range.expand()‎ הוצא משימוש. במקומו צריך להשתמש ב-Selection.modify()‎."
+  },
+  "core/lib/deprecations-strings.js | RequestedSubresourceWithEmbeddedCredentials": {
+    "message": "בקשות למשאבי משנה שכתובות ה-URL שלהן מכילות פרטי כניסה מוטמעים (למשל `https://user:pass@host/`) חסומות."
+  },
+  "core/lib/deprecations-strings.js | RtcpMuxPolicyNegotiate": {
+    "message": "האפשרות `rtcpMuxPolicy` הוצאה משימוש ותוסר."
+  },
+  "core/lib/deprecations-strings.js | SharedArrayBufferConstructedWithoutIsolation": {
+    "message": "תידרש חסימה לגישה מדומיינים אחרים עבור `SharedArrayBuffer`. פרטים נוספים זמינים בכתובת https://developer.chrome.com/blog/enabling-shared-array-buffer/‎."
+  },
+  "core/lib/deprecations-strings.js | TextToSpeech_DisallowedByAutoplay": {
+    "message": "האפשרות להפעיל את `speechSynthesis.speak()` ללא הפעלת משתמש הוצאה משימוש ותוסר."
+  },
+  "core/lib/deprecations-strings.js | V8SharedArrayBufferConstructedInExtensionWithoutIsolation": {
+    "message": "כדי להמשיך להשתמש ב-`SharedArrayBuffer`, צריך לאשר חסימה לגישה מדומיינים אחרים בתוספים. הסבר זמין בכתובת https://developer.chrome.com/docs/extensions/mv3/cross-origin-isolation/‎."
+  },
+  "core/lib/deprecations-strings.js | WebSQL": {
+    "message": "Web SQL הוצא משימוש. אפשר להשתמש ב-SQLite WebAssembly או ב-Indexed Database."
+  },
+  "core/lib/deprecations-strings.js | WindowPlacementPermissionDescriptorUsed": {
+    "message": "רכיב descriptor של ההרשאה `window-placement` הוצא משימוש. במקומו צריך להשתמש ברכיב `window-management`. ניתן לקבל עוד עזרה בכתובת https://bit.ly/window-placement-rename."
+  },
+  "core/lib/deprecations-strings.js | WindowPlacementPermissionPolicyParsed": {
+    "message": "מדיניות ההרשאות `window-placement` הוצאה משימוש. במקומה צריך להשתמש במדיניות `window-management`. ניתן לקבל עוד עזרה בכתובת https://bit.ly/window-placement-rename."
+  },
+  "core/lib/deprecations-strings.js | XHRJSONEncodingDetection": {
+    "message": "אין תמיכה ב-UTF-16 ב-JSON של התגובה ב-`XMLHttpRequest`"
+  },
+  "core/lib/deprecations-strings.js | XMLHttpRequestSynchronousInNonWorkerOutsideBeforeUnload": {
+    "message": "האפשרות הסינכרונית `XMLHttpRequest` ב-thread הראשי הוצאה משימוש כי היא משפיעה לרעה על החוויה של משתמשי הקצה. ניתן לקבל עוד עזרה בכתובת https://xhr.spec.whatwg.org/‎."
+  },
+  "core/lib/deprecations-strings.js | XRSupportsSession": {
+    "message": "האפשרות `supportsSession()` הוצאה משימוש. במקומה, יש להשתמש באפשרות `isSessionSupported()` ולסמן את הערך הבוליאני שהתקבל בהתאמת הנתונים."
   },
   "core/lib/i18n/i18n.js | columnBlockingTime": {
     "message": "משך החסימה של התהליכון הראשי"
@@ -2538,7 +2853,7 @@
     "message": "כדאי להתקין [מודול של Drupal](https://www.drupal.org/project/project_module?f%5B0%5D=&f%5B1%5D=&f%5B2%5D=im_vid_3%3A67&f%5B3%5D=&f%5B4%5D=sm_field_project_type%3Afull&f%5B5%5D=&f%5B6%5D=&text=%22lazy+load%22&solrsort=iss_project_release_usage+desc&op=Search) שיכול לטעון תמונות בהדרגה. כדי לשפר ביצועים, מודולים מסוג זה מאפשרים לדחות את טעינת התמונות שאינן מופיעות מייד במסך."
   },
   "node_modules/lighthouse-stack-packs/packs/drupal.js | render-blocking-resources": {
-    "message": "יש לשקול להשתמש במודול כדי להטביע נכסים קריטיים של CSS ושל JavaScript או כדי לטעון נכסים באופן אסינכרוני באמצעות JavaScript כגון מודול של [צבירת CSS/JS מתקדמת](https://www.drupal.org/project/advagg). חשוב: ייתכן שהאופטימיזציות המבוצעות על ידי המודול הזה יגרמו לתקלות באתר, ולכן כנראה שיהיה צורך לערוך שינויים בקוד."
+    "message": "Consider using a module to inline critical CSS and JavaScript, and use the defer attribute for non-critical CSS or JavaScript."
   },
   "node_modules/lighthouse-stack-packs/packs/drupal.js | server-response-time": {
     "message": "עיצובים, מודולים ומפרטי שרתים משפיעים על זמן התגובה של השרת. אפשר להשתמש בעיצוב שעבר אופטימיזציה, לבחור בקפידה מודול לאופטימיזציה ו/או לשדרג את השרת. שרתי האירוח שלך צריכים להשתמש בהעברה למטמון של PHP opcode ושל הזיכרון כדי לצמצם את זמני השאילתות של מסדי נתונים כגון Redis או Memcache, וגם להשתמש בלוגיקה באיכות אופטימלית של האפליקציה כדי להכין דפים במהירות רבה יותר."
@@ -2547,10 +2862,10 @@
     "message": "כדאי לשקול שימוש ב[סגנונות התמונות הרספונסיביות](https://www.drupal.org/docs/8/mobile-guide/responsive-images-in-drupal-8) כדי לצמצם את הגודל של התמונות שטענת לדף. אם נעשה שימוש בתצוגות להצגת פריטי תוכן מרובים בדף, כדאי לשקול יישום עימוד כדי להגביל את מספר פריטי התוכן המופיעים בכל דף נתון."
   },
   "node_modules/lighthouse-stack-packs/packs/drupal.js | unminified-css": {
-    "message": "יש לוודא ש\"קובצי ה-CSS המצטברים\" מופעלים בדף \"ניהול » הגדרה » פיתוח\". ניתן גם להגדיר אפשרויות צבירה מתקדמות יותר באמצעות [מודולים נוספים](https://www.drupal.org/project/project_module?f%5B0%5D=&f%5B1%5D=&f%5B2%5D=im_vid_3%3A123&f%5B3%5D=&f%5B4%5D=sm_field_project_type%3Afull&f%5B5%5D=&f%5B6%5D=&text=css+aggregation&solrsort=iss_project_release_usage+desc&op=Search) שיכולים להאיץ את האתר בעזרת שרשור, הקטנה ודחיסה של סגנונות CSS."
+    "message": "Ensure you have enabled \"Aggregate CSS files\" in the \"Administration » Configuration » Development\" page.  Ensure your Drupal site is running at least Drupal 10.1 for improved asset aggregation support."
   },
   "node_modules/lighthouse-stack-packs/packs/drupal.js | unminified-javascript": {
-    "message": "יש לוודא ש\"קובצי ה-JavaScript המצטברים\" מופעלים בדף \"ניהול » הגדרה » פיתוח\". ניתן גם להגדיר אפשרויות צבירה מתקדמות יותר באמצעות [מודולים נוספים](https://www.drupal.org/project/project_module?f%5B0%5D=&f%5B1%5D=&f%5B2%5D=im_vid_3%3A123&f%5B3%5D=&f%5B4%5D=sm_field_project_type%3Afull&f%5B5%5D=&f%5B6%5D=&text=javascript+aggregation&solrsort=iss_project_release_usage+desc&op=Search) שיכולים להאיץ את האתר בעזרת שרשור, הקטנה ודחיסה של נכסי JavaScript."
+    "message": "Ensure you have enabled \"Aggregate JavaScript files\" in the \"Administration » Configuration » Development\" page.  Ensure your Drupal site is running at least Drupal 10.1 for improved asset aggregation support."
   },
   "node_modules/lighthouse-stack-packs/packs/drupal.js | unused-css-rules": {
     "message": "כדאי לשקול הסרה של כללי CSS שאינם בשימוש, ולצרף לדף הרלוונטי או לרכיב בדף רק את ספריות ה-Drupal הנדרשות. לפרטים נוספים, ניתן לעיין ב[קישור לתיעוד של Drupal](https://www.drupal.org/docs/8/creating-custom-modules/adding-stylesheets-css-and-javascript-js-to-a-drupal-8-module#library). כדי לזהות ספריות מצורפות שמוסיפות תוכן CSS מיותר, כדאי להפעיל [כיסוי קוד](https://developers.google.com/web/updates/2017/04/devtools-release-notes#coverage) ב-Chrome DevTools. לאחר השבתה של צבירת CSS באתר ה-Drupal שלך, ניתן יהיה לזהות את העיצוב/המודול שאחראים להוספת גיליון הסגנונות. העיצובים/המודולים הבעייתיים הם אלה שברשימת גיליונות הסגנונות שלהם יש כמות גדולה של כיסוי קוד באדום. עיצוב/מודול צריך להכניס גיליון סגנונות לתור רק אם נעשה בו שימוש בפועל בדף."
@@ -2750,6 +3065,48 @@
   "node_modules/lighthouse-stack-packs/packs/next.js | uses-text-compression": {
     "message": "עליך להפעיל דחיסת נתונים בשרת Next.js. [למידע נוסף](https://nextjs.org/docs/api-reference/next.config.js/compression)."
   },
+  "node_modules/lighthouse-stack-packs/packs/nitropack.js | dom-size": {
+    "message": "Contact your account manager to enable [`HTML Lazy Load`](https://support.nitropack.io/hc/en-us/articles/17144942904337). Configuring it will prioritize and optimize your page rendering performance."
+  },
+  "node_modules/lighthouse-stack-packs/packs/nitropack.js | font-display": {
+    "message": "Use the [`Override Font Rendering Behavior`](https://support.nitropack.io/hc/en-us/articles/16547358865041) option in NitroPack to set a desired value for the CSS font-display rule."
+  },
+  "node_modules/lighthouse-stack-packs/packs/nitropack.js | modern-image-formats": {
+    "message": "Use [`Image Optimization`](https://support.nitropack.io/hc/en-us/articles/16547237162513) to automatically convert your images to WebP."
+  },
+  "node_modules/lighthouse-stack-packs/packs/nitropack.js | offscreen-images": {
+    "message": "Defer offscreen images by enabling [`Automatic Image Lazy Loading`](https://support.nitropack.io/hc/en-us/articles/12457493524369-NitroPack-Lazy-Loading-Feature-for-Images)."
+  },
+  "node_modules/lighthouse-stack-packs/packs/nitropack.js | render-blocking-resources": {
+    "message": "Enable [`Remove render-blocking resources`](https://support.nitropack.io/hc/en-us/articles/13820893500049-How-to-Deal-with-Render-Blocking-Resources-in-NitroPack) in NitroPack for faster initial load times."
+  },
+  "node_modules/lighthouse-stack-packs/packs/nitropack.js | server-response-time": {
+    "message": "Improve server response time and optimize perceived performance by activating [`Instant Load`](https://support.nitropack.io/hc/en-us/articles/16547340617361)."
+  },
+  "node_modules/lighthouse-stack-packs/packs/nitropack.js | unminified-css": {
+    "message": "Enable [`Minify resources`](https://support.nitropack.io/hc/en-us/articles/360061059394-Minify-Resources) in your Caching settings to reduce the size of your CSS, HTML, and JavaScript files for faster load times."
+  },
+  "node_modules/lighthouse-stack-packs/packs/nitropack.js | unminified-javascript": {
+    "message": "Enable [`Minify resources`](https://support.nitropack.io/hc/en-us/articles/360061059394-Minify-Resources) in your Caching settings to reduce the size of your JS, HTML, and CSS files for faster load times."
+  },
+  "node_modules/lighthouse-stack-packs/packs/nitropack.js | unused-css-rules": {
+    "message": "Enable [`Reduce Unused CSS`](https://support.nitropack.io/hc/en-us/articles/360020418457-Reduce-Unused-CSS) to remove CSS rules that are not applicable to this page."
+  },
+  "node_modules/lighthouse-stack-packs/packs/nitropack.js | unused-javascript": {
+    "message": "Configure [`Delayed Scripts`](https://support.nitropack.io/hc/en-us/articles/1500002600942-Delayed-Scripts) in NitroPack to delay loading of scripts until they are needed."
+  },
+  "node_modules/lighthouse-stack-packs/packs/nitropack.js | uses-long-cache-ttl": {
+    "message": "Go to the [`Improve Server Response Time`](https://support.nitropack.io/hc/en-us/articles/1500002321821-Improve-Server-Response-Time) feature in the `Caching` menu and adjust your page cache expiration time to improve loading times and user experience."
+  },
+  "node_modules/lighthouse-stack-packs/packs/nitropack.js | uses-optimized-images": {
+    "message": "Automatically compress, optimize, and convert your images into WebP by enabling the [`Image Optimization`](https://support.nitropack.io/hc/en-us/articles/14177271695121-How-to-serve-images-in-next-gen-formats-using-NitroPack) setting."
+  },
+  "node_modules/lighthouse-stack-packs/packs/nitropack.js | uses-responsive-images": {
+    "message": "Enable [`Adaptive Image Sizing`](https://support.nitropack.io/hc/en-us/articles/10123833029905-How-to-Enable-Adaptive-Image-Sizing-For-Your-Site) to preemptively optimize your images and make them match the dimensions of the containers they’re displayed in across all devices."
+  },
+  "node_modules/lighthouse-stack-packs/packs/nitropack.js | uses-text-compression": {
+    "message": "Use [`Gzip compression`](https://support.nitropack.io/hc/en-us/articles/13229297479313-Enabling-GZIP-compression) in NitroPack to reduce the size of the files that are sent to the browser."
+  },
   "node_modules/lighthouse-stack-packs/packs/nuxt.js | modern-image-formats": {
     "message": "עליך להשתמש ברכיב `nuxt/image` ולהגדיר את `format=\"webp\"`. [מידע נוסף](https://image.nuxtjs.org/components/nuxt-img#format)."
   },
@@ -2830,6 +3187,21 @@
   },
   "node_modules/lighthouse-stack-packs/packs/react.js | user-timings": {
     "message": "כדי למדוד את ביצועי הרינדור של הרכיבים, אפשר להיעזר ב-React DevTools Profiler, שמשתמש ב-Profiler API. [מידע נוסף.](https://reactjs.org/blog/2018/09/10/introducing-the-react-profiler.html)"
+  },
+  "node_modules/lighthouse-stack-packs/packs/wix.js | efficient-animated-content": {
+    "message": "צריך למקם סרטונים בתוך `VideoBoxes`, להתאים אותם אישית באמצעות `Video Masks` או להוסיף `Transparent Videos`. [מידע נוסף](https://support.wix.com/en/article/wix-video-about-wix-video)"
+  },
+  "node_modules/lighthouse-stack-packs/packs/wix.js | modern-image-formats": {
+    "message": "אפשר להעלות תמונות באמצעות `Wix Media Manager` כדי שהן יוצגו בפורמט WebP באופן אוטומטי. כדאי לבדוק [דרכים נוספות לאופטימיזציה](https://support.wix.com/en/article/site-performance-optimizing-your-media) של המדיה באתר."
+  },
+  "node_modules/lighthouse-stack-packs/packs/wix.js | render-blocking-resources": {
+    "message": "כש[מוסיפים קוד מצד שלישי](https://support.wix.com/en/article/site-performance-using-third-party-code-on-your-site) בכרטיסייה `Custom Code` שבמרכז הבקרה של האתר, חשוב לוודא שהוא נדחה או נטען בסוף גוף הקוד. אם אפשר, כדאי להשתמש ב[שילובים](https://support.wix.com/en/article/about-marketing-integrations) של Wix להטמעת כלי שיווק באתר. "
+  },
+  "node_modules/lighthouse-stack-packs/packs/wix.js | server-response-time": {
+    "message": "ב-Wix נעשה שימוש ברשתות CDN ובשמירה במטמון כדי שזמן התגובה יהיה קצר ככל שניתן עבור רוב המבקרים. כדאי [להפעיל שמירה במטמון באופן ידני](https://support.wix.com/en/article/site-performance-caching-pages-to-optimize-loading-speed) באתר, במיוחד אם משתמשים ב-`Velo`."
+  },
+  "node_modules/lighthouse-stack-packs/packs/wix.js | unused-javascript": {
+    "message": "עליך לבדוק את כל הקודים שהוספת לאתר מצדדים שלישיים בכרטיסייה `Custom Code` שבמרכז הבקרה של האתר. חשוב לשמור רק את השירותים הנחוצים לאתר. [מידע נוסף](https://support.wix.com/en/article/site-performance-removing-unused-javascript)"
   },
   "node_modules/lighthouse-stack-packs/packs/wordpress.js | efficient-animated-content": {
     "message": "כדאי לשקול העלאה של ה-GIF לשירות שיאפשר להטמיע אותו כסרטון HTML5."
@@ -2935,6 +3307,9 @@
   },
   "report/renderer/report-utils.js | dropdownSaveJSON": {
     "message": "שמירה כ-JSON"
+  },
+  "report/renderer/report-utils.js | dropdownViewUnthrottledTrace": {
+    "message": "View Unthrottled Trace"
   },
   "report/renderer/report-utils.js | dropdownViewer": {
     "message": "פתיחה ב-Viewer"
@@ -3055,9 +3430,6 @@
   },
   "report/renderer/report-utils.js | varianceDisclaimer": {
     "message": "הערכים משוערים והם עשויים להשתנות. [ציון הביצועים מחושב](https://developer.chrome.com/docs/lighthouse/performance/performance-scoring/) ישירות לפי הערכים האלה."
-  },
-  "report/renderer/report-utils.js | viewOriginalTraceLabel": {
-    "message": "צפייה בעקבות המקוריות"
   },
   "report/renderer/report-utils.js | viewTraceLabel": {
     "message": "צפייה בעקבות"

@@ -99,7 +99,7 @@ uint32_t Instruction::GetBitWidth() const {
     return bit_width;
 }
 
-AtomicInstructionInfo Instruction::GetAtomicInfo(const SHADER_MODULE_STATE& module_state) const {
+AtomicInstructionInfo Instruction::GetAtomicInfo(const SPIRV_MODULE_STATE& module_state) const {
     AtomicInstructionInfo info;
 
     // All atomics have a pointer referenced
@@ -129,11 +129,13 @@ spv::BuiltIn Instruction::GetBuiltIn() const {
     }
 }
 
+bool Instruction::IsArray() const { return (Opcode() == spv::OpTypeArray || Opcode() == spv::OpTypeRuntimeArray); }
+
 spv::Dim Instruction::FindImageDim() const { return (Opcode() == spv::OpTypeImage) ? (spv::Dim(Word(3))) : spv::DimMax; }
 
-bool Instruction::IsArrayed() const { return (Opcode() == spv::OpTypeImage) && (Word(5) != 0); }
+bool Instruction::IsImageArray() const { return (Opcode() == spv::OpTypeImage) && (Word(5) != 0); }
 
-bool Instruction::IsMultisampled() const {
+bool Instruction::IsImageMultisampled() const {
     // spirv-val makes sure that the MS operand is only non-zero when possible to be Multisampled
     return (Opcode() == spv::OpTypeImage) && (Word(6) != 0);
 }

@@ -33,6 +33,7 @@
 #include "absl/strings/string_view.h"
 #include "absl/synchronization/mutex.h"
 #include "absl/types/span.h"
+#include "./fuzztest/domain_core.h"
 #include "./fuzztest/internal/any.h"
 #include "./fuzztest/internal/domains/arbitrary_impl.h"
 #include "./fuzztest/internal/domains/container_of_impl.h"
@@ -44,6 +45,7 @@
 #include "./fuzztest/internal/logging.h"
 #include "./fuzztest/internal/meta.h"
 #include "./fuzztest/internal/serialization.h"
+#include "./fuzztest/internal/status.h"
 #include "./fuzztest/internal/type_support.h"
 
 namespace google::protobuf {
@@ -181,15 +183,6 @@ auto VisitProtobufField(const FieldDescriptor* field, Visitor visitor) {
         return visitor.template VisitSingular<ProtoMessageTag>(field);
     }
   }
-}
-
-template <typename Message>
-auto GetProtobufField(const Message* prototype, int number) {
-  auto* field = prototype->GetDescriptor()->FindFieldByNumber(number);
-  if (field == nullptr) {
-    field = prototype->GetReflection()->FindKnownExtensionByNumber(number);
-  }
-  return field;
 }
 
 template <typename T>
@@ -511,8 +504,7 @@ class ProtobufDomainUntypedImpl
     absl::flat_hash_map<int, int> oneof_to_field;
 
     // TODO(b/241124202): Use a valid proto with minimum size.
-    for (int i = 0; i < descriptor->field_count(); ++i) {
-      const auto* field = descriptor->field(i);
+    for (const FieldDescriptor* field : GetProtobufFields(descriptor)) {
       if (auto* oneof = field->containing_oneof()) {
         if (!oneof_to_field.contains(oneof->index())) {
           oneof_to_field[oneof->index()] = SelectAFieldIndexInOneof(
@@ -605,11 +597,10 @@ class ProtobufDomainUntypedImpl
 
   uint64_t CountNumberOfFields(const corpus_type& val) {
     uint64_t total_weight = 0;
-    auto* descriptor = prototype_.Get()->GetDescriptor();
-    if (descriptor->field_count() == 0) return total_weight;
+    auto descriptor = prototype_.Get()->GetDescriptor();
+    if (GetFieldCount(descriptor) == 0) return total_weight;
 
-    for (int i = 0; i < descriptor->field_count(); ++i) {
-      FieldDescriptor* field = descriptor->field(i);
+    for (const FieldDescriptor* field : GetProtobufFields(descriptor)) {
       if (field->containing_oneof() &&
           GetOneofFieldPolicy(field) == OptionalPolicy::kAlwaysNull) {
         continue;
@@ -637,11 +628,10 @@ class ProtobufDomainUntypedImpl
                                bool only_shrink,
                                uint64_t selected_field_index) {
     uint64_t field_counter = 0;
-    auto* descriptor = prototype_.Get()->GetDescriptor();
-    if (descriptor->field_count() == 0) return field_counter;
+    auto descriptor = prototype_.Get()->GetDescriptor();
+    if (GetFieldCount(descriptor) == 0) return field_counter;
 
-    for (int i = 0; i < descriptor->field_count(); ++i) {
-      FieldDescriptor* field = descriptor->field(i);
+    for (const FieldDescriptor* field : GetProtobufFields(descriptor)) {
       if (field->containing_oneof() &&
           GetOneofFieldPolicy(field) == OptionalPolicy::kAlwaysNull) {
         continue;
@@ -673,8 +663,7 @@ class ProtobufDomainUntypedImpl
   }
 
   void Mutate(corpus_type& val, absl::BitGenRef prng, bool only_shrink) {
-    auto* descriptor = prototype_.Get()->GetDescriptor();
-    if (descriptor->field_count() == 0) return;
+    if (GetFieldCount(prototype_.Get()->GetDescriptor()) == 0) return;
     // TODO(JunyangShao): Maybe make CountNumberOfFields static.
     uint64_t total_weight = CountNumberOfFields(val);
     uint64_t selected_weight = absl::Uniform(absl::IntervalClosedClosed, prng,
@@ -694,7 +683,7 @@ class ProtobufDomainUntypedImpl
       if (!value.has_value()) {
         FUZZTEST_INTERNAL_CHECK_PRECONDITION(
             !field->is_required(), "required field '",
-            std::string(field->name()), "' cannot have null values.");
+            std::string(field->full_name()), "' cannot have null values.");
         message.GetReflection()->ClearField(&message, field);
         return;
       }
@@ -732,7 +721,7 @@ class ProtobufDomainUntypedImpl
     value_type out(prototype_.Get()->New());
 
     for (auto& [number, data] : value) {
-      auto* field = GetProtobufField(prototype_.Get(), number);
+      auto* field = GetField(number);
       VisitProtobufField(field, GetValueVisitor{*out, *this, data});
     }
 
@@ -836,22 +825,23 @@ class ProtobufDomainUntypedImpl
     for (const auto& sub : *subs) {
       auto pair_subs = sub.Subs();
       if (!pair_subs || pair_subs->size() != 2) return std::nullopt;
-      auto number = (*pair_subs)[0].GetScalar<int>();
-      if (!number) return std::nullopt;
-      auto* field = GetProtobufField(prototype_.Get(), *number);
+      FieldDescriptor* field = nullptr;
+      if (auto number = (*pair_subs)[0].GetScalar<int>(); number.has_value()) {
+        field = GetField(*number);
+      } else if (auto name = (*pair_subs)[0].GetScalar<std::string>();
+                 name.has_value()) {
+        field = GetField(std::string(*name));
+      }
       if (!field) return std::nullopt;
       present_fields.insert(field->number());
       std::optional<GenericDomainCorpusType> inner_parsed;
       VisitProtobufField(field,
                          ParseVisitor{*this, (*pair_subs)[1], inner_parsed});
       if (!inner_parsed) return std::nullopt;
-      out[*number] = *std::move(inner_parsed);
+      out[field->number()] = *std::move(inner_parsed);
     }
-    for (int field_index = 0;
-         field_index < prototype_.Get()->GetDescriptor()->field_count();
-         ++field_index) {
-      const FieldDescriptor* field =
-          prototype_.Get()->GetDescriptor()->field(field_index);
+    for (const FieldDescriptor* field :
+         GetProtobufFields(prototype_.Get()->GetDescriptor())) {
       if (present_fields.contains(field->number())) continue;
       std::optional<GenericDomainCorpusType> inner_parsed;
       IRObject unset_value;
@@ -885,11 +875,11 @@ class ProtobufDomainUntypedImpl
     IRObject out;
     auto& subs = out.MutableSubs();
     for (auto& [number, inner] : v) {
-      auto* field = GetProtobufField(prototype_.Get(), number);
+      auto* field = GetField(number);
       FUZZTEST_INTERNAL_CHECK(field, "Field not found by number: ", number);
       IRObject& pair = subs.emplace_back();
       auto& pair_subs = pair.MutableSubs();
-      pair_subs.emplace_back(number);
+      pair_subs.emplace_back(GetFieldName(field));
       VisitProtobufField(
           field, SerializeVisitor{*this, inner, pair_subs.emplace_back()});
     }
@@ -900,16 +890,18 @@ class ProtobufDomainUntypedImpl
     const ProtobufDomainUntypedImpl& self;
     // nullopt indicates that the field is not set.
     const std::optional<GenericDomainCorpusType>& corpus_value;
-    bool& out;
+    absl::Status& out;
 
     template <typename T>
     void VisitSingular(const FieldDescriptor* field) {
       const GenericDomainCorpusType value =
           corpus_value.has_value()
               ? *corpus_value
-              : GetUnsetCorpusValue<T, /*is_repeated=*/false>(field);
-      out = self.GetSubDomain<T, /*is_repeated=*/false>(field)
-                .ValidateCorpusValue(value);
+              : *self.GetSubDomain<T, /*is_repeated=*/false>(field).FromValue(
+                    std::nullopt);
+      absl::Status s = self.GetSubDomain<T, /*is_repeated=*/false>(field)
+                           .ValidateCorpusValue(value);
+      out = Prefix(s, absl::StrCat("Invalid value for field ", field->name()));
     }
 
     template <typename T>
@@ -917,45 +909,28 @@ class ProtobufDomainUntypedImpl
       const GenericDomainCorpusType value =
           corpus_value.has_value()
               ? *corpus_value
-              : GetUnsetCorpusValue<T, /*is_repeated=*/true>(field);
-      out =
+              : *self.GetSubDomain<T, /*is_repeated=*/true>(field).FromValue(
+                    {});
+      absl::Status s =
           self.GetSubDomain<T, /*is_repeated=*/true>(field).ValidateCorpusValue(
               value);
-    }
-
-   private:
-    template <typename T, bool is_repeated>
-    GenericDomainCorpusType GetUnsetCorpusValue(const FieldDescriptor* field) {
-      IRObject unset_value;
-      if constexpr (is_repeated) {
-        unset_value = IRObject(std::vector<IRObject>{});
-      } else {
-        unset_value = IRObject(std::vector<IRObject>{IRObject(0)});
-      }
-      std::optional<GenericDomainCorpusType> result =
-          self.GetSubDomain<T, is_repeated>(field).ParseCorpus(unset_value);
-      FUZZTEST_INTERNAL_CHECK(result.has_value(),
-                              "Invalid unset value for field.");
-      return *result;
+      out = Prefix(s, absl::StrCat("Invalid value for field ", field->name()));
     }
   };
 
-  bool ValidateCorpusValue(const corpus_type& corpus_value) const {
-    for (int field_index = 0;
-         field_index < prototype_.Get()->GetDescriptor()->field_count();
-         ++field_index) {
-      const FieldDescriptor* field =
-          prototype_.Get()->GetDescriptor()->field(field_index);
+  absl::Status ValidateCorpusValue(const corpus_type& corpus_value) const {
+    for (const FieldDescriptor* field :
+         GetProtobufFields(prototype_.Get()->GetDescriptor())) {
       auto field_number_value = corpus_value.find(field->number());
       auto inner_corpus_value = (field_number_value != corpus_value.end())
                                     ? std::optional(field_number_value->second)
                                     : std::nullopt;
-      bool result;
+      absl::Status result;
       VisitProtobufField(field,
                          ValidateVisitor{*this, inner_corpus_value, result});
-      if (!result) return false;
+      if (!result.ok()) return result;
     }
-    return true;
+    return absl::OkStatus();
   }
 
   auto GetPrinter() const { return ProtobufPrinter{}; }
@@ -1036,13 +1011,46 @@ class ProtobufDomainUntypedImpl
     customized_fields_.insert(field->index());
   }
 
-  const FieldDescriptor* GetField(absl::string_view field_name) const {
+  auto GetField(absl::string_view field_name) const {
     auto* field = prototype_.Get()->GetDescriptor()->FindFieldByName(
         std::string(field_name));
+    if (field == nullptr) {
+      field = prototype_.Get()->GetReflection()->FindKnownExtensionByName(
+          std::string(field_name));
+    }
     FUZZTEST_INTERNAL_CHECK_PRECONDITION(field != nullptr,
                                          "Invalid field name '",
                                          std::string(field_name), "'.");
     return field;
+  }
+
+  auto GetField(int number) const {
+    auto* field = prototype_.Get()->GetDescriptor()->FindFieldByNumber(number);
+    if (field == nullptr) {
+      field =
+          prototype_.Get()->GetReflection()->FindKnownExtensionByNumber(number);
+    }
+    return field;
+  }
+
+  static auto GetFieldCount(const Descriptor* descriptor) {
+    std::vector<const FieldDescriptor*> extensions;
+    descriptor->file()->pool()->FindAllExtensions(descriptor, &extensions);
+    return descriptor->field_count() + extensions.size();
+  }
+
+  static auto GetProtobufFields(const Descriptor* descriptor) {
+    std::vector<const FieldDescriptor*> fields;
+    fields.reserve(descriptor->field_count());
+    for (int i = 0; i < descriptor->field_count(); ++i) {
+      fields.push_back(descriptor->field(i));
+    }
+    descriptor->file()->pool()->FindAllExtensions(descriptor, &fields);
+    return fields;
+  }
+
+  static auto GetFieldName(const FieldDescriptor* field) {
+    return field->is_extension() ? field->full_name() : field->name();
   }
 
   void WithOneofField(absl::string_view field_name, OptionalPolicy policy) {
@@ -1103,7 +1111,7 @@ class ProtobufDomainUntypedImpl
       } else if (policy == OptionalPolicy::kWithoutNull) {
         domain.SetWithoutNull();
       }
-      self.WithField(field->name(), domain);
+      self.WithField(self.GetFieldName(field), domain);
     }
 
     template <typename T>
@@ -1117,7 +1125,7 @@ class ProtobufDomainUntypedImpl
       } else if (policy == OptionalPolicy::kWithoutNull) {
         domain.WithMinSize(1);
       }
-      self.WithField(field->name(), domain);
+      self.WithField(self.GetFieldName(field), domain);
     }
   };
 
@@ -1138,7 +1146,7 @@ class ProtobufDomainUntypedImpl
           false,
           "Customizing repeated field size is not applicable to non-repeated "
           "field ",
-          field->name(), ".");
+          field->full_name(), ".");
     }
 
     template <typename T>
@@ -1153,7 +1161,7 @@ class ProtobufDomainUntypedImpl
       if (max_size.has_value()) {
         domain.WithMaxSize(*max_size);
       }
-      self.WithField(field->name(), domain);
+      self.WithField(self.GetFieldName(field), domain);
     }
   };
 
@@ -1207,7 +1215,7 @@ class ProtobufDomainUntypedImpl
     FUZZTEST_INTERNAL_CHECK(
         field->containing_oneof(),
         "GetOneofFieldPolicy should apply to oneof fields only! ",
-        field->name());
+        field->full_name());
     auto result = oneof_fields_policies_.find(field->index());
     if (result != oneof_fields_policies_.end()) {
       return result->second;
@@ -1282,8 +1290,7 @@ class ProtobufDomainUntypedImpl
     if constexpr (std::is_same_v<T, std::string>) {
       if (field->type() == FieldDescriptor::TYPE_STRING) {
         // Can only use UTF-8. For now, simplify as just ASCII.
-        return Domain<T>(ContainerOfImpl<std::string, InRangeImpl<char>>(
-            InRangeImpl<char>(char{0}, char{127})));
+        return Domain<T>(AsciiString());
       }
     }
 
@@ -1422,11 +1429,15 @@ class ProtobufDomainUntypedImpl
         return true;
       }
     }
-    for (int i = 0; i < descriptor->field_count(); ++i) {
-      const auto* field = descriptor->field(i);
+    for (const FieldDescriptor* field : GetProtobufFields(descriptor)) {
       if (field->containing_oneof()) continue;
       const auto* child = field->message_type();
       if (!child) continue;
+      if (policy_.GetDefaultDomainForProtobufs(field) != std::nullopt) {
+        // If this field is recursive, it will be detected when initializing
+        // its default domain. Otherwise, this field can always be set safely.
+        continue;
+      }
       if (consider_non_terminating_recursions) {
         const bool should_be_set =
             IsRequired(field) ||
@@ -1531,7 +1542,7 @@ class ProtobufDomainImpl
     return inner_.SerializeCorpus(v);
   }
 
-  bool ValidateCorpusValue(const corpus_type& corpus_value) const {
+  absl::Status ValidateCorpusValue(const corpus_type& corpus_value) const {
     return inner_.ValidateCorpusValue(corpus_value);
   }
 
@@ -1894,7 +1905,7 @@ class ProtobufDomainImpl
           return {std::make_unique<value_type_t<Inner>>(proto_message)};
         },
         [](const std::unique_ptr<typename T::Message>& proto_message)
-            -> std::tuple<value_type_t<Inner>> {
+            -> std::optional<std::tuple<value_type_t<Inner>>> {
           return *static_cast<std::add_pointer_t<value_type_t<Inner>>>(
               proto_message.get());
         },
@@ -1913,7 +1924,8 @@ class ProtobufDomainImpl
               *proto_message);
         },
         [](const std::optional<std::unique_ptr<typename T::Message>>&
-               proto_message) -> std::tuple<value_type_t<Inner>> {
+               proto_message)
+            -> std::optional<std::tuple<value_type_t<Inner>>> {
           if (!proto_message.has_value()) return std::nullopt;
           return *static_cast<
               std::add_pointer_t<typename value_type_t<Inner>::value_type>>(
@@ -1937,7 +1949,8 @@ class ProtobufDomainImpl
           return result;
         },
         [](const std::vector<std::unique_ptr<typename T::Message>>&
-               proto_message) -> std::tuple<value_type_t<Inner>> {
+               proto_message)
+            -> std::optional<std::tuple<value_type_t<Inner>>> {
           value_type_t<Inner> result;
           for (auto& entry : proto_message) {
             result.push_back(
@@ -1994,8 +2007,8 @@ class ArbitraryImpl<T, std::enable_if_t<is_protocol_buffer_enum_v<T>>>
     return ProtobufEnumPrinter<decltype(descriptor())>{descriptor()};
   }
 
-  bool ValidateCorpusValue(const value_type&) const {
-    return true;  // Any number is fine.
+  absl::Status ValidateCorpusValue(const value_type&) const {
+    return absl::OkStatus();  // Any number is fine.
   }
 
  private:

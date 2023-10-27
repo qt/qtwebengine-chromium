@@ -1,8 +1,10 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "osp/public/protocol_connection_client.h"
+
+#include <utility>
 
 namespace openscreen {
 namespace osp {
@@ -14,7 +16,8 @@ ProtocolConnectionClient::ConnectRequest::ConnectRequest(
     uint64_t request_id)
     : parent_(parent), request_id_(request_id) {}
 
-ProtocolConnectionClient::ConnectRequest::ConnectRequest(ConnectRequest&& other)
+ProtocolConnectionClient::ConnectRequest::ConnectRequest(
+    ConnectRequest&& other) noexcept
     : parent_(other.parent_), request_id_(other.request_id_) {
   other.request_id_ = 0;
 }
@@ -25,7 +28,8 @@ ProtocolConnectionClient::ConnectRequest::~ConnectRequest() {
 }
 
 ProtocolConnectionClient::ConnectRequest&
-ProtocolConnectionClient::ConnectRequest::operator=(ConnectRequest&& other) {
+ProtocolConnectionClient::ConnectRequest::operator=(
+    ConnectRequest&& other) noexcept {
   using std::swap;
   swap(parent_, other.parent_);
   swap(request_id_, other.request_id_);

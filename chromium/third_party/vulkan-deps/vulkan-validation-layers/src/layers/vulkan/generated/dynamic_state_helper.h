@@ -1,7 +1,6 @@
 // *** THIS FILE IS GENERATED - DO NOT EDIT ***
 // See dynamic_state_generator.py for modifications
 
-
 /***************************************************************************
  *
  * Copyright (c) 2023 Valve Corporation
@@ -19,6 +18,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  ****************************************************************************/
+
+// NOLINTBEGIN
 
 #pragma once
 #include <bitset>
@@ -105,3 +106,4 @@ CBDynamicState ConvertToCBDynamicState(VkDynamicState dynamic_state);
 const char* DynamicStateToString(CBDynamicState dynamic_state);
 std::string DynamicStatesToString(CBDynamicFlags const &dynamic_states);
 
+// NOLINTEND

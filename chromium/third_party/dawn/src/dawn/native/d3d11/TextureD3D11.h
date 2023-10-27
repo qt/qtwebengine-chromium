@@ -36,6 +36,8 @@ namespace dawn::native::d3d11 {
 
 class CommandRecordingContext;
 class Device;
+class TextureView;
+class SharedTextureMemory;
 
 MaybeError ValidateTextureCanBeWrapped(ID3D11Resource* d3d11Resource,
                                        const TextureDescriptor* descriptor);
@@ -53,6 +55,9 @@ class Texture final : public d3d::Texture {
                                                            std::vector<Ref<d3d::Fence>> waitFences,
                                                            bool isSwapChainTexture,
                                                            bool isInitialized);
+    static ResultOrError<Ref<Texture>> CreateFromSharedTextureMemory(
+        SharedTextureMemory* memory,
+        const TextureDescriptor* descriptor);
     ID3D11Resource* GetD3D11Resource() const;
 
     D3D11_RENDER_TARGET_VIEW_DESC GetRTVDescriptor(const Format& format,
@@ -82,16 +87,29 @@ class Texture final : public d3d::Texture {
 
     ResultOrError<ExecutionSerial> EndAccess() override;
 
+    // As D3D11 SRV doesn't support 'Shader4ComponentMapping' for depth-stencil textures, we can't
+    // sample the stencil component directly. As a workaround we create an internal R8Uint texture,
+    // holding the copy of its stencil data, and use the internal texture's SRV instead.
+    ResultOrError<ComPtr<ID3D11ShaderResourceView>> GetStencilSRV(
+        CommandRecordingContext* commandContext,
+        const TextureView* view);
+
   private:
     using Base = d3d::Texture;
 
-    static ResultOrError<Ref<Texture>> CreateStaging(Device* device,
-                                                     const TextureDescriptor* descriptor);
+    enum class Kind { Normal, Staging, Interim };
 
-    Texture(Device* device,
-            const TextureDescriptor* descriptor,
-            TextureState state,
-            bool isStaging);
+    struct D3D11ClearValue {
+        float color[4];
+        float depth;
+        uint8_t stencil;
+    };
+
+    static ResultOrError<Ref<Texture>> CreateInternal(Device* device,
+                                                      const TextureDescriptor* descriptor,
+                                                      Kind kind);
+
+    Texture(Device* device, const TextureDescriptor* descriptor, Kind kind);
     ~Texture() override;
 
     template <typename T>
@@ -111,6 +129,17 @@ class Texture final : public d3d::Texture {
     MaybeError Clear(CommandRecordingContext* commandContext,
                      const SubresourceRange& range,
                      TextureBase::ClearValue clearValue);
+    MaybeError ClearRenderable(CommandRecordingContext* commandContext,
+                               const SubresourceRange& range,
+                               TextureBase::ClearValue clearValue,
+                               const D3D11ClearValue& d3d11ClearValue);
+    MaybeError ClearNonRenderable(CommandRecordingContext* commandContext,
+                                  const SubresourceRange& range,
+                                  TextureBase::ClearValue clearValue);
+    MaybeError ClearCompressed(CommandRecordingContext* commandContext,
+                               const SubresourceRange& range,
+                               TextureBase::ClearValue clearValue);
+
     MaybeError ReadStaging(CommandRecordingContext* commandContext,
                            const SubresourceRange& subresources,
                            const Origin3D& origin,
@@ -119,8 +148,32 @@ class Texture final : public d3d::Texture {
                            uint32_t rowsPerImage,
                            ReadCallback callback);
 
-    const bool mIsStaging = false;
+    // Write the texture without the content initialization bookkeeping.
+    MaybeError WriteInternal(CommandRecordingContext* commandContext,
+                             const SubresourceRange& subresources,
+                             const Origin3D& origin,
+                             const Extent3D& size,
+                             const uint8_t* data,
+                             uint32_t bytesPerRow,
+                             uint32_t rowsPerImage);
+
+    // Write the depth-stencil texture without the content initialization bookkeeping.
+    MaybeError WriteDepthStencilInternal(CommandRecordingContext* commandContext,
+                                         const SubresourceRange& subresources,
+                                         const Origin3D& origin,
+                                         const Extent3D& size,
+                                         const uint8_t* data,
+                                         uint32_t bytesPerRow,
+                                         uint32_t rowsPerImage);
+
+    // Copy the textures without the content initialization bookkeeping.
+    static MaybeError CopyInternal(CommandRecordingContext* commandContext,
+                                   CopyTextureToTextureCmd* copy);
+
+    const Kind mKind = Kind::Normal;
     ComPtr<ID3D11Resource> mD3d11Resource;
+    // The internal 'R8Uint' texture for sampling stencil from depth-stencil textures.
+    Ref<Texture> mTextureForStencilSampling;
 };
 
 class TextureView final : public TextureViewBase {

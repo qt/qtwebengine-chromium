@@ -74,6 +74,10 @@ class AnalyticsRecorder {
       ABSL_LOCKS_EXCLUDED(mutex_);
 
   // Connection request
+  void OnRequestConnection(const connections::Strategy &strategy,
+                           const std::string &endpoint_id)
+      ABSL_LOCKS_EXCLUDED(mutex_);
+
   void OnConnectionRequestReceived(const std::string &remote_endpoint_id)
       ABSL_LOCKS_EXCLUDED(mutex_);
   void OnConnectionRequestSent(const std::string &remote_endpoint_id)
@@ -184,6 +188,10 @@ class AnalyticsRecorder {
 
   bool IsSessionLogged();
 
+  // Waits until all logs are sent to the backend.
+  // For testing only.
+  void Sync();
+
  private:
   // Tracks the chunks and duration of a Payload on a particular medium.
   class PendingPayload {
@@ -290,7 +298,7 @@ class AnalyticsRecorder {
 
   // Callbacks the ConnectionsLog proto byte array data to the EventLogger with
   // ClientSession sub-proto.
-  void LogClientSession();
+  void LogClientSessionLocked() ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
   // Callbacks the ConnectionsLog proto byte array data to the EventLogger.
   void LogEvent(location::nearby::proto::connections::EventType event_type);
 
@@ -334,7 +342,8 @@ class AnalyticsRecorder {
 
   // Reset the client cession's logging resources (e.g. current_strategy_,
   // current_advertising_phase_, current_discovery_phase_, etc)
-  void ResetClientSessionLoggingResouces();
+  void ResetClientSessionLoggingResoucesLocked()
+      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   location::nearby::proto::connections::ConnectionsStrategy
   StrategyToConnectionStrategy(connections::Strategy strategy);
@@ -369,13 +378,13 @@ class AnalyticsRecorder {
   std::unique_ptr<
       location::nearby::analytics::proto::ConnectionsLog::AdvertisingPhase>
       current_advertising_phase_;
-  absl::Time started_advertising_phase_time_;
+  absl::Time started_advertising_phase_time_ = absl::InfinitePast();
 
   // Current DiscoveryPhase
   std::unique_ptr<
       location::nearby::analytics::proto::ConnectionsLog::DiscoveryPhase>
       current_discovery_phase_;
-  absl::Time started_discovery_phase_time_;
+  absl::Time started_discovery_phase_time_ = absl::InfinitePast();
 
   absl::btree_map<std::string,
                   std::unique_ptr<location::nearby::analytics::proto::

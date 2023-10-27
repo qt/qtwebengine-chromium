@@ -36,7 +36,11 @@ namespace {
 using ::winrt::Windows::Networking::Sockets::SocketQualityOfService;
 }  // namespace
 
-WifiHotspotServerSocket::WifiHotspotServerSocket(int port) : port_(port) {}
+WifiHotspotServerSocket::WifiHotspotServerSocket(int port) : port_(port) {
+  for (auto &it : socket_events_) {
+    it = WSA_INVALID_EVENT;
+  }
+}
 
 WifiHotspotServerSocket::~WifiHotspotServerSocket() { Close(); }
 
@@ -53,14 +57,11 @@ std::string WifiHotspotServerSocket::GetIPAddress() const {
     }
   }
 
-  if (ip_addresses_.empty()) {
-    auto ip_addr = GetIpAddresses();
-    if (ip_addr.empty()) {
-      return {};
-    }
-    return ip_addr.front();
-  }
-  return ip_addresses_.front();
+  std::string hotspot_ip_address = GetHotspotIpAddress();
+  NEARBY_LOGS(INFO) << __func__
+                    << ": Return hotspot IP address: " << hotspot_ip_address;
+
+  return hotspot_ip_address;
 }
 
 int WifiHotspotServerSocket::GetPort() const {
@@ -129,18 +130,26 @@ Exception WifiHotspotServerSocket::Close() {
                 kEnableHotspotWin32Socket)) {
       if (listen_socket_ != INVALID_SOCKET) {
         NEARBY_LOGS(INFO) << ": Close listen_socket_: " << listen_socket_;
+        // Trigger close event manually
+        WSASetEvent(socket_events_[kSocketEventClose]);
+        shutdown(listen_socket_, 2);
+        shutdown(client_socket_, 2);
         closesocket(listen_socket_);
         closesocket(client_socket_);
-        listen_socket_ = INVALID_SOCKET;
-        client_socket_ = INVALID_SOCKET;
         for (const auto &pending_socket : pending_client_sockets_) {
           if (pending_socket != INVALID_SOCKET) closesocket(pending_socket);
+        }
+        submittable_executor_.Shutdown();
+        listen_socket_ = INVALID_SOCKET;
+        client_socket_ = INVALID_SOCKET;
+        for (auto &it : socket_events_) {
+          WSACloseEvent(it);
+          it = WSA_INVALID_EVENT;
         }
         WSACleanup();
 
         pending_client_sockets_ = {};
       }
-      submittable_executor_.Shutdown();
     } else {
       if (stream_socket_listener_ != nullptr) {
         stream_socket_listener_.ConnectionReceived(listener_event_token_);
@@ -257,14 +266,16 @@ bool WifiHotspotServerSocket::SetupServerSocketWinRT() {
   return false;
 }
 
-// Checks for SOCKET_ERROR, this error can come up when trying to bind, listen,
-// Getsockname, WSACreateEvent, WSAEventSelect etc.
-void SocketErrorNotice(SOCKET socket_to_close, const char *action) {
-  // const char *actionAttempted = action;
-  NEARBY_LOGS(WARNING) << "socket error. " << action
+void WifiHotspotServerSocket::SocketErrorNotice(absl::string_view reason) {
+  NEARBY_LOGS(WARNING) << "socket error. " << reason
                        << " failed with error: " << WSAGetLastError();
-
-  closesocket(socket_to_close);
+  for (auto &it : socket_events_) {
+    if (it != WSA_INVALID_EVENT) {
+      WSACloseEvent(it);
+      it = WSA_INVALID_EVENT;
+    }
+  }
+  closesocket(listen_socket_);
   WSACleanup();
 }
 
@@ -296,7 +307,7 @@ bool WifiHotspotServerSocket::SetupServerSocketWinSock() {
              sizeof(flag));
   if (bind(listen_socket_, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) ==
       SOCKET_ERROR) {
-    SocketErrorNotice(listen_socket_, "Bind");
+    SocketErrorNotice("Bind");
     return false;
   }
   NEARBY_LOGS(INFO) << "Bind socket successful";
@@ -305,50 +316,63 @@ bool WifiHotspotServerSocket::SetupServerSocketWinSock() {
   memset(&serv_addr, 0, size);
   if (getsockname(listen_socket_, (struct sockaddr *)&serv_addr, &size) ==
       SOCKET_ERROR) {
-    SocketErrorNotice(listen_socket_, "Getsockname");
+    SocketErrorNotice("Getsockname");
     return false;
   }
   port_ = ntohs(serv_addr.sin_port);
   NEARBY_LOGS(INFO) << "Hotspot Server bound to port: " << port_;
 
-  socket_event = WSACreateEvent();
-  if (socket_event == nullptr) {
-    SocketErrorNotice(listen_socket_, "WSACreateEvent");
+  socket_events_[kSocketEventListen] = WSACreateEvent();
+  if (socket_events_[kSocketEventListen] == WSA_INVALID_EVENT) {
+    SocketErrorNotice("WSACreateEvent");
     return false;
   }
+
+  socket_events_[kSocketEventClose] = WSACreateEvent();
+  if (socket_events_[kSocketEventClose] == WSA_INVALID_EVENT) {
+    SocketErrorNotice("WSACreateEvent");
+    return false;
+  }
+
   // Associate event types FD_ACCEPT and FD_CLOSE with the listen_socket_ and
   // socket_event
-  if (WSAEventSelect(listen_socket_, socket_event, FD_ACCEPT | FD_CLOSE) ==
-      SOCKET_ERROR) {
-    SocketErrorNotice(listen_socket_, "WSAEventSelect");
+  if (WSAEventSelect(listen_socket_, socket_events_[kSocketEventListen],
+                     FD_ACCEPT | FD_CLOSE) == SOCKET_ERROR) {
+    SocketErrorNotice("WSAEventSelect");
     return false;
   }
 
   if (::listen(listen_socket_, SOMAXCONN) == SOCKET_ERROR) {
-    SocketErrorNotice(listen_socket_, "Listen");
+    SocketErrorNotice("Listen");
     return false;
   }
   NEARBY_LOGS(INFO) << "Hotspot Server Socket " << listen_socket_
                     << " started to listen with socket event: " << socket_event;
 
-  submittable_executor_.Execute([this, socket_event]() {
+  submittable_executor_.Execute([this]() {
     DWORD index;
     WSANETWORKEVENTS network_events;
     // Wait for network events on all sockets
-    index =
-        WSAWaitForMultipleEvents(1, &socket_event, FALSE, WSA_INFINITE, FALSE);
+    index = WSAWaitForMultipleEvents(kSocketEventsCount, socket_events_, FALSE,
+                                     WSA_INFINITE, FALSE);
 
     NEARBY_LOGS(INFO) << "Hotspot Server Socket " << listen_socket_
-                      << " received event: " << socket_event;
+                      << " received event index: " << index;
     if (index == WSA_WAIT_TIMEOUT || index == WSA_WAIT_FAILED) {
       NEARBY_LOGS(INFO) << "Hotspot Server Socket timout or failed ";
       return false;
     }
 
     index = index - WSA_WAIT_EVENT_0;
+    if (index == kSocketEventClose) {
+      // the socket is closed by SDK
+      NEARBY_LOGS(INFO) << "listner socket is closed.";
+      return false;
+    }
+
     // Iterate through all events and enumerate
-    if (WSAEnumNetworkEvents(listen_socket_, socket_event, &network_events) ==
-        SOCKET_ERROR) {
+    if (WSAEnumNetworkEvents(listen_socket_, socket_events_[index],
+                             &network_events) == SOCKET_ERROR) {
       NEARBY_LOGS(INFO) << "Iterate through all events failed";
       return false;
     }
@@ -364,7 +388,8 @@ bool WifiHotspotServerSocket::SetupServerSocketWinSock() {
         return false;
       }
 
-      if (WSAEventSelect(listen_socket_, socket_event, 0) == SOCKET_ERROR) {
+      if (WSAEventSelect(listen_socket_, socket_events_[kSocketEventListen],
+                         0) == SOCKET_ERROR) {
         NEARBY_LOGS(WARNING)
             << "Remove association between listen_socket_ and event failed: "
             << WSAGetLastError();
@@ -399,7 +424,7 @@ bool WifiHotspotServerSocket::listen() {
                     << ", IP check interval="
                     << ip_address_retry_interval_millis << "ms";
   for (int i = 0; i < ip_address_max_retries; i++) {
-    hotspot_ipaddr_ = GetHotspotIpAddresses();
+    hotspot_ipaddr_ = GetHotspotIpAddress();
     if (hotspot_ipaddr_.empty()) {
       NEARBY_LOGS(WARNING) << "Failed to find Hotspot's IP addr for the try: "
                            << i + 1 << ". Wait "
@@ -425,35 +450,7 @@ bool WifiHotspotServerSocket::listen() {
   }
 }
 
-std::vector<std::string> WifiHotspotServerSocket::GetIpAddresses() const {
-  std::vector<std::string> result;
-  try {
-    auto host_names = NetworkInformation::GetHostNames();
-    for (auto host_name : host_names) {
-      if (host_name.IPInformation() != nullptr &&
-          host_name.IPInformation().NetworkAdapter() != nullptr &&
-          host_name.Type() == HostNameType::Ipv4) {
-        std::string ipv4_s = winrt::to_string(host_name.ToString());
-
-        if (absl::EndsWith(ipv4_s, ".1")) {
-          NEARBY_LOGS(INFO) << "Found Hotspot IP: " << ipv4_s;
-          result.push_back(ipv4_s);
-        }
-      }
-    }
-  } catch (std::exception exception) {
-    NEARBY_LOGS(ERROR) << __func__ << ": Exception: " << exception.what();
-  } catch (const winrt::hresult_error &error) {
-    NEARBY_LOGS(ERROR) << __func__ << ": WinRT exception: " << error.code()
-                       << ": " << winrt::to_string(error.message());
-  } catch (...) {
-    NEARBY_LOGS(ERROR) << __func__ << ": Unknown exeption.";
-  }
-
-  return result;
-}
-
-std::string WifiHotspotServerSocket::GetHotspotIpAddresses() const {
+std::string WifiHotspotServerSocket::GetHotspotIpAddress() const {
   try {
     int64_t ip_address_max_retries = NearbyFlags::GetInstance().GetInt64Flag(
         platform::config_package_nearby::nearby_platform_feature::
@@ -461,19 +458,32 @@ std::string WifiHotspotServerSocket::GetHotspotIpAddresses() const {
 
     for (int i = 0; i < ip_address_max_retries; i++) {
       auto host_names = NetworkInformation::GetHostNames();
+      std::vector<std::string> ip_candidates;
       for (auto host_name : host_names) {
         if (host_name.IPInformation() != nullptr &&
             host_name.IPInformation().NetworkAdapter() != nullptr &&
             host_name.Type() == HostNameType::Ipv4) {
           std::string ipv4_s = winrt::to_string(host_name.ToString());
           if (absl::EndsWith(ipv4_s, ".1")) {
-            // TODO(b/228541380): replace when we find a better way to
-            // identifying the hotspot address
-            NEARBY_LOGS(INFO) << "Found Hotspot IP: " << ipv4_s;
-            return ipv4_s;
+            ip_candidates.push_back(ipv4_s);
           }
         }
       }
+
+      if (ip_candidates.empty()) {
+        continue;
+      }
+
+      // Windows always creates Hotspot at address "192.168.137.1".
+      for (auto &ip_candidate : ip_candidates) {
+        if (ip_candidate == "192.168.137.1") {
+          NEARBY_LOGS(INFO) << "Found Hotspot IP: " << ip_candidate;
+          return ip_candidate;
+        }
+      }
+
+      NEARBY_LOGS(INFO) << "Found Hotspot IP: " << ip_candidates.front();
+      return ip_candidates.front();
     }
     return {};
   } catch (std::exception exception) {

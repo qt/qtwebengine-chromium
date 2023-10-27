@@ -114,6 +114,18 @@ message UwbControleeCapabilities {
   optional bool is_elevation_supported = 11 [default = false];
   optional float min_slot_duration_ms = 12 [default = 2.0];
   repeated int32 supported_ntf_configs = 13 [packed = true];
+  optional bool is_ranging_interval_reconfigure_supported = 14
+      [default = false];
+  repeated int32 supported_slot_durations = 15 [packed = true];
+  repeated int32 supported_ranging_update_rates = 16 [packed = true];
+  optional int32 chip_count = 17 [default = 1];
+  repeated UwbMultiChipInfo multi_chip_info = 18;
+}
+
+/* A frame containing info needed per chip in a multi-chip environment. */
+message UwbMultiChipInfo {
+  optional bytes controlee_address = 1;
+  optional string chip_id = 2;
 }
 
 /**
@@ -167,8 +179,11 @@ message PresenceAuthenticationFrame {
   // A signature signed by the private key in the LocalCredential.
   optional bytes private_key_signature = 2;
 
-  // A hash of the credential's id.
-  optional bytes credential_id_hash = 3;
+  // A hash of a shared credential's id. Used to prove ownership of shared
+  // credentials used in discovery.
+  optional bytes shared_credential_id_hash = 3;
 
-  // TBD. Keychain PSK hash (go/nearby-presence-identity-verification).
+  // A hash of a local credential's id. Used to expedite local credential
+  // verification.
+  optional bytes credential_id_hash = 4 [deprecated = true];
 }

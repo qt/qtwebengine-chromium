@@ -18,20 +18,21 @@
  * limitations under the License.
  */
 
-#include "generated/vk_enum_string_helper.h"
+#include <vulkan/vk_enum_string_helper.h>
 #include "generated/chassis.h"
 #include "core_validation.h"
 
-bool CoreChecks::ValidateComputePipelineShaderState(const PIPELINE_STATE &pipeline) const {
-    return ValidatePipelineShaderStage(pipeline, pipeline.stage_states[0]);
+bool CoreChecks::ValidateComputePipelineShaderState(const PIPELINE_STATE &pipeline, const Location &create_info_loc) const {
+    StageCreateInfo stage_create_info(create_info_loc.function, &pipeline);
+    return ValidatePipelineShaderStage(stage_create_info, pipeline.stage_states[0], create_info_loc.dot(Field::stage));
 }
 
 bool CoreChecks::PreCallValidateCreateComputePipelines(VkDevice device, VkPipelineCache pipelineCache, uint32_t count,
                                                        const VkComputePipelineCreateInfo *pCreateInfos,
                                                        const VkAllocationCallbacks *pAllocator, VkPipeline *pPipelines,
-                                                       void *ccpl_state_data) const {
+                                                       const ErrorObject &error_obj, void *ccpl_state_data) const {
     bool skip = StateTracker::PreCallValidateCreateComputePipelines(device, pipelineCache, count, pCreateInfos, pAllocator,
-                                                                    pPipelines, ccpl_state_data);
+                                                                    pPipelines, error_obj, ccpl_state_data);
 
     auto *ccpl_state = reinterpret_cast<create_compute_pipeline_api_state *>(ccpl_state_data);
     for (uint32_t i = 0; i < count; i++) {
@@ -39,16 +40,15 @@ bool CoreChecks::PreCallValidateCreateComputePipelines(VkDevice device, VkPipeli
         if (!pipeline) {
             continue;
         }
-        skip |= ValidateComputePipelineShaderState(*pipeline);
-        skip |= ValidateShaderModuleId(*pipeline);
-        skip |= ValidatePipelineCacheControlFlags(pCreateInfos[i].flags, i, "vkCreateComputePipelines",
+        const Location create_info_loc = error_obj.location.dot(Field::pCreateInfos, i);
+        skip |= ValidateComputePipelineShaderState(*pipeline, create_info_loc);
+        skip |= ValidateShaderModuleId(*pipeline, create_info_loc);
+        skip |= ValidatePipelineCacheControlFlags(pCreateInfos[i].flags, create_info_loc.dot(Field::flags),
                                                   "VUID-VkComputePipelineCreateInfo-pipelineCreationCacheControl-02875");
 
         if (const auto *pipeline_robustness_info = LvlFindInChain<VkPipelineRobustnessCreateInfoEXT>(pCreateInfos[i].pNext);
             pipeline_robustness_info) {
-            std::stringstream parameter_name;
-            parameter_name << "vkCreateComputePipelines(): pCreateInfos[" << i << "]";
-            skip |= ValidatePipelineRobustnessCreateInfo(*pipeline, parameter_name.str().c_str(), *pipeline_robustness_info);
+            skip |= ValidatePipelineRobustnessCreateInfo(*pipeline, *pipeline_robustness_info, create_info_loc);
         }
     }
     return skip;

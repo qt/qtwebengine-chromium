@@ -25,6 +25,7 @@ constexpr int kCrashListenerPort = 7779;
 constexpr int kSftpServerPort = 7780;
 
 constexpr int kLmkdKillDecisionPort = 7781;
+constexpr int kVmMemoryManagementServerPort = 7782;
 
 // All ports above this value are reserved for seneschal servers.
 constexpr uint32_t kFirstSeneschalServerPort = 16384;

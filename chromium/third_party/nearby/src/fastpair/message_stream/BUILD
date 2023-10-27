@@ -55,11 +55,11 @@ cc_library(
         "//fastpair:__subpackages__",
     ],
     deps = [
+        ":fake_gatt_callbacks",
         ":message_stream",
         "//fastpair/common",
         "//internal/platform:base",
         "//internal/platform:comm",
-        "//internal/platform:logging",
         "//internal/platform:test_util",
         "//internal/platform:types",
         "//internal/platform:uuid",
@@ -87,6 +87,7 @@ cc_library(
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -104,7 +105,6 @@ cc_library(
         ":message_stream",
         "//fastpair/common",
         "//internal/platform:comm",
-        "//internal/platform:logging",
         "//internal/platform:test_util",
         "//internal/platform:types",
         "@com_google_absl//absl/status",
@@ -126,7 +126,6 @@ cc_test(
         ":message_stream",
         "//fastpair/common",
         "//internal/platform:comm",
-        "//internal/platform:logging",
         "//internal/platform:test_util",
         "//internal/platform:types",
         "//internal/platform/implementation/g3",  # build_cleaner: keep
@@ -151,7 +150,6 @@ cc_test(
         ":message_stream",
         "//fastpair/common",
         "//internal/platform:comm",
-        "//internal/platform:logging",
         "//internal/platform:test_util",
         "//internal/platform:types",
         "//internal/platform/implementation:types",

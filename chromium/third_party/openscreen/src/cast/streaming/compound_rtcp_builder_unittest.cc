@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -331,7 +331,7 @@ TEST_F(CompoundRtcpBuilderTest, WithEverythingThatCanFit) {
             std::equal(parsed_acks.begin(), parsed_acks.end(), acks.begin()));
       }));
   EXPECT_CALL(*(client()), OnReceiverIsMissingPackets(_))
-      .WillOnce(Invoke([&](absl::Span<const PacketNack> parsed_nacks) {
+      .WillOnce(Invoke([&](Span<const PacketNack> parsed_nacks) {
         // All of the 48 NACKs provided should be present.
         ASSERT_EQ(kFewerNackCount, static_cast<int>(parsed_nacks.size()));
         EXPECT_TRUE(std::equal(parsed_nacks.begin(), parsed_nacks.end(),
@@ -357,7 +357,7 @@ TEST_F(CompoundRtcpBuilderTest, WithEverythingThatCanFit) {
         EXPECT_EQ(acks, parsed_acks);
       }));
   EXPECT_CALL(*(client()), OnReceiverIsMissingPackets(_))
-      .WillOnce(Invoke([&](absl::Span<const PacketNack> parsed_nacks) {
+      .WillOnce(Invoke([&](Span<const PacketNack> parsed_nacks) {
         // Only the first 46 NACKs provided should be present.
         ASSERT_EQ(kEvenFewerNackCount, static_cast<int>(parsed_nacks.size()));
         EXPECT_TRUE(std::equal(parsed_nacks.begin(), parsed_nacks.end(),

@@ -164,7 +164,7 @@ void *loader_dev_ext_gpa_impl(struct loader_instance *inst, const char *funcName
         // failed to allocate memory, return NULL
         return NULL;
     }
-    strncpy(inst->dev_ext_disp_functions[inst->dev_ext_disp_function_count], funcName, funcName_len);
+    loader_strncpy(inst->dev_ext_disp_functions[inst->dev_ext_disp_function_count], funcName_len, funcName, funcName_len);
     // init any dev dispatch table entries as needed
     loader_init_dispatch_dev_ext_entry(inst, NULL, inst->dev_ext_disp_function_count, funcName);
     void *out_function = loader_get_dev_ext_trampoline(inst->dev_ext_disp_function_count);
@@ -203,8 +203,8 @@ bool loader_check_layer_list_for_phys_dev_ext_address(struct loader_instance *in
         // Find the first layer in the call chain which supports vk_layerGetPhysicalDeviceProcAddr
         // and call that, returning whether it found a valid pointer for this function name.
         // We return if the topmost layer supports GPDPA since the layer should call down the chain for us.
-        if (layer_prop_list[layer].interface_version > 1) {
-            const struct loader_layer_functions *const functions = &(layer_prop_list[layer].functions);
+        if (layer_prop_list->interface_version > 1) {
+            const struct loader_layer_functions *const functions = &(layer_prop_list->functions);
             if (NULL != functions->get_physical_device_proc_addr) {
                 return NULL != functions->get_physical_device_proc_addr((VkInstance)inst->instance, funcName);
             }
@@ -276,7 +276,8 @@ void *loader_phys_dev_ext_gpa_impl(struct loader_instance *inst, const char *fun
             // failed to allocate memory, return NULL
             return NULL;
         }
-        strncpy(inst->phys_dev_ext_disp_functions[inst->phys_dev_ext_disp_function_count], funcName, funcName_len);
+        loader_strncpy(inst->phys_dev_ext_disp_functions[inst->phys_dev_ext_disp_function_count], funcName_len, funcName,
+                       funcName_len);
 
         new_function_index = inst->phys_dev_ext_disp_function_count;
         // increment the count so that the subsequent logic includes the newly added entry point when searching for functions

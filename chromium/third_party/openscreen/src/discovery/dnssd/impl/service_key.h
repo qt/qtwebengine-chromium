@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -29,10 +29,10 @@ class ServiceKey {
   // NOTE: The provided service and domain labels must be valid.
   ServiceKey(absl::string_view service, absl::string_view domain);
   ServiceKey(const ServiceKey& other);
-  ServiceKey(ServiceKey&& other);
+  ServiceKey(ServiceKey&& other) noexcept;
 
   ServiceKey& operator=(const ServiceKey& rhs);
-  ServiceKey& operator=(ServiceKey&& rhs);
+  ServiceKey& operator=(ServiceKey&& rhs) noexcept;
 
   virtual DomainName GetName() const;
 

@@ -45,6 +45,10 @@ impl<T: fmt::Debug, const N: usize> fmt::Debug for ArrayView<T, N> {
 }
 
 impl<T, const N: usize> ArrayView<T, N> {
+    /// Destructures this ArrayView into a (length, payload) pair.
+    pub fn into_raw_parts(self) -> (usize, [T; N]) {
+        (self.len, self.array)
+    }
     /// A version of [`ArrayView#try_from_array`] which panics if `len > buffer.len()`,
     /// suitable for usage in `const` contexts.
     pub const fn const_from_array(array: [T; N], len: usize) -> ArrayView<T, N> {

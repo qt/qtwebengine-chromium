@@ -21,6 +21,7 @@
 #include "dawn/native/DawnNative.h"
 
 #include "dawn/common/GPUInfo.h"
+#include "dawn/common/Ref.h"
 #include "dawn/common/RefCounted.h"
 #include "dawn/common/ityp_span.h"
 #include "dawn/native/Error.h"
@@ -42,9 +43,6 @@ class PhysicalDeviceBase : public RefCounted {
 
     MaybeError Initialize();
 
-    bool HasFeature(wgpu::FeatureName feature) const;
-    size_t EnumerateFeatures(wgpu::FeatureName* features) const;
-
     ResultOrError<Ref<DeviceBase>> CreateDevice(AdapterBase* adapter,
                                                 const DeviceDescriptor* descriptor,
                                                 const TogglesState& deviceToggles);
@@ -65,9 +63,12 @@ class PhysicalDeviceBase : public RefCounted {
 
     void ResetInternalDeviceForTesting();
 
-    FeaturesSet GetSupportedFeatures() const;
-    bool SupportsAllRequiredFeatures(
-        const ityp::span<size_t, const wgpu::FeatureName>& features) const;
+    // Get all features supported by the physical device and suitable with given toggles.
+    FeaturesSet GetSupportedFeatures(const TogglesState& toggles) const;
+    // Check if all given features are supported by the physical device and suitable with given
+    // toggles.
+    bool SupportsAllRequiredFeatures(const ityp::span<size_t, const wgpu::FeatureName>& features,
+                                     const TogglesState& toggles) const;
 
     const CombinedLimits& GetLimits() const;
 
@@ -76,11 +77,11 @@ class PhysicalDeviceBase : public RefCounted {
     virtual bool SupportsFeatureLevel(FeatureLevel featureLevel) const = 0;
 
     // Backend-specific force-setting and defaulting device toggles
+    virtual void SetupBackendAdapterToggles(TogglesState* adapterToggles) const = 0;
+    // Backend-specific force-setting and defaulting device toggles
     virtual void SetupBackendDeviceToggles(TogglesState* deviceToggles) const = 0;
 
     // Check if a feature os supported by this adapter AND suitable with given toggles.
-    // TODO(dawn:1495): After implementing adapter toggles, remove this and use adapter toggles
-    // instead of device toggles to validate supported features.
     MaybeError ValidateFeatureSupportedWithToggles(wgpu::FeatureName feature,
                                                    const TogglesState& toggles) const;
 
@@ -94,6 +95,10 @@ class PhysicalDeviceBase : public RefCounted {
     gpu_info::DriverVersion mDriverVersion;
     std::string mDriverDescription;
 
+    // Juat a wrapper of ValidateFeatureSupportedWithToggles, return true if a feature is supported
+    // by this adapter AND suitable with given toggles.
+    bool IsFeatureSupportedWithToggles(wgpu::FeatureName feature,
+                                       const TogglesState& toggles) const;
     // Mark a feature as enabled in mSupportedFeatures.
     void EnableFeature(Feature feature);
     // Used for the tests that intend to use an adapter without all features enabled.

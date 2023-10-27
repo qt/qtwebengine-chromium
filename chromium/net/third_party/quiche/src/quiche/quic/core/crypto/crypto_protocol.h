@@ -431,6 +431,8 @@ const QuicTag kINVC = TAG('I', 'N', 'V', 'C');   // Send connection close for
                                                  // INVALID_VERSION
 
 const QuicTag kMPQC = TAG('M', 'P', 'Q', 'C');   // Multi-port QUIC connection
+const QuicTag kMPQM = TAG('M', 'P', 'Q', 'M');   // Enable multi-port QUIC
+                                                 // migration
 
 // Client Hints triggers.
 const QuicTag kGWCH = TAG('G', 'W', 'C', 'H');
@@ -464,6 +466,10 @@ const QuicTag kEPID = TAG('E', 'P', 'I', 'D');  // Endpoint identifier.
 const QuicTag kMCS1 = TAG('M', 'C', 'S', '1');
 const QuicTag kMCS2 = TAG('M', 'C', 'S', '2');
 const QuicTag kMCS3 = TAG('M', 'C', 'S', '3');
+
+constexpr QuicTag kBSUS = TAG('B', 'S', 'U', 'S');  // Blocks server connection
+                                                    // until the SETTINGS frame
+                                                    // is received.
 
 // clang-format on
 

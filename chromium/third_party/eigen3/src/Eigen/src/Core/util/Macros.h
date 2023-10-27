@@ -619,7 +619,9 @@
 /// supports Neon vector intrinsics for fp16.
 #if EIGEN_ARCH_ARM_OR_ARM64
   #ifndef EIGEN_HAS_ARM64_FP16_VECTOR_ARITHMETIC
-    #if defined(__ARM_FEATURE_FP16_VECTOR_ARITHMETIC) && !defined(EIGEN_GPU_COMPILE_PHASE)
+    // Clang only supports FP16 on aarch64, and not all intrinsics are available
+    // on A32 anyways even in GCC (e.g. vdiv_f16, vsqrt_f16).
+    #if EIGEN_ARCH_ARM64 && defined(__ARM_FEATURE_FP16_VECTOR_ARITHMETIC) && !defined(EIGEN_GPU_COMPILE_PHASE)
       #define EIGEN_HAS_ARM64_FP16_VECTOR_ARITHMETIC 1
     #else
       #define EIGEN_HAS_ARM64_FP16_VECTOR_ARITHMETIC 0
@@ -631,7 +633,9 @@
 /// supports Neon scalar intrinsics for fp16.
 #if EIGEN_ARCH_ARM_OR_ARM64
   #ifndef EIGEN_HAS_ARM64_FP16_SCALAR_ARITHMETIC
-    #if defined(__ARM_FEATURE_FP16_SCALAR_ARITHMETIC) && !defined(EIGEN_GPU_COMPILE_PHASE)
+    // Clang only supports FP16 on aarch64, and not all intrinsics are available
+    // on A32 anyways, even in GCC (e.g. vceqh_f16).
+    #if EIGEN_ARCH_ARM64 && defined(__ARM_FEATURE_FP16_SCALAR_ARITHMETIC) && !defined(EIGEN_GPU_COMPILE_PHASE)
       #define EIGEN_HAS_ARM64_FP16_SCALAR_ARITHMETIC 1
     #endif
   #endif

@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -61,6 +61,8 @@ class StreamingOpusEncoder {
   // sample.
   void EncodeAndSend(const float* interleaved_samples,
                      int num_samples,
+                     Clock::time_point capture_begin_time,
+                     Clock::time_point capture_end_time,
                      Clock::time_point reference_time);
 
   static constexpr int kDefaultCastAudioFramesPerSecond =

@@ -17,7 +17,6 @@
 #include "dawn/common/Log.h"
 
 #include "dawn/native/BackendConnection.h"
-#include "dawn/native/BindGroupLayout.h"
 #include "dawn/native/ErrorData.h"
 #include "dawn/native/Instance.h"
 #include "dawn/native/opengl/BindGroupGL.h"
@@ -201,10 +200,9 @@ ResultOrError<Ref<BindGroupBase>> Device::CreateBindGroupImpl(
     DAWN_TRY(ValidateGLBindGroupDescriptor(descriptor));
     return BindGroup::Create(this, descriptor);
 }
-ResultOrError<Ref<BindGroupLayoutBase>> Device::CreateBindGroupLayoutImpl(
-    const BindGroupLayoutDescriptor* descriptor,
-    PipelineCompatibilityToken pipelineCompatibilityToken) {
-    return AcquireRef(new BindGroupLayout(this, descriptor, pipelineCompatibilityToken));
+ResultOrError<Ref<BindGroupLayoutInternalBase>> Device::CreateBindGroupLayoutImpl(
+    const BindGroupLayoutDescriptor* descriptor) {
+    return AcquireRef(new BindGroupLayout(this, descriptor));
 }
 ResultOrError<Ref<BufferBase>> Device::CreateBufferImpl(const BufferDescriptor* descriptor) {
     return AcquireRef(new Buffer(this, descriptor));
@@ -268,15 +266,14 @@ void Device::SubmitFenceSync() {
 
     const OpenGLFunctions& gl = GetGL();
     GLsync sync = gl.FenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
-    IncrementLastSubmittedCommandSerial();
+    GetQueue()->IncrementLastSubmittedCommandSerial();
     mFencesInFlight.emplace(sync, GetLastSubmittedCommandSerial());
 
     // Reset mHasPendingCommands after GetGL() which will set mHasPendingCommands to true.
     mHasPendingCommands = false;
 }
 
-MaybeError Device::ValidateEGLImageCanBeWrapped(const TextureDescriptor* descriptor,
-                                                ::EGLImage image) {
+MaybeError Device::ValidateTextureCanBeWrapped(const TextureDescriptor* descriptor) {
     DAWN_INVALID_IF(descriptor->dimension != wgpu::TextureDimension::e2D,
                     "Texture dimension (%s) is not %s.", descriptor->dimension,
                     wgpu::TextureDimension::e2D);
@@ -305,7 +302,7 @@ TextureBase* Device::CreateTextureWrappingEGLImage(const ExternalImageDescriptor
     if (ConsumedError(ValidateTextureDescriptor(this, textureDescriptor))) {
         return nullptr;
     }
-    if (ConsumedError(ValidateEGLImageCanBeWrapped(textureDescriptor, image))) {
+    if (ConsumedError(ValidateTextureCanBeWrapped(textureDescriptor))) {
         return nullptr;
     }
 
@@ -314,10 +311,9 @@ TextureBase* Device::CreateTextureWrappingEGLImage(const ExternalImageDescriptor
     gl.BindTexture(GL_TEXTURE_2D, tex);
     gl.EGLImageTargetTexture2DOES(GL_TEXTURE_2D, image);
 
-    GLint width, height, internalFormat;
+    GLint width, height;
     gl.GetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &width);
     gl.GetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &height);
-    gl.GetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_INTERNAL_FORMAT, &internalFormat);
 
     if (textureDescriptor->size.width != static_cast<uint32_t>(width) ||
         textureDescriptor->size.height != static_cast<uint32_t>(height) ||
@@ -331,7 +327,41 @@ TextureBase* Device::CreateTextureWrappingEGLImage(const ExternalImageDescriptor
 
     // TODO(dawn:803): Validate the OpenGL texture format from the EGLImage against the format
     // in the passed-in TextureDescriptor.
-    return new Texture(this, textureDescriptor, tex, TextureBase::TextureState::OwnedInternal);
+    return new Texture(this, textureDescriptor, tex);
+}
+
+TextureBase* Device::CreateTextureWrappingGLTexture(const ExternalImageDescriptor* descriptor,
+                                                    GLuint texture) {
+    const OpenGLFunctions& gl = GetGL();
+    const TextureDescriptor* textureDescriptor = FromAPI(descriptor->cTextureDescriptor);
+
+    if (!HasFeature(Feature::ANGLETextureSharing)) {
+        HandleError(DAWN_VALIDATION_ERROR("Device does not support ANGLE GL texture sharing."));
+        return nullptr;
+    }
+    if (ConsumedError(ValidateTextureDescriptor(this, textureDescriptor))) {
+        return nullptr;
+    }
+    if (ConsumedError(ValidateTextureCanBeWrapped(textureDescriptor))) {
+        return nullptr;
+    }
+
+    gl.BindTexture(GL_TEXTURE_2D, texture);
+
+    GLint width, height;
+    gl.GetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &width);
+    gl.GetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &height);
+
+    if (textureDescriptor->size.width != static_cast<uint32_t>(width) ||
+        textureDescriptor->size.height != static_cast<uint32_t>(height) ||
+        textureDescriptor->size.depthOrArrayLayers != 1) {
+        HandleError(DAWN_VALIDATION_ERROR(
+            "GL texture size (width: %u, height: %u, depth: 1) doesn't match descriptor size %s.",
+            width, height, &textureDescriptor->size));
+        return nullptr;
+    }
+
+    return new Texture(this, textureDescriptor, texture);
 }
 
 MaybeError Device::TickImpl() {
@@ -363,7 +393,7 @@ ResultOrError<ExecutionSerial> Device::CheckAndUpdateCompletedSerials() {
 
         mFencesInFlight.pop();
 
-        ASSERT(fenceSerial > GetCompletedCommandSerial());
+        ASSERT(fenceSerial > GetQueue()->GetCompletedCommandSerial());
     }
     return fenceSerial;
 }
@@ -390,7 +420,7 @@ void Device::DestroyImpl() {
 MaybeError Device::WaitForIdleForDestruction() {
     const OpenGLFunctions& gl = GetGL();
     gl.Finish();
-    DAWN_TRY(CheckPassedSerials());
+    DAWN_TRY(GetQueue()->CheckPassedSerials());
     ASSERT(mFencesInFlight.empty());
 
     return {};

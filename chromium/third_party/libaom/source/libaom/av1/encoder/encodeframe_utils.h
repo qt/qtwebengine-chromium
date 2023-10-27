@@ -430,6 +430,8 @@ void av1_set_cost_upd_freq(AV1_COMP *cpi, ThreadData *td,
                            const TileInfo *const tile_info, const int mi_row,
                            const int mi_col);
 
+void av1_dealloc_src_diff_buf(struct macroblock *mb, int num_planes);
+
 static AOM_INLINE void av1_dealloc_mb_data(struct AV1Common *cm,
                                            struct macroblock *mb) {
   aom_free(mb->txfm_search_info.mb_rd_record);
@@ -438,11 +440,7 @@ static AOM_INLINE void av1_dealloc_mb_data(struct AV1Common *cm,
   aom_free(mb->inter_modes_info);
   mb->inter_modes_info = NULL;
 
-  const int num_planes = av1_num_planes(cm);
-  for (int plane = 0; plane < num_planes; plane++) {
-    aom_free(mb->plane[plane].src_diff);
-    mb->plane[plane].src_diff = NULL;
-  }
+  av1_dealloc_src_diff_buf(mb, av1_num_planes(cm));
 
   aom_free(mb->e_mbd.seg_mask);
   mb->e_mbd.seg_mask = NULL;
@@ -468,6 +466,8 @@ static AOM_INLINE void allocate_winner_mode_stats(const AV1_COMP *cpi,
                       winner_mode_count * sizeof(mb->winner_mode_stats[0])));
 }
 
+void av1_alloc_src_diff_buf(const struct AV1Common *cm, struct macroblock *mb);
+
 static AOM_INLINE void av1_alloc_mb_data(const AV1_COMP *cpi,
                                          struct macroblock *mb) {
   const AV1_COMMON *cm = &cpi->common;
@@ -483,16 +483,9 @@ static AOM_INLINE void av1_alloc_mb_data(const AV1_COMP *cpi,
           cm, mb->inter_modes_info,
           (InterModesInfo *)aom_malloc(sizeof(*mb->inter_modes_info)));
   }
-  const int num_planes = av1_num_planes(cm);
-  for (int plane = 0; plane < num_planes; plane++) {
-    const int subsampling_xy =
-        plane ? cm->seq_params->subsampling_x + cm->seq_params->subsampling_y
-              : 0;
-    const int sb_size = MAX_SB_SQUARE >> subsampling_xy;
-    CHECK_MEM_ERROR(cm, mb->plane[plane].src_diff,
-                    (int16_t *)aom_memalign(
-                        32, sizeof(*mb->plane[plane].src_diff) * sb_size));
-  }
+
+  av1_alloc_src_diff_buf(cm, mb);
+
   CHECK_MEM_ERROR(cm, mb->e_mbd.seg_mask,
                   (uint8_t *)aom_memalign(
                       16, 2 * MAX_SB_SQUARE * sizeof(mb->e_mbd.seg_mask[0])));

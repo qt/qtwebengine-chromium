@@ -59,7 +59,7 @@ void avifGetPixelFormatInfo(avifPixelFormat format, avifPixelFormatInfo * info)
         case AVIF_PIXEL_FORMAT_YUV400:
             info->monochrome = AVIF_TRUE;
             // The nonexistent chroma is considered as subsampled in each dimension
-            // according to the AV1 specification. See sections 5.5.2. and 6.4.2.
+            // according to the AV1 specification. See sections 5.5.2 and 6.4.2.
             info->chromaShiftX = 1;
             info->chromaShiftY = 1;
             break;
@@ -227,10 +227,10 @@ avifResult avifImageCopy(avifImage * dstImage, const avifImage * srcImage, avifP
     avifImageFreePlanes(dstImage, AVIF_PLANES_ALL);
     avifImageCopyNoAlloc(dstImage, srcImage);
 
-    avifImageSetProfileICC(dstImage, srcImage->icc.data, srcImage->icc.size);
+    AVIF_CHECKRES(avifImageSetProfileICC(dstImage, srcImage->icc.data, srcImage->icc.size));
 
-    avifRWDataSet(&dstImage->exif, srcImage->exif.data, srcImage->exif.size);
-    avifImageSetMetadataXMP(dstImage, srcImage->xmp.data, srcImage->xmp.size);
+    AVIF_CHECKRES(avifRWDataSet(&dstImage->exif, srcImage->exif.data, srcImage->exif.size));
+    AVIF_CHECKRES(avifImageSetMetadataXMP(dstImage, srcImage->xmp.data, srcImage->xmp.size));
 
     if ((planes & AVIF_PLANES_YUV) && srcImage->yuvPlanes[AVIF_CHAN_Y]) {
         if ((srcImage->yuvFormat != AVIF_PIXEL_FORMAT_YUV400) &&
@@ -295,14 +295,14 @@ void avifImageDestroy(avifImage * image)
     avifFree(image);
 }
 
-void avifImageSetProfileICC(avifImage * image, const uint8_t * icc, size_t iccSize)
+avifResult avifImageSetProfileICC(avifImage * image, const uint8_t * icc, size_t iccSize)
 {
-    avifRWDataSet(&image->icc, icc, iccSize);
+    return avifRWDataSet(&image->icc, icc, iccSize);
 }
 
-void avifImageSetMetadataXMP(avifImage * image, const uint8_t * xmp, size_t xmpSize)
+avifResult avifImageSetMetadataXMP(avifImage * image, const uint8_t * xmp, size_t xmpSize)
 {
-    avifRWDataSet(&image->xmp, xmp, xmpSize);
+    return avifRWDataSet(&image->xmp, xmp, xmpSize);
 }
 
 avifResult avifImageAllocatePlanes(avifImage * image, avifPlanesFlags planes)

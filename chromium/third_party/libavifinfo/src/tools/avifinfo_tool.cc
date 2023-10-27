@@ -8,8 +8,9 @@
 // PATENTS file, you can obtain it at www.aomedia.org/license/patent.
 
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
-#include <filesystem>
+#include <filesystem>  // NOLINT
 #include <fstream>
 #include <iostream>
 #include <iterator>
@@ -33,6 +34,7 @@ std::string GetHelpStr() {
   str += "  --fast .......... Skip libavif decoding, only use libavifinfo\n";
   str += "  --min-size ...... Find minimum size to extract features per file\n";
   str += "  --validate ...... Check libavifinfo consistency on each file\n";
+  str += "  --no-bad-file ... Return an error code in case of invalid file\n";
   return str;
 }
 
@@ -148,7 +150,9 @@ void ParseFile(const std::string& path, const uint8_t* data, size_t data_size,
 }
 
 // Uses libavif then libavifinfo to extract the features of an AVIF file.
-void DecodeAndParseFile(const std::string& path, const uint8_t* data,
+// Returns false in case of libavifinfo parsing failure or behavior
+// inconsistency compared to libavif.
+bool DecodeAndParseFile(const std::string& path, const uint8_t* data,
                         size_t data_size, Stats& stats) {
   const Result decode = DecodeAvif(data, data_size);
   const Result parse = ParseAvif(data, data_size);
@@ -174,7 +178,9 @@ void DecodeAndParseFile(const std::string& path, const uint8_t* data,
                 << " / parsing " << (parse.success ? "success" : "failure");
     }
     std::cout << " for " << path << std::endl;
+    return false;
   }
+  return true;
 }
 
 // Returns the minimum number of bytes of AVIF 'data' for features to be
@@ -191,11 +197,14 @@ void FindMinSizeOfFile(const std::string& path, const uint8_t* data,
 }
 
 // Checks the consistency of libavifinfo over an AVIF file.
-void ValidateFile(const std::string& path, const uint8_t* data,
+// Returns false in case of error.
+bool ValidateFile(const std::string& path, const uint8_t* data,
                   size_t data_size) {
   if (LLVMFuzzerTestOneInput(data, data_size) != 0) {
     std::cout << "validation failed for " << path << std::endl;
+    return false;
   }
+  return true;
 }
 
 }  // namespace
@@ -207,6 +216,7 @@ int main(int argc, char** argv) {
   bool only_parse = false;
   bool find_min_size = false;
   bool validate = false;
+  bool error_on_bad_file = false;
 
   for (int arg = 1; arg < argc; ++arg) {
     if (!std::strcmp(argv[arg], "-h")) {
@@ -219,6 +229,8 @@ int main(int argc, char** argv) {
       only_parse = true;
     } else if (!std::strcmp(argv[arg], "--validate")) {
       validate = true;
+    } else if (!std::strcmp(argv[arg], "--no-bad-file")) {
+      error_on_bad_file = true;
     } else {
       FindFiles(argv[arg], file_paths);
     }
@@ -234,6 +246,7 @@ int main(int argc, char** argv) {
   }
 
   Stats stats;
+  bool success = true;
   for (const std::string& file_path : file_paths) {
     std::vector<uint8_t> bytes(std::filesystem::file_size(prefix + file_path));
     std::ifstream file(prefix + file_path, std::ios::binary);
@@ -242,11 +255,12 @@ int main(int argc, char** argv) {
       FindMinSizeOfFile(file_path, bytes.data(), bytes.size(), stats);
     } else if (only_parse) {
       ParseFile(file_path, bytes.data(), bytes.size(), stats);
-    } else {
-      DecodeAndParseFile(file_path, bytes.data(), bytes.size(), stats);
+    } else if (!DecodeAndParseFile(file_path, bytes.data(), bytes.size(),
+                                   stats)) {
+      success = false;
     }
-    if (validate) {
-      ValidateFile(file_path, bytes.data(), bytes.size());
+    if (validate && !ValidateFile(file_path, bytes.data(), bytes.size())) {
+      success = false;
     }
   }
 
@@ -266,5 +280,10 @@ int main(int argc, char** argv) {
                 << " bytes to extract features" << std::endl;
     }
   }
-  return 0;
+
+  if (error_on_bad_file && (stats.num_files_invalid_at_parse > 0 ||
+                            stats.num_files_invalid_at_decode > 0)) {
+    success = false;
+  }
+  return success ? 0 : 1;
 }

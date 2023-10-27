@@ -49,7 +49,7 @@ if ((${TINT_BUILD_SPIRV_TOOLS_FUZZER} OR ${TINT_BUILD_AST_FUZZER}) AND
         (NOT TARGET protobuf::libprotobuf OR NOT TARGET protobuf::protoc))
     set(protobuf_BUILD_TESTS OFF CACHE BOOL "Controls whether protobuf tests are built" FORCE)
     set(protobuf_MSVC_STATIC_RUNTIME OFF CACHE BOOL "Controls whether a protobuf static runtime is built" FORCE)
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/protobuf/cmake)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/protobuf)
 endif()
 
 if (NOT TARGET SPIRV-Tools)
@@ -69,7 +69,7 @@ if (NOT TARGET SPIRV-Tools)
     add_subdirectory(${DAWN_SPIRV_TOOLS_DIR} "${CMAKE_CURRENT_BINARY_DIR}/spirv-tools" EXCLUDE_FROM_ALL)
 endif()
 
-if(NOT TARGET glslang AND ${TINT_BUILD_GLSL_WRITER} AND ${TINT_BUILD_SAMPLES})
+if(NOT TARGET glslang AND ${TINT_BUILD_GLSL_WRITER} AND ${TINT_BUILD_CMD_TOOLS})
     set(SKIP_GLSLANG_INSTALL ON CACHE BOOL "" FORCE)
     add_subdirectory("${DAWN_THIRD_PARTY_DIR}/vulkan-deps/glslang/src" "${CMAKE_CURRENT_BINARY_DIR}/glslang" EXCLUDE_FROM_ALL)
 endif()
@@ -106,8 +106,8 @@ endif()
 
 # Header-only library for khrplatform.h
 add_library(dawn_khronos_platform INTERFACE)
-target_sources(dawn_khronos_platform INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/khronos/KHR/khrplatform.h")
-target_include_directories(dawn_khronos_platform INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/khronos")
+target_sources(dawn_khronos_platform INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/khronos/EGL-Registry/api/KHR/khrplatform.h")
+target_include_directories(dawn_khronos_platform INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/khronos/EGL-Registry/api")
 
 # Header-only library for Vulkan headers
 add_library(dawn_vulkan_headers INTERFACE)

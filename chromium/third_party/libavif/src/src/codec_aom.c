@@ -535,6 +535,13 @@ static avifBool avifFindAOMScalingMode(const avifFraction * avifMode, AOM_SCALIN
     return AVIF_FALSE;
 }
 
+static avifBool doesLevelMatch(int width, int height, int levelWidth, int levelHeight, int levelDimMult)
+{
+    const int64_t levelLumaPels = (int64_t)levelWidth * levelHeight;
+    const int64_t lumaPels = (int64_t)width * height;
+    return lumaPels <= levelLumaPels && width <= levelWidth * levelDimMult && height <= levelHeight * levelDimMult;
+}
+
 static avifBool aomCodecEncodeFinish(avifCodec * codec, avifCodecEncodeOutput * output);
 
 static avifResult aomCodecEncodeImage(avifCodec * codec,
@@ -689,6 +696,26 @@ static avifResult aomCodecEncodeImage(avifCodec * codec,
         cfg->g_input_bit_depth = image->depth;
         cfg->g_w = image->width;
         cfg->g_h = image->height;
+
+        // Detect the libaom v3.6.0 bug described in
+        // https://crbug.com/aomedia/2871#c12. See the changes to
+        // av1/encoder/encoder.c in
+        // https://aomedia-review.googlesource.com/c/aom/+/174421.
+        static const int aomVersion_3_6_0 = (3 << 16) | (6 << 8);
+        if (aomVersion == aomVersion_3_6_0) {
+            // Detect the use of levels 7.x and 8.x, which use a larger max
+            // tile area (4096 * 4608) than MAX_TILE_AREA (4096 * 2304). The
+            // larger max tile area may not result in a different bitstream
+            // (see the tile_info() function in the AV1 spec, Section 5.9.15),
+            // so this is just a necessary condition for the bug.
+            if (!doesLevelMatch(image->width, image->height, 8192, 4352, 2) &&
+                (doesLevelMatch(image->width, image->height, 16384, 8704, 2) ||
+                 doesLevelMatch(image->width, image->height, 32768, 17408, 2))) {
+                avifDiagnosticsPrintf(codec->diag, "Detected libaom v3.6.0 bug with large images. Upgrade to libaom v3.6.1 or later.");
+                return AVIF_RESULT_UNKNOWN_ERROR;
+            }
+        }
+
         if (addImageFlags & AVIF_ADD_IMAGE_FLAG_SINGLE) {
             // Set the maximum number of frames to encode to 1. This instructs
             // libaom to set still_picture and reduced_still_picture_header to
@@ -789,9 +816,6 @@ static avifResult aomCodecEncodeImage(avifCodec * codec,
         avifBool lossless = (quantizer == AVIF_QUANTIZER_LOSSLESS);
         if (lossless) {
             aom_codec_control(&codec->internal->encoder, AV1E_SET_LOSSLESS, 1);
-        }
-        if (encoder->maxThreads > 1) {
-            aom_codec_control(&codec->internal->encoder, AV1E_SET_ROW_MT, 1);
         }
         if (tileRowsLog2 != 0) {
             aom_codec_control(&codec->internal->encoder, AV1E_SET_TILE_ROWS, tileRowsLog2);
@@ -1118,7 +1142,8 @@ static avifResult aomCodecEncodeImage(avifCodec * codec,
             break;
         }
         if (pkt->kind == AOM_CODEC_CX_FRAME_PKT) {
-            avifCodecEncodeOutputAddSample(output, pkt->data.frame.buf, pkt->data.frame.sz, (pkt->data.frame.flags & AOM_FRAME_IS_KEY));
+            AVIF_CHECKRES(
+                avifCodecEncodeOutputAddSample(output, pkt->data.frame.buf, pkt->data.frame.sz, (pkt->data.frame.flags & AOM_FRAME_IS_KEY)));
         }
     }
 
@@ -1163,7 +1188,14 @@ static avifBool aomCodecEncodeFinish(avifCodec * codec, avifCodecEncodeOutput * 
             }
             if (pkt->kind == AOM_CODEC_CX_FRAME_PKT) {
                 gotPacket = AVIF_TRUE;
-                avifCodecEncodeOutputAddSample(output, pkt->data.frame.buf, pkt->data.frame.sz, (pkt->data.frame.flags & AOM_FRAME_IS_KEY));
+                const avifResult result = avifCodecEncodeOutputAddSample(output,
+                                                                         pkt->data.frame.buf,
+                                                                         pkt->data.frame.sz,
+                                                                         (pkt->data.frame.flags & AOM_FRAME_IS_KEY));
+                if (result != AVIF_RESULT_OK) {
+                    avifDiagnosticsPrintf(codec->diag, "avifCodecEncodeOutputAddSample() failed: %s", avifResultToString(result));
+                    return AVIF_FALSE;
+                }
             }
         }
 

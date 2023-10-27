@@ -596,6 +596,7 @@ export class TabbedPane extends Common.ObjectWrapper.eventMixin<EventTypes, type
     dropDownContainer.title = moreTabsString;
     ARIAUtils.markAsMenuButton(dropDownContainer);
     ARIAUtils.setLabel(dropDownContainer, moreTabsString);
+    ARIAUtils.setExpanded(dropDownContainer, false);
     dropDownContainer.tabIndex = 0;
     dropDownContainer.appendChild(chevronIcon);
     dropDownContainer.addEventListener('click', this.dropDownClicked.bind(this));
@@ -623,6 +624,9 @@ export class TabbedPane extends Common.ObjectWrapper.eventMixin<EventTypes, type
       useSoftMenu: false,
       x: rect.left,
       y: rect.bottom,
+      onSoftMenuClosed: (): void => {
+        ARIAUtils.setExpanded(this.dropDownButton, false);
+      },
     });
     for (const tab of this.tabs) {
       if (tab.shown) {
@@ -635,7 +639,7 @@ export class TabbedPane extends Common.ObjectWrapper.eventMixin<EventTypes, type
         menu.defaultSection().appendItem(tab.title, this.dropDownMenuItemSelected.bind(this, tab));
       }
     }
-    void menu.show();
+    void menu.show().then(() => ARIAUtils.setExpanded(this.dropDownButton, menu.isHostedMenuOpen()));
   }
 
   private dropDownKeydown(event: KeyboardEvent): void {
@@ -1105,10 +1109,23 @@ export class TabbedPaneTab {
 
     const iconContainer = document.createElement('span');
     iconContainer.classList.add('tabbed-pane-header-tab-icon');
-    const iconNode = measuring ? this.icon.cloneNode(true) : this.icon;
+    const iconNode = measuring ? this.createMeasureClone(this.icon) : this.icon;
     iconContainer.appendChild(iconNode);
     tabElement.insertBefore(iconContainer, titleElement);
     tabIcons.set(tabElement, iconContainer);
+  }
+
+  private createMeasureClone(original: Icon|IconButton.Icon.Icon): Node {
+    if ('data' in original && original.data.width && original.data.height) {
+      // Cloning doesn't work for the icon component because the shadow
+      // root isn't copied, but it is sufficient to create a div styled
+      // to be the same size.
+      const fakeClone = document.createElement('div');
+      fakeClone.style.width = original.data.width;
+      fakeClone.style.height = original.data.height;
+      return fakeClone;
+    }
+    return original.cloneNode(true);
   }
 
   createTabElement(measuring: boolean): HTMLElement {

@@ -31,6 +31,10 @@ from collections import defaultdict
 from collections import OrderedDict
 from dataclasses import dataclass
 
+# helper to define paths relative to the repo root
+def repo_relative(path):
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), '..', path))
+
 verbose_mode = False
 vuid_prefixes = ['VUID-', 'UNASSIGNED-', 'kVUID_']
 
@@ -77,6 +81,12 @@ class ValidationJSON:
             '\u2026' : '...',# HORIZONTAL ELLIPSIS
             '\u2032' : "'",  # PRIME
             '\u2192' : '->', # RIGHTWARDS ARROW
+            '\u2308' : '⌈', # LEFT CEILING
+            '\u2309' : '⌉', # RIGHT CEILING
+            '\u230a' : '⌊', # LEFT FLOOR
+            '\u230b' : '⌋', # RIGHT FLOOR
+            '\u00d7' : '×', # MULTIPLICATION SIGN
+            '\u2264' : '≤', # LESS-THAN OR EQUAL TO
         }
 
     def sanitize(self, text, location):
@@ -142,7 +152,7 @@ def buildKvuidDict(unassigned_vuid_files):
 
     for uf in unassigned_vuid_files:
         line_num = 0
-        with open(uf) as f:
+        with open(uf, encoding='utf-8') as f:
             for line in f:
                 line_num = line_num + 1
                 if True in [line.strip().startswith(comment) for comment in ['//', '/*']]:
@@ -265,10 +275,12 @@ class ValidationTests:
         prepend = None
         for test_file in self.test_files:
             spirv_file = True if spirv_val.enabled and test_file.startswith(spirv_val.repo_path) else False
-            with open(test_file) as tf:
+            with open(test_file, encoding='utf-8') as tf:
                 for line in tf:
                     if True in [line.strip().startswith(comment) for comment in ['//', '/*']]:
                         continue
+                    elif True in [x in line for x in ['TEST_DESCRIPTION', 'vvl_vuid_hash']]:
+                        continue # Tests have extra place it might not want to report VUIDs
 
                     # if line ends in a broken VUID string, fix that before proceeding
                     if prepend is not None:
@@ -353,7 +365,6 @@ class Consistency:
             unassigned = set({uv for uv in undef_set if uv.startswith('UNASSIGNED-')})
             undef_set = undef_set - unassigned
         if (len(undef_set) > 0):
-            ok = False
             print("\nFollowing VUIDs found in layer tests are not defined in validusage.json (%d):" % len(undef_set))
             undef = list(undef_set)
             undef.sort()
@@ -373,7 +384,6 @@ class Consistency:
                     unassigned.add(vuid)
             undef_set = undef_set - unassigned
         if (len(undef_set) > 0):
-            ok = False
             print("\nFollowing VUIDs found in tests but are not checked in layer code (%d):" % len(undef_set))
             undef = list(undef_set)
             undef.sort()
@@ -434,7 +444,7 @@ static const vuid_spec_text_pair vuid_spec_text[] = {
 """
     def dump_txt(self, filename, only_unimplemented=False):
         print(f'\nDumping database to text file: {filename}')
-        with open (filename, 'w') as txt:
+        with open(filename, 'w', encoding='utf-8') as txt:
             txt.write("## VUID Database\n")
             txt.write("## Format: VUID_NAME | CHECKED | SPIRV-TOOL | TEST | TYPE | API/STRUCT | EXTENSION | VUID_TEXT\n##\n")
             vuid_list = list(self.vj.all_vuids)
@@ -463,7 +473,7 @@ static const vuid_spec_text_pair vuid_spec_text[] = {
 
     def dump_csv(self, filename, only_unimplemented=False):
         print(f'\nDumping database to csv file: {filename}')
-        with open (filename, 'w', newline='') as csvfile:
+        with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
             cw = csv.writer(csvfile)
             cw.writerow(['VUID_NAME','CHECKED','SPIRV-TOOL', 'TEST','TYPE','API/STRUCT','EXTENSION','VUID_TEXT'])
             vuid_list = list(self.vj.all_vuids)
@@ -499,7 +509,7 @@ static const vuid_spec_text_pair vuid_spec_text[] = {
         print(f'\nDumping database to html file: {filename}')
         preamble = '<!DOCTYPE html>\n<html>\n<head>\n<style>\ntable, th, td {\n border: 1px solid black;\n border-collapse: collapse; \n}\n</style>\n<body>\n<h2>Valid Usage Database</h2>\n<font size="2" face="Arial">\n<table style="width:100%">\n'
         headers = '<tr><th>VUID NAME</th><th>CHECKED</th><th>SPIRV-TOOL</th><th>TEST</th><th>TYPE</th><th>API/STRUCT</th><th>EXTENSION</th><th>VUID TEXT</th></tr>\n'
-        with open(filename, 'w') as hfile:
+        with open(filename, 'w', encoding='utf-8') as hfile:
             hfile.write(preamble)
             hfile.write(headers)
             vuid_list = list(self.vj.all_vuids)
@@ -544,7 +554,7 @@ static const vuid_spec_text_pair vuid_spec_text[] = {
                     if vuid in self.vs.all_vuids:
                         ext_db[ext_name].checked += 1
 
-        with open (filename, 'w', newline='') as csvfile:
+        with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
             cw = csv.writer(csvfile)
             cw.writerow(['EXTENSION','CHECKED','TOTAL','COVERAGE'])
             for ext_name in sorted(ext_db):
@@ -623,7 +633,7 @@ static const vuid_spec_text_pair vuid_spec_text[] = {
     def export_header(self, filename):
         if verbose_mode:
             print("\n Exporting header file to: %s" % filename)
-        with open (filename, 'w', newline='\n') as hfile:
+        with open(filename, 'w', newline='\n', encoding='utf-8') as hfile:
             hfile.write(self.header_version)
             hfile.write(self.header_preamble)
             vuid_list = list(self.vj.all_vuids)
@@ -641,7 +651,11 @@ static const vuid_spec_text_pair vuid_spec_text[] = {
                 else: spec_url_id = '1.%s' % spec_list[0]['version']
 
                 # Escape quotes and backslashes when generating C strings for source code
-                db_text = db_entry['text'].replace('\\', '\\\\').replace('"', '\\"')
+                db_text = db_entry['text'].replace('\\', '\\\\').replace('"', '\\"').strip()
+                html_remove_tags = re.compile('<.*?>|&([a-z0-9]+|#[0-9]{1,6}|#x[0-9a-f]{1,6});')
+                db_text = re.sub(html_remove_tags, '', db_text)
+                # In future we could use the `/n` to add new lines to a pretty print in the console
+                db_text = db_text.replace('\n', ' ')
                 hfile.write('    {"%s", "%s", "%s"},\n' % (vuid, db_text, spec_url_id))
                 # For multiply-defined VUIDs, include versions with extension appended
                 if len(self.vj.vuid_db[vuid]) > 1:
@@ -650,7 +664,7 @@ static const vuid_spec_text_pair vuid_spec_text[] = {
 
 class SpirvValidation:
     def __init__(self, repo_path):
-        self.enabled = (repo_path != None)
+        self.enabled = (repo_path is not None)
         self.repo_path = repo_path
         self.version = 'unknown'
         self.source_files = []
@@ -662,7 +676,7 @@ class SpirvValidation:
         self.test_implicit_vuids = set()
 
     def load(self, verbose):
-        if self.enabled == False:
+        if self.enabled is False:
             return
         # Get hash from git if available
         try:
@@ -728,29 +742,28 @@ def main(argv):
     # and hasn't been copied elsewhere.
     registry_dir = os.path.dirname(args.json_file)
     sys.path.insert(0, registry_dir)
-    import common_codegen
 
-    layer_source_files = [common_codegen.repo_relative(path) for path in [
+    layer_source_files = [repo_relative(path) for path in [
         'layers/error_message/unimplementable_validation.h',
         'layers/state_tracker/cmd_buffer_state.cpp', # some Video VUIDs are in here
         'layers/state_tracker/descriptor_sets.cpp',
         'layers/state_tracker/shader_module.cpp',
         'layers/gpu_validation/gpu_vuids.h',
         'layers/stateless/stateless_validation.h',
-        f'layers/{args.api}/generated/parameter_validation.cpp',
+        f'layers/{args.api}/generated/stateless_validation_helper.cpp',
         f'layers/{args.api}/generated/object_tracker.cpp',
         f'layers/{args.api}/generated/spirv_validation_helper.cpp',
         f'layers/{args.api}/generated/command_validation.cpp',
     ]]
     # Be careful not to add vk_validation_error_messages.h or it will show 100% test coverage
-    layer_source_files.extend(glob.glob(os.path.join(common_codegen.repo_relative('layers/core_checks/'), '*.cpp')))
-    layer_source_files.extend(glob.glob(os.path.join(common_codegen.repo_relative('layers/stateless/'), '*.cpp')))
-    layer_source_files.extend(glob.glob(os.path.join(common_codegen.repo_relative('layers/sync/'), '*.cpp')))
-    layer_source_files.extend(glob.glob(os.path.join(common_codegen.repo_relative('layers/object_tracker/'), '*.cpp')))
+    layer_source_files.extend(glob.glob(os.path.join(repo_relative('layers/core_checks/'), '*.cpp')))
+    layer_source_files.extend(glob.glob(os.path.join(repo_relative('layers/stateless/'), '*.cpp')))
+    layer_source_files.extend(glob.glob(os.path.join(repo_relative('layers/sync/'), '*.cpp')))
+    layer_source_files.extend(glob.glob(os.path.join(repo_relative('layers/object_tracker/'), '*.cpp')))
 
-    test_source_files = glob.glob(os.path.join(common_codegen.repo_relative('tests/negative'), '*.cpp'))
+    test_source_files = glob.glob(os.path.join(repo_relative('tests/unit'), '*.cpp'))
 
-    unassigned_vuid_files = [common_codegen.repo_relative(path) for path in [
+    unassigned_vuid_files = [repo_relative(path) for path in [
         'layers/best_practices/best_practices_error_enums.h',
         'layers/stateless/stateless_validation.h',
         'layers/error_message/validation_error_enums.h',
@@ -846,7 +859,7 @@ def main(argv):
 
     # Report status of a single VUID
     if args.vuid:
-        print("\n\nChecking status of <%s>" % args.vuid);
+        print("\n\nChecking status of <%s>" % args.vuid)
         if args.vuid not in val_json.all_vuids and not args.vuid.startswith('UNASSIGNED-'):
             print('  Not a valid VUID string.')
         else:
@@ -864,7 +877,7 @@ def main(argv):
                 print('  Not implemented.')
             if args.vuid in val_tests.all_vuids:
                 print('  Has a test!')
-                test_list = val_tests.vuid_to_tests[get_vuid_status]
+                test_list = val_tests.vuid_to_tests[args.vuid]
                 for test in test_list:
                     print('    => %s' % test)
             else:

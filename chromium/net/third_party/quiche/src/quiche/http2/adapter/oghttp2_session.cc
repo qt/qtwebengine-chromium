@@ -199,8 +199,14 @@ OgHttp2Session::PassthroughHeadersHandler::PassthroughHeadersHandler(
   if (session_.options_.validate_http_headers) {
     QUICHE_VLOG(2) << "instantiating regular header validator";
     validator_ = std::make_unique<HeaderValidator>();
+    if (session_.options_.validate_path) {
+      validator_->SetValidatePath();
+    }
     if (session_.options_.allow_fragment_in_path) {
       validator_->SetAllowFragmentInPath();
+    }
+    if (session_.options_.allow_different_host_and_authority) {
+      validator_->SetAllowDifferentHostAndAuthority();
     }
   } else {
     QUICHE_VLOG(2) << "instantiating noop header validator";
@@ -1006,6 +1012,7 @@ void OgHttp2Session::OnError(SpdyFramerError error,
 
 void OgHttp2Session::OnCommonHeader(spdy::SpdyStreamId stream_id, size_t length,
                                     uint8_t type, uint8_t flags) {
+  current_frame_type_ = type;
   highest_received_stream_id_ = std::max(static_cast<Http2StreamId>(stream_id),
                                          highest_received_stream_id_);
   if (streams_reset_.contains(stream_id)) {
@@ -1839,7 +1846,6 @@ HeaderType OgHttp2Session::NextHeaderType(
     if (!current_type) {
       return HeaderType::REQUEST;
     } else {
-      QUICHE_DCHECK(current_type == HeaderType::REQUEST);
       return HeaderType::REQUEST_TRAILER;
     }
   } else if (!current_type ||
@@ -1947,6 +1953,13 @@ void OgHttp2Session::DecrementQueuedFrameCount(uint32_t stream_id,
 }
 
 void OgHttp2Session::HandleContentLengthError(Http2StreamId stream_id) {
+  if (current_frame_type_ == static_cast<uint8_t>(FrameType::HEADERS)) {
+    // For consistency, either OnInvalidFrame should always be invoked,
+    // regardless of frame type, or perhaps we should introduce an OnStreamError
+    // callback.
+    visitor_.OnInvalidFrame(
+        stream_id, Http2VisitorInterface::InvalidFrameError::kHttpMessaging);
+  }
   EnqueueFrame(std::make_unique<spdy::SpdyRstStreamIR>(
       stream_id, spdy::ERROR_CODE_PROTOCOL_ERROR));
 }

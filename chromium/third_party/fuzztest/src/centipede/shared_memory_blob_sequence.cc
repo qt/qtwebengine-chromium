@@ -32,67 +32,18 @@ static void ErrorOnFailure(bool condition, const char *text) {
   abort();
 }
 
-SharedMemoryBlobSequence::SharedMemoryBlobSequence(const char *name,
-                                                   size_t size)
-    : size_(size) {
+BlobSequence::BlobSequence(uint8_t *data, size_t size)
+    : data_(data), size_(size) {
   ErrorOnFailure(size < sizeof(Blob::size), "Size too small");
-  fd_ = shm_open(name, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
-  name_to_unlink_ = strdup(name);  // Using raw C strings to avoid dependencies.
-  ErrorOnFailure(fd_ < 0, "shm_open() failed");
-  ErrorOnFailure(ftruncate(fd_, static_cast<__off_t>(size_)),
-                 "ftruncate() failed)");
-  MmapData();
 }
 
-SharedMemoryBlobSequence::SharedMemoryBlobSequence(const char *name) {
-  fd_ = shm_open(name, O_RDWR, 0);
-  ErrorOnFailure(fd_ < 0, "shm_open() failed");
-  struct stat statbuf = {};
-  ErrorOnFailure(fstat(fd_, &statbuf), "fstat() failed");
-  size_ = statbuf.st_size;
-  MmapData();
-}
-
-void SharedMemoryBlobSequence::MmapData() {
-  data_ = static_cast<uint8_t *>(
-      mmap(nullptr, size_, PROT_READ | PROT_WRITE, MAP_SHARED, fd_, 0));
-  ErrorOnFailure(data_ == MAP_FAILED, "mmap() failed");
-}
-
-SharedMemoryBlobSequence::~SharedMemoryBlobSequence() {
-  ErrorOnFailure(munmap(data_, size_), "munmap() failed");
-  if (name_to_unlink_) {
-    ErrorOnFailure(shm_unlink(name_to_unlink_), "shm_unlink() failed");
-    free(name_to_unlink_);
-  }
-  ErrorOnFailure(close(fd_), "close() failed");
-}
-
-void SharedMemoryBlobSequence::Reset() {
-  offset_ = 0;
-  had_reads_after_reset_ = false;
-  had_writes_after_reset_ = false;
-}
-
-void SharedMemoryBlobSequence::ReleaseSharedMemory() {
-  // Setting size to 0 releases the memory to OS.
-  ErrorOnFailure(ftruncate(fd_, 0) != 0, "ftruncate(0) failed)");
-  // Set the size back to `size`. The memory is not actually reserved.
-  ErrorOnFailure(ftruncate(fd_, size_) != 0, "ftruncate(size_) failed)");
-}
-
-size_t SharedMemoryBlobSequence::NumBytesUsed() const {
-  struct stat statbuf;
-  ErrorOnFailure(fstat(fd_, &statbuf), "fstat() failed)");
-  return statbuf.st_blocks * S_BLKSIZE;
-}
-
-bool SharedMemoryBlobSequence::Write(Blob blob) {
+bool BlobSequence::Write(Blob blob) {
   ErrorOnFailure(!blob.IsValid(), "Write(): blob.tag must not be zero");
   ErrorOnFailure(had_reads_after_reset_, "Write(): Had reads after reset");
   had_writes_after_reset_ = true;
   if (offset_ + sizeof(blob.size) + sizeof(blob.tag) + blob.size > size_)
     return false;
+
   // Write tag.
   memcpy(data_ + offset_, &blob.tag, sizeof(blob.tag));
   offset_ += sizeof(blob.tag);
@@ -114,10 +65,10 @@ bool SharedMemoryBlobSequence::Write(Blob blob) {
   return true;
 }
 
-SharedMemoryBlobSequence::Blob SharedMemoryBlobSequence::Read() {
+Blob BlobSequence::Read() {
   ErrorOnFailure(had_writes_after_reset_, "Had writes after reset");
   had_reads_after_reset_ = true;
-  if (offset_ + sizeof(Blob::size) + sizeof(Blob::tag) >= size_) return {};
+  if (offset_ + sizeof(Blob::size) + sizeof(Blob::tag) > size_) return {};
   // Read blob_tag.
   Blob::SizeAndTagT blob_tag = 0;
   memcpy(&blob_tag, data_ + offset_, sizeof(blob_tag));
@@ -133,6 +84,83 @@ SharedMemoryBlobSequence::Blob SharedMemoryBlobSequence::Read() {
   Blob result{blob_tag, blob_size, data_ + offset_};
   offset_ += result.size;
   return result;
+}
+
+void BlobSequence::Reset() {
+  offset_ = 0;
+  had_reads_after_reset_ = false;
+  had_writes_after_reset_ = false;
+}
+
+SharedMemoryBlobSequence::SharedMemoryBlobSequence(const char *name,
+                                                   size_t size,
+                                                   bool use_posix_shmem) {
+  ErrorOnFailure(size < sizeof(Blob::size), "Size too small");
+  size_ = size;
+  if (use_posix_shmem) {
+    fd_ = shm_open(name, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
+    ErrorOnFailure(fd_ < 0, "shm_open() failed");
+    strncpy(path_, name, PATH_MAX);
+    ErrorOnFailure(path_[PATH_MAX - 1] != 0,
+                   "shm_open() path length exceeds PATH_MAX.");
+    path_is_owned_ = true;
+  } else {
+    fd_ = memfd_create(name, MFD_CLOEXEC);
+    ErrorOnFailure(fd_ < 0, "memfd_create() failed");
+    const size_t path_size =
+        snprintf(path_, PATH_MAX, "/proc/%d/fd/%d", getpid(), fd_);
+    ErrorOnFailure(path_size >= PATH_MAX,
+                   "internal fd path length exceeds PATH_MAX.");
+    // memfd_create descriptors are automatically freed on close().
+    path_is_owned_ = false;
+  }
+  ErrorOnFailure(ftruncate(fd_, static_cast<__off_t>(size_)),
+                 "ftruncate() failed)");
+  MmapData();
+}
+
+SharedMemoryBlobSequence::SharedMemoryBlobSequence(const char *path) {
+  // This is a quick way to tell shm-allocated paths from memfd paths without
+  // requiring the caller to specify.
+  if (strncmp(path, "/proc/", 6) == 0) {
+    fd_ = open(path, O_RDWR, O_CLOEXEC);
+  } else {
+    fd_ = shm_open(path, O_RDWR, 0);
+  }
+  ErrorOnFailure(fd_ < 0, "open() failed");
+  strncpy(path_, path, PATH_MAX);
+  ErrorOnFailure(path_[PATH_MAX - 1] != 0, "path length exceeds PATH_MAX.");
+  struct stat statbuf = {};
+  ErrorOnFailure(fstat(fd_, &statbuf), "fstat() failed");
+  size_ = statbuf.st_size;
+  MmapData();
+}
+
+void SharedMemoryBlobSequence::MmapData() {
+  data_ = static_cast<uint8_t *>(
+      mmap(nullptr, size_, PROT_READ | PROT_WRITE, MAP_SHARED, fd_, 0));
+  ErrorOnFailure(data_ == MAP_FAILED, "mmap() failed");
+}
+
+SharedMemoryBlobSequence::~SharedMemoryBlobSequence() {
+  if (path_is_owned_) {
+    ErrorOnFailure(shm_unlink(path_), "shm_unlink() failed");
+  }
+  ErrorOnFailure(munmap(data_, size_), "munmap() failed");
+  ErrorOnFailure(close(fd_), "close() failed");
+}
+
+void SharedMemoryBlobSequence::ReleaseSharedMemory() {
+  // Setting size to 0 releases the memory to OS.
+  ErrorOnFailure(ftruncate(fd_, 0) != 0, "ftruncate(0) failed)");
+  // Set the size back to `size`. The memory is not actually reserved.
+  ErrorOnFailure(ftruncate(fd_, size_) != 0, "ftruncate(size_) failed)");
+}
+
+size_t SharedMemoryBlobSequence::NumBytesUsed() const {
+  struct stat statbuf;
+  ErrorOnFailure(fstat(fd_, &statbuf), "fstat() failed)");
+  return statbuf.st_blocks * S_BLKSIZE;
 }
 
 }  // namespace centipede

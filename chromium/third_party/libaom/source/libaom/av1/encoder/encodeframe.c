@@ -1124,6 +1124,17 @@ static AOM_INLINE void encode_sb_row(AV1_COMP *cpi, ThreadData *td,
     // top-right superblock to finish encoding.
     enc_row_mt->sync_read_ptr(
         row_mt_sync, sb_row, sb_col_in_tile - delay_wait_for_top_right_sb(cpi));
+
+#if CONFIG_MULTITHREAD
+    if (row_mt_enabled) {
+      pthread_mutex_lock(enc_row_mt->mutex_);
+      const bool row_mt_exit = enc_row_mt->row_mt_exit;
+      pthread_mutex_unlock(enc_row_mt->mutex_);
+      // Exit in case any worker has encountered an error.
+      if (row_mt_exit) return;
+    }
+#endif
+
     const int update_cdf = tile_data->allow_update_cdf && row_mt_enabled;
     if (update_cdf && (tile_info->mi_row_start != mi_row)) {
       if ((tile_info->mi_col_start == mi_col)) {
@@ -1155,6 +1166,9 @@ static AOM_INLINE void encode_sb_row(AV1_COMP *cpi, ThreadData *td,
     x->content_state_sb.lighting_change = 0;
     x->content_state_sb.low_sumdiff = 0;
     x->force_zeromv_skip_for_sb = 0;
+    x->sb_me_block = 0;
+    x->sb_me_partition = 0;
+    x->sb_me_mv.as_int = 0;
 
     if (cpi->oxcf.mode == ALLINTRA) {
       x->intra_sb_rdmult_modifier = 128;

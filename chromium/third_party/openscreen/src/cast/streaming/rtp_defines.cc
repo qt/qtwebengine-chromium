@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -50,6 +50,27 @@ RtpPayloadType GetPayloadType(VideoCodec codec, bool use_android_rtp_hack) {
     default:
       OSP_NOTREACHED();
   }
+}
+
+StreamType ToStreamType(RtpPayloadType type, bool use_android_rtp_hack) {
+  if (use_android_rtp_hack) {
+    if (type == RtpPayloadType::kAudioHackForAndroidTV) {
+      return StreamType::kAudio;
+    }
+    if (type == RtpPayloadType::kVideoHackForAndroidTV) {
+      return StreamType::kVideo;
+    }
+  }
+
+  if (RtpPayloadType::kAudioFirst <= type &&
+      type <= RtpPayloadType::kAudioLast) {
+    return StreamType::kAudio;
+  }
+  if (RtpPayloadType::kVideoFirst <= type &&
+      type <= RtpPayloadType::kVideoLast) {
+    return StreamType::kVideo;
+  }
+  return StreamType::kUnknown;
 }
 
 bool IsRtpPayloadType(uint8_t raw_byte) {

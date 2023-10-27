@@ -230,7 +230,7 @@ class EventCount {
   void Unpark(Waiter* w) {
     for (Waiter* next; w; w = next) {
       uint64_t wnext = w->next.load(std::memory_order_relaxed) & kStackMask;
-      next = wnext == kStackMask ? nullptr : &waiters_[wnext];
+      next = wnext == kStackMask ? nullptr : &waiters_[internal::convert_index<size_t>(wnext)];
       unsigned state;
       {
         EIGEN_MUTEX_LOCK lock(w->mu);

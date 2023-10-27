@@ -26,6 +26,7 @@
 #include "absl/synchronization/mutex.h"
 #include "absl/synchronization/notification.h"
 #include "absl/time/time.h"
+#include "internal/platform/feature_flags.h"
 #include "internal/platform/implementation/windows/ble_peripheral.h"
 #include "internal/platform/implementation/windows/bluetooth_adapter.h"
 #include "internal/platform/implementation/windows/utils.h"
@@ -129,6 +130,12 @@ using IVector = winrt::Windows::Foundation::Collections::IVector<T>;
 
 // Copresence Service UUID 0xfef3 (little-endian)
 constexpr uint16_t kCopresenceServiceUuid = 0xf3fe;
+
+bool IsFastPairScanner() {
+  return FeatureFlags::GetInstance()
+      .GetFlags()
+      .enable_scan_for_fast_pair_advertisement;
+}
 }  // namespace
 
 BleMedium::BleMedium(api::BluetoothAdapter& adapter)
@@ -223,6 +230,9 @@ bool BleMedium::StartAdvertising(
                        << ": " << winrt::to_string(ex.message());
 
     return false;
+  } catch (...) {
+    NEARBY_LOGS(ERROR) << __func__ << ": Unknown exception.";
+    return false;
   }
 }
 
@@ -242,7 +252,12 @@ bool BleMedium::StopAdvertising(const std::string& service_id) {
       return false;
     }
 
-    publisher_.Stop();
+    // publisher_ may be null when status changed during advertising.
+    if (publisher_ != nullptr &&
+        publisher_.Status() ==
+            BluetoothLEAdvertisementPublisherStatus::Started) {
+      publisher_.Stop();
+    }
 
     // Don't need to wait for the status becomes to `Stopped`. If application
     // starts to scanning immediately, the scanning still needs to wait the
@@ -260,6 +275,9 @@ bool BleMedium::StopAdvertising(const std::string& service_id) {
                        << ": Exception to stop BLE advertising: " << ex.code()
                        << ": " << winrt::to_string(ex.message());
 
+    return false;
+  } catch (...) {
+    NEARBY_LOGS(ERROR) << __func__ << ": Unknown exception.";
     return false;
   }
 }
@@ -299,8 +317,8 @@ bool BleMedium::StartScanning(
     if (adapter_->IsExtendedAdvertisingSupported()) {
       watcher_.AllowExtendedAdvertisements(true);
     }
-    // Active mode indicates that scan request packets will be sent to query for
-    // Scan Response
+    // Active mode indicates that scan request packets will be sent to query
+    // for Scan Response
     watcher_.ScanningMode(BluetoothLEScanningMode::Active);
     ::winrt::Windows::Devices::Bluetooth::BluetoothSignalStrengthFilter filter;
     filter.SamplingInterval(TimeSpan(std::chrono::seconds(2)));
@@ -321,6 +339,9 @@ bool BleMedium::StartScanning(
                        << ": Exception to start BLE scanning: " << ex.code()
                        << ": " << winrt::to_string(ex.message());
 
+    return false;
+  } catch (...) {
+    NEARBY_LOGS(ERROR) << __func__ << ": Unknown exception.";
     return false;
   }
 }
@@ -361,6 +382,9 @@ bool BleMedium::StopScanning(const std::string& service_id) {
                        << ": Exception to stop BLE scanning: " << ex.code()
                        << ": " << winrt::to_string(ex.message());
 
+    return false;
+  } catch (...) {
+    NEARBY_LOGS(ERROR) << __func__ << ": Unknown exception.";
     return false;
   }
 }
@@ -438,8 +462,8 @@ void BleMedium::PublisherHandler(
                                 "radio not available.";
           break;
         case BluetoothError::ResourceInUse:
-          NEARBY_LOGS(ERROR)
-              << "Nearby BLE Medium advertising failed due to resource in use.";
+          NEARBY_LOGS(ERROR) << "Nearby BLE Medium advertising failed due to "
+                                "resource in use.";
           break;
         case BluetoothError::DeviceNotConnected:
           NEARBY_LOGS(ERROR) << "Nearby BLE Medium advertising failed due to "
@@ -467,8 +491,8 @@ void BleMedium::PublisherHandler(
           break;
         case BluetoothError::OtherError:
         default:
-          NEARBY_LOGS(ERROR)
-              << "Nearby BLE Medium advertising failed due to unknown errors.";
+          NEARBY_LOGS(ERROR) << "Nearby BLE Medium advertising failed due to "
+                                "unknown errors.";
           break;
       }
       break;
@@ -515,8 +539,8 @@ void BleMedium::WatcherHandler(
           << "Nearby BLE Medium stoped to scan due to disabled by user.";
       break;
     case BluetoothError::NotSupported:
-      NEARBY_LOGS(ERROR)
-          << "Nearby BLE Medium stoped to scan due to hardware not supported.";
+      NEARBY_LOGS(ERROR) << "Nearby BLE Medium stoped to scan due to "
+                            "hardware not supported.";
       break;
     case BluetoothError::TransportNotSupported:
       NEARBY_LOGS(ERROR) << "Nearby BLE Medium stoped to scan due to "
@@ -562,10 +586,11 @@ void BleMedium::AdvertisementReceivedHandler(
     DataReader data_reader = DataReader::FromBuffer(service_data.Data());
 
     // Discard the first 2 bytes of Service Uuid in Service Data
-    uint8_t first_byte = data_reader.ReadByte();   // 0xf3
-    uint8_t second_byte = data_reader.ReadByte();  // 0xfe
+    uint8_t first_byte = data_reader.ReadByte();
+    uint8_t second_byte = data_reader.ReadByte();
 
-    if (first_byte == 0xf3 && second_byte == 0xfe) {
+    if ((IsFastPairScanner() && first_byte == 0x2c && second_byte == 0xfe) ||
+        (!IsFastPairScanner() && first_byte == 0xf3 && second_byte == 0xfe)) {
       std::string data;
 
       uint8_t unconsumed_buffer_length = data_reader.UnconsumedBufferLength();
@@ -575,11 +600,11 @@ void BleMedium::AdvertisementReceivedHandler(
 
       ByteArray advertisement_data(data);
 
-      NEARBY_LOGS(VERBOSE)
-          << "Nearby BLE Medium 0xFEF3 Advertisement discovered. "
-             "0x16 Service data: advertisement bytes= 0x"
-          << absl::BytesToHexString(advertisement_data.AsStringView()) << "("
-          << advertisement_data.size() << ")";
+      NEARBY_LOGS(VERBOSE) << "Nearby BLE Medium Advertisement discovered. "
+                              "0x16 Service data: advertisement bytes= 0x"
+                           << absl::BytesToHexString(
+                                  advertisement_data.AsStringView())
+                           << "(" << advertisement_data.size() << ")";
 
       std::string peripheral_name =
           uint64_to_mac_address_string(args.BluetoothAddress());
@@ -593,7 +618,8 @@ void BleMedium::AdvertisementReceivedHandler(
                   service_id_) != advertisement_data) {
             NEARBY_LOGS(INFO) << "BLE reports lost device: " << peripheral_name;
 
-            // Lost the device first and then the report discovered the device.
+            // Lost the device first and then the report discovered the
+            // device.
             advertisement_received_callback_.peripheral_lost_cb(
                 /*ble_peripheral*/ *peripheral_map_[peripheral_name],
                 /*service_id*/ service_id_);

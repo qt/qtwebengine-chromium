@@ -20,6 +20,7 @@ import {
   autosaveConfigStore,
   recordTargetStore,
 } from '../frontend/record_config';
+import {SqlTables} from '../frontend/sql_table/well_known_tables';
 
 import {featureFlags} from './feature_flags';
 import {
@@ -28,6 +29,7 @@ import {
   State,
   STATE_VERSION,
 } from './state';
+import {Time} from './time';
 
 const AUTOLOAD_STARTED_CONFIG_FLAG = featureFlags.register({
   id: 'autoloadStartedConfig',
@@ -59,16 +61,21 @@ export function createEmptyNonSerializableState(): NonSerializableState {
   return {
     pivotTable: {
       queryResult: null,
-      selectedPivots: [{kind: 'regular', table: 'slice', column: 'name'}],
+      selectedPivots:
+          [{kind: 'regular', table: SqlTables.slice.name, column: 'name'}],
       selectedAggregations: [
         {
           aggregationFunction: 'SUM',
-          column: {kind: 'regular', table: 'slice', column: 'dur'},
+          column: {kind: 'regular', table: SqlTables.slice.name, column: 'dur'},
           sortDirection: 'DESC',
         },
         {
           aggregationFunction: 'SUM',
-          column: {kind: 'regular', table: 'slice', column: 'thread_dur'},
+          column: {
+            kind: 'regular',
+            table: SqlTables.slice.name,
+            column: 'thread_dur',
+          },
         },
         COUNT_AGGREGATION,
       ],
@@ -95,7 +102,6 @@ export function createEmptyState(): State {
     scrollingTracks: [],
     areas: {},
     queries: {},
-    metrics: {},
     permalink: {},
     notes: {},
     visualisedArgs: [],
@@ -142,8 +148,8 @@ export function createEmptyState(): State {
     sidebarVisible: true,
     hoveredUtid: -1,
     hoveredPid: -1,
-    hoverCursorTimestamp: -1n,
-    hoveredNoteTimestamp: -1n,
+    hoverCursorTimestamp: Time.INVALID,
+    hoveredNoteTimestamp: Time.INVALID,
     highlightedSliceId: -1,
     focusedFlowIdLeft: -1,
     focusedFlowIdRight: -1,
@@ -167,5 +173,8 @@ export function createEmptyState(): State {
       textEntry: '',
       hideNonMatching: true,
     },
+
+    // Somewhere to store plugins' persistent state.
+    plugins: {},
   };
 }

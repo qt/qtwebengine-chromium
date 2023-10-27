@@ -40,9 +40,8 @@ message CrOSVersionAttestationBlob {
 
   // kernel_cmdline_quote contains a PCR quotation of the PCR that have the
   // kernel commandline measured into it.
-  // For TPM2_FORMAT_1 version, this field will contain TPM2B_ATTEST
-  // concatenated with TPMT_SIGNATURE, whereby extraData in TPM2B_ATTEST is
-  // set to the challenge.
+  // For TPM2_FORMAT_1 version, this field will contain TPM2B_ATTEST, whereby
+  // extraData in TPM2B_ATTEST is set to the challenge.
   // The quotation is generated with TPM2_PCR_QUOTE.
   // Note that TPM2B_ATTEST and the TPMS_QUOTE_INFO within does not contain
   // the PCR content itself, but the hash of it, therefore to verify it, the
@@ -54,6 +53,10 @@ message CrOSVersionAttestationBlob {
   // Server side should also verify the quote PCR is PCR3.
   bytes kernel_cmdline_quote = 3;
 
+  // Same as above, but contains the TPMT_SIGNATURE part of the quote in DER
+  // format.
+  bytes kernel_cmdline_quote_signature = 4;
+
   // kernel_cmdline_content contains the raw content of /proc/cmdline.
   // Its content can be verified together with the kernel_cmdline_quote above.
   // Within the kernel command line, there's a key named
@@ -61,7 +64,7 @@ message CrOSVersionAttestationBlob {
   // lsb_release_content field below.
   // Currently, this field is populated for all supported devices and blob
   // version.
-  bytes kernel_cmdline_content = 4;
+  bytes kernel_cmdline_content = 5;
 
   // lsb_release_content contains the raw content of /etc/lsb-release
   // This file contains the ChromeOS version. Note that not all fields in the
@@ -69,7 +72,7 @@ message CrOSVersionAttestationBlob {
   // https://chromium.googlesource.com/chromiumos/docs/+/HEAD/os_config.md#LSB
   // Currently, this field is populated for all supported devices and blob
   // version.
-  bytes lsb_release_content = 5;
+  bytes lsb_release_content = 6;
 
   // kernel_antirollback_quote contains an NVRAM quotation of the NVRAM that
   // holds the kernel antirollback version.
@@ -78,7 +81,7 @@ message CrOSVersionAttestationBlob {
   // TPM2B_ATTEST is set to the challenge.
   // The quotation is generated with TPM2_NV_Certify.
   // The NVRAM content is in TPM2B_ATTEST and can be verified directly.
-  bytes kernel_antirollback_quote = 6;
+  bytes kernel_antirollback_quote = 7;
 }
 
 // This message is used to hold all additional information needed to validate

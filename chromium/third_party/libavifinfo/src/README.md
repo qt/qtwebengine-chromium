@@ -1,10 +1,10 @@
 # AVIF-info
 
 **libavifinfo** is a standalone library that can be used to extract the width,
-height, bit depth and number of channels from an AVIF payload.
+height, bit depth, number of channels and other metadata from an AVIF payload.
 
 See `avifinfo.h` for details on the API and `avifinfo.c` for the implementation.
-See `avifinfo_test.cc` for usage examples.
+See `tests/avifinfo_demo.cc` for API usage examples.
 
 ## Contents
 
@@ -29,15 +29,9 @@ linking to or including [libavif](https://github.com/AOMediaCodec/libavif) is
 not an option. For decoding an image or extracting more features, please rely on
 [libavif](https://github.com/AOMediaCodec/libavif).
 
-```
-AvifInfoFeatures features;
-if (AvifInfoGet(bytes, number_of_available_bytes, &features) == kAvifInfoOk) {
-  // Use 'features.width' etc.
-}
-```
-
-Note: `AvifInfoGet()` is designed to return the same `avifImage` field values as
-[`avifDecoderRead()`](https://github.com/AOMediaCodec/libavif/blob/9d8f9f9eb24fcea36113c946fa72f9f92aa7b317/include/avif/avif.h#L894).
+Note: `AvifInfoGetFeatures()` is designed to return the same `avifImage` field
+values as
+[`avifDecoderParse()`](https://github.com/AOMediaCodec/libavif/blob/e34204f5370509c72b3b2f065e5ebb2767cbbd48/include/avif/avif.h#L1049).
 However **libavifinfo** is more permissive and may return features of images
 considered invalid by **libavif**.
 
@@ -45,7 +39,7 @@ considered invalid by **libavif**.
 
 `avifinfo.c` is written in C. To build from this directory:
 
-```
+```sh
 mkdir build && \
 cd build && \
 cmake .. && \
@@ -56,7 +50,7 @@ cmake --build . --config Release
 
 Tests are written in C++. GoogleTest is required.
 
-```
+```sh
 mkdir build && \
 cd build && \
 cmake .. -DAVIFINFO_BUILD_TESTS=ON && \
@@ -77,6 +71,8 @@ If you would like to contribute to **libavifinfo**, please follow the steps for
 **libaom** at https://aomedia.googlesource.com/aom/#submitting-patches.
 
 ## PHP implementation
+
+The PHP implementation of libavifinfo is a subset of the C API.
 
 `libavifinfo` was [implemented](https://github.com/php/php-src/pull/7711) into
 **php-src** natively and is available through `getimagesize()` at head. If it is

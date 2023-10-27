@@ -14,9 +14,11 @@
 
 #include "./centipede/config_file.h"
 
+#include <cstdlib>
 #include <filesystem>  // NOLINT
 #include <set>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -25,11 +27,12 @@
 #include "absl/flags/parse.h"
 #include "absl/flags/reflection.h"
 #include "absl/log/check.h"
-#include "absl/strings/match.h"
+#include "absl/log/log.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/str_join.h"
 #include "absl/strings/str_replace.h"
-#include "absl/strings/str_split.h"
 #include "absl/strings/substitute.h"
+#include "./centipede/config_init.h"
 #include "./centipede/config_util.h"
 #include "./centipede/logging.h"
 #include "./centipede/remote_file.h"
@@ -82,23 +85,6 @@ ABSL_DECLARE_FLAG(std::vector<std::string>, flagfile);
 #define DASHED_FLAG_NAME(name) "--" << FLAGS_##name.Name()
 
 namespace centipede::config {
-
-std::vector<char*> CastArgv(const std::vector<std::string>& argv) {
-  std::vector<char*> ret_argv;
-  ret_argv.reserve(argv.size());
-  for (const auto& arg : argv) {
-    ret_argv.push_back(const_cast<char*>(arg.c_str()));
-  }
-  return ret_argv;
-}
-
-std::vector<std::string> CastArgv(const std::vector<char*>& argv) {
-  return {argv.cbegin(), argv.cend()};
-}
-
-std::vector<std::string> CastArgv(int argc, char** argv) {
-  return {argv, argv + argc};
-}
 
 AugmentedArgvWithCleanup::AugmentedArgvWithCleanup(
     const std::vector<std::string>& orig_argv, const Replacements& replacements,
@@ -244,16 +230,15 @@ $2 "$${flags[@]}"
   return path;
 }
 
-std::vector<std::string> InitCentipede(
-    int argc, char** argv, const MainRuntimeInit& main_runtime_init) {
+std::vector<std::string> InitCentipede(int argc, char** argv) {
   std::vector<std::string> leftover_argv;
 
   // main_runtime_init() is allowed to remove recognized flags from `argv`, so
   // we need a copy.
   const std::vector<std::string> saved_argv = CastArgv(argc, argv);
 
-  // Among other things, this should perform the initial command line parsing.
-  leftover_argv = main_runtime_init(argc, argv);
+  // Among other things, this performs the initial command line parsing.
+  leftover_argv = InitRuntime(argc, argv);
 
   // If --config=<path> was passed, replace it with the Abseil Flags' built-in
   // --flagfile=<localized_path> and reparse the command line. NOTE: It would be

@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -49,7 +49,7 @@ class SDLAudioPlayer final : public SDLPlayerBase {
   std::vector<uint8_t> interleaved_audio_buffer_;
 
   // Points to the memory containing the next chunk of interleaved audio.
-  absl::Span<const uint8_t> pending_audio_;
+  ByteView pending_audio_;
 
   // The currently-open SDL audio device (or zero, if not open).
   SDL_AudioDeviceID device_ = 0;

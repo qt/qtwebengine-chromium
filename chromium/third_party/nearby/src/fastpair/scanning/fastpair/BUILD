@@ -17,12 +17,13 @@ licenses(["notice"])
 cc_library(
     name = "scanning",
     srcs = [
-        "fast_pair_discoverable_scanner_impl.cc",
+        "fast_pair_discoverable_scanner.cc",
+        "fast_pair_non_discoverable_scanner.cc",
         "fast_pair_scanner_impl.cc",
     ],
     hdrs = [
         "fast_pair_discoverable_scanner.h",
-        "fast_pair_discoverable_scanner_impl.h",
+        "fast_pair_non_discoverable_scanner.h",
         "fast_pair_scanner.h",
         "fast_pair_scanner_impl.h",
     ],
@@ -37,11 +38,9 @@ cc_library(
         "//fastpair/proto:fastpair_cc_proto",
         "//fastpair/repository",
         "//fastpair/repository:device_repository",
-        "//fastpair/server_access",
         "//internal/base",
         "//internal/platform:base",
         "//internal/platform:comm",
-        "//internal/platform:logging",
         "//internal/platform:types",
         "@com_google_absl//absl/functional:any_invocable",
         "@com_google_absl//absl/functional:bind_front",
@@ -56,7 +55,6 @@ cc_library(
         "fake_fast_pair_scanner.cc",
     ],
     hdrs = [
-        "fake_fast_pair_discoverable_scanner.h",
         "fake_fast_pair_scanner.h",
     ],
     visibility = [
@@ -94,22 +92,41 @@ cc_test(
 )
 
 cc_test(
-    name = "fast_pair_discoverable_scanner_impl_test",
+    name = "fast_pair_discoverable_scanner_test",
     size = "small",
     srcs = [
-        "fast_pair_discoverable_scanner_impl_test.cc",
+        "fast_pair_discoverable_scanner_test.cc",
     ],
     shard_count = 16,
     deps = [
         ":scanning",
         ":test_support",
         "//fastpair/repository:device_repository",
-        "//fastpair/server_access:test_support",
+        "//fastpair/repository:test_support",
         "//fastpair/testing",
         "//internal/platform:comm",
         "//internal/platform/implementation/g3",  # build_cleaner: keep
         "@com_github_protobuf_matchers//protobuf-matchers",
         "@com_google_absl//absl/synchronization",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "fast_pair_non_discoverable_scanner_test",
+    size = "small",
+    srcs = [
+        "fast_pair_non_discoverable_scanner_test.cc",
+    ],
+    shard_count = 16,
+    deps = [
+        ":scanning",
+        ":test_support",
+        "//fastpair/common",
+        "//fastpair/repository:test_support",
+        "//fastpair/testing",
+        "//internal/platform/implementation/g3",  # build_cleaner: keep
+        "@com_github_protobuf_matchers//protobuf-matchers",
         "@com_google_googletest//:gtest_main",
     ],
 )

@@ -729,6 +729,7 @@ constexpr char kTypeDHCP[] = "dhcp";
 constexpr char kTypeBOOTP[] = "bootp";
 constexpr char kTypeZeroConf[] = "zeroconf";
 constexpr char kTypeDHCP6[] = "dhcp6";
+constexpr char kTypeSLAAC[] = "slaac";
 // kTypeVPN[] = "vpn" is defined above in device type session.
 
 // Flimflam error options.
@@ -1023,6 +1024,8 @@ constexpr char kTetheringEnableResultSuccess[] = "success";
 constexpr char kTetheringEnableResultUpstreamFailure[] = "upstream_failure";
 constexpr char kTetheringEnableResultUpstreamNotAvailable[] =
     "upstream_not_available";
+constexpr char kTetheringEnableResultUpstreamWithoutInternet[] =
+    "upstream_network_without_Internet";
 constexpr char kTetheringEnableResultWrongState[] = "wrong_state";
 
 // kCheckTetheringReadinessFunction return status

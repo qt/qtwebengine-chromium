@@ -36,6 +36,7 @@ cc_library(
         "//presence/implementation:internal",  # build_cleaner: keep
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/types:variant",
     ],
 )
 
@@ -86,10 +87,11 @@ cc_library(
         "scan_request_builder.h",
     ],
     deps = [
+        "//connections/implementation/proto:offline_wire_formats_cc_proto",
         "//internal/interop:device",
         "//internal/platform:base",
         "//internal/platform:connection_info",
-        "//internal/platform:logging",
+        "//internal/platform:types",
         "//internal/platform/implementation:types",
         "//internal/proto:credential_cc_proto",
         "//internal/proto:metadata_cc_proto",
@@ -118,9 +120,11 @@ cc_test(
     shard_count = 6,
     deps = [
         ":types",
+        "//connections/implementation/proto:offline_wire_formats_cc_proto",
         "//internal/platform:connection_info",
-        "//internal/platform:logging",
+        "//internal/platform:types",
         "//internal/proto:credential_cc_proto",
+        "//internal/proto:metadata_cc_proto",
         "@com_github_protobuf_matchers//protobuf-matchers",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:variant",

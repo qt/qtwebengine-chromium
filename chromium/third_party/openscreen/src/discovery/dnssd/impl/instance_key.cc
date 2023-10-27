@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -39,10 +39,10 @@ InstanceKey::InstanceKey(absl::string_view instance,
 }
 
 InstanceKey::InstanceKey(const InstanceKey& other) = default;
-InstanceKey::InstanceKey(InstanceKey&& other) = default;
+InstanceKey::InstanceKey(InstanceKey&& other) noexcept = default;
 
 InstanceKey& InstanceKey::operator=(const InstanceKey& rhs) = default;
-InstanceKey& InstanceKey::operator=(InstanceKey&& rhs) = default;
+InstanceKey& InstanceKey::operator=(InstanceKey&& rhs) noexcept = default;
 
 DomainName InstanceKey::GetName() const {
   std::vector<std::string> labels = ServiceKey::GetName().labels();

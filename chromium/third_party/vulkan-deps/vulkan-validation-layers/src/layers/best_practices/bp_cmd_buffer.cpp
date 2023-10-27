@@ -21,7 +21,8 @@
 #include "best_practices/best_practices_error_enums.h"
 
 bool BestPractices::PreCallValidateCreateCommandPool(VkDevice device, const VkCommandPoolCreateInfo* pCreateInfo,
-                                                     const VkAllocationCallbacks* pAllocator, VkCommandPool* pCommandPool) const {
+                                                     const VkAllocationCallbacks* pAllocator, VkCommandPool* pCommandPool,
+                                                     const ErrorObject& error_obj) const {
     bool skip = false;
 
     if (pCreateInfo->flags & VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT) {
@@ -35,7 +36,7 @@ bool BestPractices::PreCallValidateCreateCommandPool(VkDevice device, const VkCo
 }
 
 bool BestPractices::PreCallValidateAllocateCommandBuffers(VkDevice device, const VkCommandBufferAllocateInfo* pAllocateInfo,
-                                                          VkCommandBuffer* pCommandBuffers) const {
+                                                          VkCommandBuffer* pCommandBuffers, const ErrorObject& error_obj) const {
     bool skip = false;
 
     auto cp_state = Get<COMMAND_POOL_STATE>(pAllocateInfo->commandPool);
@@ -66,8 +67,8 @@ void BestPractices::PreCallRecordBeginCommandBuffer(VkCommandBuffer commandBuffe
     cb->is_one_time_submit = (pBeginInfo->flags & VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT) != 0;
 }
 
-bool BestPractices::PreCallValidateBeginCommandBuffer(VkCommandBuffer commandBuffer,
-                                                      const VkCommandBufferBeginInfo* pBeginInfo) const {
+bool BestPractices::PreCallValidateBeginCommandBuffer(VkCommandBuffer commandBuffer, const VkCommandBufferBeginInfo* pBeginInfo,
+                                                      const ErrorObject& error_obj) const {
     bool skip = false;
 
     if (pBeginInfo->flags & VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT) {
@@ -98,7 +99,7 @@ bool BestPractices::PreCallValidateBeginCommandBuffer(VkCommandBuffer commandBuf
 }
 
 bool BestPractices::PreCallValidateCmdWriteTimestamp(VkCommandBuffer commandBuffer, VkPipelineStageFlagBits pipelineStage,
-                                                     VkQueryPool queryPool, uint32_t query) const {
+                                                     VkQueryPool queryPool, uint32_t query, const ErrorObject& error_obj) const {
     bool skip = false;
 
     skip |= CheckPipelineStageFlags("vkCmdWriteTimestamp", static_cast<VkPipelineStageFlags>(pipelineStage));
@@ -107,7 +108,8 @@ bool BestPractices::PreCallValidateCmdWriteTimestamp(VkCommandBuffer commandBuff
 }
 
 bool BestPractices::PreCallValidateCmdWriteTimestamp2KHR(VkCommandBuffer commandBuffer, VkPipelineStageFlags2KHR pipelineStage,
-                                                         VkQueryPool queryPool, uint32_t query) const {
+                                                         VkQueryPool queryPool, uint32_t query,
+                                                         const ErrorObject& error_obj) const {
     bool skip = false;
 
     skip |= CheckPipelineStageFlags("vkCmdWriteTimestamp2KHR", pipelineStage);
@@ -116,7 +118,7 @@ bool BestPractices::PreCallValidateCmdWriteTimestamp2KHR(VkCommandBuffer command
 }
 
 bool BestPractices::PreCallValidateCmdWriteTimestamp2(VkCommandBuffer commandBuffer, VkPipelineStageFlags2 pipelineStage,
-                                                      VkQueryPool queryPool, uint32_t query) const {
+                                                      VkQueryPool queryPool, uint32_t query, const ErrorObject& error_obj) const {
     bool skip = false;
 
     skip |= CheckPipelineStageFlags("vkCmdWriteTimestamp2", pipelineStage);
@@ -169,7 +171,7 @@ void BestPractices::PreCallRecordCmdSetDepthTestEnableEXT(VkCommandBuffer comman
 }
 
 bool BestPractices::PreCallValidateCmdExecuteCommands(VkCommandBuffer commandBuffer, uint32_t commandBufferCount,
-                                                      const VkCommandBuffer* pCommandBuffers) const {
+                                                      const VkCommandBuffer* pCommandBuffers, const ErrorObject& error_obj) const {
     bool skip = false;
     const auto primary = GetRead<bp_state::CommandBuffer>(commandBuffer);
     for (uint32_t i = 0; i < commandBufferCount; i++) {
@@ -181,6 +183,20 @@ bool BestPractices::PreCallValidateCmdExecuteCommands(VkCommandBuffer commandBuf
         for (auto& clear : secondary.earlyClearAttachments) {
             if (ClearAttachmentsIsFullClear(*primary, uint32_t(clear.rects.size()), clear.rects.data())) {
                 skip |= ValidateClearAttachment(*primary, clear.framebufferAttachment, clear.colorAttachment, clear.aspects, true);
+            }
+        }
+
+        if (!(secondary_cb->beginInfo.flags & VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT)) {
+            if (primary->beginInfo.flags & VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT) {
+                // Warn that non-simultaneous secondary cmd buffer renders primary non-simultaneous
+                const LogObjectList objlist(commandBuffer, pCommandBuffers[i]);
+                skip |= LogWarning(objlist, kVUID_BestPractices_DrawState_InvalidCommandBufferSimultaneousUse,
+                                   "vkCmdExecuteCommands(): pCommandBuffers[%" PRIu32
+                                   "] %s does not have "
+                                   "VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT set and will cause primary "
+                                   "%s to be treated as if it does not have "
+                                   "VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT set, even though it does.",
+                                   i, FormatHandle(pCommandBuffers[i]).c_str(), FormatHandle(commandBuffer).c_str());
             }
         }
     }

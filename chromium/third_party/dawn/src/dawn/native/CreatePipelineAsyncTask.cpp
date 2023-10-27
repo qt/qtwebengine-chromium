@@ -22,6 +22,7 @@
 #include "dawn/native/RenderPipeline.h"
 #include "dawn/native/utils/WGPUHelpers.h"
 #include "dawn/platform/DawnPlatform.h"
+#include "dawn/platform/metrics/HistogramMacros.h"
 #include "dawn/platform/tracing/TraceEvent.h"
 
 namespace dawn::native {
@@ -47,10 +48,17 @@ void CreateComputePipelineAsyncTask::Run() {
     TRACE_EVENT1(device->GetPlatform(), General, "CreateComputePipelineAsyncTask::Run", "label",
                  eventLabel);
 
-    MaybeError maybeError = mComputePipeline->Initialize();
+    MaybeError maybeError;
+    {
+        SCOPED_DAWN_HISTOGRAM_TIMER_MICROS(device->GetPlatform(), "CreateComputePipelineUS");
+        maybeError = mComputePipeline->Initialize();
+    }
+    DAWN_HISTOGRAM_BOOLEAN(device->GetPlatform(), "CreateComputePipelineSuccess",
+                           maybeError.IsSuccess());
+
     if (maybeError.IsError()) {
-        device->AddComputePipelineAsyncCallbackTask(maybeError.AcquireError(), mCallback,
-                                                    mUserdata);
+        device->AddComputePipelineAsyncCallbackTask(
+            maybeError.AcquireError(), mComputePipeline->GetLabel().c_str(), mCallback, mUserdata);
     } else {
         device->AddComputePipelineAsyncCallbackTask(mComputePipeline, mCallback, mUserdata);
     }
@@ -97,9 +105,17 @@ void CreateRenderPipelineAsyncTask::Run() {
     TRACE_EVENT1(device->GetPlatform(), General, "CreateRenderPipelineAsyncTask::Run", "label",
                  eventLabel);
 
-    MaybeError maybeError = mRenderPipeline->Initialize();
+    MaybeError maybeError;
+    {
+        SCOPED_DAWN_HISTOGRAM_TIMER_MICROS(device->GetPlatform(), "CreateRenderPipelineUS");
+        maybeError = mRenderPipeline->Initialize();
+    }
+    DAWN_HISTOGRAM_BOOLEAN(device->GetPlatform(), "CreateRenderPipelineSuccess",
+                           maybeError.IsSuccess());
+
     if (maybeError.IsError()) {
-        device->AddRenderPipelineAsyncCallbackTask(maybeError.AcquireError(), mCallback, mUserdata);
+        device->AddRenderPipelineAsyncCallbackTask(
+            maybeError.AcquireError(), mRenderPipeline->GetLabel().c_str(), mCallback, mUserdata);
     } else {
         device->AddRenderPipelineAsyncCallbackTask(mRenderPipeline, mCallback, mUserdata);
     }

@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,7 +21,10 @@ class MockEnvironment : public Environment {
   MOCK_METHOD(IPEndpoint, GetBoundLocalEndpoint, (), (const, override));
 
   // Used for intercepting packet sends from the implementation under test.
-  MOCK_METHOD(void, SendPacket, (ByteView packet), (override));
+  MOCK_METHOD(void,
+              SendPacket,
+              (ByteView packet, PacketMetadata metadata),
+              (override));
 };
 
 }  // namespace cast

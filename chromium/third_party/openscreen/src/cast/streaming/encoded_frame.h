@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -38,6 +38,19 @@ struct EncodedFrame {
     kKeyFrame,
   };
 
+  EncodedFrame(Dependency dependency,
+               FrameId frame_id,
+               FrameId referenced_frame_id,
+               RtpTimeTicks rtp_timestamp,
+               Clock::time_point reference_time,
+               std::chrono::milliseconds new_playout_delay,
+               Clock::time_point capture_begin_time,
+               Clock::time_point capture_end_time,
+               ByteView data);
+
+  // TODO(issuetracker.google.com/285905175): remove remaining optional fields
+  // (new_playout_delay) once Chrome provides the capture begin and end
+  // timestamps, so this constructor only provides the required fields.
   EncodedFrame(Dependency dependency,
                FrameId frame_id,
                FrameId referenced_frame_id,
@@ -90,6 +103,11 @@ struct EncodedFrame {
   // Playout delay for this and all future frames. Used by the Adaptive
   // Playout delay extension. Non-positive values means no change.
   std::chrono::milliseconds new_playout_delay{};
+
+  // Video capture begin/end timestamps. If set to a value other than
+  // Clock::time_point::min(), used for improved statistics gathering.
+  Clock::time_point capture_begin_time = Clock::time_point::min();
+  Clock::time_point capture_end_time = Clock::time_point::min();
 
   // A buffer containing the encoded signal data for the frame. In the sender
   // context, this points to the data to be sent. In the receiver context, this

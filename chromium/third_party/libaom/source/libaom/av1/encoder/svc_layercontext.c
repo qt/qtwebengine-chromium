@@ -245,7 +245,8 @@ void av1_restore_layer_context(AV1_COMP *const cpi) {
   // This is to skip searching mv for that reference if it was last
   // refreshed (i.e., buffer slot holding that reference was refreshed) on the
   // previous spatial layer(s) at the same time (current_superframe).
-  if (rtc_ref->set_ref_frame_config && svc->force_zero_mode_spatial_ref) {
+  if (rtc_ref->set_ref_frame_config && svc->force_zero_mode_spatial_ref &&
+      cpi->sf.rt_sf.use_nonrd_pick_mode) {
     if (check_ref_is_low_spatial_res_super_frame(LAST_FRAME, svc, rtc_ref)) {
       svc->skip_mvsearch_last = 1;
     }
@@ -499,7 +500,8 @@ void av1_set_svc_fixed_mode(AV1_COMP *const cpi) {
       // Set all buffer_idx to 0.
       // Set GOLDEN to slot 5 and update slot 5.
       for (i = 0; i < INTER_REFS_PER_FRAME; i++) rtc_ref->ref_idx[i] = 0;
-      if (svc->temporal_layer_id < svc->number_temporal_layers - 1) {
+      if (svc->temporal_layer_id < svc->number_temporal_layers - 1 ||
+          svc->spatial_layer_id < svc->number_spatial_layers - 1) {
         rtc_ref->ref_idx[SVC_GOLDEN_FRAME] = 5;
         rtc_ref->refresh[5] = 1;
       }
@@ -509,7 +511,8 @@ void av1_set_svc_fixed_mode(AV1_COMP *const cpi) {
       // Set LAST3 to slot 6 and update slot 6.
       for (i = 0; i < INTER_REFS_PER_FRAME; i++) rtc_ref->ref_idx[i] = 5;
       rtc_ref->ref_idx[SVC_LAST_FRAME] = 1;
-      if (svc->temporal_layer_id < svc->number_temporal_layers - 1) {
+      if (svc->temporal_layer_id < svc->number_temporal_layers - 1 ||
+          svc->spatial_layer_id < svc->number_spatial_layers - 1) {
         rtc_ref->ref_idx[SVC_LAST3_FRAME] = 6;
         rtc_ref->refresh[6] = 1;
       }
@@ -606,11 +609,19 @@ void av1_svc_set_last_source(AV1_COMP *const cpi, EncodeFrameInput *frame_input,
       // For base spatial layer: if the LAST reference (index 0) is not
       // the previous (super)frame set the last_source to the source
       // corresponding to the last TL0, otherwise keep it at prev_source.
+      // Always use source_last_TL0 if previous base TL0 was dropped.
       if (cpi->svc.current_superframe > 0) {
         const int buffslot_last = rtc_ref->ref_idx[0];
-        if (rtc_ref->buffer_time_index[buffslot_last] <
-            cpi->svc.current_superframe - 1)
+        // Check if previous frame was dropped on base TL0 layer.
+        const int layer =
+            LAYER_IDS_TO_IDX(0, 0, cpi->svc.number_temporal_layers);
+        LAYER_CONTEXT *lc = &cpi->svc.layer_context[layer];
+        RATE_CONTROL *lrc = &lc->rc;
+        if (lrc->prev_frame_is_dropped ||
+            rtc_ref->buffer_time_index[buffslot_last] <
+                cpi->svc.current_superframe - 1) {
           frame_input->last_source = &cpi->svc.source_last_TL0;
+        }
       }
     } else if (cpi->svc.spatial_layer_id > 0) {
       // For spatial enhancement layers: the previous source (prev_source)

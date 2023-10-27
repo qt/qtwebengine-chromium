@@ -235,7 +235,9 @@ fn box_to_handle<T>(thing: T) -> Result<jlong, ()> {
         .try_into()
         .map_err(|_| {
             // resuscitate the Box so that its drop can run, otherwise we would leak on error
-            unsafe { Box::from_raw(pointer) };
+            unsafe {
+                let _ = Box::from_raw(pointer);
+            }
         })
         // Now that we know the pointer fits in 64 bits, can cast u64 to i64/jlong.
         .map(|ptr_64: u64| ptr_64 as jlong)

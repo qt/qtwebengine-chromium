@@ -27,7 +27,7 @@ struct GLFormat;
 class Texture final : public TextureBase {
   public:
     static ResultOrError<Ref<Texture>> Create(Device* device, const TextureDescriptor* descriptor);
-    Texture(Device* device, const TextureDescriptor* descriptor, GLuint handle, TextureState state);
+    Texture(Device* device, const TextureDescriptor* descriptor, GLuint handle);
 
     GLuint GetHandle() const;
     GLenum GetGLTarget() const;
@@ -45,6 +45,7 @@ class Texture final : public TextureBase {
     MaybeError ClearTexture(const SubresourceRange& range, TextureBase::ClearValue clearValue);
 
     GLuint mHandle;
+    bool mOwnsHandle = false;
     GLenum mTarget;
     uint32_t mGenID = 0;
 };

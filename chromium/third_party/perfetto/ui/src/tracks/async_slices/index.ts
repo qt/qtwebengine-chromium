@@ -13,14 +13,14 @@
 // limitations under the License.
 
 import {BigintMath as BIMath} from '../../base/bigint_math';
-import {PluginContext} from '../../common/plugin_api';
 import {LONG, LONG_NULL, NUM, STR} from '../../common/query_result';
-import {TPDuration, TPTime} from '../../common/time';
+import {duration, time} from '../../common/time';
 import {TrackData} from '../../common/track_data';
 import {
   TrackController,
 } from '../../controller/track_controller';
 import {NewTrackArgs, Track} from '../../frontend/track';
+import {Plugin, PluginContext, PluginInfo} from '../../public';
 import {ChromeSliceTrack} from '../chrome_slices';
 
 export const ASYNC_SLICE_TRACK_KIND = 'AsyncSliceTrack';
@@ -44,9 +44,9 @@ export interface Data extends TrackData {
 
 class AsyncSliceTrackController extends TrackController<Config, Data> {
   static readonly kind = ASYNC_SLICE_TRACK_KIND;
-  private maxDurNs: TPDuration = 0n;
+  private maxDurNs: duration = 0n;
 
-  async onBoundsChange(start: TPTime, end: TPTime, resolution: TPDuration):
+  async onBoundsChange(start: time, end: time, resolution: duration):
       Promise<Data> {
     if (this.maxDurNs === 0n) {
       const maxDurResult = await this.query(`
@@ -139,12 +139,14 @@ export class AsyncSliceTrack extends ChromeSliceTrack {
   }
 }
 
-function activate(ctx: PluginContext) {
-  ctx.registerTrackController(AsyncSliceTrackController);
-  ctx.registerTrack(AsyncSliceTrack);
+class AsyncSlicePlugin implements Plugin {
+  onActivate(ctx: PluginContext) {
+    ctx.registerTrackController(AsyncSliceTrackController);
+    ctx.registerTrack(AsyncSliceTrack);
+  }
 }
 
-export const plugin = {
+export const plugin: PluginInfo = {
   pluginId: 'perfetto.AsyncSlices',
-  activate,
+  plugin: AsyncSlicePlugin,
 };

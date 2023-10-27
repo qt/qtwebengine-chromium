@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -19,6 +20,7 @@
 #include "quiche/balsa/noop_balsa_visitor.h"
 #include "quiche/common/platform/api/quiche_export.h"
 #include "quiche/common/platform/api/quiche_flag_utils.h"
+#include "quiche/common/platform/api/quiche_logging.h"
 
 namespace quiche {
 
@@ -104,7 +106,12 @@ class QUICHE_EXPORT BalsaFrame : public FramerInterface {
   // framer.  This is a required step before the framer will process any input
   // message data.  To detach the trailer object from the framer, use
   // set_balsa_trailer(nullptr).
+  // TODO(b/134507471): Remove this method in favor of `EnableTrailers()`.
   void set_balsa_trailer(BalsaHeaders* trailer) {
+    if (trailers_ != nullptr) {
+      QUICHE_LOG(DFATAL) << "set_balsa_trailer() called with trailers_!";
+      return;
+    }
     if (trailer != nullptr && is_request()) {
       QUICHE_CODE_COUNT(balsa_trailer_in_request);
     }
@@ -116,6 +123,23 @@ class QUICHE_EXPORT BalsaFrame : public FramerInterface {
       // Clear the trailer if it is non-null, even if the new trailer is
       // the same as the old.
       trailer_->Clear();
+    }
+  }
+
+  // Enables the framer to process trailers and deliver them in
+  // `BalsaVisitorInterface::OnTrailers()`. Mutually exclusive with
+  // `set_balsa_trailer()`. If neither method is called, minimal
+  // trailers parsing will be performed (just enough to advance past trailers).
+  // TODO(b/134507471): Update comment with removal of `set_balsa_trailer()`.
+  void EnableTrailers() {
+    if (trailer_ != nullptr) {
+      QUICHE_LOG(DFATAL) << "EnableTrailers() called with trailer_!";
+    }
+    if (is_request()) {
+      QUICHE_CODE_COUNT(balsa_trailer_in_request);
+    }
+    if (trailers_ == nullptr) {
+      trailers_ = std::make_unique<BalsaHeaders>();
     }
   }
 
@@ -201,6 +225,13 @@ class QUICHE_EXPORT BalsaFrame : public FramerInterface {
     use_interim_headers_callback_ = set;
   }
 
+  // If enabled, parse the available portion of headers even on a
+  // HEADERS_TOO_LONG error, so that that portion of headers is available to the
+  // error handler. Generally results in the last header being truncated.
+  void set_parse_truncated_headers_even_when_headers_too_long(bool set) {
+    parse_truncated_headers_even_when_headers_too_long_ = set;
+  }
+
  protected:
   inline BalsaHeadersEnums::ContentLengthStatus ProcessContentLengthLine(
       size_t line_idx, size_t* length);
@@ -271,6 +302,11 @@ class QUICHE_EXPORT BalsaFrame : public FramerInterface {
   void HandleError(BalsaFrameEnums::ErrorCode error_code);
   void HandleWarning(BalsaFrameEnums::ErrorCode error_code);
 
+  void HandleHeadersTooLongError();
+
+  // TODO(b/134507471): Remove.
+  BalsaHeaders* GetTrailers() const;
+
   bool last_char_was_slash_r_;
   bool saw_non_newline_char_;
   bool start_was_space_;
@@ -300,8 +336,13 @@ class QUICHE_EXPORT BalsaFrame : public FramerInterface {
   Lines trailer_lines_;
   size_t start_of_trailer_line_;
   size_t trailer_length_;
-  BalsaHeaders* trailer_;  // Does not own and is not reset to nullptr
-                           // in Reset().
+
+  // At most one of these members is populated. Neither is reset to nullptr in
+  // Reset().
+  // TODO(b/134507471): Remove `trailer_` and update comment.
+  std::unique_ptr<BalsaHeaders> trailers_;
+  BalsaHeaders* trailer_;
+
   InvalidCharsLevel invalid_chars_level_;  // This is not reset in Reset().
 
   HttpValidationPolicy http_validation_policy_;
@@ -310,6 +351,9 @@ class QUICHE_EXPORT BalsaFrame : public FramerInterface {
   // TODO(b/68801833): Default-enable and then deprecate this field, along with
   // set_continue_headers().
   bool use_interim_headers_callback_;
+
+  // This is not reset in Reset().
+  bool parse_truncated_headers_even_when_headers_too_long_ = false;
 };
 
 }  // namespace quiche

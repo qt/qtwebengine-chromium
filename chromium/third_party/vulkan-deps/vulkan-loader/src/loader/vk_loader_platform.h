@@ -30,17 +30,19 @@
 #endif
 
 #include <assert.h>
-#include <string.h>
+#include <float.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <string.h>
 
 #if defined(__Fuchsia__)
 #include "dlopen_fuchsia.h"
 #endif  // defined(__Fuchsia__)
 
 // Set of platforms with a common set of functionality which is queried throughout the program
-#if defined(__linux__) || defined(__APPLE__) || defined(__Fuchsia__) || defined(__QNXNTO__) || defined(__FreeBSD__) || \
-    defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
+#if defined(__linux__) || defined(__APPLE__) || defined(__Fuchsia__) || defined(__QNX__) || defined(__FreeBSD__) || \
+    defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__) || defined(__GNU__)
 #define COMMON_UNIX_PLATFORMS 1
 #else
 #define COMMON_UNIX_PLATFORMS 0
@@ -99,6 +101,7 @@
 // Support added in v1.3.234 loader
 #define VK_LAYERS_ENABLE_ENV_VAR "VK_LOADER_LAYERS_ENABLE"
 #define VK_LAYERS_DISABLE_ENV_VAR "VK_LOADER_LAYERS_DISABLE"
+#define VK_LAYERS_ALLOW_ENV_VAR "VK_LOADER_LAYERS_ALLOW"
 #define VK_DRIVERS_SELECT_ENV_VAR "VK_LOADER_DRIVERS_SELECT"
 #define VK_DRIVERS_DISABLE_ENV_VAR "VK_LOADER_DRIVERS_DISABLE"
 #define VK_LOADER_DISABLE_ALL_LAYERS_VAR_1 "~all~"
@@ -141,7 +144,7 @@
 #define VK_ILAYERS_INFO_REGISTRY_LOC ""
 #define VK_SETTINGS_INFO_REGISTRY_LOC ""
 
-#if defined(__QNXNTO__)
+#if defined(__QNX__)
 #define SYSCONFDIR "/etc"
 #endif
 
@@ -214,6 +217,9 @@ typedef CONDITION_VARIABLE loader_platform_thread_cond;
 
 #endif
 
+// controls whether loader_platform_close_library() closes the libraries or not - controlled by an environment variables
+extern bool loader_disable_dynamic_library_unloading;
+
 // Returns true if the DIRECTORY_SYMBOL is contained within path
 static inline bool loader_platform_is_path(const char *path) { return strchr(path, DIRECTORY_SYMBOL) != NULL; }
 
@@ -260,7 +266,7 @@ static inline char *loader_platform_dirname(char *path) { return dirname(path); 
 
 // loader_platform_executable_path finds application path + name.
 // Path cannot be longer than 1024, returns NULL if it is greater than that.
-#if defined(__linux__)
+#if defined(__linux__) || defined(__GNU__)
 static inline char *loader_platform_executable_path(char *buffer, size_t size) {
     ssize_t count = readlink("/proc/self/exe", buffer, size);
     if (count == -1) return NULL;
@@ -300,7 +306,7 @@ static inline char *loader_platform_executable_path(char *buffer, size_t size) {
 }
 #elif defined(__Fuchsia__) || defined(__OpenBSD__)
 static inline char *loader_platform_executable_path(char *buffer, size_t size) { return NULL; }
-#elif defined(__QNXNTO__)
+#elif defined(__QNX__)
 
 #define SYSCONFDIR "/etc"
 
@@ -324,7 +330,7 @@ static inline char *loader_platform_executable_path(char *buffer, size_t size) {
 
     return buffer;
 }
-#endif  // defined (__QNXNTO__)
+#endif  // defined (__QNX__)
 
 // Compatability with compilers that don't support __has_feature
 #if !defined(__has_feature)
@@ -363,12 +369,11 @@ static inline const char *loader_platform_open_library_error(const char *libPath
 #endif
 }
 static inline void loader_platform_close_library(loader_platform_dl_handle library) {
-#if defined(LOADER_DISABLE_DYNAMIC_LIBRARY_UNLOADING)
-    (void)library;
-    return;
-#else
-    dlclose(library);
-#endif
+    if (!loader_disable_dynamic_library_unloading) {
+        dlclose(library);
+    } else {
+        (void)library;
+    }
 }
 static inline void *loader_platform_get_proc_address(loader_platform_dl_handle library, const char *name) {
     assert(library);
@@ -387,6 +392,16 @@ static inline void loader_platform_thread_unlock_mutex(loader_platform_thread_mu
 static inline void loader_platform_thread_delete_mutex(loader_platform_thread_mutex *pMutex) { pthread_mutex_destroy(pMutex); }
 
 static inline void *thread_safe_strtok(char *str, const char *delim, char **saveptr) { return strtok_r(str, delim, saveptr); }
+
+static inline FILE *loader_fopen(const char *fileName, const char *mode) { return fopen(fileName, mode); }
+static inline char *loader_strncat(char *dest, size_t dest_sz, const char *src, size_t count) {
+    (void)dest_sz;
+    return strncat(dest, src, count);
+}
+static inline char *loader_strncpy(char *dest, size_t dest_sz, const char *src, size_t count) {
+    (void)dest_sz;
+    return strncpy(dest, src, count);
+}
 
 #elif defined(_WIN32)
 
@@ -519,12 +534,11 @@ static inline const char *loader_platform_open_library_error(const char *libPath
     return errorMsg;
 }
 static inline void loader_platform_close_library(loader_platform_dl_handle library) {
-#if defined(LOADER_DISABLE_DYNAMIC_LIBRARY_UNLOADING)
-    (void)library;
-    return;
-#else
-    FreeLibrary(library);
-#endif
+    if (!loader_disable_dynamic_library_unloading) {
+        FreeLibrary(library);
+    } else {
+        (void)library;
+    }
 }
 static inline void *loader_platform_get_proc_address(loader_platform_dl_handle library, const char *name) {
     assert(library);
@@ -545,6 +559,25 @@ static inline void loader_platform_thread_delete_mutex(loader_platform_thread_mu
 
 static inline void *thread_safe_strtok(char *str, const char *delimiters, char **context) {
     return strtok_s(str, delimiters, context);
+}
+
+static inline FILE *loader_fopen(const char *fileName, const char *mode) {
+    FILE *file = NULL;
+    errno_t err = fopen_s(&file, fileName, mode);
+    if (err != 0) return NULL;
+    return file;
+}
+
+static inline char *loader_strncat(char *dest, size_t dest_sz, const char *src, size_t count) {
+    errno_t err = strncat_s(dest, dest_sz, src, count);
+    if (err != 0) return NULL;
+    return dest;
+}
+
+static inline char *loader_strncpy(char *dest, size_t dest_sz, const char *src, size_t count) {
+    errno_t err = strncpy_s(dest, dest_sz, src, count);
+    if (err != 0) return NULL;
+    return dest;
 }
 
 #else  // defined(_WIN32)

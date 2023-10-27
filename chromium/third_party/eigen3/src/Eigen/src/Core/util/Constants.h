@@ -480,6 +480,7 @@ namespace Architecture
     NEON = 0x4,
     MSA = 0x5,
     SVE = 0x6,
+    HVX = 0x7,
 #if defined EIGEN_VECTORIZE_SSE
     Target = SSE
 #elif defined EIGEN_VECTORIZE_ALTIVEC
@@ -492,6 +493,8 @@ namespace Architecture
     Target = SVE
 #elif defined EIGEN_VECTORIZE_MSA
     Target = MSA
+#elif defined EIGEN_VECTORIZE_HVX
+    Target = HVX
 #else
     Target = Generic
 #endif

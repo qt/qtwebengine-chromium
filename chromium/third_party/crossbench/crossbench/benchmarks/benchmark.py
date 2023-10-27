@@ -9,13 +9,14 @@ import argparse
 import logging
 import re
 from typing import (TYPE_CHECKING, Any, Dict, Generic, List, Optional, Sequence,
-                    Type, TypeVar, cast)
-from crossbench import helper
+                    Tuple, Type, TypeVar, cast)
 
-from crossbench.stories import PressBenchmarkStory, Story
+from crossbench import cli_helper, helper
+from crossbench.stories.press_benchmark import PressBenchmarkStory
+from crossbench.stories.story import Story
 
 if TYPE_CHECKING:
-  from crossbench.runner import Runner
+  from crossbench.runner.runner import Runner
 
 
 class Benchmark(abc.ABC):
@@ -26,7 +27,7 @@ class Benchmark(abc.ABC):
   def cli_help(cls) -> str:
     assert cls.__doc__, (f"Benchmark class {cls} must provide a doc string.")
     # Return the first non-empty line
-    return cls.__doc__.strip().split("\n")[0]
+    return cls.__doc__.strip().splitlines()[0]
 
   @classmethod
   def cli_description(cls) -> str:
@@ -38,8 +39,13 @@ class Benchmark(abc.ABC):
     return ""
 
   @classmethod
+  def aliases(cls) -> Tuple[str, ...]:
+    return tuple()
+
+  @classmethod
   def add_cli_parser(
-      cls, subparsers, aliases: Sequence[str] = ()) -> argparse.ArgumentParser:
+      cls, subparsers, aliases: Sequence[str] = ()
+  ) -> cli_helper.CrossBenchArgumentParser:
     parser = subparsers.add_parser(
         cls.NAME,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -47,6 +53,7 @@ class Benchmark(abc.ABC):
         description=cls.cli_description(),
         epilog=cls.cli_epilog(),
         aliases=aliases)
+    assert isinstance(parser, cli_helper.CrossBenchArgumentParser)
     return parser
 
   @classmethod
@@ -72,7 +79,7 @@ class Benchmark(abc.ABC):
     kwargs = cls.kwargs_from_cli(args)
     return cls(**kwargs)
 
-  def __init__(self, stories: Sequence[Story]):
+  def __init__(self, stories: Sequence[Story]) -> None:
     assert self.NAME is not None, f"{self} has no .NAME property"
     assert self.DEFAULT_STORY_CLS != Story, (
         f"{self} has no .DEFAULT_STORY_CLS property")
@@ -101,16 +108,24 @@ StoryT = TypeVar("StoryT", bound=Story)
 class StoryFilter(Generic[StoryT], metaclass=abc.ABCMeta):
 
   @classmethod
+  def add_cli_parser(
+      cls, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    return parser
+
+  @classmethod
   def kwargs_from_cli(cls, args: argparse.Namespace) -> Dict[str, Any]:
     return {"patterns": args.stories.split(",")}
 
   @classmethod
   def from_cli_args(cls, story_cls: Type[StoryT],
-                    args: argparse.Namespace) -> StoryFilter:
+                    args: argparse.Namespace) -> StoryFilter[StoryT]:
     kwargs = cls.kwargs_from_cli(args)
     return cls(story_cls, **kwargs)
 
-  def __init__(self, story_cls: Type[StoryT], patterns: Sequence[str]):
+  def __init__(self,
+               story_cls: Type[StoryT],
+               patterns: Sequence[str],
+               separate: bool = False) -> None:
     self.story_cls = story_cls
     assert issubclass(
         story_cls, Story), (f"Subclass of {Story} expected, found {story_cls}")
@@ -119,14 +134,14 @@ class StoryFilter(Generic[StoryT], metaclass=abc.ABCMeta):
                             None] = dict.fromkeys(story_cls.all_story_names())
     self.stories: Sequence[StoryT] = []
     self.process_all(patterns)
-    self.stories = self.create_stories()
+    self.stories = self.create_stories(separate)
 
   @abc.abstractmethod
   def process_all(self, patterns: Sequence[str]) -> None:
     pass
 
   @abc.abstractmethod
-  def create_stories(self) -> Sequence[StoryT]:
+  def create_stories(self, separate: bool) -> Sequence[StoryT]:
     pass
 
 
@@ -135,8 +150,10 @@ class SubStoryBenchmark(Benchmark, metaclass=abc.ABCMeta):
 
   @classmethod
   def add_cli_parser(
-      cls, subparsers, aliases: Sequence[str] = ()) -> argparse.ArgumentParser:
+      cls, subparsers, aliases: Sequence[str] = ()
+  ) -> cli_helper.CrossBenchArgumentParser:
     parser = super().add_cli_parser(subparsers, aliases)
+    # TODO: move these args to a dedicated SubStoryFilter class.
     parser.add_argument(
         "--stories",
         "--story",
@@ -162,12 +179,13 @@ class SubStoryBenchmark(Benchmark, metaclass=abc.ABCMeta):
   def cli_description(cls) -> str:
     desc = super().cli_description()
     desc += "\n\n"
-    desc += ("Stories (alternatively use 'the describe benchmark "
+    desc += ("Stories (alternatively use the 'describe benchmark "
              f"{cls.NAME}' command):\n")
     desc += ", ".join(cls.all_story_names())
     desc += "\n\n"
     desc += "Filtering (for --stories): "
-    assert cls.STORY_FILTER_CLS.__doc__
+    assert cls.STORY_FILTER_CLS.__doc__, (
+        f"{cls.STORY_FILTER_CLS} has no doc string.")
     desc += cls.STORY_FILTER_CLS.__doc__.strip()
 
     return desc
@@ -194,7 +212,12 @@ class SubStoryBenchmark(Benchmark, metaclass=abc.ABCMeta):
     return sorted(cls.DEFAULT_STORY_CLS.all_story_names())
 
 
-class PressBenchmarkStoryFilter(StoryFilter[PressBenchmarkStory]):
+PressBenchmarkStoryT = TypeVar(
+    "PressBenchmarkStoryT", bound=PressBenchmarkStory)
+
+
+class PressBenchmarkStoryFilter(Generic[PressBenchmarkStoryT],
+                                StoryFilter[PressBenchmarkStoryT]):
   """
   Filter stories by name or regexp.
 
@@ -217,20 +240,19 @@ class PressBenchmarkStoryFilter(StoryFilter[PressBenchmarkStory]):
     return kwargs
 
   def __init__(self,
-               story_cls: Type[PressBenchmarkStory],
+               story_cls: Type[PressBenchmarkStoryT],
                patterns: Sequence[str],
                separate: bool = False,
                url: Optional[str] = None):
-    self.separate = separate
     self.url = url
     # Using dict instead as ordered set
     self._selected_names: Dict[str, None] = {}
-    super().__init__(story_cls, patterns)
+    super().__init__(story_cls, patterns, separate)
     assert issubclass(self.story_cls, PressBenchmarkStory)
     for name in self._known_names:
       assert name, "Invalid empty story name"
       assert not name.startswith("-"), (
-          f"Known story names cannot start with '-', but got {name}.")
+          f"Known story names cannot start with '-', but got '{name}'.")
       assert not name == "all", "Known story name cannot match 'all'."
 
   def process_all(self, patterns: Sequence[str]) -> None:
@@ -298,18 +320,29 @@ class PressBenchmarkStoryFilter(StoryFilter[PressBenchmarkStory]):
         substory for substory in self._known_names if regexp.fullmatch(substory)
     ]
     if not substories:
+      logging.warning(
+          "No matching stories, using case-insensitive fallback regexp.")
+      iregexp: re.Pattern = re.compile(regexp.pattern, flags=re.IGNORECASE)
+      substories = [
+          substory for substory in self._known_names
+          if iregexp.fullmatch(substory)
+      ]
+    if not substories:
       raise ValueError(f"'{original_pattern}' didn't match any stories.")
     if len(substories) == len(self._known_names) and self._selected_names:
       raise ValueError(f"'{original_pattern}' matched all and overrode all"
                        "previously filtered story names.")
     return substories
 
-  def create_stories(self) -> Sequence[StoryT]:
+  def create_stories(self, separate: bool) -> Sequence[PressBenchmarkStoryT]:
     logging.info("SELECTED STORIES: %s",
                  str(list(map(str, self._selected_names))))
     names = list(self._selected_names.keys())
-    return self.story_cls.from_names(
-        names, separate=self.separate, url=self.url)
+    return self.create_stories_from_names(names, separate)
+
+  def create_stories_from_names(
+      self, names: List[str], separate: bool) -> Sequence[PressBenchmarkStoryT]:
+    return self.story_cls.from_names(names, separate=separate, url=self.url)
 
 
 class PressBenchmark(SubStoryBenchmark):
@@ -317,9 +350,38 @@ class PressBenchmark(SubStoryBenchmark):
   DEFAULT_STORY_CLS: Type[PressBenchmarkStory] = PressBenchmarkStory
 
   @classmethod
+  @abc.abstractmethod
+  def short_base_name(cls) -> str:
+    raise NotImplementedError()
+
+  @classmethod
+  @abc.abstractmethod
+  def base_name(cls) -> str:
+    raise NotImplementedError()
+
+  @classmethod
+  @abc.abstractmethod
+  def version(cls) -> Tuple[int, ...]:
+    raise NotImplementedError()
+
+  @classmethod
+  def aliases(cls) -> Tuple[str, ...]:
+    version = [str(v) for v in cls.version()]
+    assert version, "Expected non-empty version tuple."
+    version_names = []
+    dot_version = ".".join(version)
+    for name in (cls.short_base_name(), cls.base_name()):
+      assert name, "Expected non-empty base name."
+      version_names.append(f"{name}{dot_version}")
+      version_names.append(f"{name}_{dot_version}")
+    return tuple(version_names)
+
+  @classmethod
   def add_cli_parser(
-      cls, subparsers, aliases: Sequence[str] = ()) -> argparse.ArgumentParser:
+      cls, subparsers, aliases: Sequence[str] = ()
+  ) -> cli_helper.CrossBenchArgumentParser:
     parser = super().add_cli_parser(subparsers, aliases)
+    # TODO: Move story-related args to dedicated PressBenchmarkStoryFilter class
     benchmark_url_group = parser.add_mutually_exclusive_group()
     default_live_url = cls.DEFAULT_STORY_CLS.URL
     default_local_url = cls.DEFAULT_STORY_CLS.URL_LOCAL
@@ -332,11 +394,13 @@ class PressBenchmark(SubStoryBenchmark):
     benchmark_url_group.add_argument(
         "--local",
         "--custom-benchmark-url",
+        type=cli_helper.parse_httpx_url_str,
         nargs="?",
         dest="custom_benchmark_url",
         const=default_local_url,
         help=(f"Use custom or locally (default={default_local_url}) "
               "hosted benchmark url."))
+    cls.STORY_FILTER_CLS.add_cli_parser(parser)
     return parser
 
   @classmethod
@@ -379,5 +443,12 @@ class PressBenchmark(SubStoryBenchmark):
     if not url:
       raise ValueError("Invalid empty url")
     if not runner.env.validate_url(url):
-      raise ValueError(f"Could not reach live benchmark URL: '{url}'. "
-                       f"Please make sure you're connected to the internet.")
+      msg = [
+          f"Could not reach live benchmark URL: '{url}'."
+          f"Please make sure you're connected to the internet."
+      ]
+      local_url = first_story.URL_LOCAL
+      if local_url:
+        msg.append(
+            f"Alternatively use --local for the default local URL: {local_url}")
+      raise ValueError("\n".join(msg))

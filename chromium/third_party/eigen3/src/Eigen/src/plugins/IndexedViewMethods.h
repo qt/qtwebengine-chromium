@@ -37,7 +37,7 @@ inline IvcColType<Indices> ivcCol(const Indices& indices) const {
 }
 
 template <typename Indices>
-inline IvcColType<Indices> ivcSize(const Indices& indices) const {
+inline IvcType<Indices> ivcSize(const Indices& indices) const {
   return internal::makeIndexedViewCompatible(
       indices, internal::variable_if_dynamic<Index, SizeAtCompileTime>(derived().size()), Specialized);
 }

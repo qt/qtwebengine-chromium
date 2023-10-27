@@ -194,10 +194,7 @@ message LocalData {
 }
 
 // The format of the ownership taken signal payload.
-message OwnershipTakenSignal {
-  // A copy of LocalData right before sending the signal.
-  optional LocalData local_data = 1;
-}
+message OwnershipTakenSignal {}
 
 ////////////////////////////////////////////////////////////////////////////////
 // A series of request and reply messages for the NVRAM interface methods.
@@ -346,6 +343,8 @@ message GetVersionInfoReply {
   optional bytes vendor_specific = 7;
   // The GSC version.
   optional GscVersion gsc_version = 8;
+  // The RW firmware version.
+  optional string rw_version = 9;
 }
 
 message GetSupportedFeaturesRequest {}

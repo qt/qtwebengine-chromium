@@ -140,12 +140,6 @@ static const struct arg_enum_list color_primaries_enum[] = {
   { "ebu3213", AOM_CICP_CP_EBU_3213 },
   { NULL, 0 }
 };
-
-static const struct arg_enum_list global_motion_method_enum[] = {
-  { "feature-match", GLOBAL_MOTION_METHOD_FEATURE_MATCH },
-  { "disflow", GLOBAL_MOTION_METHOD_DISFLOW },
-  { NULL, 0 }
-};
 #endif  // CONFIG_AV1_ENCODER
 
 const av1_codec_arg_definitions_t g_av1_codec_arg_defs = {
@@ -704,9 +698,5 @@ const av1_codec_arg_definitions_t g_av1_codec_arg_defs = {
       ARG_DEF(NULL, "sb-qp-sweep", 1,
               "When set to 1, enable the superblock level qp sweep for a "
               "given lambda to minimize the rdcost."),
-  .global_motion_method = ARG_DEF_ENUM(NULL, "global-motion-method", 1,
-                                       "Global motion search method "
-                                       "(default: disflow):",
-                                       global_motion_method_enum),
 #endif  // CONFIG_AV1_ENCODER
 };

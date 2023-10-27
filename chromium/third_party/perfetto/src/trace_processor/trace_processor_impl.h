@@ -30,11 +30,11 @@
 #include "perfetto/trace_processor/basic_types.h"
 #include "perfetto/trace_processor/status.h"
 #include "perfetto/trace_processor/trace_processor.h"
-#include "src/trace_processor/prelude/functions/create_function.h"
-#include "src/trace_processor/prelude/functions/create_view_function.h"
-#include "src/trace_processor/prelude/functions/import.h"
+#include "src/trace_processor/perfetto_sql/engine/perfetto_sql_engine.h"
+#include "src/trace_processor/perfetto_sql/intrinsics/functions/create_function.h"
+#include "src/trace_processor/perfetto_sql/intrinsics/functions/create_view_function.h"
+#include "src/trace_processor/perfetto_sql/intrinsics/functions/import.h"
 #include "src/trace_processor/sqlite/db_sqlite_table.h"
-#include "src/trace_processor/sqlite/perfetto_sql_engine.h"
 #include "src/trace_processor/sqlite/query_cache.h"
 #include "src/trace_processor/sqlite/scoped_db.h"
 #include "src/trace_processor/sqlite/sqlite_engine.h"
@@ -108,12 +108,12 @@ class TraceProcessorImpl : public TraceProcessor,
   friend class IteratorImpl;
 
   template <typename Table>
-  void RegisterDbTable(const Table& table) {
-    engine_.RegisterTable(table, Table::Name());
+  void RegisterStaticTable(const Table& table) {
+    engine_.RegisterStaticTable(table, Table::Name());
   }
 
-  void RegisterTableFunction(std::unique_ptr<TableFunction> fn) {
-    engine_.RegisterTableFunction(std::move(fn));
+  void RegisterStaticTableFunction(std::unique_ptr<StaticTableFunction> fn) {
+    engine_.RegisterStaticTableFunction(std::move(fn));
   }
 
   template <typename View>
@@ -125,8 +125,6 @@ class TraceProcessorImpl : public TraceProcessor,
 
   DescriptorPool pool_;
 
-  // Map from module name to module contents. Used for IMPORT function.
-  base::FlatHashMap<std::string, sql_modules::RegisteredModule> sql_modules_;
   std::vector<metrics::SqlMetricFile> sql_metrics_;
   std::unordered_map<std::string, std::string> proto_field_to_sql_metric_path_;
 

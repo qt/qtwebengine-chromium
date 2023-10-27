@@ -47,6 +47,7 @@
 #include "winrt/Windows.Devices.Bluetooth.Advertisement.h"
 #include "winrt/Windows.Devices.Bluetooth.h"
 #include "winrt/Windows.Foundation.Collections.h"
+#include "winrt/Windows.Storage.Streams.h"  // NOLINT(misc-include-cleaner)
 
 namespace nearby {
 namespace windows {
@@ -68,6 +69,8 @@ using ::winrt::Windows::Devices::Bluetooth::Advertisement::
     BluetoothLEAdvertisementDataSection;
 using ::winrt::Windows::Devices::Bluetooth::Advertisement::
     BluetoothLEAdvertisementDataTypes;
+using ::winrt::Windows::Devices::Bluetooth::Advertisement::
+    BluetoothLEAdvertisementFilter;  // NOLINT(misc-include-cleaner)
 using ::winrt::Windows::Devices::Bluetooth::Advertisement::
     BluetoothLEAdvertisementPublisher;
 using ::winrt::Windows::Devices::Bluetooth::Advertisement::
@@ -230,9 +233,19 @@ bool BleV2Medium::StartScanning(const Uuid& service_uuid,
     // Active mode indicates that scan request packets will be sent to query for
     // Scan Response
     watcher_.ScanningMode(BluetoothLEScanningMode::Active);
-    ::winrt::Windows::Devices::Bluetooth::BluetoothSignalStrengthFilter filter;
-    filter.SamplingInterval(TimeSpan(std::chrono::seconds(2)));
-    watcher_.SignalStrengthFilter(filter);
+
+    BluetoothLEAdvertisementDataSection data_section;
+    data_section.DataType(0x16);
+    DataWriter data_writer;  // NOLINT(misc-include-cleaner)
+    std::array<char, 16> service_id_data = service_uuid_.data();
+    data_writer.WriteByte(service_id_data[3] & 0xff);
+    data_writer.WriteByte(service_id_data[2] & 0xff);
+    data_section.Data(data_writer.DetachBuffer());
+    BluetoothLEAdvertisement advertisement;
+    advertisement.DataSections().Append(data_section);
+    BluetoothLEAdvertisementFilter advertisement_filter;
+    advertisement_filter.Advertisement(advertisement);
+    watcher_.AdvertisementFilter(advertisement_filter);
     watcher_.Start();
 
     is_watcher_started_ = true;
@@ -249,6 +262,9 @@ bool BleV2Medium::StartScanning(const Uuid& service_uuid,
                        << ": Exception to start BLE scanning: " << ex.code()
                        << ": " << winrt::to_string(ex.message());
 
+    return false;
+  } catch (...) {
+    NEARBY_LOGS(ERROR) << __func__ << ": Unknown exception.";
     return false;
   }
 }
@@ -297,6 +313,9 @@ std::unique_ptr<BleV2Medium::ScanningSession> BleV2Medium::StartScanning(
       NEARBY_LOGS(ERROR) << __func__
                          << ": Exception to start BLE scanning: " << ex.code()
                          << ": " << winrt::to_string(ex.message());
+      return nullptr;
+    } catch (...) {
+      NEARBY_LOGS(ERROR) << __func__ << ": Unknown exception.";
       return nullptr;
     }
   } else {
@@ -357,6 +376,10 @@ std::unique_ptr<BleV2Medium::ScanningSession> BleV2Medium::StartScanning(
                           << __func__
                           << ": Exception to stop BLE scanning: " << ex.code()
                           << ": " << winrt::to_string(ex.message());
+                      return absl::InternalError(
+                          "Bad status stopping Ble scanning");
+                    } catch (...) {
+                      NEARBY_LOGS(ERROR) << __func__ << ": Unknown exception.";
                       return absl::InternalError(
                           "Bad status stopping Ble scanning");
                     }
@@ -429,6 +452,8 @@ std::unique_ptr<api::ble_v2::GattClient> BleV2Medium::ConnectToGattServer(
   } catch (const winrt::hresult_error& error) {
     NEARBY_LOGS(ERROR) << __func__ << ": WinRT exception: " << error.code()
                        << ": " << winrt::to_string(error.message());
+  } catch (...) {
+    NEARBY_LOGS(ERROR) << __func__ << ": Unknown exception.";
   }
 
   return nullptr;
@@ -470,6 +495,9 @@ bool BleV2Medium::StopScanning() {
                        << ": Exception to stop BLE scanning: " << ex.code()
                        << ": " << winrt::to_string(ex.message());
 
+    return false;
+  } catch (...) {
+    NEARBY_LOGS(ERROR) << __func__ << ": Unknown exception.";
     return false;
   }
 }
@@ -626,6 +654,9 @@ bool BleV2Medium::StartBleAdvertising(
                        << ": " << winrt::to_string(ex.message());
 
     return false;
+  } catch (...) {
+    NEARBY_LOGS(ERROR) << __func__ << ": Unknown exception.";
+    return false;
   }
 }
 
@@ -643,7 +674,12 @@ bool BleV2Medium::StopBleAdvertising() {
       return false;
     }
 
-    publisher_.Stop();
+    // publisher_ may be null when status changed during advertising.
+    if (publisher_ != nullptr &&
+        publisher_.Status() ==
+            BluetoothLEAdvertisementPublisherStatus::Started) {
+      publisher_.Stop();
+    }
 
     // Don't need to wait for the status becomes to `Stopped`. If application
     // starts to scanning immediately, the scanning still needs to wait the
@@ -661,6 +697,9 @@ bool BleV2Medium::StopBleAdvertising() {
                        << ": Exception to stop BLE advertising: " << ex.code()
                        << ": " << winrt::to_string(ex.message());
 
+    return false;
+  } catch (...) {
+    NEARBY_LOGS(ERROR) << __func__ << ": Unknown exception.";
     return false;
   }
 }
@@ -723,6 +762,9 @@ bool BleV2Medium::StartGattAdvertising(
                        << ": " << winrt::to_string(ex.message());
 
     return false;
+  } catch (...) {
+    NEARBY_LOGS(ERROR) << __func__ << ": Unknown exception.";
+    return false;
   }
 }
 
@@ -760,6 +802,9 @@ bool BleV2Medium::StopGattAdvertising() {
                        << ": Exception to stop BLE advertising: " << ex.code()
                        << ": " << winrt::to_string(ex.message());
 
+    return false;
+  } catch (...) {
+    NEARBY_LOGS(ERROR) << __func__ << ": Unknown exception.";
     return false;
   }
 }

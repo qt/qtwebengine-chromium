@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import {BigintMath} from '../base/bigint_math';
 import {RecordConfig} from '../controller/record_config_types';
 import {
   GenericSliceDetailsTabConfigBase,
@@ -21,9 +22,10 @@ import {
   PivotTree,
   TableColumn,
 } from '../frontend/pivot_table_types';
+import {TrackTags} from '../public/index';
 
 import {Direction} from './event_set';
-import {TPDuration, TPTime} from './time';
+import {duration, Time, time} from './time';
 
 /**
  * A plain js object, holding objects of type |Class| keyed by string id.
@@ -41,12 +43,16 @@ export type OmniboxMode = 'SEARCH'|'COMMAND';
 export interface OmniboxState {
   omnibox: string;
   mode: OmniboxMode;
+  force?: boolean;
 }
 
+// This is simply an arbitrarily large number to default to.
+export const RESOLUTION_DEFAULT = BigintMath.bitFloor(1_000_000_000_000n);
+
 export interface VisibleState extends Timestamped {
-  start: TPTime;
-  end: TPTime;
-  resolution: TPDuration;
+  start: time;
+  end: time;
+  resolution: duration;
 }
 
 export interface AreaSelection {
@@ -64,8 +70,8 @@ export interface AreaSelection {
 export type AreaById = Area&{id: string};
 
 export interface Area {
-  start: TPTime;
-  end: TPTime;
+  start: time;
+  end: time;
   tracks: string[];
 }
 
@@ -107,7 +113,13 @@ export const MAX_TIME = 180;
 // 30. Convert ftraceFilter.excludedNames from Set<string> to string[].
 // 31. Convert all timestamps to bigints.
 // 32. Add pendingDeeplink.
-export const STATE_VERSION = 31;
+// 33. Add plugins state.
+// 34. Add additional pendingDeeplink fields (query, pid).
+// 35. Add force to OmniboxState
+// 36. Remove metrics
+// 37. Add additional pendingDeeplink fields (visStart, visEnd).
+// 38. Add track tags.
+export const STATE_VERSION = 38;
 
 export const SCROLLING_TRACK_GROUP = 'ScrollingTracks';
 
@@ -239,6 +251,7 @@ export interface TrackState {
   labels?: string[];
   trackSortKey: TrackSortKey;
   trackGroup?: string;
+  tags: TrackTags;
   config: {
     trackId?: number;
     trackIds?: number[];
@@ -275,8 +288,8 @@ export interface PermalinkConfig {
 }
 
 export interface TraceTime {
-  start: TPTime;
-  end: TPTime;
+  start: time;
+  end: time;
 }
 
 export interface FrontendLocalState {
@@ -291,7 +304,7 @@ export interface Status {
 export interface Note {
   noteType: 'DEFAULT';
   id: string;
-  timestamp: TPTime;
+  timestamp: time;
   color: string;
   text: string;
 }
@@ -314,18 +327,10 @@ export interface SliceSelection {
   id: number;
 }
 
-export interface DebugSliceSelection {
-  kind: 'DEBUG_SLICE';
-  id: number;
-  sqlTableName: string;
-  start: TPTime;
-  duration: TPDuration;
-}
-
 export interface CounterSelection {
   kind: 'COUNTER';
-  leftTs: TPTime;
-  rightTs: TPTime;
+  leftTs: time;
+  rightTs: time;
   id: number;
 }
 
@@ -333,7 +338,7 @@ export interface HeapProfileSelection {
   kind: 'HEAP_PROFILE';
   id: number;
   upid: number;
-  ts: TPTime;
+  ts: time;
   type: ProfileType;
 }
 
@@ -341,16 +346,16 @@ export interface PerfSamplesSelection {
   kind: 'PERF_SAMPLES';
   id: number;
   upid: number;
-  leftTs: TPTime;
-  rightTs: TPTime;
+  leftTs: time;
+  rightTs: time;
   type: ProfileType;
 }
 
 export interface FlamegraphState {
   kind: 'FLAMEGRAPH_STATE';
   upids: number[];
-  start: TPTime;
-  end: TPTime;
+  start: time;
+  end: time;
   type: ProfileType;
   viewingOption: FlamegraphStateViewingOption;
   focusRegex: string;
@@ -361,7 +366,7 @@ export interface CpuProfileSampleSelection {
   kind: 'CPU_PROFILE_SAMPLE';
   id: number;
   utid: number;
-  ts: TPTime;
+  ts: time;
 }
 
 export interface ChromeSliceSelection {
@@ -385,8 +390,8 @@ export interface GenericSliceSelection {
   kind: 'GENERIC_SLICE';
   id: number;
   sqlTableName: string;
-  start: TPTime;
-  duration: TPDuration;
+  start: time;
+  duration: duration;
   // NOTE: this config can be expanded for multiple details panel types.
   detailsPanelConfig: {kind: string; config: GenericSliceDetailsTabConfigBase;};
 }
@@ -394,8 +399,8 @@ export interface GenericSliceSelection {
 export type Selection =
     (NoteSelection|SliceSelection|CounterSelection|HeapProfileSelection|
      CpuProfileSampleSelection|ChromeSliceSelection|ThreadStateSelection|
-     AreaSelection|PerfSamplesSelection|LogSelection|DebugSliceSelection|
-     GenericSliceSelection)&{trackId?: string};
+     AreaSelection|PerfSamplesSelection|LogSelection|GenericSliceSelection)&
+    {trackId?: string};
 export type SelectionKind = Selection['kind'];  // 'THREAD_STATE' | 'SLICE' ...
 
 export interface Pagination {
@@ -426,12 +431,6 @@ export interface Sorting {
 export interface AggregationState {
   id: string;
   sorting?: Sorting;
-}
-
-export interface MetricsState {
-  availableMetrics?: string[];  // Undefined until list is loaded.
-  selectedIndex?: number;
-  requestedMetric?: string;  // Unset after metric request is handled.
 }
 
 // Auxiliary metadata needed to parse the query result, as well as to render it
@@ -532,6 +531,10 @@ export interface PendingDeeplinkState {
   ts?: string;
   dur?: string;
   tid?: string;
+  pid?: string;
+  query?: string;
+  visStart?: string;
+  visEnd?: string;
 }
 
 export interface State {
@@ -564,7 +567,6 @@ export interface State {
   debugTrackId?: string;
   lastTrackReloadRequest?: number;
   queries: ObjectById<QueryConfig>;
-  metrics: MetricsState;
   permalink: PermalinkConfig;
   notes: ObjectById<Note|AreaNote>;
   status: Status;
@@ -593,8 +595,8 @@ export interface State {
   // Hovered and focused events
   hoveredUtid: number;
   hoveredPid: number;
-  hoverCursorTimestamp: TPTime;
-  hoveredNoteTimestamp: TPTime;
+  hoverCursorTimestamp: time;
+  hoveredNoteTimestamp: time;
   highlightedSliceId: number;
   focusedFlowIdLeft: number;
   focusedFlowIdRight: number;
@@ -632,11 +634,14 @@ export interface State {
   // Pending deeplink which will happen when we first finish opening a
   // trace.
   pendingDeeplink?: PendingDeeplinkState;
+
+  // Individual plugin states
+  plugins: {[key: string]: any};
 }
 
 export const defaultTraceTime = {
-  start: 0n,
-  end: BigInt(10e9),
+  start: Time.ZERO,
+  end: Time.fromSeconds(10),
 };
 
 export declare type RecordMode =

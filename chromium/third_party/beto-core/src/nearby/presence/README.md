@@ -5,17 +5,20 @@ Implementations of XTS and LDT for Nearby Presence "v0" advertisements.
 See the appendix below for more details on XTS and LDT.
 
 ## Project structure
-*Note all new crates follow the convention of using underscore `_` instead of hyphen `-` in crate names
+
+*Note all new crates follow the convention of using underscore `_` instead of
+hyphen `-` in crate names
 
 ### `ldt`
 
 An implementation
 of [`LDT`](https://luca-giuzzi.unibs.it/corsi/Support/papers-cryptography/1619-2007-NIST-Submission.pdf)
- which can use `xts-aes` as its tweakable block cipher.
+which can use `xts-aes` as its tweakable block cipher.
 
- ### `ldt_tbc`
+### `ldt_tbc`
 
-The Tweakable Block Cipher traits for use in LDT. These traits have implementations in the `xts_aes`
+The Tweakable Block Cipher traits for use in LDT. These traits have
+implementations in the `xts_aes`
 
 ### `ldt_np_adv`
 
@@ -24,23 +27,26 @@ payload validation the way Nearby Presence advertisements need.
 
 ### `ldt_np_adv_ffi`
 
-C API for rust library, currently exposes C/C++ clients the needed API's to use the NP specific LDT rust implementation.
-For an example of how to integrate with these API's see program in `ldt_np_c_sample`
+C API for rust library, currently exposes C/C++ clients the needed API's to use
+the NP specific LDT rust implementation.
+For an example of how to integrate with these API's see program
+in `ldt_np_c_sample`
 
 ### `ldt_np_c_sample`
 
-Sample c program which provides its own OpenSSL based AES implementation to encrypt data through the LDT rust implementation
+Sample c program which provides its own OpenSSL based AES implementation to
+encrypt data through the LDT rust implementation
 An example of how to interface with the `ldt_np_adv_ffi` API's
 
 ### `np_hkdf`
 
-The Key Derivation functions used for creating keys used by nearby presence from a key_seed
+The Key Derivation functions used for creating keys used by nearby presence from
+a key_seed
 
 ### `xts_aes`
 
 An implementation
 of [`XTS-AES`](https://luca-giuzzi.unibs.it/corsi/Support/papers-cryptography/1619-2007-NIST-Submission.pdf)
-
 
 ## Setup for MacOS local development
 
@@ -50,37 +56,51 @@ Dependencies:
 brew install protobuf rapidjson google-benchmark
 ```
 
-We depend on OpenSSL of version at least 3.0.5 being installed on your machine to build the fuzzers, for macOS run:
+We depend on OpenSSL of version at least 3.0.5 being installed on your machine
+to build the fuzzers, for macOS run:
 
 ```
 brew install openssl@3
 ```
 
-Your build system may still be picking up an older version so you will have to symlink to the brew installed version:
+Your build system may still be picking up an older version so you will have to
+symlink to the brew installed version:
+
 ```
 brew link --force openssl
 ```
 
-The in-box version of Clang which comes from XCode developer tools does not have a fuzzer runtime so we will have to use our own
+The in-box version of Clang which comes from XCode developer tools does not have
+a fuzzer runtime so we will have to use our own
+
 ```
 brew install llvm
 ```
-then to override the default version it needs to come before it in $PATH. first find your path:
+
+then to override the default version it needs to come before it in $PATH. first
+find your path:
+
 ```
 $(brew --prefix llvm)/bin
 ```
+
 then add this to the beginning of your path
+
 ```
 echo 'export PATH="/opt/homebrew/opt/llvm/bin:$PATH"' >> ~/.bash_profile
 export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
 ```
+
 verify success with:
+
 ```
 clang --version
 ```
+
 it should display the path to the homebrew version and not the xcode version.
 
 Some other dependencies you may need include:
+
 ```
 brew install ninja bindgen
 ```
@@ -117,7 +137,9 @@ cargo run --release --example ldt_benchmark -- \
 ```
 
 ### `ldt_np_c_sample`
-From the root directory run the following commands to build and run the C sample.
+
+From the root directory run the following commands to build and run the C
+sample.
 
 ```
 mkdir -p cmake-build && cd cmake-build
@@ -127,7 +149,9 @@ make
 ```
 
 ### `ldt_np_c_sample/tests`
-Test cases for the ldt_np_adv_ffi C API which are built alongside the sample, use the following commands to run the tests, from root of repo:
+
+Test cases for the ldt_np_adv_ffi C API which are built alongside the sample,
+use the following commands to run the tests, from root of repo:
 
 ```
 mkdir -p cmake-build && cd cmake-build
@@ -135,7 +159,9 @@ cmake .. -DENABLE_TESTS=TRUE
 make
 cd ldt_np_c_sample/tests && ctest
 ```
-you can then view the output of the tests in `ldt_np_c_sample/tests/Testing/Temporary/LastTest.log`
+
+you can then view the output of the tests
+in `ldt_np_c_sample/tests/Testing/Temporary/LastTest.log`
 
 To run the benchmarks:
 
@@ -155,7 +181,15 @@ Crates with fuzzers: `ldt`, `ldt_np_adv`, `xts_aes`
 
 ### C
 
-Build w/ cmake as per `ldt_np_c_sample` instructions. Fuzzers will be in `np_ffi_fuzz` in the build directory.
+Build cmake project with `-DENABLE_FUZZ=true`<br>
+Fuzz targets will be output to the build dir for:<br>
+
+- `ldt_np_adv_ffi_fuzz`<br>
+- `np_cpp_ffi/fuzz`
+    - To run `fuzzer_np_cpp_deserialize`
+      use: `./fuzzer_np_cpp_deserialize -max_len=255 corpus`
+    - The `corpus` directory provides seed data to help the fuzzer generate
+      more relevant data to input
 
 ## Cross-compilation for Android
 
@@ -198,15 +232,20 @@ Build w/ cmake as per `ldt_np_c_sample` instructions. Fuzzers will be in `np_ffi
 - In your `adb shell`, run the benchmark
 
     - `./ldt_scan-... --bench`
+
 ### Building min-sized release cross-compiled for Android
-- Copy and paste the following into your `~/.cargo/config.toml`, replacing with a path to your NDK and Host OS
+
+- Copy and paste the following into your `~/.cargo/config.toml`, replacing with
+  a path to your NDK and Host OS
+
 ```
 [target.aarch64-linux-android]
 # Replace this with a path to your ndk version and the prebuilt toolchain for your Host OS
 linker = "Library/Android/sdk/ndk/23.2.8568313/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android21-clang"
 ```
+
 - then run:
-`cargo +nightly build -Z build-std=core,alloc -Z build-std-features=panic_immediate_abort --target aarch64-linux-android --profile release-min-size`
+  `cargo +nightly build -Z build-std=core,alloc -Z build-std-features=panic_immediate_abort --target aarch64-linux-android --profile release-min-size`
 
 ## Appendix
 

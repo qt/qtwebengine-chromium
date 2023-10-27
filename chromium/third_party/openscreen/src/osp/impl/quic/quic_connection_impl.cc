@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,8 @@
 
 #include <limits>
 #include <memory>
+#include <utility>
+#include <vector>
 
 #include "absl/types/optional.h"
 #include "osp/impl/quic/quic_connection_factory_impl.h"

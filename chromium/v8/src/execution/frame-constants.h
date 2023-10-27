@@ -204,22 +204,6 @@ class BuiltinFrameConstants : public TypedFrameConstants {
   DEFINE_TYPED_FRAME_SIZES(2);
 };
 
-// Fixed frame slots shared by the js-to-wasm wrapper, the
-// ReturnPromiseOnSuspend wrapper and the WasmResume wrapper.
-class BuiltinWasmWrapperConstants : public TypedFrameConstants {
- public:
-  // This slot contains the number of slots at the top of the frame that need to
-  // be scanned by the GC.
-  static constexpr int kGCScanSlotCountOffset =
-      TYPED_FRAME_PUSHED_VALUE_OFFSET(0);
-  // The number of parameters passed to this function.
-  static constexpr int kInParamCountOffset = TYPED_FRAME_PUSHED_VALUE_OFFSET(1);
-  // The number of parameters according to the signature.
-  static constexpr int kParamCountOffset = TYPED_FRAME_PUSHED_VALUE_OFFSET(2);
-  static constexpr int kSuspenderOffset = TYPED_FRAME_PUSHED_VALUE_OFFSET(3);
-  static constexpr int kFunctionDataOffset = TYPED_FRAME_PUSHED_VALUE_OFFSET(4);
-};
-
 class ConstructFrameConstants : public TypedFrameConstants {
  public:
   // FP-relative.
@@ -230,6 +214,15 @@ class ConstructFrameConstants : public TypedFrameConstants {
   static constexpr int kNewTargetOrImplicitReceiverOffset =
       TYPED_FRAME_PUSHED_VALUE_OFFSET(4);
   DEFINE_TYPED_FRAME_SIZES(5);
+};
+
+class FastConstructFrameConstants : public TypedFrameConstants {
+ public:
+  // FP-relative.
+  static constexpr int kContextOffset = TYPED_FRAME_PUSHED_VALUE_OFFSET(0);
+  static constexpr int kImplicitReceiverOffset =
+      TYPED_FRAME_PUSHED_VALUE_OFFSET(1);
+  DEFINE_TYPED_FRAME_SIZES(2);
 };
 
 #if V8_ENABLE_WEBASSEMBLY
@@ -254,11 +247,16 @@ class WasmExitFrameConstants : public WasmFrameConstants {
   DEFINE_TYPED_FRAME_SIZES(2);
 };
 
-class JSToWasmWrapperConstants {
+// Fixed frame slots used by the js-to-wasm wrapper.
+class JSToWasmWrapperFrameConstants : public TypedFrameConstants {
  public:
   // FP-relative.
-  static constexpr int kResultArrayOffset = 2 * kSystemPointerSize;
-  static constexpr int kInstanceOffset = 3 * kSystemPointerSize;
+  static constexpr int kResultArrayParamOffset = 2 * kSystemPointerSize;
+  static constexpr int kInstanceParamOffset = 3 * kSystemPointerSize;
+
+  // Contains RawPtr to stack-allocated buffer.
+  static constexpr int kWrapperBufferOffset =
+      TYPED_FRAME_PUSHED_VALUE_OFFSET(0);
 
   // Offsets into the wrapper buffer for values passed from Torque to the
   // assembly builtin.
@@ -282,8 +280,50 @@ class JSToWasmWrapperConstants {
   // Size of the wrapper buffer
   static constexpr int kWrapperBufferSize =
       kWrapperBufferGPReturnRegister2 + kSystemPointerSize;
+  static_assert(kWrapperBufferParamEnd + kSystemPointerSize <=
+                kWrapperBufferSize);
 };
 
+// Fixed frame slots used by the ReturnPromiseOnSuspendAsm wrapper
+// and the WasmResume wrapper.
+class StackSwitchFrameConstants : public JSToWasmWrapperFrameConstants {
+ public:
+  //  StackSwitching stack layout
+  //  ------+-----------------+----------------------
+  //        |  return addr    |
+  //    fp  |- - - - - - - - -|  -------------------|
+  //        |       fp        |                     |
+  //   fp-p |- - - - - - - - -|                     |
+  //        |  frame marker   |                     | no GC scan
+  //  fp-2p |- - - - - - - - -|                     |
+  //        |   scan_count    |                     |
+  //  fp-3p |- - - - - - - - -|  -------------------|
+  //        |  wasm_instance  |                     |
+  //  fp-4p |- - - - - - - - -|                     | fixed GC scan
+  //        |  result_array   |                     |
+  //  fp-5p |- - - - - - - - -|  -------------------|
+  //        |      ....       | <- spill_slot_limit |
+  //        |   spill slots   |                     | GC scan scan_count slots
+  //        |      ....       | <- spill_slot_base--|
+  //        |- - - - - - - - -|                     |
+  // This slot contains the number of slots at the top of the frame that need to
+  // be scanned by the GC.
+  static constexpr int kGCScanSlotCountOffset =
+      TYPED_FRAME_PUSHED_VALUE_OFFSET(1);
+  // Tagged pointer to wasm instance.
+  static constexpr int kInstanceOffset = TYPED_FRAME_PUSHED_VALUE_OFFSET(2);
+  // Tagged pointer to a JS Array for result values.
+  static constexpr int kResultArrayOffset = TYPED_FRAME_PUSHED_VALUE_OFFSET(3);
+
+  static constexpr int kLastSpillOffset = kResultArrayOffset;
+  static constexpr int kNumSpillSlots = 4;
+};
+
+class WasmToJSWrapperConstants {
+ public:
+  // FP-relative.
+  static constexpr size_t kSignatureOffset = 2 * kSystemPointerSize;
+};
 #endif  // V8_ENABLE_WEBASSEMBLY
 
 class BuiltinContinuationFrameConstants : public TypedFrameConstants {
@@ -346,12 +386,25 @@ class ApiCallbackExitFrameConstants : public ExitFrameConstants {
   static constexpr int kFunctionCallbackInfoNewTargetIndex = 5;
   static constexpr int kFunctionCallbackInfoArgsLength = 6;
 
-  // Target and argc.
+  // Target, argc, context and optional padding (for arm64).
   static constexpr int kTargetOffset = kCallerPCOffset + 1 * kSystemPointerSize;
   static constexpr int kArgcOffset = kTargetOffset + 1 * kSystemPointerSize;
+  static constexpr int kContextOffset = kArgcOffset + 1 * kSystemPointerSize;
+  static constexpr int kOptionalPaddingOffset =
+      kContextOffset + 1 * kSystemPointerSize;
+
+#if V8_TARGET_ARCH_ARM64
+  // Padding is required to keep the stack 16-byte aligned.
+  static constexpr int kOptionalPaddingSize = kSystemPointerSize;
+  static constexpr int kAdditionalParametersCount = 4;
+#else
+  static constexpr int kOptionalPaddingSize = 0;
+  static constexpr int kAdditionalParametersCount = 3;
+#endif  // V8_TARGET_ARCH_ARM64
+
   // FunctionCallbackInfo.
   static constexpr int kFunctionCallbackInfoOffset =
-      kArgcOffset + 1 * kSystemPointerSize;
+      kOptionalPaddingOffset + kOptionalPaddingSize;
   static constexpr int kNewTargetOffset =
       kFunctionCallbackInfoOffset +
       kFunctionCallbackInfoNewTargetIndex * kSystemPointerSize;

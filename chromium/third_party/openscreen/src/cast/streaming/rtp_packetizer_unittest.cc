@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,19 +12,22 @@
 #include "cast/streaming/rtp_defines.h"
 #include "cast/streaming/rtp_packet_parser.h"
 #include "cast/streaming/ssrc.h"
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "util/chrono_helpers.h"
 #include "util/crypto/random_bytes.h"
 
+using testing::ElementsAreArray;
+
 namespace openscreen {
 namespace cast {
+
 namespace {
 
 constexpr RtpPayloadType kPayloadType = RtpPayloadType::kAudioOpus;
 
 // Returns true if |needle| is fully within |haystack|.
-bool IsSubspan(absl::Span<const uint8_t> needle,
-               absl::Span<const uint8_t> haystack) {
+bool IsSubspan(ByteView needle, ByteView haystack) {
   return (needle.data() >= haystack.data()) &&
          ((needle.data() + needle.size()) <=
           (haystack.data() + haystack.size()));
@@ -117,10 +120,10 @@ class RtpPacketizerTest : public testing::Test {
                                           ? final_packet_payload_size
                                           : packet_payload_size;
     EXPECT_EQ(expected_payload_size, static_cast<int>(result->payload.size()));
-    const absl::Span<const uint8_t> expected_bytes(
-        frame.data.data() + (packet_id * packet_payload_size),
-        expected_payload_size);
-    EXPECT_EQ(expected_bytes, result->payload);
+    EXPECT_THAT(
+        result->payload,
+        ElementsAreArray(frame.data.data() + (packet_id * packet_payload_size),
+                         expected_payload_size));
   }
 
  private:

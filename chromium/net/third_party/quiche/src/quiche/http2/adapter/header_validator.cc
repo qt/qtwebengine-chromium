@@ -12,8 +12,13 @@ namespace adapter {
 
 namespace {
 
+// From RFC 9110 Section 5.6.2.
+const absl::string_view kHttpTokenChars =
+    "!#$%&'*+-.^_`|~0123456789"
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
 const absl::string_view kHttp2HeaderNameAllowedChars =
-    "!#$%&\'*+-.0123456789"
+    "!#$%&'*+-.0123456789"
     "^_`abcdefghijklmnopqrstuvwxyz|~";
 
 const absl::string_view kHttp2HeaderValueAllowedChars =
@@ -76,6 +81,11 @@ bool IsValidStatus(absl::string_view status) {
   static const CharMap valid_chars =
       BuildValidCharMap(kHttp2StatusValueAllowedChars);
   return AllCharsInMap(status, valid_chars);
+}
+
+bool IsValidMethod(absl::string_view method) {
+  static const CharMap valid_chars = BuildValidCharMap(kHttpTokenChars);
+  return AllCharsInMap(method, valid_chars);
 }
 
 bool ValidateRequestHeaders(const std::vector<std::string>& pseudo_headers,
@@ -181,11 +191,16 @@ HeaderValidator::HeaderStatus HeaderValidator::ValidateSingleHeader(
       }
       status_ = std::string(value);
     } else if (key == ":method") {
-      method_ = std::string(value);
+      if (IsValidMethod(value)) {
+        method_ = std::string(value);
+      } else {
+        return HEADER_FIELD_INVALID;
+      }
     } else if (key == ":authority" && !ValidateAndSetAuthority(value)) {
       return HEADER_FIELD_INVALID;
     } else if (key == ":path") {
-      if (value.empty() || !IsValidPath(value, allow_fragment_in_path_)) {
+      if (value.empty() ||
+          (validate_path_ && !IsValidPath(value, allow_fragment_in_path_))) {
         return HEADER_FIELD_INVALID;
       }
       path_ = std::string(value);
@@ -304,6 +319,14 @@ HeaderValidator::ContentLengthStatus HeaderValidator::HandleContentLength(
 bool HeaderValidator::ValidateAndSetAuthority(absl::string_view authority) {
   if (!IsValidAuthority(authority)) {
     return false;
+  }
+  if (allow_different_host_and_authority_) {
+    if (!authority_.has_value()) {
+      authority_ = std::string(authority);
+    } else {
+      absl::StrAppend(&authority_.value(), ", ", authority);
+    }
+    return true;
   }
   if (authority_.has_value() && authority != authority_.value()) {
     return false;

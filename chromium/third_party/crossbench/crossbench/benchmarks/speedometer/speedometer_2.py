@@ -9,7 +9,7 @@ from .speedometer import SpeedometerStory
 
 class Speedometer2Story(SpeedometerStory):
   __doc__ = SpeedometerStory.__doc__
-  SUBSTORIES: Final[Tuple[str, ...]] = (
+  SUBSTORIES: Tuple[str, ...] = (
       "VanillaJS-TodoMVC",
       "Vanilla-ES2015-TodoMVC",
       "Vanilla-ES2015-Babel-Webpack-TodoMVC",

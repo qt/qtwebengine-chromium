@@ -124,7 +124,6 @@ enum class WellKnownImport : uint8_t;
   V(WasmArrayNewSegment)                 \
   V(WasmArrayInitSegment)                \
   V(WasmAllocateStructWithRtt)           \
-  V(WasmSubtypeCheck)                    \
   V(WasmOnStackReplace)                  \
   V(WasmSuspend)                         \
   V(WasmStringNewWtf8)                   \
@@ -139,6 +138,7 @@ enum class WellKnownImport : uint8_t;
   V(WasmStringIsUSVSequence)             \
   V(WasmStringAsWtf16)                   \
   V(WasmStringViewWtf16GetCodeUnit)      \
+  V(WasmStringCodePointAt)               \
   V(WasmStringViewWtf16Encode)           \
   V(WasmStringViewWtf16Slice)            \
   V(WasmStringNewWtf8Array)              \
@@ -605,7 +605,7 @@ class WasmCodeAllocator {
 class V8_EXPORT_PRIVATE NativeModule final {
  public:
 #if V8_TARGET_ARCH_X64 || V8_TARGET_ARCH_S390X || V8_TARGET_ARCH_ARM64 || \
-    V8_TARGET_ARCH_PPC64 || V8_TARGET_ARCH_LOONG64
+    V8_TARGET_ARCH_PPC64 || V8_TARGET_ARCH_LOONG64 || V8_TARGET_ARCH_RISCV64
   static constexpr bool kNeedsFarJumpsBetweenCodeSpaces = true;
 #else
   static constexpr bool kNeedsFarJumpsBetweenCodeSpaces = false;
@@ -713,7 +713,10 @@ class V8_EXPORT_PRIVATE NativeModule final {
   // on the fly, and bypass the instance builder pipeline.
   void ReserveCodeTableForTesting(uint32_t max_functions);
 
-  void LogWasmCodes(Isolate*, Script);
+  // Log all owned code in the given isolate, using the given script as the
+  // containing script. Use this after transferring the module to a new isolate
+  // or when enabling a component that needs all code to be logged (profiler).
+  void LogWasmCodes(Isolate*, Tagged<Script>);
 
   CompilationState* compilation_state() const {
     return compilation_state_.get();
@@ -781,8 +784,8 @@ class V8_EXPORT_PRIVATE NativeModule final {
   // Similar to above, scheduling a repeated task to write out PGO data is only
   // needed once per module, not per instantiation.
   bool ShouldPgoDataBeWritten() {
-    return should_pgo_data_be_written.exchange(false,
-                                               std::memory_order_relaxed);
+    return should_pgo_data_be_written_.exchange(false,
+                                                std::memory_order_relaxed);
   }
 
   bool HasWireBytes() const {
@@ -858,6 +861,16 @@ class V8_EXPORT_PRIVATE NativeModule final {
   uint32_t* tiering_budget_array() const { return tiering_budgets_.get(); }
 
   Counters* counters() const { return code_allocator_.counters(); }
+
+  size_t EstimateCurrentMemoryConsumption() const;
+
+  bool log_code() const { return log_code_.load(std::memory_order_relaxed); }
+
+  void EnableCodeLogging() { log_code_.store(true, std::memory_order_relaxed); }
+
+  void DisableCodeLogging() {
+    log_code_.store(false, std::memory_order_relaxed);
+  }
 
  private:
   friend class WasmCode;
@@ -1036,7 +1049,14 @@ class V8_EXPORT_PRIVATE NativeModule final {
 
   // Whether the next instantiation should trigger repeated output of PGO data
   // (if --experimental-wasm-pgo-to-file is enabled).
-  std::atomic<bool> should_pgo_data_be_written{true};
+  std::atomic<bool> should_pgo_data_be_written_{true};
+
+  // A lock-free quick-access flag to indicate whether code for this
+  // NativeModule might need to be logged in any isolate. This is updated by the
+  // {WasmEngine}, which keeps the source of truth. After checking this flag,
+  // you would typically call into {WasmEngine::LogCode} which then checks
+  // (under a mutex) which isolate needs logging.
+  std::atomic<bool> log_code_{false};
 };
 
 class V8_EXPORT_PRIVATE WasmCodeManager final {

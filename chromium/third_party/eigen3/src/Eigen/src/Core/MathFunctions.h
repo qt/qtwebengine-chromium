@@ -430,6 +430,13 @@ struct cast_impl
   }
 };
 
+template <typename OldType>
+struct cast_impl<OldType, bool> {
+  EIGEN_DEVICE_FUNC
+  static inline bool run(const OldType& x) { return x != OldType(0); }
+};
+
+
 // Casting from S -> Complex<T> leads to an implicit conversion from S to T,
 // generating warnings on clang.  Here we explicitly cast the real component.
 template<typename OldType, typename NewType>
@@ -456,51 +463,6 @@ inline NewType cast(const OldType& x)
 }
 
 /****************************************************************************
-* Implementation of round                                                   *
-****************************************************************************/
-
-template<typename Scalar>
-struct round_impl
-{
-  EIGEN_STATIC_ASSERT((!NumTraits<Scalar>::IsComplex), NUMERIC_TYPE_MUST_BE_REAL)
-
-  EIGEN_DEVICE_FUNC
-  static inline Scalar run(const Scalar& x)
-  {
-    EIGEN_USING_STD(round);
-    return Scalar(round(x));
-  }
-};
-
-template<typename Scalar>
-struct round_retval
-{
-  typedef Scalar type;
-};
-
-/****************************************************************************
-* Implementation of rint                                                    *
-****************************************************************************/
-
-template<typename Scalar>
-struct rint_impl {
-  EIGEN_STATIC_ASSERT((!NumTraits<Scalar>::IsComplex), NUMERIC_TYPE_MUST_BE_REAL)
-
-  EIGEN_DEVICE_FUNC
-  static inline Scalar run(const Scalar& x)
-  {
-    EIGEN_USING_STD(rint);
-    return rint(x);
-  }
-};
-
-template<typename Scalar>
-struct rint_retval
-{
-  typedef Scalar type;
-};
-
-/****************************************************************************
 * Implementation of arg                                                     *
 ****************************************************************************/
 
@@ -520,12 +482,8 @@ struct arg_default_impl<Scalar, true> {
   EIGEN_DEVICE_FUNC
   static inline RealScalar run(const Scalar& x)
   {
-    #if defined(EIGEN_HIP_DEVICE_COMPILE)
-    // HIP does not seem to have a native device side implementation for the math routine "arg"
+    // There is no official ::arg on device in CUDA/HIP, so we always need to use std::arg.
     using std::arg;
-    #else
-    EIGEN_USING_STD(arg);
-    #endif
     return static_cast<RealScalar>(arg(x));
   }
 };
@@ -989,6 +947,22 @@ struct sign_retval {
   typedef Scalar type;
 };
 
+
+template <typename Scalar, bool IsInteger = NumTraits<typename unpacket_traits<Scalar>::type>::IsInteger>
+struct nearest_integer_impl {
+  static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Scalar run_floor(const Scalar& x) { EIGEN_USING_STD(floor) return floor(x); }
+  static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Scalar run_ceil(const Scalar& x) { EIGEN_USING_STD(ceil) return ceil(x); }
+  static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Scalar run_rint(const Scalar& x) { EIGEN_USING_STD(rint) return rint(x); }
+  static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Scalar run_round(const Scalar& x) { EIGEN_USING_STD(round) return round(x); }
+};
+template <typename Scalar>
+struct nearest_integer_impl<Scalar, true> {
+  static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Scalar run_floor(const Scalar& x) { return x; }
+  static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Scalar run_ceil(const Scalar& x) { return x; }
+  static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Scalar run_rint(const Scalar& x) { return x; }
+  static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Scalar run_round(const Scalar& x) { return x; }
+};
+
 } // end namespace internal
 
 /****************************************************************************
@@ -1310,29 +1284,28 @@ SYCL_SPECIALIZE_FLOATING_TYPES_UNARY_FUNC_RET_TYPE(isfinite, isfinite, bool)
 #endif
 
 template<typename Scalar>
-EIGEN_DEVICE_FUNC
-inline EIGEN_MATHFUNC_RETVAL(rint, Scalar) rint(const Scalar& x)
+EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
+Scalar rint(const Scalar& x)
 {
-  return EIGEN_MATHFUNC_IMPL(rint, Scalar)::run(x);
+  return internal::nearest_integer_impl<Scalar>::run_rint(x);
 }
 
 template<typename Scalar>
-EIGEN_DEVICE_FUNC
-inline EIGEN_MATHFUNC_RETVAL(round, Scalar) round(const Scalar& x)
+EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
+Scalar round(const Scalar& x)
 {
-  return EIGEN_MATHFUNC_IMPL(round, Scalar)::run(x);
+  return internal::nearest_integer_impl<Scalar>::run_round(x);
 }
 
 #if defined(SYCL_DEVICE_ONLY)
 SYCL_SPECIALIZE_FLOATING_TYPES_UNARY(round, round)
 #endif
 
-template<typename T>
-EIGEN_DEVICE_FUNC
-T (floor)(const T& x)
+template<typename Scalar>
+EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
+Scalar (floor)(const Scalar& x)
 {
-  EIGEN_USING_STD(floor)
-  return floor(x);
+  return internal::nearest_integer_impl<Scalar>::run_floor(x);
 }
 
 #if defined(SYCL_DEVICE_ONLY)
@@ -1347,12 +1320,11 @@ template<> EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
 double floor(const double &x) { return ::floor(x); }
 #endif
 
-template<typename T>
-EIGEN_DEVICE_FUNC
-T (ceil)(const T& x)
+template<typename Scalar>
+EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
+Scalar (ceil)(const Scalar& x)
 {
-  EIGEN_USING_STD(ceil);
-  return ceil(x);
+  return internal::nearest_integer_impl<Scalar>::run_ceil(x);
 }
 
 #if defined(SYCL_DEVICE_ONLY)

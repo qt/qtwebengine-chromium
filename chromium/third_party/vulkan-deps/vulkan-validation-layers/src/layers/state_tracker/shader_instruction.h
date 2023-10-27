@@ -24,7 +24,7 @@
 #include "containers/custom_containers.h"
 #include <spirv/unified1/spirv.hpp>
 
-struct SHADER_MODULE_STATE;
+struct SPIRV_MODULE_STATE;
 
 struct AtomicInstructionInfo {
     uint32_t storage_class;
@@ -69,13 +69,14 @@ class Instruction {
     uint32_t GetConstantValue() const;
     uint32_t GetBitWidth() const;
     uint32_t GetByteWidth() const { return (GetBitWidth() + 31) / 32; }
-    AtomicInstructionInfo GetAtomicInfo(const SHADER_MODULE_STATE& module_state) const;
+    AtomicInstructionInfo GetAtomicInfo(const SPIRV_MODULE_STATE& module_state) const;
     spv::BuiltIn GetBuiltIn() const;
 
+    bool IsArray() const;
     // Helpers for OpTypeImage
     spv::Dim FindImageDim() const;
-    bool IsArrayed() const;
-    bool IsMultisampled() const;
+    bool IsImageArray() const;
+    bool IsImageMultisampled() const;
 
     // Auto-generated helper functions
     spv::StorageClass StorageClass() const;

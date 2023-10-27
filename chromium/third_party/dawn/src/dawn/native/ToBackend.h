@@ -34,7 +34,7 @@ struct ToBackendTraits<BindGroupBase, BackendTraits> {
 };
 
 template <typename BackendTraits>
-struct ToBackendTraits<BindGroupLayoutBase, BackendTraits> {
+struct ToBackendTraits<BindGroupLayoutInternalBase, BackendTraits> {
     using BackendType = typename BackendTraits::BindGroupLayoutType;
 };
 
@@ -96,6 +96,16 @@ struct ToBackendTraits<SamplerBase, BackendTraits> {
 template <typename BackendTraits>
 struct ToBackendTraits<ShaderModuleBase, BackendTraits> {
     using BackendType = typename BackendTraits::ShaderModuleType;
+};
+
+template <typename BackendTraits>
+struct ToBackendTraits<SharedFenceBase, BackendTraits> {
+    using BackendType = typename BackendTraits::SharedFenceType;
+};
+
+template <typename BackendTraits>
+struct ToBackendTraits<SharedTextureMemoryBase, BackendTraits> {
+    using BackendType = typename BackendTraits::SharedTextureMemoryType;
 };
 
 template <typename BackendTraits>

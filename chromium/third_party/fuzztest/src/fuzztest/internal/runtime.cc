@@ -32,6 +32,7 @@
 #include "absl/random/bit_gen_ref.h"
 #include "absl/random/discrete_distribution.h"
 #include "absl/random/random.h"
+#include "absl/status/status.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
@@ -293,14 +294,23 @@ FuzzTestFuzzerImpl::~FuzzTestFuzzerImpl() {
 
 std::optional<corpus_type> FuzzTestFuzzerImpl::TryParse(std::string_view data) {
   auto ir_value = IRObject::FromString(data);
-  if (!ir_value) return std::nullopt;
-
+  if (!ir_value) {
+    absl::FPrintF(GetStderr(), "[!] Unexpected file format.\n");
+    return std::nullopt;
+  }
   auto corpus_value = params_domain_->UntypedParseCorpus(*ir_value);
-  if (!corpus_value) return std::nullopt;
+  if (!corpus_value) {
+    absl::FPrintF(GetStderr(), "[!] Unexpected intermediate representation.\n");
+    return std::nullopt;
+  }
 
-  bool valid = params_domain_->UntypedValidateCorpusValue(*corpus_value);
-  if (!valid) return std::nullopt;
-
+  absl::Status is_valid =
+      params_domain_->UntypedValidateCorpusValue(*corpus_value);
+  if (!is_valid.ok()) {
+    absl::FPrintF(GetStderr(), "[!] Invalid corpus value: %s\n",
+                  is_valid.ToString());
+    return std::nullopt;
+  }
   return corpus_value;
 }
 

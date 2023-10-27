@@ -6,12 +6,14 @@
 
 #include "src/codegen/compiler.h"
 #include "src/codegen/optimized-compilation-info.h"
+#include "src/compiler/turboshaft/wasm-turboshaft-compiler.h"
 #include "src/compiler/wasm-compiler.h"
 #include "src/handles/handles-inl.h"
 #include "src/logging/counters-scopes.h"
 #include "src/logging/log.h"
 #include "src/objects/code-inl.h"
 #include "src/wasm/baseline/liftoff-compiler.h"
+#include "src/wasm/turboshaft-graph-interface.h"
 #include "src/wasm/wasm-code-manager.h"
 #include "src/wasm/wasm-debug.h"
 
@@ -147,6 +149,18 @@ WasmCompilationResult WasmCompilationUnit::ExecuteFunctionCompilation(
       compiler::WasmCompilationData data(func_body);
       data.func_index = func_index_;
       data.wire_bytes_storage = wire_bytes_storage;
+      bool use_turboshaft = v8_flags.turboshaft_wasm;
+      if (func_index_ < 32 && ((v8_flags.wasm_turboshaft_mask_for_testing &
+                                (1 << func_index_)) == 1)) {
+        use_turboshaft = true;
+      }
+      if (use_turboshaft) {
+        result = compiler::turboshaft::ExecuteTurboshaftWasmCompilation(
+            env, data, detected);
+        if (result.succeeded()) return result;
+        // Else fall back to turbofan.
+      }
+
       result = compiler::ExecuteTurbofanWasmCompilation(env, data, counters,
                                                         detected);
       result.for_debugging = for_debugging_;
@@ -187,17 +201,6 @@ void WasmCompilationUnit::CompileWasmFunction(Counters* counters,
 
 namespace {
 bool UseGenericWrapper(const WasmModule* module, const FunctionSig* sig) {
-  if constexpr (!SmiValuesAre31Bits()) {
-    // The generic wrapper does not work without pointer compression at the
-    // moment because without pointer compression, a JavaScript Smi does not fit
-    // into a WebAssembly I31. The JSToWasm wrapper then has to canonicalize Smi
-    // and allocate a HeapNumber for Smis that don't fit into an I31. This
-    // HeapNumber allocation may cause a GC, and the wrapper cannot handle this
-    // GC yet.
-    // TODO(ahaas): Support the generic wrapper in the no-pointer-compression
-    // build.
-    return false;
-  }
 #if (V8_TARGET_ARCH_X64 || V8_TARGET_ARCH_ARM64 || V8_TARGET_ARCH_IA32 || \
      V8_TARGET_ARCH_ARM)
   // We don't use the generic wrapper for asm.js, because it creates invalid

@@ -37,6 +37,11 @@ fn main() -> anyhow::Result<()> {
     );
 
     match cli.subcommand {
+        Subcommand::CheckEverything { ref check_options, ref bssl_options } => {
+            check_everything(&root_dir, check_options, bssl_options)?
+        }
+        Subcommand::CheckWorkspace(ref options) => check_workspace(&root_dir, options)?,
+        Subcommand::FfiCheckEverything => ffi::check_everything(&root_dir)?,
         Subcommand::BuildBoringssl(ref bssl_options) => {
             crypto_ffi::build_boringssl(&root_dir, bssl_options)?
         }
@@ -49,13 +54,11 @@ fn main() -> anyhow::Result<()> {
         Subcommand::BuildFfiFuzzers => fuzzers::build_ffi_fuzzers(&root_dir)?,
         Subcommand::CheckLicenseHeaders => license::check_license_headers(&root_dir)?,
         Subcommand::AddLicenseHeaders => license::add_license_headers(&root_dir)?,
-        Subcommand::CheckWorkspace(ref options) => check_workspace(&root_dir, options)?,
         Subcommand::CheckLdtFfi => ffi::check_ldt_ffi(&root_dir)?,
-        Subcommand::CheckEverything { ref check_options, ref bssl_options } => {
-            check_everything(&root_dir, check_options, bssl_options)?
-        }
         Subcommand::CheckUkey2Ffi => ukey2::check_ukey2_ffi(&root_dir)?,
         Subcommand::CheckLdtJni => jni::check_ldt_jni(&root_dir)?,
+        Subcommand::CheckNpFfi => ffi::check_np_ffi(&root_dir)?,
+        Subcommand::CheckCmakeProjects => ffi::check_cmake_projects(&root_dir)?,
     }
 
     Ok(())
@@ -95,7 +98,7 @@ pub fn check_everything(
     check_workspace(root, check_options)?;
     crypto_ffi::check_boringssl(root, bssl_options)?;
     crypto_ffi::check_openssl(root)?;
-    ffi::check_ldt_ffi(root)?;
+    ffi::check_everything(root)?;
     jni::check_ldt_jni(root)?;
     ukey2::check_ukey2_ffi(root)?;
     fuzzers::run_rust_fuzzers(root)?;
@@ -112,6 +115,15 @@ struct Cli {
 
 #[derive(clap::Subcommand, Debug, Clone)]
 enum Subcommand {
+    /// Checks everything in beto-rust
+    CheckEverything {
+        #[command(flatten)]
+        check_options: CheckOptions,
+        #[command(flatten)]
+        bssl_options: BuildBoringSslOptions,
+    },
+    /// Checks everything included in the top level workspace
+    CheckWorkspace(CheckOptions),
     /// Clones boringssl and uses bindgen to generate the rust crate
     BuildBoringssl(BuildBoringSslOptions),
     /// Run crypto provider tests using boringssl backend
@@ -125,21 +137,19 @@ enum Subcommand {
     RunRustFuzzers,
     /// Build FFI fuzzers
     BuildFfiFuzzers,
-    /// Builds and runs all tests for all combinations of features for the LDT FFI
+    /// Builds and runs tests for all C/C++ projects. This is a combination of CheckNpFfi,
+    /// CheckLdtFfi, and CheckCmakeBuildAndTests
+    FfiCheckEverything,
+    /// Builds the crate checks the cbindgen generation of C/C++ bindings
+    CheckNpFfi,
+    /// Builds ldt_np_adv_ffi crate with all possible different sets of feature flags
     CheckLdtFfi,
+    /// Checks the CMake build and runs all of the C/C++ tests
+    CheckCmakeProjects,
     /// Checks the workspace 3rd party crates and makes sure they have a valid license
     CheckLicenseHeaders,
     /// Generate new headers for any files that are missing them
     AddLicenseHeaders,
-    /// Checks everything included in the top level workspace
-    CheckWorkspace(CheckOptions),
-    /// Checks everything in beto-rust
-    CheckEverything {
-        #[command(flatten)]
-        check_options: CheckOptions,
-        #[command(flatten)]
-        bssl_options: BuildBoringSslOptions,
-    },
     /// Builds and runs tests for the UKEY2 FFI
     CheckUkey2Ffi,
     /// Checks the build of ldt_jni wrapper with non default features, ie rust-openssl, and boringssl

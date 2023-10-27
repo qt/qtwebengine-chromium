@@ -166,7 +166,7 @@ FUZZ_TEST(EnglishLocaleTest, ParseFirstDateInStringAlwaysSucceedsForDates)
         "^(0[1-9]|1[012])/(0[1-9]|[12][0-9])/[1-9][0-9]{3}$"));
 ```
 
-### `ElementOf` Domains
+### `ElementOf` Domains {#element-of}
 
 We can also define a domain by explicitly enumerating the set of values in it.
 You can do this with the `ElementOf` domain, that can be instantiated with a
@@ -194,10 +194,9 @@ auto AnyStatus() {
 
 The `ElementOf` domain is often used in combination with other domains, for
 instance to provide some concrete examples while fuzzing with arbitrary inputs,
-e.g.: `OneOf(MagicNumber(), Arbitrary<uint32>())`. TODO reference combinations
+e.g.: `OneOf(MagicNumber(), Arbitrary<uint32>())`.
 
 Or it can also be used for a
-
 [regular value-parameterized unit tests](https://google.github.io/googletest/advanced.html#value-parameterized-tests):
 
 ```c++
@@ -206,6 +205,11 @@ void WorksWithAnyPig(const std::string& pig) {
 }
 FUZZ_TEST(IsLittlePigTest, WorksWithAnyPig).WithDomains(AnyLittlePig());
 ```
+
+Note: `ElementOf` supports [initial seeds](fuzz-test-macro.md#initial-seeds)
+only for arithmetic types, enums, strings (`std::string` and
+`std::string_view`), and Abseil time library types (`absl::Duration` and
+`absl::Time`).
 
 ### `BitFlagCombinationOf` Domains
 
@@ -314,7 +318,8 @@ FUZZ_TEST(MySuite, DoingStuffDoesNotCrashWithCustomProto).
       .WithProtobufField("address",
                          Arbitrary<Address>()
                              .WithInt32Field("zipcode", InRange(10000, 99999))
-                             .WithStringField("state", String().WithSize(2))));
+                             .WithStringField("state", String().WithSize(2)))
+      .WithInt32Field("my.pkg.PersonExtender.id", InRange(100000, 999999)));
 ```
 
 The inner domain is as follows:
@@ -335,7 +340,7 @@ The inner domain is as follows:
 
 The field domains are indexed by field name and will be verified at startup. A
 mismatch between the field names and the inner domains will cause a runtime
-failure.
+failure. For extension fields, the full name should be used.
 
 IMPORTANT: Note that *optional* fields are not always set by the fuzzer.
 
@@ -507,9 +512,9 @@ FUZZ_TEST(MySuite, DoingStuffDoesNotCrashWithCustomProto).
 
 Notice that `With[Optional|Repeated]Fields[Unset|AlwaysSet]` and
 `WithRepeatedFields[Min|Max]?Size` work recursively and apply to subprotos as
-well, but calling `With[Optional|Repeated]FieldsAlwaysSet` or
-`WithRepeatedFields[Min]?Size(X)` with `X > 0` on recursively defined protos
-causes a failure.
+well, unless subproto domains are explicitly defined. Also, calling
+`With[Optional|Repeated]FieldsAlwaysSet` or `WithRepeatedFields[Min]?Size(X)`
+with `X > 0` on recursively defined protos causes a failure.
 
 #### Customizing Oneof Fields
 
@@ -1033,3 +1038,84 @@ domain.
 
 When you have finished, call `Finalize` to get the domain ready for use. After
 calling `Finalize`, the builder will be invalidated.
+
+## Seeded domains
+
+When asked to produce an initial value, a domain typically returns a random
+value, sometimes with a strong bias toward special cases. For example, initial
+values for `Arbitrary<int>()` are biased toward values such as 0, 1, the
+maximum, etc., and an unconstrained protocol buffer domain initially produces an
+empty protocol buffer.
+
+You can skew most built-in domains toward your own special values by specifying
+*initial seeds*. Use the `.WithSeeds()` function to do this. For example:
+
+```c++
+auto HttpResponseCode() {
+  return Arbitrary<int>().WithSeeds({200, 404, 500});
+}
+```
+
+In addition to the default special-case integers, `HttpResponseCode()` also
+produces `200`, `404`, and `500` with high probability.
+
+Note that the [`FUZZ_TEST` macro](fuzz-test-macro.md) also has a `.WithSeeds()`
+function, which serves for specifying
+[initial seeds](fuzz-test-macro.md#initial-seeds) at the fuzz test
+instantiation. FuzzTest calls the test's property function on those seeds when
+it starts executing the test. In contrast, the domain seeds are not directly
+passed to the property function. Instead, they are picked with high probability
+when the domain needs to produce an initial value. The difference can sometimes
+be subtle, like in the following example:
+
+```c++
+void TestOne(std::string) {}
+FUZZ_TEST(MySuite, TestOne)
+  .WithDomains(Arbitrary<std::string>())
+  .WithSeeds({"foo", "bar"});
+
+void TestTwo(std::string) {}
+FUZZ_TEST(MySuite, TestTwo)
+  .WithDomains(Arbitrary<std::string>().WithSeeds({"foo", "bar"}));
+```
+
+In `TestOne`, FuzzTest initially calls `TestOne("foo")` and `TestOne("bar")`,
+and it continues fuzzing `TestOne` with arbitrary strings. In `TestTwo`,
+FuzzTest immediately starts fuzzing `TestTwo`, but this time with strings coming
+from a seeded domain: occasionally, as FuzzTest asks the domain for an initial
+value, the domain is likely to produce `foo` and `bar`. (In a more typical
+iteration, FuzzTest asks the domain to mutate an existing value, and then the
+initial seeds don't play a role.)
+
+Seeded domains occur more commonly as part of complex domains constructed using
+domain combinators. In complex domains, seeded domains can appear at any level.
+For example:
+
+```c++
+auto BiasedPairs() {
+  return PairOf(InRange(0, 100).WithSeeds({7}), Arbitrary<std::string>)
+      .WithSeeds({{42, "Foo"}});
+}
+```
+
+The domain `BiasedPairs()` is likely to produce pairs where the first component
+is `7`, as well as the specific pair `(42, "Foo")`.
+
+Finally, just like with the
+[`FUZZ_TEST` macro](fuzz-test-macro.md#seed-providers), seed initialization for
+a domain can be delayed using a seed provider. For a domain over a type `T`, a
+seed provider is any invocable (e.g., a lambda, function pointer, callable
+object, etc.) that doesn't take inputs and returns `std::vector<T>`. For
+example:
+
+```c++
+Arbitrary<int>().WithSeeds([]() -> std::vector<int> { return {7, 42}; });
+```
+
+This is useful for avoiding static initialization issues: FuzzTest invokes the
+seed provider the first time it needs to get an initial value from the domain.
+
+Note: Some domains don't support seeds. `ElementOf` and `Just` support seeds
+only for certain types (see [`ElementOf`](#element-of)). Complex domains
+constructed using combinators `ConstructorOf`, `Map`, and `FlatMap` don't
+support seeds.

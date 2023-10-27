@@ -41,9 +41,9 @@
 #include "core/fpdfapi/parser/object_tree_traversal_util.h"
 #include "third_party/base/check.h"
 #include "third_party/base/containers/contains.h"
+#include "third_party/base/containers/span.h"
 #include "third_party/base/notreached.h"
 #include "third_party/base/numerics/safe_conversions.h"
-#include "third_party/base/span.h"
 
 namespace {
 
@@ -361,9 +361,8 @@ const CPDF_ContentMarks* CPDF_PageContentGenerator::ProcessContentMarks(
         *buf << "/" << item->GetPropertyName() << " ";
         break;
       }
-      default:
-        NOTREACHED();
-        break;
+      case CPDF_ContentMarkItem::kNone:
+        NOTREACHED_NORETURN();
     }
 
     // Write BDC (begin dictionary content) operator.
@@ -573,8 +572,7 @@ void CPDF_PageContentGenerator::ProcessGraphics(fxcrt::ostringstream* buf,
           *buf << " W* ";
           break;
         case CFX_FillRenderOptions::FillType::kNoFill:
-          NOTREACHED();
-          break;
+          NOTREACHED_NORETURN();
       }
 
       // Use a no-op path-painting operator to terminate the path without

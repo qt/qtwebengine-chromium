@@ -28,9 +28,12 @@
 #include "./centipede/control_flow.h"
 #include "./centipede/defs.h"
 #include "./centipede/environment.h"
-#include "./centipede/execution_result.h"
+#include "./centipede/fuzztest_mutator.h"
 #include "./centipede/knobs.h"
 #include "./centipede/logging.h"
+#include "./centipede/mutation_input.h"
+#include "./centipede/runner_request.h"
+#include "./centipede/runner_result.h"
 #include "./centipede/shared_memory_blob_sequence.h"
 #include "./centipede/symbol_table.h"
 #include "./centipede/util.h"
@@ -48,9 +51,15 @@ class CentipedeCallbacks {
   CentipedeCallbacks(const Environment &env)
       : env_(env),
         byte_array_mutator_(env.knobs, GetRandomSeed(env.seed)),
-        inputs_blobseq_(shmem_name1_.c_str(), env.shmem_size_mb << 20),
-        outputs_blobseq_(shmem_name2_.c_str(), env.shmem_size_mb << 20) {
-    CHECK(byte_array_mutator_.set_max_len(env.max_len));
+        fuzztest_mutator_(GetRandomSeed(env.seed)),
+        inputs_blobseq_(shmem_name1_.c_str(), env.shmem_size_mb << 20,
+                        env.use_posix_shmem),
+        outputs_blobseq_(shmem_name2_.c_str(), env.shmem_size_mb << 20,
+                         env.use_posix_shmem) {
+    if (env.use_legacy_default_mutator)
+      CHECK(byte_array_mutator_.set_max_len(env.max_len));
+    else
+      CHECK(fuzztest_mutator_.set_max_len(env.max_len));
   }
   virtual ~CentipedeCallbacks() {}
 
@@ -64,9 +73,14 @@ class CentipedeCallbacks {
                        BatchResult &batch_result) = 0;
 
   // Takes non-empty `inputs`, discards old contents of `mutants`,
-  // adds `num_mutants` mutated inputs to `mutants`.
-  virtual void Mutate(const std::vector<ByteArray> &inputs, size_t num_mutants,
-                      std::vector<ByteArray> &mutants) = 0;
+  // adds at least one and at most `num_mutants` mutated inputs to
+  // `mutants`.
+  virtual void Mutate(const std::vector<MutationInputRef> &inputs,
+                      size_t num_mutants, std::vector<ByteArray> &mutants) {
+    env_.use_legacy_default_mutator
+        ? byte_array_mutator_.MutateMany(inputs, num_mutants, mutants)
+        : fuzztest_mutator_.MutateMany(inputs, num_mutants, mutants);
+  }
 
   // Populates the BinaryInfo using the `symbolizer_path` and `coverage_binary`
   // in `env_`. The tables may not be populated if the PC table cannot be
@@ -74,14 +88,11 @@ class CentipedeCallbacks {
   // PC table was not populated and `env_.require_pc_table` is set.
   virtual void PopulateBinaryInfo(BinaryInfo &binary_info);
 
-  // Returns some simple non-empty valid input.
-  virtual ByteArray DummyValidInput() { return {0}; }
-
-  // Sets the internal CmpDictionary to `cmp_data`.
-  // TODO(kcc): this is pretty ugly. Instead we need to pass `cmp_data`
-  // to Mutate() alongside with the inputs.
-  bool SetCmpDictionary(ByteSpan cmp_data) {
-    return byte_array_mutator_.SetCmpDictionary(cmp_data);
+  // Retrieves at most `num_seeds` seed inputs. Returns the number of seeds
+  // available if `num_seeds` had been large enough.
+  virtual size_t GetSeeds(size_t num_seeds, std::vector<ByteArray> &seeds) {
+    if (num_seeds > 0) seeds = {{0}};
+    return 1;
   }
 
  protected:
@@ -99,18 +110,22 @@ class CentipedeCallbacks {
   std::string ConstructRunnerFlags(std::string_view extra_flags = "",
                                    bool disable_coverage = false);
 
-  // Uses an external binary `binary` to mutate `inputs`.
-  // The binary should be linked against :centipede_runner and
-  // implement the Structure-Aware Fuzzing interface, as described here:
+  // Uses an external binary `binary` to mutate `inputs`. The binary
+  // should be linked against :centipede_runner and implement the
+  // RunnerCallbacks interface as described in runner_interface.h,
+  // or implement the legacy Structure-Aware Fuzzing interface described here:
   // github.com/google/fuzzing/blob/master/docs/structure-aware-fuzzing.md
   //
   // Produces at most `mutants.size()` non-empty mutants,
   // replacing the existing elements of `mutants`,
   // and shrinking `mutants` if needed.
   //
-  // Returns true on success.
+  // Returns true if the custom mutator in the binary is found and
+  // used, false otherwise. Note that mutants.size() may be 0 when
+  // returning true, if the mutator exists but refuses to mutate
+  // (hopefully occasionally).
   bool MutateViaExternalBinary(std::string_view binary,
-                               const std::vector<ByteArray> &inputs,
+                               const std::vector<MutationInputRef> &inputs,
                                std::vector<ByteArray> &mutants);
 
   // Loads the dictionary from `dictionary_path`,
@@ -120,6 +135,7 @@ class CentipedeCallbacks {
  protected:
   const Environment &env_;
   ByteArrayMutator byte_array_mutator_;
+  FuzzTestMutator fuzztest_mutator_;
 
  private:
   // Returns a Command object with matching `binary` from commands_,

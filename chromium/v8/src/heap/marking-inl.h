@@ -12,6 +12,7 @@
 #include "src/heap/marking.h"
 #include "src/heap/memory-chunk-layout.h"
 #include "src/heap/spaces.h"
+#include "src/objects/instance-type-inl.h"
 
 namespace v8::internal {
 
@@ -168,8 +169,9 @@ constexpr MarkingBitmap::MarkBitIndex MarkingBitmap::LimitAddressToIndex(
 }
 
 // static
-inline Address MarkingBitmap::FindPreviousObjectForConservativeMarking(
-    const Page* page, Address maybe_inner_ptr) {
+inline Address MarkingBitmap::FindPreviousValidObject(const Page* page,
+                                                      Address maybe_inner_ptr) {
+  DCHECK(page->Contains(maybe_inner_ptr));
   const auto* bitmap = page->marking_bitmap();
   const MarkBit::CellType* cells = bitmap->cells();
 
@@ -187,11 +189,7 @@ inline Address MarkingBitmap::FindPreviousObjectForConservativeMarking(
   auto cell_index = MarkingBitmap::IndexToCell(index);
   const auto index_in_cell = MarkingBitmap::IndexInCell(index);
   DCHECK_GT(MarkingBitmap::kBitsPerCell, index_in_cell);
-  const auto mask = static_cast<MarkBit::CellType>(1u) << index_in_cell;
   auto cell = cells[cell_index];
-
-  // If the markbit is already set, bail out.
-  if ((cell & mask) != 0) return kNullAddress;
 
   // Clear the bits corresponding to higher addresses in the cell.
   cell &= ((~static_cast<MarkBit::CellType>(0)) >>
@@ -255,7 +253,7 @@ MarkBit MarkBit::From(Address address) {
 }
 
 // static
-MarkBit MarkBit::From(HeapObject heap_object) {
+MarkBit MarkBit::From(Tagged<HeapObject> heap_object) {
   return MarkingBitmap::MarkBitFromAddress(heap_object.ptr());
 }
 
@@ -332,10 +330,10 @@ bool LiveObjectRange::iterator::AdvanceToNextMarkedObject() {
       Address object_address = current_cell_base + trailing_zeros * kTaggedSize;
       // The object may be a filler which we want to skip.
       current_object_ = HeapObject::FromAddress(object_address);
-      current_map_ = current_object_.map(cage_base_, kAcquireLoad);
+      current_map_ = current_object_->map(cage_base_, kAcquireLoad);
       DCHECK(MapWord::IsMapOrForwarded(current_map_));
       current_size_ = ALIGN_TO_ALLOCATION_ALIGNMENT(
-          current_object_.SizeFromMap(current_map_));
+          current_object_->SizeFromMap(current_map_));
       CHECK(page_->ContainsLimit(object_address + current_size_));
       return true;
     }

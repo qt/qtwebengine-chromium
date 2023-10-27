@@ -11,7 +11,6 @@ import static org.mockito.Mockito.verifyNoInteractions;
 
 import android.content.Context;
 
-import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -44,11 +43,6 @@ public class PolicyCacheProviderTest {
     @Before
     public void setUp() {
         MockitoAnnotations.initMocks(this);
-    }
-
-    @After
-    public void tearDown() {
-        PolicyCache.resetForTesting();
     }
 
     @Test

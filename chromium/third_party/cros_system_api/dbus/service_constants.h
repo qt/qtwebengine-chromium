@@ -267,6 +267,8 @@ const char kChromeFeaturesServiceIsPeripheralDataAccessEnabledMethod[] =
     "IsPeripheralDataAccessEnabled";
 const char kChromeFeaturesServiceIsDNSProxyEnabledMethod[] =
     "IsDNSProxyEnabled";
+const char kChromeFeaturesServiceIsSuspendToDiskEnabledMethod[] =
+    "IsSuspendToDiskEnabled";
 
 const char kUrlHandlerServiceName[] = "org.chromium.UrlHandlerService";
 const char kUrlHandlerServicePath[] = "/org/chromium/UrlHandlerService";
@@ -471,6 +473,7 @@ const char kBootstrapCdmFactoryDaemonMojoConnection[] =
 const char kGetFactoryTransportKeyMaterial[] = "GetFactoryTransportKeyMaterial";
 const char kWrapFactoryKeybox[] = "WrapFactoryKeybox";
 const char kGetClientInformation[] = "GetClientInformation";
+const char kGetBootCertificateChain[] = "GetBootCertificateChain";
 }  // namespace cdm_oemcrypto
 
 namespace midis {

@@ -35,6 +35,10 @@ export class PowerBookmarkRowElement extends PolymerElement {
   static get properties() {
     return {
       bookmark: Object,
+      checkboxChecked: {
+        type: Boolean,
+        value: false,
+      },
       checkboxDisabled: {
         type: Boolean,
         value: false,
@@ -44,6 +48,10 @@ export class PowerBookmarkRowElement extends PolymerElement {
         value: false,
       },
       description: {
+        type: String,
+        value: '',
+      },
+      descriptionMeta: {
         type: String,
         value: '',
       },
@@ -89,9 +97,11 @@ export class PowerBookmarkRowElement extends PolymerElement {
   }
 
   bookmark: chrome.bookmarks.BookmarkTreeNode;
+  checkboxChecked: boolean;
   checkboxDisabled: boolean;
   compact: boolean;
   description: string;
+  descriptionMeta: string;
   forceHover: boolean;
   hasCheckbox: boolean;
   hasInput: boolean;
@@ -167,8 +177,8 @@ export class PowerBookmarkRowElement extends PolymerElement {
   private onRowClicked_(event: MouseEvent) {
     // Ignore clicks on the row when it has an input, to ensure the row doesn't
     // eat input clicks. Also ignore clicks if the row has no associated
-    // bookmark.
-    if (this.hasInput || !this.bookmark) {
+    // bookmark, or if the event is a right-click.
+    if (this.hasInput || !this.bookmark || event.button === 2) {
       return;
     }
     event.preventDefault();

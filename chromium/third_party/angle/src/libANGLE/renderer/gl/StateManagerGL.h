@@ -271,7 +271,7 @@ class StateManagerGL final : angle::NonCopyable
 
     void setProvokingVertex(GLenum mode);
 
-    void setClipDistancesEnable(const gl::State::ClipDistanceEnableBits &enables);
+    void setClipDistancesEnable(const gl::ClipDistanceEnableBits &enables);
 
     void setLogicOpEnabled(bool enabled);
     void setLogicOp(gl::LogicalOperation opcode);
@@ -284,10 +284,10 @@ class StateManagerGL final : angle::NonCopyable
     angle::Result onMakeCurrent(const gl::Context *context);
 
     angle::Result syncState(const gl::Context *context,
-                            const gl::State::DirtyBits &glDirtyBits,
-                            const gl::State::DirtyBits &bitMask,
-                            const gl::State::ExtendedDirtyBits &extendedDirtyBits,
-                            const gl::State::ExtendedDirtyBits &extendedBitMask);
+                            const gl::state::DirtyBits &glDirtyBits,
+                            const gl::state::DirtyBits &bitMask,
+                            const gl::state::ExtendedDirtyBits &extendedDirtyBits,
+                            const gl::state::ExtendedDirtyBits &extendedBitMask);
 
     ANGLE_INLINE void updateMultiviewBaseViewLayerIndexUniform(
         const gl::Program *program,
@@ -345,7 +345,7 @@ class StateManagerGL final : angle::NonCopyable
 
     void updateEmulatedClipDistanceState(const gl::ProgramExecutable *executable,
                                          const gl::Program *program,
-                                         const gl::State::ClipDistanceEnableBits enables) const;
+                                         const gl::ClipDistanceEnableBits enables) const;
 
     void updateMultiviewBaseViewLayerIndexUniformImpl(
         const gl::Program *program,
@@ -542,14 +542,14 @@ class StateManagerGL final : angle::NonCopyable
 
     GLenum mProvokingVertex;
 
-    gl::State::ClipDistanceEnableBits mEnabledClipDistances;
+    gl::ClipDistanceEnableBits mEnabledClipDistances;
     const size_t mMaxClipDistances;
 
     bool mLogicOpEnabled;
     gl::LogicalOperation mLogicOp;
 
-    gl::State::DirtyBits mLocalDirtyBits;
-    gl::State::ExtendedDirtyBits mLocalExtendedDirtyBits;
+    gl::state::DirtyBits mLocalDirtyBits;
+    gl::state::ExtendedDirtyBits mLocalExtendedDirtyBits;
     gl::AttributesMask mLocalDirtyCurrentValues;
 };
 

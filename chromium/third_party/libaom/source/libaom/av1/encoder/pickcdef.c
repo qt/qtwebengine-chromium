@@ -638,7 +638,7 @@ static AOM_INLINE bool cdef_alloc_data(CdefSearchCtx *cdef_search_ctx) {
   const int nvfb = cdef_search_ctx->nvfb;
   const int nhfb = cdef_search_ctx->nhfb;
   cdef_search_ctx->sb_index =
-      aom_malloc(nvfb * nhfb * sizeof(cdef_search_ctx->sb_index));
+      aom_malloc(nvfb * nhfb * sizeof(cdef_search_ctx->sb_index[0]));
   cdef_search_ctx->sb_count = 0;
   cdef_search_ctx->mse[0] =
       aom_malloc(sizeof(**cdef_search_ctx->mse) * nvfb * nhfb);

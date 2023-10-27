@@ -327,12 +327,17 @@ AV1CdefInfo AV1RateControlRTC::GetCdefInfo() const {
   return cdef_level;
 }
 
-signed char *AV1RateControlRTC::GetCyclicRefreshMap() const {
-  return cpi_->cyclic_refresh->map;
-}
-
-int *AV1RateControlRTC::GetDeltaQ() const {
-  return cpi_->cyclic_refresh->qindex_delta;
+bool AV1RateControlRTC::GetSegmentationData(
+    AV1SegmentationData *segmentation_data) const {
+  if (cpi_->oxcf.q_cfg.aq_mode == 0) {
+    return false;
+  }
+  segmentation_data->segmentation_map = cpi_->enc_seg.map;
+  segmentation_data->segmentation_map_size =
+      cpi_->common.mi_params.mi_rows * cpi_->common.mi_params.mi_cols;
+  segmentation_data->delta_q = cpi_->cyclic_refresh->qindex_delta;
+  segmentation_data->delta_q_size = 3u;
+  return true;
 }
 
 void AV1RateControlRTC::PostEncodeUpdate(uint64_t encoded_frame_size) {

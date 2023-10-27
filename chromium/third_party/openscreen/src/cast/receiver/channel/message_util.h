@@ -1,9 +1,11 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CAST_RECEIVER_CHANNEL_MESSAGE_UTIL_H_
 #define CAST_RECEIVER_CHANNEL_MESSAGE_UTIL_H_
+
+#include <string>
 
 #include "cast/common/channel/message_util.h"
 #include "cast/common/channel/proto/cast_channel.pb.h"

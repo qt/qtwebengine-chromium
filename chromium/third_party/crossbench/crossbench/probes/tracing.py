@@ -3,24 +3,24 @@
 # found in the LICENSE file.
 
 from __future__ import annotations
+
 import argparse
-import enum
 import logging
 import pathlib
+from typing import TYPE_CHECKING, Dict, Optional, Sequence, Set
 
-from typing import TYPE_CHECKING, Dict, List, Optional, Sequence, Set, cast
-from crossbench import cli_helper
-
-from crossbench.browsers.chromium import Chromium
-from crossbench.helper import Platform
-from crossbench.probes.probe import Probe, ProbeConfigParser
-from crossbench.probes.results import ProbeResult
+from crossbench import cli_helper, compat, helper
+from crossbench.browsers.chromium.chromium import Chromium
 from crossbench.probes import helper as probe_helper
+from crossbench.probes.probe import (Probe, ProbeConfigParser, ProbeScope,
+                                     ResultLocation)
+from crossbench.probes.results import ProbeResult
 
 if TYPE_CHECKING:
-  from crossbench.flags import ChromeFlags
-  from crossbench.runner import Run
   from crossbench.browsers.browser import Browser
+  from crossbench.flags import ChromeFlags
+  from crossbench import plt
+  from crossbench.runner.run import Run
 
 MINIMAL_CONFIG = {
     "toplevel",
@@ -89,16 +89,46 @@ TRACE_PRESETS: Dict[str, Set[str]] = {
     "v8": V8_TRACE_CONFIG,
 }
 
-
-class RecordMode(enum.Enum):
+class RecordMode(compat.StrEnum):
   CONTINUOUSLY = "record-continuously"
   UNTIL_FULL = "record-until-full"
   AS_MUCH_AS_POSSIBLE = "record-as-much-as-possible"
 
 
-class RecordFormat(enum.Enum):
-  JSON = "json"
-  PROTO = "proto"
+class RecordFormat(helper.StrEnumWithHelp):
+  JSON = ("json", "Old about://tracing compatible file format.")
+  PROTO = ("proto", "New https://ui.perfetto.dev/ compatible format")
+
+
+def parse_trace_config_file_path(value: str) -> pathlib.Path:
+  data = cli_helper.parse_json_file(value)
+  if "trace_config" not in data:
+    raise argparse.ArgumentTypeError("Missing 'trace_config' property.")
+  cli_helper.parse_positive_int(
+      data.get("startup_duration", "0"), "for 'startup_duration'")
+  if "result_file" in data:
+    raise argparse.ArgumentTypeError(
+        "Explicit 'result_file' is not allowed with crossbench. "
+        "--probe=tracing sets a results location automatically.")
+  config = data["trace_config"]
+  if "included_categories" not in config and (
+      "excluded_categories" not in config) and ("memory_dump_config"
+                                                not in config):
+    raise argparse.ArgumentTypeError(
+        "Empty trace config: no trace categories or memory dumps configured.")
+  record_mode = config.get("record_mode", RecordMode.CONTINUOUSLY)
+  try:
+    RecordMode(record_mode)
+  except ValueError as e:
+    # pytype: disable=missing-parameter
+    raise argparse.ArgumentTypeError(
+        f"Invalid record_mode: '{record_mode}'. "
+        f"Choices are: {', '.join(str(e) for e in RecordMode)}") from e
+    # pytype: enable=missing-parameter
+  return pathlib.Path(value)
+
+
+ANDROID_TRACE_CONFIG_PATH = pathlib.Path("/data/local/chrome-trace-config.json")
 
 
 class TracingProbe(Probe):
@@ -109,9 +139,10 @@ class TracingProbe(Probe):
   Currently WIP
   """
   NAME = "tracing"
+  RESULT_LOCATION = ResultLocation.BROWSER
   CHROMIUM_FLAGS = ("--enable-perfetto",)
 
-  HELP_URL = "https://www.chromium.org/developers/how-tos/trace-event-profiling-tool/"
+  HELP_URL = "https://bit.ly/chrome-about-tracing"
 
   @classmethod
   def config_parser(cls) -> ProbeConfigParser:
@@ -127,21 +158,30 @@ class TracingProbe(Probe):
         is_list=True,
         default=[],
         type=str,
-        help=("A list of trace categories to enable. "
-              f"See chrome's {cls.HELP_URL} for more details"))
+        help=f"A list of trace categories to enable.\n{cls.HELP_URL}")
     parser.add_argument(
         "trace_config",
-        type=cli_helper.parse_json_file_path,
-        help=("Sets Chromium's --trace-config-file to the given json config."))
+        type=parse_trace_config_file_path,
+        help=("Sets Chromium's --trace-config-file to the given json config.\n"
+              "https://bit.ly/chromium-memory-startup-tracing "))
     parser.add_argument(
         "startup_duration",
-        type=cli_helper.parse_positive_float,
-        help="Stop recording tracing after a certain time")
+        default=0,
+        type=cli_helper.parse_positive_zero_int,
+        help=("Stop recording tracing after a given number of seconds. "
+              "Use 0 (default) for unlimited recording time."))
     parser.add_argument(
         "record_mode",
         default=RecordMode.CONTINUOUSLY,
         type=RecordMode,
         help="")
+    parser.add_argument(
+        "record_format",
+        default=RecordFormat.PROTO,
+        type=RecordFormat,
+        help=("Choose between 'json' or the default 'proto' format. "
+              "Perfetto proto output is converted automatically to the "
+              "legacy json format."))
     parser.add_argument(
         "traceconv",
         default=None,
@@ -156,8 +196,9 @@ class TracingProbe(Probe):
                preset: Optional[str] = None,
                categories: Optional[Sequence[str]] = None,
                trace_config: Optional[pathlib.Path] = None,
-               startup_duration: float = 0,
+               startup_duration: int = 0,
                record_mode: RecordMode = RecordMode.CONTINUOUSLY,
+               record_format: RecordFormat = RecordFormat.PROTO,
                traceconv: Optional[pathlib.Path] = None) -> None:
     super().__init__()
     self._trace_config = trace_config
@@ -171,66 +212,88 @@ class TracingProbe(Probe):
             "trace categories or a trace_config file.")
       self._categories = set()
 
-    self._startup_duration = startup_duration
-    self._record_mode = record_mode
-    self._record_format = RecordFormat.PROTO
+    self._startup_duration: int = startup_duration
+    self._record_mode: RecordMode = record_mode
+    self._record_format: RecordFormat = record_format
     self._traceconv = traceconv
 
   @property
-  def results_file_name(self) -> str:
-    return f"trace.{self._record_format.value}"
+  def result_path_name(self) -> str:
+    return f"trace.{self._record_format.value}"  # pylint: disable=no-member
 
   @property
   def traceconv(self) -> Optional[pathlib.Path]:
     return self._traceconv
 
+  @property
+  def record_format(self) -> RecordFormat:
+    return self._record_format
+
   def is_compatible(self, browser: Browser) -> bool:
     return isinstance(browser, Chromium)
 
-  def attach(self, browser: Chromium) -> None:
+  def attach(self, browser: Browser) -> None:
+    assert isinstance(browser, Chromium)
     flags: ChromeFlags = browser.flags
     flags.update(self.CHROMIUM_FLAGS)
     # Force proto file so we can convert it to legacy json as well.
-    flags["--trace-startup-format"] = self._record_format.value
+    flags["--trace-startup-format"] = str(self._record_format)
+    # pylint: disable=no-member
+    flags["--trace-startup-duration"] = str(self._startup_duration)
     if self._trace_config:
-      flags["--trace-config-file"] = str(self._trace_config)
+      # TODO: use ANDROID_TRACE_CONFIG_PATH
+      assert not browser.platform.is_android, (
+          "Trace config files not supported on android yet")
+      flags["--trace-config-file"] = str(self._trace_config.absolute())
     else:
-      if self._startup_duration:
-        flags["--trace-startup-duration"] = str(self._startup_duration)
-      flags["--trace-startup-record-mode"] = self._record_mode.value
+      flags["--trace-startup-record-mode"] = str(self._record_mode)
       assert self._categories, "No trace categories provided."
-      flags["--trace-startup"] = ",".join(self._categories)
+      flags["--enable-tracing"] = ",".join(self._categories)
     super().attach(browser)
 
-  class Scope(Probe.Scope):
-    _traceconv: Optional[pathlib.Path]
+  def get_scope(self, run: Run) -> TracingProbeScope:
+    return TracingProbeScope(self, run)
 
-    def setup(self, run: Run) -> None:
-      run.extra_flags["--trace-startup-file"] = str(self.results_file)
+
+class TracingProbeScope(ProbeScope[TracingProbe]):
+  _traceconv: Optional[pathlib.Path]
+  _record_format: RecordFormat
+
+  def setup(self, run: Run) -> None:
+    run.extra_flags["--trace-startup-file"] = str(self.result_path)
+    self._record_format = self.probe.record_format
+    if self._record_format == RecordFormat.PROTO:
       self._traceconv = self.probe.traceconv or TraceconvFinder(
           self.browser_platform).traceconv
+    else:
+      self._traceconv = None
 
-    def start(self, run: Run) -> None:
-      del run
+  def start(self, run: Run) -> None:
+    del run
 
-    def stop(self, run: Run) -> None:
-      del run
+  def stop(self, run: Run) -> None:
+    del run
 
-    def tear_down(self, run: Run) -> ProbeResult:
-      if not self._traceconv:
-        logging.info(
-            "No traceconv binary: skipping converting proto to legacy traces")
-        return ProbeResult(file=(self.results_file,))
-      logging.info("Converting to legacy .json trace: %s", self.results_file)
-      json_trace_file = self.results_file.with_suffix(".json")
-      self.browser_platform.sh(self._traceconv, "json", self.results_file,
-                               json_trace_file)
-      return ProbeResult(json=(json_trace_file,), file=(self.results_file,))
+  def tear_down(self, run: Run) -> ProbeResult:
+    if self._record_format == RecordFormat.JSON:
+      return self.browser_result(json=(self.result_path,))
+    if not self._traceconv:
+      logging.info(
+          "No traceconv binary: skipping converting proto to legacy traces")
+      return self.browser_result(file=(self.result_path,))
+
+    logging.info("Converting to legacy .json trace on local machine: %s",
+                 self.result_path)
+    json_trace_file = self.result_path.with_suffix(".json")
+    self.browser_platform.sh(self._traceconv, "json", self.result_path,
+                             json_trace_file)
+    return self.browser_result(
+        json=(json_trace_file,), file=(self.result_path,))
 
 
 class TraceconvFinder(probe_helper.V8CheckoutFinder):
 
-  def __init__(self, platform: Platform) -> None:
+  def __init__(self, platform: plt.Platform) -> None:
     super().__init__(platform)
     self.traceconv: Optional[pathlib.Path] = None
     if self.v8_checkout:

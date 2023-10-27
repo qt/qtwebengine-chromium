@@ -60,6 +60,18 @@ unsigned int avifLibYUVVersion(void)
 #pragma clang diagnostic pop
 #endif
 
+// libyuv is a C++ library and defines custom types (struct, enum, etc) in the libyuv namespace when the libyuv header files are
+// included by C++ code. When accessed from a C library like libavif, via a function pointer, this leads to signature mismatches
+// in the CFI sanitizers since libyuv itself, compiled as C++ code, has the types within the namespace and the C code has the
+// types without the namespace. In order to avoid this CFI error, we tag some functions as an exception when being compiled with
+// CFI enabled.  For more details on clang's CFI see: https://clang.llvm.org/docs/ControlFlowIntegrity.html. For a simpler example
+// of this bug, please see: https://github.com/vigneshvg/cpp_c_potential_cfi_bug
+#if defined(__clang__)
+#define IGNORE_CFI_ICALL __attribute__((no_sanitize("cfi-icall")))
+#else
+#define IGNORE_CFI_ICALL
+#endif
+
 //--------------------------------------------------------------------------------------------------
 // libyuv API availability management
 
@@ -737,8 +749,13 @@ static avifBool getLibYUVConversionFunction(avifPixelFormat yuvFormat,
 
 static void getLibYUVConstants(const avifImage * image, const struct YuvConstants ** matrixYUV, const struct YuvConstants ** matrixYVU)
 {
+    // Allow the identity matrix to be used with YUV 4:0:0. Replace the identity matrix with
+    // MatrixCoefficients 6 (BT.601).
+    const avifBool yuv400WithIdentityMatrix = (image->yuvFormat == AVIF_PIXEL_FORMAT_YUV400) &&
+                                              (image->matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_IDENTITY);
+    const avifMatrixCoefficients matrixCoefficients = yuv400WithIdentityMatrix ? AVIF_MATRIX_COEFFICIENTS_BT601 : image->matrixCoefficients;
     if (image->yuvRange == AVIF_RANGE_FULL) {
-        switch (image->matrixCoefficients) {
+        switch (matrixCoefficients) {
             // BT.709 full range YuvConstants were added in libyuv version 1772.
             // See https://chromium-review.googlesource.com/c/libyuv/libyuv/+/2646472.
             case AVIF_MATRIX_COEFFICIENTS_BT709:
@@ -805,7 +822,7 @@ static void getLibYUVConstants(const avifImage * image, const struct YuvConstant
                 break;
         }
     } else { // image->yuvRange == AVIF_RANGE_LIMITED
-        switch (image->matrixCoefficients) {
+        switch (matrixCoefficients) {
             case AVIF_MATRIX_COEFFICIENTS_BT709:
                 *matrixYUV = &kYuvH709Constants;
                 *matrixYVU = &kYvuH709Constants;
@@ -887,7 +904,7 @@ static avifResult avifImageDownshiftTo8bpc(const avifImage * image, avifImage * 
     return AVIF_RESULT_OK;
 }
 
-avifResult avifImageYUVToRGBLibYUV(const avifImage * image, avifRGBImage * rgb, avifBool reformatAlpha, avifBool * alphaReformattedWithLibYUV)
+IGNORE_CFI_ICALL avifResult avifImageYUVToRGBLibYUV(const avifImage * image, avifRGBImage * rgb, avifBool reformatAlpha, avifBool * alphaReformattedWithLibYUV)
 {
     *alphaReformattedWithLibYUV = AVIF_FALSE;
     if (rgb->depth != 8 || (image->depth != 8 && image->depth != 10 && image->depth != 12)) {
@@ -916,7 +933,10 @@ avifResult avifImageYUVToRGBLibYUV(const avifImage * image, avifRGBImage * rgb, 
     int libyuvResult = -1;
     int uPlaneIndex = isYVU ? AVIF_CHAN_V : AVIF_CHAN_U;
     int vPlaneIndex = isYVU ? AVIF_CHAN_U : AVIF_CHAN_V;
-    const enum FilterMode filter = nearestNeighborFilterAllowed(rgb->chromaUpsampling) ? kFilterNone : kFilterBilinear;
+    const enum FilterMode filter =
+        ((rgb->chromaUpsampling == AVIF_CHROMA_UPSAMPLING_FASTEST) || (rgb->chromaUpsampling == AVIF_CHROMA_UPSAMPLING_NEAREST))
+            ? kFilterNone
+            : kFilterBilinear;
     if (lcf.yuvToRgbMatrixFilterHighBitDepth != NULL) {
         libyuvResult = lcf.yuvToRgbMatrixFilterHighBitDepth((const uint16_t *)image->yuvPlanes[AVIF_CHAN_Y],
                                                             image->yuvRowBytes[AVIF_CHAN_Y] / 2,

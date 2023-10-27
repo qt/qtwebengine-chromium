@@ -146,6 +146,11 @@ MaybeError Buffer::Initialize(bool mappedAtCreation) {
 
     // Allocate at least 4 bytes so clamped accesses are always in bounds.
     uint64_t size = std::max(GetSize(), uint64_t(4u));
+    // The validation layer requires:
+    // ByteWidth must be 12 or larger to be used with D3D11_RESOURCE_MISC_DRAWINDIRECT_ARGS.
+    if (GetUsage() & wgpu::BufferUsage::Indirect) {
+        size = std::max(size, uint64_t(12u));
+    }
     size_t alignment = D3D11BufferSizeAlignment(GetUsage());
     // Check for overflow, bufferDescriptor.ByteWidth is a UINT.
     if (size > std::numeric_limits<UINT>::max() - alignment) {
@@ -530,9 +535,8 @@ MaybeError Buffer::WriteInternal(CommandRecordingContext* commandContext,
     // data to mD3d11ConstantBuffer, since UpdateSubresource() has many restrictions. For example,
     // the size of the data has to be a multiple of 16, etc
     BufferDescriptor descriptor;
-    descriptor.size = size;
-    DAWN_ASSERT(IsAligned(descriptor.size, 4));
     descriptor.usage = wgpu::BufferUsage::MapWrite | wgpu::BufferUsage::CopySrc;
+    descriptor.size = Align(size, D3D11BufferSizeAlignment(descriptor.usage));
     descriptor.mappedAtCreation = false;
     descriptor.label = "DawnWriteStagingBuffer";
     Ref<BufferBase> stagingBuffer;

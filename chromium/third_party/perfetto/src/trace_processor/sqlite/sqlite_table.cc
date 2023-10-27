@@ -289,7 +289,9 @@ base::Status TypedSqliteTableBase::DeclareAndAssignVtab(
 }
 
 int TypedSqliteTableBase::xDestroy(sqlite3_vtab* t) {
-  delete static_cast<SqliteTable*>(t);
+  auto* table = static_cast<SqliteTable*>(t);
+  table->engine_->OnSqliteTableDestroyed(table->name_);
+  delete table;
   return SQLITE_OK;
 }
 

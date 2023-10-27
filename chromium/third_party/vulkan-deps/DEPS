@@ -4,33 +4,37 @@
 
 # Avoids the need for a custom root variable.
 use_relative_paths = True
+git_dependencies = 'SYNC'
 
 vars = {
   'chromium_git': 'https://chromium.googlesource.com',
 
   # Current revision of glslang, the Khronos SPIRV compiler.
-  'glslang_revision': '6a7ec4be7b8a22ab16cea0f294b5973dbcdd637a',
+  'glslang_revision': 'e3a711b6fc942307be7cb634698015dfd13c37fe',
 
   # Current revision of spirv-cross, the Khronos SPIRV cross compiler.
-  'spirv_cross_revision': '2d3a152081ca6e6bea7093940d0f81088fe4d01c',
+  'spirv_cross_revision': '54997fb4bc3adeb47b9b9f7bb67f1c25eaca2204',
 
   # Current revision fo the SPIRV-Headers Vulkan support library.
-  'spirv_headers_revision': '6e09e44cd88a5297433411b2ee52f4cf9f50fa90',
+  'spirv_headers_revision': 'd790ced752b5bfc06b6988baadef6eb2d16bdf96',
 
   # Current revision of SPIRV-Tools for Vulkan.
-  'spirv_tools_revision': 'a63ac9f73d29cd27cdb6e3388d98d1d934e512bb',
+  'spirv_tools_revision': '4c16c35b16bbd462a0e89707ebeecc0bce956b2f',
 
   # Current revision of Khronos Vulkan-Headers.
-  'vulkan_headers_revision': 'c1a8560c5cf5e7bd6dbc71fe69b1a317411c36b8',
+  'vulkan_headers_revision': '2634c969d7dc0e983f005f7f2e665cce8449efe6',
 
   # Current revision of Khronos Vulkan-Loader.
-  'vulkan_loader_revision': 'db51885950c860961279168997b5cde12a77abf9',
+  'vulkan_loader_revision': 'd34bfafff23602e857064bea6d99a35eb63f37f2',
 
   # Current revision of Khronos Vulkan-Tools.
-  'vulkan_tools_revision': '0cab6e8055fb0f3a54d8314552fd523a3da57c2c',
+  'vulkan_tools_revision': '389110e4600669d82bca042859fddf898387c0d2',
+
+  # Current revision of Khronos Vulkan-Utility-Libraries.
+  'vulkan_utility_libraries_revision': 'dd26ae7065a9ed60c8ab517ed79bf7935394aec7',
 
   # Current revision of Khronos Vulkan-ValidationLayers.
-  'vulkan_validation_revision': 'e2be2287f4820ed578d1adeca981736146a74d9a',
+  'vulkan_validation_revision': 'b89f48ae89ec064c91e8b77468cebc18c3faa682',
 }
 
 deps = {
@@ -60,6 +64,10 @@ deps = {
 
   'vulkan-tools/src': {
     'url': '{chromium_git}/external/github.com/KhronosGroup/Vulkan-Tools@{vulkan_tools_revision}',
+  },
+
+  'vulkan-utility-libraries/src': {
+    'url': '{chromium_git}/external/github.com/KhronosGroup/Vulkan-Utility-Libraries@{vulkan_utility_libraries_revision}',
   },
 
   'vulkan-validation-layers/src': {

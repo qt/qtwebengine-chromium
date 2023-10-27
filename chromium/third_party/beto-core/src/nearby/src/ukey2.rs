@@ -34,7 +34,7 @@ pub(crate) fn check_ukey2_ffi(root: &path::Path) -> anyhow::Result<()> {
     ffi_build_dir.push("cpp/build");
     fs::create_dir_all(&ffi_build_dir)?;
     run_cmd_shell_with_color::<YellowStderr>(&ffi_build_dir, "cmake ..")?;
-    run_cmd_shell_with_color::<YellowStderr>(&ffi_build_dir, "make all")?;
+    run_cmd_shell_with_color::<YellowStderr>(&ffi_build_dir, "cmake --build .")?;
     run_cmd_shell_with_color::<YellowStderr>(&ffi_build_dir, "ctest")?;
 
     Ok(())

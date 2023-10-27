@@ -4,9 +4,12 @@
 
 #include "src/heap/new-spaces.h"
 
+#include <atomic>
+
 #include "src/common/globals.h"
 #include "src/heap/allocation-observer.h"
 #include "src/heap/array-buffer-sweeper.h"
+#include "src/heap/concurrent-marking.h"
 #include "src/heap/free-list-inl.h"
 #include "src/heap/gc-tracer-inl.h"
 #include "src/heap/heap-inl.h"
@@ -16,10 +19,12 @@
 #include "src/heap/marking-state-inl.h"
 #include "src/heap/marking-state.h"
 #include "src/heap/memory-allocator.h"
+#include "src/heap/page-inl.h"
 #include "src/heap/paged-spaces.h"
 #include "src/heap/safepoint.h"
 #include "src/heap/spaces-inl.h"
 #include "src/heap/spaces.h"
+#include "src/heap/zapping.h"
 
 namespace v8 {
 namespace internal {
@@ -28,10 +33,11 @@ Page* SemiSpace::InitializePage(MemoryChunk* chunk) {
   bool in_to_space = (id() != kFromSpace);
   chunk->SetFlag(in_to_space ? MemoryChunk::TO_PAGE : MemoryChunk::FROM_PAGE);
   Page* page = static_cast<Page*>(chunk);
-  page->SetYoungGenerationPageFlags(heap()->incremental_marking()->IsMarking());
+  page->SetYoungGenerationPageFlags(
+      heap()->incremental_marking()->marking_mode());
   page->list_node().Initialize();
-  if (v8_flags.minor_mc) {
-    heap()->non_atomic_marking_state()->ClearLiveness(page);
+  if (v8_flags.minor_ms) {
+    page->ClearLiveness();
   }
   page->InitializationMemoryFence();
   return page;
@@ -76,7 +82,6 @@ bool SemiSpace::EnsureCurrentCapacity() {
     }
 
     // Add more pages if we have less than expected_pages.
-    NonAtomicMarkingState* marking_state = heap()->non_atomic_marking_state();
     while (actual_pages < expected_pages) {
       actual_pages++;
       current_page = heap()->memory_allocator()->AllocatePage(
@@ -86,7 +91,7 @@ bool SemiSpace::EnsureCurrentCapacity() {
       AccountCommitted(Page::kPageSize);
       IncrementCommittedPhysicalMemory(current_page->CommittedPhysicalMemory());
       memory_chunk_list_.PushBack(current_page);
-      marking_state->ClearLiveness(current_page);
+      current_page->ClearLiveness();
       current_page->SetFlags(first_page()->GetFlags());
       heap()->CreateFillerObjectAt(current_page->area_start(),
                                    static_cast<int>(current_page->area_size()));
@@ -182,7 +187,6 @@ bool SemiSpace::GrowTo(size_t new_capacity) {
   DCHECK(IsAligned(delta, AllocatePageSize()));
   const int delta_pages = static_cast<int>(delta / Page::kPageSize);
   DCHECK(last_page());
-  NonAtomicMarkingState* marking_state = heap()->non_atomic_marking_state();
   for (int pages_added = 0; pages_added < delta_pages; pages_added++) {
     Page* new_page = heap()->memory_allocator()->AllocatePage(
         MemoryAllocator::AllocationMode::kUsePool, this, NOT_EXECUTABLE);
@@ -191,7 +195,7 @@ bool SemiSpace::GrowTo(size_t new_capacity) {
       return false;
     }
     memory_chunk_list_.PushBack(new_page);
-    marking_state->ClearLiveness(new_page);
+    new_page->ClearLiveness();
     IncrementCommittedPhysicalMemory(new_page->CommittedPhysicalMemory());
     // Duplicate the flags that was set on the old page.
     new_page->SetFlags(last_page()->GetFlags(), Page::kCopyOnFlipFlagsMask);
@@ -263,10 +267,11 @@ void SemiSpace::RemovePage(Page* page) {
   memory_chunk_list_.Remove(page);
   AccountUncommitted(Page::kPageSize);
   DecrementCommittedPhysicalMemory(page->CommittedPhysicalMemory());
-  for (size_t i = 0; i < ExternalBackingStoreType::kNumTypes; i++) {
-    ExternalBackingStoreType t = static_cast<ExternalBackingStoreType>(i);
-    DecrementExternalBackingStoreBytes(t, page->ExternalBackingStoreBytes(t));
-  }
+  ForAll<ExternalBackingStoreType>(
+      [this, page](ExternalBackingStoreType type, int index) {
+        DecrementExternalBackingStoreBytes(
+            type, page->ExternalBackingStoreBytes(type));
+      });
 }
 
 void SemiSpace::PrependPage(Page* page) {
@@ -276,10 +281,11 @@ void SemiSpace::PrependPage(Page* page) {
   current_capacity_ += Page::kPageSize;
   AccountCommitted(Page::kPageSize);
   IncrementCommittedPhysicalMemory(page->CommittedPhysicalMemory());
-  for (size_t i = 0; i < ExternalBackingStoreType::kNumTypes; i++) {
-    ExternalBackingStoreType t = static_cast<ExternalBackingStoreType>(i);
-    IncrementExternalBackingStoreBytes(t, page->ExternalBackingStoreBytes(t));
-  }
+  ForAll<ExternalBackingStoreType>(
+      [this, page](ExternalBackingStoreType type, int index) {
+        IncrementExternalBackingStoreBytes(
+            type, page->ExternalBackingStoreBytes(type));
+      });
 }
 
 void SemiSpace::MovePageToTheEnd(Page* page) {
@@ -303,8 +309,17 @@ void SemiSpace::Swap(SemiSpace* from, SemiSpace* to) {
   std::swap(from->age_mark_, to->age_mark_);
   std::swap(from->memory_chunk_list_, to->memory_chunk_list_);
   std::swap(from->current_page_, to->current_page_);
-  std::swap(from->external_backing_store_bytes_,
-            to->external_backing_store_bytes_);
+  ForAll<ExternalBackingStoreType>(
+      [from, to](ExternalBackingStoreType type, int index) {
+        const size_t tmp = from->external_backing_store_bytes_[index].load(
+            std::memory_order_relaxed);
+        from->external_backing_store_bytes_[index].store(
+            to->external_backing_store_bytes_[index].load(
+                std::memory_order_relaxed),
+            std::memory_order_relaxed);
+        to->external_backing_store_bytes_[index].store(
+            tmp, std::memory_order_relaxed);
+      });
   std::swap(from->committed_physical_memory_, to->committed_physical_memory_);
 
   to->FixPagesFlags(saved_to_space_flags, Page::kCopyOnFlipFlagsMask);
@@ -359,11 +374,8 @@ void SemiSpace::Print() {}
 #ifdef VERIFY_HEAP
 void SemiSpace::VerifyPageMetadata() const {
   bool is_from_space = (id_ == kFromSpace);
-  size_t external_backing_store_bytes[kNumTypes];
-
-  for (int i = 0; i < kNumTypes; i++) {
-    external_backing_store_bytes[static_cast<ExternalBackingStoreType>(i)] = 0;
-  }
+  size_t external_backing_store_bytes[static_cast<int>(
+      ExternalBackingStoreType::kNumValues)] = {0};
 
   int actual_pages = 0;
   size_t computed_committed_physical_memory = 0;
@@ -380,16 +392,19 @@ void SemiSpace::VerifyPageMetadata() const {
       // The pointers-from-here-are-interesting flag isn't updated dynamically
       // on from-space pages, so it might be out of sync with the marking state.
       if (page->heap()->incremental_marking()->IsMarking()) {
+        DCHECK(page->heap()->incremental_marking()->IsMajorMarking());
         CHECK(page->IsFlagSet(MemoryChunk::POINTERS_FROM_HERE_ARE_INTERESTING));
       } else {
         CHECK(
             !page->IsFlagSet(MemoryChunk::POINTERS_FROM_HERE_ARE_INTERESTING));
       }
     }
-    for (int i = 0; i < kNumTypes; i++) {
-      ExternalBackingStoreType t = static_cast<ExternalBackingStoreType>(i);
-      external_backing_store_bytes[t] += page->ExternalBackingStoreBytes(t);
-    }
+    ForAll<ExternalBackingStoreType>(
+        [&external_backing_store_bytes, page](ExternalBackingStoreType type,
+                                              int index) {
+          external_backing_store_bytes[index] +=
+              page->ExternalBackingStoreBytes(type);
+        });
 
     computed_committed_physical_memory += page->CommittedPhysicalMemory();
 
@@ -399,11 +414,12 @@ void SemiSpace::VerifyPageMetadata() const {
   }
   CHECK_EQ(actual_pages * size_t(Page::kPageSize), CommittedMemory());
   CHECK_EQ(computed_committed_physical_memory, CommittedPhysicalMemory());
-
-  for (int i = 0; i < kNumTypes; i++) {
-    ExternalBackingStoreType t = static_cast<ExternalBackingStoreType>(i);
-    CHECK_EQ(external_backing_store_bytes[t], ExternalBackingStoreBytes(t));
-  }
+  ForAll<ExternalBackingStoreType>(
+      [this, external_backing_store_bytes](ExternalBackingStoreType type,
+                                           int index) {
+        CHECK_EQ(external_backing_store_bytes[index],
+                 ExternalBackingStoreBytes(type));
+      });
 }
 #endif  // VERIFY_HEAP
 
@@ -575,9 +591,8 @@ void SemiSpaceNewSpace::ResetLinearAllocationArea() {
   to_space_.Reset();
   UpdateLinearAllocationArea();
   // Clear all mark-bits in the to-space.
-  NonAtomicMarkingState* marking_state = heap()->non_atomic_marking_state();
   for (Page* p : to_space_) {
-    marking_state->ClearLiveness(p);
+    p->ClearLiveness();
     // Concurrent marking may have local live bytes for this page.
     heap()->concurrent_marking()->ClearMemoryChunkData(p);
   }
@@ -698,11 +713,8 @@ void SemiSpaceNewSpace::Verify(Isolate* isolate,
 // that it works (it depends on the invariants we are checking).
 void SemiSpaceNewSpace::VerifyObjects(Isolate* isolate,
                                       SpaceVerificationVisitor* visitor) const {
-  size_t external_space_bytes[kNumTypes];
-  for (int i = 0; i < kNumTypes; i++) {
-    external_space_bytes[static_cast<ExternalBackingStoreType>(i)] = 0;
-  }
-
+  size_t external_space_bytes[static_cast<int>(
+      ExternalBackingStoreType::kNumValues)] = {0};
   PtrComprCageBase cage_base(isolate);
   for (const Page* page = to_space_.first_page(); page;
        page = page->next_page()) {
@@ -711,19 +723,19 @@ void SemiSpaceNewSpace::VerifyObjects(Isolate* isolate,
     Address current_address = page->area_start();
 
     while (!Page::IsAlignedToPageSize(current_address)) {
-      HeapObject object = HeapObject::FromAddress(current_address);
+      Tagged<HeapObject> object = HeapObject::FromAddress(current_address);
 
       // The first word should be a map, and we expect all map pointers to
       // be in map space or read-only space.
-      int size = object.Size(cage_base);
+      int size = object->Size(cage_base);
 
       visitor->VerifyObject(object);
 
-      if (object.IsExternalString(cage_base)) {
-        ExternalString external_string = ExternalString::cast(object);
-        size_t string_size = external_string.ExternalPayloadSize();
-        external_space_bytes[ExternalBackingStoreType::kExternalString] +=
-            string_size;
+      if (IsExternalString(object, cage_base)) {
+        Tagged<ExternalString> external_string = ExternalString::cast(object);
+        size_t string_size = external_string->ExternalPayloadSize();
+        external_space_bytes[static_cast<int>(
+            ExternalBackingStoreType::kExternalString)] += string_size;
       }
 
       current_address += ALIGN_TO_ALLOCATION_ALIGNMENT(size);
@@ -732,11 +744,13 @@ void SemiSpaceNewSpace::VerifyObjects(Isolate* isolate,
     visitor->VerifyPageDone(page);
   }
 
-  for (int i = 0; i < kNumTypes; i++) {
-    if (i == ExternalBackingStoreType::kArrayBuffer) continue;
-    ExternalBackingStoreType t = static_cast<ExternalBackingStoreType>(i);
-    CHECK_EQ(external_space_bytes[t], ExternalBackingStoreBytes(t));
-  }
+  ForAll<ExternalBackingStoreType>(
+      [this, external_space_bytes](ExternalBackingStoreType type, int index) {
+        if (type == ExternalBackingStoreType::kArrayBuffer) {
+          return;
+        }
+        CHECK_EQ(external_space_bytes[index], ExternalBackingStoreBytes(type));
+      });
 
   if (!v8_flags.concurrent_array_buffer_sweeping) {
     size_t bytes = heap()->array_buffer_sweeper()->young().BytesSlow();
@@ -844,9 +858,9 @@ void SemiSpaceNewSpace::GarbageCollectionEpilogue() { set_age_mark(top()); }
 void SemiSpaceNewSpace::ZapUnusedMemory() {
   if (!IsFromSpaceCommitted()) return;
   for (Page* page : PageRange(from_space().first_page(), nullptr)) {
-    heap_->memory_allocator()->ZapBlock(
-        page->area_start(), page->HighWaterMark() - page->area_start(),
-        heap_->ZapValue());
+    heap::ZapBlock(page->area_start(),
+                   page->HighWaterMark() - page->area_start(),
+                   heap::ZapValue());
   }
 }
 
@@ -896,8 +910,9 @@ Page* PagedSpaceForNewSpace::InitializePage(MemoryChunk* chunk) {
   // Make sure that categories are initialized before freeing the area.
   page->ResetAllocationStatistics();
   page->SetFlags(Page::TO_PAGE);
-  page->SetYoungGenerationPageFlags(heap()->incremental_marking()->IsMarking());
-  heap()->non_atomic_marking_state()->ClearLiveness(page);
+  page->SetYoungGenerationPageFlags(
+      heap()->incremental_marking()->marking_mode());
+  page->ClearLiveness();
   page->AllocateFreeListCategories();
   page->InitializeFreeListCategories();
   page->list_node().Initialize();
@@ -933,7 +948,7 @@ void PagedSpaceForNewSpace::FinishShrinking() {
     // space could not be shrunk all the way down to `target_capacity_`, it
     // must mean that all pages contain live objects.
     for (Page* page : *this) {
-      DCHECK_NE(0, heap()->non_atomic_marking_state()->live_bytes(page));
+      DCHECK_NE(0, page->live_bytes());
     }
 #endif  // DEBUG
     target_capacity_ = current_capacity_;
@@ -953,8 +968,9 @@ void PagedSpaceForNewSpace::UpdateInlineAllocationLimit() {
 
 size_t PagedSpaceForNewSpace::AddPage(Page* page) {
   current_capacity_ += Page::kPageSize;
-  DCHECK_IMPLIES(!force_allocation_success_,
-                 UsableCapacity() <= TotalCapacity());
+  DCHECK_IMPLIES(
+      !force_allocation_success_ && !heap_->ShouldOptimizeForLoadTime(),
+      UsableCapacity() <= TotalCapacity());
   return PagedSpaceBase::AddPage(page);
 }
 
@@ -993,20 +1009,25 @@ bool PagedSpaceForNewSpace::ShouldReleaseEmptyPage() const {
 bool PagedSpaceForNewSpace::AddPageBeyondCapacity(int size_in_bytes,
                                                   AllocationOrigin origin) {
   DCHECK(heap()->sweeper()->IsSweepingDoneForSpace(NEW_SPACE));
-  if (!force_allocation_success_ &&
-      ((UsableCapacity() >= TotalCapacity()) ||
-       (TotalCapacity() - UsableCapacity() < Page::kPageSize)))
-    return false;
-  if (!heap()->CanExpandOldGeneration(Size() + heap()->new_lo_space()->Size() +
-                                      Page::kPageSize)) {
-    // Assuming all of new space is alive, doing a full GC and promoting all
-    // objects should still succeed. Don't let new space grow if it means it
-    // will exceed the available size of old space.
-    return false;
+  // Allocate another page is `force_allocation_success_` is true,
+  // `UsableCapacity()` is below `TotalCapacity()` and allocating another page
+  // won't exceed `TotalCapacity()`, or `ShouldOptimizeForLoadTime()` is true.
+  if (force_allocation_success_ ||
+      ((UsableCapacity() < TotalCapacity()) &&
+       (TotalCapacity() - UsableCapacity() >= Page::kPageSize)) ||
+      heap_->ShouldOptimizeForLoadTime()) {
+    if (!heap()->CanExpandOldGeneration(
+            Size() + heap()->new_lo_space()->Size() + Page::kPageSize)) {
+      // Assuming all of new space is alive, doing a full GC and promoting all
+      // objects should still succeed. Don't let new space grow if it means it
+      // will exceed the available size of old space.
+      return false;
+    }
+    if (!AllocatePage()) return false;
+    return TryAllocationFromFreeListMain(static_cast<size_t>(size_in_bytes),
+                                         origin);
   }
-  if (!AllocatePage()) return false;
-  return TryAllocationFromFreeListMain(static_cast<size_t>(size_in_bytes),
-                                       origin);
+  return false;
 }
 
 bool PagedSpaceForNewSpace::AllocatePage() {
@@ -1057,7 +1078,7 @@ bool PagedSpaceForNewSpace::IsPromotionCandidate(
   return page->AllocatedLabSize() <=
          static_cast<size_t>(
              Page::kPageSize *
-             v8_flags.minor_mc_page_promotion_max_lab_threshold / 100);
+             v8_flags.minor_ms_page_promotion_max_lab_threshold / 100);
 }
 
 #ifdef VERIFY_HEAP

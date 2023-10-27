@@ -166,8 +166,14 @@ static int sync_queue_process(Muxer *mux, OutputStream *ost, AVPacket *pkt, int 
 
         while (1) {
             ret = sq_receive(mux->sq_mux, -1, SQPKT(mux->sq_pkt));
-            if (ret < 0)
-                return (ret == AVERROR_EOF || ret == AVERROR(EAGAIN)) ? 0 : ret;
+            if (ret < 0) {
+                /* n.b.: We forward EOF from the sync queue, terminating muxing.
+                 * This assumes that if a muxing sync queue is present, then all
+                 * the streams use it. That is true currently, but may change in
+                 * the future, then this code needs to be revisited.
+                 */
+                return ret == AVERROR(EAGAIN) ? 0 : ret;
+            }
 
             ret = write_packet(mux, of->streams[ret],
                                mux->sq_pkt);
@@ -324,30 +330,36 @@ static int submit_packet(Muxer *mux, AVPacket *pkt, OutputStream *ost)
     return 0;
 }
 
-void of_output_packet(OutputFile *of, AVPacket *pkt, OutputStream *ost, int eof)
+int of_output_packet(OutputFile *of, OutputStream *ost, AVPacket *pkt)
 {
     Muxer *mux = mux_from_of(of);
     MuxStream *ms = ms_from_ost(ost);
     const char *err_msg;
     int ret = 0;
 
-    if (!eof && pkt->dts != AV_NOPTS_VALUE)
+    if (pkt && pkt->dts != AV_NOPTS_VALUE)
         ost->last_mux_dts = av_rescale_q(pkt->dts, pkt->time_base, AV_TIME_BASE_Q);
+
+    /* rescale timestamps to the muxing timebase */
+    if (pkt) {
+        av_packet_rescale_ts(pkt, pkt->time_base, ost->mux_timebase);
+        pkt->time_base = ost->mux_timebase;
+    }
 
     /* apply the output bitstream filters */
     if (ms->bsf_ctx) {
         int bsf_eof = 0;
 
-        ret = av_bsf_send_packet(ms->bsf_ctx, eof ? NULL : pkt);
+        ret = av_bsf_send_packet(ms->bsf_ctx, pkt);
         if (ret < 0) {
             err_msg = "submitting a packet for bitstream filtering";
             goto fail;
         }
 
         while (!bsf_eof) {
-            ret = av_bsf_receive_packet(ms->bsf_ctx, pkt);
+            ret = av_bsf_receive_packet(ms->bsf_ctx, ms->bsf_pkt);
             if (ret == AVERROR(EAGAIN))
-                return;
+                return 0;
             else if (ret == AVERROR_EOF)
                 bsf_eof = 1;
             else if (ret < 0) {
@@ -355,66 +367,63 @@ void of_output_packet(OutputFile *of, AVPacket *pkt, OutputStream *ost, int eof)
                 goto fail;
             }
 
-            ret = submit_packet(mux, bsf_eof ? NULL : pkt, ost);
+            ret = submit_packet(mux, bsf_eof ? NULL : ms->bsf_pkt, ost);
             if (ret < 0)
                 goto mux_fail;
         }
     } else {
-        ret = submit_packet(mux, eof ? NULL : pkt, ost);
+        ret = submit_packet(mux, pkt, ost);
         if (ret < 0)
             goto mux_fail;
     }
 
-    return;
+    return 0;
 
 mux_fail:
     err_msg = "submitting a packet to the muxer";
 
 fail:
     av_log(ost, AV_LOG_ERROR, "Error %s\n", err_msg);
-    if (exit_on_error)
-        exit_program(1);
-
+    return exit_on_error ? ret : 0;
 }
 
-void of_streamcopy(OutputStream *ost, const AVPacket *pkt, int64_t dts)
+int of_streamcopy(OutputStream *ost, const AVPacket *pkt, int64_t dts)
 {
     OutputFile *of = output_files[ost->file_index];
     MuxStream  *ms = ms_from_ost(ost);
     int64_t start_time = (of->start_time == AV_NOPTS_VALUE) ? 0 : of->start_time;
     int64_t ost_tb_start_time = av_rescale_q(start_time, AV_TIME_BASE_Q, ost->mux_timebase);
-    AVPacket *opkt = ost->pkt;
+    AVPacket *opkt = ms->pkt;
+    int ret;
 
     av_packet_unref(opkt);
+
+    if (of->recording_time != INT64_MAX &&
+        dts >= of->recording_time + start_time)
+        pkt = NULL;
+
     // EOF: flush output bitstream filters.
-    if (!pkt) {
-        of_output_packet(of, opkt, ost, 1);
-        return;
-    }
+    if (!pkt)
+        return of_output_packet(of, ost, NULL);
 
     if (!ms->streamcopy_started && !(pkt->flags & AV_PKT_FLAG_KEY) &&
         !ms->copy_initial_nonkeyframes)
-        return;
+        return 0;
 
     if (!ms->streamcopy_started) {
         if (!ms->copy_prior_start &&
             (pkt->pts == AV_NOPTS_VALUE ?
              dts < ms->ts_copy_start :
              pkt->pts < av_rescale_q(ms->ts_copy_start, AV_TIME_BASE_Q, pkt->time_base)))
-            return;
+            return 0;
 
         if (of->start_time != AV_NOPTS_VALUE && dts < of->start_time)
-            return;
+            return 0;
     }
 
-    if (of->recording_time != INT64_MAX &&
-        dts >= of->recording_time + start_time) {
-        close_output_stream(ost);
-        return;
-    }
-
-    if (av_packet_ref(opkt, pkt) < 0)
-        exit_program(1);
+    ret = av_packet_ref(opkt, pkt);
+    if (ret < 0)
+        return ret;
 
     opkt->time_base = ost->mux_timebase;
 
@@ -444,13 +453,17 @@ void of_streamcopy(OutputStream *ost, const AVPacket *pkt, int64_t dts)
             av_log(NULL, AV_LOG_ERROR,
                    "Subtitle heartbeat logic failed in %s! (%s)\n",
                    __func__, av_err2str(ret));
-            exit_program(1);
+            return ret;
         }
     }
 
-    of_output_packet(of, opkt, ost, 0);
+    ret = of_output_packet(of, ost, opkt);
+    if (ret < 0)
+        return ret;
 
     ms->streamcopy_started = 1;
+
+    return 0;
 }
 
 static int thread_stop(Muxer *mux)
@@ -468,11 +481,6 @@ static int thread_stop(Muxer *mux)
     tq_free(&mux->tq);
 
     return (int)(intptr_t)ret;
-}
-
-static void pkt_move(void *dst, void *src)
-{
-    av_packet_move_ref(dst, src);
 }
 
 static int thread_start(Muxer *mux)
@@ -651,6 +659,10 @@ static int bsf_init(MuxStream *ms)
         return ret;
     ost->st->time_base = ctx->time_base_out;
 
+    ms->bsf_pkt = av_packet_alloc();
+    if (!ms->bsf_pkt)
+        return AVERROR(ENOMEM);
+
     return 0;
 }
 
@@ -666,6 +678,11 @@ int of_stream_init(OutputFile *of, OutputStream *ost)
     ret = bsf_init(ms);
     if (ret < 0)
         return ret;
+
+    if (ms->stream_duration) {
+        ost->st->duration = av_rescale_q(ms->stream_duration, ms->stream_duration_tb,
+                                         ost->st->time_base);
+    }
 
     ost->initialized = 1;
 
@@ -846,14 +863,14 @@ static void ost_free(OutputStream **post)
     avcodec_parameters_free(&ost->par_in);
 
     av_bsf_free(&ms->bsf_ctx);
+    av_packet_free(&ms->bsf_pkt);
 
-    av_packet_free(&ost->pkt);
+    av_packet_free(&ms->pkt);
     av_dict_free(&ost->encoder_opts);
 
     av_freep(&ost->kf.pts);
     av_expr_free(ost->kf.pexpr);
 
-    av_freep(&ost->avfilter);
     av_freep(&ost->logfile_prefix);
     av_freep(&ost->apad);
 

@@ -67,8 +67,7 @@ class MachineLoweringReducer : public Next {
         return input;
       }
       case ChangeOrDeoptOp::Kind::kInt64ToInt32: {
-        // Int64 is truncated to Int32 implicitly.
-        V<Word32> i32 = input;
+        V<Word32> i32 = __ TruncateWord64ToWord32(input);
         __ DeoptimizeIfNot(__ Word64Equal(__ ChangeInt32ToInt64(i32), input),
                            frame_state, DeoptimizeReason::kLostPrecision,
                            feedback);
@@ -78,8 +77,7 @@ class MachineLoweringReducer : public Next {
         __ DeoptimizeIfNot(
             __ Uint64LessThanOrEqual(input, static_cast<uint64_t>(kMaxInt)),
             frame_state, DeoptimizeReason::kLostPrecision, feedback);
-        // Uint64 is truncated to Int32 implicitly
-        return input;
+        return __ TruncateWord64ToWord32(input);
       }
       case ChangeOrDeoptOp::Kind::kUint64ToInt64: {
         __ DeoptimizeIfNot(__ Uint64LessThanOrEqual(
@@ -188,7 +186,7 @@ class MachineLoweringReducer : public Next {
         if (input_assumptions != ObjectIsOp::InputAssumptions::kBigInt) {
           if (NeedsHeapObjectCheck(input_assumptions)) {
             // Check for Smi.
-            GOTO_IF(IsSmi(input), done, 0);
+            GOTO_IF(__ IsSmi(input), done, 0);
           }
 
           // Check for BigInt.
@@ -249,7 +247,7 @@ class MachineLoweringReducer : public Next {
 
         // Check for Smi if necessary.
         if (NeedsHeapObjectCheck(input_assumptions)) {
-          GOTO_IF(UNLIKELY(IsSmi(input)), done, 0);
+          GOTO_IF(UNLIKELY(__ IsSmi(input)), done, 0);
         }
 
         // Load bitfield from map.
@@ -332,14 +330,14 @@ class MachineLoweringReducer : public Next {
         if (!NeedsHeapObjectCheck(input_assumptions)) {
           return __ Word32Constant(0);
         }
-        return IsSmi(input);
+        return __ IsSmi(input);
       }
       case ObjectIsOp::Kind::kNumber: {
         Label<Word32> done(this);
 
         // Check for Smi if necessary.
         if (NeedsHeapObjectCheck(input_assumptions)) {
-          GOTO_IF(IsSmi(input), done, 1);
+          GOTO_IF(__ IsSmi(input), done, 1);
         }
 
         V<Map> map = __ LoadMapField(input);
@@ -356,7 +354,7 @@ class MachineLoweringReducer : public Next {
 
         // Check for Smi if necessary.
         if (NeedsHeapObjectCheck(input_assumptions)) {
-          GOTO_IF(IsSmi(input), done, 0);
+          GOTO_IF(__ IsSmi(input), done, 0);
         }
 
         // Load instance type from map.
@@ -470,11 +468,11 @@ class MachineLoweringReducer : public Next {
       case NumericKind::kFinite:
       case NumericKind::kInteger:
       case NumericKind::kSafeInteger:
-        GOTO_IF(IsSmi(input), done, 1);
+        GOTO_IF(__ IsSmi(input), done, 1);
         break;
       case NumericKind::kMinusZero:
       case NumericKind::kNaN:
-        GOTO_IF(IsSmi(input), done, 0);
+        GOTO_IF(__ IsSmi(input), done, 0);
         break;
       case NumericKind::kFloat64Hole:
         // ObjectIsFloat64Hole is not used, but can be implemented when needed.
@@ -549,18 +547,21 @@ class MachineLoweringReducer : public Next {
         GOTO_IF(__ Word64Equal(input, int64_t{0}), done,
                 AllocateBigInt(OpIndex::Invalid(), OpIndex::Invalid()));
 
+        // The GOTO_IF above could have been changed to an unconditional GOTO,
+        // in which case we are now in unreachable code, so we can skip the
+        // following step and return.
         if (input_interpretation ==
             ConvertUntaggedToJSPrimitiveOp::InputInterpretation::kSigned) {
           // Shift sign bit into BigInt's sign bit position.
           V<Word32> bitfield = __ Word32BitwiseOr(
               BigInt::LengthBits::encode(1),
-              __ Word64ShiftRightLogical(
-                  input, static_cast<int64_t>(63 - BigInt::SignBits::kShift)));
+              __ TruncateWord64ToWord32(__ Word64ShiftRightLogical(
+                  input, static_cast<int32_t>(63 - BigInt::SignBits::kShift))));
 
           // We use (value XOR (value >> 63)) - (value >> 63) to compute the
           // absolute value, in a branchless fashion.
           V<Word64> sign_mask =
-              __ Word64ShiftRightArithmetic(input, int64_t{63});
+              __ Word64ShiftRightArithmetic(input, int32_t{63});
           V<Word64> absolute_value =
               __ Word64Sub(__ Word64BitwiseXor(input, sign_mask), sign_mask);
           GOTO(done, AllocateBigInt(bitfield, absolute_value));
@@ -571,6 +572,7 @@ class MachineLoweringReducer : public Next {
           const auto bitfield = BigInt::LengthBits::encode(1);
           GOTO(done, AllocateBigInt(__ Word32Constant(bitfield), input));
         }
+
         BIND(done, result);
         return result;
       }
@@ -619,7 +621,7 @@ class MachineLoweringReducer : public Next {
               Label<Tagged> done(this);
               Label<> outside_smi_range(this);
 
-              V<Word32> v32 = input;
+              V<Word32> v32 = __ TruncateWord64ToWord32(input);
               V<Word64> v64 = __ ChangeInt32ToInt64(v32);
               GOTO_IF_NOT(__ Word64Equal(v64, input), outside_smi_range);
 
@@ -642,7 +644,7 @@ class MachineLoweringReducer : public Next {
               Label<Tagged> done(this);
 
               GOTO_IF(__ Uint64LessThanOrEqual(input, Smi::kMaxValue), done,
-                      __ TagSmi(input));
+                      __ TagSmi(__ TruncateWord64ToWord32(input)));
               GOTO(done,
                    AllocateHeapNumberWithValue(__ ChangeInt64ToFloat64(input)));
 
@@ -760,8 +762,9 @@ class MachineLoweringReducer : public Next {
                         MemoryRepresentation::TaggedSigned(),
                         WriteBarrierKind::kNoWriteBarrier,
                         SeqTwoByteString::SizeFor(2) - kObjectAlignment);
-          __ InitializeField(string, AccessBuilder::ForMap(),
-                             __ HeapConstant(factory_->string_map()));
+          __ InitializeField(
+              string, AccessBuilder::ForMap(),
+              __ HeapConstant(factory_->seq_two_byte_string_map()));
           __ InitializeField(string, AccessBuilder::ForNameRawHashField(),
                              __ Word32Constant(Name::kEmptyHashField));
           __ InitializeField(string, AccessBuilder::ForStringLength(),
@@ -785,7 +788,7 @@ class MachineLoweringReducer : public Next {
 
             // Load the string for the {code} from the single character string
             // table.
-            OpIndex entry = __ LoadElement(
+            OpIndex entry = __ LoadNonArrayBufferElement(
                 table, AccessBuilder::ForFixedArrayElement(), index);
 
             // Use the {entry} from the {table}.
@@ -802,8 +805,9 @@ class MachineLoweringReducer : public Next {
                           MemoryRepresentation::TaggedSigned(),
                           WriteBarrierKind::kNoWriteBarrier,
                           SeqTwoByteString::SizeFor(1) - kObjectAlignment);
-            __ InitializeField(string, AccessBuilder::ForMap(),
-                               __ HeapConstant(factory_->string_map()));
+            __ InitializeField(
+                string, AccessBuilder::ForMap(),
+                __ HeapConstant(factory_->seq_two_byte_string_map()));
             __ InitializeField(string, AccessBuilder::ForNameRawHashField(),
                                __ Word32Constant(Name::kEmptyHashField));
             __ InitializeField(string, AccessBuilder::ForStringLength(),
@@ -857,8 +861,7 @@ class MachineLoweringReducer : public Next {
       DCHECK_EQ(input_rep, RegisterRepresentation::Word64());
       if (input_interpretation ==
           ConvertUntaggedToJSPrimitiveOrDeoptOp::InputInterpretation::kSigned) {
-        // Word32 truncation is implicit.
-        V<Word32> i32 = input;
+        V<Word32> i32 = __ TruncateWord64ToWord32(input);
         V<Word32> check = __ Word64Equal(__ ChangeInt32ToInt64(i32), input);
         __ DeoptimizeIfNot(check, frame_state, DeoptimizeReason::kLostPrecision,
                            feedback);
@@ -1157,11 +1160,12 @@ class MachineLoweringReducer : public Next {
             // TODO(nicohartmann@): We might introduce a Turboshaft way for
             // constructing call descriptors.
             MachineSignature::Builder builder(__ graph_zone(), 1, 1);
-            builder.AddReturn(MachineType::IntPtr());
+            builder.AddReturn(MachineType::Int32());
             builder.AddParam(MachineType::TaggedPointer());
             auto desc = Linkage::GetSimplifiedCDescriptor(__ graph_zone(),
                                                           builder.Build());
-            auto ts_desc = TSCallDescriptor::Create(desc, __ graph_zone());
+            auto ts_desc =
+                TSCallDescriptor::Create(desc, CanThrow::kNo, __ graph_zone());
             OpIndex callee = __ ExternalConstant(
                 ExternalReference::string_to_array_index_function());
             // NOTE: String::ToArrayIndex() currently returns int32_t.
@@ -1330,8 +1334,9 @@ class MachineLoweringReducer : public Next {
     // primitive object's maps are in RO space and are allocated before all
     // JS_RECEIVER maps. Thus primitive object maps have smaller (compressed)
     // addresses.
-    return __ Uint32LessThan(InstanceTypeChecker::kNonJsReceiverMapLimit,
-                             __ BitcastTaggedToWord(value_map));
+    return __ Uint32LessThan(
+        InstanceTypeChecker::kNonJsReceiverMapLimit,
+        __ TruncateWordPtrToWord32(__ BitcastTaggedToWord(value_map)));
 #else
     static_assert(LAST_TYPE == LAST_JS_RECEIVER_TYPE);
     V<Word32> value_instance_type = __ LoadInstanceTypeField(value_map);
@@ -1399,7 +1404,8 @@ class MachineLoweringReducer : public Next {
     V<Word32> encoding =
         __ Word32BitwiseAnd(instance_type, kStringEncodingMask);
     IF(__ Word32Equal(encoding, kTwoByteStringTag)) {
-      GOTO(allocate_string, __ HeapConstant(factory_->cons_string_map()));
+      GOTO(allocate_string,
+           __ HeapConstant(factory_->cons_two_byte_string_map()));
     }
     ELSE {
       GOTO(allocate_string,
@@ -1437,7 +1443,7 @@ class MachineLoweringReducer : public Next {
         size_log2 = kDoubleSizeLog2;
         array_map = factory_->fixed_double_array_map();
         access = {kTaggedBase, FixedDoubleArray::kHeaderSize,
-                  compiler::Type::NumberOrHole(), MachineType::Float64(),
+                  compiler::Type::NumberOrTheHole(), MachineType::Float64(),
                   kNoWriteBarrier};
         STATIC_ASSERT_FIELD_OFFSETS_EQUAL(HeapNumber::kValueOffset,
                                           Oddball::kToNumberRawOffset);
@@ -1455,8 +1461,9 @@ class MachineLoweringReducer : public Next {
         break;
       }
     }
-    V<WordPtr> size = __ WordPtrAdd(__ WordPtrShiftLeft(length, size_log2),
-                                    access.header_size);
+    V<WordPtr> size =
+        __ WordPtrAdd(__ WordPtrShiftLeft(length, static_cast<int>(size_log2)),
+                      access.header_size);
 
     // Allocate the result and initialize the header.
     auto uninitialized_array =
@@ -1464,7 +1471,8 @@ class MachineLoweringReducer : public Next {
     __ InitializeField(uninitialized_array, AccessBuilder::ForMap(),
                        __ HeapConstant(array_map));
     __ InitializeField(uninitialized_array,
-                       AccessBuilder::ForFixedArrayLength(), __ TagSmi(length));
+                       AccessBuilder::ForFixedArrayLength(),
+                       __ TagSmi(__ TruncateWordPtrToWord32(length)));
     // TODO(nicohartmann@): Should finish initialization only after all elements
     // have been initialized.
     auto array = __ FinishInitialization(std::move(uninitialized_array));
@@ -1476,7 +1484,7 @@ class MachineLoweringReducer : public Next {
     LOOP(loop, index) {
       GOTO_IF_NOT(LIKELY(__ UintPtrLessThan(index, length)), done, array);
 
-      __ StoreElement(array, access, index, the_hole_value);
+      __ StoreNonArrayBufferElement(array, access, index, the_hole_value);
 
       // Advance the {index}.
       GOTO(loop, __ WordPtrAdd(index, 1));
@@ -1502,25 +1510,25 @@ class MachineLoweringReducer : public Next {
     V<Tagged> elements = __ template LoadField<Tagged>(
         array, AccessBuilder::ForJSObjectElements());
 
-    Label<Float64> done(this);
-    LoopLabel<WordPtr, Float64> loop(this);
+    Label<> done(this);
+    LoopLabel<WordPtr> loop(this);
+    ScopedVar<Float64> result(Asm(), empty_value);
 
-    GOTO(loop, intptr_t{0}, empty_value);
+    GOTO(loop, intptr_t{0});
 
-    LOOP(loop, index, accumulator) {
-      GOTO_IF_NOT(LIKELY(__ UintPtrLessThan(index, array_length)), done,
-                  accumulator);
+    LOOP(loop, index) {
+      GOTO_IF_NOT(LIKELY(__ UintPtrLessThan(index, array_length)), done);
 
-      V<Float64> element = __ template LoadElement<Float64>(
+      V<Float64> element = __ template LoadNonArrayBufferElement<Float64>(
           elements, AccessBuilder::ForFixedDoubleArrayElement(), index);
 
-      V<Float64> new_accumulator = is_max ? __ Float64Max(accumulator, element)
-                                          : __ Float64Min(accumulator, element);
-      GOTO(loop, __ WordPtrAdd(index, 1), new_accumulator);
+      result = is_max ? __ Float64Max(*result, element)
+                      : __ Float64Min(*result, element);
+      GOTO(loop, __ WordPtrAdd(index, 1));
     }
 
-    BIND(done, result);
-    return __ ConvertFloat64ToNumber(result,
+    BIND(done);
+    return __ ConvertFloat64ToNumber(*result,
                                      CheckForMinusZeroMode::kCheckForMinusZero);
   }
 
@@ -1538,7 +1546,9 @@ class MachineLoweringReducer : public Next {
     Label<Tagged> done(this);
 
     // Check if field is a mutable double field.
-    GOTO_IF(UNLIKELY(__ WordPtrBitwiseAnd(index, 0x1)), double_field);
+    GOTO_IF(
+        UNLIKELY(__ TruncateWordPtrToWord32(__ WordPtrBitwiseAnd(index, 0x1))),
+        double_field);
 
     {
       // The field is a proper Tagged field on {object}. The {index} is
@@ -1696,11 +1706,13 @@ class MachineLoweringReducer : public Next {
       Label<> runtime(this);
       // We need a loop here to properly deal with indirect strings
       // (SlicedString, ConsString and ThinString).
-      LoopLabel<String, WordPtr> loop(this);
-      GOTO(loop, string, pos);
+      LoopLabel<> loop(this);
+      ScopedVar<String> receiver(Asm(), string);
+      ScopedVar<WordPtr> position(Asm(), pos);
+      GOTO(loop);
 
-      LOOP(loop, receiver, position) {
-        V<Map> map = __ LoadMapField(receiver);
+      LOOP(loop) {
+        V<Map> map = __ LoadMapField(*receiver);
         V<Word32> instance_type = __ LoadInstanceTypeField(map);
         V<Word32> representation =
             __ Word32BitwiseAnd(instance_type, kStringRepresentationMask);
@@ -1711,21 +1723,21 @@ class MachineLoweringReducer : public Next {
             IF(__ Word32Equal(representation, kConsStringTag)) {
               // if_consstring
               V<String> second = __ template LoadField<String>(
-                  receiver, AccessBuilder::ForConsStringSecond());
+                  *receiver, AccessBuilder::ForConsStringSecond());
               GOTO_IF_NOT(
                   LIKELY(__ TaggedEqual(
                       second, __ HeapConstant(factory_->empty_string()))),
                   runtime);
-              V<String> first = __ template LoadField<String>(
-                  receiver, AccessBuilder::ForConsStringFirst());
-              GOTO(loop, first, position);
+              receiver = __ template LoadField<String>(
+                  *receiver, AccessBuilder::ForConsStringFirst());
+              GOTO(loop);
             }
             ELSE {
               // if_seqstring
               V<Word32> onebyte = __ Word32Equal(
                   __ Word32BitwiseAnd(instance_type, kStringEncodingMask),
                   kOneByteStringTag);
-              GOTO(done, LoadFromSeqString(receiver, position, onebyte));
+              GOTO(done, LoadFromSeqString(*receiver, *position, onebyte));
             }
             END_IF
           }
@@ -1735,9 +1747,9 @@ class MachineLoweringReducer : public Next {
           {
             IF(__ Word32Equal(representation, kThinStringTag)) {
               // if_thinstring
-              V<String> actual = __ template LoadField<String>(
-                  receiver, AccessBuilder::ForThinStringActual());
-              GOTO(loop, actual, position);
+              receiver = __ template LoadField<String>(
+                  *receiver, AccessBuilder::ForThinStringActual());
+              GOTO(loop);
             }
             ELSE_IF(__ Word32Equal(representation, kExternalStringTag)) {
               // if_externalstring
@@ -1750,14 +1762,14 @@ class MachineLoweringReducer : public Next {
                       runtime);
 
               OpIndex data = __ LoadField(
-                  receiver, AccessBuilder::ForExternalStringResourceData());
+                  *receiver, AccessBuilder::ForExternalStringResourceData());
               IF(__ Word32Equal(
                   __ Word32BitwiseAnd(instance_type, kStringEncodingMask),
                   kTwoByteStringTag)) {
                 // if_twobyte
                 constexpr uint8_t twobyte_size_log2 = 1;
                 V<Word32> value = __ Load(
-                    data, position,
+                    data, *position,
                     LoadOp::Kind::Aligned(BaseTaggedness::kUntaggedBase),
                     MemoryRepresentation::Uint16(), 0, twobyte_size_log2);
                 GOTO(done, value);
@@ -1766,7 +1778,7 @@ class MachineLoweringReducer : public Next {
                 // if_onebyte
                 constexpr uint8_t onebyte_size_log2 = 0;
                 V<Word32> value = __ Load(
-                    data, position,
+                    data, *position,
                     LoadOp::Kind::Aligned(BaseTaggedness::kUntaggedBase),
                     MemoryRepresentation::Uint8(), 0, onebyte_size_log2);
                 GOTO(done, value);
@@ -1776,12 +1788,12 @@ class MachineLoweringReducer : public Next {
             ELSE_IF(__ Word32Equal(representation, kSlicedStringTag)) {
               // if_slicedstring
               V<Tagged> offset = __ template LoadField<Tagged>(
-                  receiver, AccessBuilder::ForSlicedStringOffset());
-              V<String> parent = __ template LoadField<String>(
-                  receiver, AccessBuilder::ForSlicedStringParent());
-              GOTO(loop, parent,
-                   __ WordPtrAdd(position,
-                                 __ ChangeInt32ToIntPtr(__ UntagSmi(offset))));
+                  *receiver, AccessBuilder::ForSlicedStringOffset());
+              receiver = __ template LoadField<String>(
+                  *receiver, AccessBuilder::ForSlicedStringParent());
+              position = __ WordPtrAdd(
+                  *position, __ ChangeInt32ToIntPtr(__ UntagSmi(offset)));
+              GOTO(loop);
             }
             ELSE { GOTO(runtime); }
             END_IF
@@ -1791,7 +1803,8 @@ class MachineLoweringReducer : public Next {
 
         if (BIND(runtime)) {
           V<Word32> value = __ UntagSmi(__ CallRuntime_StringCharCodeAt(
-              isolate_, __ NoContextConstant(), receiver, __ TagSmi(position)));
+              isolate_, __ NoContextConstant(), *receiver,
+              __ TagSmi(__ TruncateWordPtrToWord32(*position))));
           GOTO(done, value);
         }
       }
@@ -1807,7 +1820,7 @@ class MachineLoweringReducer : public Next {
                       __ Word32BitwiseAnd(first_code_unit, 0xFC00), 0xD800)),
                   done, first_code_unit);
       V<WordPtr> length =
-          __ ChangeUint32ToUintPtr(__ template LoadField<WordPtr>(
+          __ ChangeUint32ToUintPtr(__ template LoadField<Word32>(
               string, AccessBuilder::ForStringLength()));
       V<WordPtr> next_index = __ WordPtrAdd(pos, 1);
       GOTO_IF_NOT(__ IntPtrLessThan(next_index, length), done, first_code_unit);
@@ -1866,12 +1879,15 @@ class MachineLoweringReducer : public Next {
   }
 
   V<Boolean> REDUCE(StringEqual)(V<String> left, V<String> right) {
+    Label<Boolean> done(this);
+
+    GOTO_IF(__ TaggedEqual(left, right), done,
+            __ HeapConstant(factory_->true_value()));
+
     V<Word32> left_length =
         __ template LoadField<Word32>(left, AccessBuilder::ForStringLength());
     V<Word32> right_length =
         __ template LoadField<Word32>(right, AccessBuilder::ForStringLength());
-
-    Label<Boolean> done(this);
     IF(__ Word32Equal(left_length, right_length)) {
       GOTO(done,
            __ CallBuiltin_StringEqual(isolate_, left, right,
@@ -1907,7 +1923,7 @@ class MachineLoweringReducer : public Next {
     V<WordPtr> arguments_length = __ WordPtrSub(count, kJSArgcReceiverSlots);
 
     if (kind == ArgumentsLengthOp::Kind::kArguments) {
-      return __ TagSmi(arguments_length);
+      return __ TagSmi(__ TruncateWordPtrToWord32(arguments_length));
     } else {
       DCHECK_EQ(kind, ArgumentsLengthOp::Kind::kRest);
       V<WordPtr> rest_length =
@@ -1918,7 +1934,7 @@ class MachineLoweringReducer : public Next {
       END_IF
 
       BIND(done, value);
-      return __ TagSmi(value);
+      return __ TagSmi(__ TruncateWordPtrToWord32(value));
     }
   }
 
@@ -1946,7 +1962,7 @@ class MachineLoweringReducer : public Next {
     V<WordPtr> data_ptr = BuildTypedArrayDataPointer(base, external);
 
     // Perform the actual typed element access.
-    OpIndex result = __ LoadElement(
+    OpIndex result = __ LoadArrayBufferElement(
         data_ptr, AccessBuilder::ForTypedArrayElement(array_type, true), index);
 
     // We need to keep the {buffer} alive so that the GC will not release the
@@ -1963,44 +1979,37 @@ class MachineLoweringReducer : public Next {
         AccessBuilder::ForTypedArrayElement(element_type, true).machine_type;
 
     OpIndex value =
-        __ Load(storage, index, LoadOp::Kind::RawUnaligned(),
+        __ Load(storage, index,
+                LoadOp::Kind::RawUnaligned().NotAlwaysCanonicallyAccessed(),
                 MemoryRepresentation::FromMachineType(machine_type));
 
-    Block* done = __ NewBlock();
-    OpIndex little_value, big_value;
+    Variable result = Asm().NewLoopInvariantVariable(
+        RegisterRepresentationForArrayType(element_type));
     IF(is_little_endian) {
 #if V8_TARGET_LITTLE_ENDIAN
-      little_value = value;
-      __ Goto(done);
+      Asm().SetVariable(result, value);
 #else
-      little_value = BuildReverseBytes(element_type, value);
-      __ Goto(done);
+      Asm().SetVariable(result, BuildReverseBytes(element_type, value));
 #endif  // V8_TARGET_LITTLE_ENDIAN
     }
     ELSE {
 #if V8_TARGET_LITTLE_ENDIAN
-      big_value = BuildReverseBytes(element_type, value);
-      __ Goto(done);
+      Asm().SetVariable(result, BuildReverseBytes(element_type, value));
 #else
-      big_value = value;
-      __ Goto(done);
+      Asm().SetVariable(result, value);
 #endif  // V8_TARGET_LITTLE_ENDIAN
     }
     END_IF
-
-    __ Bind(done);
-    OpIndex result = __ Phi({little_value, big_value},
-                            RegisterRepresentationForArrayType(element_type));
 
     // We need to keep the {object} (either the JSArrayBuffer or the JSDataView)
     // alive so that the GC will not release the JSArrayBuffer (if there's any)
     // as long as we are still operating on it.
     __ Retain(object);
-    return result;
+    return Asm().GetVariable(result);
   }
 
   V<Object> REDUCE(LoadStackArgument)(V<WordPtr> base, V<WordPtr> index) {
-    V<WordPtr> argument = __ template LoadElement<WordPtr>(
+    V<WordPtr> argument = __ template LoadNonArrayBufferElement<WordPtr>(
         base, AccessBuilder::ForStackArgument(), index);
     return __ BitcastWordPtrToTagged(argument);
   }
@@ -2012,9 +2021,9 @@ class MachineLoweringReducer : public Next {
     V<WordPtr> data_ptr = BuildTypedArrayDataPointer(base, external);
 
     // Perform the actual typed element access.
-    __ StoreElement(data_ptr,
-                    AccessBuilder::ForTypedArrayElement(array_type, true),
-                    index, value);
+    __ StoreArrayBufferElement(
+        data_ptr, AccessBuilder::ForTypedArrayElement(array_type, true), index,
+        value);
 
     // We need to keep the {buffer} alive so that the GC will not release the
     // ArrayBuffer (if there's any) as long as we are still operating on it.
@@ -2029,33 +2038,26 @@ class MachineLoweringReducer : public Next {
     const MachineType machine_type =
         AccessBuilder::ForTypedArrayElement(element_type, true).machine_type;
 
-    Block* done = __ NewBlock();
-    OpIndex little_value, big_value;
+    Variable value_to_store = Asm().NewLoopInvariantVariable(
+        RegisterRepresentationForArrayType(element_type));
     IF(is_little_endian) {
 #if V8_TARGET_LITTLE_ENDIAN
-      little_value = value;
-      __ Goto(done);
+      Asm().SetVariable(value_to_store, value);
 #else
-      little_value = BuildReverseBytes(element_type, value);
-      __ Goto(done);
+      Asm().SetVariable(value_to_store, BuildReverseBytes(element_type, value));
 #endif  // V8_TARGET_LITTLE_ENDIAN
     }
     ELSE {
 #if V8_TARGET_LITTLE_ENDIAN
-      big_value = BuildReverseBytes(element_type, value);
-      __ Goto(done);
+      Asm().SetVariable(value_to_store, BuildReverseBytes(element_type, value));
 #else
-      big_value = value;
-      __ Goto(done);
+      Asm().SetVariable(value_to_store, value);
 #endif  // V8_TARGET_LITTLE_ENDIAN
     }
     END_IF
 
-    __ Bind(done);
-    OpIndex value_to_store =
-        __ Phi({little_value, big_value},
-               RegisterRepresentationForArrayType(element_type));
-    __ Store(storage, index, value_to_store, StoreOp::Kind::RawUnaligned(),
+    __ Store(storage, index, Asm().GetVariable(value_to_store),
+             StoreOp::Kind::RawUnaligned().NotAlwaysCanonicallyAccessed(),
              MemoryRepresentation::FromMachineType(machine_type),
              WriteBarrierKind::kNoWriteBarrier);
 
@@ -2165,25 +2167,25 @@ class MachineLoweringReducer : public Next {
           IF (__ ObjectIsSmi(value)) {
             V<Float64> float_value =
                 __ ChangeInt32ToFloat64(__ UntagSmi(value));
-            __ StoreElement(elements,
-                            AccessBuilder::ForFixedDoubleArrayElement(), index,
-                            float_value);
+            __ StoreNonArrayBufferElement(
+                elements, AccessBuilder::ForFixedDoubleArrayElement(), index,
+                float_value);
           }
           ELSE {
             V<Float64> float_value = __ template LoadField<Float64>(
                 V<HeapObject>::Cast(value),
                 AccessBuilder::ForHeapNumberValue());
-            __ StoreElement(elements,
-                            AccessBuilder::ForFixedDoubleArrayElement(), index,
-                            __ Float64SilenceNaN(float_value));
+            __ StoreNonArrayBufferElement(
+                elements, AccessBuilder::ForFixedDoubleArrayElement(), index,
+                __ Float64SilenceNaN(float_value));
           }
           END_IF
         }
         ELSE {
           // Our ElementsKind is HOLEY_SMI_ELEMENTS or HOLEY_ELEMENTS.
-          __ StoreElement(elements,
-                          AccessBuilder::ForFixedArrayElement(HOLEY_ELEMENTS),
-                          index, value);
+          __ StoreNonArrayBufferElement(
+              elements, AccessBuilder::ForFixedArrayElement(HOLEY_ELEMENTS),
+              index, value);
         }
         END_IF
         break;
@@ -2224,8 +2226,9 @@ class MachineLoweringReducer : public Next {
 
         V<Object> elements = __ template LoadField<Object>(
             array, AccessBuilder::ForJSObjectElements());
-        __ StoreElement(elements, AccessBuilder::ForFixedDoubleArrayElement(),
-                        index, __ Float64SilenceNaN(value));
+        __ StoreNonArrayBufferElement(
+            elements, AccessBuilder::ForFixedDoubleArrayElement(), index,
+            __ Float64SilenceNaN(value));
         break;
       }
       case TransitionAndStoreArrayElementOp::Kind::kOddballElement:
@@ -2263,7 +2266,7 @@ class MachineLoweringReducer : public Next {
           access.type = compiler::Type::BooleanOrNullOrUndefined();
           access.write_barrier_kind = kNoWriteBarrier;
         }
-        __ StoreElement(elements, access, index, value);
+        __ StoreNonArrayBufferElement(elements, access, index, value);
         break;
       }
       case TransitionAndStoreArrayElementOp::Kind::kSignedSmallElement: {
@@ -2286,8 +2289,9 @@ class MachineLoweringReducer : public Next {
         IF (__ Int32LessThan(HOLEY_ELEMENTS, elements_kind)) {
           // Our ElementsKind is HOLEY_DOUBLE_ELEMENTS.
           V<Float64> f64 = __ ChangeInt32ToFloat64(value);
-          __ StoreElement(elements, AccessBuilder::ForFixedDoubleArrayElement(),
-                          index, f64);
+          __ StoreNonArrayBufferElement(
+              elements, AccessBuilder::ForFixedDoubleArrayElement(), index,
+              f64);
         }
         ELSE {
           // Our ElementsKind is HOLEY_SMI_ELEMENTS or HOLEY_ELEMENTS.
@@ -2297,7 +2301,8 @@ class MachineLoweringReducer : public Next {
           access.type = compiler::Type::SignedSmall();
           access.machine_type = MachineType::TaggedSigned();
           access.write_barrier_kind = kNoWriteBarrier;
-          __ StoreElement(elements, access, index, __ TagSmi(value));
+          __ StoreNonArrayBufferElement(elements, access, index,
+                                        __ TagSmi(value));
         }
         END_IF
         break;
@@ -2335,6 +2340,9 @@ class MachineLoweringReducer : public Next {
       __ DeoptimizeIfNot(__ CompareMaps(heap_object, maps), frame_state,
                          DeoptimizeReason::kWrongMap, feedback);
     }
+    // Inserting a AssumeMap so that subsequent optimizations know the map of
+    // this object.
+    __ AssumeMap(heap_object, maps);
     return OpIndex::Invalid();
   }
 
@@ -2586,9 +2594,10 @@ class MachineLoweringReducer : public Next {
                     DeoptimizeReason::kWrongName, FeedbackSource{});
     V<Map> value_map = __ LoadMapField(value);
     V<Word32> value_instance_type = __ LoadInstanceTypeField(value_map);
-
+    V<Word32> value_representation =
+        __ Word32BitwiseAnd(value_instance_type, kStringRepresentationMask);
     // ThinString
-    IF(__ Word32Equal(value_instance_type, THIN_STRING_TYPE)) {
+    IF (__ Word32Equal(value_representation, kThinStringTag)) {
       // The {value} is a ThinString, let's check the actual value.
       V<String> value_actual = __ template LoadField<String>(
           value, AccessBuilder::ForThinStringActual());
@@ -2618,7 +2627,7 @@ class MachineLoweringReducer : public Next {
           try_string_to_index_or_lookup_existing, {isolate_ptr, value},
           TSCallDescriptor::Create(Linkage::GetSimplifiedCDescriptor(
                                        __ graph_zone(), builder.Build()),
-                                   __ graph_zone()));
+                                   CanThrow::kNo, __ graph_zone()));
 
       // Now see if the results match.
       __ DeoptimizeIfNot(__ TaggedEqual(expected, value_internalized),
@@ -2835,6 +2844,8 @@ class MachineLoweringReducer : public Next {
   // Pass {bitfield} = {digit} = OpIndex::Invalid() to construct the canonical
   // 0n BigInt.
   V<BigInt> AllocateBigInt(V<Word32> bitfield, V<Word64> digit) {
+    if (Asm().generating_unreachable_operations()) return OpIndex::Invalid();
+
     DCHECK(Is64());
     DCHECK_EQ(bitfield.valid(), digit.valid());
     static constexpr auto zero_bitfield =
@@ -2859,15 +2870,6 @@ class MachineLoweringReducer : public Next {
           bigint, AccessBuilder::ForBigIntLeastSignificantDigit64(), digit);
     }
     return V<BigInt>::Cast(__ FinishInitialization(std::move(bigint)));
-  }
-
-  // TODO(nicohartmann@): Should also make this an operation and lower in
-  // TagUntagLoweringReducer.
-  V<Word32> IsSmi(V<Tagged> input) {
-    return __ Word32Equal(
-        __ Word32BitwiseAnd(V<Word32>::Cast(input),
-                            static_cast<uint32_t>(kSmiTagMask)),
-        static_cast<uint32_t>(kSmiTag));
   }
 
   void TagSmiOrOverflow(V<Word32> input, Label<>* overflow,
@@ -2952,12 +2954,12 @@ class MachineLoweringReducer : public Next {
     Label<Word32> done(this);
 
     IF(onebyte) {
-      GOTO(done, __ template LoadElement<Word32>(
+      GOTO(done, __ template LoadNonArrayBufferElement<Word32>(
                      receiver, AccessBuilder::ForSeqOneByteStringCharacter(),
                      position));
     }
     ELSE {
-      GOTO(done, __ template LoadElement<Word32>(
+      GOTO(done, __ template LoadNonArrayBufferElement<Word32>(
                      receiver, AccessBuilder::ForSeqTwoByteStringCharacter(),
                      position));
     }
@@ -3000,7 +3002,8 @@ class MachineLoweringReducer : public Next {
         __ graph_zone(), callable.descriptor(),
         callable.descriptor().GetStackParameterCount(),
         CallDescriptor::kNoFlags, Operator::kFoldable | Operator::kNoThrow);
-    auto ts_descriptor = TSCallDescriptor::Create(descriptor, __ graph_zone());
+    auto ts_descriptor =
+        TSCallDescriptor::Create(descriptor, CanThrow::kNo, __ graph_zone());
     return __ Call(__ HeapConstant(callable.code()), OpIndex::Invalid(),
                    base::VectorOf(args), ts_descriptor);
   }
@@ -3039,7 +3042,8 @@ class MachineLoweringReducer : public Next {
       // contains compensated offset value) will decompress the tagged value.
       // See JSTypedArray::ExternalPointerCompensationForOnHeapArray() for
       // details.
-      untagged_base = __ ChangeUint32ToUintPtr(untagged_base);
+      untagged_base =
+          __ ChangeUint32ToUintPtr(__ TruncateWordPtrToWord32(untagged_base));
     }
     return __ WordPtrAdd(untagged_base, external);
   }

@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -220,7 +220,7 @@ class MockReceiver : public Environment::PacketConsumer {
   // Receiver Report, NACKs, ACKs.
   void TransmitRtcpFeedbackPacket() {
     uint8_t buffer[kMaxRtpPacketSizeForIpv6UdpOnEthernet];
-    const absl::Span<uint8_t> packet =
+    const ByteBuffer packet =
         rtcp_builder_.BuildPacket(FakeClock::now(), buffer);
     pipe_to_sender_->StartPacketTransmission(
         std::vector<uint8_t>(packet.begin(), packet.end()));
@@ -355,8 +355,8 @@ class SenderTest : public testing::Test {
     sender_environment_.SetSocketSubscriber(&socket_subscriber_);
     sender_environment_.set_remote_endpoint(
         receiver_to_sender_pipe_.local_endpoint());
-    ON_CALL(sender_environment_, SendPacket(_))
-        .WillByDefault(Invoke([this](absl::Span<const uint8_t> packet) {
+    ON_CALL(sender_environment_, SendPacket(_, _))
+        .WillByDefault(Invoke([this](ByteView packet, PacketMetadata metadata) {
           sender_to_receiver_pipe_.StartPacketTransmission(
               std::vector<uint8_t>(packet.begin(), packet.end()));
         }));
@@ -413,7 +413,7 @@ class SenderTest : public testing::Test {
   // Confirms that all |sent_frames| exist in |received_frames|, with identical
   // data and metadata.
   static void ExpectFramesReceivedCorrectly(
-      absl::Span<EncodedFrameWithBuffer> sent_frames,
+      Span<EncodedFrameWithBuffer> sent_frames,
       const std::map<FrameId, EncodedFrameWithBuffer> received_frames) {
     ASSERT_EQ(sent_frames.size(), received_frames.size());
 
@@ -496,7 +496,8 @@ TEST_F(SenderTest, SendsFramesEfficiently) {
   }
   SimulateExecution(kTargetPlayoutDelay);
 
-  ExpectFramesReceivedCorrectly(frames, receiver()->TakeCompleteFrames());
+  ExpectFramesReceivedCorrectly(Span(frames, 3),
+                                receiver()->TakeCompleteFrames());
 }
 
 // Tests that the Sender correctly computes the current in-flight media
@@ -849,7 +850,8 @@ TEST_F(SenderTest, ManagesReceiverPictureLossWorkflow) {
   Mock::VerifyAndClearExpectations(&observer);
   EXPECT_FALSE(sender()->NeedsKeyFrame());
 
-  ExpectFramesReceivedCorrectly(frames, receiver()->TakeCompleteFrames());
+  ExpectFramesReceivedCorrectly(Span(frames, 6),
+                                receiver()->TakeCompleteFrames());
 }
 
 // Tests that the Receiver should get a Sender Report just before the first RTP
@@ -966,7 +968,8 @@ TEST_F(SenderTest, ProvidesKickstartPacketsIfReceiverDoesNotACK) {
   EXPECT_CALL(*receiver(), OnRtpPacket(_)).Times(0);
   SimulateExecution(10 * kTargetPlayoutDelay);
 
-  ExpectFramesReceivedCorrectly(frames, receiver()->TakeCompleteFrames());
+  ExpectFramesReceivedCorrectly(Span(frames, 3),
+                                receiver()->TakeCompleteFrames());
 }
 
 // Tests that the Sender only retransmits packets specifically NACK'ed by the
@@ -1046,7 +1049,8 @@ TEST_F(SenderTest, ResendsIndividuallyNackedPackets) {
   EXPECT_CALL(*receiver(), OnRtpPacket(_)).Times(0);
   SimulateExecution(10 * kTargetPlayoutDelay);
 
-  ExpectFramesReceivedCorrectly(frames, receiver()->TakeCompleteFrames());
+  ExpectFramesReceivedCorrectly(Span(frames, 3),
+                                receiver()->TakeCompleteFrames());
 }
 
 // Tests that the Sender retransmits an entire frame if the Receiver requests it
@@ -1141,7 +1145,8 @@ TEST_F(SenderTest, ResendsMissingFrames) {
   EXPECT_CALL(*receiver(), OnRtpPacket(_)).Times(0);
   SimulateExecution(10 * kTargetPlayoutDelay);
 
-  ExpectFramesReceivedCorrectly(frames, receiver()->TakeCompleteFrames());
+  ExpectFramesReceivedCorrectly(Span(frames, 3),
+                                receiver()->TakeCompleteFrames());
 }
 
 }  // namespace

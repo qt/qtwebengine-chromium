@@ -1,6 +1,6 @@
 {
   "name": "@puppeteer/replay",
-  "version": "2.11.0",
+  "version": "2.13.3",
   "description": "Replay is a library which provides an API to replay and stringify recordings created using Chrome DevTools Recorder](https://developer.chrome.com/docs/devtools/recorder/)",
   "main": "lib/cjs/main.cjs",
   "types": "lib/main.d.ts",
@@ -25,7 +25,7 @@
     "doc": "docs"
   },
   "engines": {
-    "node": ">=14"
+    "node": ">=16.3.0"
   },
   "scripts": {
     "test": "npm run build:testserver && cross-env TS_NODE_PROJECT=test/tsconfig.json mocha --config .mocharc.cjs",
@@ -52,8 +52,11 @@
   "license": "Apache-2.0",
   "type": "module",
   "devDependencies": {
+    "@rollup/plugin-commonjs": "25.0.2",
+    "@rollup/plugin-node-resolve": "15.1.0",
     "@rollup/plugin-typescript": "9.0.1",
     "@types/chai": "4.3.3",
+    "@types/cssesc": "^3.0.0",
     "@types/mime": "3.0.1",
     "@types/mocha": "10.0.0",
     "@types/node": "18.11.0",
@@ -73,8 +76,8 @@
     "mime": "3.0.0",
     "mocha": "10.1.0",
     "prettier": "2.7.1",
-    "puppeteer": "19.10.0",
-    "puppeteer-core": "19.10.0",
+    "puppeteer": "21.0.1",
+    "puppeteer-core": "21.0.1",
     "rimraf": "3.0.2",
     "rollup": "3.2.2",
     "rollup-plugin-dts": "5.0.0",
@@ -86,8 +89,8 @@
     "typescript": "4.8.4"
   },
   "peerDependencies": {
-    "puppeteer": ">=19.9.1",
-    "lighthouse": ">=10.0.0"
+    "lighthouse": ">=10.0.0",
+    "puppeteer": ">=21.0.1"
   },
   "peerDependenciesMeta": {
     "puppeteer": {
@@ -99,7 +102,7 @@
   },
   "dependencies": {
     "cli-table3": "0.6.3",
-    "colorette": "2.0.19",
+    "colorette": "2.0.20",
     "yargs": "17.6.2"
   }
 }

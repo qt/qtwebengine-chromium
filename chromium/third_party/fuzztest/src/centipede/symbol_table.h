@@ -21,7 +21,9 @@
 #include <string_view>
 #include <vector>
 
+#include "absl/types/span.h"
 #include "./centipede/control_flow.h"
+#include "./centipede/pc_info.h"
 
 namespace centipede {
 
@@ -35,14 +37,21 @@ class SymbolTable {
   //   FunctionName
   //   SourceCodeLocation
   //   <empty line>
+  // If called multiple times, this function will append symbols to `this`.
   void ReadFromLLVMSymbolizer(std::istream &in);
 
-  // Invokes `symbolizer_path --no-inlines` on `binary_path`,
-  // pipes all PCs from pc_table though it,
-  // and calls ReadFromLLVMSymbolizer() on the output.
+  // Invokes `symbolizer_path --no-inlines` on all binaries from `dso_table`,
+  // pipes through it all PCs in pc_table that correspond to each of the
+  // binaries and calls ReadFromLLVMSymbolizer() on the output.
   // Possibly uses files `tmp_path1` and `tmp_path2` for temporary storage.
-  void GetSymbolsFromBinary(const PCTable &pc_table,
-                            std::string_view binary_path,
+  void GetSymbolsFromBinary(const PCTable &pc_table, const DsoTable &dso_table,
+                            std::string_view symbolizer_path,
+                            std::string_view tmp_path1,
+                            std::string_view tmp_path2);
+
+  // Helper for GetSymbolsFromBinary: symbolizes `pc_infos` for `dso_path`.
+  void GetSymbolsFromOneDso(absl::Span<const PCInfo> pc_infos,
+                            std::string_view dso_path,
                             std::string_view symbolizer_path,
                             std::string_view tmp_path1,
                             std::string_view tmp_path2);

@@ -903,6 +903,10 @@ int DisassemblerX64::AVXInstruction(uint8_t* data) {
         AppendToBuffer("vbroadcastss %s,", NameOfAVXRegister(regop));
         current += PrintRightXMMOperand(current);
         break;
+      case 0x19:
+        AppendToBuffer("vbroadcastsd %s,", NameOfAVXRegister(regop));
+        current += PrintRightXMMOperand(current);
+        break;
       case 0xF7:
         AppendToBuffer("shlx%c %s,", operand_size_code(),
                        NameOfCPURegister(regop));
@@ -981,6 +985,12 @@ int DisassemblerX64::AVXInstruction(uint8_t* data) {
         current += PrintRightAVXOperand(current);
         AppendToBuffer(",0x%x", *current++);
         break;
+      case 0x06:
+        AppendToBuffer("vperm2f128 %s,%s,", NameOfAVXRegister(regop),
+                       NameOfAVXRegister(vvvv));
+        current += PrintRightAVXOperand(current);
+        AppendToBuffer(",0x%x", *current++);
+        break;
       case 0x08:
         AppendToBuffer("vroundps %s,", NameOfAVXRegister(regop));
         current += PrintRightAVXOperand(current);
@@ -1051,6 +1061,12 @@ int DisassemblerX64::AVXInstruction(uint8_t* data) {
         AppendToBuffer("vpinsr%c %s,%s,", rex_w() ? 'q' : 'd',
                        NameOfAVXRegister(regop), NameOfAVXRegister(vvvv));
         current += PrintRightOperand(current);
+        AppendToBuffer(",0x%x", *current++);
+        break;
+      case 0x38:
+        AppendToBuffer("vinserti128 %s,%s,", NameOfAVXRegister(regop),
+                       NameOfAVXRegister(vvvv));
+        current += PrintRightXMMOperand(current);
         AppendToBuffer(",0x%x", *current++);
         break;
       case 0x4A: {

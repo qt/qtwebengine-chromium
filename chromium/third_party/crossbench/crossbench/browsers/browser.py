@@ -5,31 +5,25 @@
 from __future__ import annotations
 
 import abc
-import html
 import logging
 import pathlib
 import re
 import shutil
-import urllib.parse
-import urllib.request
-from typing import TYPE_CHECKING, Any, Dict, Optional, Sequence, Set, Tuple
+from typing import TYPE_CHECKING, Any, Iterable, Optional, Sequence, Set, Tuple
 
-from crossbench import helper
 from crossbench.flags import Flags
+from crossbench import plt
 
+from .splash_screen import SplashScreen
 from .viewport import Viewport
 
 if TYPE_CHECKING:
   import datetime as dt
 
   from crossbench.probes.probe import Probe
-  from crossbench.runner import Run, Runner
-
-# =============================================================================
-
-BROWSERS_CACHE = pathlib.Path(__file__).parents[2] / ".browsers-cache"
-
-# =============================================================================
+  from crossbench.runner.run import Run
+  from crossbench.runner.runner import Runner
+  from crossbench.types import JsonDict
 
 
 class Browser(abc.ABC):
@@ -41,15 +35,19 @@ class Browser(abc.ABC):
   def __init__(
       self,
       label: str,
-      path: Optional[pathlib.Path],
-      flags: Flags.InitialDataType = None,
+      path: Optional[pathlib.Path] = None,
+      flags: Optional[Flags.InitialDataType] = None,
+      js_flags: Optional[Flags.InitialDataType] = None,
       cache_dir: Optional[pathlib.Path] = None,
       type: Optional[str] = None,  # pylint: disable=redefined-builtin
-      viewport: Viewport = Viewport.DEFAULT,
-      platform: Optional[helper.Platform] = None):
-    self.platform = platform or helper.platform
+      driver_path: Optional[pathlib.Path] = None,
+      viewport: Optional[Viewport] = None,
+      splash_screen: Optional[SplashScreen] = None,
+      platform: Optional[plt.Platform] = None):
+    self._platform = platform or plt.PLATFORM
     # Marked optional to make subclass constructor calls easier with pytype.
     assert type
+    assert not driver_path, "driver_path not supported by base Browser"
     self.type: str = type
     self.label: str = label
     self._unique_name: str = ""
@@ -59,23 +57,31 @@ class Browser(abc.ABC):
     self.app_path: pathlib.Path = pathlib.Path()
     if path:
       self.path = self._resolve_binary(path)
-      assert self.path.is_absolute()
+      # TODO clean up
+      if not self.platform.is_android:
+        assert self.path.is_absolute()
       self.version = self._extract_version()
       self.major_version = int(self.version.split(".")[0])
       self.unique_name = f"{self.type}_v{self.major_version}_{self.label}"
     else:
-      # TODO: separate out remote browser (selenium) without an explicit binary
-      # path.
-      self.path: pathlib.Path = pathlib.Path()
+      # TODO: separate class for remote browser (selenium) without an explicit
+      # binary path.
+      self.path = pathlib.Path()
       self.unique_name = f"{self.type}_{self.label}".lower()
-    self._viewport = viewport
+    self._viewport = viewport or Viewport.DEFAULT
+    self._splash_screen = splash_screen or SplashScreen.DEFAULT
     self._is_running: bool = False
     self.cache_dir: Optional[pathlib.Path] = cache_dir
     self.clear_cache_dir: bool = True
     self._pid: Optional[int] = None
     self._probes: Set[Probe] = set()
     self._flags: Flags = self.default_flags(flags)
+    assert not js_flags, "Base Browser doesn't support js_flags directly"
     self.log_file: Optional[pathlib.Path] = None
+
+  @property
+  def platform(self) -> plt.Platform:
+    return self._platform
 
   @property
   def unique_name(self) -> str:
@@ -88,6 +94,10 @@ class Browser(abc.ABC):
     self._unique_name = re.sub(r"[^\w\d\-\.]", "_", name).lower()
 
   @property
+  def splash_screen(self) -> SplashScreen:
+    return self._splash_screen
+
+  @property
   def viewport(self) -> Viewport:
     return self._viewport
 
@@ -97,11 +107,15 @@ class Browser(abc.ABC):
     self._viewport = value
 
   @property
+  def probes(self) -> Iterable[Probe]:
+    return iter(self._probes)
+
+  @property
   def flags(self) -> Flags:
     return self._flags
 
   def user_agent(self, runner: Runner) -> str:
-    return self.js(runner, "return window.navigator.userAgent")
+    return str(self.js(runner, "return window.navigator.userAgent"))
 
   @property
   def pid(self) -> Optional[int]:
@@ -114,7 +128,7 @@ class Browser(abc.ABC):
     info = self.platform.process_info(self.pid)
     if info is None:
       return None
-    return info["status"] == "running"
+    return info["status"] == "running" or info["status"] == "sleeping"
 
   @property
   def is_local(self) -> bool:
@@ -149,7 +163,7 @@ class Browser(abc.ABC):
     self._probes.add(probe)
     probe.attach(self)
 
-  def details_json(self) -> Dict[str, Any]:
+  def details_json(self) -> JsonDict:
     return {
         "label": self.label,
         "browser": self.type,
@@ -157,7 +171,7 @@ class Browser(abc.ABC):
         "app_name": self.app_name,
         "version": self.version,
         "flags": tuple(self.flags.get_list()),
-        "js_flags": tuple(),
+        "js_flags": [],
         "path": str(self.path),
         "clear_cache_dir": self.clear_cache_dir,
         "major_version": self.major_version,
@@ -174,8 +188,7 @@ class Browser(abc.ABC):
     self.start(run)
     assert self._is_running
     self._prepare_temperature(run)
-    self.show_url(runner, self.info_data_url(run))
-    runner.wait(2)
+    self.splash_screen.run(run)
 
   @abc.abstractmethod
   def _extract_version(self) -> str:
@@ -201,46 +214,14 @@ class Browser(abc.ABC):
         self.show_url(runner, "about:blank")
         runner.wait(1)
 
-  def _get_browser_flags(self, run: Run) -> Tuple[str, ...]:
-    flags_copy = self.flags.copy()
+  def _get_browser_flags_for_run(self, run: Run) -> Tuple[str, ...]:
+    flags_copy: Flags = self.flags.copy()
     flags_copy.update(run.extra_flags)
+    flags_copy = self._filter_flags_for_run(flags_copy)
     return tuple(flags_copy.get_list())
 
-  def info_data_url(self, run: Run) -> str:
-    page = ("<html><head>"
-            "<title>Browser Details</title>"
-            "<style>"
-            """
-            html { font-family: sans-serif; }
-            dl {
-              display: grid;
-              grid-template-columns: max-content auto;
-            }
-            dt { grid-column-start: 1; }
-            dd { grid-column-start: 2;  font-family: monospace; }
-            """
-            "</style>"
-            "<head><body>"
-            "<h1>"
-            f"{html.escape(self.app_name.title())} {html.escape(self.version)}"
-            "</h1>")
-    page += (
-        "<h2>Browser Details</h2>"
-        "<dl>"
-        f"<dt>UserAgent</dt><dd>{html.escape(self.user_agent(run.runner))}</dd>"
-    )
-    for property_name, value in self.details_json().items():
-      page += f"<dt>{html.escape(property_name)}</dt>"
-      page += f"<dd>{html.escape(str(value))}</dd>"
-    page += "</dl>"
-    page += "<h2>Run Details</h2><dl>"
-    for property_name, value in run.details_json().items():
-      page += f"<dt>{html.escape(property_name)}</dt>"
-      page += f"<dd>{html.escape(str(value))}</dd>"
-    page += "</dl>"
-    page += "</body></html>"
-    data_url = f"data:text/html;charset=utf-8,{urllib.parse.quote(page)}"
-    return data_url
+  def _filter_flags_for_run(self, flags: Flags) -> Flags:
+    return flags
 
   def quit(self, runner: Runner) -> None:
     del runner
@@ -289,16 +270,7 @@ class Browser(abc.ABC):
             f"{flag} conflicts with requested --viewport={self.viewport}")
 
   def __str__(self) -> str:
-    return f"{self.type.capitalize()}:{self.label}"
-
-
-_FLAG_TO_PATH_RE = re.compile(r"[-/\\:\.]")
-
-
-def convert_flags_to_label(*flags: str, index: Optional[int] = None) -> str:
-  label = "default"
-  if flags:
-    label = _FLAG_TO_PATH_RE.sub("_", "_".join(flags).replace("--", ""))
-  if index is None:
-    return label
-  return f"{str(index).rjust(2,'0')}_{label}"
+    platform_prefix = ""
+    if self.platform.is_remote:
+      platform_prefix = str(self.platform)
+    return f"{platform_prefix}{self.type.capitalize()}:{self.label}"

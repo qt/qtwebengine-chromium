@@ -27,6 +27,7 @@
 #include "./fuzztest/internal/logging.h"
 #include "./fuzztest/internal/meta.h"
 #include "./fuzztest/internal/serialization.h"
+#include "./fuzztest/internal/status.h"
 #include "./fuzztest/internal/type_support.h"
 
 namespace fuzztest::internal {
@@ -98,12 +99,8 @@ class OptionalOfImpl
 
   std::optional<corpus_type> FromValue(const value_type& v) const {
     if (!v) {
-      FUZZTEST_INTERNAL_CHECK(policy_ != OptionalPolicy::kWithoutNull,
-                              "Value cannot be null!");
       return corpus_type(std::in_place_index<0>);
     }
-    FUZZTEST_INTERNAL_CHECK(policy_ != OptionalPolicy::kAlwaysNull,
-                            "Value cannot be non-null!");
     if (auto inner_value = inner_.FromValue(*v)) {
       return corpus_type(std::in_place_index<1>, *std::move(inner_value));
     } else {
@@ -119,15 +116,19 @@ class OptionalOfImpl
     return SerializeWithDomainOptional(inner_, v);
   }
 
-  bool ValidateCorpusValue(const corpus_type& corpus_value) const {
+  absl::Status ValidateCorpusValue(const corpus_type& corpus_value) const {
     bool is_null = std::get_if<std::monostate>(&corpus_value);
     if (is_null) {
-      return policy_ != OptionalPolicy::kWithoutNull;
-    } else {
-      if (policy_ == OptionalPolicy::kAlwaysNull) return false;
-      // Validate inner object.
-      return inner_.ValidateCorpusValue(std::get<1>(corpus_value));
+      if (policy_ == OptionalPolicy::kWithoutNull) {
+        return absl::InvalidArgumentError("Optional value must be set");
+      }
+      return absl::OkStatus();
     }
+    if (policy_ == OptionalPolicy::kAlwaysNull) {
+      return absl::InvalidArgumentError("Optional value must be null");
+    }
+    // Validate inner object.
+    return inner_.ValidateCorpusValue(std::get<1>(corpus_value));
   }
 
   OptionalOfImpl& SetAlwaysNull() {

@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,7 @@
 #include <memory>
 #include <vector>
 
+#include "cast/streaming/statistics_collector.h"
 #include "platform/api/time.h"
 #include "platform/api/udp_socket.h"
 #include "platform/base/ip_address.h"
@@ -102,6 +103,12 @@ class Environment : public UdpSocket::Client {
   // nullptr.
   void SetSocketSubscriber(SocketSubscriber* subscriber);
 
+  // Subscribe to frame and packet events. Callers can unsubscribe by passing
+  // nullptr. Note that if the collector is destroyed before the environment,
+  // callers MUST unsubscribe to avoid an access exception.
+  void SetStatisticsCollector(StatisticsCollector* subscriber);
+  StatisticsCollector* statistics_collector() { return statistics_collector_; }
+
   // Start/Resume delivery of incoming packets to the given |packet_consumer|.
   // Delivery will continue until DropIncomingPackets() is called.
   void ConsumeIncomingPackets(PacketConsumer* packet_consumer);
@@ -120,7 +127,7 @@ class Environment : public UdpSocket::Client {
   //
   // Note: This method is virtual to allow unit tests to intercept packets
   // before they actually head-out through the socket.
-  virtual void SendPacket(ByteView packet);
+  virtual void SendPacket(ByteView packet, PacketMetadata metadata);
 
  private:
   // UdpSocket::Client implementation.
@@ -143,6 +150,7 @@ class Environment : public UdpSocket::Client {
   PacketConsumer* packet_consumer_ = nullptr;
   SocketState state_ = SocketState::kStarting;
   SocketSubscriber* socket_subscriber_ = nullptr;
+  StatisticsCollector* statistics_collector_ = nullptr;
 };
 
 }  // namespace cast

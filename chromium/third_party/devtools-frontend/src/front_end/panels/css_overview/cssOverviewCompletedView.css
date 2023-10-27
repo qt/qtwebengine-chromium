@@ -107,7 +107,7 @@
 
 .results-section {
   flex-shrink: 0;
-  border-bottom: 1px solid var(--color-details-hairline);
+  border-bottom: 1px solid var(--sys-color-divider);
   padding: var(--overview-default-padding) 0 var(--overview-default-padding) 0;
 }
 
@@ -292,7 +292,7 @@
 }
 
 .overview-completed-view .font-family:nth-child(2n+1) {
-  background: var(--color-background);
+  background: var(--sys-color-cdt-base-container);
 }
 
 .overview-completed-view .font-family:first-of-type {

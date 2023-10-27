@@ -13,12 +13,12 @@
 // limitations under the License.
 
 import {BigintMath as BIMath} from '../../base/bigint_math';
-import {PluginContext} from '../../common/plugin_api';
 import {LONG, LONG_NULL, NUM, STR} from '../../common/query_result';
-import {TPDuration, TPTime} from '../../common/time';
+import {duration, time} from '../../common/time';
 import {TrackData} from '../../common/track_data';
 import {TrackController} from '../../controller/track_controller';
 import {NewTrackArgs, Track} from '../../frontend/track';
+import {Plugin, PluginContext, PluginInfo} from '../../public';
 import {ChromeSliceTrack} from '../chrome_slices';
 
 export const ACTUAL_FRAMES_SLICE_TRACK_KIND = 'ActualFramesSliceTrack';
@@ -52,7 +52,7 @@ class ActualFramesSliceTrackController extends TrackController<Config, Data> {
   static readonly kind = ACTUAL_FRAMES_SLICE_TRACK_KIND;
   private maxDur = 0n;
 
-  async onBoundsChange(start: TPTime, end: TPTime, resolution: TPDuration):
+  async onBoundsChange(start: time, end: time, resolution: duration):
       Promise<Data> {
     if (this.maxDur === 0n) {
       const maxDurResult = await this.query(`
@@ -161,12 +161,14 @@ export class ActualFramesSliceTrack extends ChromeSliceTrack {
   }
 }
 
-export function activate(ctx: PluginContext) {
-  ctx.registerTrackController(ActualFramesSliceTrackController);
-  ctx.registerTrack(ActualFramesSliceTrack);
+class ActualFrames implements Plugin {
+  onActivate(ctx: PluginContext): void {
+    ctx.registerTrackController(ActualFramesSliceTrackController);
+    ctx.registerTrack(ActualFramesSliceTrack);
+  }
 }
 
-export const plugin = {
+export const plugin: PluginInfo = {
   pluginId: 'perfetto.ActualFrames',
-  activate,
+  plugin: ActualFrames,
 };

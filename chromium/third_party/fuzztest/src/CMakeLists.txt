@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.19)
 project(fuzztest)
 
 option(FUZZTEST_TESTING "Building the tests." OFF)
@@ -50,7 +50,6 @@ endif ()
 
 add_subdirectory(grammar_codegen)
 add_subdirectory(tools)
-add_subdirectory(grammars)
 add_subdirectory(fuzztest)
 
 if (FUZZTEST_TESTING)

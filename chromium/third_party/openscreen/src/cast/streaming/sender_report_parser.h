@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,11 +6,11 @@
 #define CAST_STREAMING_SENDER_REPORT_PARSER_H_
 
 #include "absl/types/optional.h"
-#include "absl/types/span.h"
 #include "cast/streaming/rtcp_common.h"
 #include "cast/streaming/rtcp_session.h"
 #include "cast/streaming/rtp_defines.h"
 #include "cast/streaming/rtp_time.h"
+#include "platform/base/span.h"
 
 namespace openscreen {
 namespace cast {
@@ -35,7 +35,7 @@ class SenderReportParser {
   // Parses the RTCP |packet|, and returns a parsed sender report if the packet
   // contained one. Returns nullopt if the data is corrupt or the packet did not
   // contain a sender report.
-  absl::optional<SenderReportWithId> Parse(absl::Span<const uint8_t> packet);
+  absl::optional<SenderReportWithId> Parse(ByteView packet);
 
  private:
   RtcpSession* const session_;

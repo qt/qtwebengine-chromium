@@ -136,16 +136,16 @@ template<> EIGEN_ALWAYS_INLINE Packet2cf pload_partial<Packet2cf>(const std::com
 {
   return Packet2cf(pload_partial<Packet4f>((const float *) from, n * 2, offset * 2));
 }
-template<> EIGEN_ALWAYS_INLINE Packet2cf ploadu_partial<Packet2cf>(const std::complex<float>* from, const Index n)
+template<> EIGEN_ALWAYS_INLINE Packet2cf ploadu_partial<Packet2cf>(const std::complex<float>* from, const Index n, const Index offset)
 {
-  return Packet2cf(ploadu_partial<Packet4f>((const float*) from, n * 2));
+  return Packet2cf(ploadu_partial<Packet4f>((const float*) from, n * 2, offset * 2));
 }
 template<> EIGEN_STRONG_INLINE Packet2cf ploaddup<Packet2cf>(const std::complex<float>*     from) { return pset1<Packet2cf>(*from); }
 
 template<> EIGEN_STRONG_INLINE void pstore <std::complex<float> >(std::complex<float> *   to, const Packet2cf& from) { pstore((float*)to, from.v); }
 template<> EIGEN_STRONG_INLINE void pstoreu<std::complex<float> >(std::complex<float> *   to, const Packet2cf& from) { pstoreu((float*)to, from.v); }
 template<> EIGEN_ALWAYS_INLINE void pstore_partial <std::complex<float> >(std::complex<float> *  to, const Packet2cf& from, const Index n, const Index offset) { pstore_partial((float*)to, from.v, n * 2, offset * 2); }
-template<> EIGEN_ALWAYS_INLINE void pstoreu_partial<std::complex<float> >(std::complex<float> *  to, const Packet2cf& from, const Index n) { pstoreu_partial((float*)to, from.v, n * 2); }
+template<> EIGEN_ALWAYS_INLINE void pstoreu_partial<std::complex<float> >(std::complex<float> *  to, const Packet2cf& from, const Index n, const Index offset) { pstoreu_partial((float*)to, from.v, n * 2, offset * 2); }
 
 EIGEN_STRONG_INLINE Packet2cf pload2(const std::complex<float>& from0, const std::complex<float>& from1)
 {
@@ -382,14 +382,14 @@ template<> EIGEN_ALWAYS_INLINE Packet1cd pload_partial<Packet1cd>(const std::com
 {
   return Packet1cd(pload_partial<Packet2d>((const double*)from, n * 2, offset * 2));
 }
-template<> EIGEN_ALWAYS_INLINE Packet1cd ploadu_partial<Packet1cd>(const std::complex<double>* from, const Index n)
+template<> EIGEN_ALWAYS_INLINE Packet1cd ploadu_partial<Packet1cd>(const std::complex<double>* from, const Index n, const Index offset)
 {
-  return Packet1cd(ploadu_partial<Packet2d>((const double*)from, n * 2));
+  return Packet1cd(ploadu_partial<Packet2d>((const double*)from, n * 2, offset * 2));
 }
 template<> EIGEN_STRONG_INLINE void pstore <std::complex<double> >(std::complex<double> *   to, const Packet1cd& from) { pstore((double*)to, from.v); }
 template<> EIGEN_STRONG_INLINE void pstoreu<std::complex<double> >(std::complex<double> *   to, const Packet1cd& from) { pstoreu((double*)to, from.v); }
 template<> EIGEN_ALWAYS_INLINE void pstore_partial <std::complex<double> >(std::complex<double> *  to, const Packet1cd& from, const Index n, const Index offset) { pstore_partial((double*)to, from.v, n * 2, offset * 2); }
-template<> EIGEN_ALWAYS_INLINE void pstoreu_partial<std::complex<double> >(std::complex<double> *  to, const Packet1cd& from, const Index n) { pstoreu_partial((double*)to, from.v, n * 2); }
+template<> EIGEN_ALWAYS_INLINE void pstoreu_partial<std::complex<double> >(std::complex<double> *  to, const Packet1cd& from, const Index n, const Index offset) { pstoreu_partial((double*)to, from.v, n * 2, offset * 2); }
 
 template<> EIGEN_STRONG_INLINE Packet1cd pset1<Packet1cd>(const std::complex<double>&  from)
 { /* here we really have to use unaligned loads :( */ return ploadu<Packet1cd>(&from); }

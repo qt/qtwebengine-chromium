@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,6 +22,7 @@
 #include "cast/streaming/session_config.h"
 #include "cast/streaming/session_messenger.h"
 #include "cast/streaming/statistics.h"
+#include "cast/streaming/statistics_analyzer.h"
 #include "json/value.h"
 #include "util/json/json_serialization.h"
 
@@ -278,6 +279,10 @@ class SenderSession final {
   // limited. |kStreaming| or |kRemoting| means that we are either starting
   // a negotiation or actively sending to a receiver.
   State state_ = State::kIdle;
+
+  // Owns a StatisticsCollector, and sends analyzed stats to `stats_client_`.
+  // Created when `stats_client_` is set.
+  std::unique_ptr<StatisticsAnalyzer> stats_analyzer_;
 
   // The statistics client for this session. Must be set in order for statistics
   // to be calculated.

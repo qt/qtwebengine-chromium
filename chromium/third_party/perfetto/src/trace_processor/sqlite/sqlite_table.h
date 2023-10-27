@@ -231,13 +231,12 @@ class SqliteTable : public sqlite3_vtab {
 
   // This name of the table. For tables created using CREATE VIRTUAL TABLE, this
   // will be the name of the table specified by the query. For automatically
-  // created tables, this will be the same as the module name passed to
-  // RegisterTable.
+  // created tables, this will be the same as the module name registered.
   std::string name_;
 
-  // The module name is the name passed to RegisterTable. This is differs from
-  // the table name (|name_|) where the table was created using CREATE VIRTUAL
-  // TABLE.
+  // The module name is the name that will be registered. This is
+  // differs from the table name (|name_|) where the table was created using
+  // CREATE VIRTUAL TABLE.
   std::string module_name_;
 
   Schema schema_;
@@ -252,6 +251,7 @@ class TypedSqliteTableBase : public SqliteTable {
   struct BaseModuleArg {
     sqlite3_module module;
     SqliteEngine* engine;
+    TableType table_type;
   };
 
   ~TypedSqliteTableBase() override;
@@ -290,7 +290,7 @@ class TypedSqliteTableBase : public SqliteTable {
 template <typename SubTable, typename Context>
 class TypedSqliteTable : public TypedSqliteTableBase {
  public:
-  struct ModuleArg : BaseModuleArg {
+  struct ModuleArg : public BaseModuleArg {
     Context context;
   };
 
@@ -301,6 +301,7 @@ class TypedSqliteTable : public TypedSqliteTableBase {
     auto arg = std::make_unique<ModuleArg>();
     arg->module = CreateModule(table_type, updatable);
     arg->engine = engine;
+    arg->table_type = table_type;
     arg->context = std::move(ctx);
     return arg;
   }
@@ -355,8 +356,8 @@ class TypedSqliteTable : public TypedSqliteTableBase {
                      sqlite3_vtab** tab,
                      char** pzErr) {
     auto* xdesc = static_cast<ModuleArg*>(arg);
-    std::unique_ptr<SubTable> table(
-        new SubTable(xdb, std::move(xdesc->context)));
+    std::unique_ptr<SubTable> table(new SubTable(xdb, &*xdesc->context));
+    SubTable* table_ptr = table.get();
     base::Status status = table->InitInternal(xdesc->engine, argc, argv);
     if (!status.ok()) {
       *pzErr = sqlite3_mprintf("%s", status.c_message());
@@ -367,6 +368,7 @@ class TypedSqliteTable : public TypedSqliteTableBase {
       *pzErr = sqlite3_mprintf("%s", status.c_message());
       return SQLITE_ERROR;
     }
+    xdesc->engine->OnSqliteTableCreated(table_ptr->name(), xdesc->table_type);
     return SQLITE_OK;
   }
   static int xClose(sqlite3_vtab_cursor* c) {

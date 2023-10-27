@@ -21,7 +21,7 @@ licenses(["notice"])
 # When not set, LDT encryption will not be available. We won't be able to advertise encrypted BLE4.2 advertisements nor scan for them.
 bool_flag(
     name = "enable_rust_ldt",
-    build_setting_default = True,
+    build_setting_default = False,
 )
 
 config_setting(
@@ -84,9 +84,9 @@ cc_library(
     ],
     deps = [
         "//internal/crypto",
+        "//internal/crypto_cros",
         "//internal/platform:base",
         "//internal/platform:comm",
-        "//internal/platform:logging",
         "//internal/platform:types",
         "//internal/platform:uuid",
         "//internal/platform/implementation:comm",
@@ -96,7 +96,6 @@ cc_library(
         "//internal/proto:metadata_cc_proto",
         "//presence:types",
         "//presence/implementation/mediums",
-        "//presence/proto:presence_frame_cc_proto",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
@@ -126,7 +125,8 @@ cc_library(
     ],
     deps = [
         "//presence:types",
-        "@com_google_absl//absl/types:optional",
+        "@com_google_absl//absl/functional:any_invocable",
+        "@com_google_absl//absl/status",
     ],
 )
 
@@ -286,6 +286,7 @@ cc_test(
     deps = [
         ":internal",
         "//internal/crypto",
+        "//internal/crypto_cros",
         "//internal/proto:credential_cc_proto",
         "//internal/proto:local_credential_cc_proto",
         "//presence/proto:presence_frame_cc_proto",
@@ -310,6 +311,7 @@ cc_test(
         "//internal/platform:comm",
         "//internal/platform:test_util",
         "//internal/platform:types",
+        "//internal/platform/implementation:comm",
         "//internal/platform/implementation:types",
         "//internal/proto:credential_cc_proto",
         "//net/proto2/contrib/parse_proto:testing",

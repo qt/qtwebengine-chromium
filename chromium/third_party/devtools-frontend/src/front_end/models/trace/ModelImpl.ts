@@ -6,16 +6,16 @@ import * as Platform from '../../core/platform/platform.js';
 
 import * as Handlers from './handlers/handlers.js';
 import * as Helpers from './helpers/helpers.js';
-
-import type * as Types from './types/types.js';
-import {TraceProcessor, TraceParseProgressEvent} from './Processor.js';
+import {TraceParseProgressEvent, TraceProcessor} from './Processor.js';
+import * as Types from './types/types.js';
 
 // Note: this model is implemented in a way that can support multiple trace
 // processors. Currently there is only one implemented, but you will see
 // references to "processors" plural because it can easily be extended in the future.
 
 export interface ParseConfig {
-  metadata?: TraceFileMetaData;
+  metadata?: Types.File.MetaData;
+  // Unused but will eventually be consumed by UIUtils Linkifier, etc.
   isFreshRecording?: boolean;
 }
 
@@ -39,21 +39,36 @@ export class Model<EnabledModelHandlers extends {[key: string]: Handlers.Types.T
   readonly #recordingsAvailable: string[] = [];
   #lastRecordingIndex = 0;
   #processor: TraceProcessor<Handlers.Types.HandlersWithMeta<EnabledModelHandlers>>;
+  #config: Types.Configuration.Configuration = Types.Configuration.DEFAULT;
 
   static createWithAllHandlers(): Model<typeof Handlers.ModelHandlers> {
     return new Model(Handlers.ModelHandlers);
   }
 
-  static createWithRequiredHandlersForMigration(): Model<{
+  static createWithRequiredHandlersForMigration(config?: Types.Configuration.Configuration): Model<{
     [K in keyof typeof Handlers.Migration.ENABLED_TRACE_HANDLERS]: typeof Handlers.Migration.ENABLED_TRACE_HANDLERS[K];
   }> {
-    return new Model(Handlers.Migration.ENABLED_TRACE_HANDLERS);
+    return new Model(Handlers.Migration.ENABLED_TRACE_HANDLERS, config);
   }
 
-  constructor(handlers: EnabledModelHandlers) {
+  constructor(handlers: EnabledModelHandlers, config?: Types.Configuration.Configuration) {
     super();
-    this.#processor = new TraceProcessor(handlers);
+    if (config) {
+      this.#config = config;
+    }
+    this.#processor = new TraceProcessor(handlers, {/* Settings for how event processing is chunked */}, this.#config);
   }
+
+  /**
+   * Updates the configuration. Useful if a user changes a setting - this lets
+   * us update the model without having to destroy it and recreate it with the
+   * new settings.
+   */
+  updateConfiguration(config: Types.Configuration.Configuration): void {
+    this.#config = config;
+    this.#processor.updateConfiguration(config);
+  }
+
   /**
    * Parses an array of trace events into a structured object containing all the
    * information parsed by the trace handlers.
@@ -149,7 +164,7 @@ export class Model<EnabledModelHandlers extends {[key: string]: Handlers.Types.T
     return this.#traces[index].traceParsedData;
   }
 
-  metadata(index: number): TraceFileMetaData|null {
+  metadata(index: number): Types.File.MetaData|null {
     if (!this.#traces[index]) {
       return null;
     }
@@ -178,7 +193,7 @@ export class Model<EnabledModelHandlers extends {[key: string]: Handlers.Types.T
     return this.#recordingsAvailable;
   }
 
-  reset(): void {
+  resetProcessor(): void {
     this.#processor.reset();
   }
 }
@@ -188,7 +203,7 @@ export class Model<EnabledModelHandlers extends {[key: string]: Handlers.Types.T
  * of these so that the user can swap between them. The key is that it is
  * essentially the TraceFile plus whatever the model has parsed from it.
  */
-export type ParsedTraceFile<Handlers extends {[key: string]: Handlers.Types.TraceEventHandler}> = TraceFile&{
+export type ParsedTraceFile<Handlers extends {[key: string]: Handlers.Types.TraceEventHandler}> = Types.File.TraceFile&{
   traceParsedData: Handlers.Types.EnabledHandlerDataWithMeta<Handlers>| null,
 };
 
@@ -233,23 +248,3 @@ export function isModelUpdateDataComplete(eventData: ModelUpdateEventData): even
 export function isModelUpdateDataProgress(eventData: ModelUpdateEventData): eventData is ModelUpdateEventProgress {
   return eventData.type === ModelUpdateType.PROGRESS_UPDATE;
 }
-
-export type TraceFile = {
-  traceEvents: readonly Types.TraceEvents.TraceEventData[],
-  metadata: TraceFileMetaData,
-};
-
-/**
- * Trace metadata that we persist to the file. This will allow us to
- * store specifics for the trace, e.g., which tracks should be visible
- * on load.
- */
-export interface TraceFileMetaData {
-  source?: 'DevTools';
-  startTime?: string;
-  networkThrottling?: string;
-  cpuThrottling?: number;
-  hardwareConcurrency?: number;
-}
-
-export type TraceFileContents = TraceFile|Types.TraceEvents.TraceEventData[];

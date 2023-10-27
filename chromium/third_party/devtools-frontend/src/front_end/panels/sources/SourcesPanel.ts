@@ -40,13 +40,12 @@ import * as Extensions from '../../models/extensions/extensions.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import * as IconButton from '../../ui/components/icon_button/icon_button.js';
 import * as ObjectUI from '../../ui/legacy/components/object_ui/object_ui.js';
+import type * as SourceFrame from '../../ui/legacy/components/source_frame/source_frame.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as Snippets from '../snippets/snippets.js';
 
 import {CallStackSidebarPane} from './CallStackSidebarPane.js';
 import {DebuggerPausedMessage} from './DebuggerPausedMessage.js';
-import sourcesPanelStyles from './sourcesPanel.css.js';
-
 import {type NavigatorView} from './NavigatorView.js';
 import {
   ContentScriptsNavigatorView,
@@ -55,6 +54,7 @@ import {
   OverridesNavigatorView,
   SnippetsNavigatorView,
 } from './SourcesNavigator.js';
+import sourcesPanelStyles from './sourcesPanel.css.js';
 import {Events, SourcesView} from './SourcesView.js';
 import {ThreadsSidebarPane} from './ThreadsSidebarPane.js';
 import {UISourceCodeFrame} from './UISourceCodeFrame.js';
@@ -251,7 +251,7 @@ export class SourcesPanel extends UI.Panel.Panel implements UI.ContextMenu.Provi
 
     // Create navigator tabbed pane with toolbar.
     this.navigatorTabbedLocation = UI.ViewManager.ViewManager.instance().createTabbedLocation(
-        this.revealNavigatorSidebar.bind(this), 'navigator-view', true);
+        this.revealNavigatorSidebar.bind(this), 'navigator-view', true, true);
     const tabbedPane = this.navigatorTabbedLocation.tabbedPane();
     tabbedPane.setMinimumSize(100, 25);
     tabbedPane.element.classList.add('navigator-tabbed-pane');
@@ -520,7 +520,7 @@ export class SourcesPanel extends UI.Panel.Panel implements UI.ContextMenu.Provi
   }
 
   showUISourceCode(
-      uiSourceCode: Workspace.UISourceCode.UISourceCode, lineNumber?: number, columnNumber?: number,
+      uiSourceCode: Workspace.UISourceCode.UISourceCode, location?: SourceFrame.SourceFrame.RevealPosition,
       omitFocus?: boolean): void {
     if (omitFocus) {
       const wrapperShowing = WrapperView.isShowing();
@@ -530,8 +530,7 @@ export class SourcesPanel extends UI.Panel.Panel implements UI.ContextMenu.Provi
     } else {
       this.showEditor();
     }
-    this.sourcesViewInternal.showSourceLocation(
-        uiSourceCode, lineNumber === undefined ? undefined : {lineNumber, columnNumber}, omitFocus);
+    this.sourcesViewInternal.showSourceLocation(uiSourceCode, location, omitFocus);
   }
 
   private showEditor(): void {
@@ -542,7 +541,8 @@ export class SourcesPanel extends UI.Panel.Panel implements UI.ContextMenu.Provi
   }
 
   showUILocation(uiLocation: Workspace.UISourceCode.UILocation, omitFocus?: boolean): void {
-    this.showUISourceCode(uiLocation.uiSourceCode, uiLocation.lineNumber, uiLocation.columnNumber, omitFocus);
+    const {uiSourceCode, lineNumber, columnNumber} = uiLocation;
+    this.showUISourceCode(uiSourceCode, {lineNumber, columnNumber}, omitFocus);
   }
 
   revealInNavigator(uiSourceCode: Workspace.UISourceCode.UISourceCode, skipReveal?: boolean): void {
@@ -1010,6 +1010,22 @@ export class SourcesPanel extends UI.Panel.Panel implements UI.ContextMenu.Provi
       const subtype = data.subtype;
       const indent = data.indent;
 
+      if (subtype === 'map') {
+        if (this instanceof Map) {
+          const elements = Array.from(this.entries());
+          const literal = elements.length === 0 ? '' : JSON.stringify(elements, null, indent);
+          return `new Map(${literal})`;
+        }
+        return undefined;
+      }
+      if (subtype === 'set') {
+        if (this instanceof Set) {
+          const values = Array.from(this.values());
+          const literal = values.length === 0 ? '' : JSON.stringify(values, null, indent);
+          return `new Set(${literal})`;
+        }
+        return undefined;
+      }
       if (subtype === 'node') {
         return this instanceof Element ? this.outerHTML : undefined;
       }
@@ -1194,6 +1210,8 @@ export class SourcesPanel extends UI.Panel.Panel implements UI.ContextMenu.Provi
     const entry = items[0].webkitGetAsEntry();
     if (entry && entry.isDirectory) {
       Host.InspectorFrontendHost.InspectorFrontendHostInstance.upgradeDraggedFileSystemPermissions(entry.filesystem);
+      Host.userMetrics.actionTaken(Host.UserMetrics.Action.WorkspaceDropFolder);
+      void UI.ViewManager.ViewManager.instance().showView('navigator-files');
     }
   }
 }
@@ -1220,6 +1238,24 @@ export class UILocationRevealer implements Common.Revealer.Revealer {
       throw new Error('Internal error: not a ui location');
     }
     SourcesPanel.instance().showUILocation(uiLocation, omitFocus);
+  }
+}
+
+export class UILocationRangeRevealer implements Common.Revealer.Revealer {
+  static #instance?: UILocationRangeRevealer;
+  static instance(opts: {forceNew: boolean} = {forceNew: false}): UILocationRangeRevealer {
+    if (!UILocationRangeRevealer.#instance || opts.forceNew) {
+      UILocationRangeRevealer.#instance = new UILocationRangeRevealer();
+    }
+    return UILocationRangeRevealer.#instance;
+  }
+
+  async reveal(uiLocationRange: Object, omitFocus?: boolean): Promise<void> {
+    if (!(uiLocationRange instanceof Workspace.UISourceCode.UILocationRange)) {
+      throw new Error('Internal error: Not a UILocationRange');
+    }
+    const {uiSourceCode, range: {start: from, end: to}} = uiLocationRange;
+    SourcesPanel.instance().showUISourceCode(uiSourceCode, {from, to}, omitFocus);
   }
 }
 
@@ -1268,7 +1304,7 @@ export class UISourceCodeRevealer implements Common.Revealer.Revealer {
     if (!(uiSourceCode instanceof Workspace.UISourceCode.UISourceCode)) {
       throw new Error('Internal error: not a ui source code');
     }
-    SourcesPanel.instance().showUISourceCode(uiSourceCode, undefined, undefined, omitFocus);
+    SourcesPanel.instance().showUISourceCode(uiSourceCode, undefined, omitFocus);
   }
 }
 

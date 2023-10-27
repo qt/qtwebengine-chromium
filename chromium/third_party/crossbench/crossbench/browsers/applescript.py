@@ -10,7 +10,7 @@ import logging
 import subprocess
 from typing import TYPE_CHECKING, Any, List, Optional, Sequence, Tuple
 
-from crossbench import helper
+from crossbench import plt
 from crossbench.env import ValidationError
 
 from .browser import Browser
@@ -19,7 +19,8 @@ if TYPE_CHECKING:
   import datetime as dt
   import pathlib
 
-  from crossbench.runner import Run, Runner
+  from crossbench.runner.runner import Runner
+  from crossbench.runner.run import Run
 
 
 class AppleScript:
@@ -35,10 +36,10 @@ class AppleScript:
       unique_variable = f"cb_input_{variable}"
       replacements[variable] = unique_variable
       variables.append(f"set {unique_variable} to (item {len(args)} of argv)")
-    variables = "\n".join(variables)
+    variables_str = "\n".join(variables)
     formatted_script = apple_script.strip() % replacements
     wrapper = f"""
-      {variables}
+      {variables_str}
       tell application "{app_path}"
         {formatted_script}
       end tell
@@ -52,7 +53,7 @@ class AppleScript:
     args_str: str = json.dumps(args)
     script = """JSON.stringify((function exceptionWrapper(){
         try {
-          return [(function(...arguments){%(script)s}).apply(globalThis, %(args_str)s), true]
+          return [(function(...arguments){%(script)s}).apply(window, %(args_str)s), true]
         } catch(e) {
           return [e + "", false]
         }
@@ -83,7 +84,7 @@ class AppleScriptBrowser(Browser, metaclass=abc.ABCMeta):
   def start(self, run: Run) -> None:
     assert not self._is_running
     # Start process directly
-    startup_flags = self._get_browser_flags(run)
+    startup_flags = self._get_browser_flags_for_run(run)
     self._browser_process = self.platform.popen(
         self.path, *startup_flags, shell=False)
     self._pid = self._browser_process.pid
@@ -95,7 +96,7 @@ class AppleScriptBrowser(Browser, metaclass=abc.ABCMeta):
   def _check_js_from_apple_script_allowed(self, run: Run) -> None:
     try:
       self.js(run.runner, "return 1")
-    except helper.SubprocessError as e:
+    except plt.SubprocessError as e:
       logging.error("Browser does not allow JS from AppleScript!")
       logging.debug("    SubprocessError: %s", e)
       run.runner.env.handle_warning(
@@ -103,7 +104,7 @@ class AppleScriptBrowser(Browser, metaclass=abc.ABCMeta):
           f"'{self.APPLE_SCRIPT_ALLOW_JS_MENU}'")
     try:
       self.js(run.runner, "return 1;")
-    except helper.SubprocessError as e:
+    except plt.SubprocessError as e:
       raise ValidationError(
           " JavaScript from Apple Script Events was not enabled") from e
     self._is_running = True
@@ -133,7 +134,7 @@ class AppleScriptBrowser(Browser, metaclass=abc.ABCMeta):
     self._exec_apple_script(self.APPLE_SCRIPT_SET_URL, url=url)
     self.platform.sleep(0.5)
 
-  def quit(self, runner: Runner):
+  def quit(self, runner: Runner) -> None:
     del runner
     self._exec_apple_script("quit")
     self._browser_process.terminate()

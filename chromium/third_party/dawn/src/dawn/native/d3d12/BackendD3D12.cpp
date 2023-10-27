@@ -56,6 +56,10 @@ MaybeError Backend::Initialize() {
 
     DAWN_TRY(Base::Initialize(std::move(functions)));
 
+#ifdef DAWN_USE_BUILT_DXC
+    DAWN_INVALID_IF(!IsDXCAvailable(), "DXC dlls were built, but are not available");
+#endif
+
     return {};
 }
 

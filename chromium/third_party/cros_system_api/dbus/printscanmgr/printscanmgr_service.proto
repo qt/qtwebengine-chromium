@@ -10,20 +10,24 @@ option optimize_for = LITE_RUNTIME;
 package printscanmgr;
 option go_package = "chromiumos/system_api/printscanmgr_proto";
 
-// CupsAdd* error codes.
-enum CupsResult {
-  CUPS_RESULT_UNSPECIFIED = 0;
-  CUPS_RESULT_SUCCESS = 1;
-  CUPS_RESULT_FATAL = 2;
-  CUPS_RESULT_INVALID_PPD = 3;
-  CUPS_RESULT_LPADMIN_FAILURE = 4;
-  CUPS_RESULT_AUTOCONF_FAILURE = 5;
-  CUPS_RESULT_BAD_URI = 6;
-  CUPS_RESULT_IO_ERROR = 7;
-  CUPS_RESULT_MEMORY_ALLOC_ERROR = 8;
-  CUPS_RESULT_PRINTER_UNREACHABLE = 9;
-  CUPS_RESULT_PRINTER_WRONG_RESPONSE = 10;
-  CUPS_RESULT_PRINTER_NOT_AUTOCONF = 11;
+// CupsAdd* results.
+enum AddPrinterResult {
+  ADD_PRINTER_RESULT_UNSPECIFIED = 0;
+  ADD_PRINTER_RESULT_SUCCESS = 1;
+  ADD_PRINTER_RESULT_CUPS_FATAL = 2;
+  ADD_PRINTER_RESULT_CUPS_INVALID_PPD = 3;
+  ADD_PRINTER_RESULT_CUPS_LPADMIN_FAILURE = 4;
+  ADD_PRINTER_RESULT_CUPS_AUTOCONF_FAILURE = 5;
+  ADD_PRINTER_RESULT_CUPS_BAD_URI = 6;
+  ADD_PRINTER_RESULT_CUPS_IO_ERROR = 7;
+  ADD_PRINTER_RESULT_CUPS_MEMORY_ALLOC_ERROR = 8;
+  ADD_PRINTER_RESULT_CUPS_PRINTER_UNREACHABLE = 9;
+  ADD_PRINTER_RESULT_CUPS_PRINTER_WRONG_RESPONSE = 10;
+  ADD_PRINTER_RESULT_CUPS_PRINTER_NOT_AUTOCONF = 11;
+  ADD_PRINTER_RESULT_DBUS_GENERIC = 12;
+  ADD_PRINTER_RESULT_DBUS_NO_REPLY = 13;
+  ADD_PRINTER_RESULT_DBUS_TIMEOUT = 14;
+  ADD_PRINTER_RESULT_DBUS_ENCODING_FAILURE = 15;
 };
 
 // Input for the org.chromium.printscanmgr.CupsAddAutoConfiguredPrinter D-Bus
@@ -39,8 +43,9 @@ message CupsAddAutoConfiguredPrinterRequest {
 // Output for the org.chromium.printscanmgr.CupsAddAutoConfiguredPrinter D-Bus
 // method.
 message CupsAddAutoConfiguredPrinterResponse {
-  // Must not be `CUPS_RESULT_UNSPECIFIED`.
-  CupsResult result = 1;
+  reserved 1;
+  // Must not be `ADD_PRINTER_RESULT_UNSPECIFIED`.
+  AddPrinterResult result = 2;
 }
 
 // Input for the org.chromium.printscanmgr.CupsAddManuallyConfiguredPrinter
@@ -58,8 +63,9 @@ message CupsAddManuallyConfiguredPrinterRequest {
 // Output for the org.chromium.printscanmgr.CupsAddManuallyConfiguredPrinter
 // D-Bus method.
 message CupsAddManuallyConfiguredPrinterResponse {
-  // Must not be `CUPS_RESULT_UNSPECIFIED`.
-  CupsResult result = 1;
+  reserved 1;
+  // Must not be `ADD_PRINTER_RESULT_UNSPECIFIED`.
+  AddPrinterResult result = 2;
 }
 
 // Input for the org.chromium.printscanmgr.CupsRemovePrinter D-Bus method.

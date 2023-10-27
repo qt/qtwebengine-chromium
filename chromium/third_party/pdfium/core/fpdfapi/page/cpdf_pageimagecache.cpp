@@ -64,10 +64,11 @@ class CachedImage final : public CFX_DIBBase {
   }
 
   pdfium::span<const uint8_t> GetBuffer() const override {
-    // TODO(crbug.com/pdfium/2051): `CachedImage` is only used by Skia, which
-    // should call `RealizeSkImage()` instead. Consider removing this, or at
-    // least making it `NOTREACHED_NORETURN()`.
-    NOTREACHED();
+    // TODO(crbug.com/pdfium/2051): Still needed for
+    // CGdiDeviceDriver::GDI_StretchDIBits(). `CachedImage` is only used when
+    // Skia is the default renderer, which should call `RealizeSkImage()`
+    // instead. Consider removing this or making it `NOTREACHED_NORETURN()`
+    // by reimplementing its caller when Skia is the default renderer.
     return image_->GetBuffer();
   }
 
@@ -113,8 +114,13 @@ RetainPtr<CFX_DIBBase> MakeCachedImage(RetainPtr<CFX_DIBBase> image,
     // TODO(crbug.com/pdfium/2050): Ignore `realize_hint`, as `RealizeSkImage()`
     // doesn't benefit from it. The current behavior masks a bug in `CPDF_DIB`
     // in which `GetBuffer()` and `GetScanline()` don't give the same answer.
-    return pdfium::MakeRetain<CachedImage>(realize_hint ? image->Realize()
-                                                        : std::move(image));
+    if (realize_hint) {
+      image = image->Realize();
+      if (!image) {
+        return nullptr;
+      }
+    }
+    return pdfium::MakeRetain<CachedImage>(std::move(image));
   }
 #endif  // defined(_SKIA_SUPPORT_)
   return realize_hint ? image->Realize() : image;

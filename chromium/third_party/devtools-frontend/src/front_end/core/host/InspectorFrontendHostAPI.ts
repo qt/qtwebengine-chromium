@@ -136,6 +136,10 @@ export interface SearchCompletedEvent {
   files: Platform.DevToolsPath.RawPathString[];
 }
 
+export interface DoAidaConversationResult {
+  response: string;
+}
+
 // While `EventDescriptors` are used to dynamically dispatch host binding events,
 // the `EventTypes` "type map" is used for type-checking said events by TypeScript.
 // `EventTypes` is not used at runtime.
@@ -300,6 +304,8 @@ export interface InspectorFrontendHostAPI {
   setAddExtensionCallback(callback: (arg0: ExtensionDescriptor) => void): void;
 
   initialTargetId(): Promise<string|null>;
+
+  doAidaConversation: (request: string, cb: (result: DoAidaConversationResult) => void) => void;
 }
 
 export interface ContextMenuDescriptor {
@@ -372,6 +378,7 @@ export enum EnumeratedHistogram {
   KeybindSetSettingChanged = 'DevTools.KeybindSetSettingChanged',
   ElementsSidebarTabShown = 'DevTools.Elements.SidebarTabShown',
   ExperimentEnabledAtLaunch = 'DevTools.ExperimentEnabledAtLaunch',
+  ExperimentDisabledAtLaunch = 'DevTools.ExperimentDisabledAtLaunch',
   ExperimentEnabled = 'DevTools.ExperimentEnabled',
   ExperimentDisabled = 'DevTools.ExperimentDisabled',
   DeveloperResourceLoaded = 'DevTools.DeveloperResourceLoaded',
@@ -405,4 +412,6 @@ export enum EnumeratedHistogram {
   BreakpointsRestoredFromStorageCount = 'DevTools.BreakpointsRestoredFromStorageCount',
   SwatchActivated = 'DevTools.SwatchActivated',
   BadgeActivated = 'DevTools.BadgeActivated',
+  AnimationPlaybackRateChanged = 'DevTools.AnimationPlaybackRateChanged',
+  AnimationPointDragged = 'DevTools.AnimationPointDragged',
 }

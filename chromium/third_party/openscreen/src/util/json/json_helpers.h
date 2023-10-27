@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -158,6 +158,18 @@ inline bool TryParseUintArray(const Json::Value& value,
 inline bool TryParseStringArray(const Json::Value& value,
                                 std::vector<std::string>* out) {
   return TryParseArray<std::string>(value, TryParseString, out);
+}
+
+template <typename T>
+Json::Value PrimitiveVectorToJson(const std::vector<T>& vec) {
+  Json::Value array(Json::ValueType::arrayValue);
+  array.resize(vec.size());
+
+  for (Json::Value::ArrayIndex i = 0; i < vec.size(); ++i) {
+    array[i] = Json::Value(vec[i]);
+  }
+
+  return array;
 }
 
 }  // namespace json

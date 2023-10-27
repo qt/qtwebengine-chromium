@@ -769,16 +769,8 @@ Optimizer::PassToken CreateCombineAccessChainsPass();
 // The instrumentation will read and write buffers in debug
 // descriptor set |desc_set|. It will write |shader_id| in each output record
 // to identify the shader module which generated the record.
-// |desc_length_enable| controls instrumentation of runtime descriptor array
-// references, |desc_init_enable| controls instrumentation of descriptor
-// initialization checking, and |buff_oob_enable| controls instrumentation
-// of storage and uniform buffer bounds checking, all of which require input
-// buffer support. |texbuff_oob_enable| controls instrumentation of texel
-// buffers, which does not require input buffer support.
-Optimizer::PassToken CreateInstBindlessCheckPass(
-    uint32_t desc_set, uint32_t shader_id, bool desc_length_enable = false,
-    bool desc_init_enable = false, bool buff_oob_enable = false,
-    bool texbuff_oob_enable = false);
+Optimizer::PassToken CreateInstBindlessCheckPass(uint32_t desc_set,
+                                                 uint32_t shader_id);
 
 // Create a pass to instrument physical buffer address checking
 // This pass instruments all physical buffer address references to check that
@@ -989,6 +981,22 @@ Optimizer::PassToken CreateRemoveDontInlinePass();
 // object, currently the pass would remove accesschain pointer argument passed
 // to the function
 Optimizer::PassToken CreateFixFuncCallArgumentsPass();
+
+// Creates a trim-capabilities pass.
+// This pass removes unused capabilities for a given module, and if possible,
+// associated extensions.
+// See `trim_capabilities.h` for the list of supported capabilities.
+//
+// If the module contains unsupported capabilities, this pass will ignore them.
+// This should be fine in most cases, but could yield to incorrect results if
+// the unknown capability interacts with one of the trimmed capabilities.
+Optimizer::PassToken CreateTrimCapabilitiesPass();
+
+// Creates a switch-descriptorset pass.
+// This pass changes any DescriptorSet decorations with the value |ds_from| to
+// use the new value |ds_to|.
+Optimizer::PassToken CreateSwitchDescriptorSetPass(uint32_t ds_from,
+                                                   uint32_t ds_to);
 }  // namespace spvtools
 
 #endif  // INCLUDE_SPIRV_TOOLS_OPTIMIZER_HPP_

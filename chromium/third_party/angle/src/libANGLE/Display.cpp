@@ -22,7 +22,7 @@
 #include "common/android_util.h"
 #include "common/debug.h"
 #include "common/mathutil.h"
-#include "common/platform.h"
+#include "common/platform_helpers.h"
 #include "common/string_utils.h"
 #include "common/system_utils.h"
 #include "common/tls.h"
@@ -50,8 +50,6 @@
 #endif
 
 #if defined(ANGLE_ENABLE_D3D9) || defined(ANGLE_ENABLE_D3D11)
-#    include <versionhelpers.h>
-
 #    include "libANGLE/renderer/d3d/DisplayD3D.h"
 #endif
 
@@ -156,6 +154,19 @@ static WindowSurfaceMap *GetWindowSurfaces()
     return windowSurfaces.get();
 }
 
+size_t EGLStringArrayHash(const char **ary)
+{
+    size_t hash = 0;
+    if (ary != nullptr)
+    {
+        for (; *ary != nullptr; ary++)
+        {
+            hash ^= std::hash<std::string>{}(std::string(*ary));
+        }
+    }
+    return hash;
+}
+
 struct ANGLEPlatformDisplay
 {
     ANGLEPlatformDisplay() = default;
@@ -169,19 +180,29 @@ struct ANGLEPlatformDisplay
                          EGLAttrib platformANGLEType,
                          EGLAttrib deviceIdHigh,
                          EGLAttrib deviceIdLow,
-                         EGLAttrib displayKey)
+                         EGLAttrib displayKey,
+                         EGLAttrib enabledFeatureOverrides,
+                         EGLAttrib disabledFeatureOverrides,
+                         EGLAttrib disableAllNonOverriddenFeatures)
         : nativeDisplayType(nativeDisplayType),
           powerPreference(powerPreference),
           platformANGLEType(platformANGLEType),
           deviceIdHigh(deviceIdHigh),
           deviceIdLow(deviceIdLow),
-          displayKey(displayKey)
-    {}
+          displayKey(displayKey),
+          disableAllNonOverriddenFeatures(static_cast<bool>(disableAllNonOverriddenFeatures))
+    {
+        enabledFeatureOverridesHash =
+            EGLStringArrayHash(reinterpret_cast<const char **>(enabledFeatureOverrides));
+        disabledFeatureOverridesHash =
+            EGLStringArrayHash(reinterpret_cast<const char **>(disabledFeatureOverrides));
+    }
 
     auto tie() const
     {
         return std::tie(nativeDisplayType, powerPreference, platformANGLEType, deviceIdHigh,
-                        deviceIdLow, displayKey);
+                        deviceIdLow, displayKey, enabledFeatureOverridesHash,
+                        disabledFeatureOverridesHash, disableAllNonOverriddenFeatures);
     }
 
     EGLNativeDisplayType nativeDisplayType{EGL_DEFAULT_DISPLAY};
@@ -190,6 +211,9 @@ struct ANGLEPlatformDisplay
     EGLAttrib deviceIdHigh{0};
     EGLAttrib deviceIdLow{0};
     EGLAttrib displayKey{0};
+    size_t enabledFeatureOverridesHash;
+    size_t disabledFeatureOverridesHash;
+    bool disableAllNonOverriddenFeatures;
 };
 
 inline bool operator==(const ANGLEPlatformDisplay &a, const ANGLEPlatformDisplay &b)
@@ -289,13 +313,6 @@ EGLAttrib GetDisplayTypeFromEnvironment()
     {
         return EGL_PLATFORM_ANGLE_TYPE_NULL_ANGLE;
     }
-#endif
-#if defined(ANGLE_ENABLE_METAL)
-    if (angleDefaultEnv == "metal")
-    {
-        return EGL_PLATFORM_ANGLE_TYPE_METAL_ANGLE;
-    }
-
 #endif
 #if defined(ANGLE_ENABLE_D3D11)
     return EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE;
@@ -414,6 +431,11 @@ rx::DisplayImpl *CreateDisplayFromAttribs(EGLAttrib displayType,
                 break;
             }
 #        endif
+            if (platformType == EGL_PLATFORM_SURFACELESS_MESA)
+            {
+                impl = new rx::DisplayEGL(state);
+                break;
+            }
             break;
 
 #    elif defined(ANGLE_PLATFORM_ANDROID)
@@ -437,11 +459,8 @@ rx::DisplayImpl *CreateDisplayFromAttribs(EGLAttrib displayType,
             impl = new rx::DisplayWGL(state);
 #    elif defined(ANGLE_PLATFORM_LINUX)
 #        if defined(ANGLE_USE_GBM)
-            if (platformType == 0 ||
-                platformType == EGL_PLATFORM_VULKAN_DISPLAY_MODE_HEADLESS_ANGLE)
+            if (platformType == 0)
             {
-                // platformType == EGL_PLATFORM_VULKAN_DISPLAY_MODE_HEADLESS_ANGLE is a hack,
-                // to allow ChromeOS GLES backend to continue functioning when Vulkan is enabled.
                 impl = new rx::DisplayEGL(state);
                 break;
             }
@@ -460,6 +479,11 @@ rx::DisplayImpl *CreateDisplayFromAttribs(EGLAttrib displayType,
                     break;
                 }
 #        endif
+                if (platformType == EGL_PLATFORM_SURFACELESS_MESA)
+                {
+                    impl = new rx::DisplayEGL(state);
+                    break;
+                }
             }
 #    elif defined(ANGLE_PLATFORM_ANDROID)
             impl = new rx::DisplayAndroid(state);
@@ -506,6 +530,12 @@ rx::DisplayImpl *CreateDisplayFromAttribs(EGLAttrib displayType,
                 break;
             }
 #        endif
+            if (platformType == EGL_PLATFORM_SURFACELESS_MESA &&
+                rx::IsVulkanOffscreenDisplayAvailable())
+            {
+                impl = rx::CreateVulkanOffscreenDisplay(state);
+                break;
+            }
 #        if defined(ANGLE_USE_VULKAN_DISPLAY)
             if (platformType == EGL_PLATFORM_VULKAN_DISPLAY_MODE_SIMPLE_ANGLE &&
                 rx::IsVulkanSimpleDisplayAvailable())
@@ -516,6 +546,10 @@ rx::DisplayImpl *CreateDisplayFromAttribs(EGLAttrib displayType,
                      rx::IsVulkanHeadlessDisplayAvailable())
             {
                 impl = rx::CreateVulkanHeadlessDisplay(state);
+            }
+            else if (rx::IsVulkanOffscreenDisplayAvailable())
+            {
+                impl = rx::CreateVulkanOffscreenDisplay(state);
             }
             else
             {
@@ -653,62 +687,6 @@ static constexpr uint32_t kScratchBufferLifetime = 64u;
 
 }  // anonymous namespace
 
-// ShareGroup
-ShareGroup::ShareGroup(rx::EGLImplFactory *factory)
-    : mRefCount(1),
-      mImplementation(factory->createShareGroup()),
-      mFrameCaptureShared(new angle::FrameCaptureShared)
-{}
-
-void ShareGroup::finishAllContexts()
-{
-    for (auto shareContext : mContexts)
-    {
-        if (shareContext.second->hasBeenCurrent() && !shareContext.second->isDestroyed())
-        {
-            shareContext.second->finish();
-        }
-    }
-}
-
-void ShareGroup::addSharedContext(gl::Context *context)
-{
-    mContexts.insert(std::pair(context->id().value, context));
-
-    if (context->isRobustnessEnabled())
-    {
-        mImplementation->onRobustContextAdd();
-    }
-}
-
-void ShareGroup::removeSharedContext(gl::Context *context)
-{
-    mContexts.erase(context->id().value);
-}
-
-ShareGroup::~ShareGroup()
-{
-    SafeDelete(mImplementation);
-}
-
-void ShareGroup::addRef()
-{
-    // This is protected by global lock, so no atomic is required
-    mRefCount++;
-}
-
-void ShareGroup::release(const Display *display)
-{
-    if (--mRefCount == 0)
-    {
-        if (mImplementation)
-        {
-            mImplementation->onDestroy(display);
-        }
-        delete this;
-    }
-}
-
 // DisplayState
 DisplayState::DisplayState(EGLNativeDisplayType nativeDisplayId)
     : label(nullptr), featuresAllDisabled(false), displayId(nativeDisplayId)
@@ -767,10 +745,18 @@ Display *Display::GetDisplayFromNativeDisplay(EGLenum platform,
     EGLAttrib deviceIdHigh = updatedAttribMap.get(EGL_PLATFORM_ANGLE_DEVICE_ID_HIGH_ANGLE, 0);
     EGLAttrib deviceIdLow  = updatedAttribMap.get(EGL_PLATFORM_ANGLE_DEVICE_ID_LOW_ANGLE, 0);
     EGLAttrib displayKey   = updatedAttribMap.get(EGL_PLATFORM_ANGLE_DISPLAY_KEY_ANGLE, 0);
+    EGLAttrib enabledFeatureOverrides =
+        updatedAttribMap.get(EGL_FEATURE_OVERRIDES_ENABLED_ANGLE, 0);
+    EGLAttrib disabledFeatureOverrides =
+        updatedAttribMap.get(EGL_FEATURE_OVERRIDES_DISABLED_ANGLE, 0);
+    EGLAttrib disableAllNonOverriddenFeatures =
+        updatedAttribMap.get(EGL_FEATURE_ALL_DISABLED_ANGLE, 0);
     ANGLEPlatformDisplayMap *displays = GetANGLEPlatformDisplayMap();
-    ANGLEPlatformDisplay combinedDisplayKey(nativeDisplay, powerPreference, platformANGLEType,
-                                            deviceIdHigh, deviceIdLow, displayKey);
+    ANGLEPlatformDisplay combinedDisplayKey(
+        nativeDisplay, powerPreference, platformANGLEType, deviceIdHigh, deviceIdLow, displayKey,
+        enabledFeatureOverrides, disabledFeatureOverrides, disableAllNonOverriddenFeatures);
     const auto &iter = displays->find(combinedDisplayKey);
+
     if (iter != displays->end())
     {
         display = iter->second;
@@ -945,6 +931,7 @@ Display::~Display()
         case EGL_PLATFORM_ANGLE_ANGLE:
         case EGL_PLATFORM_GBM_KHR:
         case EGL_PLATFORM_WAYLAND_EXT:
+        case EGL_PLATFORM_SURFACELESS_MESA:
         {
             ANGLEPlatformDisplayMap *displays      = GetANGLEPlatformDisplayMap();
             ANGLEPlatformDisplayMap::iterator iter = displays->find(ANGLEPlatformDisplay(
@@ -954,7 +941,10 @@ Display::~Display()
                                   EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE),
                 mAttributeMap.get(EGL_PLATFORM_ANGLE_DEVICE_ID_HIGH_ANGLE, 0),
                 mAttributeMap.get(EGL_PLATFORM_ANGLE_DEVICE_ID_LOW_ANGLE, 0),
-                mAttributeMap.get(EGL_PLATFORM_ANGLE_DISPLAY_KEY_ANGLE, 0)));
+                mAttributeMap.get(EGL_PLATFORM_ANGLE_DISPLAY_KEY_ANGLE, 0),
+                mAttributeMap.get(EGL_FEATURE_OVERRIDES_ENABLED_ANGLE, 0),
+                mAttributeMap.get(EGL_FEATURE_OVERRIDES_DISABLED_ANGLE, 0),
+                mAttributeMap.get(EGL_FEATURE_ALL_DISABLED_ANGLE, 0)));
             if (iter != displays->end())
             {
                 displays->erase(iter);
@@ -1090,6 +1080,8 @@ Error Display::initialize()
 #endif
     }
 
+    mFrontendFeatures.reset();
+    rx::ApplyFeatureOverrides(&mFrontendFeatures, mState);
     if (!mState.featuresAllDisabled)
     {
         initializeFrontendFeatures();
@@ -1239,7 +1231,7 @@ Error Display::terminate(Thread *thread, TerminateReason terminateReason)
     ContextMap contextsStillCurrent = {};
     for (auto context : mState.contextMap)
     {
-        if (context.second->getRefCount() > 0)
+        if (context.second->isReferenced())
         {
             if (terminateReason == TerminateReason::NoActiveThreads)
             {
@@ -1334,6 +1326,11 @@ Error Display::prepareForCall()
 
 Error Display::releaseThread()
 {
+    // Need to check if initialized, because makeCurrent() may terminate the Display.
+    if (!mInitialized)
+    {
+        return NoError();
+    }
     ANGLE_TRY(mImplementation->releaseThread());
     return destroyInvalidEglObjects();
 }
@@ -1719,7 +1716,7 @@ Error Display::makeCurrent(Thread *thread,
         thread->setCurrent(nullptr);
 
         auto error = previousContext->unMakeCurrent(this);
-        if (previousContext->getRefCount() == 0 && previousContext->isDestroyed())
+        if (!previousContext->isReferenced() && previousContext->isDestroyed())
         {
             // The previous Context may have been created with a different Display.
             Display *previousDisplay = previousContext->getDisplay();
@@ -1760,6 +1757,14 @@ Error Display::makeCurrent(Thread *thread,
         {
             zeroFilledBuffer.tick();
         }
+    }
+
+    // If eglTerminate() has previously been called and Context was changed, perform InternalCleanup
+    // to invalidate any non-current Contexts, and possibly fully terminate the Display and release
+    // all of its resources.
+    if (mTerminatedByApi && contextChanged)
+    {
+        return terminate(thread, TerminateReason::InternalCleanup);
     }
 
     return NoError();
@@ -1841,7 +1846,7 @@ Error Display::releaseContext(gl::Context *context, Thread *thread)
 
 Error Display::releaseContextImpl(gl::Context *context, ContextMap *contexts)
 {
-    ASSERT(context->getRefCount() == 0);
+    ASSERT(!context->isReferenced());
 
     // Use scoped_ptr to make sure the context is always freed.
     std::unique_ptr<gl::Context> unique_context(context);
@@ -1891,7 +1896,7 @@ Error Display::destroyContext(Thread *thread, gl::Context *context)
 
     // If the context is still current on at least 1 thread, just return since it'll be released
     // once no threads have it current anymore.
-    if (context->getRefCount() > 0)
+    if (context->isReferenced())
     {
         return NoError();
     }
@@ -1922,21 +1927,6 @@ Error Display::destroyContext(Thread *thread, gl::Context *context)
         ANGLE_TRY(makeCurrent(thread, currentContext, nullptr, nullptr, context));
         ANGLE_TRY(
             makeCurrent(thread, context, currentDrawSurface, currentReadSurface, currentContext));
-    }
-
-    // If eglTerminate() has previously been called and this is the last Context the Display owns,
-    // we can now fully terminate the display and release all of its resources.
-    if (mTerminatedByApi)
-    {
-        for (auto ctx : mState.contextMap)
-        {
-            if (ctx.second->getRefCount() > 0)
-            {
-                return NoError();
-            }
-        }
-
-        return terminate(thread, TerminateReason::InternalCleanup);
     }
 
     return NoError();
@@ -2117,13 +2107,13 @@ static ClientExtensions GenerateClientExtensions()
     extensions.platformWaylandEXT = true;
 #endif
 
+#if defined(ANGLE_PLATFORM_LINUX) && (defined(ANGLE_ENABLE_OPENGL) || defined(ANGLE_ENABLE_VULKAN))
+    extensions.platformSurfacelessMESA = true;
+#endif
+
 #if defined(ANGLE_ENABLE_D3D11)
-#    if defined(ANGLE_ENABLE_WINDOWS_UWP)
-    extensions.platformANGLED3D11ON12 = true;
-#    else
-    extensions.platformANGLED3D11ON12 = IsWindows10OrGreater();
-#    endif
-    extensions.platformANGLEDeviceId = true;
+    extensions.platformANGLED3D11ON12 = angle::IsWindows10OrLater();
+    extensions.platformANGLEDeviceId  = true;
 #endif
 
 #if defined(ANGLE_ENABLE_OPENGL)
@@ -2352,8 +2342,6 @@ void Display::initializeFrontendFeatures()
     ANGLE_FEATURE_CONDITION(&mFrontendFeatures, emulatePixelLocalStorage, true);
 
     mImplementation->initializeFrontendFeatures(&mFrontendFeatures);
-
-    rx::ApplyFeatureOverrides(&mFrontendFeatures, mState);
 }
 
 const DisplayExtensions &Display::getExtensions() const

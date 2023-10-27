@@ -10,7 +10,7 @@ crypto_provider_stubs.workspace = true
 openssl.workspace = true
 cfg-if.workspace = true
 
-ouroboros = "0.15.5"
+ouroboros = "0.17.0"
 
 [features]
 default = []

@@ -51,7 +51,7 @@ cc_defaults {
     ],
 
     static_libs: [
-        "libLLVM10_swiftshader",
+        "libLLVM16_swiftshader",
     ],
 
     shared_libs: [
@@ -280,8 +280,16 @@ cc_library_shared {
 
     static_libs: [
         "libswiftshadervk_llvm",
-        "libLLVM10_swiftshader",
+        "libLLVM16_swiftshader",
     ],
+
+    target: {
+        host: {
+            strip: {
+                keep_symbols_and_debug_frame: true,
+            },
+        },
+    },
 
     defaults: [
         "libvk_swiftshader_common_defaults",
@@ -294,7 +302,7 @@ cc_library_shared {
 
     static_libs: [
         "libswiftshadervk_llvm_debug",
-        "libLLVM10_swiftshader_debug",
+        "libLLVM16_swiftshader_debug",
     ],
 
     cflags: [

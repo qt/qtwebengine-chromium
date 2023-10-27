@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,9 +19,9 @@ RtpPacketParser::RtpPacketParser(Ssrc sender_ssrc)
 RtpPacketParser::~RtpPacketParser() = default;
 
 absl::optional<RtpPacketParser::ParseResult> RtpPacketParser::Parse(
-    absl::Span<const uint8_t> buffer) {
+    ByteView buffer) {
   if (buffer.size() < kRtpPacketMinValidSize ||
-      ConsumeField<uint8_t>(&buffer) != kRtpRequiredFirstByte) {
+      ConsumeField<uint8_t>(buffer) != kRtpRequiredFirstByte) {
     return absl::nullopt;
   }
 
@@ -32,29 +32,28 @@ absl::optional<RtpPacketParser::ParseResult> RtpPacketParser::Parse(
   // lenient just in case some sender implementations don't adhere to this tiny,
   // subtle detail.
   const uint8_t payload_type =
-      ConsumeField<uint8_t>(&buffer) & kRtpPayloadTypeMask;
+      ConsumeField<uint8_t>(buffer) & kRtpPayloadTypeMask;
   if (!IsRtpPayloadType(payload_type)) {
     return absl::nullopt;
   }
   ParseResult result;
   result.payload_type = static_cast<RtpPayloadType>(payload_type);
-  result.sequence_number = ConsumeField<uint16_t>(&buffer);
+  result.sequence_number = ConsumeField<uint16_t>(buffer);
   result.rtp_timestamp =
-      last_parsed_rtp_timestamp_.Expand(ConsumeField<uint32_t>(&buffer));
-  if (ConsumeField<uint32_t>(&buffer) != sender_ssrc_) {
+      last_parsed_rtp_timestamp_.Expand(ConsumeField<uint32_t>(buffer));
+  if (ConsumeField<uint32_t>(buffer) != sender_ssrc_) {
     return absl::nullopt;
   }
 
   // Cast-specific header elements.
-  const uint8_t byte12 = ConsumeField<uint8_t>(&buffer);
+  const uint8_t byte12 = ConsumeField<uint8_t>(buffer);
   result.is_key_frame = !!(byte12 & kRtpKeyFrameBitMask);
   const bool has_referenced_frame_id =
       !!(byte12 & kRtpHasReferenceFrameIdBitMask);
   const size_t num_cast_extensions = byte12 & kRtpExtensionCountMask;
-  result.frame_id =
-      highest_rtp_frame_id_.Expand(ConsumeField<uint8_t>(&buffer));
-  result.packet_id = ConsumeField<uint16_t>(&buffer);
-  result.max_packet_id = ConsumeField<uint16_t>(&buffer);
+  result.frame_id = highest_rtp_frame_id_.Expand(ConsumeField<uint8_t>(buffer));
+  result.packet_id = ConsumeField<uint16_t>(buffer);
+  result.max_packet_id = ConsumeField<uint16_t>(buffer);
   if (result.max_packet_id == kAllPacketsLost) {
     return absl::nullopt;  // Packet ID cannot be the special value.
   }
@@ -66,7 +65,7 @@ absl::optional<RtpPacketParser::ParseResult> RtpPacketParser::Parse(
       return absl::nullopt;
     }
     result.referenced_frame_id =
-        result.frame_id.Expand(ConsumeField<uint8_t>(&buffer));
+        result.frame_id.Expand(ConsumeField<uint8_t>(buffer));
   } else {
     // By default, if no reference frame ID was provided, the assumption is that
     // a key frame only references itself, while non-key frames reference only
@@ -80,7 +79,7 @@ absl::optional<RtpPacketParser::ParseResult> RtpPacketParser::Parse(
     if (buffer.size() < sizeof(uint16_t)) {
       return absl::nullopt;
     }
-    const uint16_t type_and_size = ConsumeField<uint16_t>(&buffer);
+    const uint16_t type_and_size = ConsumeField<uint16_t>(buffer);
     const uint8_t type = type_and_size >> kNumExtensionDataSizeFieldBits;
     const size_t size =
         type_and_size & FieldBitmask<uint16_t>(kNumExtensionDataSizeFieldBits);

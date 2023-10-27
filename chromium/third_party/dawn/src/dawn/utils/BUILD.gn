@@ -27,6 +27,8 @@ static_library("utils") {
   ]
 
   sources = [
+    "BinarySemaphore.cpp",
+    "BinarySemaphore.h",
     "ComboRenderBundleEncoderDescriptor.cpp",
     "ComboRenderBundleEncoderDescriptor.h",
     "ComboRenderPipelineDescriptor.cpp",
@@ -72,6 +74,12 @@ static_library("utils") {
       "ObjCUtils.mm",
     ]
     frameworks += [ "QuartzCore.framework" ]
+
+    # If a "build with ARC" config is present, remove it.
+    if (filter_include(configs, [ "//build/config/compiler:enable_arc" ]) !=
+        []) {
+      configs -= [ "//build/config/compiler:enable_arc" ]
+    }
   } else {
     sources += [ "PosixTimer.cpp" ]
   }

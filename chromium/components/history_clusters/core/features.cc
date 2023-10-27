@@ -97,10 +97,6 @@ BASE_FEATURE(kJourneysNamedNewTabGroups,
              "JourneysNamedNewTabGroups",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kUseUrlForDisplayCache,
-             "HistoryClustersUrlForDisplayCache",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
 BASE_FEATURE(kJourneysZeroStateFiltering,
              "JourneysZeroStateFiltering",
              base::FEATURE_DISABLED_BY_DEFAULT);
@@ -117,6 +113,6 @@ const base::FeatureParam<bool> kSidePanelJourneysOpensFromOmnibox{
 
 BASE_FEATURE(kRenameJourneys,
              "RenameJourneys",
-             enabled_by_default_desktop_only);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 }  // namespace history_clusters

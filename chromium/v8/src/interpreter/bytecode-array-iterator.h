@@ -139,7 +139,7 @@ class V8_EXPORT_PRIVATE BytecodeArrayIterator {
   template <typename IsolateT>
   Handle<Object> GetConstantAtIndex(int offset, IsolateT* isolate) const;
   bool IsConstantAtIndexSmi(int offset) const;
-  Smi GetConstantAtIndexAsSmi(int offset) const;
+  Tagged<Smi> GetConstantAtIndexAsSmi(int offset) const;
   template <typename IsolateT>
   Handle<Object> GetConstantForIndexOperand(int operand_index,
                                             IsolateT* isolate) const;
@@ -163,8 +163,7 @@ class V8_EXPORT_PRIVATE BytecodeArrayIterator {
 
   std::ostream& PrintTo(std::ostream& os) const;
 
-  static void UpdatePointersCallback(LocalIsolate*, GCType, GCCallbackFlags,
-                                     void* iterator) {
+  static void UpdatePointersCallback(void* iterator) {
     reinterpret_cast<BytecodeArrayIterator*>(iterator)->UpdatePointers();
   }
 

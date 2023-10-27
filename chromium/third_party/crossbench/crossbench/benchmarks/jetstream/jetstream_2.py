@@ -8,19 +8,20 @@ import abc
 import json
 import logging
 import pathlib
+import datetime as dt
 from collections import defaultdict
-from typing import TYPE_CHECKING, Any, Dict, Final, List, Tuple, Type
+from typing import TYPE_CHECKING, Any, Dict, List, Tuple, Type
 
-from crossbench import helper
-from crossbench.benchmarks.benchmark import PressBenchmark
-from crossbench.probes import helper as probes_helper
+from crossbench.benchmarks import PressBenchmark
+from crossbench.probes import metric as cb_metric
 from crossbench.probes.json import JsonResultProbe
 from crossbench.probes.results import ProbeResult, ProbeResultDict
-from crossbench.stories import PressBenchmarkStory
+from crossbench.stories.press_benchmark import PressBenchmarkStory
 
 if TYPE_CHECKING:
-  from crossbench.runner import (Actions, BrowsersRunGroup, Run,
-                                 StoriesRunGroup)
+  from crossbench.runner.run import Run
+  from crossbench.runner.actions import Actions
+  from crossbench.runner.groups import (StoriesRunGroup, BrowsersRunGroup)
 
 
 class JetStream2Probe(JsonResultProbe, metaclass=abc.ABCMeta):
@@ -28,9 +29,9 @@ class JetStream2Probe(JsonResultProbe, metaclass=abc.ABCMeta):
   JetStream2-specific Probe.
   Extracts all JetStream2 times and scores.
   """
-  IS_GENERAL_PURPOSE: Final[bool] = False
-  FLATTEN: Final[bool] = False
-  JS: Final[str] = """
+  IS_GENERAL_PURPOSE: bool = False
+  FLATTEN: bool = False
+  JS: str = """
   let results = Object.create(null);
   for (let benchmark of JetStream.benchmarks) {
     const data = { score: benchmark.score };
@@ -67,11 +68,11 @@ class JetStream2Probe(JsonResultProbe, metaclass=abc.ABCMeta):
         accumulated_metrics[metric].append(value)
     total: Dict[str, float] = {}
     for metric, values in accumulated_metrics.items():
-      total[metric] = probes_helper.geomean(values)
+      total[metric] = cb_metric.geomean(values)
     return total
 
   def merge_stories(self, group: StoriesRunGroup) -> ProbeResult:
-    merged = probes_helper.ValuesMerger.merge_json_list(
+    merged = cb_metric.MetricsMerger.merge_json_list(
         story_group.results[self].json
         for story_group in group.repetitions_groups)
     return self.write_group_result(group, merged, write_csv=True)
@@ -94,8 +95,7 @@ class JetStream2Probe(JsonResultProbe, metaclass=abc.ABCMeta):
     logging.info("-" * 80)
     logging.critical("JetStream results:")
     if not single_result:
-      relative_path = result_dict[self].csv.relative_to(pathlib.Path.cwd())
-      logging.critical("  %s", relative_path)
+      logging.critical("  %s", result_dict[self].csv)
     logging.info("- " * 40)
 
     with results_json.open(encoding="utf-8") as f:
@@ -107,22 +107,24 @@ class JetStream2Probe(JsonResultProbe, metaclass=abc.ABCMeta):
 
   def _extract_result_metrics_table(self, metrics: Dict[str, Any],
                                     table: Dict[str, List[str]]) -> None:
-    for metric_key, metric in metrics.items():
+    for metric_key, metric_value in metrics.items():
       parts = metric_key.split("/")
       if len(parts) != 2 or parts[0] == "Total" or parts[1] != "score":
         continue
       table[metric_key].append(
-          helper.format_metric(metric["average"], metric["stddev"]))
+          cb_metric.format_metric(metric_value["average"],
+                                  metric_value["stddev"]))
       # Separate runs don't produce a score
     if "Total/score" in metrics:
-      metric = metrics["Total/score"]
+      metric_value = metrics["Total/score"]
       table["Score"].append(
-          helper.format_metric(metric["average"], metric["stddev"]))
+          cb_metric.format_metric(metric_value["average"],
+                                  metric_value["stddev"]))
 
 
 class JetStream2Story(PressBenchmarkStory, metaclass=abc.ABCMeta):
-  URL_LOCAL: Final[str] = "http://localhost:8000/"
-  SUBSTORIES: Final[Tuple[str, ...]] = (
+  URL_LOCAL: str = "http://localhost:8000/"
+  SUBSTORIES: Tuple[str, ...] = (
       "WSL",
       "UniPoker",
       "uglify-js-wtb",
@@ -190,12 +192,12 @@ class JetStream2Story(PressBenchmarkStory, metaclass=abc.ABCMeta):
   )
 
   @property
-  def substory_duration(self) -> float:
-    return 2
+  def substory_duration(self) -> dt.timedelta:
+    return dt.timedelta(seconds=2)
 
-  def run(self, run: Run) -> None:
+  def setup(self, run: Run) -> None:
     with run.actions("Setup") as actions:
-      actions.navigate_to(self._url)
+      actions.show_url(self._url)
       if self._substories != self.SUBSTORIES:
         actions.wait_js_condition(("return JetStream && JetStream.benchmarks "
                                    "&& JetStream.benchmarks.length > 0;"), 0.1,
@@ -210,7 +212,9 @@ class JetStream2Story(PressBenchmarkStory, metaclass=abc.ABCMeta):
       actions.wait_js_condition(
           """
         return document.querySelectorAll("#results>.benchmark").length > 0;
-      """, 1, 30 + self.duration)
+      """, 1, self.duration + dt.timedelta(seconds=30))
+
+  def run(self, run: Run) -> None:
     with run.actions("Running") as actions:
       actions.js("JetStream.start()")
       actions.wait(self.fast_duration)
@@ -225,5 +229,16 @@ class JetStream2Story(PressBenchmarkStory, metaclass=abc.ABCMeta):
 ProbeClsTupleT = Tuple[Type[JetStream2Probe], ...]
 
 
-class JetStream2Benchmark(PressBenchmark, metaclass=abc.ABCMeta):
+class JetStreamBenchmark(PressBenchmark, metaclass=abc.ABCMeta):
+
+  @classmethod
+  def short_base_name(cls) -> str:
+    return "js"
+
+  @classmethod
+  def base_name(cls) -> str:
+    return "jetstream"
+
+
+class JetStream2Benchmark(JetStreamBenchmark):
   pass

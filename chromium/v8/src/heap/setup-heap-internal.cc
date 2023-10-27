@@ -61,10 +61,6 @@ namespace internal {
 
 namespace {
 
-// TODO(jgruber): Toggle this and remove the constant once RO allocation of
-// SFIs is possible.
-constexpr bool kSharedFunctionInfosInReadOnlySpace = false;
-
 Handle<SharedFunctionInfo> CreateSharedFunctionInfo(
     Isolate* isolate, Builtin builtin, int len,
     FunctionKind kind = FunctionKind::kNormalFunction) {
@@ -231,7 +227,7 @@ bool Heap::CreateMutableHeapObjects() {
                  message_object)
     ALLOCATE_MAP(JS_EXTERNAL_OBJECT_TYPE, JSExternalObject::kHeaderSize,
                  external)
-    external_map().set_is_extensible(false);
+    external_map()->set_is_extensible(false);
   }
 #undef ALLOCATE_MAP
 
@@ -260,16 +256,16 @@ AllocationResult Heap::AllocateMap(AllocationType allocation_type,
                                    ElementsKind elements_kind,
                                    int inobject_properties) {
   static_assert(LAST_JS_OBJECT_TYPE == LAST_TYPE);
-  HeapObject result;
+  Tagged<HeapObject> result;
   DCHECK_EQ(allocation_type, IsMutableMap(instance_type, elements_kind)
                                  ? AllocationType::kMap
                                  : AllocationType::kReadOnly);
   AllocationResult allocation = AllocateRaw(Map::kSize, allocation_type);
   if (!allocation.To(&result)) return allocation;
 
-  result.set_map_after_allocation(ReadOnlyRoots(this).meta_map(),
-                                  SKIP_WRITE_BARRIER);
-  Map map = isolate()->factory()->InitializeMap(
+  result->set_map_after_allocation(ReadOnlyRoots(this).meta_map(),
+                                   SKIP_WRITE_BARRIER);
+  Tagged<Map> map = isolate()->factory()->InitializeMap(
       Map::cast(result), instance_type, instance_size, elements_kind,
       inobject_properties, this);
 
@@ -278,71 +274,71 @@ AllocationResult Heap::AllocateMap(AllocationType allocation_type,
 
 AllocationResult Heap::AllocatePartialMap(InstanceType instance_type,
                                           int instance_size) {
-  Object result;
+  Tagged<Object> result;
   AllocationResult allocation =
       AllocateRaw(Map::kSize, AllocationType::kReadOnly);
   if (!allocation.To(&result)) return allocation;
   // Map::cast cannot be used due to uninitialized map field.
-  Map map = Map::unchecked_cast(result);
-  map.set_map_after_allocation(
+  Tagged<Map> map = Map::unchecked_cast(result);
+  map->set_map_after_allocation(
       Map::unchecked_cast(isolate()->root(RootIndex::kMetaMap)),
       SKIP_WRITE_BARRIER);
-  map.set_instance_type(instance_type);
-  map.set_instance_size(instance_size);
-  map.set_visitor_id(Map::GetVisitorId(map));
-  map.set_inobject_properties_start_or_constructor_function_index(0);
-  DCHECK(!map.IsJSObjectMap());
-  map.set_prototype_validity_cell(Smi::FromInt(Map::kPrototypeChainValid),
-                                  kRelaxedStore);
-  map.SetInObjectUnusedPropertyFields(0);
-  map.set_bit_field(0);
-  map.set_bit_field2(0);
+  map->set_instance_type(instance_type);
+  map->set_instance_size(instance_size);
+  map->set_visitor_id(Map::GetVisitorId(map));
+  map->set_inobject_properties_start_or_constructor_function_index(0);
+  DCHECK(!IsJSObjectMap(map));
+  map->set_prototype_validity_cell(Smi::FromInt(Map::kPrototypeChainValid),
+                                   kRelaxedStore);
+  map->SetInObjectUnusedPropertyFields(0);
+  map->set_bit_field(0);
+  map->set_bit_field2(0);
   int bit_field3 =
       Map::Bits3::EnumLengthBits::encode(kInvalidEnumCacheSentinel) |
       Map::Bits3::OwnsDescriptorsBit::encode(true) |
       Map::Bits3::ConstructionCounterBits::encode(Map::kNoSlackTracking);
-  map.set_bit_field3(bit_field3);
-  DCHECK(!map.is_in_retained_map_list());
-  map.clear_padding();
-  map.set_elements_kind(TERMINAL_FAST_ELEMENTS_KIND);
+  map->set_bit_field3(bit_field3);
+  DCHECK(!map->is_in_retained_map_list());
+  map->clear_padding();
+  map->set_elements_kind(TERMINAL_FAST_ELEMENTS_KIND);
   return AllocationResult::FromObject(map);
 }
 
-void Heap::FinalizePartialMap(Map map) {
+void Heap::FinalizePartialMap(Tagged<Map> map) {
   ReadOnlyRoots roots(this);
-  map.set_dependent_code(DependentCode::empty_dependent_code(roots));
-  map.set_raw_transitions(MaybeObject::FromSmi(Smi::zero()));
-  map.SetInstanceDescriptors(isolate(), roots.empty_descriptor_array(), 0);
-  map.init_prototype_and_constructor_or_back_pointer(roots);
+  map->set_dependent_code(DependentCode::empty_dependent_code(roots));
+  map->set_raw_transitions(MaybeObject::FromSmi(Smi::zero()));
+  map->SetInstanceDescriptors(isolate(), roots.empty_descriptor_array(), 0);
+  map->init_prototype_and_constructor_or_back_pointer(roots);
 }
 
 AllocationResult Heap::Allocate(Handle<Map> map,
                                 AllocationType allocation_type) {
   DCHECK(map->instance_type() != MAP_TYPE);
   int size = map->instance_size();
-  HeapObject result;
+  Tagged<HeapObject> result;
   AllocationResult allocation = AllocateRaw(size, allocation_type);
   if (!allocation.To(&result)) return allocation;
   // New space objects are allocated white.
   WriteBarrierMode write_barrier_mode =
       allocation_type == AllocationType::kYoung ? SKIP_WRITE_BARRIER
                                                 : UPDATE_WRITE_BARRIER;
-  result.set_map_after_allocation(*map, write_barrier_mode);
+  result->set_map_after_allocation(*map, write_barrier_mode);
   return AllocationResult::FromObject(result);
 }
 
 bool Heap::CreateEarlyReadOnlyMaps() {
   // Setup maps which are used often, or used in CreateImportantReadOnlyObjects.
   ReadOnlyRoots roots(this);
-  HeapObject obj;
+  Tagged<HeapObject> obj;
   {
     AllocationResult allocation = AllocatePartialMap(MAP_TYPE, Map::kSize);
     if (!allocation.To(&obj)) return false;
   }
   // Map::cast cannot be used due to uninitialized map field.
-  Map new_meta_map = Map::unchecked_cast(obj);
+  Tagged<Map> new_meta_map = Map::unchecked_cast(obj);
   set_meta_map(new_meta_map);
-  new_meta_map.set_map_after_allocation(new_meta_map);
+  new_meta_map->set_map_after_allocation(new_meta_map);
 
 #define ALLOCATE_PARTIAL_MAP(instance_type, size, field_name)                \
   {                                                                          \
@@ -366,12 +362,12 @@ bool Heap::CreateEarlyReadOnlyMaps() {
 
     ALLOCATE_PARTIAL_MAP(ODDBALL_TYPE, Oddball::kSize, undefined);
     ALLOCATE_PARTIAL_MAP(ODDBALL_TYPE, Oddball::kSize, null);
-    ALLOCATE_PARTIAL_MAP(HOLE_TYPE, Hole::kSize, the_hole);
+    ALLOCATE_PARTIAL_MAP(HOLE_TYPE, Hole::kSize, hole);
 
     // Some struct maps which we need for later dependencies
     for (const StructInit& entry : kStructTable) {
       if (!is_important_struct(entry.type)) continue;
-      Map map;
+      Tagged<Map> map;
       if (!AllocatePartialMap(entry.type, entry.size).To(&map)) return false;
       roots_table()[entry.index] = map.ptr();
     }
@@ -382,8 +378,8 @@ bool Heap::CreateEarlyReadOnlyMaps() {
     AllocationResult alloc =
         AllocateRaw(FixedArray::SizeFor(0), AllocationType::kReadOnly);
     if (!alloc.To(&obj)) return false;
-    obj.set_map_after_allocation(roots.fixed_array_map(), SKIP_WRITE_BARRIER);
-    FixedArray::cast(obj).set_length(0);
+    obj->set_map_after_allocation(roots.fixed_array_map(), SKIP_WRITE_BARRIER);
+    FixedArray::cast(obj)->set_length(0);
   }
   set_empty_fixed_array(FixedArray::cast(obj));
 
@@ -391,9 +387,9 @@ bool Heap::CreateEarlyReadOnlyMaps() {
     AllocationResult alloc =
         AllocateRaw(WeakFixedArray::SizeFor(0), AllocationType::kReadOnly);
     if (!alloc.To(&obj)) return false;
-    obj.set_map_after_allocation(roots.weak_fixed_array_map(),
-                                 SKIP_WRITE_BARRIER);
-    WeakFixedArray::cast(obj).set_length(0);
+    obj->set_map_after_allocation(roots.weak_fixed_array_map(),
+                                  SKIP_WRITE_BARRIER);
+    WeakFixedArray::cast(obj)->set_length(0);
   }
   set_empty_weak_fixed_array(WeakFixedArray::cast(obj));
 
@@ -401,10 +397,10 @@ bool Heap::CreateEarlyReadOnlyMaps() {
     AllocationResult allocation = AllocateRaw(WeakArrayList::SizeForCapacity(0),
                                               AllocationType::kReadOnly);
     if (!allocation.To(&obj)) return false;
-    obj.set_map_after_allocation(roots.weak_array_list_map(),
-                                 SKIP_WRITE_BARRIER);
-    WeakArrayList::cast(obj).set_capacity(0);
-    WeakArrayList::cast(obj).set_length(0);
+    obj->set_map_after_allocation(roots.weak_array_list_map(),
+                                  SKIP_WRITE_BARRIER);
+    WeakArrayList::cast(obj)->set_capacity(0);
+    WeakArrayList::cast(obj)->set_length(0);
   }
   set_empty_weak_array_list(WeakArrayList::cast(obj));
 
@@ -413,20 +409,20 @@ bool Heap::CreateEarlyReadOnlyMaps() {
         Allocate(roots.null_map_handle(), AllocationType::kReadOnly);
     if (!allocation.To(&obj)) return false;
   }
-  set_null_value(Oddball::cast(obj));
-  Oddball::cast(obj).set_kind(Oddball::kNull);
+  set_null_value(Null::unchecked_cast(obj));
+  Oddball::cast(obj)->set_kind(Oddball::kNull);
 
   {
     AllocationResult allocation =
         Allocate(roots.undefined_map_handle(), AllocationType::kReadOnly);
     if (!allocation.To(&obj)) return false;
   }
-  set_undefined_value(Oddball::cast(obj));
-  Oddball::cast(obj).set_kind(Oddball::kUndefined);
+  set_undefined_value(Undefined::unchecked_cast(obj));
+  Oddball::cast(obj)->set_kind(Oddball::kUndefined);
   DCHECK(!InYoungGeneration(roots.undefined_value()));
   {
     AllocationResult allocation =
-        Allocate(roots.the_hole_map_handle(), AllocationType::kReadOnly);
+        Allocate(roots.hole_map_handle(), AllocationType::kReadOnly);
     if (!allocation.To(&obj)) return false;
   }
   set_the_hole_value(Hole::cast(obj));
@@ -441,18 +437,18 @@ bool Heap::CreateEarlyReadOnlyMaps() {
     if (!allocation.To(&obj)) return false;
   }
   set_empty_enum_cache(EnumCache::cast(obj));
-  EnumCache::cast(obj).set_keys(roots.empty_fixed_array());
-  EnumCache::cast(obj).set_indices(roots.empty_fixed_array());
+  EnumCache::cast(obj)->set_keys(roots.empty_fixed_array());
+  EnumCache::cast(obj)->set_indices(roots.empty_fixed_array());
 
   // Allocate the empty descriptor array.
   {
     int size = DescriptorArray::SizeFor(0);
     if (!AllocateRaw(size, AllocationType::kReadOnly).To(&obj)) return false;
-    obj.set_map_after_allocation(roots.descriptor_array_map(),
-                                 SKIP_WRITE_BARRIER);
-    DescriptorArray array = DescriptorArray::cast(obj);
-    array.Initialize(roots.empty_enum_cache(), roots.undefined_value(), 0, 0,
-                     DescriptorArrayMarkingState::kInitialGCState);
+    obj->set_map_after_allocation(roots.descriptor_array_map(),
+                                  SKIP_WRITE_BARRIER);
+    Tagged<DescriptorArray> array = DescriptorArray::cast(obj);
+    array->Initialize(roots.empty_enum_cache(), roots.undefined_value(), 0, 0,
+                      DescriptorArrayMarkingState::kInitialGCState);
   }
   set_empty_descriptor_array(DescriptorArray::cast(obj));
 
@@ -467,7 +463,7 @@ bool Heap::CreateEarlyReadOnlyMaps() {
   roots.undefined_map()->set_is_undetectable(true);
   FinalizePartialMap(roots.null_map());
   roots.null_map()->set_is_undetectable(true);
-  FinalizePartialMap(roots.the_hole_map());
+  FinalizePartialMap(roots.hole_map());
   for (const StructInit& entry : kStructTable) {
     if (!is_important_struct(entry.type)) continue;
     FinalizePartialMap(Map::cast(roots.object_at(entry.index)));
@@ -521,15 +517,15 @@ bool Heap::CreateEarlyReadOnlyMaps() {
                            Context::SYMBOL_FUNCTION_INDEX)
 
     for (const StringTypeInit& entry : kStringTypeTable) {
-      Map map;
+      Tagged<Map> map;
       if (!AllocateMap(AllocationType::kReadOnly, entry.type, entry.size)
                .To(&map)) {
         return false;
       }
-      map.SetConstructorFunctionIndex(Context::STRING_FUNCTION_INDEX);
+      map->SetConstructorFunctionIndex(Context::STRING_FUNCTION_INDEX);
       // Mark cons string maps as unstable, because their objects can change
       // maps during GC.
-      if (StringShape(entry.type).IsCons()) map.mark_unstable();
+      if (StringShape(entry.type).IsCons()) map->mark_unstable();
       roots_table()[entry.index] = map.ptr();
     }
 
@@ -550,12 +546,12 @@ bool Heap::CreateEarlyReadOnlyMaps() {
     ALLOCATE_MAP(CELL_TYPE, Cell::kSize, cell);
     {
       // The invalid_prototype_validity_cell is needed for JSObject maps.
-      Smi value = Smi::FromInt(Map::kPrototypeChainInvalid);
+      Tagged<Smi> value = Smi::FromInt(Map::kPrototypeChainInvalid);
       AllocationResult alloc =
           AllocateRaw(Cell::kSize, AllocationType::kReadOnly);
       if (!alloc.To(&obj)) return false;
-      obj.set_map_after_allocation(roots.cell_map(), SKIP_WRITE_BARRIER);
-      Cell::cast(obj).set_value(value);
+      obj->set_map_after_allocation(roots.cell_map(), SKIP_WRITE_BARRIER);
+      Cell::cast(obj)->set_value(value);
       set_invalid_prototype_validity_cell(Cell::cast(obj));
     }
 
@@ -604,7 +600,7 @@ bool Heap::CreateLateReadOnlyNonJSReceiverMaps() {
     // Setup the struct maps.
     for (const StructInit& entry : kStructTable) {
       if (is_important_struct(entry.type)) continue;
-      Map map;
+      Tagged<Map> map;
       if (!AllocateMap(AllocationType::kReadOnly, entry.type, entry.size)
                .To(&map))
         return false;
@@ -671,6 +667,7 @@ bool Heap::CreateLateReadOnlyNonJSReceiverMaps() {
     IF_WASM(ALLOCATE_MAP, WASM_NULL_TYPE, kVariableSizeSentinel, wasm_null);
 
     ALLOCATE_MAP(WEAK_CELL_TYPE, WeakCell::kSize, weak_cell)
+    ALLOCATE_VARSIZE_MAP(EXTERNAL_POINTER_ARRAY_TYPE, external_pointer_array)
   }
 
   return true;
@@ -696,7 +693,7 @@ bool Heap::CreateLateReadOnlyJSReceiverMaps() {
 
   // Shared space object maps are immutable and can be in RO space.
   {
-    Map shared_array_map;
+    Tagged<Map> shared_array_map;
     if (!AllocateMap(AllocationType::kReadOnly, JS_SHARED_ARRAY_TYPE,
                      JSSharedArray::kSize, SHARED_ARRAY_ELEMENTS,
                      JSSharedArray::kInObjectFieldCount)
@@ -712,7 +709,7 @@ bool Heap::CreateLateReadOnlyJSReceiverMaps() {
         ALL_ATTRIBUTES_MASK, PropertyConstness::kConst, Representation::Smi(),
         MaybeObjectHandle(FieldType::Any(isolate())));
     descriptors->Set(InternalIndex(0), &length_descriptor);
-    shared_array_map.InitializeDescriptors(isolate(), *descriptors);
+    shared_array_map->InitializeDescriptors(isolate(), *descriptors);
     set_js_shared_array_map(shared_array_map);
   }
 
@@ -740,7 +737,7 @@ void Heap::StaticRootsEnsureAllocatedSize(Handle<HeapObject> obj,
     CHECK_LT(obj_size, required);
     int filler_size = required - obj_size;
 
-    HeapObject filler =
+    Tagged<HeapObject> filler =
         allocator()->AllocateRawWith<HeapAllocator::kRetryOrFail>(
             filler_size, AllocationType::kReadOnly, AllocationOrigin::kRuntime,
             AllocationAlignment::kTaggedAligned);
@@ -748,161 +745,13 @@ void Heap::StaticRootsEnsureAllocatedSize(Handle<HeapObject> obj,
                          ClearFreedMemoryMode::kClearFreedMemory);
 
     CHECK_EQ(filler.address(), obj->address() + obj_size);
-    CHECK_EQ(filler.address() + filler.Size(), obj->address() + required);
-  }
-}
-
-void Heap::CreateImportantSharedFunctionInfos() {
-  // Create internal SharedFunctionInfos.
-
-  auto CreateSharedFunctionInfoImpl =
-      [&](Isolate* isolate, Builtin builtin, int len,
-          FunctionKind kind = FunctionKind::kNormalFunction) {
-        Handle<SharedFunctionInfo> sfi =
-            CreateSharedFunctionInfo(isolate, builtin, len, kind);
-        if (kSharedFunctionInfosInReadOnlySpace) {
-          StaticRootsEnsureAllocatedSize(sfi, kStaticRootsSFISize);
-        }
-        return sfi;
-      };
-
-  // Async functions:
-  {
-    Handle<SharedFunctionInfo> info = CreateSharedFunctionInfoImpl(
-        isolate(), Builtin::kAsyncFunctionAwaitRejectClosure, 1);
-    set_async_function_await_reject_shared_fun(*info);
-
-    info = CreateSharedFunctionInfoImpl(
-        isolate(), Builtin::kAsyncFunctionAwaitResolveClosure, 1);
-    set_async_function_await_resolve_shared_fun(*info);
-  }
-
-  // Async generators:
-  {
-    Handle<SharedFunctionInfo> info = CreateSharedFunctionInfoImpl(
-        isolate(), Builtin::kAsyncGeneratorAwaitResolveClosure, 1);
-    set_async_generator_await_resolve_shared_fun(*info);
-
-    info = CreateSharedFunctionInfoImpl(
-        isolate(), Builtin::kAsyncGeneratorAwaitRejectClosure, 1);
-    set_async_generator_await_reject_shared_fun(*info);
-
-    info = CreateSharedFunctionInfoImpl(
-        isolate(), Builtin::kAsyncGeneratorYieldWithAwaitResolveClosure, 1);
-    set_async_generator_yield_with_await_resolve_shared_fun(*info);
-
-    info = CreateSharedFunctionInfoImpl(
-        isolate(), Builtin::kAsyncGeneratorReturnResolveClosure, 1);
-    set_async_generator_return_resolve_shared_fun(*info);
-
-    info = CreateSharedFunctionInfoImpl(
-        isolate(), Builtin::kAsyncGeneratorReturnClosedResolveClosure, 1);
-    set_async_generator_return_closed_resolve_shared_fun(*info);
-
-    info = CreateSharedFunctionInfoImpl(
-        isolate(), Builtin::kAsyncGeneratorReturnClosedRejectClosure, 1);
-    set_async_generator_return_closed_reject_shared_fun(*info);
-  }
-
-  // AsyncIterator:
-  {
-    Handle<SharedFunctionInfo> info = CreateSharedFunctionInfoImpl(
-        isolate_, Builtin::kAsyncIteratorValueUnwrap, 1);
-    set_async_iterator_value_unwrap_shared_fun(*info);
-  }
-
-  // Promises:
-  {
-    Handle<SharedFunctionInfo> info = CreateSharedFunctionInfoImpl(
-        isolate_, Builtin::kPromiseCapabilityDefaultResolve, 1,
-        FunctionKind::kConciseMethod);
-    info->set_native(true);
-    info->set_function_map_index(
-        Context::STRICT_FUNCTION_WITHOUT_PROTOTYPE_MAP_INDEX);
-    set_promise_capability_default_resolve_shared_fun(*info);
-
-    info = CreateSharedFunctionInfoImpl(
-        isolate_, Builtin::kPromiseCapabilityDefaultReject, 1,
-        FunctionKind::kConciseMethod);
-    info->set_native(true);
-    info->set_function_map_index(
-        Context::STRICT_FUNCTION_WITHOUT_PROTOTYPE_MAP_INDEX);
-    set_promise_capability_default_reject_shared_fun(*info);
-
-    info = CreateSharedFunctionInfoImpl(
-        isolate_, Builtin::kPromiseGetCapabilitiesExecutor, 2);
-    set_promise_get_capabilities_executor_shared_fun(*info);
-  }
-
-  // Promises / finally:
-  {
-    Handle<SharedFunctionInfo> info = CreateSharedFunctionInfoImpl(
-        isolate(), Builtin::kPromiseThenFinally, 1);
-    info->set_native(true);
-    set_promise_then_finally_shared_fun(*info);
-
-    info = CreateSharedFunctionInfoImpl(isolate(),
-                                        Builtin::kPromiseCatchFinally, 1);
-    info->set_native(true);
-    set_promise_catch_finally_shared_fun(*info);
-
-    info = CreateSharedFunctionInfoImpl(isolate(),
-                                        Builtin::kPromiseValueThunkFinally, 0);
-    set_promise_value_thunk_finally_shared_fun(*info);
-
-    info = CreateSharedFunctionInfoImpl(isolate(),
-                                        Builtin::kPromiseThrowerFinally, 0);
-    set_promise_thrower_finally_shared_fun(*info);
-  }
-
-  // Promise combinators:
-  {
-    Handle<SharedFunctionInfo> info = CreateSharedFunctionInfoImpl(
-        isolate_, Builtin::kPromiseAllResolveElementClosure, 1);
-    set_promise_all_resolve_element_shared_fun(*info);
-
-    info = CreateSharedFunctionInfoImpl(
-        isolate_, Builtin::kPromiseAllSettledResolveElementClosure, 1);
-    set_promise_all_settled_resolve_element_shared_fun(*info);
-
-    info = CreateSharedFunctionInfoImpl(
-        isolate_, Builtin::kPromiseAllSettledRejectElementClosure, 1);
-    set_promise_all_settled_reject_element_shared_fun(*info);
-
-    info = CreateSharedFunctionInfoImpl(
-        isolate_, Builtin::kPromiseAnyRejectElementClosure, 1);
-    set_promise_any_reject_element_shared_fun(*info);
-  }
-
-  // ProxyRevoke:
-  {
-    Handle<SharedFunctionInfo> info =
-        CreateSharedFunctionInfoImpl(isolate_, Builtin::kProxyRevoke, 0);
-    set_proxy_revoke_shared_fun(*info);
-  }
-
-  // ShadowRealm:
-  {
-    Handle<SharedFunctionInfo> info = CreateSharedFunctionInfoImpl(
-        isolate_, Builtin::kShadowRealmImportValueFulfilled, 0);
-    set_shadow_realm_import_value_fulfilled_sfi(*info);
-  }
-
-  // SourceTextModule:
-  {
-    Handle<SharedFunctionInfo> info = CreateSharedFunctionInfoImpl(
-        isolate_, Builtin::kCallAsyncModuleFulfilled, 0);
-    set_source_text_module_execute_async_module_fulfilled_sfi(*info);
-
-    info = CreateSharedFunctionInfoImpl(isolate_,
-                                        Builtin::kCallAsyncModuleRejected, 0);
-    set_source_text_module_execute_async_module_rejected_sfi(*info);
+    CHECK_EQ(filler.address() + filler->Size(), obj->address() + required);
   }
 }
 
 bool Heap::CreateImportantReadOnlyObjects() {
   // Allocate some objects early to get addresses to fit as arm64 immediates.
-  HeapObject obj;
+  Tagged<HeapObject> obj;
   ReadOnlyRoots roots(isolate());
 
   // Bools
@@ -913,16 +762,16 @@ bool Heap::CreateImportantReadOnlyObjects() {
         Allocate(roots.boolean_map_handle(), AllocationType::kReadOnly);
     if (!allocation.To(&obj)) return false;
   }
-  set_true_value(Oddball::cast(obj));
-  Oddball::cast(obj).set_kind(Oddball::kTrue);
+  set_true_value(True::unchecked_cast(obj));
+  Oddball::cast(obj)->set_kind(Oddball::kTrue);
 
   {
     AllocationResult allocation =
         Allocate(roots.boolean_map_handle(), AllocationType::kReadOnly);
     if (!allocation.To(&obj)) return false;
   }
-  set_false_value(Oddball::cast(obj));
-  Oddball::cast(obj).set_kind(Oddball::kFalse);
+  set_false_value(False::unchecked_cast(obj));
+  Oddball::cast(obj)->set_kind(Oddball::kFalse);
 
   // Hash seed for strings
 
@@ -960,18 +809,11 @@ bool Heap::CreateImportantReadOnlyObjects() {
           .ToHandleChecked();
   set_empty_ordered_property_dictionary(*empty_ordered_property_dictionary);
 
-  // Allocate the empty SwissNameDictionary
-  Handle<SwissNameDictionary> empty_swiss_property_dictionary =
-      factory->CreateCanonicalEmptySwissNameDictionary();
-  set_empty_swiss_property_dictionary(*empty_swiss_property_dictionary);
-  StaticRootsEnsureAllocatedSize(empty_swiss_property_dictionary,
-                                 8 * kTaggedSize);
-
   {
     if (!AllocateRaw(ByteArray::SizeFor(0), AllocationType::kReadOnly).To(&obj))
       return false;
-    obj.set_map_after_allocation(roots.byte_array_map(), SKIP_WRITE_BARRIER);
-    ByteArray::cast(obj).set_length(0);
+    obj->set_map_after_allocation(roots.byte_array_map(), SKIP_WRITE_BARRIER);
+    ByteArray::cast(obj)->set_length(0);
     set_empty_byte_array(ByteArray::cast(obj));
   }
 
@@ -980,16 +822,16 @@ bool Heap::CreateImportantReadOnlyObjects() {
         AllocateRaw(ScopeInfo::SizeFor(ScopeInfo::kVariablePartIndex),
                     AllocationType::kReadOnly);
     if (!alloc.To(&obj)) return false;
-    obj.set_map_after_allocation(roots.scope_info_map(), SKIP_WRITE_BARRIER);
+    obj->set_map_after_allocation(roots.scope_info_map(), SKIP_WRITE_BARRIER);
     int flags = ScopeInfo::IsEmptyBit::encode(true);
     DCHECK_EQ(ScopeInfo::LanguageModeBit::decode(flags), LanguageMode::kSloppy);
     DCHECK_EQ(ScopeInfo::ReceiverVariableBits::decode(flags),
               VariableAllocationInfo::NONE);
     DCHECK_EQ(ScopeInfo::FunctionVariableBits::decode(flags),
               VariableAllocationInfo::NONE);
-    ScopeInfo::cast(obj).set_flags(flags);
-    ScopeInfo::cast(obj).set_context_local_count(0);
-    ScopeInfo::cast(obj).set_parameter_count(0);
+    ScopeInfo::cast(obj)->set_flags(flags);
+    ScopeInfo::cast(obj)->set_context_local_count(0);
+    ScopeInfo::cast(obj)->set_parameter_count(0);
   }
   set_empty_scope_info(ScopeInfo::cast(obj));
 
@@ -998,9 +840,9 @@ bool Heap::CreateImportantReadOnlyObjects() {
              .To(&obj)) {
       return false;
     }
-    obj.set_map_after_allocation(roots.property_array_map(),
-                                 SKIP_WRITE_BARRIER);
-    PropertyArray::cast(obj).initialize_length(0);
+    obj->set_map_after_allocation(roots.property_array_map(),
+                                  SKIP_WRITE_BARRIER);
+    PropertyArray::cast(obj)->initialize_length(0);
     set_empty_property_array(PropertyArray::cast(obj));
   }
 
@@ -1008,7 +850,7 @@ bool Heap::CreateImportantReadOnlyObjects() {
   // The -0 value must be set before NewNumber works.
   set_minus_zero_value(
       *factory->NewHeapNumber<AllocationType::kReadOnly>(-0.0));
-  DCHECK(std::signbit(roots.minus_zero_value()->Number()));
+  DCHECK(std::signbit(Object::Number(*roots.minus_zero_value())));
 
   set_nan_value(*factory->NewHeapNumber<AllocationType::kReadOnly>(
       std::numeric_limits<double>::quiet_NaN()));
@@ -1034,17 +876,17 @@ bool Heap::CreateReadOnlyObjects() {
   HandleScope initial_objects_handle_scope(isolate());
   Factory* factory = isolate()->factory();
   ReadOnlyRoots roots(this);
-  HeapObject obj;
+  Tagged<HeapObject> obj;
 
   // Empty elements
   {
     AllocationResult alloc = AllocateRaw(
         ArrayList::SizeFor(ArrayList::kFirstIndex), AllocationType::kReadOnly);
     if (!alloc.To(&obj)) return false;
-    obj.set_map_after_allocation(roots.array_list_map(), SKIP_WRITE_BARRIER);
+    obj->set_map_after_allocation(roots.array_list_map(), SKIP_WRITE_BARRIER);
     // Unchecked to skip failing checks since required roots are uninitialized.
-    ArrayList::unchecked_cast(obj).set_length(ArrayList::kFirstIndex);
-    ArrayList::unchecked_cast(obj).SetLength(0);
+    ArrayList::unchecked_cast(obj)->set_length(ArrayList::kFirstIndex);
+    ArrayList::unchecked_cast(obj)->SetLength(0);
   }
   set_empty_array_list(ArrayList::unchecked_cast(obj));
 
@@ -1053,12 +895,12 @@ bool Heap::CreateReadOnlyObjects() {
     AllocationResult alloc =
         AllocateRaw(FixedArray::SizeFor(1), AllocationType::kReadOnly);
     if (!alloc.To(&obj)) return false;
-    obj.set_map_after_allocation(roots.object_boilerplate_description_map(),
-                                 SKIP_WRITE_BARRIER);
+    obj->set_map_after_allocation(roots.object_boilerplate_description_map(),
+                                  SKIP_WRITE_BARRIER);
 
-    FixedArray::cast(obj).set_length(1);
-    FixedArray::cast(obj).set(ObjectBoilerplateDescription::kLiteralTypeOffset,
-                              Smi::zero());
+    FixedArray::cast(obj)->set_length(1);
+    FixedArray::cast(obj)->set(ObjectBoilerplateDescription::kLiteralTypeOffset,
+                               Smi::zero());
   }
   set_empty_object_boilerplate_description(
       ObjectBoilerplateDescription::cast(obj));
@@ -1070,9 +912,9 @@ bool Heap::CreateReadOnlyObjects() {
                  AllocationType::kReadOnly);
     if (!alloc.To(&obj)) return false;
 
-    ArrayBoilerplateDescription::cast(obj).set_constant_elements(
+    ArrayBoilerplateDescription::cast(obj)->set_constant_elements(
         roots.empty_fixed_array());
-    ArrayBoilerplateDescription::cast(obj).set_elements_kind(
+    ArrayBoilerplateDescription::cast(obj)->set_elements_kind(
         ElementsKind::PACKED_SMI_ELEMENTS);
   }
   set_empty_array_boilerplate_description(
@@ -1084,13 +926,20 @@ bool Heap::CreateReadOnlyObjects() {
              .To(&obj)) {
       return false;
     }
-    obj.set_map_after_allocation(roots.closure_feedback_cell_array_map(),
-                                 SKIP_WRITE_BARRIER);
-    FixedArray::cast(obj).set_length(0);
+    obj->set_map_after_allocation(roots.closure_feedback_cell_array_map(),
+                                  SKIP_WRITE_BARRIER);
+    FixedArray::cast(obj)->set_length(0);
     set_empty_closure_feedback_cell_array(ClosureFeedbackCellArray::cast(obj));
   }
 
   DCHECK(!InYoungGeneration(roots.empty_fixed_array()));
+
+  // Allocate the empty SwissNameDictionary
+  Handle<SwissNameDictionary> empty_swiss_property_dictionary =
+      factory->CreateCanonicalEmptySwissNameDictionary();
+  set_empty_swiss_property_dictionary(*empty_swiss_property_dictionary);
+  StaticRootsEnsureAllocatedSize(empty_swiss_property_dictionary,
+                                 8 * kTaggedSize);
 
   roots.bigint_map()->SetConstructorFunctionIndex(
       Context::BIGINT_FUNCTION_INDEX);
@@ -1104,7 +953,7 @@ bool Heap::CreateReadOnlyObjects() {
     Handle<String> str =
         factory->InternalizeString(base::Vector<const uint8_t>(&code, 1));
     DCHECK(ReadOnlyHeap::Contains(*str));
-    single_character_string_table().set(i, *str);
+    single_character_string_table()->set(i, *str);
   }
 
   for (const ConstantStringInit& entry : kNotImportantConstantStringTable) {
@@ -1132,7 +981,9 @@ bool Heap::CreateReadOnlyObjects() {
 
   // Initialize the_hole_value.
   Hole::Initialize(isolate(), factory->the_hole_value(),
-                   factory->hole_nan_value(), Hole::kDefaultHole);
+                   factory->hole_nan_value());
+
+  set_property_cell_hole_value(*factory->NewHole());
 
   set_uninitialized_value(
       *factory->NewOddball(factory->uninitialized_map(), "uninitialized",
@@ -1278,8 +1129,16 @@ bool Heap::CreateReadOnlyObjects() {
       ScopeInfo::CreateForShadowRealmNativeContext(isolate());
   set_shadow_realm_scope_info(*shadow_realm_scope_info);
 
-  if (kSharedFunctionInfosInReadOnlySpace) {
-    CreateImportantSharedFunctionInfos();
+  // EmptyExternalPointerArray:
+  {
+    if (!AllocateRaw(ExternalPointerArray::SizeFor(0),
+                     AllocationType::kReadOnly)
+             .To(&obj))
+      return false;
+    obj->set_map_after_allocation(roots.external_pointer_array_map(),
+                                  SKIP_WRITE_BARRIER);
+    ExternalPointerArray::cast(obj)->set_length(0);
+    set_empty_external_pointer_array(ExternalPointerArray::cast(obj));
   }
 
   // Initialize the wasm null_value.
@@ -1313,7 +1172,7 @@ bool Heap::CreateReadOnlyObjects() {
     // TODO(v8:7748) Depending on where we end up this might actually not hold,
     // in which case we would need to use a one or two-word filler.
     CHECK(filler_size > 2 * kTaggedSize);
-    HeapObject filler =
+    Tagged<HeapObject> filler =
         allocator()->AllocateRawWith<HeapAllocator::kRetryOrFail>(
             filler_size, AllocationType::kReadOnly, AllocationOrigin::kRuntime,
             AllocationAlignment::kTaggedAligned);
@@ -1327,12 +1186,12 @@ bool Heap::CreateReadOnlyObjects() {
 
   // Finally, allocate the wasm-null object.
   {
-    HeapObject obj;
+    Tagged<HeapObject> obj;
     CHECK(AllocateRaw(WasmNull::kSize, AllocationType::kReadOnly).To(&obj));
     // No need to initialize the payload since it's either empty or unmapped.
     CHECK_IMPLIES(!(V8_STATIC_ROOTS_BOOL || V8_STATIC_ROOTS_GENERATION_BOOL),
                   WasmNull::kSize == sizeof(Tagged_t));
-    obj.set_map_after_allocation(roots.wasm_null_map(), SKIP_WRITE_BARRIER);
+    obj->set_map_after_allocation(roots.wasm_null_map(), SKIP_WRITE_BARRIER);
     set_wasm_null(WasmNull::cast(obj));
     if (V8_STATIC_ROOTS_BOOL || V8_STATIC_ROOTS_GENERATION_BOOL) {
       CHECK_EQ(read_only_space_->top() % kLargestPossibleOSPageSize, 0);
@@ -1344,10 +1203,8 @@ bool Heap::CreateReadOnlyObjects() {
 }
 
 void Heap::CreateMutableApiObjects() {
-  Isolate* isolate = this->isolate();
-  HandleScope scope(isolate);
-
-  set_message_listeners(*TemplateList::New(isolate, 2));
+  HandleScope scope(isolate());
+  set_message_listeners(*ArrayList::New(isolate(), 2));
 }
 
 void Heap::CreateReadOnlyApiObjects() {
@@ -1430,6 +1287,7 @@ void Heap::CreateInitialMutableObjects() {
   set_map_iterator_protector(*factory->NewProtector());
   set_no_elements_protector(*factory->NewProtector());
   set_mega_dom_protector(*factory->NewProtector());
+  set_no_profiling_protector(*factory->NewProtector());
   set_promise_hook_protector(*factory->NewProtector());
   set_promise_resolve_protector(*factory->NewProtector());
   set_promise_species_protector(*factory->NewProtector());
@@ -1457,13 +1315,8 @@ void Heap::CreateInitialMutableObjects() {
   // Initialize compilation cache.
   isolate_->compilation_cache()->Clear();
 
-  if (!kSharedFunctionInfosInReadOnlySpace) {
-    CreateImportantSharedFunctionInfos();
-  }
-
   // Error.stack accessor callbacks:
   {
-    // TODO(v8:5962): create these FunctionTemplateInfos in RO space.
     Handle<FunctionTemplateInfo> function_template;
     function_template = ApiNatives::CreateAccessorFunctionTemplateInfo(
         isolate_, Accessors::ErrorStackGetter, 0,
@@ -1474,6 +1327,140 @@ void Heap::CreateInitialMutableObjects() {
         isolate_, Accessors::ErrorStackSetter, 1,
         SideEffectType::kHasSideEffectToReceiver);
     set_error_stack_setter_fun_template(*function_template);
+  }
+
+  // Create internal SharedFunctionInfos.
+  // Async functions:
+  {
+    Handle<SharedFunctionInfo> info = CreateSharedFunctionInfo(
+        isolate(), Builtin::kAsyncFunctionAwaitRejectClosure, 1);
+    set_async_function_await_reject_shared_fun(*info);
+
+    info = CreateSharedFunctionInfo(
+        isolate(), Builtin::kAsyncFunctionAwaitResolveClosure, 1);
+    set_async_function_await_resolve_shared_fun(*info);
+  }
+
+  // Async generators:
+  {
+    Handle<SharedFunctionInfo> info = CreateSharedFunctionInfo(
+        isolate(), Builtin::kAsyncGeneratorAwaitResolveClosure, 1);
+    set_async_generator_await_resolve_shared_fun(*info);
+
+    info = CreateSharedFunctionInfo(
+        isolate(), Builtin::kAsyncGeneratorAwaitRejectClosure, 1);
+    set_async_generator_await_reject_shared_fun(*info);
+
+    info = CreateSharedFunctionInfo(
+        isolate(), Builtin::kAsyncGeneratorYieldWithAwaitResolveClosure, 1);
+    set_async_generator_yield_with_await_resolve_shared_fun(*info);
+
+    info = CreateSharedFunctionInfo(
+        isolate(), Builtin::kAsyncGeneratorReturnResolveClosure, 1);
+    set_async_generator_return_resolve_shared_fun(*info);
+
+    info = CreateSharedFunctionInfo(
+        isolate(), Builtin::kAsyncGeneratorReturnClosedResolveClosure, 1);
+    set_async_generator_return_closed_resolve_shared_fun(*info);
+
+    info = CreateSharedFunctionInfo(
+        isolate(), Builtin::kAsyncGeneratorReturnClosedRejectClosure, 1);
+    set_async_generator_return_closed_reject_shared_fun(*info);
+  }
+
+  // AsyncIterator:
+  {
+    Handle<SharedFunctionInfo> info = CreateSharedFunctionInfo(
+        isolate_, Builtin::kAsyncIteratorValueUnwrap, 1);
+    set_async_iterator_value_unwrap_shared_fun(*info);
+  }
+
+  // Promises:
+  {
+    Handle<SharedFunctionInfo> info = CreateSharedFunctionInfo(
+        isolate_, Builtin::kPromiseCapabilityDefaultResolve, 1,
+        FunctionKind::kConciseMethod);
+    info->set_native(true);
+    info->set_function_map_index(
+        Context::STRICT_FUNCTION_WITHOUT_PROTOTYPE_MAP_INDEX);
+    set_promise_capability_default_resolve_shared_fun(*info);
+
+    info = CreateSharedFunctionInfo(isolate_,
+                                    Builtin::kPromiseCapabilityDefaultReject, 1,
+                                    FunctionKind::kConciseMethod);
+    info->set_native(true);
+    info->set_function_map_index(
+        Context::STRICT_FUNCTION_WITHOUT_PROTOTYPE_MAP_INDEX);
+    set_promise_capability_default_reject_shared_fun(*info);
+
+    info = CreateSharedFunctionInfo(
+        isolate_, Builtin::kPromiseGetCapabilitiesExecutor, 2);
+    set_promise_get_capabilities_executor_shared_fun(*info);
+  }
+
+  // Promises / finally:
+  {
+    Handle<SharedFunctionInfo> info =
+        CreateSharedFunctionInfo(isolate(), Builtin::kPromiseThenFinally, 1);
+    info->set_native(true);
+    set_promise_then_finally_shared_fun(*info);
+
+    info =
+        CreateSharedFunctionInfo(isolate(), Builtin::kPromiseCatchFinally, 1);
+    info->set_native(true);
+    set_promise_catch_finally_shared_fun(*info);
+
+    info = CreateSharedFunctionInfo(isolate(),
+                                    Builtin::kPromiseValueThunkFinally, 0);
+    set_promise_value_thunk_finally_shared_fun(*info);
+
+    info =
+        CreateSharedFunctionInfo(isolate(), Builtin::kPromiseThrowerFinally, 0);
+    set_promise_thrower_finally_shared_fun(*info);
+  }
+
+  // Promise combinators:
+  {
+    Handle<SharedFunctionInfo> info = CreateSharedFunctionInfo(
+        isolate_, Builtin::kPromiseAllResolveElementClosure, 1);
+    set_promise_all_resolve_element_shared_fun(*info);
+
+    info = CreateSharedFunctionInfo(
+        isolate_, Builtin::kPromiseAllSettledResolveElementClosure, 1);
+    set_promise_all_settled_resolve_element_shared_fun(*info);
+
+    info = CreateSharedFunctionInfo(
+        isolate_, Builtin::kPromiseAllSettledRejectElementClosure, 1);
+    set_promise_all_settled_reject_element_shared_fun(*info);
+
+    info = CreateSharedFunctionInfo(
+        isolate_, Builtin::kPromiseAnyRejectElementClosure, 1);
+    set_promise_any_reject_element_shared_fun(*info);
+  }
+
+  // ProxyRevoke:
+  {
+    Handle<SharedFunctionInfo> info =
+        CreateSharedFunctionInfo(isolate_, Builtin::kProxyRevoke, 0);
+    set_proxy_revoke_shared_fun(*info);
+  }
+
+  // ShadowRealm:
+  {
+    Handle<SharedFunctionInfo> info = CreateSharedFunctionInfo(
+        isolate_, Builtin::kShadowRealmImportValueFulfilled, 0);
+    set_shadow_realm_import_value_fulfilled_sfi(*info);
+  }
+
+  // SourceTextModule:
+  {
+    Handle<SharedFunctionInfo> info = CreateSharedFunctionInfo(
+        isolate_, Builtin::kCallAsyncModuleFulfilled, 0);
+    set_source_text_module_execute_async_module_fulfilled_sfi(*info);
+
+    info = CreateSharedFunctionInfo(isolate_, Builtin::kCallAsyncModuleRejected,
+                                    0);
+    set_source_text_module_execute_async_module_rejected_sfi(*info);
   }
 }
 
@@ -1492,10 +1479,10 @@ void Heap::CreateInternalAccessorInfoObjects() {
                               SetterType)                                 \
   AccessorInfo::cast(                                                     \
       Object(roots_table()[RootIndex::k##AccessorName##Accessor]))        \
-      .set_getter_side_effect_type(SideEffectType::GetterType);           \
+      ->set_getter_side_effect_type(SideEffectType::GetterType);          \
   AccessorInfo::cast(                                                     \
       Object(roots_table()[RootIndex::k##AccessorName##Accessor]))        \
-      .set_setter_side_effect_type(SideEffectType::SetterType);
+      ->set_setter_side_effect_type(SideEffectType::SetterType);
   ACCESSOR_INFO_LIST_GENERATOR(INIT_SIDE_EFFECT_FLAG, /* not used */)
 #undef INIT_SIDE_EFFECT_FLAG
 }

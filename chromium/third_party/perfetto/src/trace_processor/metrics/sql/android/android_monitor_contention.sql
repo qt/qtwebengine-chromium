@@ -14,7 +14,7 @@
 -- limitations under the License.
 --
 
-SELECT IMPORT('android.monitor_contention');
+INCLUDE PERFETTO MODULE android.monitor_contention;
 
 DROP VIEW IF EXISTS android_monitor_contention_output;
 CREATE VIEW android_monitor_contention_output AS
@@ -23,6 +23,7 @@ SELECT AndroidMonitorContentionMetric(
     SELECT RepeatedField(
       AndroidMonitorContentionMetric_Node(
         'node_parent_id', parent_id,
+        'node_child_id', child_id,
         'node_id', id,
         'ts', ts,
         'dur', dur,

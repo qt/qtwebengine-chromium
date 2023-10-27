@@ -14,7 +14,7 @@
 
 #include "dawn/native/metal/ShaderModuleMTL.h"
 
-#include "dawn/native/BindGroupLayout.h"
+#include "dawn/native/BindGroupLayoutInternal.h"
 #include "dawn/native/CacheRequest.h"
 #include "dawn/native/Serializable.h"
 #include "dawn/native/TintUtils.h"
@@ -25,6 +25,7 @@
 #include "dawn/native/stream/BlobSource.h"
 #include "dawn/native/stream/ByteVectorSink.h"
 #include "dawn/platform/DawnPlatform.h"
+#include "dawn/platform/metrics/HistogramMacros.h"
 #include "dawn/platform/tracing/TraceEvent.h"
 
 #include <tint/tint.h>
@@ -40,9 +41,9 @@ using OptionalVertexPullingTransformConfig =
 #define MSL_COMPILATION_REQUEST_MEMBERS(X)                                                       \
     X(SingleShaderStage, stage)                                                                  \
     X(const tint::Program*, inputProgram)                                                        \
-    X(tint::writer::ArrayLengthFromUniformOptions, arrayLengthFromUniform)                       \
-    X(tint::writer::BindingRemapperOptions, bindingRemapper)                                     \
-    X(tint::writer::ExternalTextureOptions, externalTextureOptions)                              \
+    X(tint::ArrayLengthFromUniformOptions, arrayLengthFromUniform)                               \
+    X(tint::BindingRemapperOptions, bindingRemapper)                                             \
+    X(tint::ExternalTextureOptions, externalTextureOptions)                                      \
     X(OptionalVertexPullingTransformConfig, vertexPullingTransformConfig)                        \
     X(std::optional<tint::ast::transform::SubstituteOverride::Config>, substituteOverrideConfig) \
     X(LimitsForCompilationRequest, limits)                                                       \
@@ -52,7 +53,7 @@ using OptionalVertexPullingTransformConfig =
     X(bool, isRobustnessEnabled)                                                                 \
     X(bool, disableSymbolRenaming)                                                               \
     X(bool, disableWorkgroupInit)                                                                \
-    X(CacheKey::UnsafeUnkeyedValue<dawn::platform::Platform*>, tracePlatform)
+    X(CacheKey::UnsafeUnkeyedValue<dawn::platform::Platform*>, platform)
 
 DAWN_MAKE_CACHE_REQUEST(MslCompilationRequest, MSL_COMPILATION_REQUEST_MEMBERS);
 #undef MSL_COMPILATION_REQUEST_MEMBERS
@@ -113,16 +114,16 @@ ResultOrError<CacheResult<MslCompilation>> TranslateToMSL(
     errorStream << "Tint MSL failure:" << std::endl;
 
     // Remap BindingNumber to BindingIndex in WGSL shader
-    using BindingPoint = tint::writer::BindingPoint;
+    using BindingPoint = tint::BindingPoint;
 
-    tint::writer::BindingRemapperOptions bindingRemapper;
+    tint::BindingRemapperOptions bindingRemapper;
     bindingRemapper.allow_collisions = true;
 
-    tint::writer::ArrayLengthFromUniformOptions arrayLengthFromUniform;
+    tint::ArrayLengthFromUniformOptions arrayLengthFromUniform;
     arrayLengthFromUniform.ubo_binding = {0, kBufferLengthBufferSlot};
 
     for (BindGroupIndex group : IterateBitSet(layout->GetBindGroupLayoutsMask())) {
-        const BindGroupLayoutBase::BindingMap& bindingMap =
+        const BindGroupLayoutInternalBase::BindingMap& bindingMap =
             layout->GetBindGroupLayout(group)->GetBindingMap();
         for (const auto [bindingNumber, bindingIndex] : bindingMap) {
             const BindingInfo& bindingInfo =
@@ -196,7 +197,7 @@ ResultOrError<CacheResult<MslCompilation>> TranslateToMSL(
         renderPipeline->GetPrimitiveTopology() == wgpu::PrimitiveTopology::PointList;
     req.isRobustnessEnabled = device->IsRobustnessEnabled();
     req.disableSymbolRenaming = device->IsToggleEnabled(Toggle::DisableSymbolRenaming);
-    req.tracePlatform = UnsafeUnkeyedValue(device->GetPlatform());
+    req.platform = UnsafeUnkeyedValue(device->GetPlatform());
     req.arrayLengthFromUniform = std::move(arrayLengthFromUniform);
 
     const CombinedLimits& limits = device->GetLimits();
@@ -206,8 +207,8 @@ ResultOrError<CacheResult<MslCompilation>> TranslateToMSL(
     DAWN_TRY_LOAD_OR_RUN(
         mslCompilation, device, std::move(req), MslCompilation::FromBlob,
         [](MslCompilationRequest r) -> ResultOrError<MslCompilation> {
-            tint::transform::Manager transformManager;
-            tint::transform::DataMap transformInputs;
+            tint::ast::transform::Manager transformManager;
+            tint::ast::transform::DataMap transformInputs;
 
             // We only remap bindings for the target entry point, so we need to strip all other
             // entry points to avoid generating invalid bindings for them.
@@ -238,9 +239,9 @@ ResultOrError<CacheResult<MslCompilation>> TranslateToMSL(
             }
 
             tint::Program program;
-            tint::transform::DataMap transformOutputs;
+            tint::ast::transform::DataMap transformOutputs;
             {
-                TRACE_EVENT0(r.tracePlatform.UnsafeGetValue(), General, "RunTransforms");
+                TRACE_EVENT0(r.platform.UnsafeGetValue(), General, "RunTransforms");
                 DAWN_TRY_ASSIGN(program,
                                 RunTransforms(&transformManager, r.inputProgram, transformInputs,
                                               &transformOutputs, nullptr));
@@ -268,7 +269,7 @@ ResultOrError<CacheResult<MslCompilation>> TranslateToMSL(
                                                program, remappedEntryPointName.data(), r.limits));
             }
 
-            tint::writer::msl::Options options;
+            tint::msl::writer::Options options;
             options.disable_robustness = !r.isRobustnessEnabled;
             options.buffer_size_ubo_index = kBufferLengthBufferSlot;
             options.fixed_sample_mask = r.sampleMask;
@@ -278,32 +279,34 @@ ResultOrError<CacheResult<MslCompilation>> TranslateToMSL(
             options.binding_remapper_options = r.bindingRemapper;
             options.external_texture_options = r.externalTextureOptions;
 
-            TRACE_EVENT0(r.tracePlatform.UnsafeGetValue(), General, "tint::writer::msl::Generate");
-            auto result = tint::writer::msl::Generate(&program, options);
-            DAWN_INVALID_IF(!result.success, "An error occured while generating MSL: %s.",
-                            result.error);
+            TRACE_EVENT0(r.platform.UnsafeGetValue(), General, "tint::msl::writer::Generate");
+            auto result = tint::msl::writer::Generate(&program, options);
+            DAWN_INVALID_IF(!result, "An error occured while generating MSL: %s.",
+                            result.Failure());
 
             // Metal uses Clang to compile the shader as C++14. Disable everything in the -Wall
             // category. -Wunused-variable in particular comes up a lot in generated code, and some
             // (old?) Metal drivers accidentally treat it as a MTLLibraryErrorCompileError instead
             // of a warning.
-            result.msl = R"(
+            auto msl = std::move(result->msl);
+            msl = R"(
                 #ifdef __clang__
                 #pragma clang diagnostic ignored "-Wall"
                 #endif
-            )" + result.msl;
+            )" + msl;
 
             auto workgroupAllocations =
-                std::move(result.workgroup_allocations[remappedEntryPointName]);
+                std::move(result->workgroup_allocations.at(remappedEntryPointName));
             return MslCompilation{{
-                std::move(result.msl),
+                std::move(msl),
                 std::move(remappedEntryPointName),
-                result.needs_storage_buffer_sizes,
-                result.has_invariant_attribute,
+                result->needs_storage_buffer_sizes,
+                result->has_invariant_attribute,
                 std::move(workgroupAllocations),
                 localSize,
             }};
-        });
+        },
+        "Metal.CompileShaderToMSL");
 
     if (device->IsToggleEnabled(Toggle::DumpShaders)) {
         std::ostringstream dumpedMsg;
@@ -352,6 +355,8 @@ MaybeError ShaderModule::CreateFunction(SingleShaderStage stage,
             (*compileOptions).preserveInvariance = true;
         }
     }
+    (*compileOptions).fastMathEnabled = true;
+
     auto mtlDevice = ToBackend(GetDevice())->GetMTLDevice();
     NSError* error = nullptr;
 

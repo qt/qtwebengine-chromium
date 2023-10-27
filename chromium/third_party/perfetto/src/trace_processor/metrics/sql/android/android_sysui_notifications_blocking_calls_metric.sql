@@ -13,10 +13,10 @@
 -- See the License for the specific language governing permissions and
 -- limitations under the License.
 
-SELECT IMPORT('android.slices');
+INCLUDE PERFETTO MODULE android.slices;
 
 DROP TABLE IF EXISTS android_sysui_notifications_blocking_calls;
-CREATE TABLE android_sysui_notifications_blocking_calls AS
+CREATE PERFETTO TABLE android_sysui_notifications_blocking_calls AS
 SELECT
     s.name name,
     COUNT(s.name) count,
@@ -39,7 +39,7 @@ DROP VIEW IF EXISTS android_sysui_notifications_blocking_calls_metric_output;
 CREATE VIEW android_sysui_notifications_blocking_calls_metric_output AS
 SELECT AndroidSysUINotificationsBlockingCallsMetric('blocking_calls', (
         SELECT RepeatedField(
-                AndroidSysUINotificationsBlockingCallsMetric_BlockingCall(
+            AndroidBlockingCall(
                 'name', a.name,
                 'cnt', a.count,
                 'total_dur_ns', a.total_dur_ns,

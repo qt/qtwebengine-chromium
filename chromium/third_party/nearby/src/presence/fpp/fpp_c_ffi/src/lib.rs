@@ -35,34 +35,41 @@ pub struct PresenceDetectorHandle {
     handle: u64,
 }
 
-/// Error enum class representing possible errors
+/// Enum class representing possible outputs of proximity data processing call
 #[repr(C)]
-pub enum ProximityEstimateError {
+pub enum ComputationStatus {
+    /// Returned if the proximity estimate calculation was successful
+    Success,
+    /// Returned if there is no computed proximity estimate
+    NoComputedProximityEstimate,
     /// Returned if the handle is invalid
-    InvalidPresenceDetectorHandle,
+    InvalidPresenceDetectorHandleError,
     /// Returned if the output parameter is null
-    NullOutputParameter,
+    NullOutputParameterError,
 }
 
-impl ProximityEstimateError {
-    fn to_error_code(&self) -> i32 {
+impl ComputationStatus {
+    fn to_status_code(&self) -> i32 {
         match self {
-            Self::InvalidPresenceDetectorHandle => -1,
-            Self::NullOutputParameter => -2,
+            /// Status codes 100+ are considered errors
+            Self::Success => 1,
+            Self::NoComputedProximityEstimate => 2,
+            Self::InvalidPresenceDetectorHandleError => 101,
+            Self::NullOutputParameterError => 102,
         }
     }
 }
 
-const SUCCESS: i32 = 0;
-
-/// Creates a new presence detector object and returns the handle for the new object
+/// Creates a new presence detector object and returns the handle for the new
+/// object
 #[no_mangle]
 pub extern "C" fn presence_detector_create() -> PresenceDetectorHandle {
     let handle = get_presence_detector_handle_map().insert(Box::new(PresenceDetector::new()));
     PresenceDetectorHandle { handle }
 }
 
-/// Updates PresenceDetector with a new scan result and returns an error code if unsuccessful
+/// Updates PresenceDetector with a new scan result and returns an error code if
+/// unsuccessful
 ///
 /// # Safety
 ///
@@ -76,17 +83,21 @@ pub unsafe extern "C" fn update_ble_scan_result(
     if let Some(presence_detector) =
         get_presence_detector_handle_map().get(&presence_detector_handle.handle)
     {
-        presence_detector
-            .on_ble_scan_result(ble_scan_result)
-            .map(|current_proximity_estimate| {
-                proximity_estimate.as_mut().map(|proximity_estimate| {
-                    *proximity_estimate = current_proximity_estimate;
-                    Some(SUCCESS)
-                });
-                ProximityEstimateError::NullOutputParameter.to_error_code()
-            });
+        if let Some(current_proximity_estimate) =
+            presence_detector.on_ble_scan_result(ble_scan_result)
+        {
+            if let Some(proximity_estimate) = proximity_estimate.as_mut() {
+                *proximity_estimate = current_proximity_estimate;
+                ComputationStatus::Success.to_status_code()
+            } else {
+                ComputationStatus::NullOutputParameterError.to_status_code()
+            }
+        } else {
+            ComputationStatus::NoComputedProximityEstimate.to_status_code()
+        }
+    } else {
+        ComputationStatus::InvalidPresenceDetectorHandleError.to_status_code()
     }
-    ProximityEstimateError::InvalidPresenceDetectorHandle.to_error_code()
 }
 
 /// Gets the current proximity estimate for a given device ID
@@ -103,18 +114,16 @@ pub unsafe extern "C" fn get_proximity_estimate(
     if let Some(presence_detector) =
         get_presence_detector_handle_map().get(&presence_detector_handle.handle)
     {
-        presence_detector
-            .get_proximity_estimate(device_id)
-            .map(|current_proximity_estimate| {
-                if let Some(proximity_estimate) = proximity_estimate.as_mut() {
-                    *proximity_estimate = current_proximity_estimate;
-                    return SUCCESS;
-                }
-                ProximityEstimateError::NullOutputParameter.to_error_code()
-            });
+        presence_detector.get_proximity_estimate(device_id).map(|current_proximity_estimate| {
+            if let Some(proximity_estimate) = proximity_estimate.as_mut() {
+                *proximity_estimate = current_proximity_estimate;
+                return ComputationStatus::Success.to_status_code();
+            }
+            ComputationStatus::NullOutputParameterError.to_status_code()
+        });
     }
 
-    ProximityEstimateError::InvalidPresenceDetectorHandle.to_error_code()
+    ComputationStatus::InvalidPresenceDetectorHandleError.to_status_code()
 }
 
 /// De-allocates memory for a presence detector object
@@ -126,7 +135,7 @@ pub extern "C" fn presence_detector_free(
         get_presence_detector_handle_map().remove(&presence_detector_handle.handle)
     {
         let _ = *presence_detector;
-        return SUCCESS;
+        return ComputationStatus::Success.to_status_code();
     }
-    ProximityEstimateError::InvalidPresenceDetectorHandle.to_error_code()
+    ComputationStatus::InvalidPresenceDetectorHandleError.to_status_code()
 }

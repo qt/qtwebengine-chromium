@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,8 @@
 #define CAST_STREAMING_PACKET_RECEIVE_STATS_TRACKER_H_
 
 #include <stdint.h>
+
+#include <limits>
 
 #include "cast/streaming/expanded_value_base.h"
 #include "cast/streaming/rtcp_common.h"

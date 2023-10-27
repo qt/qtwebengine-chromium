@@ -62,6 +62,14 @@
   white-space: normal;
 }
 
+devtools-issue-counter.toolbar-item {
+  margin-top: -4px;
+}
+
+devtools-issue-counter.main-toolbar {
+  margin-top: 1px;
+}
+
 .toolbar-dropdown-arrow {
   background-color: var(--color-text-secondary);
   pointer-events: none;
@@ -89,7 +97,7 @@ select.toolbar-item:disabled + .toolbar-dropdown-arrow {
 .toolbar-text {
   margin: 0 5px;
   flex: none;
-  color: var(--color-text-secondary);
+  color: var(--ui-text);
 }
 
 .toolbar-text:empty {
@@ -319,7 +327,6 @@ select.toolbar-item {
   min-width: 38px;
   appearance: none;
   border: 1px solid transparent;
-  border-radius: 0;
   padding: 0 13px 0 5px;
   margin-right: -10px;
   position: relative;
@@ -334,12 +341,13 @@ select.toolbar-item:disabled {
 
 button.toolbar-item:focus-visible,
 select.toolbar-item:focus-visible {
-  background: var(--color-background-elevation-2);
+  background: var(--sys-color-state-hover-on-subtle);
   border-radius: 2px;
 }
 
 select.toolbar-item:focus-visible > * {
-  background: var(--color-background);
+  background: var(--sys-color-cdt-base-container);
+  border-radius: 7px;
 }
 /* Input */
 
@@ -348,20 +356,24 @@ select.toolbar-item:focus-visible > * {
   height: 19px;
   padding: 4px 3px 3px;
   margin: 1px 3px;
-  background-color: var(--color-background);
-  border: 1px solid transparent;
+  background: var(--sys-color-cdt-base-container);
+  border: 1px solid var(--sys-color-neutral-outline);
+  border-radius: 4px;
   min-width: 35px;
-  box-shadow: var(--legacy-focus-ring-inactive-shadow);
-}
 
-.toolbar-input.focused,
-.toolbar-input:not(.toolbar-input-empty) {
-  box-shadow: var(--legacy-focus-ring-active-shadow);
-}
+  &.focused,
+  &:not(.toolbar-input-empty) {
+    border-color: var(--sys-color-state-focus-ring);
+  }
 
-.toolbar-input > input {
-  border: none;
-  flex-grow: 1;
+  &:hover:not(.focused) {
+    background: var(--sys-color-state-hover-on-subtle);
+  }
+
+  & > input {
+    border: none;
+    flex-grow: 1;
+  }
 }
 
 .toolbar-input-clear-button {
@@ -397,7 +409,7 @@ select.toolbar-item:focus-visible > * {
 /* Separator */
 
 .toolbar-divider {
-  background-color: var(--color-details-hairline);
+  background-color: var(--sys-color-on-base-divider);
   width: 1px;
   margin: 5px 4px;
   height: 16px;
@@ -434,26 +446,27 @@ select.toolbar-item:focus-visible > * {
   left: -2px;
 }
 
-.toolbar-shadow:not(.floating) .toolbar-item:last-child:not(:first-child) {
+.toolbar-shadow:not(.floating) .toolbar-item:last-child:not(:first-child, .toolbar-select-container) {
   flex-shrink: 1;
   justify-content: left;
 }
 
 input[is="history-input"] {
   margin: 0 1px;
-  border: 1px solid transparent;
+  border: 1px solid var(--sys-color-neutral-outline);
+  border-radius: 4px;
   line-height: 16px;
   padding: 1px;
   color: var(--color-text-primary);
 }
 
-input[is="history-input"]:hover {
-  box-shadow: var(--legacy-focus-ring-inactive-shadow);
-}
-
 input[is="history-input"]:focus,
 input[is="history-input"]:not(:placeholder-shown) {
-  box-shadow: var(--legacy-focus-ring-active-shadow);
+  border-color: var(--sys-color-state-focus-ring);
+}
+
+input[is="history-input"]:hover:not(:focus) {
+  background-color: var(--sys-color-state-hover-on-subtle);
 }
 
 .toolbar-item.highlight::before {
@@ -464,24 +477,20 @@ input[is="history-input"]:not(:placeholder-shown) {
   right: 2px;
   bottom: 2px;
   border-radius: 2px;
-  background: var(--color-primary-old);
+  background: var(--sys-color-neutral-container);
   z-index: -1;
 }
 
-.toolbar-item.highlight > .title {
-  color: var(--color-button-primary-text);
+.toolbar-item.highlight:focus-visible {
+  background: var(--sys-color-tonal-container);
+
+  & > .title {
+    color: var(--sys-color-on-tonal-container);
+  }
 }
 
 .toolbar-item.highlight:hover:not(:active) > .title {
   color: var(--color-button-primary-text-hover);
-}
-
-.toolbar-item.highlight:focus-visible {
-  background: var(--color-primary-variant);
-}
-
-.toolbar-item.highlight > .icon-mask {
-  background: var(--color-button-primary-text);
 }
 
 devtools-icon.leading-issue-icon {

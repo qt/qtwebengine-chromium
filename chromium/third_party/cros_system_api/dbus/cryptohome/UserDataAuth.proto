@@ -110,6 +110,7 @@ enum CryptohomeErrorCode {
   // attempts AND expired, CRYPTOHOME_ERROR_CREDENTIAL_EXPIRED will take
   // precedence and be returned.
   CRYPTOHOME_ERROR_CREDENTIAL_EXPIRED = 60;
+  CRYPTOHOME_RELABEL_CREDENTIALS_FAILED = 61;
   // Note: After adding new fields to this enum, the new enum should be added
   // to ash/components/login/auth/auth_session_authenticator.cc's
   // AuthSessionAuthenticator::ProcessCryptohomeError() so that Chromium
@@ -442,7 +443,7 @@ message StartMigrateToDircryptoRequest {
   // Auth Session id will let migrate derive credentials from AuthSessions.
   // AuthSession needs to be authenticated for this to be successful. If both
   // account_id and auth_session_id is mentioned, auth_session_id would be
-  // superseed and identity would be derived from that.
+  // supersede and identity would be derived from that.
   bytes auth_session_id = 3;
 }
 
@@ -1292,6 +1293,30 @@ message UpdateAuthFactorMetadataReply {
   AuthFactorWithStatus updated_auth_factor = 3;
 }
 
+// RelabelAuthFactor will change the label of an auth factor without modifying
+// the factor itself. Because the factor is not modified it does not require
+// an AuthInput but it does still require an authenticated session.
+message RelabelAuthFactorRequest {
+  // AuthFactor cannot be relabelled without an active and authenticated
+  // AuthSession running. This id would be used to associate the AuthFactor to
+  // an AuthSession.
+  bytes auth_session_id = 1;
+  // Label used to identify the existing AuthFactor.
+  string auth_factor_label = 2;
+  // New label to apply to the auth factor. It must be different from the
+  // original label and not already in use.
+  string new_auth_factor_label = 3;
+}
+
+message RelabelAuthFactorReply {
+  CryptohomeErrorCode error = 1;
+  CryptohomeErrorInfo error_info = 2;
+
+  // AuthFactorWithStatus returns newly updated auth factor. This will only be
+  // set if the relabel operation succeeds.
+  AuthFactorWithStatus relabelled_auth_factor = 3;
+}
+
 // RemoveAuthFactorRequest is built when a user is trying to
 // remove an AuthFactor for a user. auth_factor_label would identify
 // the AuthFactor that the request is trying to remove. When the call is made,
@@ -1596,4 +1621,25 @@ message PrepareAuthFactorProgress {
     PrepareAuthFactorForAddProgress add_progress = 2;
     PrepareAuthFactorForAuthProgress auth_progress = 3;
   }
+}
+
+// Contains the result of authenticating the auth factor.
+// Used in the AuthenticateAuthFactorCompleted signal to notify
+// if authentication was successful/failed.
+message AuthenticateAuthFactorCompleted {
+  oneof result {
+    AuthenticateAuthFactorCompletedSuccess success = 1;
+    AuthenticateAuthFactorCompletedFailure failure = 2;
+  }
+}
+
+// Used when Authentication succeeds.
+message AuthenticateAuthFactorCompletedSuccess {
+  AuthFactorType auth_factor_type = 1;
+}
+
+// Used when Authentication fails.
+message AuthenticateAuthFactorCompletedFailure {
+  CryptohomeErrorCode error = 1;
+  CryptohomeErrorInfo error_info = 2;
 }

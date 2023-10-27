@@ -3,9 +3,13 @@
 Crossbench is a cross-browser/cross-benchmark runner to extract performance
 numbers.
 
+Mailing list: <crossbench@chromium.org>
+
+Issues/Bugs: [Tests > CrossBench](https://bugs.chromium.org/p/chromium/issues/list?q=component%3ATest%3ECrossBench)
+
 Supported Browsers: Chrome/Chromium, Firefox, Safari and Edge.
 
-Supported OS: macOS, linux and windows.
+Supported OS: macOS, Android, linux and windows.
 
 ## Basic usage:
 ### Chromium Devs (with a full chromium checkout)
@@ -144,10 +148,13 @@ This project uses [poetry](https://python-poetry.org/) deps and package scripts
 to setup the correct environment for testing and debugging.
 
 ```bash
+# a) On debian:
+sudo apt-get install python3.10 python3-poetry
+# b) With python 3.8 to 3.10 installed already:
 pip3 install poetry
 ```
 
-Check that you have poetry on your path and make sure you have the right 
+Check that you have poetry on your path and make sure you have the right
 `$PATH` settings.
 ```bash
 poetry --help || echo "Please update your \$PATH to include poetry bin location";
@@ -159,11 +166,17 @@ python3 -c "import sysconfig; print(sysconfig.get_path('scripts'))";
 Install the necessary dependencies from the lock file using poetry:
 
 ```bash
+# Select the python version you want to use (3.8 to 3.10):
+poetry use 3.10
 poetry install
+
+# For python 3.11 you have to skip pytype support:
+poetry use 3.11
+poetry install --without=dev-pytype
 ```
 
 ## Crossbench
-For local development / non-chromium installation you should 
+For local development / non-chromium installation you should
 use `poetry run cb ...` instead of `./cb.py ...`.
 
 Side-note, beware that poetry eats up an empty `--`:

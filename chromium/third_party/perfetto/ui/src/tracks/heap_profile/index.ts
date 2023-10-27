@@ -12,13 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {ProfileType} from 'src/common/state';
-
 import {searchSegment} from '../../base/binary_search';
 import {Actions} from '../../common/actions';
-import {PluginContext} from '../../common/plugin_api';
 import {LONG, STR} from '../../common/query_result';
-import {TPDuration, TPTime} from '../../common/time';
+import {ProfileType} from '../../common/state';
+import {duration, Time, time} from '../../common/time';
 import {TrackData} from '../../common/track_data';
 import {profileType} from '../../controller/flamegraph_controller';
 import {TrackController} from '../../controller/track_controller';
@@ -26,6 +24,7 @@ import {FLAMEGRAPH_HOVERED_COLOR} from '../../frontend/flamegraph';
 import {globals} from '../../frontend/globals';
 import {TimeScale} from '../../frontend/time_scale';
 import {NewTrackArgs, Track} from '../../frontend/track';
+import {Plugin, PluginContext, PluginInfo} from '../../public';
 
 export const HEAP_PROFILE_TRACK_KIND = 'HeapProfileTrack';
 
@@ -40,7 +39,7 @@ export interface Config {
 
 class HeapProfileTrackController extends TrackController<Config, Data> {
   static readonly kind = HEAP_PROFILE_TRACK_KIND;
-  async onBoundsChange(start: TPTime, end: TPTime, resolution: TPDuration):
+  async onBoundsChange(start: time, end: time, resolution: duration):
       Promise<Data> {
     if (this.config.upid === undefined) {
       return {
@@ -116,7 +115,7 @@ class HeapProfileTrack extends Track<Config, Data> {
     if (data === undefined) return;
 
     for (let i = 0; i < data.tsStarts.length; i++) {
-      const centerX = data.tsStarts[i];
+      const centerX = Time.fromRaw(data.tsStarts[i]);
       const selection = globals.state.currentSelection;
       const isHovered = this.hoveredTs === centerX;
       const isSelected = selection !== null &&
@@ -124,7 +123,7 @@ class HeapProfileTrack extends Track<Config, Data> {
       const strokeWidth = isSelected ? 3 : 0;
       this.drawMarker(
           ctx,
-          timeScale.tpTimeToPx(centerX),
+          timeScale.timeToPx(centerX),
           this.centerY,
           isHovered,
           strokeWidth);
@@ -157,7 +156,7 @@ class HeapProfileTrack extends Track<Config, Data> {
       visibleTimeScale: timeScale,
     } = globals.frontendLocalState;
     const time = timeScale.pxToHpTime(x);
-    const [left, right] = searchSegment(data.tsStarts, time.toTPTime());
+    const [left, right] = searchSegment(data.tsStarts, time.toTime());
     const index = this.findTimestampIndex(left, timeScale, data, x, y, right);
     this.hoveredTs = index === -1 ? undefined : data.tsStarts[index];
   }
@@ -174,12 +173,12 @@ class HeapProfileTrack extends Track<Config, Data> {
     } = globals.frontendLocalState;
 
     const time = timeScale.pxToHpTime(x);
-    const [left, right] = searchSegment(data.tsStarts, time.toTPTime());
+    const [left, right] = searchSegment(data.tsStarts, time.toTime());
 
     const index = this.findTimestampIndex(left, timeScale, data, x, y, right);
 
     if (index !== -1) {
-      const ts = data.tsStarts[index];
+      const ts = Time.fromRaw(data.tsStarts[index]);
       const type = data.types[index];
       globals.makeSelection(Actions.selectHeapProfile(
           {id: index, upid: this.config.upid, ts, type}));
@@ -194,13 +193,15 @@ class HeapProfileTrack extends Track<Config, Data> {
       right: number): number {
     let index = -1;
     if (left !== -1) {
-      const centerX = timeScale.tpTimeToPx(data.tsStarts[left]);
+      const start = Time.fromRaw(data.tsStarts[left]);
+      const centerX = timeScale.timeToPx(start);
       if (this.isInMarker(x, y, centerX)) {
         index = left;
       }
     }
     if (right !== -1) {
-      const centerX = timeScale.tpTimeToPx(data.tsStarts[right]);
+      const start = Time.fromRaw(data.tsStarts[right]);
+      const centerX = timeScale.timeToPx(start);
       if (this.isInMarker(x, y, centerX)) {
         index = right;
       }
@@ -214,12 +215,14 @@ class HeapProfileTrack extends Track<Config, Data> {
   }
 }
 
-function activate(ctx: PluginContext) {
-  ctx.registerTrackController(HeapProfileTrackController);
-  ctx.registerTrack(HeapProfileTrack);
+class HeapProfilePlugin implements Plugin {
+  onActivate(ctx: PluginContext): void {
+    ctx.registerTrackController(HeapProfileTrackController);
+    ctx.registerTrack(HeapProfileTrack);
+  }
 }
 
-export const plugin = {
+export const plugin: PluginInfo = {
   pluginId: 'perfetto.HeapProfile',
-  activate,
+  plugin: HeapProfilePlugin,
 };

@@ -35,6 +35,7 @@
 #include "dawn/native/d3d11/PipelineLayoutD3D11.h"
 #include "dawn/native/d3d11/QuerySetD3D11.h"
 #include "dawn/native/d3d11/RenderPipelineD3D11.h"
+#include "dawn/native/d3d11/SharedFenceD3D11.h"
 #include "dawn/native/d3d11/TextureD3D11.h"
 #include "dawn/native/d3d11/UtilsD3D11.h"
 
@@ -94,6 +95,24 @@ class VertexBufferTracker {
     ityp::array<VertexBufferSlot, UINT, kMaxVertexBuffers> mOffsets = {};
 };
 
+MaybeError SynchronizeTextureBeforeUse(Texture* texture, CommandRecordingContext* commandContext) {
+    SharedTextureMemoryBase::PendingFenceList fences;
+    SharedTextureMemoryState* memoryState = texture->GetSharedTextureMemoryState();
+    if (memoryState == nullptr) {
+        return {};
+    }
+
+    memoryState->AcquirePendingFences(&fences);
+    memoryState->SetLastUsageSerial(texture->GetDevice()->GetPendingCommandSerial());
+
+    for (auto& fence : fences) {
+        DAWN_TRY(CheckHRESULT(commandContext->GetD3D11DeviceContext4()->Wait(
+                                  ToBackend(fence.object)->GetD3DFence(), fence.signaledValue),
+                              "ID3D11DeviceContext4::Wait"));
+    }
+    return {};
+}
+
 }  // namespace
 
 // Create CommandBuffer
@@ -104,6 +123,10 @@ Ref<CommandBuffer> CommandBuffer::Create(CommandEncoder* encoder,
 
 MaybeError CommandBuffer::Execute() {
     CommandRecordingContext* commandContext = ToBackend(GetDevice())->GetPendingCommandContext();
+
+    // Mark a critical section for this entire scope to minimize the cost of mutex acquire/release
+    // when ID3D11Multithread protection is enabled.
+    auto scopedCriticalSection = commandContext->EnterScopedCriticalSection();
 
     auto LazyClearSyncScope = [commandContext](const SyncScopeResourceUsage& scope) -> MaybeError {
         for (size_t i = 0; i < scope.textures.size(); i++) {
@@ -136,6 +159,10 @@ MaybeError CommandBuffer::Execute() {
         switch (type) {
             case Command::BeginComputePass: {
                 mCommands.NextCommand<BeginComputePassCmd>();
+                for (TextureBase* texture :
+                     GetResourceUsages().computePasses[nextComputePassNumber].referencedTextures) {
+                    DAWN_TRY(SynchronizeTextureBeforeUse(ToBackend(texture), commandContext));
+                }
                 for (const SyncScopeResourceUsage& scope :
                      GetResourceUsages().computePasses[nextComputePassNumber].dispatchUsages) {
                     DAWN_TRY(LazyClearSyncScope(scope));
@@ -148,6 +175,19 @@ MaybeError CommandBuffer::Execute() {
 
             case Command::BeginRenderPass: {
                 auto* cmd = mCommands.NextCommand<BeginRenderPassCmd>();
+                for (TextureBase* texture :
+                     GetResourceUsages().renderPasses[nextRenderPassNumber].textures) {
+                    DAWN_TRY(SynchronizeTextureBeforeUse(ToBackend(texture), commandContext));
+                }
+                for (ExternalTextureBase* externalTexture :
+                     GetResourceUsages().renderPasses[nextRenderPassNumber].externalTextures) {
+                    for (auto& view : externalTexture->GetTextureViews()) {
+                        if (view.Get()) {
+                            DAWN_TRY(SynchronizeTextureBeforeUse(ToBackend(view->GetTexture()),
+                                                                 commandContext));
+                        }
+                    }
+                }
                 DAWN_TRY(
                     LazyClearSyncScope(GetResourceUsages().renderPasses[nextRenderPassNumber]));
                 LazyClearRenderPassAttachments(cmd);
@@ -214,6 +254,7 @@ MaybeError CommandBuffer::Execute() {
                 DAWN_TRY(buffer->EnsureDataInitialized(commandContext));
 
                 Texture* texture = ToBackend(dst.texture.Get());
+                DAWN_TRY(SynchronizeTextureBeforeUse(texture, commandContext));
                 SubresourceRange subresources = GetSubresourcesAffectedByCopy(dst, copy->copySize);
 
                 DAWN_ASSERT(scopedMap.GetMappedData());
@@ -237,6 +278,10 @@ MaybeError CommandBuffer::Execute() {
                 auto& dst = copy->destination;
 
                 SubresourceRange subresources = GetSubresourcesAffectedByCopy(src, copy->copySize);
+                Texture* texture = ToBackend(src.texture.Get());
+                DAWN_TRY(SynchronizeTextureBeforeUse(texture, commandContext));
+                DAWN_TRY(
+                    texture->EnsureSubresourceContentInitialized(commandContext, subresources));
 
                 Buffer* buffer = ToBackend(dst.buffer.Get());
                 Buffer::ScopedMap scopedDstMap;
@@ -267,6 +312,10 @@ MaybeError CommandBuffer::Execute() {
                     continue;
                 }
 
+                DAWN_TRY(SynchronizeTextureBeforeUse(ToBackend(copy->source.texture.Get()),
+                                                     commandContext));
+                DAWN_TRY(SynchronizeTextureBeforeUse(ToBackend(copy->destination.texture.Get()),
+                                                     commandContext));
                 DAWN_TRY(Texture::Copy(commandContext, copy));
                 break;
             }
@@ -319,7 +368,7 @@ MaybeError CommandBuffer::Execute() {
             case Command::InsertDebugMarker:
             case Command::PopDebugGroup:
             case Command::PushDebugGroup: {
-                HandleDebugCommands(commandContext, type);
+                HandleDebugCommands(commandContext, &mCommands, type);
                 break;
             }
 
@@ -404,7 +453,7 @@ MaybeError CommandBuffer::ExecuteComputePass(CommandRecordingContext* commandCon
             case Command::InsertDebugMarker:
             case Command::PopDebugGroup:
             case Command::PushDebugGroup: {
-                HandleDebugCommands(commandContext, type);
+                HandleDebugCommands(commandContext, &mCommands, type);
                 break;
             }
 
@@ -626,7 +675,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
             case Command::InsertDebugMarker:
             case Command::PopDebugGroup:
             case Command::PushDebugGroup: {
-                HandleDebugCommands(commandContext, type);
+                HandleDebugCommands(commandContext, iter, type);
                 break;
             }
 
@@ -760,24 +809,26 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
     UNREACHABLE();
 }
 
-void CommandBuffer::HandleDebugCommands(CommandRecordingContext* commandContext, Command command) {
+void CommandBuffer::HandleDebugCommands(CommandRecordingContext* commandContext,
+                                        CommandIterator* iter,
+                                        Command command) {
     switch (command) {
         case Command::InsertDebugMarker: {
-            InsertDebugMarkerCmd* cmd = mCommands.NextCommand<InsertDebugMarkerCmd>();
-            std::wstring label = UTF8ToWStr(mCommands.NextData<char>(cmd->length + 1));
+            InsertDebugMarkerCmd* cmd = iter->NextCommand<InsertDebugMarkerCmd>();
+            std::wstring label = UTF8ToWStr(iter->NextData<char>(cmd->length + 1));
             commandContext->GetD3DUserDefinedAnnotation()->SetMarker(label.c_str());
             break;
         }
 
         case Command::PopDebugGroup: {
-            std::ignore = mCommands.NextCommand<PopDebugGroupCmd>();
+            std::ignore = iter->NextCommand<PopDebugGroupCmd>();
             commandContext->GetD3DUserDefinedAnnotation()->EndEvent();
             break;
         }
 
         case Command::PushDebugGroup: {
-            PushDebugGroupCmd* cmd = mCommands.NextCommand<PushDebugGroupCmd>();
-            std::wstring label = UTF8ToWStr(mCommands.NextData<char>(cmd->length + 1));
+            PushDebugGroupCmd* cmd = iter->NextCommand<PushDebugGroupCmd>();
+            std::wstring label = UTF8ToWStr(iter->NextData<char>(cmd->length + 1));
             commandContext->GetD3DUserDefinedAnnotation()->BeginEvent(label.c_str());
             break;
         }

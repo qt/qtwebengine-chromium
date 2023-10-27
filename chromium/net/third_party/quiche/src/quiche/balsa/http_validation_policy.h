@@ -13,7 +13,8 @@ namespace quiche {
 
 // An HttpValidationPolicy captures policy choices affecting parsing of HTTP
 // requests.  It offers individual Boolean members to be consulted during the
-// parsing of an HTTP request.
+// parsing of an HTTP request.  For historical reasons, every member is set up
+// such that `true` means more strict validation.
 struct QUICHE_EXPORT HttpValidationPolicy {
   // https://tools.ietf.org/html/rfc7230#section-3.2.4 deprecates "folding"
   // of long header lines onto continuation lines.
@@ -42,6 +43,17 @@ struct QUICHE_EXPORT HttpValidationPolicy {
   // with a method POST or PUT, which requires a body, has neither a
   // "Content-Length" nor a "Transfer-Encoding: chunked" header.
   bool require_content_length_if_body_required = true;
+
+  // If true, signal an INVALID_HEADER_NAME_CHARACTER or
+  // INVALID_TRAILER_NAME_CHARACTER error if the header or trailer name contains
+  // the character '"'.
+  bool disallow_double_quote_in_header_name = false;
+
+  // If true, then signal an INVALID_HEADER_CHARACTER warning or error, or
+  // neither, depending on InvalidCharsLevel, if a response header contains an
+  // invalid character. Invalid characters are always disallowed according to
+  // InvalidCharsLevel in request headers.
+  bool disallow_invalid_header_characters_in_response = false;
 };
 
 }  // namespace quiche

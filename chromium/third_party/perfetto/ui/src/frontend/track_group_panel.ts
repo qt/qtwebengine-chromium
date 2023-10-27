@@ -34,7 +34,7 @@ import {
 } from './icons';
 import {Panel, PanelSize} from './panel';
 import {Track} from './track';
-import {TrackContent} from './track_panel';
+import {TrackChips, TrackContent} from './track_panel';
 import {trackRegistry} from './track_registry';
 import {
   drawVerticalLineAtTime,
@@ -133,11 +133,12 @@ export class TrackGroupPanel extends Panel<Attrs> {
             m('i.material-icons',
               this.trackGroupState.collapsed ? EXPAND_DOWN : EXPAND_UP)),
           m('.title-wrapper',
-            m('h1.track-title',
-              {title: name},
-              name,
-              ('namespace' in this.summaryTrackState.config) &&
-                  m('span.chip', 'metric')),
+            m(
+                'h1.track-title',
+                {title: name},
+                name,
+                m(TrackChips, {config: this.summaryTrackState.config}),
+                ),
             (this.trackGroupState.collapsed && child !== null) ?
                 m('h2.track-subtitle', child) :
                 null),
@@ -198,7 +199,7 @@ export class TrackGroupPanel extends Panel<Attrs> {
     if (selectedArea.tracks.includes(this.trackGroupId)) {
       ctx.fillStyle = 'rgba(131, 152, 230, 0.3)';
       ctx.fillRect(
-          visibleTimeScale.tpTimeToPx(selectedArea.start) + this.shellWidth,
+          visibleTimeScale.timeToPx(selectedArea.start) + this.shellWidth,
           0,
           visibleTimeScale.durationToPx(selectedAreaDuration),
           size.height);

@@ -69,6 +69,7 @@ const char kKernelFeatureList[] = "KernelFeatureList";
 const char kKernelFeatureEnable[] = "KernelFeatureEnable";
 // PacketCaptureStart method isn't defined as it's not needed by any component.
 const char kPacketCaptureStop[] = "PacketCaptureStop";
+const char kDRMTraceAnnotateLog[] = "DRMTraceAnnotateLog";
 
 // Signals.
 const char kPacketCaptureStartSignal[] = "PacketCaptureStart";

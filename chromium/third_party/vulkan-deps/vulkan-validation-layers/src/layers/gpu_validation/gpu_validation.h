@@ -17,7 +17,8 @@
 
 #pragma once
 
-#include "gpu_validation/gpu_utils.h"
+#include "gpu_validation/gpu_state_tracker.h"
+#include "gpu_validation/gpu_error_message.h"
 #include "gpu_validation/gv_descriptor_sets.h"
 #include "state_tracker/pipeline_state.h"
 
@@ -62,27 +63,27 @@ struct GpuAssistedPreDispatchResources {
 
 struct GpuAssistedBufferInfo {
     GpuAssistedDeviceMemoryBlock output_mem_block;
-    GpuAssistedDeviceMemoryBlock bda_input_mem_block;  // Buffer Device Address input
     GpuAssistedPreDrawResources pre_draw_resources;
     GpuAssistedPreDispatchResources pre_dispatch_resources;
     VkDescriptorSet desc_set;
     VkDescriptorPool desc_pool;
     VkPipelineBindPoint pipeline_bind_point;
     bool uses_robustness;
-    CMD_TYPE cmd_type;
-    GpuAssistedBufferInfo(GpuAssistedDeviceMemoryBlock output_mem_block, GpuAssistedDeviceMemoryBlock bda_input_mem_block,
-                          GpuAssistedPreDrawResources pre_draw_resources, GpuAssistedPreDispatchResources pre_dispatch_resources,
-                          VkDescriptorSet desc_set, VkDescriptorPool desc_pool, VkPipelineBindPoint pipeline_bind_point,
-                          bool uses_robustness, CMD_TYPE cmd_type)
+    vvl::Func command;
+    uint32_t desc_binding_index;
+    GpuAssistedBufferInfo(GpuAssistedDeviceMemoryBlock output_mem_block, GpuAssistedPreDrawResources pre_draw_resources,
+                          GpuAssistedPreDispatchResources pre_dispatch_resources, VkDescriptorSet desc_set,
+                          VkDescriptorPool desc_pool, VkPipelineBindPoint pipeline_bind_point, bool uses_robustness,
+                          vvl::Func command, uint32_t desc_binding_index)
         : output_mem_block(output_mem_block),
-          bda_input_mem_block(bda_input_mem_block),
           pre_draw_resources(pre_draw_resources),
           pre_dispatch_resources(pre_dispatch_resources),
           desc_set(desc_set),
           desc_pool(desc_pool),
           pipeline_bind_point(pipeline_bind_point),
           uses_robustness(uses_robustness),
-          cmd_type(cmd_type){};
+          command(command),
+          desc_binding_index(desc_binding_index){};
 };
 
 struct GpuVuid {
@@ -188,6 +189,8 @@ VALSTATETRACK_DERIVED_STATE_OBJECT(VkCommandBuffer, gpuav_state::CommandBuffer, 
 VALSTATETRACK_DERIVED_STATE_OBJECT(VkDescriptorSet, gpuav_state::DescriptorSet, cvdescriptorset::DescriptorSet)
 
 class GpuAssisted : public GpuAssistedBase {
+    using Func = vvl::Func;
+
   public:
     GpuAssisted() {
         setup_vuid = "UNASSIGNED-GPU-Assisted-Validation";
@@ -203,10 +206,10 @@ class GpuAssisted : public GpuAssistedBase {
     void PreCallRecordDestroyDevice(VkDevice device, const VkAllocationCallbacks* pAllocator) override;
     void PostCallRecordBindAccelerationStructureMemoryNV(VkDevice device, uint32_t bindInfoCount,
                                                          const VkBindAccelerationStructureMemoryInfoNV* pBindInfos,
-                                                         VkResult result) override;
+                                                         const RecordObject& record_obj) override;
     void PreCallRecordCreateBuffer(VkDevice device, const VkBufferCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator,
                                    VkBuffer* pBuffer, void* cb_state_data) override;
-    void CreateAccelerationStructureBuildValidationState();
+    void CreateAccelerationStructureBuildValidationState(const VkDeviceCreateInfo* pCreateInfo);
     void PreCallRecordCmdBuildAccelerationStructureNV(VkCommandBuffer commandBuffer, const VkAccelerationStructureInfoNV* pInfo,
                                                       VkBuffer instanceData, VkDeviceSize instanceOffset, VkBool32 update,
                                                       VkAccelerationStructureNV dst, VkAccelerationStructureNV src,
@@ -217,17 +220,21 @@ class GpuAssisted : public GpuAssistedBase {
     void PreCallRecordCreateShaderModule(VkDevice device, const VkShaderModuleCreateInfo* pCreateInfo,
                                          const VkAllocationCallbacks* pAllocator, VkShaderModule* pShaderModule,
                                          void* csm_state_data) override;
+    void PreCallRecordCreateShadersEXT(VkDevice device, uint32_t createInfoCount, const VkShaderCreateInfoEXT* pCreateInfos,
+                                       const VkAllocationCallbacks* pAllocator, VkShaderEXT* pShaders,
+                                       void* csm_state_data) override;
     void AnalyzeAndGenerateMessages(VkCommandBuffer command_buffer, VkQueue queue, GpuAssistedBufferInfo& buffer_info,
-                                    uint32_t operation_index, uint32_t* const debug_output_buffer);
-
+                                    uint32_t operation_index, uint32_t* const debug_output_buffer,
+                                    const std::vector<GpuAssistedDescSetState>& descriptor_sets);
     void UpdateInstrumentationBuffer(gpuav_state::CommandBuffer* cb_node);
+    void UpdateBDABuffer(GpuAssistedDeviceMemoryBlock buffer_device_addresses);
 
     void UpdateBoundDescriptors(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint);
 
     void PostCallRecordCmdBindDescriptorSets(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint,
                                              VkPipelineLayout layout, uint32_t firstSet, uint32_t descriptorSetCount,
                                              const VkDescriptorSet* pDescriptorSets, uint32_t dynamicOffsetCount,
-                                             const uint32_t* pDynamicOffsets) override;
+                                             const uint32_t* pDynamicOffsets, const RecordObject& record_obj) override;
     void PreCallRecordCmdPushDescriptorSetKHR(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint,
                                               VkPipelineLayout layout, uint32_t set, uint32_t descriptorWriteCount,
                                               const VkWriteDescriptorSet* pDescriptorWrites) override;
@@ -303,7 +310,7 @@ class GpuAssisted : public GpuAssistedBase {
                                               const VkStridedDeviceAddressRegionKHR* pCallableShaderBindingTable,
                                               VkDeviceAddress indirectDeviceAddress) override;
     void PreCallRecordCmdTraceRaysIndirect2KHR(VkCommandBuffer commandBuffer, VkDeviceAddress indirectDeviceAddress) override;
-    void AllocateValidationResources(const VkCommandBuffer cmd_buffer, const VkPipelineBindPoint bind_point, CMD_TYPE cmd,
+    void AllocateValidationResources(const VkCommandBuffer cmd_buffer, const VkPipelineBindPoint bind_point, Func command,
                                      const GpuAssistedCmdIndirectState* indirect_state = nullptr);
     void AllocatePreDrawValidationResources(const GpuAssistedDeviceMemoryBlock& output_block,
                                             GpuAssistedPreDrawResources& resources, const VkRenderPass render_pass,
@@ -312,9 +319,11 @@ class GpuAssisted : public GpuAssistedBase {
                                                 GpuAssistedPreDispatchResources& resources,
                                                 const GpuAssistedCmdIndirectState* indirect_state);
     void PostCallRecordGetPhysicalDeviceProperties(VkPhysicalDevice physicalDevice,
-                                                   VkPhysicalDeviceProperties* pPhysicalDeviceProperties) override;
+                                                   VkPhysicalDeviceProperties* pPhysicalDeviceProperties,
+                                                   const RecordObject& record_obj) override;
     void PostCallRecordGetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
-                                                    VkPhysicalDeviceProperties2* pPhysicalDeviceProperties2) override;
+                                                    VkPhysicalDeviceProperties2* pPhysicalDeviceProperties2,
+                                                    const RecordObject& record_obj) override;
 
     std::shared_ptr<CMD_BUFFER_STATE> CreateCmdBufferState(VkCommandBuffer cb, const VkCommandBufferAllocateInfo* create_info,
                                                            const COMMAND_POOL_STATE* pool) final;
@@ -330,7 +339,7 @@ class GpuAssisted : public GpuAssistedBase {
     VkPipeline GetValidationPipeline(VkRenderPass render_pass);
 
     VkBool32 shaderInt64;
-    bool buffer_oob_enabled;
+    bool validate_descriptors;
     bool validate_draw_indirect;
     bool validate_dispatch_indirect;
     bool warn_on_robust_oob;
@@ -338,7 +347,10 @@ class GpuAssisted : public GpuAssistedBase {
     GpuAssistedAccelerationStructureBuildValidationState acceleration_structure_validation_state;
     GpuAssistedPreDrawValidationState pre_draw_validation_state;
     GpuAssistedPreDispatchValidationState pre_dispatch_validation_state;
+    GpuAssistedDeviceMemoryBlock app_buffer_device_addresses{};
+    size_t app_bda_buffer_size{};
+    size_t app_bda_max_addresses{};
+    uint32_t gpuav_bda_buffer_version = 0;
 
-    bool descriptor_indexing = false;
     bool buffer_device_address;
 };

@@ -37,6 +37,7 @@ enum {
 // number of parameters used by each transformation in TransformationTypes
 static const int trans_model_params[TRANS_TYPES] = { 0, 2, 4, 6 };
 
+// Available methods which can be used for global motion estimation
 typedef enum {
   GLOBAL_MOTION_METHOD_FEATURE_MATCH,
   GLOBAL_MOTION_METHOD_DISFLOW,
@@ -64,6 +65,12 @@ typedef struct {
 // Note that this is a maximum, and fewer levels will be allocated if the frame
 // is not large enough to need all of the specified levels
 extern const int global_motion_pyr_levels[GLOBAL_MOTION_METHODS];
+
+// Which global motion method should we use in practice?
+// Disflow is both faster and gives better results than feature matching in
+// practically all cases, so we use disflow by default
+static const GlobalMotionMethod default_global_motion_method =
+    GLOBAL_MOTION_METHOD_DISFLOW;
 
 extern const double kIdentityParams[MAX_PARAMDIM];
 

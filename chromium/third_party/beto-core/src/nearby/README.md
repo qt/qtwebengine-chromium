@@ -35,7 +35,7 @@ use Docker to handle setting up the environment in a container.
 First install Docker then build and run the image:
 
 ```
-sudo docker build -t nearby_rust:v1.0 .
+sudo docker build -t nearby_rust:v1.0 ..
 sudo docker run --rm -it nearby_rust:v1.0
 ```
 

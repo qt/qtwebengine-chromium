@@ -21,15 +21,15 @@ namespace internal {
 // -----------------------------------------------------------------------------
 // SemiSpace
 
-bool SemiSpace::Contains(HeapObject o) const {
+bool SemiSpace::Contains(Tagged<HeapObject> o) const {
   BasicMemoryChunk* memory_chunk = BasicMemoryChunk::FromHeapObject(o);
   if (memory_chunk->IsLargePage()) return false;
   return id_ == kToSpace ? memory_chunk->IsToPage()
                          : memory_chunk->IsFromPage();
 }
 
-bool SemiSpace::Contains(Object o) const {
-  return o.IsHeapObject() && Contains(HeapObject::cast(o));
+bool SemiSpace::Contains(Tagged<Object> o) const {
+  return IsHeapObject(o) && Contains(HeapObject::cast(o));
 }
 
 template <typename T>
@@ -48,18 +48,12 @@ bool SemiSpace::ContainsSlow(Address a) const {
 // --------------------------------------------------------------------------
 // NewSpace
 
-bool NewSpace::Contains(Object o) const {
-  return o.IsHeapObject() && Contains(HeapObject::cast(o));
+bool NewSpace::Contains(Tagged<Object> o) const {
+  return IsHeapObject(o) && Contains(HeapObject::cast(o));
 }
 
-bool NewSpace::Contains(HeapObject o) const {
+bool NewSpace::Contains(Tagged<HeapObject> o) const {
   return BasicMemoryChunk::FromHeapObject(o)->InNewSpace();
-}
-
-template <typename T>
-inline bool NewSpace::Contains(Tagged<T> o) const {
-  static_assert(kTaggedCanConvertToRawObjects);
-  return Contains(*o);
 }
 
 V8_WARN_UNUSED_RESULT inline AllocationResult NewSpace::AllocateRawSynchronized(
@@ -148,17 +142,17 @@ V8_INLINE bool PagedSpaceForNewSpace::EnsureAllocation(
 SemiSpaceObjectIterator::SemiSpaceObjectIterator(const SemiSpaceNewSpace* space)
     : current_(space->first_allocatable_address()) {}
 
-HeapObject SemiSpaceObjectIterator::Next() {
+Tagged<HeapObject> SemiSpaceObjectIterator::Next() {
   while (true) {
     if (Page::IsAlignedToPageSize(current_)) {
       Page* page = Page::FromAllocationAreaAddress(current_);
       page = page->next_page();
-      if (page == nullptr) return HeapObject();
+      if (page == nullptr) return Tagged<HeapObject>();
       current_ = page->area_start();
     }
-    HeapObject object = HeapObject::FromAddress(current_);
-    current_ += ALIGN_TO_ALLOCATION_ALIGNMENT(object.Size());
-    if (!object.IsFreeSpaceOrFiller()) return object;
+    Tagged<HeapObject> object = HeapObject::FromAddress(current_);
+    current_ += ALIGN_TO_ALLOCATION_ALIGNMENT(object->Size());
+    if (!IsFreeSpaceOrFiller(object)) return object;
   }
 }
 

@@ -48,6 +48,12 @@ std::shared_ptr<ReadOnlyArtifacts> InitializeSharedReadOnlyArtifacts() {
 }
 }  // namespace
 
+ReadOnlyHeap::~ReadOnlyHeap() {
+#ifdef V8_CODE_POINTER_SANDBOXING
+  GetProcessWideCodePointerTable()->TearDownSpace(&code_pointer_space_);
+#endif
+}
+
 bool ReadOnlyHeap::IsSharedMemoryAvailable() {
   static bool shared_memory_allocation_supported =
       GetPlatformPageAllocator()->CanAllocateSharedPages();
@@ -76,15 +82,22 @@ void ReadOnlyHeap::SetUp(Isolate* isolate,
       if (!artifacts) {
         artifacts = InitializeSharedReadOnlyArtifacts();
         artifacts->InitializeChecksum(read_only_snapshot_data);
-        ro_heap = CreateInitalHeapForBootstrapping(isolate, artifacts);
+        ro_heap = CreateInitialHeapForBootstrapping(isolate, artifacts);
         ro_heap->DeserializeIntoIsolate(isolate, read_only_snapshot_data,
                                         can_rehash);
+        artifacts->set_initial_next_unique_sfi_id(
+            isolate->next_unique_sfi_id());
         read_only_heap_created = true;
       } else {
         // With pointer compression, there is one ReadOnlyHeap per Isolate.
         // Without PC, there is only one shared between all Isolates.
         ro_heap = artifacts->GetReadOnlyHeapForIsolate(isolate);
         isolate->SetUpFromReadOnlyArtifacts(artifacts, ro_heap);
+#ifdef V8_COMPRESS_POINTERS
+        isolate->external_pointer_table().SetUpFromReadOnlyArtifacts(
+            isolate->heap()->read_only_external_pointer_space(),
+            artifacts.get());
+#endif  // V8_COMPRESS_POINTERS
       }
       artifacts->VerifyChecksum(read_only_snapshot_data,
                                 read_only_heap_created);
@@ -98,7 +111,7 @@ void ReadOnlyHeap::SetUp(Isolate* isolate,
       CHECK(!artifacts);
       artifacts = InitializeSharedReadOnlyArtifacts();
 
-      ro_heap = CreateInitalHeapForBootstrapping(isolate, artifacts);
+      ro_heap = CreateInitialHeapForBootstrapping(isolate, artifacts);
 
       // Ensure the first read-only page ends up first in the cage.
       ro_heap->read_only_space()->EnsurePage();
@@ -118,10 +131,24 @@ void ReadOnlyHeap::DeserializeIntoIsolate(Isolate* isolate,
                                           SnapshotData* read_only_snapshot_data,
                                           bool can_rehash) {
   DCHECK_NOT_NULL(read_only_snapshot_data);
+
   ReadOnlyDeserializer des(isolate, read_only_snapshot_data, can_rehash);
   des.DeserializeIntoIsolate();
   OnCreateRootsComplete(isolate);
+
+#ifdef V8_ENABLE_EXTENSIBLE_RO_SNAPSHOT
+  if (isolate->serializer_enabled()) {
+    // If this isolate will be serialized, leave RO space unfinalized and
+    // allocatable s.t. it can be extended (e.g. by future Context::New calls).
+    // We reach this scenario when creating custom snapshots - these initially
+    // create the isolate from the default V8 snapshot, create new customized
+    // contexts, and finally reserialize.
+  } else {
+    InitFromIsolate(isolate);
+  }
+#else
   InitFromIsolate(isolate);
+#endif  // V8_ENABLE_EXTENSIBLE_RO_SNAPSHOT
 }
 
 void ReadOnlyHeap::OnCreateRootsComplete(Isolate* isolate) {
@@ -155,7 +182,7 @@ ReadOnlyHeap::ReadOnlyHeap(ReadOnlyHeap* ro_heap, ReadOnlySpace* ro_space)
 }
 
 // static
-ReadOnlyHeap* ReadOnlyHeap::CreateInitalHeapForBootstrapping(
+ReadOnlyHeap* ReadOnlyHeap::CreateInitialHeapForBootstrapping(
     Isolate* isolate, std::shared_ptr<ReadOnlyArtifacts> artifacts) {
   DCHECK(IsReadOnlySpaceShared());
 
@@ -210,6 +237,13 @@ void ReadOnlyHeap::InitFromIsolate(Isolate* isolate) {
   }
 }
 
+ReadOnlyHeap::ReadOnlyHeap(ReadOnlySpace* ro_space)
+    : read_only_space_(ro_space) {
+#ifdef V8_CODE_POINTER_SANDBOXING
+  GetProcessWideCodePointerTable()->InitializeSpace(&code_pointer_space_);
+#endif
+}
+
 void ReadOnlyHeap::OnHeapTearDown(Heap* heap) {
   read_only_space_->TearDown(heap->memory_allocator());
   delete read_only_space_;
@@ -248,7 +282,7 @@ bool ReadOnlyHeap::Contains(Address address) {
 }
 
 // static
-bool ReadOnlyHeap::Contains(HeapObject object) {
+bool ReadOnlyHeap::Contains(Tagged<HeapObject> object) {
   if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) {
     return third_party_heap::Heap::InReadOnlySpace(object.address());
   } else {
@@ -269,18 +303,18 @@ ReadOnlyHeapObjectIterator::ReadOnlyHeapObjectIterator(
   DCHECK(!V8_ENABLE_THIRD_PARTY_HEAP_BOOL);
 }
 
-HeapObject ReadOnlyHeapObjectIterator::Next() {
+Tagged<HeapObject> ReadOnlyHeapObjectIterator::Next() {
   while (current_page_ != ro_space_->pages().end()) {
-    HeapObject obj = page_iterator_.Next();
+    Tagged<HeapObject> obj = page_iterator_.Next();
     if (!obj.is_null()) return obj;
 
     ++current_page_;
-    if (current_page_ == ro_space_->pages().end()) return HeapObject();
+    if (current_page_ == ro_space_->pages().end()) return Tagged<HeapObject>();
     page_iterator_.Reset(*current_page_);
   }
 
   DCHECK_EQ(current_page_, ro_space_->pages().end());
-  return HeapObject();
+  return Tagged<HeapObject>();
 }
 
 ReadOnlyPageObjectIterator::ReadOnlyPageObjectIterator(
@@ -300,7 +334,7 @@ ReadOnlyPageObjectIterator::ReadOnlyPageObjectIterator(
   DCHECK_LT(current_addr, page->GetAreaStart() + page->area_size());
 }
 
-HeapObject ReadOnlyPageObjectIterator::Next() {
+Tagged<HeapObject> ReadOnlyPageObjectIterator::Next() {
   if (page_ == nullptr) return HeapObject();
 
   Address end = page_->GetAreaStart() + page_->area_size();
@@ -308,12 +342,12 @@ HeapObject ReadOnlyPageObjectIterator::Next() {
     DCHECK_LE(current_addr_, end);
     if (current_addr_ == end) return HeapObject();
 
-    HeapObject object = HeapObject::FromAddress(current_addr_);
-    const int object_size = object.Size();
+    Tagged<HeapObject> object = HeapObject::FromAddress(current_addr_);
+    const int object_size = object->Size();
     current_addr_ += ALIGN_TO_ALLOCATION_ALIGNMENT(object_size);
 
     if (skip_free_space_or_filler_ == SkipFreeSpaceOrFiller::kYes &&
-        object.IsFreeSpaceOrFiller()) {
+        IsFreeSpaceOrFiller(object)) {
       continue;
     }
 

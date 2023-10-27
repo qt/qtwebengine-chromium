@@ -6,8 +6,3 @@ from __future__ import annotations
 
 from .jetstream_2_0 import JetStream20Benchmark
 from .jetstream_2_1 import JetStream21Benchmark
-
-__all__ = [
-    "JetStream20Benchmark",
-    "JetStream21Benchmark",
-]

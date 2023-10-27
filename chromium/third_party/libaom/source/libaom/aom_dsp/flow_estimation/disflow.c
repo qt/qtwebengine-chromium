@@ -154,9 +154,13 @@ static int determine_disflow_correspondence(CornerList *corners,
 // (x, y) in src and the other at (x + u, y + v) in ref.
 // This function returns the sum of squared pixel differences between
 // the two regions.
-static INLINE void compute_flow_error(const uint8_t *src, const uint8_t *ref,
-                                      int width, int height, int stride, int x,
-                                      int y, double u, double v, int16_t *dt) {
+static INLINE void compute_flow_vector(const uint8_t *src, const uint8_t *ref,
+                                       int width, int height, int stride, int x,
+                                       int y, double u, double v,
+                                       const int16_t *dx, const int16_t *dy,
+                                       int *b) {
+  memset(b, 0, 2 * sizeof(*b));
+
   // Split offset into integer and fractional parts, and compute cubic
   // interpolation kernels
   const int u_int = (int)floor(u);
@@ -230,8 +234,9 @@ static INLINE void compute_flow_error(const uint8_t *src, const uint8_t *ref,
       const int round_bits = DISFLOW_INTERP_BITS + 6 - DISFLOW_DERIV_SCALE_LOG2;
       const int warped = ROUND_POWER_OF_TWO(result, round_bits);
       const int src_px = src[(x + j) + (y + i) * stride] << 3;
-      const int err = warped - src_px;
-      dt[i * DISFLOW_PATCH_SIZE + j] = err;
+      const int dt = warped - src_px;
+      b[0] += dx[i * DISFLOW_PATCH_SIZE + j] * dt;
+      b[1] += dy[i * DISFLOW_PATCH_SIZE + j] * dt;
     }
   }
 }
@@ -351,20 +356,6 @@ static INLINE void compute_flow_matrix(const int16_t *dx, int dx_stride,
   M[3] = (double)tmp[3];
 }
 
-static INLINE void compute_flow_vector(const int16_t *dx, int dx_stride,
-                                       const int16_t *dy, int dy_stride,
-                                       const int16_t *dt, int dt_stride,
-                                       int *b) {
-  memset(b, 0, 2 * sizeof(*b));
-
-  for (int i = 0; i < DISFLOW_PATCH_SIZE; i++) {
-    for (int j = 0; j < DISFLOW_PATCH_SIZE; j++) {
-      b[0] += dx[i * dx_stride + j] * dt[i * dt_stride + j];
-      b[1] += dy[i * dy_stride + j] * dt[i * dt_stride + j];
-    }
-  }
-}
-
 // Try to invert the matrix M
 // Note: Due to the nature of how a least-squares matrix is constructed, all of
 // the eigenvalues will be >= 0, and therefore det M >= 0 as well.
@@ -388,7 +379,6 @@ void aom_compute_flow_at_point_c(const uint8_t *src, const uint8_t *ref, int x,
   double M[4];
   double M_inv[4];
   int b[2];
-  int16_t dt[DISFLOW_PATCH_SIZE * DISFLOW_PATCH_SIZE];
   int16_t dx[DISFLOW_PATCH_SIZE * DISFLOW_PATCH_SIZE];
   int16_t dy[DISFLOW_PATCH_SIZE * DISFLOW_PATCH_SIZE];
 
@@ -401,9 +391,8 @@ void aom_compute_flow_at_point_c(const uint8_t *src, const uint8_t *ref, int x,
   invert_2x2(M, M_inv);
 
   for (int itr = 0; itr < DISFLOW_MAX_ITR; itr++) {
-    compute_flow_error(src, ref, width, height, stride, x, y, *u, *v, dt);
-    compute_flow_vector(dx, DISFLOW_PATCH_SIZE, dy, DISFLOW_PATCH_SIZE, dt,
-                        DISFLOW_PATCH_SIZE, b);
+    compute_flow_vector(src, ref, width, height, stride, x, y, *u, *v, dx, dy,
+                        b);
 
     // Solve flow equations to find a better estimate for the flow vector
     // at this point

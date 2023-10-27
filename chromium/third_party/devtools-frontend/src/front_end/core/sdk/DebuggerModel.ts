@@ -300,7 +300,8 @@ export class DebuggerModel extends SDKModel<EventTypes> {
   }
 
   private registerDebugger(response: Protocol.Debugger.EnableResponse): void {
-    if (response.getError()) {
+    if (response.getError() || response.debuggerId === undefined) {
+      this.#debuggerEnabledInternal = false;
       return;
     }
     const {debuggerId} = response;
@@ -1335,9 +1336,7 @@ export interface ScopeChainEntry {
 
   name(): string|undefined;
 
-  startLocation(): Location|null;
-
-  endLocation(): Location|null;
+  range(): LocationRange|null;
 
   object(): RemoteObject;
 
@@ -1352,8 +1351,7 @@ export class Scope implements ScopeChainEntry {
   readonly #typeInternal: Protocol.Debugger.ScopeType;
   readonly #nameInternal: string|undefined;
   #ordinal: number;
-  readonly #startLocationInternal: Location|null;
-  readonly #endLocationInternal: Location|null;
+  readonly #locationRange: LocationRange|null;
   #objectInternal: RemoteObject|null;
   constructor(callFrame: CallFrame, ordinal: number) {
     this.#callFrameInternal = callFrame;
@@ -1361,11 +1359,17 @@ export class Scope implements ScopeChainEntry {
     this.#typeInternal = this.#payload.type;
     this.#nameInternal = this.#payload.name;
     this.#ordinal = ordinal;
-    this.#startLocationInternal =
-        this.#payload.startLocation ? Location.fromPayload(callFrame.debuggerModel, this.#payload.startLocation) : null;
-    this.#endLocationInternal =
-        this.#payload.endLocation ? Location.fromPayload(callFrame.debuggerModel, this.#payload.endLocation) : null;
     this.#objectInternal = null;
+
+    const start =
+        this.#payload.startLocation ? Location.fromPayload(callFrame.debuggerModel, this.#payload.startLocation) : null;
+    const end =
+        this.#payload.endLocation ? Location.fromPayload(callFrame.debuggerModel, this.#payload.endLocation) : null;
+    if (start && end && start.scriptId === end.scriptId) {
+      this.#locationRange = {start, end};
+    } else {
+      this.#locationRange = null;
+    }
   }
 
   callFrame(): CallFrame {
@@ -1406,12 +1410,8 @@ export class Scope implements ScopeChainEntry {
     return this.#nameInternal;
   }
 
-  startLocation(): Location|null {
-    return this.#startLocationInternal;
-  }
-
-  endLocation(): Location|null {
-    return this.#endLocationInternal;
+  range(): LocationRange|null {
+    return this.#locationRange;
   }
 
   object(): RemoteObject {

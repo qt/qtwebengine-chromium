@@ -9,7 +9,6 @@
 
 #include "libANGLE/renderer/d3d/d3d11/renderer11_utils.h"
 
-#include <versionhelpers.h>
 #include <algorithm>
 
 #include "common/debug.h"
@@ -1343,7 +1342,7 @@ unsigned int GetMaxViewportAndScissorRectanglesPerPipeline(D3D_FEATURE_LEVEL fea
 
 bool IsMultiviewSupported(D3D_FEATURE_LEVEL featureLevel)
 {
-    // The ANGLE_multiview extension can always be supported in D3D11 through geometry shaders.
+    // The multiview extensions can always be supported in D3D11 through geometry shaders.
     switch (featureLevel)
     {
         case D3D_FEATURE_LEVEL_11_1:
@@ -2595,7 +2594,7 @@ void InitializeFeatures(const Renderer11DeviceCaps &deviceCaps,
     // Allow translating uniform block to StructuredBuffer on Windows 10. This is targeted
     // to work around a slow fxc compile performance issue with dynamic uniform indexing.
     ANGLE_FEATURE_CONDITION(features, allowTranslateUniformBlockToStructuredBuffer,
-                            IsWin10OrGreater());
+                            IsWindows10OrLater());
 }
 
 void InitializeFrontendFeatures(const DXGI_ADAPTER_DESC &adapterDesc,

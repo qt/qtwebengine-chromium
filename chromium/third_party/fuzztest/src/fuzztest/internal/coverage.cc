@@ -57,6 +57,10 @@ constexpr uint8_t BitWidth(uint8_t x) {
 
 ExecutionCoverage* execution_coverage_instance = nullptr;
 
+void SetExecutionCoverage(ExecutionCoverage *value) {
+  execution_coverage_instance = value;
+}
+
 ExecutionCoverage* GetExecutionCoverage() {
   return execution_coverage_instance;
 }
@@ -135,7 +139,7 @@ void ExecutionCoverage::UpdateMaxStack(uintptr_t PC) {
       max_stack_recorded_ = this_stack;
     }
 
-    if (this_stack > MaxAllowedStackUsage()) {
+    if (static_cast<size_t>(this_stack) > MaxAllowedStackUsage()) {
       absl::FPrintF(GetStderr(),
                     "[!] Code under test used %d bytes of stack. Configured "
                     "limit is %d. You can change the limit by specifying "
@@ -241,7 +245,7 @@ FUZZTEST_INTERNAL_NOSANITIZE bool UpdateVectorized(
   merge_data(std::false_type{});
 
   // If any position has a bit on, we updated something.
-  for (int i = 0; i < sizeof(Vector); ++i) {
+  for (size_t i = 0; i < sizeof(Vector); ++i) {
     if (any_greater[i]) return true;
   }
   return false;
@@ -317,7 +321,7 @@ bool CorpusCoverage::Update(ExecutionCoverage* execution_coverage) {
 
 }  // namespace fuzztest::internal
 
-#ifndef FUZZTEST_COMPATIBILITY_MODE
+#if !defined(FUZZTEST_COMPATIBILITY_MODE) && !defined(FUZZTEST_USE_CENTIPEDE)
 // Sanitizer Coverage hooks.
 
 // The instrumentation runtime calls back the following function at startup,
@@ -346,10 +350,10 @@ extern "C" void __sanitizer_cov_8bit_counters_init(uint8_t* start,
              absl::Span<uint8_t>(start, map_size)) {
     // Nothing to do.
   } else {
-    FUZZTEST_INTERNAL_CHECK_PRECONDITION(
-        false,
-        "__sanitizer_cov_8bit_counters_init was called multiple times with "
-        "different arguments. Currently, we support only a single DSO.");
+    fprintf(fuzztest::internal::GetStderr(),
+            "Warning: __sanitizer_cov_8bit_counters_init was called multiple "
+            "times with different arguments. Currently, we only support "
+            "recording coverage metrics for the first DSO encountered.\n");
   }
 }
 
@@ -508,4 +512,5 @@ void __sanitizer_weak_hook_strncasecmp(void *caller_pc, const char *s1,
 }
 }
 
-#endif  // FUZZTEST_COMPATIBILITY_MODE
+#endif  // !defined(FUZZTEST_COMPATIBILITY_MODE) &&
+        // !defined(FUZZTEST_USE_CENTIPEDE)

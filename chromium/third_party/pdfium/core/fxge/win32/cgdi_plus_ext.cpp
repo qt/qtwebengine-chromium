@@ -26,9 +26,9 @@
 #include "core/fxge/dib/cfx_dibbase.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
 #include "core/fxge/win32/cwin32_platform.h"
+#include "third_party/base/containers/span.h"
 #include "third_party/base/notreached.h"
 #include "third_party/base/numerics/safe_conversions.h"
-#include "third_party/base/span.h"
 
 // Has to come before gdiplus.h
 namespace Gdiplus {
@@ -222,16 +222,22 @@ void OutputImage(Gdiplus::GpGraphics* pGraphics,
                 dest_height);
     return;
   }
-  int src_pitch = source->GetPitch();
+
+  RetainPtr<const CFX_DIBBase> realized_source = source->RealizeIfNeeded();
+  if (!realized_source) {
+    return;
+  }
+
+  int src_pitch = realized_source->GetPitch();
 
   // `GdipCreateBitmapFromScan0()` requires a `BYTE*` scanline buffer, but in
   // this case, the bitmap only gets read by `GdipDrawImagePointsI()`, then
   // disposed of, so it's safe to cast away `const` here.
-  uint8_t* scan0 =
-      const_cast<uint8_t*>(source->GetBuffer()
-                               .subspan(src_rect.top * src_pitch +
-                                        source->GetBPP() * src_rect.left / 8)
-                               .data());
+  uint8_t* scan0 = const_cast<uint8_t*>(
+      realized_source->GetBuffer()
+          .subspan(src_rect.top * src_pitch +
+                   realized_source->GetBPP() * src_rect.left / 8)
+          .data());
   Gdiplus::GpBitmap* bitmap = nullptr;
   switch (source->GetFormat()) {
     case FXDIB_Format::kArgb:
@@ -254,7 +260,7 @@ void OutputImage(Gdiplus::GpGraphics* pGraphics,
       pal[0] = 0;
       pal[1] = 256;
       for (int i = 0; i < 256; i++)
-        pal[i + 2] = source->GetPaletteArgb(i);
+        pal[i + 2] = realized_source->GetPaletteArgb(i);
       CallFunc(GdipSetImagePalette)(bitmap, (Gdiplus::ColorPalette*)pal);
       break;
     }

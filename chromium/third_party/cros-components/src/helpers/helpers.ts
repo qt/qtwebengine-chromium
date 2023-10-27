@@ -32,9 +32,10 @@ export function assertExists<A>(
  * NOTE: unlike the internal counterpart this ALWAYS throws an error when given
  * null or undefined. This is not compiled out for prod.
  */
-export function castExists<A>(arg: A, msg: string): NonNullable<A> {
-  if (!arg) {
-    throw new Error(`Assertion Error: ${msg}`);
+export function castExists<A>(arg: A, msg: string|null = null): NonNullable<A> {
+  if (arg === null || arg === undefined) {
+    throw new Error(
+        msg ? `Assertion Error: ${msg}` : `The reference is ${arg}`);
   }
   return arg;
 }

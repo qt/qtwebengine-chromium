@@ -22,14 +22,25 @@
  public:                                                                       \
   constexpr Type() : __VA_ARGS__() {}                                          \
                                                                                \
+  /* For every object, add a `->` operator which returns a pointer to this     \
+     object. This will allow smoother transition between T and Tagged<T>. */   \
+  Type* operator->() { return this; }                                          \
+  const Type* operator->() const { return this; }                              \
+                                                                               \
  protected:                                                                    \
   template <typename TFieldType, int kFieldOffset, typename CompressionScheme> \
   friend class TaggedField;                                                    \
+  friend class Tagged<Type>;                                                   \
+                                                                               \
+  /* Special constructor for constexpr construction which allows skipping type \
+   * checks. */                                                                \
+  explicit constexpr inline Type(Address ptr, Object::SkipTypeCheckTag)        \
+      : __VA_ARGS__(ptr, Object::SkipTypeCheckTag()) {}                        \
                                                                                \
   explicit inline Type(Address ptr)
 
 #define OBJECT_CONSTRUCTORS_IMPL(Type, Super) \
-  inline Type::Type(Address ptr) : Super(ptr) { SLOW_DCHECK(Is##Type()); }
+  inline Type::Type(Address ptr) : Super(ptr) { SLOW_DCHECK(Is##Type(*this)); }
 
 #define NEVER_READ_ONLY_SPACE   \
   inline Heap* GetHeap() const; \
@@ -108,6 +119,13 @@
   }                                                          \
   type holder::name(PtrComprCageBase cage_base, AcquireLoadTag) const
 
+#define DEF_HEAP_OBJECT_PREDICATE(holder, name)            \
+  bool name(Tagged<holder> obj) {                          \
+    PtrComprCageBase cage_base = GetPtrComprCageBase(obj); \
+    return name(obj, cage_base);                           \
+  }                                                        \
+  bool name(Tagged<holder> obj, PtrComprCageBase cage_base)
+
 #define TQ_FIELD_TYPE(name, tq_type) \
   static constexpr const char* k##name##TqFieldType = tq_type;
 
@@ -155,14 +173,17 @@
   DECL_ACQUIRE_GETTER(name, MaybeObject)          \
   DECL_RELEASE_SETTER(name, MaybeObject)
 
-#define DECL_CAST(Type)                                 \
-  V8_INLINE static Type cast(Object object);            \
-  V8_INLINE static Type unchecked_cast(Object object) { \
-    return base::bit_cast<Type>(object);                \
+#define DECL_CAST(Type)                                      \
+  V8_INLINE static Tagged<Type> cast(Tagged<Object> object); \
+  V8_INLINE static constexpr Tagged<Type> unchecked_cast(    \
+      Tagged<Object> object) {                               \
+    return Tagged<Type>::unchecked_cast(object);             \
   }
 
-#define CAST_ACCESSOR(Type) \
-  Type Type::cast(Object object) { return Type(object.ptr()); }
+#define CAST_ACCESSOR(Type)                        \
+  Tagged<Type> Type::cast(Tagged<Object> object) { \
+    return Tagged<Type>(Type(object.ptr()));       \
+  }
 
 #define DEF_PRIMITIVE_ACCESSORS(holder, name, offset, type)     \
   type holder::name() const { return ReadField<type>(offset); } \
@@ -226,6 +247,9 @@
 #define RENAME_TORQUE_ACCESSORS(holder, name, torque_name, type)      \
   inline type holder::name() const {                                  \
     return TorqueGeneratedClass::torque_name();                       \
+  }                                                                   \
+  inline type holder::name(PtrComprCageBase cage_base) const {        \
+    return TorqueGeneratedClass::torque_name(cage_base);              \
   }                                                                   \
   inline void holder::set_##name(type value, WriteBarrierMode mode) { \
     TorqueGeneratedClass::set_##torque_name(value, mode);             \
@@ -417,23 +441,21 @@
                 kRelaxedStore);                                      \
   }
 
-#define DECL_EXTERNAL_POINTER_ACCESSORS(name, type)                       \
-  inline type name() const;                                               \
+// Host objects in ReadOnlySpace can't define the isolate-less accessor.
+#define DECL_EXTERNAL_POINTER_ACCESSORS_MAYBE_READ_ONLY_HOST(name, type)  \
   inline type name(i::Isolate* isolate_for_sandbox) const;                \
   inline void init_##name(i::Isolate* isolate, const type initial_value); \
   inline void set_##name(i::Isolate* isolate, const type value);
 
-#define EXTERNAL_POINTER_ACCESSORS(holder, name, type, offset, tag)         \
-  type holder::name() const {                                               \
-    i::Isolate* isolate_for_sandbox = GetIsolateForSandbox(*this);          \
-    return holder::name(isolate_for_sandbox);                               \
-  }                                                                         \
+// Host objects in ReadOnlySpace can't define the isolate-less accessor.
+#define EXTERNAL_POINTER_ACCESSORS_MAYBE_READ_ONLY_HOST(holder, name, type, \
+                                                        offset, tag)        \
   type holder::name(i::Isolate* isolate_for_sandbox) const {                \
     /* This is a workaround for MSVC error C2440 not allowing  */           \
     /* reinterpret casts to the same type. */                               \
     struct C2440 {};                                                        \
-    Address result =                                                        \
-        Object::ReadExternalPointerField<tag>(offset, isolate_for_sandbox); \
+    Address result = HeapObject::ReadExternalPointerField<tag>(             \
+        offset, isolate_for_sandbox);                                       \
     return reinterpret_cast<type>(reinterpret_cast<C2440*>(result));        \
   }                                                                         \
   void holder::init_##name(i::Isolate* isolate, const type initial_value) { \
@@ -442,7 +464,7 @@
     struct C2440 {};                                                        \
     Address the_value = reinterpret_cast<Address>(                          \
         reinterpret_cast<const C2440*>(initial_value));                     \
-    Object::InitExternalPointerField<tag>(offset, isolate, the_value);      \
+    HeapObject::InitExternalPointerField<tag>(offset, isolate, the_value);  \
   }                                                                         \
   void holder::set_##name(i::Isolate* isolate, const type value) {          \
     /* This is a workaround for MSVC error C2440 not allowing  */           \
@@ -450,8 +472,20 @@
     struct C2440 {};                                                        \
     Address the_value =                                                     \
         reinterpret_cast<Address>(reinterpret_cast<const C2440*>(value));   \
-    Object::WriteExternalPointerField<tag>(offset, isolate, the_value);     \
+    HeapObject::WriteExternalPointerField<tag>(offset, isolate, the_value); \
   }
+
+#define DECL_EXTERNAL_POINTER_ACCESSORS(name, type) \
+  inline type name() const;                         \
+  DECL_EXTERNAL_POINTER_ACCESSORS_MAYBE_READ_ONLY_HOST(name, type)
+
+#define EXTERNAL_POINTER_ACCESSORS(holder, name, type, offset, tag)           \
+  type holder::name() const {                                                 \
+    i::Isolate* isolate_for_sandbox = GetIsolateForSandbox(*this);            \
+    return holder::name(isolate_for_sandbox);                                 \
+  }                                                                           \
+  EXTERNAL_POINTER_ACCESSORS_MAYBE_READ_ONLY_HOST(holder, name, type, offset, \
+                                                  tag)
 
 #define BIT_FIELD_ACCESSORS2(holder, get_field, set_field, name, BitField) \
   typename BitField::FieldType holder::name() const {                      \
@@ -504,6 +538,9 @@
 #define SEQ_CST_SWAP_FIELD(p, offset, value) \
   TaggedField<Object>::SeqCst_Swap(p, offset, value)
 
+#define SEQ_CST_COMPARE_AND_SWAP_FIELD(p, offset, expected, value) \
+  TaggedField<Object>::SeqCst_CompareAndSwap(p, offset, expected, value)
+
 #ifdef V8_DISABLE_WRITE_BARRIERS
 #define WRITE_BARRIER(object, offset, value)
 #else
@@ -534,12 +571,24 @@
 #define EPHEMERON_KEY_WRITE_BARRIER(object, offset, value) \
   WRITE_BARRIER(object, offset, value)
 #else
-#define EPHEMERON_KEY_WRITE_BARRIER(object, offset, value)          \
-  do {                                                              \
-    DCHECK_NOT_NULL(GetHeapFromWritableObject(object));             \
-    CombinedEphemeronWriteBarrier(EphemeronHashTable::cast(object), \
-                                  (object).RawField(offset), value, \
-                                  UPDATE_WRITE_BARRIER);            \
+#define EPHEMERON_KEY_WRITE_BARRIER(object, offset, value)           \
+  do {                                                               \
+    DCHECK_NOT_NULL(GetHeapFromWritableObject(object));              \
+    CombinedEphemeronWriteBarrier(EphemeronHashTable::cast(object),  \
+                                  (object)->RawField(offset), value, \
+                                  UPDATE_WRITE_BARRIER);             \
+  } while (false)
+#endif
+
+#ifdef V8_DISABLE_WRITE_BARRIERS
+#define INDIRECT_POINTER_WRITE_BARRIER(object, offset, value)
+#else
+#define INDIRECT_POINTER_WRITE_BARRIER(object, offset, value)           \
+  do {                                                                  \
+    DCHECK_NOT_NULL(GetHeapFromWritableObject(object));                 \
+    IndirectPointerWriteBarrier(                                        \
+        object, Tagged(object)->RawIndirectPointerField(offset), value, \
+        UPDATE_WRITE_BARRIER);                                          \
   } while (false)
 #endif
 
@@ -549,10 +598,10 @@
 #define CONDITIONAL_WRITE_BARRIER(object, offset, value, mode) \
   WRITE_BARRIER(object, offset, value)
 #else
-#define CONDITIONAL_WRITE_BARRIER(object, offset, value, mode)            \
-  do {                                                                    \
-    DCHECK_NOT_NULL(GetHeapFromWritableObject(object));                   \
-    CombinedWriteBarrier(object, (object).RawField(offset), value, mode); \
+#define CONDITIONAL_WRITE_BARRIER(object, offset, value, mode)             \
+  do {                                                                     \
+    DCHECK_NOT_NULL(GetHeapFromWritableObject(object));                    \
+    CombinedWriteBarrier(object, (object)->RawField(offset), value, mode); \
   } while (false)
 #endif
 
@@ -562,11 +611,11 @@
 #define CONDITIONAL_WEAK_WRITE_BARRIER(object, offset, value, mode) \
   WRITE_BARRIER(object, offset, value)
 #else
-#define CONDITIONAL_WEAK_WRITE_BARRIER(object, offset, value, mode)         \
-  do {                                                                      \
-    DCHECK_NOT_NULL(GetHeapFromWritableObject(object));                     \
-    CombinedWriteBarrier(object, (object).RawMaybeWeakField(offset), value, \
-                         mode);                                             \
+#define CONDITIONAL_WEAK_WRITE_BARRIER(object, offset, value, mode)          \
+  do {                                                                       \
+    DCHECK_NOT_NULL(GetHeapFromWritableObject(object));                      \
+    CombinedWriteBarrier(object, (object)->RawMaybeWeakField(offset), value, \
+                         mode);                                              \
   } while (false)
 #endif
 
@@ -577,7 +626,19 @@
   do {                                                                       \
     DCHECK_NOT_NULL(GetHeapFromWritableObject(object));                      \
     CombinedEphemeronWriteBarrier(EphemeronHashTable::cast(object),          \
-                                  (object).RawField(offset), value, mode);   \
+                                  (object)->RawField(offset), value, mode);  \
+  } while (false)
+#endif
+
+#ifdef V8_DISABLE_WRITE_BARRIERS
+#define CONDITIONAL_INDIRECT_POINTER_WRITE_BARRIER(object, offset, value, mode)
+#else
+#define CONDITIONAL_INDIRECT_POINTER_WRITE_BARRIER(object, offset, value, \
+                                                   mode)                  \
+  do {                                                                    \
+    DCHECK_NOT_NULL(GetHeapFromWritableObject(object));                   \
+    IndirectPointerWriteBarrier(                                          \
+        object, (object).RawIndirectPointerField(offset), value, mode);   \
   } while (false)
 #endif
 
@@ -698,9 +759,16 @@ static_assert(sizeof(unsigned) == sizeof(uint32_t),
 #define DECL_VERIFIER(Name) void Name##Verify(Isolate* isolate);
 #define EXPORT_DECL_VERIFIER(Name) \
   V8_EXPORT_PRIVATE void Name##Verify(Isolate* isolate);
+#define DECL_STATIC_VERIFIER(Name) \
+  static void Name##Verify(Tagged<Name> obj, Isolate* isolate);
+#define EXPORT_DECL_STATIC_VERIFIER(Name)                      \
+  V8_EXPORT_PRIVATE static void Name##Verify(Tagged<Name> obj, \
+                                             Isolate* isolate);
 #else
 #define DECL_VERIFIER(Name)
 #define EXPORT_DECL_VERIFIER(Name)
+#define DECL_STATIC_VERIFIER(Name)
+#define EXPORT_DECL_STATIC_VERIFIER(Name)
 #endif
 
 #define DEFINE_DEOPT_ELEMENT_ACCESSORS(name, type) \
@@ -717,15 +785,8 @@ static_assert(sizeof(unsigned) == sizeof(uint32_t),
     set(IndexForEntry(i) + k##name##Offset, value);             \
   }
 
-#define TQ_OBJECT_CONSTRUCTORS(Type)                                           \
- public:                                                                       \
-  constexpr Type() = default;                                                  \
-                                                                               \
- protected:                                                                    \
-  template <typename TFieldType, int kFieldOffset, typename CompressionScheme> \
-  friend class TaggedField;                                                    \
-                                                                               \
-  inline explicit Type(Address ptr);                                           \
+#define TQ_OBJECT_CONSTRUCTORS(Type)                             \
+  OBJECT_CONSTRUCTORS(Type, TorqueGenerated##Type<Type, Super>); \
   friend class TorqueGenerated##Type<Type, Super>;
 
 #define TQ_OBJECT_CONSTRUCTORS_IMPL(Type) \

@@ -5,7 +5,7 @@
 #define EIGEN_POWER_PREFETCH(p)
 #endif
 
-#ifdef _ARCH_PWR9
+#if defined(_ARCH_PWR9) || defined(EIGEN_ALTIVEC_MMA_DYNAMIC_DISPATCH)
 #define USE_PARTIAL_PACKETS
 #endif
 

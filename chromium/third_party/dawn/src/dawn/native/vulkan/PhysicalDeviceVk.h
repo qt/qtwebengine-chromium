@@ -17,7 +17,7 @@
 
 #include "dawn/native/PhysicalDevice.h"
 
-#include "dawn/common/RefCounted.h"
+#include "dawn/common/Ref.h"
 #include "dawn/common/vulkan_platform.h"
 #include "dawn/native/vulkan/VulkanInfo.h"
 
@@ -43,6 +43,7 @@ class PhysicalDevice : public PhysicalDeviceBase {
     bool IsDepthStencilFormatSupported(VkFormat format) const;
 
     bool IsAndroidQualcomm() const;
+    bool IsAndroidARM() const;
     bool IsIntelMesa() const;
 
     uint32_t GetDefaultComputeSubgroupSize() const;
@@ -55,6 +56,7 @@ class PhysicalDevice : public PhysicalDeviceBase {
     MaybeError ValidateFeatureSupportedWithTogglesImpl(wgpu::FeatureName feature,
                                                        const TogglesState& toggles) const override;
 
+    void SetupBackendAdapterToggles(TogglesState* adapterToggles) const override;
     void SetupBackendDeviceToggles(TogglesState* deviceToggles) const override;
     ResultOrError<Ref<DeviceBase>> CreateDeviceImpl(AdapterBase* adapter,
                                                     const DeviceDescriptor* descriptor,

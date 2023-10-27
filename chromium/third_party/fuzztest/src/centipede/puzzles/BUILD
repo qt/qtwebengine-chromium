@@ -34,6 +34,7 @@ package(default_visibility = ["@com_google_fuzztest//centipede/puzzles:__subpack
     "memcmp_4",
     "memcmp_4_may_inline",
     "memcmp_3",
+    "strcmp",
     "uint32_cmp_1",
     "oom",
     "per_input_timeout",
@@ -41,4 +42,5 @@ package(default_visibility = ["@com_google_fuzztest//centipede/puzzles:__subpack
     "independent_compares",
     "autodictionary_stress",
     "paths",
+    "thread_uint32_cmp_1",
 ]]

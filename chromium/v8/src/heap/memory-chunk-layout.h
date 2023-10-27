@@ -17,7 +17,6 @@ namespace v8 {
 namespace internal {
 
 class MarkingBitmap;
-class CodeObjectRegistry;
 class FreeListCategory;
 class Heap;
 class TypedSlotsSet;
@@ -37,7 +36,8 @@ using ActiveSystemPages = ::heap::base::ActiveSystemPages;
 class V8_EXPORT_PRIVATE MemoryChunkLayout {
  public:
   static constexpr int kNumSets = NUMBER_OF_REMEMBERED_SET_TYPES;
-  static constexpr int kNumTypes = ExternalBackingStoreType::kNumTypes;
+  static constexpr int kNumTypes =
+      static_cast<int>(ExternalBackingStoreType::kNumValues);
   static constexpr int kMemoryChunkAlignment = sizeof(size_t);
 #define FIELD(Type, Name) \
   k##Name##Offset, k##Name##End = k##Name##Offset + sizeof(Type) - 1
@@ -65,7 +65,6 @@ class V8_EXPORT_PRIVATE MemoryChunkLayout {
     FIELD(std::atomic<size_t>[kNumTypes], ExternalBackingStoreBytes),
     FIELD(heap::ListNode<MemoryChunk>, ListNode),
     FIELD(FreeListCategory**, Categories),
-    FIELD(CodeObjectRegistry*, CodeObjectRegistry),
     FIELD(PossiblyEmptyBuckets, PossiblyEmptyBuckets),
     FIELD(ActiveSystemPages*, ActiveSystemPages),
     FIELD(size_t, AllocatedLabSize),

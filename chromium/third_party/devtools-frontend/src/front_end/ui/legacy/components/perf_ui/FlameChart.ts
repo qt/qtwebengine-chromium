@@ -31,17 +31,15 @@
 import * as Common from '../../../../core/common/common.js';
 import * as i18n from '../../../../core/i18n/i18n.js';
 import * as Platform from '../../../../core/platform/platform.js';
-import type * as SDK from '../../../../core/sdk/sdk.js';
 import type * as TimelineModel from '../../../../models/timeline_model/timeline_model.js';
 import * as TraceEngine from '../../../../models/trace/trace.js';
 import * as UI from '../../legacy.js';
 import * as ThemeSupport from '../../theme_support/theme_support.js';
 
 import {ChartViewport, type ChartViewportDelegate} from './ChartViewport.js';
-
-import {TimelineGrid, type Calculator} from './TimelineGrid.js';
 import flameChartStyles from './flameChart.css.legacy.js';
 import {DEFAULT_FONT_SIZE, getFontFamilyForCanvas} from './Font.js';
+import {type Calculator, TimelineGrid} from './TimelineGrid.js';
 
 const UIStrings = {
   /**
@@ -92,7 +90,7 @@ export class FlameChart extends Common.ObjectWrapper.eventMixin<EventTypes, type
   private readonly flameChartDelegate: FlameChartDelegate;
   private chartViewport: ChartViewport;
   private dataProvider: FlameChartDataProvider;
-  private candyStripeCanvas: HTMLCanvasElement;
+  private candyStripePattern: CanvasPattern|null;
   private viewportElement: HTMLElement;
   private canvas: HTMLCanvasElement;
   private entryInfo: HTMLElement;
@@ -109,7 +107,16 @@ export class FlameChart extends Common.ObjectWrapper.eventMixin<EventTypes, type
   private readonly headerLabelXPadding: number;
   private readonly headerLabelYPadding: number;
   private highlightedMarkerIndex: number;
+  /**
+   * Represents the index of the entry that the user's mouse cursor is over.
+   * Note that this is updated as the user moves their cursor: they do not have
+   * to click for this to be updated.
+   **/
   private highlightedEntryIndex: number;
+  /**
+   * Represents the index of the entry that is selected. For an entry to be
+   * selected, it has to be clicked by the user.
+   **/
   private selectedEntryIndex: number;
   private rawTimelineDataLength: number;
   private readonly markerPositions: Map<number, {
@@ -152,11 +159,10 @@ export class FlameChart extends Common.ObjectWrapper.eventMixin<EventTypes, type
     this.chartViewport.show(this.contentElement);
 
     this.dataProvider = dataProvider;
-    this.candyStripeCanvas = document.createElement('canvas');
-    this.createCandyStripePattern();
 
     this.viewportElement = this.chartViewport.viewportElement;
     this.canvas = (this.viewportElement.createChild('canvas', 'fill') as HTMLCanvasElement);
+    this.candyStripePattern = null;
 
     this.canvas.tabIndex = 0;
     UI.ARIAUtils.setLabel(this.canvas, i18nString(UIStrings.flameChart));
@@ -167,6 +173,7 @@ export class FlameChart extends Common.ObjectWrapper.eventMixin<EventTypes, type
     this.canvas.addEventListener('mouseout', this.onMouseOut.bind(this), false);
     this.canvas.addEventListener('click', this.onClick.bind(this), false);
     this.canvas.addEventListener('keydown', this.onKeyDown.bind(this), false);
+    this.canvas.addEventListener('contextmenu', this.#onContextMenu.bind(this), false);
 
     this.entryInfo = this.viewportElement.createChild('div', 'flame-chart-entry-info');
     this.markerHighlighElement = this.viewportElement.createChild('div', 'flame-chart-marker-highlight-element');
@@ -257,16 +264,13 @@ export class FlameChart extends Common.ObjectWrapper.eventMixin<EventTypes, type
     this.dispatchEventToListeners(Events.EntryHighlighted, -1);
   }
 
-  private createCandyStripePattern(): void {
+  private createCandyStripePattern(): CanvasPattern {
     // Set the candy stripe pattern to 17px so it repeats well.
     const size = 17;
-    this.candyStripeCanvas.width = size;
-    this.candyStripeCanvas.height = size;
-
-    const ctx = this.candyStripeCanvas.getContext('2d');
-    if (!ctx) {
-      return;
-    }
+    const candyStripeCanvas = document.createElement('canvas');
+    candyStripeCanvas.width = size;
+    candyStripeCanvas.height = size;
+    const ctx = candyStripeCanvas.getContext('2d') as CanvasRenderingContext2D;
 
     // Rotate the stripe by 45deg to the right.
     ctx.translate(size * 0.5, size * 0.5);
@@ -277,6 +281,9 @@ export class FlameChart extends Common.ObjectWrapper.eventMixin<EventTypes, type
     for (let x = -size; x < size * 2; x += 3) {
       ctx.fillRect(x, -size, 1, size * 3);
     }
+    // Because we're using a canvas, we know createPattern won't return null
+    // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-createpattern-dev
+    return ctx.createPattern(candyStripeCanvas, 'repeat') as CanvasPattern;
   }
 
   private resetCanvas(): void {
@@ -604,6 +611,31 @@ export class FlameChart extends Common.ObjectWrapper.eventMixin<EventTypes, type
                                        i18nString(UIStrings.sCollapsed, {PH1: groupName});
       UI.ARIAUtils.alert(content);
     }
+  }
+
+  #onContextMenu(_event: Event): void {
+    // The context menu only applies if the user is hovering over an individual entry.
+    if (this.highlightedEntryIndex === -1) {
+      return;
+    }
+    const data = this.timelineData();
+    if (!data) {
+      return;
+    }
+    const group = data.groups.at(this.selectedGroup);
+    // Early exit here if there is no group or:
+    // 1. The group is not expanded: it needs to be expanded to allow the
+    //    context menu actions to occur.
+    // 2. The group does not have the showStackContextMenu flag which indicates
+    //    that it does not show entries that support the stack actions.
+    if (!group || !group.expanded || !group.showStackContextMenu) {
+      return;
+    }
+    // TODO(crbug.com/1469887): implement a context menu that supports stack editing options. See bug for more details.
+    // At this point once a context menu is implemented we will also want to
+    // update the selected index to match the highlighted index, which
+    // represents the entry under the cursor where the user has right clicked
+    // to trigger a context menu.
   }
 
   private onKeyDown(e: KeyboardEvent): void {
@@ -991,8 +1023,9 @@ export class FlameChart extends Common.ObjectWrapper.eventMixin<EventTypes, type
 
     for (const [color, {indexes}] of colorBuckets) {
       this.#drawGenericEvents(context, timelineData, color, indexes);
-      this.#drawDecorations(context, timelineData, indexes);
     }
+    const allIndexes = Array.from(colorBuckets.values()).map(x => x.indexes).flat();
+    this.#drawDecorations(context, timelineData, allIndexes);
 
     this.drawMarkers(context, timelineData, markerIndices);
 
@@ -1003,7 +1036,7 @@ export class FlameChart extends Common.ObjectWrapper.eventMixin<EventTypes, type
     this.drawFlowEvents(context, canvasWidth, canvasHeight);
     this.drawMarkerLines();
     const dividersData = TimelineGrid.calculateGridOffsets(this);
-    const navStartTimes = Array.from(this.dataProvider.navStartTimes().values());
+    const navStartTimes = this.dataProvider.mainFrameNavigationStartEvents?.() || [];
 
     let navStartTimeIndex = 0;
     const drawAdjustedTime = (time: number): string => {
@@ -1014,14 +1047,20 @@ export class FlameChart extends Common.ObjectWrapper.eventMixin<EventTypes, type
       // Track when the time crosses the boundary to the next nav start record,
       // and when it does, move the nav start array index accordingly.
       const hasNextNavStartTime = navStartTimes.length > navStartTimeIndex + 1;
-      if (hasNextNavStartTime && time > navStartTimes[navStartTimeIndex + 1].startTime) {
-        navStartTimeIndex++;
+      if (hasNextNavStartTime) {
+        const nextNavStartTime = navStartTimes[navStartTimeIndex + 1];
+        const nextNavStartTimeStartTimestamp =
+            TraceEngine.Helpers.Timing.microSecondsToMilliseconds(nextNavStartTime.ts);
+        if (time > nextNavStartTimeStartTimestamp) {
+          navStartTimeIndex++;
+        }
       }
 
       // Adjust the time by the nearest nav start marker's value.
       const nearestMarker = navStartTimes[navStartTimeIndex];
       if (nearestMarker) {
-        time -= nearestMarker.startTime - this.zeroTime();
+        const nearestMarkerStartTime = TraceEngine.Helpers.Timing.microSecondsToMilliseconds(nearestMarker.ts);
+        time -= nearestMarkerStartTime - this.zeroTime();
       }
 
       return this.formatValue(time, dividersData.precision);
@@ -1071,7 +1110,6 @@ export class FlameChart extends Common.ObjectWrapper.eventMixin<EventTypes, type
         sortDecorationsForRenderingOrder(decorationsForEvent);
       }
       const entryStartTime = entryStartTimes[entryIndex];
-      const candyStripePattern = context.createPattern(this.candyStripeCanvas, 'repeat');
 
       for (const decoration of decorationsForEvent) {
         const duration = entryTotalTimes[entryIndex];
@@ -1080,6 +1118,9 @@ export class FlameChart extends Common.ObjectWrapper.eventMixin<EventTypes, type
           if (duration < candyStripeStartTime) {
             // If the duration of the event is less than the start time to draw the candy stripes, then we have no stripes to draw.
             continue;
+          }
+          if (!this.candyStripePattern) {
+            this.candyStripePattern = this.createCandyStripePattern();
           }
 
           context.save();
@@ -1092,10 +1133,8 @@ export class FlameChart extends Common.ObjectWrapper.eventMixin<EventTypes, type
             startX: barXStart,
             width: barXEnd - barXStart,
           });
-          if (candyStripePattern) {
-            context.fillStyle = candyStripePattern;
-            context.fill();
-          }
+          context.fillStyle = this.candyStripePattern;
+          context.fill();
           context.restore();
 
         } else if (decoration.type === 'WARNING_TRIANGLE') {
@@ -2050,20 +2089,20 @@ export class FlameChart extends Common.ObjectWrapper.eventMixin<EventTypes, type
     return this.dataProvider.formatValue(value - this.zeroTime(), precision);
   }
 
-  maximumBoundary(): number {
-    return this.chartViewport.windowRightTime();
+  maximumBoundary(): TraceEngine.Types.Timing.MilliSeconds {
+    return TraceEngine.Types.Timing.MilliSeconds(this.chartViewport.windowRightTime());
   }
 
-  minimumBoundary(): number {
-    return this.chartViewport.windowLeftTime();
+  minimumBoundary(): TraceEngine.Types.Timing.MilliSeconds {
+    return TraceEngine.Types.Timing.MilliSeconds(this.chartViewport.windowLeftTime());
   }
 
-  zeroTime(): number {
-    return this.dataProvider.minimumBoundary();
+  zeroTime(): TraceEngine.Types.Timing.MilliSeconds {
+    return TraceEngine.Types.Timing.MilliSeconds(this.dataProvider.minimumBoundary());
   }
 
-  boundarySpan(): number {
-    return this.maximumBoundary() - this.minimumBoundary();
+  boundarySpan(): TraceEngine.Types.Timing.MilliSeconds {
+    return TraceEngine.Types.Timing.MilliSeconds(this.maximumBoundary() - this.minimumBoundary());
   }
 }
 
@@ -2184,7 +2223,7 @@ export interface FlameChartDataProvider {
 
   textColor(entryIndex: number): string;
 
-  navStartTimes(): Map<string, SDK.TracingModel.Event>;
+  mainFrameNavigationStartEvents?(): readonly TraceEngine.Types.TraceEvents.TraceEventNavigationStart[];
 }
 
 export interface FlameChartMarker {
@@ -2243,6 +2282,8 @@ export interface Group {
   selectable?: boolean;
   style: GroupStyle;
   track?: TimelineModel.TimelineModel.Track|null;
+  // Should be turned on if the track supports user editable stacks.
+  showStackContextMenu?: boolean;
 }
 
 export interface GroupStyle {

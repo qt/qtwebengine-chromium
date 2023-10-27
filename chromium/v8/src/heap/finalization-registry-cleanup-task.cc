@@ -64,7 +64,7 @@ void FinalizationRegistryCleanupTask::RunInternal() {
   catcher.SetVerbose(true);
   std::unique_ptr<MicrotasksScope> microtasks_scope;
   MicrotaskQueue* microtask_queue =
-      finalization_registry->native_context().microtask_queue();
+      finalization_registry->native_context()->microtask_queue();
   if (!microtask_queue) microtask_queue = isolate->default_microtask_queue();
   if (microtask_queue &&
       microtask_queue->microtasks_policy() == v8::MicrotasksPolicy::kScoped) {
@@ -89,7 +89,7 @@ void FinalizationRegistryCleanupTask::RunInternal() {
                                             finalization_registry, callback);
   if (finalization_registry->NeedsCleanup() &&
       !finalization_registry->scheduled_for_cleanup()) {
-    auto nop = [](HeapObject, ObjectSlot, Object) {};
+    auto nop = [](Tagged<HeapObject>, ObjectSlot, Tagged<Object>) {};
     heap_->EnqueueDirtyJSFinalizationRegistry(*finalization_registry, nop);
   }
 

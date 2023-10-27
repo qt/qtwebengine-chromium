@@ -3,28 +3,29 @@ Validation negative tests for bitcast builtins.
 `;
 
 import { makeTestGroup } from '../../../../../../common/framework/test_group.js';
+import { keysOf } from '../../../../../../common/util/data_tables.js';
 import { kBit } from '../../../../../util/constants.js';
 import { linearRange } from '../../../../../util/math.js';
 import { ShaderValidationTest } from '../../../shader_validation_test.js';
 
 export const g = makeTestGroup(ShaderValidationTest);
 
-// A VectorCase specfies the number of components a vector type has,
+// A VectorCase specifies the number of components a vector type has,
 // and which component will have a bad value.
 // Use width = 1 to indicate a scalar.
 type VectorCase = { width: number; badIndex: number };
-const vectorCases: VectorCase[] = [
-  { width: 1, badIndex: 0 },
-  { width: 2, badIndex: 0 },
-  { width: 2, badIndex: 1 },
-  { width: 3, badIndex: 0 },
-  { width: 3, badIndex: 1 },
-  { width: 3, badIndex: 2 },
-  { width: 4, badIndex: 0 },
-  { width: 4, badIndex: 1 },
-  { width: 4, badIndex: 2 },
-  { width: 4, badIndex: 3 },
-];
+const kVectorCases: Record<string, VectorCase> = {
+  v1_b0: { width: 1, badIndex: 0 },
+  v2_b0: { width: 2, badIndex: 0 },
+  v2_b1: { width: 2, badIndex: 1 },
+  v3_b0: { width: 3, badIndex: 0 },
+  v3_b1: { width: 3, badIndex: 1 },
+  v3_b2: { width: 3, badIndex: 2 },
+  v4_b0: { width: 4, badIndex: 0 },
+  v4_b1: { width: 4, badIndex: 1 },
+  v4_b2: { width: 4, badIndex: 2 },
+  v4_b3: { width: 4, badIndex: 3 },
+};
 
 const numNaNs = 4;
 const f32InfAndNaNInU32: number[] = [
@@ -51,7 +52,8 @@ It is a shader-creation error if any const-expression of floating-point type eva
   .params(u =>
     u
       .combine('fromScalarType', ['i32', 'u32'] as const)
-      .combine('vectorize', [...vectorCases] as const)
+      .combine('vectorize', keysOf(kVectorCases))
+      .beginSubcases()
       .combine('bitBadValue', [...f32InfAndNaNInU32] as const)
   )
   .fn(t => {
@@ -60,8 +62,9 @@ It is a shader-creation error if any const-expression of floating-point type eva
     // For vector cases, generate code where one component is bad. In this case
     // width=4 and badIndex=2
     //  const f = bitcast<vec4f>(vec4<32>(0,0,i32(u32(0x7f800000)),0));
-    const width = t.params.vectorize.width;
-    const badIndex = t.params.vectorize.badIndex;
+    const vectorize = kVectorCases[t.params.vectorize];
+    const width = vectorize.width;
+    const badIndex = vectorize.badIndex;
     const badScalar = `${t.params.fromScalarType}(u32(${t.params.bitBadValue}))`;
     const destType = width === 1 ? 'f32' : `vec${width}f`;
     const srcType =
@@ -141,4 +144,149 @@ Can't cast numeric type to vec3<f16> because it is 48 bits wide
 and no other type is that size.
 `
   )
-  .unimplemented();
+  .params(u =>
+    u
+      .combine('other_type', [
+        'bool',
+        'u32',
+        'i32',
+        'f32',
+        'vec2<bool>',
+        'vec3<bool>',
+        'vec4<bool>',
+        'vec2u',
+        'vec3u',
+        'vec4u',
+        'vec2i',
+        'vec3i',
+        'vec4i',
+        'vec2f',
+        'vec3f',
+        'vec4f',
+        'vec2h',
+        'vec4h',
+      ] as const)
+      .combine('direction', ['to', 'from'] as const)
+      .combine('type', ['vec3<f16>', 'vec3h'])
+  )
+  .beforeAllSubcases(t => {
+    t.selectDeviceOrSkipTestCase('shader-f16');
+  })
+  .fn(t => {
+    const src_type = t.params.direction === 'to' ? t.params.type : t.params.other_type;
+    const dst_type = t.params.direction === 'from' ? t.params.type : t.params.other_type;
+    const code = `
+enable f16;
+@fragment
+fn main() {
+  var src : ${src_type};
+  let dst = bitcast<${dst_type}>(src);
+}`;
+    t.expectCompileResult(false, code);
+  });
+
+g.test('bad_to_f16')
+  .specURL('https://www.w3.org/TR/WGSL/#bitcast-builtin')
+  .desc(
+    `
+Can't cast non-16-bit types to f16 because it is 16 bits wide
+and no other type is that size.
+`
+  )
+  .params(u =>
+    u
+      .combine('other_type', [
+        'bool',
+        'u32',
+        'i32',
+        'f32',
+        'vec2<bool>',
+        'vec3<bool>',
+        'vec4<bool>',
+        'vec2u',
+        'vec3u',
+        'vec4u',
+        'vec2i',
+        'vec3i',
+        'vec4i',
+        'vec2f',
+        'vec3f',
+        'vec4f',
+        'vec2h',
+        'vec3h',
+        'vec4h',
+      ] as const)
+      .combine('direction', ['to', 'from'] as const)
+  )
+  .beforeAllSubcases(t => {
+    t.selectDeviceOrSkipTestCase('shader-f16');
+  })
+  .fn(t => {
+    const src_type = t.params.direction === 'to' ? 'f16' : t.params.other_type;
+    const dst_type = t.params.direction === 'from' ? 'f16' : t.params.other_type;
+    const code = `
+enable f16;
+@fragment
+fn main() {
+  var src : ${src_type};
+  let dst = bitcast<${dst_type}>(src);
+}`;
+    t.expectCompileResult(false, code);
+  });
+
+g.test('valid_vec2h')
+  .specURL('https://www.w3.org/TR/WGSL/#bitcast-builtin')
+  .desc(`Check valid vec2<f16> bitcasts`)
+  .params(u =>
+    u
+      .combine('other_type', ['u32', 'i32', 'f32'] as const)
+      .combine('type', ['vec2<f16>', 'vec2h'] as const)
+      .combine('direction', ['to', 'from'] as const)
+  )
+  .beforeAllSubcases(t => {
+    t.selectDeviceOrSkipTestCase('shader-f16');
+  })
+  .fn(t => {
+    const src_type = t.params.direction === 'to' ? t.params.type : t.params.other_type;
+    const dst_type = t.params.direction === 'from' ? t.params.type : t.params.other_type;
+    const code = `
+enable f16;
+@fragment
+fn main() {
+  var src : ${src_type};
+  let dst = bitcast<${dst_type}>(src);
+}`;
+    t.expectCompileResult(true, code);
+  });
+
+g.test('valid_vec4h')
+  .specURL('https://www.w3.org/TR/WGSL/#bitcast-builtin')
+  .desc(`Check valid vec2<f16> bitcasts`)
+  .params(u =>
+    u
+      .combine('other_type', [
+        'vec2<u32>',
+        'vec2u',
+        'vec2<i32>',
+        'vec2i',
+        'vec2<f32>',
+        'vec2f',
+      ] as const)
+      .combine('type', ['vec4<f16>', 'vec4h'] as const)
+      .combine('direction', ['to', 'from'] as const)
+  )
+  .beforeAllSubcases(t => {
+    t.selectDeviceOrSkipTestCase('shader-f16');
+  })
+  .fn(t => {
+    const src_type = t.params.direction === 'to' ? t.params.type : t.params.other_type;
+    const dst_type = t.params.direction === 'from' ? t.params.type : t.params.other_type;
+    const code = `
+enable f16;
+@fragment
+fn main() {
+  var src : ${src_type};
+  let dst = bitcast<${dst_type}>(src);
+}`;
+    t.expectCompileResult(true, code);
+  });

@@ -37,8 +37,7 @@ import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
-
-import type * as Protocol from '../../generated/protocol.js';
+import * as Protocol from '../../generated/protocol.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
 import type * as Components from '../../ui/legacy/components/utils/utils.js';
@@ -48,9 +47,8 @@ import {FontEditorSectionManager} from './ColorSwatchPopoverIcon.js';
 import * as ElementsComponents from './components/components.js';
 import {linkifyDeferredNodeReference} from './DOMLinkifier.js';
 import {ElementsPanel} from './ElementsPanel.js';
+import {type Context, StylePropertyTreeElement} from './StylePropertyTreeElement.js';
 import stylesSectionTreeStyles from './stylesSectionTree.css.js';
-
-import {StylePropertyTreeElement, type Context} from './StylePropertyTreeElement.js';
 import {StylesSidebarPane} from './StylesSidebarPane.js';
 
 const UIStrings = {
@@ -146,7 +144,7 @@ export class StylePropertiesSection {
   private hoverableSelectorsMode: boolean;
   private isHiddenInternal: boolean;
 
-  private queryListElement: HTMLElement;
+  private ancestorRuleListElement: HTMLElement;
 
   // Used to identify buttons that trigger a flexbox or grid editor.
   nextEditorTriggerButtonIdx = 1;
@@ -154,11 +152,13 @@ export class StylePropertiesSection {
 
   // Used to keep track of Specificity Information
   static #nodeElementToSpecificity: WeakMap<Element, Protocol.CSS.Specificity> = new WeakMap();
+  #customHeaderText: string|undefined;
 
   constructor(
       parentPane: StylesSidebarPane, matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles,
       style: SDK.CSSStyleDeclaration.CSSStyleDeclaration, sectionIdx: number, computedStyles: Map<string, string>|null,
-      parentsComputedStyles: Map<string, string>|null) {
+      parentsComputedStyles: Map<string, string>|null, headerText?: string) {
+    this.#customHeaderText = headerText;
     this.parentPane = parentPane;
     this.sectionIdx = sectionIdx;
     this.styleInternal = style;
@@ -271,7 +271,7 @@ export class StylePropertiesSection {
       }
     }
 
-    this.queryListElement = this.titleElement.createChild('div', 'query-list query-matches');
+    this.ancestorRuleListElement = this.titleElement.createChild('div', 'ancestor-rule-list');
     this.selectorRefElement = this.titleElement.createChild('div', 'styles-section-subtitle');
     this.updateQueryList();
     this.updateRuleOrigin();
@@ -352,7 +352,7 @@ export class StylePropertiesSection {
       return document.createTextNode('');
     }
 
-    const ruleLocation = this.getRuleLocationFromCSSRule(rule);
+    const ruleLocation = StylePropertiesSection.getRuleLocationFromCSSRule(rule);
 
     const header = rule.styleSheetId ? matchedStyles.cssModel().styleSheetHeaderForId(rule.styleSheetId) : null;
 
@@ -413,6 +413,12 @@ export class StylePropertiesSection {
     }
 
     return document.createTextNode('');
+  }
+
+  protected createRuleOriginNode(
+      matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles, linkifier: Components.Linkifier.Linkifier,
+      rule: SDK.CSSRule.CSSRule|null): Node {
+    return StylePropertiesSection.createRuleOriginNode(matchedStyles, linkifier, rule);
   }
 
   private static getRuleLocationFromCSSRule(rule: SDK.CSSRule.CSSRule): TextUtils.TextRange.TextRange|null|undefined {
@@ -576,6 +582,9 @@ export class StylePropertiesSection {
   }
 
   headerText(): string {
+    if (this.#customHeaderText) {
+      return this.#customHeaderText;
+    }
     const node = this.matchedStyles.nodeForStyle(this.styleInternal);
     if (this.styleInternal.type === SDK.CSSStyleDeclaration.Type.Inline) {
       return this.matchedStyles.isInherited(this.styleInternal) ? i18nString(UIStrings.styleAttribute) :
@@ -725,122 +734,138 @@ export class StylePropertiesSection {
     this.updateRuleOrigin();
   }
 
-  protected createAtRuleLists(rule: SDK.CSSRule.CSSStyleRule): void {
-    this.createMediaList(rule.media);
-    this.createContainerQueryList(rule.containerQueries);
-    this.createScopesList(rule.scopes);
-    this.createSupportsList(rule.supports);
-  }
-
-  protected createMediaList(mediaRules: SDK.CSSMedia.CSSMedia[]): void {
-    for (let i = mediaRules.length - 1; i >= 0; --i) {
-      const media = mediaRules[i];
-      // Don't display trivial non-print media types.
-      const isMedia = !media.text || !media.text.includes('(') && media.text !== 'print';
-      if (isMedia) {
-        continue;
-      }
-
-      let queryPrefix = '';
-      let queryText = '';
-      let onQueryTextClick;
-      switch (media.source) {
-        case SDK.CSSMedia.Source.LINKED_SHEET:
-        case SDK.CSSMedia.Source.INLINE_SHEET: {
-          queryText = `media="${media.text}"`;
+  protected createAncestorRules(rule: SDK.CSSRule.CSSStyleRule): void {
+    let mediaIndex = 0;
+    let containerIndex = 0;
+    let scopeIndex = 0;
+    let supportsIndex = 0;
+    let nestingIndex = 0;
+    for (const ruleType of rule.ruleTypes) {
+      let ancestorRuleElement;
+      switch (ruleType) {
+        case Protocol.CSS.CSSRuleType.MediaRule:
+          ancestorRuleElement = this.createMediaElement(rule.media[mediaIndex++]);
           break;
-        }
-        case SDK.CSSMedia.Source.MEDIA_RULE: {
-          queryPrefix = '@media';
-          queryText = media.text;
-          if (media.styleSheetId) {
-            onQueryTextClick = this.handleQueryRuleClick.bind(this, media);
-          }
+        case Protocol.CSS.CSSRuleType.ContainerRule:
+          ancestorRuleElement = this.createContainerQueryElement(rule.containerQueries[containerIndex++]);
           break;
-        }
-        case SDK.CSSMedia.Source.IMPORT_RULE: {
-          queryText = `@import ${media.text}`;
+        case Protocol.CSS.CSSRuleType.ScopeRule:
+          ancestorRuleElement = this.createScopeElement(rule.scopes[scopeIndex++]);
           break;
+        case Protocol.CSS.CSSRuleType.SupportsRule:
+          ancestorRuleElement = this.createSupportsElement(rule.supports[supportsIndex++]);
+          break;
+        case Protocol.CSS.CSSRuleType.StyleRule:
+          ancestorRuleElement = this.createNestingElement(rule.nestingSelectors?.[nestingIndex++]);
+          break;
+      }
+      ancestorRuleElement && this.ancestorRuleListElement.prepend(ancestorRuleElement);
+    }
+  }
+
+  protected createMediaElement(media: SDK.CSSMedia.CSSMedia): ElementsComponents.CSSQuery.CSSQuery|undefined {
+    // Don't display trivial non-print media types.
+    const isMedia = !media.text || !media.text.includes('(') && media.text !== 'print';
+    if (isMedia) {
+      return;
+    }
+
+    let queryPrefix = '';
+    let queryText = '';
+    let onQueryTextClick;
+    switch (media.source) {
+      case SDK.CSSMedia.Source.LINKED_SHEET:
+      case SDK.CSSMedia.Source.INLINE_SHEET: {
+        queryText = `media="${media.text}"`;
+        break;
+      }
+      case SDK.CSSMedia.Source.MEDIA_RULE: {
+        queryPrefix = '@media';
+        queryText = media.text;
+        if (media.styleSheetId) {
+          onQueryTextClick = this.handleQueryRuleClick.bind(this, media);
         }
+        break;
       }
-
-      const mediaQueryElement = new ElementsComponents.CSSQuery.CSSQuery();
-      mediaQueryElement.data = {
-        queryPrefix,
-        queryText,
-        onQueryTextClick,
-      };
-      this.queryListElement.append(mediaQueryElement);
+      case SDK.CSSMedia.Source.IMPORT_RULE: {
+        queryText = `@import ${media.text}`;
+        break;
+      }
     }
+
+    const mediaQueryElement = new ElementsComponents.CSSQuery.CSSQuery();
+    mediaQueryElement.data = {
+      queryPrefix,
+      queryText,
+      onQueryTextClick,
+    };
+    return mediaQueryElement;
   }
 
-  protected createContainerQueryList(containerQueries: SDK.CSSContainerQuery.CSSContainerQuery[]): void {
-    for (let i = containerQueries.length - 1; i >= 0; --i) {
-      const containerQuery = containerQueries[i];
-      if (!containerQuery.text) {
-        continue;
-      }
-
-      let onQueryTextClick;
-      if (containerQuery.styleSheetId) {
-        onQueryTextClick = this.handleQueryRuleClick.bind(this, containerQuery);
-      }
-
-      const containerQueryElement = new ElementsComponents.CSSQuery.CSSQuery();
-      containerQueryElement.data = {
-        queryPrefix: '@container',
-        queryName: containerQuery.name,
-        queryText: containerQuery.text,
-        onQueryTextClick,
-      };
-      this.queryListElement.append(containerQueryElement);
-
-      void this.addContainerForContainerQuery(containerQuery);
+  protected createContainerQueryElement(containerQuery: SDK.CSSContainerQuery.CSSContainerQuery):
+      ElementsComponents.CSSQuery.CSSQuery|undefined {
+    if (!containerQuery.text) {
+      return;
     }
+
+    let onQueryTextClick;
+    if (containerQuery.styleSheetId) {
+      onQueryTextClick = this.handleQueryRuleClick.bind(this, containerQuery);
+    }
+
+    const containerQueryElement = new ElementsComponents.CSSQuery.CSSQuery();
+    containerQueryElement.data = {
+      queryPrefix: '@container',
+      queryName: containerQuery.name,
+      queryText: containerQuery.text,
+      onQueryTextClick,
+    };
+    void this.addContainerForContainerQuery(containerQuery);
+    return containerQueryElement;
   }
 
-  protected createScopesList(scopesList: SDK.CSSScope.CSSScope[]): void {
-    for (let i = scopesList.length - 1; i >= 0; --i) {
-      const scope = scopesList[i];
-      if (!scope.text) {
-        continue;
-      }
-
-      let onQueryTextClick;
-      if (scope.styleSheetId) {
-        onQueryTextClick = this.handleQueryRuleClick.bind(this, scope);
-      }
-
-      const scopeElement = new ElementsComponents.CSSQuery.CSSQuery();
-      scopeElement.data = {
-        queryPrefix: '@scope',
-        queryText: scope.text,
-        onQueryTextClick,
-      };
-      this.queryListElement.append(scopeElement);
+  protected createScopeElement(scope: SDK.CSSScope.CSSScope): ElementsComponents.CSSQuery.CSSQuery|undefined {
+    let onQueryTextClick;
+    if (scope.styleSheetId) {
+      onQueryTextClick = this.handleQueryRuleClick.bind(this, scope);
     }
+
+    const scopeElement = new ElementsComponents.CSSQuery.CSSQuery();
+    scopeElement.data = {
+      queryPrefix: '@scope',
+      queryText: scope.text,
+      onQueryTextClick,
+    };
+    return scopeElement;
   }
 
-  protected createSupportsList(supportsList: SDK.CSSSupports.CSSSupports[]): void {
-    for (let i = supportsList.length - 1; i >= 0; --i) {
-      const supports = supportsList[i];
-      if (!supports.text) {
-        continue;
-      }
-
-      let onQueryTextClick;
-      if (supports.styleSheetId) {
-        onQueryTextClick = this.handleQueryRuleClick.bind(this, supports);
-      }
-
-      const supportsElement = new ElementsComponents.CSSQuery.CSSQuery();
-      supportsElement.data = {
-        queryPrefix: '@supports',
-        queryText: supports.text,
-        onQueryTextClick,
-      };
-      this.queryListElement.append(supportsElement);
+  protected createSupportsElement(supports: SDK.CSSSupports.CSSSupports): ElementsComponents.CSSQuery.CSSQuery
+      |undefined {
+    if (!supports.text) {
+      return;
     }
+
+    let onQueryTextClick;
+    if (supports.styleSheetId) {
+      onQueryTextClick = this.handleQueryRuleClick.bind(this, supports);
+    }
+
+    const supportsElement = new ElementsComponents.CSSQuery.CSSQuery();
+    supportsElement.data = {
+      queryPrefix: '@supports',
+      queryText: supports.text,
+      onQueryTextClick,
+    };
+    return supportsElement;
+  }
+
+  protected createNestingElement(nestingSelector?: string): HTMLElement|undefined {
+    if (!nestingSelector) {
+      return;
+    }
+    const nestingElement = document.createElement('div');
+    nestingElement.textContent = nestingSelector;
+    return nestingElement;
   }
 
   private async addContainerForContainerQuery(containerQuery: SDK.CSSContainerQuery.CSSContainerQuery): Promise<void> {
@@ -867,13 +892,13 @@ export class StylePropertiesSection {
       }
     });
 
-    this.queryListElement.prepend(containerElement);
+    this.ancestorRuleListElement.prepend(containerElement);
   }
 
   private updateQueryList(): void {
-    this.queryListElement.removeChildren();
+    this.ancestorRuleListElement.removeChildren();
     if (this.styleInternal.parentRule && this.styleInternal.parentRule instanceof SDK.CSSRule.CSSStyleRule) {
-      this.createAtRuleLists(this.styleInternal.parentRule);
+      this.createAncestorRules(this.styleInternal.parentRule);
     }
   }
 
@@ -978,8 +1003,15 @@ export class StylePropertiesSection {
       if (style.parentRule && style.parentRule.isUserAgent() && inherited) {
         continue;
       }
-      const item = new StylePropertyTreeElement(
-          this.parentPane, this.matchedStyles, property, isShorthand, inherited, overloaded, false);
+      const item = new StylePropertyTreeElement({
+        stylesPane: this.parentPane,
+        matchedStyles: this.matchedStyles,
+        property,
+        isShorthand,
+        inherited,
+        overloaded,
+        newProperty: false,
+      });
       item.setComputedStyles(this.computedStyles);
       item.setParentsComputedStyles(this.parentsComputedStyles);
       this.propertiesTreeOutline.appendChild(item);
@@ -1027,8 +1059,6 @@ export class StylePropertiesSection {
       return;
     }
 
-    this.queryListElement.classList.toggle('query-matches', this.matchedStyles.queryMatches(this.styleInternal));
-
     const matchingSelectorIndexes = this.matchedStyles.getMatchingSelectors(rule);
     const matchingSelectors = (new Array(rule.selectors.length).fill(false) as boolean[]);
     for (const matchingIndex of matchingSelectorIndexes) {
@@ -1039,8 +1069,8 @@ export class StylePropertiesSection {
       return;
     }
 
-    const fragment = StylePropertiesSection.renderSelectors(
-        rule.selectors, matchingSelectors, this.elementToSelectorIndex, rule.nestingSelectors);
+    const fragment =
+        StylePropertiesSection.renderSelectors(rule.selectors, matchingSelectors, this.elementToSelectorIndex);
     this.selectorElement.removeChildren();
     this.selectorElement.appendChild(fragment);
     this.markSelectorHighlights();
@@ -1052,9 +1082,8 @@ export class StylePropertiesSection {
 
   static renderSelectors(
       selectors: {text: string, specificity: Protocol.CSS.Specificity|undefined}[], matchingSelectors: boolean[],
-      elementToSelectorIndex: WeakMap<Element, number>, nestingSelectors?: string[]): DocumentFragment {
+      elementToSelectorIndex: WeakMap<Element, number>): DocumentFragment {
     const fragment = document.createDocumentFragment();
-    let hasNestingSymbol = false;
     for (const [i, selector] of selectors.entries()) {
       if (i) {
         UI.UIUtils.createTextChild(fragment, ', ');
@@ -1066,42 +1095,10 @@ export class StylePropertiesSection {
         StylePropertiesSection.#nodeElementToSpecificity.set(selectorElement, selector.specificity);
       }
       elementToSelectorIndex.set(selectorElement, i);
-
-      if (nestingSelectors && selector.text.includes('&')) {
-        hasNestingSymbol = true;
-        const segments = selector.text.split('&');
-        for (const [segmentIndex, segment] of segments.entries()) {
-          if (segment) {
-            selectorElement.append(segment);
-          }
-          if (segmentIndex < segments.length - 1) {
-            selectorElement.append(this.createNestingSymbol(nestingSelectors));
-          }
-        }
-      } else {
-        selectorElement.textContent = selectors[i].text;
-      }
-
+      selectorElement.textContent = selectors[i].text;
       fragment.append(selectorElement);
     }
-
-    if (nestingSelectors && !hasNestingSymbol) {
-      const implicitNestingSymbol = this.createNestingSymbol(nestingSelectors);
-      implicitNestingSymbol.classList.add('implicit');
-      fragment.prepend(implicitNestingSymbol, ' ');
-    }
     return fragment;
-  }
-
-  static createNestingSymbol(nestingSelectors: string[]): HTMLElement {
-    const nestingElement = document.createElement('span');
-    nestingElement.textContent = '&';
-    nestingElement.classList.add('nesting-symbol');
-    // Selector list (.cl1, .cl2) is internally treated as :is(...) for specificity calculation.
-    const computedNestingSelectors =
-        nestingSelectors.reverse().map(selector => (selector.includes(',') ? `:is(${selector})` : selector)).join(' ');
-    nestingElement.dataset.nestingSelectors = computedNestingSelectors;
-    return nestingElement;
   }
 
   markSelectorHighlights(): void {
@@ -1116,7 +1113,15 @@ export class StylePropertiesSection {
   addNewBlankProperty(index: number|undefined = this.propertiesTreeOutline.rootElement().childCount()):
       StylePropertyTreeElement {
     const property = this.styleInternal.newBlankProperty(index);
-    const item = new StylePropertyTreeElement(this.parentPane, this.matchedStyles, property, false, false, false, true);
+    const item = new StylePropertyTreeElement({
+      stylesPane: this.parentPane,
+      matchedStyles: this.matchedStyles,
+      property,
+      isShorthand: false,
+      inherited: false,
+      overloaded: false,
+      newProperty: true,
+    });
     this.propertiesTreeOutline.insertChild(item, property.index);
     return item;
   }
@@ -1146,7 +1151,7 @@ export class StylePropertiesSection {
     const target = (event.target as Element);
 
     if (target.classList.contains('header') || this.element.classList.contains('read-only') ||
-        target.enclosingNodeOrSelfWithClass('query')) {
+        target.enclosingNodeOrSelfWithClass('ancestor-rule-list')) {
       event.consume();
       return;
     }
@@ -1463,6 +1468,7 @@ export class StylePropertiesSection {
     if (!oldSelectorRange) {
       return Promise.resolve();
     }
+    this.#customHeaderText = undefined;
     return rule.setSelectorText(newContent).then(onSelectorsUpdated.bind(this, rule, Boolean(oldSelectorRange)));
   }
 
@@ -1471,8 +1477,8 @@ export class StylePropertiesSection {
 
   protected updateRuleOrigin(): void {
     this.selectorRefElement.removeChildren();
-    this.selectorRefElement.appendChild(StylePropertiesSection.createRuleOriginNode(
-        this.matchedStyles, this.parentPane.linkifier, this.styleInternal.parentRule));
+    this.selectorRefElement.appendChild(
+        this.createRuleOriginNode(this.matchedStyles, this.parentPane.linkifier, this.styleInternal.parentRule));
   }
 
   protected editingSelectorEnded(): void {
@@ -1526,7 +1532,7 @@ export class BlankStylePropertiesSection extends StylePropertiesSection {
         cssModel, this.parentPane.linkifier, styleSheetId, this.actualRuleLocation()));
     if (insertAfterStyle && insertAfterStyle.parentRule &&
         insertAfterStyle.parentRule instanceof SDK.CSSRule.CSSStyleRule) {
-      this.createAtRuleLists(insertAfterStyle.parentRule);
+      this.createAncestorRules(insertAfterStyle.parentRule);
     }
     this.element.classList.add('blank-section');
   }
@@ -1614,6 +1620,28 @@ export class BlankStylePropertiesSection extends StylePropertiesSection {
     this.styleInternal = newRule.style;
     // FIXME: replace this instance by a normal StylePropertiesSection.
     this.normal = true;
+  }
+}
+
+export class RegisteredPropertiesSection extends StylePropertiesSection {
+  constructor(
+      stylesPane: StylesSidebarPane, matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles,
+      style: SDK.CSSStyleDeclaration.CSSStyleDeclaration, sectionIdx: number, propertyName: string,
+      expandedByDefault: boolean) {
+    super(stylesPane, matchedStyles, style, sectionIdx, null, null, propertyName);
+    if (!expandedByDefault) {
+      this.element.classList.add('hidden');
+    }
+    this.selectorElement.className = 'property-registration-key';
+  }
+
+  override createRuleOriginNode(
+      matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles, linkifier: Components.Linkifier.Linkifier,
+      rule: SDK.CSSRule.CSSRule|null): Node {
+    if (rule) {
+      return super.createRuleOriginNode(matchedStyles, linkifier, rule);
+    }
+    return document.createTextNode('CSS.registerProperty');
   }
 }
 

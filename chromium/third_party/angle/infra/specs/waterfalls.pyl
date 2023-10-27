@@ -106,8 +106,6 @@
           'x86-64',
         ],
         'test_suites': {
-          'gtest_tests': 'swangle_gtests',
-          'isolated_scripts': 'swangle_restricted_trace_gold_isolated_scripts',
         },
       },
       'linux-exp-swiftshader-asan': {
@@ -120,7 +118,6 @@
           'x86-64',
         ],
         'test_suites': {
-          'gtest_tests': 'swangle_slow_gtests',
         },
       },
       'linux-exp-swiftshader-tsan': {
@@ -133,7 +130,6 @@
           'x86-64',
         ],
         'test_suites': {
-          'gtest_tests': 'swangle_slow_flaky_gtests',
         },
       },
       'linux-intel': {
@@ -181,7 +177,7 @@
         'mixins': [
           'gpu-swarming-pool',
           'no_gpu',
-          'linux-bionic',
+          'linux-jammy',
           'timeout_15m',
           'x86-64',
         ],
@@ -195,7 +191,7 @@
         'mixins': [
           'gpu-swarming-pool',
           'no_gpu',
-          'linux-bionic',
+          'linux-jammy',
           'timeout_15m',
           'x86-64',
         ],
@@ -208,7 +204,7 @@
         'mixins': [
           'gpu-swarming-pool',
           'no_gpu',
-          'linux-bionic',
+          'linux-jammy',
           'timeout_15m',
           'x86-64',
         ],
@@ -231,6 +227,7 @@
           'mac_retina_amd_gpu_experimental',
         ],
         'test_suites': {
+          'gtest_tests': 'mac_amd_and_intel_gtests',
         },
       },
       'mac-exp-intel': {
@@ -239,6 +236,16 @@
           'mac_mini_intel_gpu_experimental',
         ],
         'test_suites': {
+          'gtest_tests': 'mac_amd_and_intel_gtests',
+        },
+      },
+      'mac-exp-nvidia': {
+        'os_type': 'mac',
+        'mixins': [
+          'mac_retina_nvidia_gpu_experimental',
+        ],
+        'test_suites': {
+          'gtest_tests': 'mac_nvidia_gtests',
         },
       },
       'mac-intel': {
@@ -257,7 +264,8 @@
         ],
         'test_suites': {
           # Fewer tests enabled on this config because of limited capacity.
-          'gtest_tests': 'mac_nvidia_gtests',
+          # Temporarily disabled for upgrade crbug.com/1456549
+          # 'gtest_tests': 'mac_nvidia_gtests',
         },
       },
       'win10-x64-exp-intel': {

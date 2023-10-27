@@ -23,6 +23,7 @@
 
 #include "absl/random/bit_gen_ref.h"
 #include "absl/random/distributions.h"
+#include "absl/time/time.h"
 #include "./fuzztest/internal/domains/domain_base.h"
 #include "./fuzztest/internal/logging.h"
 #include "./fuzztest/internal/serialization.h"
@@ -77,10 +78,13 @@ class ElementOfImpl
     // Checking for `operator==` is not enough. You will have false positives
     // where `operator==` exists but it either doens't compile or it gives the
     // wrong answer.
+    // TODO(b/298068402): Improve this.
     if constexpr (std::is_enum_v<value_type> ||
                   std::is_arithmetic_v<value_type> ||
                   std::is_same_v<std::string, value_type> ||
-                  std::is_same_v<std::string_view, value_type>) {
+                  std::is_same_v<std::string_view, value_type> ||
+                  std::is_same_v<absl::Duration, value_type> ||
+                  std::is_same_v<absl::Time, value_type>) {
       auto it = std::find(values_.begin(), values_.end(), v);
       return it == values_.end() ? std::nullopt
                                  : std::optional(static_cast<corpus_type>(
@@ -99,8 +103,11 @@ class ElementOfImpl
     return IRObject::FromCorpus(v);
   }
 
-  bool ValidateCorpusValue(const corpus_type& corpus_value) const {
-    return static_cast<size_t>(corpus_value) < values_.size();
+  absl::Status ValidateCorpusValue(const corpus_type& corpus_value) const {
+    if (static_cast<size_t>(corpus_value) < values_.size()) {
+      return absl::OkStatus();
+    }
+    return absl::InvalidArgumentError("Invalid ElementOf() value");
   }
 
  private:

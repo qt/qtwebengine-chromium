@@ -83,9 +83,7 @@ BitVector::BitVector(std::vector<uint64_t> words,
                      std::vector<uint32_t> counts,
                      uint32_t size)
     : size_(size), counts_(std::move(counts)), words_(std::move(words)) {
-  uint32_t words_size = static_cast<uint32_t>(words_.size());
-  if (words_size % Block::kWords != 0)
-    words_.resize(words_.size() + 8 - (words_.size() % 8u));
+  PERFETTO_CHECK(words_.size() % Block::kWords == 0);
 }
 
 void BitVector::Resize(uint32_t new_size, bool filler) {
@@ -307,11 +305,7 @@ BitVector BitVector::IntersectRange(uint32_t range_start,
   if (range_start >= end_idx)
     return BitVector();
 
-  Builder builder(end_idx);
-
-  // All bits before start should be empty.
-  builder.Skip(range_start);
-
+  Builder builder(end_idx, range_start);
   uint32_t front_bits = builder.BitsUntilWordBoundaryOrFull();
   uint32_t cur_index = range_start;
   for (uint32_t i = 0; i < front_bits; ++i, ++cur_index) {

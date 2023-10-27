@@ -215,6 +215,17 @@ IMAGE_STATE::IMAGE_STATE(const ValidationStateTracker *dev_data, VkImage img, co
       store_device_as_workaround(dev_data->device),  // TODO REMOVE WHEN encoder can be const
       supported_video_profiles(
           dev_data->video_profile_cache_.Get(dev_data, LvlFindInChain<VkVideoProfileListInfoKHR>(pCreateInfo->pNext))) {
+    if (pCreateInfo->flags & VK_IMAGE_CREATE_SPARSE_BINDING_BIT) {
+        bool is_resident = (pCreateInfo->flags & VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT) != 0;
+        tracker_.emplace<BindableSparseMemoryTracker>(requirements.data(), is_resident);
+        SetMemoryTracker(&std::get<BindableSparseMemoryTracker>(tracker_));
+    } else if (pCreateInfo->flags & VK_IMAGE_CREATE_DISJOINT_BIT) {
+        tracker_.emplace<BindableMultiplanarMemoryTracker>(requirements.data(), FormatPlaneCount(pCreateInfo->format));
+        SetMemoryTracker(&std::get<BindableMultiplanarMemoryTracker>(tracker_));
+    } else {
+        tracker_.emplace<BindableLinearMemoryTracker>(requirements.data());
+        SetMemoryTracker(&std::get<BindableLinearMemoryTracker>(tracker_));
+    }
 }
 
 IMAGE_STATE::IMAGE_STATE(const ValidationStateTracker *dev_data, VkImage img, const VkImageCreateInfo *pCreateInfo,
@@ -249,6 +260,9 @@ IMAGE_STATE::IMAGE_STATE(const ValidationStateTracker *dev_data, VkImage img, co
           dev_data->video_profile_cache_.Get(dev_data, LvlFindInChain<VkVideoProfileListInfoKHR>(pCreateInfo->pNext))) {
     fragment_encoder =
         std::unique_ptr<const subresource_adapter::ImageRangeEncoder>(new subresource_adapter::ImageRangeEncoder(*this));
+
+    tracker_.emplace<BindableNoMemoryTracker>(requirements.data());
+    SetMemoryTracker(&std::get<BindableNoMemoryTracker>(tracker_));
 }
 
 void IMAGE_STATE::Destroy() {
@@ -352,6 +366,16 @@ void IMAGE_STATE::SetInitialLayoutMap() {
     }
     // And store in the object
     layout_range_map = std::move(layout_map);
+}
+
+void IMAGE_STATE::SetImageLayout(const VkImageSubresourceRange &range, VkImageLayout layout) {
+    using sparse_container::update_range_value;
+    using sparse_container::value_precedence;
+    GlobalImageLayoutRangeMap::RangeGenerator range_gen(subresource_encoder, NormalizeSubresourceRange(range));
+    auto guard = layout_range_map->WriteLock();
+    for (; range_gen->non_empty(); ++range_gen) {
+        update_range_value(*layout_range_map, *range_gen, layout, value_precedence::prefer_source);
+    }
 }
 
 void IMAGE_STATE::SetSwapchain(std::shared_ptr<SWAPCHAIN_NODE> &swapchain, uint32_t swapchain_index) {
@@ -921,4 +945,16 @@ VkSurfacePresentScalingCapabilitiesEXT SURFACE_STATE::GetPresentModeScalingCapab
     surface_capabilities.pNext = &scaling_caps;
     DispatchGetPhysicalDeviceSurfaceCapabilities2KHR(phys_dev, &surface_info, &surface_capabilities);
     return scaling_caps;
+}
+
+bool GlobalImageLayoutRangeMap::AnyInRange(RangeGenerator &gen,
+                                           std::function<bool(const key_type &range, const mapped_type &state)> &&func) const {
+    for (; gen->non_empty(); ++gen) {
+        for (auto pos = lower_bound(*gen); (pos != end()) && (gen->intersects(pos->first)); ++pos) {
+            if (func(pos->first, pos->second)) {
+                return true;
+            }
+        }
+    }
+    return false;
 }

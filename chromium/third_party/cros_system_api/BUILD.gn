@@ -6,6 +6,8 @@ import("//common-mk/proto_library.gni")
 
 group("all") {
   deps = [
+    ":install_headers",
+    ":install_pkg_config",
     ":libsystem_api",
     ":system_api-anomaly_detector-protos",
     ":system_api-arc-goprotos",
@@ -22,6 +24,7 @@ group("all") {
     ":system_api-chaps-protos",
     ":system_api-chunneld-protos",
     ":system_api-cryptohome-goprotos",
+    ":system_api-device_management-protos",
     ":system_api-dlcservice-goprotos",
     ":system_api-dlcservice-protos",
     ":system_api-dlp-protos",
@@ -81,12 +84,30 @@ group("all") {
     ":system_api-vm_concierge-protos",
     ":system_api-vm_disk_management-protos",
     ":system_api-vm_launch-protos",
+    ":system_api-vm_memory_management-protos",
     ":system_api-vm_permission_service-protos",
     ":system_api-vm_plugin_dispatcher-goprotos",
     ":system_api-vm_plugin_dispatcher-protos",
     ":system_api-vm_sk_forwarding-protos",
     ":system_api-vm_wl-protos",
   ]
+}
+
+install_config("install_headers") {
+  sources = [
+    "constants",
+    "dbus",
+    "mojo",
+    "non_standard_ipc",
+    "switches",
+  ]
+  install_path = "/usr/include/chromeos"
+  recursive = true
+}
+
+install_config("install_pkg_config") {
+  sources = [ "system_api.pc" ]
+  install_path = "${libdir}/pkgconfig"
 }
 
 shared_library("libsystem_api") {
@@ -105,6 +126,7 @@ shared_library("libsystem_api") {
   } else {
     pkg_deps = [ "protobuf-lite" ]
   }
+  install_path = "lib"
 }
 
 proto_library("system_api-protos") {
@@ -116,6 +138,7 @@ proto_library("system_api-protos") {
     "${proto_in_dir}/mtp_storage_info.proto",
   ]
   standalone = true
+  install_package = true
 }
 
 proto_library("system_api-power_manager-protos") {
@@ -136,6 +159,7 @@ proto_library("system_api-power_manager-protos") {
     "${proto_in_dir}/user_charging_event.proto",
   ]
   standalone = true
+  install_package = true
 }
 
 goproto_library("system_api-power_manager-goprotos") {
@@ -168,6 +192,7 @@ proto_library("system_api-cryptohome-protos") {
     "${proto_in_dir}/rpc.proto",
   ]
   standalone = true
+  install_package = true
 
   # system_api-cryptohome-protos is used by a shared_library
   # object, so we need to build it with "-fPIC" instead of "-fPIE".
@@ -191,6 +216,7 @@ proto_library("system_api-authpolicy-protos") {
   proto_out_dir = "include/authpolicy/proto_bindings"
   sources = [ "${proto_in_dir}/active_directory_info.proto" ]
   standalone = true
+  install_package = true
 }
 
 proto_library("system_api-biod-protos") {
@@ -201,6 +227,7 @@ proto_library("system_api-biod-protos") {
     "${proto_in_dir}/messages.proto",
   ]
   standalone = true
+  install_package = true
 
   # system_api-biod-protos is used by a shared_library
   # object, so we need to build it with "-fPIC" instead of "-fPIE".
@@ -216,11 +243,20 @@ goproto_library("system_api-biod-goprotos") {
   ]
 }
 
+proto_library("system_api-device_management-protos") {
+  proto_in_dir = "dbus/device_management"
+  proto_out_dir = "include/device_management/proto_bindings"
+  sources = [ "${proto_in_dir}/device_management_interface.proto" ]
+  standalone = true
+  install_package = true
+}
+
 proto_library("system_api-kerberos-protos") {
   proto_in_dir = "dbus/kerberos"
   proto_out_dir = "include/kerberos/proto_bindings"
   sources = [ "${proto_in_dir}/kerberos_service.proto" ]
   standalone = true
+  install_package = true
 }
 
 goproto_library("system_api-kerberos-goprotos") {
@@ -237,6 +273,7 @@ proto_library("system_api-login_manager-protos") {
     "${proto_in_dir}/policy_descriptor.proto",
   ]
   standalone = true
+  install_package = true
 
   # Override optimize_for option in proto file.
   # Needed for fuzz targets using libprotobuf-mutator.
@@ -256,6 +293,7 @@ proto_library("system_api-lorgnette-protos") {
   proto_out_dir = "include/lorgnette/proto_bindings"
   sources = [ "${proto_in_dir}/lorgnette_service.proto" ]
   standalone = true
+  install_package = true
 }
 
 goproto_library("system_api-lorgnette-goprotos") {
@@ -275,6 +313,7 @@ proto_library("system_api-lvmd-protos") {
   proto_out_dir = "include/lvmd/proto_bindings"
   sources = [ "${proto_in_dir}/lvmd.proto" ]
   standalone = true
+  install_package = true
 }
 
 proto_library("system_api-chaps-protos") {
@@ -285,6 +324,7 @@ proto_library("system_api-chaps-protos") {
     "${proto_in_dir}/key_permissions.proto",
   ]
   standalone = true
+  install_package = true
 
   # system_api-chaps-protos is used by a shared_library
   # object, so we need to build it with "-fPIC" instead of "-fPIE".
@@ -296,12 +336,14 @@ proto_library("system_api-attestation-protos") {
   proto_out_dir = "include/attestation/proto_bindings"
   sources = [
     "${proto_in_dir}/attestation_ca.proto",
+    "${proto_in_dir}/database.proto",
     "${proto_in_dir}/google_key.proto",
     "${proto_in_dir}/interface.proto",
     "${proto_in_dir}/keystore.proto",
     "${proto_in_dir}/pca_agent.proto",
   ]
   standalone = true
+  install_package = true
 
   # system_api-attestation-protos" is used by a shared_library
   # object, so we need to build it with "-fPIC" instead of "-fPIE".
@@ -313,6 +355,7 @@ proto_library("system_api-libarc_attestation-protos") {
   proto_out_dir = "include/libarc_attestation/proto_bindings"
   sources = [ "${proto_in_dir}/arc_attestation_blob.proto" ]
   standalone = true
+  install_package = true
 
   # system_api-libarc_attestation-protos" is used by a shared_library
   # object, so we need to build it with "-fPIC" instead of "-fPIE".
@@ -334,6 +377,7 @@ proto_library("system_api-tpm_manager-protos") {
   proto_out_dir = "include/tpm_manager/proto_bindings"
   sources = [ "${proto_in_dir}/tpm_manager.proto" ]
   standalone = true
+  install_package = true
 
   # system_api-tpm_manager-protos is used by a shared_library
   # object, so we need to build it with "-fPIC" instead of "-fPIE".
@@ -351,6 +395,7 @@ proto_library("system_api-metrics_event-protos") {
   proto_out_dir = "include/metrics_event/proto_bindings"
   sources = [ "${proto_in_dir}/metrics_event.proto" ]
   standalone = true
+  install_package = true
 }
 
 goproto_library("system_api-metrics_event-goprotos") {
@@ -364,6 +409,7 @@ proto_library("system_api-plugin_vm_service-protos") {
   proto_out_dir = "include/plugin_vm_service/proto_bindings"
   sources = [ "${proto_in_dir}/plugin_vm_service.proto" ]
   standalone = true
+  install_package = true
 }
 
 goproto_library("system_api-plugin_vm_service-goprotos") {
@@ -377,6 +423,7 @@ proto_library("system_api-smbprovider-protos") {
   proto_out_dir = "include/smbprovider/proto_bindings"
   sources = [ "${proto_in_dir}/directory_entry.proto" ]
   standalone = true
+  install_package = true
 }
 
 proto_library("system_api-vm_cicerone-protos") {
@@ -384,6 +431,7 @@ proto_library("system_api-vm_cicerone-protos") {
   proto_out_dir = "include"
   sources = [ "${proto_in_dir}/vm_cicerone/cicerone_service.proto" ]
   standalone = true
+  install_package = true
 }
 
 goproto_library("system_api-vm_cicerone-goprotos") {
@@ -398,6 +446,7 @@ proto_library("system_api-vm_concierge-protos") {
   sources = [ "${proto_in_dir}/vm_concierge/concierge_service.proto" ]
   deps = [ ":system_api-arc-protos" ]
   standalone = true
+  install_package = true
 }
 
 goproto_library("system_api-vm_concierge-goprotos") {
@@ -411,6 +460,7 @@ proto_library("system_api-vm_applications-protos") {
   proto_out_dir = "include"
   sources = [ "${proto_in_dir}/vm_applications/apps.proto" ]
   standalone = true
+  install_package = true
 }
 
 proto_library("system_api-vm_sk_forwarding-protos") {
@@ -418,6 +468,7 @@ proto_library("system_api-vm_sk_forwarding-protos") {
   proto_out_dir = "include"
   sources = [ "${proto_in_dir}/vm_sk_forwarding/sk_forwarding.proto" ]
   standalone = true
+  install_package = true
 }
 
 proto_library("system_api-vm_launch-protos") {
@@ -425,6 +476,7 @@ proto_library("system_api-vm_launch-protos") {
   proto_out_dir = "include"
   sources = [ "${proto_in_dir}/vm_launch/launch.proto" ]
   standalone = true
+  install_package = true
 }
 
 proto_library("system_api-vm_disk_management-protos") {
@@ -432,6 +484,16 @@ proto_library("system_api-vm_disk_management-protos") {
   proto_out_dir = "include"
   sources = [ "${proto_in_dir}/vm_disk_management/disk_management.proto" ]
   standalone = true
+  install_package = true
+}
+
+proto_library("system_api-vm_memory_management-protos") {
+  proto_in_dir = "non_standard_ipc"
+  proto_out_dir = "include"
+  sources =
+      [ "${proto_in_dir}/vm_memory_management/vm_memory_management.proto" ]
+  standalone = true
+  install_package = true
 }
 
 proto_library("system_api-vm_plugin_dispatcher-protos") {
@@ -440,6 +502,7 @@ proto_library("system_api-vm_plugin_dispatcher-protos") {
   sources =
       [ "${proto_in_dir}/vm_plugin_dispatcher/vm_plugin_dispatcher.proto" ]
   standalone = true
+  install_package = true
 }
 
 goproto_library("system_api-vm_plugin_dispatcher-goprotos") {
@@ -455,6 +518,7 @@ proto_library("system_api-vm_permission_service-protos") {
   sources =
       [ "${proto_in_dir}/vm_permission_service/vm_permission_service.proto" ]
   standalone = true
+  install_package = true
 }
 
 proto_library("system_api-vm_wl-protos") {
@@ -462,6 +526,7 @@ proto_library("system_api-vm_wl-protos") {
   proto_out_dir = "include"
   sources = [ "${proto_in_dir}/vm_wl/wl.proto" ]
   standalone = true
+  install_package = true
 }
 
 proto_library("system_api-seneschal-protos") {
@@ -469,6 +534,7 @@ proto_library("system_api-seneschal-protos") {
   proto_out_dir = "include/seneschal/proto_bindings"
   sources = [ "${proto_in_dir}/seneschal_service.proto" ]
   standalone = true
+  install_package = true
 }
 
 goproto_library("system_api-seneschal-goprotos") {
@@ -482,6 +548,7 @@ proto_library("system_api-oobe_config-protos") {
   proto_out_dir = "include/oobe_config/proto_bindings"
   sources = [ "${proto_in_dir}/oobe_config.proto" ]
   standalone = true
+  install_package = true
 }
 
 proto_library("system_api-runtime_probe-protos") {
@@ -489,6 +556,7 @@ proto_library("system_api-runtime_probe-protos") {
   proto_out_dir = "include/runtime_probe/proto_bindings"
   sources = [ "${proto_in_dir}/runtime_probe.proto" ]
   standalone = true
+  install_package = true
 }
 
 goproto_library("system_api-runtime_probe-goprotos") {
@@ -502,6 +570,7 @@ proto_library("system_api-bootlockbox-protos") {
   proto_out_dir = "include/bootlockbox/proto_bindings"
   sources = [ "${proto_in_dir}/boot_lockbox_rpc.proto" ]
   standalone = true
+  install_package = true
 
   # system_api-bootlockbox-protos is used by a shared_library
   # object, so we need to build it with "-fPIC" instead of "-fPIE".
@@ -519,6 +588,7 @@ proto_library("system_api-dlcservice-protos") {
   proto_out_dir = "include/dlcservice/proto_bindings"
   sources = [ "${proto_in_dir}/dlcservice.proto" ]
   standalone = true
+  install_package = true
 }
 
 goproto_library("system_api-dlcservice-goprotos") {
@@ -532,6 +602,7 @@ proto_library("system_api-imageloader-protos") {
   proto_out_dir = "include/imageloader/proto_bindings"
   sources = [ "${proto_in_dir}/imageloader.proto" ]
   standalone = true
+  install_package = true
 }
 
 goproto_library("system_api-imageloader-goprotos") {
@@ -545,6 +616,7 @@ proto_library("system_api-update_engine-protos") {
   proto_out_dir = "include/update_engine/proto_bindings"
   sources = [ "${proto_in_dir}/update_engine.proto" ]
   standalone = true
+  install_package = true
 }
 
 goproto_library("system_api-update_engine-goprotos") {
@@ -558,6 +630,7 @@ proto_library("system_api-u2f-protos") {
   proto_out_dir = "include/u2f/proto_bindings"
   sources = [ "${proto_in_dir}/u2f_interface.proto" ]
   standalone = true
+  install_package = true
 }
 
 goproto_library("system_api-u2f-goprotos") {
@@ -571,6 +644,7 @@ proto_library("system_api-chunneld-protos") {
   proto_out_dir = "include/chunneld/proto_bindings"
   sources = [ "${proto_in_dir}/chunneld_service.proto" ]
   standalone = true
+  install_package = true
 }
 
 proto_library("system_api-patchpanel-protos") {
@@ -578,6 +652,7 @@ proto_library("system_api-patchpanel-protos") {
   proto_out_dir = "include/patchpanel/proto_bindings"
   sources = [ "${proto_in_dir}/patchpanel_service.proto" ]
   standalone = true
+  install_package = true
   use_pic = true
 }
 
@@ -592,6 +667,7 @@ proto_library("system_api-anomaly_detector-protos") {
   proto_out_dir = "include/anomaly_detector/proto_bindings"
   sources = [ "${proto_in_dir}/anomaly_detector.proto" ]
   standalone = true
+  install_package = true
 }
 
 proto_library("system_api-spaced-protos") {
@@ -599,6 +675,7 @@ proto_library("system_api-spaced-protos") {
   proto_out_dir = "include/spaced/proto_bindings"
   sources = [ "${proto_in_dir}/spaced.proto" ]
   standalone = true
+  install_package = true
 
   # system_api-spaced-protos is used by a shared_library
   # object, so we need to build it with "-fPIC" instead of "-fPIE".
@@ -610,6 +687,7 @@ proto_library("system_api-system_proxy-protos") {
   proto_out_dir = "include/system_proxy/proto_bindings"
   sources = [ "${proto_in_dir}/system_proxy_service.proto" ]
   standalone = true
+  install_package = true
 }
 
 proto_library("system_api-minios-protos") {
@@ -617,6 +695,7 @@ proto_library("system_api-minios-protos") {
   proto_out_dir = "include/minios/proto_bindings"
   sources = [ "${proto_in_dir}/minios.proto" ]
   standalone = true
+  install_package = true
 }
 
 proto_library("system_api-dlp-protos") {
@@ -624,6 +703,7 @@ proto_library("system_api-dlp-protos") {
   proto_out_dir = "include/dlp/proto_bindings"
   sources = [ "${proto_in_dir}/dlp_service.proto" ]
   standalone = true
+  install_package = true
 }
 
 proto_library("system_api-hps-protos") {
@@ -631,6 +711,7 @@ proto_library("system_api-hps-protos") {
   proto_out_dir = "include/hps/proto_bindings"
   sources = [ "${proto_in_dir}/hps_service.proto" ]
   standalone = true
+  install_package = true
 }
 
 goproto_library("system_api-hps-goprotos") {
@@ -644,6 +725,7 @@ proto_library("system_api-rmad-protos") {
   proto_out_dir = "include/rmad/proto_bindings"
   sources = [ "${proto_in_dir}/rmad.proto" ]
   standalone = true
+  install_package = true
 }
 
 proto_library("system_api-fusebox-protos") {
@@ -651,6 +733,7 @@ proto_library("system_api-fusebox-protos") {
   proto_out_dir = "include/fusebox/proto_bindings"
   sources = [ "${proto_in_dir}/fusebox.proto" ]
   standalone = true
+  install_package = true
 }
 
 proto_library("system_api-privacy_screen-protos") {
@@ -658,6 +741,7 @@ proto_library("system_api-privacy_screen-protos") {
   proto_out_dir = "include/privacy_screen/proto_bindings"
   sources = [ "${proto_in_dir}/privacy_screen.proto" ]
   standalone = true
+  install_package = true
 }
 
 proto_library("system_api-cdm_oemcrypto-protos") {
@@ -668,6 +752,7 @@ proto_library("system_api-cdm_oemcrypto-protos") {
     "${proto_in_dir}/secure_buffer.proto",
   ]
   standalone = true
+  install_package = true
 
   # system_api-cdm_oemcrypto-protos is used by a shared_library
   # object, so we need to build it with "-fPIC" instead of "-fPIE".
@@ -679,6 +764,7 @@ proto_library("system_api-ml-protos") {
   proto_out_dir = "include/ml/proto_bindings"
   sources = [ "${proto_in_dir}/ranker_example.proto" ]
   standalone = true
+  install_package = true
 }
 
 goproto_library("system_api-ml-goprotos") {
@@ -692,6 +778,7 @@ proto_library("system_api-shadercached-protos") {
   proto_out_dir = "include/shadercached/proto_bindings"
   sources = [ "${proto_in_dir}/shadercached.proto" ]
   standalone = true
+  install_package = true
 }
 
 goproto_library("system_api-shadercached-goprotos") {
@@ -705,6 +792,7 @@ proto_library("system_api-arc-protos") {
   proto_out_dir = "include"
   sources = [ "${proto_in_dir}/arc/arc.proto" ]
   standalone = true
+  install_package = true
 }
 
 goproto_library("system_api-arc-goprotos") {
@@ -718,6 +806,7 @@ proto_library("system_api-private_computing-protos") {
   proto_out_dir = "include/private_computing/proto_bindings"
   sources = [ "${proto_in_dir}/private_computing_service.proto" ]
   standalone = true
+  install_package = true
 }
 
 proto_library("system_api-arcvm_data_migrator-protos") {
@@ -725,6 +814,7 @@ proto_library("system_api-arcvm_data_migrator-protos") {
   proto_out_dir = "include/arcvm_data_migrator/proto_bindings"
   sources = [ "${proto_in_dir}/arcvm_data_migrator.proto" ]
   standalone = true
+  install_package = true
 }
 
 proto_library("system_api-featured-protos") {
@@ -732,6 +822,7 @@ proto_library("system_api-featured-protos") {
   proto_out_dir = "include/featured/proto_bindings"
   sources = [ "${proto_in_dir}/featured.proto" ]
   standalone = true
+  install_package = true
 
   # system_api-featured-protos is used by a shared_library
   # object, so we need to build it with "-fPIC" instead of "-fPIE".
@@ -751,6 +842,7 @@ proto_library("system_api-printscanmgr-protos") {
   proto_out_dir = "include/printscanmgr/proto_bindings"
   sources = [ "${proto_in_dir}/printscanmgr_service.proto" ]
   standalone = true
+  install_package = true
 }
 
 goproto_library("system_api-printscanmgr-goprotos") {

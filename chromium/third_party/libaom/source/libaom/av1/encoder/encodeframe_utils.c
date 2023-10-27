@@ -1743,3 +1743,23 @@ void av1_set_cost_upd_freq(AV1_COMP *cpi, ThreadData *td,
     default: assert(0);
   }
 }
+
+void av1_dealloc_src_diff_buf(struct macroblock *mb, int num_planes) {
+  for (int plane = 0; plane < num_planes; ++plane) {
+    aom_free(mb->plane[plane].src_diff);
+    mb->plane[plane].src_diff = NULL;
+  }
+}
+
+void av1_alloc_src_diff_buf(const struct AV1Common *cm, struct macroblock *mb) {
+  const int num_planes = av1_num_planes(cm);
+  for (int plane = 0; plane < num_planes; ++plane) {
+    const int subsampling_xy =
+        plane ? cm->seq_params->subsampling_x + cm->seq_params->subsampling_y
+              : 0;
+    const int sb_size = MAX_SB_SQUARE >> subsampling_xy;
+    CHECK_MEM_ERROR(cm, mb->plane[plane].src_diff,
+                    (int16_t *)aom_memalign(
+                        32, sizeof(*mb->plane[plane].src_diff) * sb_size));
+  }
+}

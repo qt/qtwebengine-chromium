@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -42,14 +42,14 @@ YetAnotherBitVector::~YetAnotherBitVector() {
   }
 }
 
-YetAnotherBitVector::YetAnotherBitVector(YetAnotherBitVector&& other)
+YetAnotherBitVector::YetAnotherBitVector(YetAnotherBitVector&& other) noexcept
     : size_(other.size_), bits_(other.bits_) {
   other.size_ = 0;
   other.bits_.as_integer = 0;
 }
 
 YetAnotherBitVector& YetAnotherBitVector::operator=(
-    YetAnotherBitVector&& other) {
+    YetAnotherBitVector&& other) noexcept {
   if (this == &other) {
     return *this;
   }

@@ -23,6 +23,8 @@ const renderTrack = (MdSlider.prototype as any).renderTrack;
  * Width is calculated given slider lower/upper fraction (the part of the
  * track that is currently active/inactive depending on value) minus the handle
  * gap (half of the handle width + width of transparent gap on one side).
+ *
+ * TODO(b/285172083): do not use md-slider's `--_private` custom properties
  */
 const DISABLED_STATE_OVERRIDES = css`
   md-slider[disabled] > [slot="track"] {
@@ -41,12 +43,12 @@ const DISABLED_STATE_OVERRIDES = css`
   .lower {
       border-radius: 9999px 0 0 9999px;
       left: 0;
-      width: calc((var(--slider-end-fraction)) * 100% - var(--handle-gap));
+      width: calc((var(--_end-fraction)) * 100% - var(--handle-gap));
   }
   .upper {
       border-radius: 0 9999px 9999px 0;
       right: 0;
-      width: calc((1 - var(--slider-end-fraction)) * 100% - var(--handle-gap));
+      width: calc((1 - var(--_end-fraction)) * 100% - var(--handle-gap));
   }
 `;
 /**
@@ -66,7 +68,6 @@ export class Slider extends LitElement {
       --active-disabled: var(--cros-ref-neutral10);
       --inactive-disabled: var(--cros-ref-neutral10);
       --disabled-color: var(--inactive-disabled);
-      --md-focus-ring-color: var(--cros-sys-primary);
       --md-slider-active-track-color: var(--cros-sys-primary);
       --md-slider-disabled-active-track-color: var(--disabled-color);
       --md-slider-disabled-active-track-opacity: var(--cros-sys-opacity-disabled);
@@ -82,7 +83,7 @@ export class Slider extends LitElement {
       --md-slider-inactive-track-color: var(--cros-sys-primary_container);
       --md-slider-label-container-color: var(--cros-sys-primary);
       --md-slider-label-container-height: 18px;
-      --md-slider-label-label-text-type: var(--cros-typography-label1);
+      --md-slider-label-label-text-type: var(--cros-label-1-font);
       --md-slider-pressed-handle-color: var(--cros-sys-primary);
       --md-slider-pressed-state-layer-color: var(--cros-sys-ripple_primary);
       --md-slider-pressed-state-layer-opacity: 1;
@@ -90,6 +91,9 @@ export class Slider extends LitElement {
       --md-slider-with-tick-marks-active-container-color: var(--cros-sys-on_primary);
       --md-slider-with-tick-marks-disabled-container-color: var(--disabled-color);
       --md-slider-with-tick-marks-inactive-container-color: var(--cros-sys-primary);
+    }
+    md-slider::part(focus-ring) {
+      --md-focus-ring-color: var(--cros-sys-primary);
     }
   `,
     DISABLED_STATE_OVERRIDES
@@ -138,7 +142,7 @@ export class Slider extends LitElement {
     return html`
       <md-slider @input=${this.handleInput} .valueLabel=${
         valueLabel} .disabled=${this.disabled} .value=${
-        this.value} max=10 .tickmarks=${this.withTickMarks} .labeled=${
+        this.value} max=10 .ticks=${this.withTickMarks} .labeled=${
         this.withLabel}>${disabledTemplate}</md-slider>`;
   }
 

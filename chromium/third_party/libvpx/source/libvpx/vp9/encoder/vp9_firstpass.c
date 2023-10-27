@@ -152,6 +152,7 @@ static void zero_stats(FIRSTPASS_STATS *section) {
   section->pcnt_intra_high = 0.0;
   section->inactive_zone_rows = 0.0;
   section->inactive_zone_cols = 0.0;
+  section->new_mv_count = 0.0;
   section->MVr = 0.0;
   section->mvr_abs = 0.0;
   section->MVc = 0.0;
@@ -183,6 +184,7 @@ static void accumulate_stats(FIRSTPASS_STATS *section,
   section->pcnt_intra_high += frame->pcnt_intra_high;
   section->inactive_zone_rows += frame->inactive_zone_rows;
   section->inactive_zone_cols += frame->inactive_zone_cols;
+  section->new_mv_count += frame->new_mv_count;
   section->MVr += frame->MVr;
   section->mvr_abs += frame->mvr_abs;
   section->MVc += frame->MVc;
@@ -212,6 +214,7 @@ static void subtract_stats(FIRSTPASS_STATS *section,
   section->pcnt_intra_high -= frame->pcnt_intra_high;
   section->inactive_zone_rows -= frame->inactive_zone_rows;
   section->inactive_zone_cols -= frame->inactive_zone_cols;
+  section->new_mv_count -= frame->new_mv_count;
   section->MVr -= frame->MVr;
   section->mvr_abs -= frame->mvr_abs;
   section->MVc -= frame->MVc;
@@ -361,7 +364,6 @@ static vpx_variance_fn_t highbd_get_block_variance_fn(BLOCK_SIZE bsize,
         case BLOCK_8X16: return vpx_highbd_8_mse8x16;
         default: return vpx_highbd_8_mse16x16;
       }
-      break;
     case 10:
       switch (bsize) {
         case BLOCK_8X8: return vpx_highbd_10_mse8x8;
@@ -369,7 +371,6 @@ static vpx_variance_fn_t highbd_get_block_variance_fn(BLOCK_SIZE bsize,
         case BLOCK_8X16: return vpx_highbd_10_mse8x16;
         default: return vpx_highbd_10_mse16x16;
       }
-      break;
     case 12:
       switch (bsize) {
         case BLOCK_8X8: return vpx_highbd_12_mse8x8;
@@ -377,7 +378,6 @@ static vpx_variance_fn_t highbd_get_block_variance_fn(BLOCK_SIZE bsize,
         case BLOCK_8X16: return vpx_highbd_12_mse8x16;
         default: return vpx_highbd_12_mse16x16;
       }
-      break;
   }
 }
 
@@ -804,6 +804,7 @@ static void first_pass_stat_calc(VP9_COMP *cpi, FIRSTPASS_STATS *fps,
   fps->inactive_zone_cols = (double)0;
 
   if (fp_acc_data->mvcount > 0) {
+    fps->new_mv_count = (double)(fp_acc_data->new_mv_count) / num_mbs;
     fps->MVr = (double)(fp_acc_data->sum_mvr) / fp_acc_data->mvcount;
     fps->mvr_abs = (double)(fp_acc_data->sum_mvr_abs) / fp_acc_data->mvcount;
     fps->MVc = (double)(fp_acc_data->sum_mvc) / fp_acc_data->mvcount;
@@ -820,6 +821,7 @@ static void first_pass_stat_calc(VP9_COMP *cpi, FIRSTPASS_STATS *fps,
         (double)(fp_acc_data->sum_in_vectors) / (fp_acc_data->mvcount * 2);
     fps->pcnt_motion = (double)(fp_acc_data->mvcount) / num_mbs;
   } else {
+    fps->new_mv_count = 0.0;
     fps->MVr = 0.0;
     fps->mvr_abs = 0.0;
     fps->MVc = 0.0;
@@ -845,6 +847,7 @@ static void accumulate_fp_mb_row_stat(TileDataEnc *this_tile,
   this_tile->fp_data.intra_count_low += fp_acc_data->intra_count_low;
   this_tile->fp_data.intra_count_high += fp_acc_data->intra_count_high;
   this_tile->fp_data.intra_skip_count += fp_acc_data->intra_skip_count;
+  this_tile->fp_data.new_mv_count += fp_acc_data->new_mv_count;
   this_tile->fp_data.mvcount += fp_acc_data->mvcount;
   this_tile->fp_data.sum_mvr += fp_acc_data->sum_mvr;
   this_tile->fp_data.sum_mvr_abs += fp_acc_data->sum_mvr_abs;
@@ -915,6 +918,9 @@ void vp9_first_pass_encode_tile_mb_row(VP9_COMP *cpi, ThreadData *td,
   double mb_neutral_count;
   int scaled_low_intra_thresh = scale_sse_threshold(cm, LOW_I_THRESH);
 
+  MV *first_top_mv = &tile_data->firstpass_top_mv;
+  MV last_nonzero_mv = { 0, 0 };
+
   // First pass code requires valid last and new frame buffers.
   assert(new_yv12 != NULL);
   assert(frame_is_intra_only(cm) || (lst_yv12 != NULL));
@@ -954,6 +960,10 @@ void vp9_first_pass_encode_tile_mb_row(VP9_COMP *cpi, ThreadData *td,
     const int mb_index = mb_row * cm->mb_cols + mb_col;
 
     (*(cpi->row_mt_sync_read_ptr))(&tile_data->row_mt_sync, mb_row, c);
+
+    if (mb_col == mb_col_start) {
+      last_nonzero_mv = *first_top_mv;
+    }
 
     // Adjust to the next column of MBs.
     x->plane[0].src.buf = cpi->Source->y_buffer +
@@ -1279,6 +1289,10 @@ void vp9_first_pass_encode_tile_mb_row(VP9_COMP *cpi, ThreadData *td,
 
         if (!is_zero_mv(&mv)) {
           ++(fp_acc_data->mvcount);
+          if (!is_equal_mv(&mv, &last_nonzero_mv)) {
+            ++(fp_acc_data->new_mv_count);
+          }
+          last_nonzero_mv = mv;
 
           // Does the row vector point inwards or outwards?
           if (mb_row < cm->mb_rows / 2) {
@@ -1334,6 +1348,9 @@ void vp9_first_pass_encode_tile_mb_row(VP9_COMP *cpi, ThreadData *td,
     }
     fp_acc_data->coded_error += (int64_t)this_error;
 
+    if (mb_col == mb_col_start) {
+      *first_top_mv = last_nonzero_mv;
+    }
     recon_yoffset += 16;
     recon_uvoffset += uv_mb_height;
 
@@ -1356,7 +1373,7 @@ static void first_pass_encode(VP9_COMP *cpi, FIRSTPASS_DATA *fp_acc_data) {
   MV best_ref_mv;
   // Tiling is ignored in the first pass.
   vp9_tile_init(tile, cm, 0, 0);
-
+  tile_data.firstpass_top_mv = zero_mv;
 #if CONFIG_RATE_CTRL
   if (cpi->oxcf.use_simple_encode_api) {
     fp_motion_vector_info_reset(cpi->frame_info.frame_width,
@@ -1485,22 +1502,6 @@ void vp9_first_pass(VP9_COMP *cpi, const struct lookahead_entry *source) {
   if (cm->current_video_frame == 0 && cpi->gld_fb_idx != INVALID_IDX) {
     ref_cnt_fb(pool->frame_bufs, &cm->ref_frame_map[cpi->gld_fb_idx],
                cm->ref_frame_map[cpi->lst_fb_idx]);
-  }
-
-  // Use this to see what the first pass reconstruction looks like.
-  if (0) {
-    char filename[512];
-    FILE *recon_file;
-    snprintf(filename, sizeof(filename), "enc%04d.yuv",
-             (int)cm->current_video_frame);
-
-    if (cm->current_video_frame == 0)
-      recon_file = fopen(filename, "wb");
-    else
-      recon_file = fopen(filename, "ab");
-
-    (void)fwrite(lst_yv12->buffer_alloc, lst_yv12->frame_size, 1, recon_file);
-    fclose(recon_file);
   }
 
   // In the first pass, every frame is considered as a show frame.
@@ -2768,7 +2769,8 @@ static void define_gf_group(VP9_COMP *cpi, int gf_start_show_idx) {
   // are overwritten. Specifically, |gop_coding_frames| and |use_alt_ref|
   // will be overwritten.
   if (cpi->ext_ratectrl.ready &&
-      (cpi->ext_ratectrl.funcs.rc_type & VPX_RC_GOP) != 0) {
+      (cpi->ext_ratectrl.funcs.rc_type & VPX_RC_GOP) != 0 &&
+      cpi->ext_ratectrl.funcs.get_gop_decision != NULL) {
     vpx_codec_err_t codec_status;
     vpx_rc_gop_decision_t gop_decision;
     vpx_rc_gop_info_t gop_info;
@@ -3505,7 +3507,8 @@ void vp9_rc_get_second_pass_params(VP9_COMP *cpi) {
   FIRSTPASS_STATS this_frame;
   const int show_idx = cm->current_video_frame;
 
-  if (cpi->common.current_frame_coding_index == 0) {
+  if (cpi->common.current_frame_coding_index == 0 &&
+      cpi->ext_ratectrl.funcs.send_firstpass_stats != NULL) {
     const vpx_codec_err_t codec_status = vp9_extrc_send_firstpass_stats(
         &cpi->ext_ratectrl, &cpi->twopass.first_pass_info);
     if (codec_status != VPX_CODEC_OK) {

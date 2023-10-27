@@ -91,7 +91,7 @@ func (r *ResultSource) GetResults(ctx context.Context, cfg Config, auth auth.Opt
 	// CTS roll.
 	if ps.Change == 0 {
 		fmt.Println("no change specified, scanning gerrit for last CTS roll...")
-		gerrit, err := gerrit.New(cfg.Gerrit.Host, gerrit.Credentials{})
+		gerrit, err := gerrit.New(ctx, auth, cfg.Gerrit.Host)
 		if err != nil {
 			return nil, err
 		}
@@ -112,7 +112,7 @@ func (r *ResultSource) GetResults(ctx context.Context, cfg Config, auth auth.Opt
 	// If a change, but no patchset was specified, then query the most recent
 	// patchset.
 	if ps.Patchset == 0 {
-		gerrit, err := gerrit.New(cfg.Gerrit.Host, gerrit.Credentials{})
+		gerrit, err := gerrit.New(ctx, auth, cfg.Gerrit.Host)
 		if err != nil {
 			return nil, err
 		}
@@ -127,7 +127,7 @@ func (r *ResultSource) GetResults(ctx context.Context, cfg Config, auth auth.Opt
 	// Obtain the patchset's results, kicking a build if there are no results
 	// already available.
 	log.Printf("fetching results from cl %v ps %v...", ps.Change, ps.Patchset)
-	builds, err := GetOrStartBuildsAndWait(ctx, cfg, *ps, bb, false)
+	builds, err := GetOrStartBuildsAndWait(ctx, cfg, *ps, bb, "", false)
 	if err != nil {
 		return nil, err
 	}

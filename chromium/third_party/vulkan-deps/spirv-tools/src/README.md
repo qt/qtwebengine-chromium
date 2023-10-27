@@ -1,4 +1,5 @@
 # SPIR-V Tools
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/KhronosGroup/SPIRV-Tools/badge)](https://securityscorecards.dev/viewer/?uri=github.com/KhronosGroup/SPIRV-Tools)
 
 NEWS 2023-01-11: Development occurs on the `main` branch.
 
@@ -478,12 +479,12 @@ iterator debugging.
 ### Android ndk-build
 
 SPIR-V Tools supports building static libraries `libSPIRV-Tools.a` and
-`libSPIRV-Tools-opt.a` for Android:
+`libSPIRV-Tools-opt.a` for Android.  Using the Android NDK r25c or later:
 
 ```
 cd <spirv-dir>
 
-export ANDROID_NDK=/path/to/your/ndk
+export ANDROID_NDK=/path/to/your/ndk   # NDK r25c or later
 
 mkdir build && cd build
 mkdir libs

@@ -17,6 +17,7 @@
 
 #include <vector>
 
+#include "dawn/common/Ref.h"
 #include "dawn/common/RefCounted.h"
 #include "dawn/native/DawnNative.h"
 #include "dawn/native/PhysicalDevice.h"
@@ -30,10 +31,10 @@ struct SupportedLimits;
 
 class AdapterBase : public RefCounted {
   public:
-    AdapterBase(Ref<PhysicalDeviceBase> physicalDevice, FeatureLevel featureLevel);
     AdapterBase(Ref<PhysicalDeviceBase> physicalDevice,
                 FeatureLevel featureLevel,
-                const TogglesState& adapterToggles);
+                const TogglesState& requiredAdapterToggles,
+                wgpu::PowerPreference powerPreference);
     ~AdapterBase() override;
 
     // WebGPU API
@@ -50,6 +51,8 @@ class AdapterBase : public RefCounted {
 
     void SetUseTieredLimits(bool useTieredLimits);
 
+    FeaturesSet GetSupportedFeatures() const;
+
     // Return the underlying PhysicalDevice.
     PhysicalDeviceBase* GetPhysicalDevice();
 
@@ -62,8 +65,14 @@ class AdapterBase : public RefCounted {
     Ref<PhysicalDeviceBase> mPhysicalDevice;
     FeatureLevel mFeatureLevel;
     bool mUseTieredLimits = false;
-    // Adapter toggles state, currently only inherited from instance toggles state.
+
+    // Supported features under adapter toggles.
+    FeaturesSet mSupportedFeatures;
+
+    // Adapter toggles state.
     TogglesState mTogglesState;
+
+    wgpu::PowerPreference mPowerPreference;
 };
 
 std::vector<Ref<AdapterBase>> SortAdapters(std::vector<Ref<AdapterBase>> adapters,

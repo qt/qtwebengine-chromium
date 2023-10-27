@@ -784,7 +784,7 @@ class TestHistogramProvider : public StatisticsRecorder::HistogramProvider {
   TestHistogramProvider(const TestHistogramProvider&) = delete;
   TestHistogramProvider& operator=(const TestHistogramProvider&) = delete;
 
-  void MergeHistogramDeltas() override {
+  void MergeHistogramDeltas(bool async, OnceClosure done_callback) override {
     PersistentHistogramAllocator::Iterator hist_iter(allocator_.get());
     while (true) {
       std::unique_ptr<base::HistogramBase> histogram = hist_iter.GetNext();
@@ -792,6 +792,7 @@ class TestHistogramProvider : public StatisticsRecorder::HistogramProvider {
         break;
       allocator_->MergeHistogramDeltaToStatisticsRecorder(histogram.get());
     }
+    std::move(done_callback).Run();
   }
 
  private:
@@ -826,7 +827,7 @@ TEST_P(StatisticsRecorderTest, ImportHistogramsTest) {
   ASSERT_FALSE(StatisticsRecorder::FindHistogram(histogram->histogram_name()));
 
   // Now test that it merges.
-  StatisticsRecorder::ImportProvidedHistograms();
+  StatisticsRecorder::ImportProvidedHistogramsSync();
   HistogramBase* found =
       StatisticsRecorder::FindHistogram(histogram->histogram_name());
   ASSERT_TRUE(found);
@@ -838,7 +839,7 @@ TEST_P(StatisticsRecorderTest, ImportHistogramsTest) {
   // Finally, verify that updates can also be merged.
   histogram->Add(3);
   histogram->Add(5);
-  StatisticsRecorder::ImportProvidedHistograms();
+  StatisticsRecorder::ImportProvidedHistogramsSync();
   snapshot = found->SnapshotSamples();
   EXPECT_EQ(3, snapshot->TotalCount());
   EXPECT_EQ(2, snapshot->GetCount(3));

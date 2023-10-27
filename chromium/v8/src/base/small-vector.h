@@ -28,8 +28,8 @@ class SmallVector {
  public:
   static constexpr size_t kInlineSize = kSize;
 
-  explicit SmallVector(const Allocator& allocator = Allocator())
-      : allocator_(allocator) {}
+  SmallVector() = default;
+  explicit SmallVector(const Allocator& allocator) : allocator_(allocator) {}
   explicit V8_INLINE SmallVector(size_t size,
                                  const Allocator& allocator = Allocator())
       : allocator_(allocator) {
@@ -63,6 +63,7 @@ class SmallVector {
   }
 
   ~SmallVector() {
+    static_assert(std::is_trivially_destructible_v<T>);
     if (is_big()) FreeDynamicStorage();
   }
 

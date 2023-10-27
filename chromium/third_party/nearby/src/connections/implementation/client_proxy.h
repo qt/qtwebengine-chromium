@@ -16,13 +16,13 @@
 #define CORE_INTERNAL_CLIENT_PROXY_H_
 
 #include <cstdint>
-#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "absl/functional/any_invocable.h"
 #include "connections/advertising_options.h"
 #include "connections/discovery_options.h"
 #include "connections/implementation/analytics/analytics_recorder.h"
@@ -31,6 +31,7 @@
 #include "connections/status.h"
 #include "connections/strategy.h"
 #include "connections/v3/connection_listening_options.h"
+#include "connections/v3/connections_device_provider.h"
 #include "connections/v3/listeners.h"
 #include "internal/analytics/event_logger.h"
 #include "internal/interop/device.h"
@@ -74,9 +75,11 @@ class ClientProxy final {
 
   std::string GetConnectionToken(const std::string& endpoint_id);
   const NearbyDevice* GetLocalDevice();
-  // Test-only.
   NearbyDeviceProvider* GetLocalDeviceProvider() {
-    return device_provider_.get();
+    if (external_device_provider_ != nullptr) {
+      return external_device_provider_;
+    }
+    return connections_device_provider_.get();
   }
 
   // Clears all the runtime state of this client.
@@ -121,6 +124,16 @@ class ClientProxy final {
     local_endpoint_info_ = std::string(endpoint_info);
   }
 
+  void UpdateAdvertisingOptions(const AdvertisingOptions& advertising_options) {
+    MutexLock lock(&mutex_);
+    advertising_options_ = advertising_options;
+  }
+
+  void UpdateDiscoveryOptions(const DiscoveryOptions& discovery_options) {
+    MutexLock lock(&mutex_);
+    discovery_options_ = discovery_options;
+  }
+
   // Proxies to the client's DiscoveryListener::OnEndpointFound() callback.
   void OnEndpointFound(const std::string& service_id,
                        const std::string& endpoint_id,
@@ -130,11 +143,17 @@ class ClientProxy final {
   void OnEndpointLost(const std::string& service_id,
                       const std::string& endpoint_id);
 
+  // Triggered when client request connection to remote device.
+  void OnRequestConnection(const Strategy& strategy,
+                           const std::string& endpoint_id,
+                           const ConnectionOptions& connection_options);
+
   // Proxies to the client's ConnectionListener::OnInitiated() callback.
-  void OnConnectionInitiated(
-      const std::string& endpoint_id, const ConnectionResponseInfo& info,
-      const ConnectionOptions& connection_options,
-      const ConnectionListener& listener, const std::string& connection_token);
+  void OnConnectionInitiated(const std::string& endpoint_id,
+                             const ConnectionResponseInfo& info,
+                             const ConnectionOptions& connection_options,
+                             const ConnectionListener& listener,
+                             const std::string& connection_token);
 
   // Proxies to the client's ConnectionListener::OnAccepted() callback.
   void OnConnectionAccepted(const std::string& endpoint_id);
@@ -194,6 +213,12 @@ class ClientProxy final {
   // Returns true if either the local endpoint or the remote endpoint has
   // rejected the connection.
   bool IsConnectionRejected(const std::string& endpoint_id) const;
+  // Returns true if the client should enforce topology constraints.
+  bool ShouldEnforceTopologyConstraints() const;
+
+  // Returns true, if connection party should attempt to upgrade itself to
+  // use a higher bandwidth medium, if it is available.
+  bool AutoUpgradeBandwidth() const;
 
   // Proxies to the client's PayloadListener::OnPayload() callback.
   void OnPayload(const std::string& endpoint_id, Payload payload);
@@ -233,9 +258,28 @@ class ClientProxy final {
       absl::string_view endpoint_id,
       const location::nearby::connections::OsInfo& remote_os_info);
 
-  void RegisterDeviceProvider(std::unique_ptr<NearbyDeviceProvider> provider) {
-    device_provider_ = std::move(provider);
+  void RegisterDeviceProvider(NearbyDeviceProvider* provider) {
+    external_device_provider_ = provider;
   }
+
+  void RegisterConnectionsDeviceProvider(
+      std::unique_ptr<v3::ConnectionsDeviceProvider> provider) {
+    connections_device_provider_ = std::move(provider);
+  }
+
+  const bool& IsSupportSafeToDisconnect() const {
+    return supports_safe_to_disconnect_;
+  }
+  const std::int32_t& GetLocalSafeToDisconnectVersion() const {
+    return local_safe_to_disconnect_version_;
+  }
+  std::optional<std::int32_t> GetRemoteSafeToDisconnectVersion(
+      absl::string_view endpoint_id) const;
+  void SetRemoteSafeToDisconnectVersion(
+      absl::string_view endpoint_id,
+      const std::int32_t& safe_to_disconnect_version);
+  bool IsSafeToDisconnectEnabled(absl::string_view endpoint_id);
+  bool IsPayloadReceivedAckEnabled(absl::string_view endpoint_id);
 
  private:
   struct Connection {
@@ -266,6 +310,7 @@ class ClientProxy final {
     AdvertisingOptions advertising_options;
     std::string connection_token;
     std::optional<location::nearby::connections::OsInfo> os_info;
+    std::int32_t safe_to_disconnect_version;
   };
   using ConnectionPair = std::pair<Connection, PayloadListener>;
 
@@ -308,7 +353,7 @@ class ClientProxy final {
   bool ConnectionStatusMatches(const std::string& endpoint_id,
                                Connection::Status status) const;
   std::vector<std::string> GetMatchingEndpoints(
-      std::function<bool(const Connection&)> pred) const;
+      absl::AnyInvocable<bool(const Connection&)> pred) const;
   std::string GenerateLocalEndpointId();
 
   void ScheduleClearLocalHighVisModeCacheEndpointIdAlarm();
@@ -392,7 +437,13 @@ class ClientProxy final {
   std::unique_ptr<ErrorCodeRecorder> error_code_recorder_;
   // Local device OS information.
   location::nearby::connections::OsInfo local_os_info_;
-  std::unique_ptr<NearbyDeviceProvider> device_provider_;
+  // For device providers not owned by Nearby connections (e.g. Nearby
+  // Presence's DeviceProvider.)
+  NearbyDeviceProvider* external_device_provider_ = nullptr;
+  // For Nearby Connections' own device provider.
+  std::unique_ptr<v3::ConnectionsDeviceProvider> connections_device_provider_;
+  bool supports_safe_to_disconnect_;
+  std::int32_t local_safe_to_disconnect_version_;
 };
 
 }  // namespace connections

@@ -362,6 +362,10 @@ void StraightForwardRegisterAllocator::AllocateRegisters() {
     constant->SetConstantLocation();
     USE(value);
   }
+  for (const auto& [value, constant] : graph_->tagged_index()) {
+    constant->SetConstantLocation();
+    USE(value);
+  }
   for (const auto& [value, constant] : graph_->int32()) {
     constant->SetConstantLocation();
     USE(value);
@@ -633,7 +637,10 @@ void StraightForwardRegisterAllocator::UpdateUse(
       DCHECK_IMPLIES(
           slots.free_slots.size() > 0,
           slots.free_slots.back().freed_at_position <= node->live_range().end);
-      slots.free_slots.emplace_back(slot.index(), node->live_range().end);
+      bool double_slot =
+          IsDoubleRepresentation(node->properties().value_representation());
+      slots.free_slots.emplace_back(slot.index(), node->live_range().end,
+                                    double_slot);
     }
   }
 }
@@ -805,7 +812,10 @@ void StraightForwardRegisterAllocator::AllocateNodeResult(ValueNode* node) {
       CHECK(node->is_tagged());
       CHECK_GE(idx, tagged_.top);
       for (int i = tagged_.top; i < idx; ++i) {
-        tagged_.free_slots.emplace_back(i, node->live_range().start);
+        bool double_slot =
+            IsDoubleRepresentation(node->properties().value_representation());
+        tagged_.free_slots.emplace_back(i, node->live_range().start,
+                                        double_slot);
       }
       tagged_.top = idx + 1;
     }
@@ -1571,8 +1581,10 @@ void StraightForwardRegisterAllocator::AllocateSpillSlot(ValueNode* node) {
   bool is_tagged = (node->properties().value_representation() ==
                     ValueRepresentation::kTagged);
   uint32_t slot_size = 1;
+  bool double_slot =
+      IsDoubleRepresentation(node->properties().value_representation());
   if constexpr (kDoubleSize != kSystemPointerSize) {
-    if (IsDoubleRepresentation(node->properties().value_representation())) {
+    if (double_slot) {
       slot_size = kDoubleSize / kSystemPointerSize;
     }
   }
@@ -1581,7 +1593,7 @@ void StraightForwardRegisterAllocator::AllocateSpillSlot(ValueNode* node) {
   // TODO(victorgomes): We don't currently reuse double slots on arm.
   if (!v8_flags.maglev_reuse_stack_slots || slot_size > 1 ||
       slots.free_slots.empty()) {
-    free_slot = slots.top;
+    free_slot = slots.top + slot_size - 1;
     slots.top += slot_size;
   } else {
     NodeIdT start = node->live_range().start;
@@ -1590,10 +1602,23 @@ void StraightForwardRegisterAllocator::AllocateSpillSlot(ValueNode* node) {
                          start, [](NodeIdT s, const SpillSlotInfo& slot_info) {
                            return slot_info.freed_at_position >= s;
                          });
+    // {it} points to the first invalid slot. Decrement it to get to the last
+    // valid slot freed before {start}.
     if (it != slots.free_slots.begin()) {
-      // {it} points to the first invalid slot. Decrement it to get to the last
-      // valid slot freed before {start}.
       --it;
+    }
+
+    // TODO(olivf): Currently we cannot mix double and normal stack slots since
+    // the gap resolver treats them independently and cannot detect cycles via
+    // shared slots.
+    while (it != slots.free_slots.begin()) {
+      if (it->double_slot == double_slot) break;
+      --it;
+    }
+
+    if (it != slots.free_slots.begin()) {
+      CHECK_EQ(double_slot, it->double_slot);
+      CHECK_GT(start, it->freed_at_position);
       free_slot = it->slot_index;
       slots.free_slots.erase(it);
     } else {

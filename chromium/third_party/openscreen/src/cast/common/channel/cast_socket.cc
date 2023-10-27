@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,7 @@
 #include "cast/common/channel/message_framer.h"
 #include "cast/common/channel/message_util.h"
 #include "cast/common/channel/proto/cast_channel.pb.h"
+#include "platform/base/span.h"
 #include "util/osp_logging.h"
 
 namespace openscreen {
@@ -83,7 +84,7 @@ void CastSocket::OnRead(TlsConnection* connection, std::vector<uint8_t> block) {
   do {
     ErrorOr<DeserializeResult> message_or_error =
         message_serialization::TryDeserialize(
-            absl::Span<uint8_t>(&read_buffer_[0], read_buffer_.size()));
+            ByteBuffer(&read_buffer_[0], read_buffer_.size()));
     if (!message_or_error) {
       OSP_DLOG_ERROR << __func__ << ": failed to deserialize a message. "
                      << message_or_error.error().ToString();

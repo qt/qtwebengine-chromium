@@ -14,22 +14,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import sys,os
-from generator import *
-from common_codegen import *
+import sys
+import os
+from generators.vulkan_object import (SpirvEnables)
+from generators.base_generator import BaseGenerator
 
 #
-# SpirvValidationHelperOutputGenerator - Generate SPIR-V validation
-# for SPIR-V extensions and capabilities
-class SpirvValidationHelperOutputGenerator(OutputGenerator):
-    def __init__(self,
-                 errFile = sys.stderr,
-                 warnFile = sys.stderr,
-                 diagFile = sys.stdout):
-        OutputGenerator.__init__(self, errFile, warnFile, diagFile)
-        self.extensions = dict()
-        self.capabilities = dict()
-        self.formats = dict()
+# Generate SPIR-V validation for SPIR-V extensions and capabilities
+class SpirvValidationHelperOutputGenerator(BaseGenerator):
+    def __init__(self):
+        BaseGenerator.__init__(self)
 
         # Sometimes the Vulkan-Headers XML will mention new SPIR-V capability or extensions
         # That require an update of the SPIRV-Headers which might not be ready to pull in.
@@ -37,6 +31,8 @@ class SpirvValidationHelperOutputGenerator(OutputGenerator):
         # should be attempted to be cleared
         self.capabilityExcludeList = [
             'ClusterCullingShadingHUAWEI',
+            'ShaderEnqueueAMDX',
+            'TextureBlockMatch2QCOM',
         ]
 
         # There are some enums that share the same value in the SPIR-V header.
@@ -86,6 +82,7 @@ class SpirvValidationHelperOutputGenerator(OutputGenerator):
             {'vulkan' : 'VkPhysicalDeviceShaderCoreBuiltinsFeaturesARM', 'layer' : 'shader_core_builtins_features'},
             {'vulkan' : 'VkPhysicalDeviceRayTracingPositionFetchFeaturesKHR', 'layer' : 'ray_tracing_position_fetch_features'},
             {'vulkan' : 'VkPhysicalDeviceShaderTileImageFeaturesEXT', 'layer': 'shader_tile_image_features'},
+            {'vulkan' : 'VkPhysicalDeviceCooperativeMatrixFeaturesKHR', 'layer': 'cooperative_matrix_features_khr'},
         ]
 
         # Promoted features structure in state_tracker.cpp are put in the VkPhysicalDeviceVulkan*Features structs
@@ -127,193 +124,22 @@ class SpirvValidationHelperOutputGenerator(OutputGenerator):
         }
 
     #
-    # Called at beginning of processing as file is opened
-    def beginFile(self, genOpts):
-        OutputGenerator.beginFile(self, genOpts)
-        # File Comment
-        file_comment = '// *** THIS FILE IS GENERATED - DO NOT EDIT ***\n'
-        file_comment += '// See {} for modifications\n'.format(os.path.basename(__file__))
-        write(file_comment, file=self.outFile)
-        # Copyright Statement
-        copyright = ''
-        copyright += '\n'
-        copyright += '/***************************************************************************\n'
-        copyright += ' *\n'
-        copyright += ' * Copyright (c) 2020-2023 The Khronos Group Inc.\n'
-        copyright += ' *\n'
-        copyright += ' * Licensed under the Apache License, Version 2.0 (the "License");\n'
-        copyright += ' * you may not use this file except in compliance with the License.\n'
-        copyright += ' * You may obtain a copy of the License at\n'
-        copyright += ' *\n'
-        copyright += ' *     http://www.apache.org/licenses/LICENSE-2.0\n'
-        copyright += ' *\n'
-        copyright += ' * Unless required by applicable law or agreed to in writing, software\n'
-        copyright += ' * distributed under the License is distributed on an "AS IS" BASIS,\n'
-        copyright += ' * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n'
-        copyright += ' * See the License for the specific language governing permissions and\n'
-        copyright += ' * limitations under the License.\n'
-        copyright += ' *\n'
-        copyright += ' * This file is related to anything that is found in the Vulkan XML related\n'
-        copyright += ' * to SPIR-V. Anything related to the SPIR-V grammar belongs in spirv_grammar_helper\n'
-        copyright += ' *\n'
-        copyright += ' ****************************************************************************/\n'
-        write(copyright, file=self.outFile)
-        write('#include <string>', file=self.outFile)
-        write('#include <functional>', file=self.outFile)
-        write('#include <spirv/unified1/spirv.hpp>', file=self.outFile)
-        write('#include "vk_extension_helper.h"', file=self.outFile)
-        write('#include "state_tracker/shader_module.h"', file=self.outFile)
-        write('#include "state_tracker/device_state.h"', file=self.outFile)
-        write('#include "core_checks/core_validation.h"', file=self.outFile)
-        write(self.featurePointer(), file=self.outFile)
-        write(self.mapStructDeclarations(), file=self.outFile)
-    #
-    # Write generated file content to output file
-    def endFile(self):
-        write(self.capabilityStruct(), file=self.outFile)
-        write(self.extensionStruct(), file=self.outFile)
-        write(self.enumHelper(), file=self.outFile)
-        write(self.validateFunction(), file=self.outFile)
-        write(self.formatHelper(), file=self.outFile)
-        # Finish processing in superclass
-        OutputGenerator.endFile(self)
-    #
-    # Processing point at beginning of each extension definition
-    def beginFeature(self, interface, emit):
-        OutputGenerator.beginFeature(self, interface, emit)
-        self.featureExtraProtect = GetFeatureProtect(interface)
-    #
-    # Capture all SPIR-V elements from registry
-    def genSpirv(self, spirvinfo, spirvName, alias):
-        OutputGenerator.genSpirv(self, spirvinfo, spirvName, alias)
-        spirvElem = spirvinfo.elem
-        name = spirvElem.get('name')
-        enables = []
-        for elem in spirvElem:
-            if elem.tag != 'enable':
-                self.logMsg('error', 'should only be <enable> tags in ' + name)
-            # Each <enable> holds only one possible requirment
-            # This internal python dict is to represent the struct generated later
-            enable = {
-                'version' : None,
-                'feature' : None,
-                'extension' : None,
-                'property' : None,
-            }
-            if 'version' in elem.attrib:
-                enable['version'] = elem.attrib['version']
-            elif 'feature' in elem.attrib:
-                if elem.attrib['struct'] in self.promotedFeatures:
-                    continue
-                enable['feature'] = {
-                    'feature' : elem.attrib['feature'],
-                    'struct' : elem.attrib['struct']
-                }
-            elif 'extension' in elem.attrib:
-                enable['extension'] = elem.attrib['extension']
-            elif 'property' in elem.attrib:
-                enable['property'] =  {
-                    'property' : elem.attrib['property'],
-                    'member' : elem.attrib['member'],
-                    'value' : elem.attrib['value']
-                }
-            else:
-                self.logMsg('error', 'No known attributes in <enable> for ' + name)
-            enables.append(enable)
-        if spirvElem.tag == 'spirvcapability':
-            self.capabilities[name] = enables
-        elif spirvElem.tag == 'spirvextension':
-            self.extensions[name] = enables
-    #
-    # Capture all Format elements from registry
-    def genFormat(self, format, formatinfo, alias):
-        OutputGenerator.genFormat(self, format, formatinfo, alias)
-        elem = format.elem
-        formatName = elem.get('name')
-
-        spirvImageFormat = elem.find('spirvimageformat')
-        if (spirvImageFormat is not None):
-            self.formats[formatName] = spirvImageFormat.get('name')
-    #
-    # Creates SPIR-V image format helper
-    def formatHelper(self):
-        output = '\n// Will return the Vulkan format for a given SPIR-V image format value\n'
-        output += '// Note: will return VK_FORMAT_UNDEFINED if non valid input\n'
-        output += '// This was in vk_format_utils but the SPIR-V Header dependency was an issue\n'
-        output += '//   see https://github.com/KhronosGroup/Vulkan-ValidationLayers/pull/4647\n'
-        output += 'VkFormat CoreChecks::CompatibleSpirvImageFormat(uint32_t spirv_image_format) const {\n'
-        output += '    switch (spirv_image_format) {\n'
-        for f, spirvFormat in sorted(self.formats.items()):
-            output += '        case spv::ImageFormat{}:\n'.format(spirvFormat)
-            output += '            return {};\n'.format(f)
-        output += '        default:\n'
-        output += '            return VK_FORMAT_UNDEFINED;\n'
-        output += '     }\n'
-        output += '}'
-        return output
-    #
-    # Creates the Enum string helpers for better error messages. Same idea of vk_enum_string_helper.h but for SPIR-V
-    def enumHelper(self):
-        output =  'static inline const char* string_SpvCapability(uint32_t input_value) {\n'
-        output += '    switch ((spv::Capability)input_value) {\n'
-        for name, enables in sorted(self.capabilities.items()):
-            if (name not in self.capabilityAliasList) and (name not in self.capabilityExcludeList):
-                output += '         case spv::Capability' + name + ':\n'
-                output += '            return \"' + name + '\";\n'
-        output += '        default:\n'
-        output += '            return \"Unhandled OpCapability\";\n'
-        output += '    };\n'
-        output += '};'
-        return output
-    #
-    # Creates the FeaturePointer struct to map features with those in the layers state tracker
-    def featurePointer(self):
-        output = '\n'
-        output += 'struct FeaturePointer {\n'
-        output += '    // Callable object to test if this feature is enabled in the given aggregate feature struct\n'
-        output += '    const std::function<VkBool32(const DeviceFeatures &)> IsEnabled;\n'
-        output += '\n'
-        output += '    // Test if feature pointer is populated\n'
-        output += '    explicit operator bool() const { return static_cast<bool>(IsEnabled); }\n'
-        output += '\n'
-        output += '    // Default and nullptr constructor to create an empty FeaturePointer\n'
-        output += '    FeaturePointer() : IsEnabled(nullptr) {}\n'
-        output += '    FeaturePointer(std::nullptr_t ptr) : IsEnabled(nullptr) {}\n'
-        output += '\n'
-        output += '    // Constructors to populate FeaturePointer based on given pointer to member\n'
-        for feature in self.featureMap:
-            output += '    FeaturePointer(VkBool32 ' + feature['vulkan'] + '::*ptr)\n'
-            output += '        : IsEnabled([=](const DeviceFeatures &features) { return features.' + feature['layer'] + '.*ptr; }) {}\n'
-        output += '};\n'
-        return output
-    #
-    # Declare the struct that contains requirement for the spirv info
-    def mapStructDeclarations(self):
-        output = '// Each instance of the struct will only have a singel field non-null\n'
-        output += 'struct RequiredSpirvInfo {\n'
-        output += '    uint32_t version;\n'
-        output += '    FeaturePointer feature;\n'
-        output += '    ExtEnabled DeviceExtensions::*extension;\n'
-        output += '    const char* property; // For human readability and make some capabilities unique\n'
-        output += '};\n'
-        return output
-    #
-    # Creates the value of the struct declared in mapStructDeclarations()
-    def createMapValue(self, name, enable, isExtension):
-        output = ''
-        if enable['version'] != None:
+    # Creates the value of the struct declared in RequiredSpirvInfo
+    def createMapValue(self, name: str, enable: SpirvEnables, isExtension: bool) -> str:
+        out = []
+        if enable.version is not None:
             # Version should be VK_VERSION_x_x as defined in header but need to get as VK_API_VERSION_x_x
-            version = enable['version'].replace('VK_VERSION', 'VK_API_VERSION')
-            output = '{' + version + ', nullptr, nullptr, ""}'
-        elif enable['feature'] != None:
-            output = '{0, &' + enable['feature']['struct'] + '::'  + enable['feature']['feature'] + ', nullptr, ""}'
-        elif enable['extension'] != None:
+            version = enable.version.replace('VK_VERSION', 'VK_API_VERSION')
+            out.append(f'{{{version}, nullptr, nullptr, ""}}')
+        elif enable.feature is not None:
+            out.append(f'{{0, &{enable.struct}::{enable.feature}, nullptr, ""}}')
+        elif enable.extension is not None:
             # All fields in DeviceExtensions should just be the extension name lowercase
-            output = '{0, nullptr, &DeviceExtensions::' + enable['extension'].lower() + ', ""}'
-        elif enable['property'] != None:
-            propertyStruct = enable['property']['property']
+            out.append(f'{{0, nullptr, &DeviceExtensions::{enable.extension.lower()}, ""}}')
+        elif enable.property is not None:
+            propertyStruct = enable.property
             # Need to make sure to return a boolean value to prevent compiler warning for implicit conversions
-            propertyLogic = "(" + propertyStruct + '::' + enable['property']['member'] + ' & ' + enable['property']['value'] + ") != 0"
+            propertyLogic = f'({propertyStruct}::{enable.member} & {enable.value}) != 0'
             # Property might have multiple items per capability/extension
             if name not in self.propertyInfo:
                 self.propertyInfo[name] = []
@@ -324,51 +150,205 @@ class SpirvValidationHelperOutputGenerator(OutputGenerator):
                 "isExtension" : isExtension
             })
             # For properties, this string is just for human readableness
-            output = '{0, nullptr, nullptr, "' + propertyLogic + '"}'
+            out.append(f'{{0, nullptr, nullptr, "{propertyLogic}"}}')
         else:
-            output = '{0, nullptr, nullptr, ""}'
-        return output
-    #
-    # Build the struct with all the requirments for the spirv capabilities
-    def capabilityStruct(self):
-        output = '// clang-format off\n'
-        output += 'static const std::unordered_multimap<uint32_t, RequiredSpirvInfo> spirvCapabilities = {\n'
+            out.append('{0, nullptr, nullptr, ""}')
+        return "".join(out)
 
-        # Sort so the order is the same on Windows and Unix
-        for name, enables in sorted(self.capabilities.items()):
-            for enable in enables:
-                # Prepend with comment and comment out line if in exclude list as explained in declaration
-                if name in self.capabilityExcludeList:
-                    output += '    // Not found in current SPIR-V Headers\n    //'
-                output += '    {spv::Capability' + name + ', ' + self.createMapValue(name, enable, False) + '},\n'
-        output += '};\n'
-        output += '// clang-format on\n'
-        return output
-    #
-    # Build the struct with all the requirments for the spirv extensions
-    def extensionStruct(self):
-        output = '// clang-format off\n'
-        output += 'static const std::unordered_multimap<std::string, RequiredSpirvInfo> spirvExtensions = {\n'
+    def generate(self):
+        out = []
+        out.append(f'''// *** THIS FILE IS GENERATED - DO NOT EDIT ***
+// See {os.path.basename(__file__)} for modifications
 
-        # Sort so the order is the same on Windows and Unix
-        for name, enables in sorted(self.extensions.items()):
-            for enable in enables:
-                output += '    {\"' + name + '\", ' + self.createMapValue(name, enable, True) + '},\n'
-        output += '};\n'
-        output += '// clang-format on\n'
-        return output
-    #
-    # The main function to validate all the extensions and capabilities
-    def validateFunction(self):
-        output = '''
-bool CoreChecks::ValidateShaderCapabilitiesAndExtensions(const Instruction &insn) const {
+/***************************************************************************
+ *
+ * Copyright (c) 2020-2023 The Khronos Group Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * This file is related to anything that is found in the Vulkan XML related
+ * to SPIR-V. Anything related to the SPIR-V grammar belongs in spirv_grammar_helper
+ *
+ ****************************************************************************/
+''')
+        out.append('// NOLINTBEGIN') # Wrap for clang-tidy to ignore
+        out.append('''
+#include <string>
+#include <string_view>
+#include <functional>
+#include <spirv/unified1/spirv.hpp>
+#include "vk_extension_helper.h"
+#include "state_tracker/shader_module.h"
+#include "state_tracker/device_state.h"
+#include "core_checks/core_validation.h"
+''')
+
+        #
+        # Creates the FeaturePointer struct to map features with those in the layers state tracker
+        out.append('''
+struct FeaturePointer {
+    // Callable object to test if this feature is enabled in the given aggregate feature struct
+    const std::function<VkBool32(const DeviceFeatures &)> IsEnabled;
+
+    // Test if feature pointer is populated
+    explicit operator bool() const { return static_cast<bool>(IsEnabled); }
+
+    // Default and nullptr constructor to create an empty FeaturePointer
+    FeaturePointer() : IsEnabled(nullptr) {}
+    FeaturePointer(std::nullptr_t ptr) : IsEnabled(nullptr) {}
+
+    // Constructors to populate FeaturePointer based on given pointer to member
+''')
+        for feature in self.featureMap:
+            out.append('    FeaturePointer(VkBool32 {}::*ptr)\n'.format(feature['vulkan']))
+            out.append('        : IsEnabled([=](const DeviceFeatures &features) {{ return features.{}.*ptr; }}) {{}}\n'.format(feature['layer']))
+        out.append('};')
+
+        out.append('''
+// Each instance of the struct will only have a singel field non-null
+struct RequiredSpirvInfo {
+    uint32_t version;
+    FeaturePointer feature;
+    ExtEnabled DeviceExtensions::*extension;
+    const char* property; // For human readability and make some capabilities unique
+};
+
+''')
+
+        #
+        # Build the struct with all the requirments for the spirv capabilities
+        out.append('// clang-format off\n')
+        out.append('static const std::unordered_multimap<uint32_t, RequiredSpirvInfo> spirvCapabilities = {\n')
+        for spirv in [x for x in self.vk.spirv if x.capability]:
+            for enable in [x for x in spirv.enable if x.struct is None or x.struct not in self.promotedFeatures]:
+                if spirv.name in self.capabilityExcludeList:
+                    out.append('    // Not found in current SPIR-V Headers\n    //')
+                out.append(f'    {{spv::Capability{spirv.name}, {self.createMapValue(spirv.name, enable, False)}}},\n')
+        out.append('};\n')
+        out.append('// clang-format on\n')
+        out.append('\n')
+
+        #
+        # Build the struct with all the requirments for the spirv extensions
+        out.append('// clang-format off\n')
+        out.append('static const std::unordered_multimap<std::string_view, RequiredSpirvInfo> spirvExtensions = {\n')
+        for spirv in [x for x in self.vk.spirv if x.extension]:
+            for enable in spirv.enable:
+                out.append(f'    {{"{spirv.name}", {self.createMapValue(spirv.name, enable, True)}}},\n')
+        out.append('};\n')
+        out.append('// clang-format on\n')
+        out.append('\n')
+
+        #
+        # Creates the Enum string helpers for better error messages. Same idea of vk_enum_string_helper.h but for SPIR-V
+        out.append('static inline const char* string_SpvCapability(uint32_t input_value) {\n')
+        out.append('    switch ((spv::Capability)input_value) {\n')
+        for spirv in [x for x in self.vk.spirv if x.capability]:
+            if (spirv.name not in self.capabilityAliasList) and (spirv.name not in self.capabilityExcludeList):
+                out.append(f'         case spv::Capability{spirv.name}:\n')
+                out.append(f'            return "{spirv.name}";\n')
+        out.append('        default:\n')
+        out.append('            return \"Unhandled OpCapability\";\n')
+        out.append('    };\n')
+        out.append('};\n')
+        #
+        # Creates SPIR-V image format helper
+        out.append('''
+// Will return the Vulkan format for a given SPIR-V image format value
+// Note: will return VK_FORMAT_UNDEFINED if non valid input
+// This was in vk_format_utils but the SPIR-V Header dependency was an issue
+//   see https://github.com/KhronosGroup/Vulkan-ValidationLayers/pull/4647
+VkFormat CoreChecks::CompatibleSpirvImageFormat(uint32_t spirv_image_format) const {
+    switch (spirv_image_format) {
+''')
+        for format in [x for x in self.vk.formats.values() if x.spirvImageFormat]:
+            out.append(f'        case spv::ImageFormat{format.spirvImageFormat}:\n')
+            out.append(f'            return {format.name};\n')
+        out.append('        default:\n')
+        out.append('            return VK_FORMAT_UNDEFINED;\n')
+        out.append('    };\n')
+        out.append('};\n')
+
+
+        out.append('''
+static inline const char* SpvCapabilityRequirments(uint32_t capability) {
+    static const vvl::unordered_map<uint32_t, std::string_view> table {
+''')
+        for spirv in [x for x in self.vk.spirv if x.capability and x.name not in self.capabilityExcludeList]:
+            requirment = ''
+            for index, enable in enumerate([x for x in spirv.enable if x.struct is None or x.struct not in self.promotedFeatures]):
+                requirment += ' OR ' if (index != 0) else ''
+                if enable.version is not None:
+                    requirment += enable.version
+                elif enable.feature is not None:
+                    requirment += f'{enable.struct}::{enable.feature}'
+                elif enable.extension is not None:
+                    requirment += enable.extension
+                elif enable.property is not None:
+                    requirment += f'({enable.property}::{enable.member} == {enable.value})'
+            out.append(f'    {{spv::Capability{spirv.name}, "{requirment}"}},\n')
+        out.append('''    };
+
+    // VUs before catch unknown capabilities
+    const auto entry = table.find(capability);
+    return entry->second.data();
+}
+''')
+
+        out.append('''
+static inline const char* SpvExtensionRequirments(std::string_view extension) {
+    static const vvl::unordered_map<std::string_view, std::string_view> table {
+''')
+        for spirv in [x for x in self.vk.spirv if x.extension]:
+            requirment = ''
+            for index, enable in enumerate(spirv.enable):
+                requirment += ' OR ' if (index != 0) else ''
+                if enable.version is not None:
+                    requirment += enable.version
+                elif enable.feature is not None:
+                    requirment += f'{enable.struct}::{enable.feature}'
+                elif enable.extension is not None:
+                    requirment += enable.extension
+                elif enable.property is not None:
+                    requirment += f'({enable.property}::{enable.member} == {enable.value})'
+            out.append(f'    {{"{spirv.name}", "{requirment}"}},\n')
+        out.append('''    };
+
+    // VUs before catch unknown extensions
+    const auto entry = table.find(extension);
+    return entry->second.data();
+}
+''')
+
+        # The chance of an SPIR-V extension having a property as a requirement is low
+        # Instead of writting complex (and more confusing) code, just go back match what
+        # we do for capabilities if one is ever added to the XML
+        if len([infos for infos in self.propertyInfo.values() if infos[0]['isExtension']]) > 0:
+            print("Error: XML has added a property requirement to a SPIR-V Extension")
+            sys.exit(1)
+
+        #
+        # The main function to validate all the extensions and capabilities
+        out.append('''
+bool CoreChecks::ValidateShaderCapabilitiesAndExtensions(const Instruction &insn, const bool pipeline, const Location& loc) const {
     bool skip = false;
 
     if (insn.Opcode() == spv::OpCapability) {
         // All capabilities are generated so if it is not in the list it is not supported by Vulkan
         if (spirvCapabilities.count(insn.Word(1)) == 0) {
-            skip |= LogError(device, "VUID-VkShaderModuleCreateInfo-pCode-08739",
-                "vkCreateShaderModule(): A SPIR-V Capability (%s) was declared that is not supported by Vulkan.", string_SpvCapability(insn.Word(1)));
+            const char *vuid = pipeline ? "VUID-VkShaderModuleCreateInfo-pCode-08739" : "VUID-VkShaderCreateInfoEXT-pCode-08739";
+            skip |= LogError(vuid, device, loc,
+                "SPIR-V has Capability (%s) declared, but this is not supported by Vulkan.", string_SpvCapability(insn.Word(1)));
             return skip; // no known capability to validate
         }
 
@@ -394,26 +374,26 @@ bool CoreChecks::ValidateShaderCapabilitiesAndExtensions(const Instruction &insn
                 }
             } else if (it->second.property) {
                 // support is or'ed as only one has to be supported (if applicable)
-                switch (insn.Word(1)) {'''
+                switch (insn.Word(1)) {''')
 
         for name, infos in sorted(self.propertyInfo.items()):
             # Only capabilities here (all items in array are the same)
-            if infos[0]['isExtension'] == True:
+            if infos[0]['isExtension']:
                 continue
 
             # use triple-tick syntax to keep tab alignment for generated code
-            output += '''
-                    case spv::Capability{}:'''.format(name)
+            out.append(f'''
+                    case spv::Capability{name}:''')
             for info in infos:
                 # Need to string replace property string to create valid C++ logic
                 logic = info['logic'].replace('::', '.')
                 logic = logic.replace(info['struct'], self.propertyMap[info['struct']])
-                output += '''
-                        has_support |= ({});'''.format(logic)
-            output += '''
-                        break;'''
+                out.append(f'''
+                        has_support |= ({logic});''')
+            out.append('''
+                        break;''')
 
-        output += '''
+        out.append('''
                     default:
                         break;
                 }
@@ -421,16 +401,17 @@ bool CoreChecks::ValidateShaderCapabilitiesAndExtensions(const Instruction &insn
         }
 
         if (has_support == false) {
-            skip |= LogError(device, "VUID-VkShaderModuleCreateInfo-pCode-08740",
-                "vkCreateShaderModule(): The SPIR-V Capability (%s) was declared, but none of the requirements were met to use it.", string_SpvCapability(insn.Word(1)));
+            const char *vuid = pipeline ? "VUID-VkShaderModuleCreateInfo-pCode-08740" : "VUID-VkShaderCreateInfoEXT-pCode-08740";
+            skip |= LogError(vuid, device, loc,
+                "SPIR-V Capability %s was declared, but one of the following requirements is required (%s).", string_SpvCapability(insn.Word(1)), SpvCapabilityRequirments(insn.Word(1)));
         }
 
         // Portability checks
         if (IsExtEnabled(device_extensions.vk_khr_portability_subset)) {
             if ((VK_FALSE == enabled_features.portability_subset_features.shaderSampleRateInterpolationFunctions) &&
                 (spv::CapabilityInterpolationFunction == insn.Word(1))) {
-                skip |= LogError(device, "VUID-RuntimeSpirv-shaderSampleRateInterpolationFunctions-06325",
-                                    "Invalid shader capability (portability error): interpolation functions are not supported "
+                skip |= LogError("VUID-RuntimeSpirv-shaderSampleRateInterpolationFunctions-06325", device, loc,
+                                    "SPIR-V (portability error) InterpolationFunction Capability are not supported "
                                     "by this platform");
             }
         }
@@ -440,13 +421,15 @@ bool CoreChecks::ValidateShaderCapabilitiesAndExtensions(const Instruction &insn
 
         if (0 == extension_name.compare(0, spv_prefix.size(), spv_prefix)) {
             if (spirvExtensions.count(extension_name) == 0) {
-                skip |= LogError(device, "VUID-VkShaderModuleCreateInfo-pCode-08741",
-                    "vkCreateShaderModule(): A SPIR-V Extension (%s) was declared that is not supported by Vulkan.", extension_name.c_str());
+                const char *vuid = pipeline ? "VUID-VkShaderModuleCreateInfo-pCode-08741" : "VUID-VkShaderCreateInfoEXT-pCode-08741";
+                skip |= LogError(vuid, device,loc,
+                    "SPIR-V Extension %s was declared, but that is not supported by Vulkan.", extension_name.c_str());
                 return skip; // no known extension to validate
             }
         } else {
-            skip |= LogError(device, "VUID-VkShaderModuleCreateInfo-pCode-08741",
-                "vkCreateShaderModule(): The SPIR-V code uses the '%s' extension which is not a SPIR-V extension. Please use a SPIR-V"
+            const char *vuid = pipeline ? "VUID-VkShaderModuleCreateInfo-pCode-08741" : "VUID-VkShaderCreateInfoEXT-pCode-08741";
+            skip |= LogError( vuid, device,loc,
+                "SPIR-V Extension %s was declared, but this is not a SPIR-V extension. Please use a SPIR-V"
                 " extension (https://github.com/KhronosGroup/SPIRV-Registry) for OpExtension instructions. Non-SPIR-V extensions can be"
                 " recorded in SPIR-V using the OpSourceExtension instruction.", extension_name.c_str());
             return skip; // no known extension to validate
@@ -470,39 +453,17 @@ bool CoreChecks::ValidateShaderCapabilitiesAndExtensions(const Instruction &insn
                 if (IsExtEnabled(device_extensions.*(it->second.extension))) {
                     has_support = true;
                 }
-            } else if (it->second.property) {
-                // support is or'ed as only one has to be supported (if applicable)
-                switch (insn.Word(1)) {'''
-
-        for name, infos in sorted(self.propertyInfo.items()):
-            # Only extensions here (all items in array are the same)
-            if infos[0]['isExtension'] == False:
-                continue
-
-            # use triple-tick syntax to keep tab alignment for generated code
-            output += '''
-                    case spv::Capability{}:'''.format(name)
-            for info in infos:
-                # Need to string replace property string to create valid C++ logic
-                logic = info['logic'].replace('::', '.')
-                logic = logic.replace(info['struct'], self.propertyMap[info['struct']])
-                output += '''
-                    has_support |= ({});'''.format(logic)
-            output += '''
-                    break;'''
-
-        output += '''
-                    default:
-                        break;
-                }
             }
         }
 
         if (has_support == false) {
-            skip |= LogError(device, "VUID-VkShaderModuleCreateInfo-pCode-08742",
-                "vkCreateShaderModule(): The SPIR-V Extension (%s) was declared, but none of the requirements were met to use it.", extension_name.c_str());
+            const char *vuid = pipeline ? "VUID-VkShaderModuleCreateInfo-pCode-08742" : "VUID-VkShaderCreateInfoEXT-pCode-08742";
+            skip |= LogError(vuid, device, loc,
+                "SPIR-V Extension %s was declared, but one of the following requirements is required (%s).", extension_name.c_str(), SpvExtensionRequirments(extension_name));
         }
     } //spv::OpExtension
     return skip;
-}'''
-        return output
+}
+''')
+        out.append('// NOLINTEND') # Wrap for clang-tidy to ignore
+        self.write("".join(out))

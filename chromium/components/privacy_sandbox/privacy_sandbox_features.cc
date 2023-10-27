@@ -65,6 +65,9 @@ const base::FeatureParam<bool>
         &kPrivacySandboxSettings4, "suppress-dialog-for-external-app-launches",
         true};
 
+const base::FeatureParam<bool> kPrivacySandboxSettings4CloseAllPrompts{
+    &kPrivacySandboxSettings4, "close-all-prompts", true};
+
 BASE_FEATURE(kPrivacySandboxSettings3,
              "PrivacySandboxSettings3",
              base::FEATURE_ENABLED_BY_DEFAULT);
@@ -104,5 +107,9 @@ BASE_FEATURE(kEnforcePrivacySandboxAttestations,
 
 const char kPrivacySandboxEnrollmentOverrides[] =
     "privacy-sandbox-enrollment-overrides";
+
+BASE_FEATURE(kPrivacySandboxAttestationsHigherComponentRegistrationPriority,
+             "PrivacySandboxAttestationsHigherComponentRegistrationPriority",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 }  // namespace privacy_sandbox

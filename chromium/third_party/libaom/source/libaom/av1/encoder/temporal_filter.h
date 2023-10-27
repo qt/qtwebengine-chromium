@@ -261,6 +261,9 @@ typedef struct {
 #endif  // CONFIG_MULTITHREAD
   // Next temporal filter block row to be filtered.
   int next_tf_row;
+  // Initialized to false, set to true by the worker thread that encounters an
+  // error in order to abort the processing of other worker threads.
+  bool tf_mt_exit;
 } AV1TemporalFilterSync;
 
 // Estimates noise level from a given frame using a single plane (Y, U, or V).
@@ -406,9 +409,13 @@ static AOM_INLINE void tf_dealloc_data(TemporalFilterData *tf_data,
   if (is_high_bitdepth)
     tf_data->pred = (uint8_t *)CONVERT_TO_SHORTPTR(tf_data->pred);
   free(tf_data->tmp_mbmi);
+  tf_data->tmp_mbmi = NULL;
   aom_free(tf_data->accum);
+  tf_data->accum = NULL;
   aom_free(tf_data->count);
+  tf_data->count = NULL;
   aom_free(tf_data->pred);
+  tf_data->pred = NULL;
 }
 
 // Saves the state prior to temporal filter process.

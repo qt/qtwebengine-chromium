@@ -108,7 +108,35 @@ angle::Result FindAndAllocateCompatibleMemory(vk::Context *context,
     RendererVk *renderer = context->getRenderer();
     renderer->getMemoryAllocationTracker()->setPendingMemoryAlloc(
         memoryAllocationType, allocInfo.allocationSize, *memoryTypeIndexOut);
-    ANGLE_VK_TRY(context, deviceMemoryOut->allocate(device, allocInfo));
+
+    // If the initial allocation fails, it is possible to retry the allocation after cleaning the
+    // garbage.
+    VkResult result;
+    bool anyBatchCleaned             = false;
+    uint32_t batchesWaitedAndCleaned = 0;
+
+    do
+    {
+        result = deviceMemoryOut->allocate(device, allocInfo);
+        if (result != VK_SUCCESS)
+        {
+            ANGLE_TRY(renderer->finishOneCommandBatchAndCleanup(context, &anyBatchCleaned));
+
+            if (anyBatchCleaned)
+            {
+                batchesWaitedAndCleaned++;
+            }
+        }
+    } while (result != VK_SUCCESS && anyBatchCleaned);
+
+    if (batchesWaitedAndCleaned > 0)
+    {
+        INFO() << "Initial allocation failed. Waited for " << batchesWaitedAndCleaned
+               << " commands to finish and free garbage | Allocation result: "
+               << ((result == VK_SUCCESS) ? "SUCCESS" : "FAIL");
+    }
+
+    ANGLE_VK_CHECK(context, result == VK_SUCCESS, result);
 
     renderer->onMemoryAlloc(memoryAllocationType, allocInfo.allocationSize, *memoryTypeIndexOut,
                             deviceMemoryOut->getHandle());
@@ -223,41 +251,6 @@ const char *kVkValidationLayerNames[]           = {
     "VK_LAYER_LUNARG_object_tracker", "VK_LAYER_LUNARG_core_validation",
     "VK_LAYER_GOOGLE_unique_objects"};
 
-bool HasValidationLayer(const std::vector<VkLayerProperties> &layerProps, const char *layerName)
-{
-    for (const auto &layerProp : layerProps)
-    {
-        if (std::string(layerProp.layerName) == layerName)
-        {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-bool HasKhronosValidationLayer(const std::vector<VkLayerProperties> &layerProps)
-{
-    return HasValidationLayer(layerProps, kVkKhronosValidationLayerName);
-}
-
-bool HasStandardValidationLayer(const std::vector<VkLayerProperties> &layerProps)
-{
-    return HasValidationLayer(layerProps, kVkStandardValidationLayerName);
-}
-
-bool HasValidationLayers(const std::vector<VkLayerProperties> &layerProps)
-{
-    for (const char *layerName : kVkValidationLayerNames)
-    {
-        if (!HasValidationLayer(layerProps, layerName))
-        {
-            return false;
-        }
-    }
-
-    return true;
-}
 }  // anonymous namespace
 
 const char *VulkanResultString(VkResult result)
@@ -333,23 +326,35 @@ bool GetAvailableValidationLayers(const std::vector<VkLayerProperties> &layerPro
                                   bool mustHaveLayers,
                                   VulkanLayerVector *enabledLayerNames)
 {
-    // Favor unified Khronos layer, but fallback to standard validation
-    if (HasKhronosValidationLayer(layerProps))
+
+    ASSERT(enabledLayerNames);
+    for (const auto &layerProp : layerProps)
     {
-        enabledLayerNames->push_back(kVkKhronosValidationLayerName);
-    }
-    else if (HasStandardValidationLayer(layerProps))
-    {
-        enabledLayerNames->push_back(kVkStandardValidationLayerName);
-    }
-    else if (HasValidationLayers(layerProps))
-    {
-        for (const char *layerName : kVkValidationLayerNames)
+        std::string layerPropLayerName = std::string(layerProp.layerName);
+
+        // Favor unified Khronos layer, but fallback to standard validation
+        if (layerPropLayerName == kVkKhronosValidationLayerName)
         {
-            enabledLayerNames->push_back(layerName);
+            enabledLayerNames->push_back(kVkKhronosValidationLayerName);
+            continue;
+        }
+        else if (layerPropLayerName == kVkStandardValidationLayerName)
+        {
+            enabledLayerNames->push_back(kVkStandardValidationLayerName);
+            continue;
+        }
+
+        for (const char *validationLayerName : kVkValidationLayerNames)
+        {
+            if (layerPropLayerName == validationLayerName)
+            {
+                enabledLayerNames->push_back(validationLayerName);
+                break;
+            }
         }
     }
-    else
+
+    if (enabledLayerNames->size() == 0)
     {
         // Generate an error if the layers were explicitly requested, warning otherwise.
         if (mustHaveLayers)
@@ -1702,6 +1707,20 @@ vk::LevelIndex GetLevelIndex(gl::LevelIndex levelGL, gl::LevelIndex baseLevel)
 {
     ASSERT(baseLevel <= levelGL);
     return vk::LevelIndex(levelGL.get() - baseLevel.get());
+}
+
+VkImageTiling GetTilingMode(gl::TilingMode tilingMode)
+{
+    switch (tilingMode)
+    {
+        case gl::TilingMode::Optimal:
+            return VK_IMAGE_TILING_OPTIMAL;
+        case gl::TilingMode::Linear:
+            return VK_IMAGE_TILING_LINEAR;
+        default:
+            UNREACHABLE();
+            return VK_IMAGE_TILING_OPTIMAL;
+    }
 }
 
 }  // namespace gl_vk

@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -31,8 +31,8 @@ class StaticCredentialsProvider final
   StaticCredentialsProvider& operator=(StaticCredentialsProvider&&);
   ~StaticCredentialsProvider();
 
-  absl::Span<const uint8_t> GetCurrentTlsCertAsDer() override {
-    return absl::Span<uint8_t>(tls_cert_der);
+  ByteView GetCurrentTlsCertAsDer() override {
+    return ByteBuffer(tls_cert_der);
   }
   const DeviceCredentials& GetCurrentDeviceCredentials() override {
     return device_creds;

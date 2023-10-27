@@ -120,7 +120,7 @@ void DnsSdWatcherClient::StartWatcherInternal(
       });
 }
 
-SerialDeletePtr<discovery::DnsSdService>
+std::unique_ptr<discovery::DnsSdService, TaskRunnerDeleter>
 DnsSdWatcherClient::CreateDnsSdServiceInternal(
     const ServiceListener::Config& config) {
   // NOTE: With the current API, the client cannot customize the behavior of

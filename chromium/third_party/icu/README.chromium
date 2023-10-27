@@ -3,7 +3,9 @@ URL: https://github.com/unicode-org/icu
 Version: 73-1
 CPEPrefix: cpe:/a:icu-project:international_components_for_unicode:73.1
 License: MIT
+License File: LICENSE
 Security Critical: yes
+Shipped: yes
 
 Description:
 This directory contains the source code of ICU 73.1 for C/C++.
@@ -254,3 +256,8 @@ D. Local Modifications
 9.  Patch source/common/uposixdefs.h so it compiles on Fuchsia on Macs.
     patches/fuchsia.patch
   - context bug: https://bugs.chromium.org/p/chromium/issues/detail?id=1184527
+
+10. Patch fix of double free during OOM
+    patches/ultag_parse-double-free.patch
+  - https://unicode-org.atlassian.net/browse/ICU-22475
+  - https://github.com/unicode-org/icu/pull/2567

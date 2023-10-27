@@ -1049,7 +1049,7 @@ export const NativeFunctions = [
   },
   {
     name: 'connect',
-    signatures: [['readerName','accessMode','?preferredProtocols']],
+    signatures: [['readerName','accessMode','?options']],
     receivers: ['SmartCardContext']
   },
   {
@@ -1370,7 +1370,7 @@ export const NativeFunctions = [
   },
   {
     name: 'delete',
-    signatures: [['name','?ignored']],
+    signatures: [['name','?value']],
     receivers: ['URLSearchParams']
   },
   {
@@ -1450,7 +1450,7 @@ export const NativeFunctions = [
   },
   {
     name: 'has',
-    signatures: [['name','?ignored']],
+    signatures: [['name','?value']],
     receivers: ['URLSearchParams']
   },
   {
@@ -2354,7 +2354,13 @@ export const NativeFunctions = [
   },
   {
     name: 'setAttribute',
-    signatures: [['qualifiedName','value'],['name','value']]
+    signatures: [['qualifiedName','value'],['name','value']],
+    receivers: ['Element']
+  },
+  {
+    name: 'setAttribute',
+    signatures: [['tag','value']],
+    receivers: ['SmartCardConnection']
   },
   {
     name: 'setAttributeNS',
@@ -2929,8 +2935,19 @@ export const NativeFunctions = [
     receivers: ['PerformanceObserver']
   },
   {
+    name: 'observe',
+    signatures: [['handle','?options']],
+    receivers: ['FileSystemObserver']
+  },
+  {
     name: 'unobserve',
-    signatures: [['target']]
+    signatures: [['target']],
+    receivers: ['IntersectionObserver','ResizeObserver']
+  },
+  {
+    name: 'unobserve',
+    signatures: [['handle']],
+    receivers: ['FileSystemObserver']
   },
   {
     name: 'getModifierState',
@@ -5574,7 +5591,13 @@ export const NativeFunctions = [
   },
   {
     name: 'tanh',
-    signatures: [['x']]
+    signatures: [['x']],
+    receivers: ['Math']
+  },
+  {
+    name: 'tanh',
+    signatures: [['?input']],
+    receivers: ['MLGraphBuilder']
   },
   {
     name: 'acosh',
@@ -6162,7 +6185,7 @@ export const NativeFunctions = [
   },
   {
     name: 'ChildNodePart',
-    signatures: [['previousSibling','nextSibling','?init']]
+    signatures: [['root','previousSibling','nextSibling','?init']]
   },
   {
     name: 'Comment',
@@ -6175,10 +6198,6 @@ export const NativeFunctions = [
   {
     name: 'CSSToggle',
     signatures: [['?options']]
-  },
-  {
-    name: 'DocumentPart',
-    signatures: [['document']]
   },
   {
     name: 'requestStorageAccessFor',
@@ -6222,7 +6241,7 @@ export const NativeFunctions = [
   },
   {
     name: 'NodePart',
-    signatures: [['node','?init']]
+    signatures: [['root','node','?init']]
   },
   {
     name: 'setApplyScroll',
@@ -6383,6 +6402,10 @@ export const NativeFunctions = [
   {
     name: 'WheelEvent',
     signatures: [['type','?eventInitDict']]
+  },
+  {
+    name: 'fetchLater',
+    signatures: [['input','?init']]
   },
   {
     name: 'Headers',
@@ -7045,7 +7068,7 @@ export const NativeFunctions = [
   },
   {
     name: 'beginLayer',
-    signatures: [['?filter']]
+    signatures: [['?options']]
   },
   {
     name: 'scrollPathIntoView',
@@ -7178,6 +7201,10 @@ export const NativeFunctions = [
     signatures: [['?descriptor']]
   },
   {
+    name: 'FileSystemObserver',
+    signatures: [['callback']]
+  },
+  {
     name: 'showOpenFilePicker',
     signatures: [['?options']]
   },
@@ -7302,10 +7329,6 @@ export const NativeFunctions = [
     signatures: [['?photoSettings']]
   },
   {
-    name: 'batchGetAll',
-    signatures: [['?keys','?count']]
-  },
-  {
     name: 'only',
     signatures: [['value']]
   },
@@ -7372,6 +7395,10 @@ export const NativeFunctions = [
   {
     name: 'setFocusBehavior',
     signatures: [['focusBehavior']]
+  },
+  {
+    name: 'CapturedMouseEvent',
+    signatures: [['type','?eventInitDict']]
   },
   {
     name: 'fromElement',
@@ -7486,6 +7513,14 @@ export const NativeFunctions = [
   {
     name: 'prelu',
     signatures: [['x','slope']]
+  },
+  {
+    name: 'reduceSum',
+    signatures: [['input','?options']]
+  },
+  {
+    name: 'reduceMean',
+    signatures: [['input','?options']]
   },
   {
     name: 'relu',
@@ -7622,6 +7657,10 @@ export const NativeFunctions = [
   {
     name: 'RTCDTMFToneChangeEvent',
     signatures: [['type','eventInitDict']]
+  },
+  {
+    name: 'setTimestamp',
+    signatures: [['timestamp']]
   },
   {
     name: 'setMetadata',
@@ -7864,8 +7903,12 @@ export const NativeFunctions = [
     signatures: [['controlCode','data']]
   },
   {
+    name: 'startTransaction',
+    signatures: [['transaction','?options']]
+  },
+  {
     name: 'getStatusChange',
-    signatures: [['readerStates','signal']]
+    signatures: [['readerStates','?options']]
   },
   {
     name: 'SmartCardError',
@@ -8108,20 +8151,40 @@ export const NativeFunctions = [
     signatures: [['sizedformat','width','height']]
   },
   {
+    name: 'framebufferTexturePixelLocalStorageWEBGL',
+    signatures: [['plane','texture','level','layer']]
+  },
+  {
+    name: 'framebufferPixelLocalClearValuefvWEBGL',
+    signatures: [['plane','value','?srcOffset']]
+  },
+  {
+    name: 'framebufferPixelLocalClearValueivWEBGL',
+    signatures: [['plane','value','?srcOffset']]
+  },
+  {
+    name: 'framebufferPixelLocalClearValueuivWEBGL',
+    signatures: [['plane','value','?srcOffset']]
+  },
+  {
+    name: 'beginPixelLocalStorageWEBGL',
+    signatures: [['loadops']]
+  },
+  {
+    name: 'endPixelLocalStorageWEBGL',
+    signatures: [['storeops']]
+  },
+  {
+    name: 'getFramebufferPixelLocalStorageParameterWEBGL',
+    signatures: [['plane','pname']]
+  },
+  {
     name: 'shareVideoImageWEBGL',
     signatures: [['target','video']]
   },
   {
     name: 'releaseVideoImageWEBGL',
     signatures: [['target']]
-  },
-  {
-    name: 'importVideoFrame',
-    signatures: [['videoFrame']]
-  },
-  {
-    name: 'releaseVideoFrame',
-    signatures: [['handle']]
   },
   {
     name: 'requestAdapterInfo',
@@ -8257,7 +8320,7 @@ export const NativeFunctions = [
   },
   {
     name: 'GPUPipelineError',
-    signatures: [['message','options']]
+    signatures: [['?message','options']]
   },
   {
     name: 'setBindGroup',

@@ -257,7 +257,8 @@ class TestStream : public QuicSpdyStream {
   MOCK_METHOD(bool, HasPendingRetransmission, (), (const, override));
 
  protected:
-  bool ValidatedRequestHeaders(const QuicHeaderList& /*header_list*/) override {
+  bool ValidatedReceivedHeaders(
+      const QuicHeaderList& /*header_list*/) override {
     return true;
   }
 };
@@ -379,8 +380,19 @@ class TestSession : public QuicSpdySession {
                       GetEncryptionLevelToSendApplicationData());
   }
 
-  bool ShouldNegotiateWebTransport() override { return supports_webtransport_; }
-  void set_supports_webtransport(bool value) { supports_webtransport_ = value; }
+  WebTransportHttp3VersionSet LocallySupportedWebTransportVersions()
+      const override {
+    return locally_supported_web_transport_versions_;
+  }
+  void set_supports_webtransport(bool value) {
+    locally_supported_web_transport_versions_ =
+        value ? kDefaultSupportedWebTransportVersions
+              : WebTransportHttp3VersionSet();
+  }
+  void set_locally_supported_web_transport_versions(
+      WebTransportHttp3VersionSet versions) {
+    locally_supported_web_transport_versions_ = std::move(versions);
+  }
 
   HttpDatagramSupport LocalHttpDatagramSupport() override {
     return local_http_datagram_support_;
@@ -400,7 +412,7 @@ class TestSession : public QuicSpdySession {
   StrictMock<TestCryptoStream> crypto_stream_;
 
   bool writev_consumes_all_data_;
-  bool supports_webtransport_ = false;
+  WebTransportHttp3VersionSet locally_supported_web_transport_versions_;
   HttpDatagramSupport local_http_datagram_support_ = HttpDatagramSupport::kNone;
 };
 
@@ -539,10 +551,16 @@ class QuicSpdySessionTestBase : public QuicTestWithParam<ParsedQuicVersion> {
     testing::Mock::VerifyAndClearExpectations(connection_);
   }
 
-  void ReceiveWebTransportSettings() {
+  void ReceiveWebTransportSettings(WebTransportHttp3VersionSet versions =
+                                       kDefaultSupportedWebTransportVersions) {
     SettingsFrame settings;
-    settings.values[SETTINGS_H3_DATAGRAM_DRAFT04] = 1;
-    settings.values[SETTINGS_WEBTRANS_DRAFT00] = 1;
+    settings.values[SETTINGS_H3_DATAGRAM] = 1;
+    if (versions.IsSet(WebTransportHttp3Version::kDraft02)) {
+      settings.values[SETTINGS_WEBTRANS_DRAFT00] = 1;
+    }
+    if (versions.IsSet(WebTransportHttp3Version::kDraft07)) {
+      settings.values[SETTINGS_WEBTRANS_MAX_SESSIONS_DRAFT07] = 16;
+    }
     settings.values[SETTINGS_ENABLE_CONNECT_PROTOCOL] = 1;
     std::string data = std::string(1, kControlStream) +
                        HttpEncoder::SerializeSettingsFrame(settings);
@@ -1261,7 +1279,8 @@ TEST_P(QuicSpdySessionTestServer, RstStreamBeforeHeadersDecompressed) {
 
   // In HTTP/3, Qpack stream will send data on stream reset and cause packet to
   // be flushed.
-  if (VersionUsesHttp3(transport_version())) {
+  if (VersionUsesHttp3(transport_version()) &&
+      !GetQuicRestartFlag(quic_opport_bundle_qpack_decoder_data)) {
     EXPECT_CALL(*writer_, WritePacket(_, _, _, _, _, _))
         .WillOnce(Return(WriteResult(WRITE_STATUS_OK, 0)));
   }
@@ -1496,7 +1515,7 @@ TEST_P(QuicSpdySessionTestServer,
     // the STOP_SENDING, so set up the EXPECT there.
     EXPECT_CALL(*connection_, OnStreamReset(stream->id(), _));
     EXPECT_CALL(*connection_, SendControlFrame(_));
-  } else {
+  } else if (!GetQuicRestartFlag(quic_opport_bundle_qpack_decoder_data)) {
     EXPECT_CALL(*writer_, WritePacket(_, _, _, _, _, _))
         .WillOnce(Return(WriteResult(WRITE_STATUS_OK, 0)));
   }
@@ -3453,34 +3472,84 @@ TEST_P(QuicSpdySessionTestClient,
       /*expected_support=*/HttpDatagramSupport::kRfc,
       /*expected_datagram_supported=*/true);
 }
-TEST_P(QuicSpdySessionTestClient, WebTransportSetting) {
+
+TEST_P(QuicSpdySessionTestClient, WebTransportSettingDraft02OnlyBothSides) {
   if (!version().UsesHttp3()) {
     return;
   }
-  session_.set_local_http_datagram_support(HttpDatagramSupport::kDraft04);
-  session_.set_supports_webtransport(true);
+  session_.set_local_http_datagram_support(HttpDatagramSupport::kRfcAndDraft04);
+  session_.set_locally_supported_web_transport_versions(
+      WebTransportHttp3VersionSet({WebTransportHttp3Version::kDraft02}));
 
   EXPECT_FALSE(session_.SupportsWebTransport());
-
-  StrictMock<MockHttp3DebugVisitor> debug_visitor;
-  // Note that this does not actually fill out correct settings because the
-  // settings are filled in at the construction time.
-  EXPECT_CALL(debug_visitor, OnSettingsFrameSent(_));
-  session_.set_debug_visitor(&debug_visitor);
   CompleteHandshake();
-
-  EXPECT_CALL(debug_visitor, OnPeerControlStreamCreated(_));
-  EXPECT_CALL(debug_visitor, OnSettingsFrameReceived(_));
-  ReceiveWebTransportSettings();
+  ReceiveWebTransportSettings(
+      WebTransportHttp3VersionSet({WebTransportHttp3Version::kDraft02}));
   EXPECT_TRUE(session_.ShouldProcessIncomingRequests());
   EXPECT_TRUE(session_.SupportsWebTransport());
+  EXPECT_EQ(session_.SupportedWebTransportVersion(),
+            WebTransportHttp3Version::kDraft02);
+}
+
+TEST_P(QuicSpdySessionTestClient, WebTransportSettingDraft07OnlyBothSides) {
+  if (!version().UsesHttp3()) {
+    return;
+  }
+  session_.set_local_http_datagram_support(HttpDatagramSupport::kRfcAndDraft04);
+  session_.set_locally_supported_web_transport_versions(
+      WebTransportHttp3VersionSet({WebTransportHttp3Version::kDraft07}));
+
+  EXPECT_FALSE(session_.SupportsWebTransport());
+  CompleteHandshake();
+  ReceiveWebTransportSettings(
+      WebTransportHttp3VersionSet({WebTransportHttp3Version::kDraft07}));
+  EXPECT_TRUE(session_.ShouldProcessIncomingRequests());
+  EXPECT_TRUE(session_.SupportsWebTransport());
+  EXPECT_EQ(session_.SupportedWebTransportVersion(),
+            WebTransportHttp3Version::kDraft07);
+}
+
+TEST_P(QuicSpdySessionTestClient, WebTransportSettingBothDraftsBothSides) {
+  if (!version().UsesHttp3()) {
+    return;
+  }
+  session_.set_local_http_datagram_support(HttpDatagramSupport::kRfcAndDraft04);
+  session_.set_locally_supported_web_transport_versions(
+      WebTransportHttp3VersionSet({WebTransportHttp3Version::kDraft02,
+                                   WebTransportHttp3Version::kDraft07}));
+
+  EXPECT_FALSE(session_.SupportsWebTransport());
+  CompleteHandshake();
+  ReceiveWebTransportSettings(
+      WebTransportHttp3VersionSet({WebTransportHttp3Version::kDraft02,
+                                   WebTransportHttp3Version::kDraft07}));
+  EXPECT_TRUE(session_.ShouldProcessIncomingRequests());
+  EXPECT_TRUE(session_.SupportsWebTransport());
+  EXPECT_EQ(session_.SupportedWebTransportVersion(),
+            WebTransportHttp3Version::kDraft07);
+}
+
+TEST_P(QuicSpdySessionTestClient, WebTransportSettingVersionMismatch) {
+  if (!version().UsesHttp3()) {
+    return;
+  }
+  session_.set_local_http_datagram_support(HttpDatagramSupport::kRfcAndDraft04);
+  session_.set_locally_supported_web_transport_versions(
+      WebTransportHttp3VersionSet({WebTransportHttp3Version::kDraft07}));
+
+  EXPECT_FALSE(session_.SupportsWebTransport());
+  CompleteHandshake();
+  ReceiveWebTransportSettings(
+      WebTransportHttp3VersionSet({WebTransportHttp3Version::kDraft02}));
+  EXPECT_FALSE(session_.SupportsWebTransport());
+  EXPECT_EQ(session_.SupportedWebTransportVersion(), absl::nullopt);
 }
 
 TEST_P(QuicSpdySessionTestClient, WebTransportSettingSetToZero) {
   if (!version().UsesHttp3()) {
     return;
   }
-  session_.set_local_http_datagram_support(HttpDatagramSupport::kDraft04);
+  session_.set_local_http_datagram_support(HttpDatagramSupport::kRfcAndDraft04);
   session_.set_supports_webtransport(true);
 
   EXPECT_FALSE(session_.SupportsWebTransport());
@@ -3510,7 +3579,7 @@ TEST_P(QuicSpdySessionTestServer, WebTransportSetting) {
   if (!version().UsesHttp3()) {
     return;
   }
-  session_.set_local_http_datagram_support(HttpDatagramSupport::kDraft04);
+  session_.set_local_http_datagram_support(HttpDatagramSupport::kRfcAndDraft04);
   session_.set_supports_webtransport(true);
 
   EXPECT_FALSE(session_.SupportsWebTransport());
@@ -3527,7 +3596,7 @@ TEST_P(QuicSpdySessionTestServer, BufferingIncomingStreams) {
   if (!version().UsesHttp3()) {
     return;
   }
-  session_.set_local_http_datagram_support(HttpDatagramSupport::kDraft04);
+  session_.set_local_http_datagram_support(HttpDatagramSupport::kRfcAndDraft04);
   session_.set_supports_webtransport(true);
 
   CompleteHandshake();
@@ -3560,7 +3629,7 @@ TEST_P(QuicSpdySessionTestServer, BufferingIncomingStreamsLimit) {
   if (!version().UsesHttp3()) {
     return;
   }
-  session_.set_local_http_datagram_support(HttpDatagramSupport::kDraft04);
+  session_.set_local_http_datagram_support(HttpDatagramSupport::kRfcAndDraft04);
   session_.set_supports_webtransport(true);
 
   CompleteHandshake();
@@ -3601,7 +3670,7 @@ TEST_P(QuicSpdySessionTestServer, ResetOutgoingWebTransportStreams) {
   if (!version().UsesHttp3()) {
     return;
   }
-  session_.set_local_http_datagram_support(HttpDatagramSupport::kDraft04);
+  session_.set_local_http_datagram_support(HttpDatagramSupport::kRfcAndDraft04);
   session_.set_supports_webtransport(true);
 
   CompleteHandshake();
@@ -3637,7 +3706,7 @@ TEST_P(QuicSpdySessionTestClient, WebTransportWithoutExtendedConnect) {
     return;
   }
   SetQuicReloadableFlag(quic_act_upon_invalid_header, true);
-  session_.set_local_http_datagram_support(HttpDatagramSupport::kDraft04);
+  session_.set_local_http_datagram_support(HttpDatagramSupport::kRfcAndDraft04);
   session_.set_supports_webtransport(true);
 
   EXPECT_FALSE(session_.SupportsWebTransport());

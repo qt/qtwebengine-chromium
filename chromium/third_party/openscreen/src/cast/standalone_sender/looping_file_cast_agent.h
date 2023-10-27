@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,11 +23,12 @@
 #include "cast/standalone_sender/remoting_sender.h"
 #include "cast/streaming/environment.h"
 #include "cast/streaming/sender_session.h"
-#include "platform/api/scoped_wake_lock.h"
-#include "platform/api/serial_delete_ptr.h"
+#include "cast/streaming/statistics_defines.h"
 #include "platform/base/error.h"
 #include "platform/base/interface_info.h"
 #include "platform/impl/task_runner.h"
+#include "util/scoped_wake_lock.h"
+#include "util/serial_delete_ptr.h"
 
 namespace Json {
 class Value;
@@ -70,6 +71,7 @@ class LoopingFileCastAgent final
       public ConnectionNamespaceHandler::VirtualConnectionPolicy,
       public CastMessageHandler,
       public SenderSession::Client,
+      public SenderStatsClient,
       public RemotingSender::Client {
  public:
   using ShutdownCallback = std::function<void()>;
@@ -141,6 +143,9 @@ class LoopingFileCastAgent final
                         capture_recommendations) override;
   void OnError(const SenderSession* session, Error error) override;
 
+  // SenderStatsClient overrides.
+  void OnStatisticsUpdated(const SenderStats& updated_stats) override;
+
   // Starts the file sender. This may occur when mirroring or remoting is
   // "ready" if the session is already negotiated, or upon session negotiation
   // if the receiver is already ready.
@@ -198,6 +203,12 @@ class LoopingFileCastAgent final
   // Set to true when the remoting receiver is ready.  However, remoting streams
   // won't start until remoting is successfully negotiated.
   bool is_ready_for_remoting_ = false;
+
+  // Used to not spam the console with statistic update messages.
+  int num_times_on_statistics_updated_called_ = 0;
+
+  // Last reported statistics, logged as part of shutdown.
+  absl::optional<SenderStats> last_reported_statistics_;
 };
 
 }  // namespace cast

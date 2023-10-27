@@ -1,4 +1,4 @@
-// Copyright 2020 Google LLC
+// Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,13 +14,16 @@
 
 #include "presence/presence_device.h"
 
-#include <memory>
+#include <string>
+#include <variant>
 
 #include "gmock/gmock.h"
 #include "protobuf-matchers/protocol-buffer-matchers.h"
 #include "gtest/gtest.h"
-#include "absl/types/variant.h"
+#include "connections/implementation/proto/offline_wire_formats.pb.h"
 #include "internal/platform/ble_connection_info.h"
+#include "internal/proto/credential.pb.h"
+#include "internal/proto/metadata.pb.h"
 #include "presence/data_element.h"
 #include "presence/presence_action.h"
 
@@ -29,6 +32,7 @@ namespace presence {
 namespace {
 
 using ::nearby::internal::Metadata;
+using ::testing::Contains;
 
 constexpr DeviceMotion::MotionType kDefaultMotionType =
     DeviceMotion::MotionType::kPointAndHold;
@@ -45,6 +49,7 @@ Metadata CreateTestMetadata() {
   metadata.set_device_name("NP test device");
   metadata.set_device_profile_url("test_image.test.com");
   metadata.set_bluetooth_mac_address(kMacAddr);
+  metadata.set_device_type(internal::DEVICE_TYPE_LAPTOP);
   return metadata;
 }
 
@@ -57,18 +62,26 @@ TEST(PresenceDeviceTest, DefaultMotionEquals) {
 
 TEST(PresenceDeviceTest, ExplicitInitEquals) {
   Metadata metadata = CreateTestMetadata();
+  internal::SharedCredential shared_credential;
+  shared_credential.set_credential_type(internal::CREDENTIAL_TYPE_GAIA);
   PresenceDevice device1 =
-      PresenceDevice({kDefaultMotionType, kTestConfidence}, metadata);
+      PresenceDevice({kDefaultMotionType, kTestConfidence}, metadata,
+                     internal::IDENTITY_TYPE_PUBLIC);
+  device1.SetDecryptSharedCredential(shared_credential);
   PresenceDevice device2 =
-      PresenceDevice({kDefaultMotionType, kTestConfidence}, metadata);
+      PresenceDevice({kDefaultMotionType, kTestConfidence}, metadata,
+                     internal::IDENTITY_TYPE_PUBLIC);
+  device2.SetDecryptSharedCredential(shared_credential);
   EXPECT_EQ(device1, device2);
 }
 
 TEST(PresenceDeviceTest, ExplicitInitNotEquals) {
   Metadata metadata = CreateTestMetadata();
-  PresenceDevice device1 = PresenceDevice({kDefaultMotionType}, metadata);
+  PresenceDevice device1 = PresenceDevice({kDefaultMotionType}, metadata,
+                                          internal::IDENTITY_TYPE_PUBLIC);
   PresenceDevice device2 =
-      PresenceDevice({kDefaultMotionType, kTestConfidence}, metadata);
+      PresenceDevice({kDefaultMotionType, kTestConfidence}, metadata,
+                     internal::IDENTITY_TYPE_PRIVATE);
   EXPECT_NE(device1, device2);
 }
 
@@ -77,14 +90,14 @@ TEST(PresenceDeviceTest, TestGetBleConnectionInfo) {
   PresenceDevice device = PresenceDevice({kDefaultMotionType}, metadata);
   device.AddAction(PresenceAction(kTestAction));
   auto info = (device.GetConnectionInfos().at(0));
-  ASSERT_TRUE(absl::holds_alternative<nearby::BleConnectionInfo>(info));
-  auto ble_info = absl::get<nearby::BleConnectionInfo>(info);
+  ASSERT_TRUE(std::holds_alternative<nearby::BleConnectionInfo>(info));
+  auto ble_info = std::get<nearby::BleConnectionInfo>(info);
   EXPECT_EQ(ble_info.GetMacAddress(),
             kMacAddr);
   EXPECT_EQ(ble_info.GetActions(), std::vector<uint8_t>{kTestAction});
 }
 
-TEST(PresenceDevicetest, TestGetAddExtendedProperties) {
+TEST(PresenceDeviceTest, TestGetAddExtendedProperties) {
   Metadata metadata = CreateTestMetadata();
   PresenceDevice device = PresenceDevice({kDefaultMotionType}, metadata);
   device.AddExtendedProperty({kDataElementType, kDataElementValue});
@@ -93,7 +106,7 @@ TEST(PresenceDevicetest, TestGetAddExtendedProperties) {
             DataElement(kDataElementType, kDataElementValue));
 }
 
-TEST(PresenceDevicetest, TestGetAddExtendedPropertiesVector) {
+TEST(PresenceDeviceTest, TestGetAddExtendedPropertiesVector) {
   Metadata metadata = CreateTestMetadata();
   PresenceDevice device = PresenceDevice({kDefaultMotionType}, metadata);
   device.AddExtendedProperties(
@@ -122,6 +135,43 @@ TEST(PresenceDeviceTest, TestEndpointIdIsRandom) {
   PresenceDevice device = PresenceDevice({kDefaultMotionType}, metadata);
   EXPECT_EQ(device.GetEndpointId().length(), kEndpointIdLength);
   EXPECT_NE(device.GetEndpointId(), std::string(kEndpointIdLength, 0));
+}
+
+TEST(PresenceDeviceTest, TestGetIdentityType) {
+  Metadata metadata = CreateTestMetadata();
+  PresenceDevice device =
+      PresenceDevice(DeviceMotion(), metadata, internal::IDENTITY_TYPE_PUBLIC);
+  EXPECT_EQ(device.GetIdentityType(), internal::IDENTITY_TYPE_PUBLIC);
+}
+
+TEST(PresenceDeviceTest, TestGetDecryptSharedCredential) {
+  Metadata metadata = CreateTestMetadata();
+  PresenceDevice device =
+      PresenceDevice(DeviceMotion(), metadata, internal::IDENTITY_TYPE_PUBLIC);
+  EXPECT_EQ(device.GetDecryptSharedCredential(), std::nullopt);
+  internal::SharedCredential shared_credential;
+  shared_credential.set_credential_type(internal::CREDENTIAL_TYPE_GAIA);
+  device.SetDecryptSharedCredential(shared_credential);
+  EXPECT_EQ(device.GetDecryptSharedCredential()->SerializeAsString(),
+            shared_credential.SerializeAsString());
+}
+
+TEST(PresenceDeviceTest, TestToProtoBytes) {
+  Metadata metadata = CreateTestMetadata();
+  PresenceDevice device =
+      PresenceDevice(DeviceMotion(), metadata, internal::IDENTITY_TYPE_PUBLIC);
+  std::string proto_bytes = device.ToProtoBytes();
+  location::nearby::connections::PresenceDevice device_frame;
+  ASSERT_TRUE(device_frame.ParseFromString(proto_bytes));
+  // Public identity.
+  EXPECT_THAT(device_frame.identity_type(), Contains(2));
+  EXPECT_EQ(device_frame.endpoint_type(),
+            location::nearby::connections::PRESENCE_ENDPOINT);
+  EXPECT_EQ(device_frame.endpoint_id(), device.GetEndpointId());
+  EXPECT_EQ(device_frame.device_type(),
+            location::nearby::connections::PresenceDevice::LAPTOP);
+  EXPECT_EQ(device_frame.device_name(), "NP test device");
+  EXPECT_EQ(device_frame.device_image_url(), "test_image.test.com");
 }
 
 }  // namespace

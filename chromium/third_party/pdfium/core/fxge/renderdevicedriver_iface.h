@@ -14,7 +14,7 @@
 #include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/retain_ptr.h"
 #include "core/fxge/dib/fx_dib.h"
-#include "third_party/base/span.h"
+#include "third_party/base/containers/span.h"
 
 class CFX_DIBBase;
 class CFX_DIBitmap;
@@ -116,6 +116,11 @@ class RenderDeviceDriverIface {
                                int bitmap_alpha,
                                BlendMode blend_type);
   virtual void SetGroupKnockout(bool group_knockout);
+
+  // For `CFX_SkiaDeviceDriver` only:
+  // Syncs the current rendering result from the internal buffer to the output
+  // bitmap if such internal buffer exists.
+  virtual bool SyncInternalBitmaps();
 #endif
 
   // Multiplies the device by a constant alpha, returning `true` on success.

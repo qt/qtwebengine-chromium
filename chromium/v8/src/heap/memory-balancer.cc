@@ -28,18 +28,19 @@ void MemoryBalancer::RefreshLimit() {
 // a small allocation appears.
 constexpr size_t kMinHeapExtraSpace = 2 * MB;
 
-void MemoryBalancer::UpdateHeapLimit(size_t new_limit) {
-  new_limit =
-      std::max<size_t>(live_memory_after_gc_ + kMinHeapExtraSpace, new_limit) +
-      heap_->new_space_->Capacity();
-  heap_->set_old_generation_allocation_limit(new_limit);
-  heap_->global_allocation_limit_ = new_limit + external_allocation_limit_;
+void MemoryBalancer::UpdateHeapLimit(size_t computed_limit) {
+  size_t new_limit =
+      std::max<size_t>(live_memory_after_gc_ + kMinHeapExtraSpace,
+                       computed_limit) +
+      heap_->NewSpaceCapacity();
+  new_limit = std::min<size_t>(new_limit, heap_->max_old_generation_size());
+  new_limit = std::max<size_t>(new_limit, heap_->min_old_generation_size());
+  heap_->SetOldGenerationAndGlobalAllocationLimit(
+      new_limit, new_limit + external_allocation_limit_);
 }
 
 void MemoryBalancer::PostHeartbeatTask() {
-  auto taskrunner = V8::GetCurrentPlatform()->GetForegroundTaskRunner(
-      reinterpret_cast<v8::Isolate*>(heap_->isolate()));
-  taskrunner->PostDelayedTask(
+  heap_->GetForegroundTaskRunner()->PostDelayedTask(
       std::make_unique<HeartbeatTask>(heap_->isolate(), this), 1);
 }
 

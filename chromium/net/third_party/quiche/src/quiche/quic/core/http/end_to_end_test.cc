@@ -1874,8 +1874,8 @@ TEST_P(EndToEndTest, QUICHE_SLOW_TEST(AddressTokenNotReusedByClient)) {
 
   client_->Disconnect();
 
-  QuicClientSessionCache* session_cache = static_cast<QuicClientSessionCache*>(
-      client_crypto_config->mutable_session_cache());
+  QuicClientSessionCache* session_cache =
+      static_cast<QuicClientSessionCache*>(client_crypto_config->session_cache());
   ASSERT_TRUE(
       !QuicClientSessionCachePeer::GetToken(session_cache, server_id).empty());
 
@@ -1895,6 +1895,10 @@ TEST_P(EndToEndTest, LargePostZeroRTTFailure) {
   // Send a request and then disconnect. This prepares the client to attempt
   // a 0-RTT handshake for the next request.
   ASSERT_TRUE(Initialize());
+  if (!version_.UsesTls() &&
+      GetQuicReloadableFlag(quic_require_handshake_confirmation)) {
+    return;
+  }
 
   std::string body(20480, 'a');
   Http2HeaderBlock headers;
@@ -1950,6 +1954,10 @@ TEST_P(EndToEndTest, LargePostZeroRTTFailure) {
 // Regression test for b/168020146.
 TEST_P(EndToEndTest, MultipleZeroRtt) {
   ASSERT_TRUE(Initialize());
+  if (!version_.UsesTls() &&
+      GetQuicReloadableFlag(quic_require_handshake_confirmation)) {
+    return;
+  }
 
   EXPECT_EQ(kFooResponseBody, client_->SendSynchronousRequest("/foo"));
   QuicSpdyClientSession* client_session = GetClientSession();
@@ -1991,6 +1999,10 @@ TEST_P(EndToEndTest, SynchronousRequestZeroRTTFailure) {
   // Send a request and then disconnect. This prepares the client to attempt
   // a 0-RTT handshake for the next request.
   ASSERT_TRUE(Initialize());
+  if (!version_.UsesTls() &&
+      GetQuicReloadableFlag(quic_require_handshake_confirmation)) {
+    return;
+  }
 
   EXPECT_EQ(kFooResponseBody, client_->SendSynchronousRequest("/foo"));
   QuicSpdyClientSession* client_session = GetClientSession();
@@ -2067,8 +2079,12 @@ TEST_P(EndToEndTest, LargePostSynchronousRequest) {
 
   client_session = GetClientSession();
   ASSERT_TRUE(client_session);
-  EXPECT_TRUE(client_session->EarlyDataAccepted());
-  EXPECT_TRUE(client_->client()->EarlyDataAccepted());
+  EXPECT_EQ((version_.UsesTls() ||
+             !GetQuicReloadableFlag(quic_require_handshake_confirmation)),
+            client_session->EarlyDataAccepted());
+  EXPECT_EQ((version_.UsesTls() ||
+             !GetQuicReloadableFlag(quic_require_handshake_confirmation)),
+            client_->client()->EarlyDataAccepted());
 
   client_->Disconnect();
 
@@ -2840,9 +2856,15 @@ TEST_P(EndToEndTest, StreamCancelErrorTest) {
       client_connection->GetStats().packets_sent;
 
   if (version_.UsesHttp3()) {
-    // Make sure 2 packets were sent, one for QPACK instructions, another for
-    // RESET_STREAM and STOP_SENDING.
-    EXPECT_EQ(packets_sent_before + 2, packets_sent_now);
+    if (GetQuicRestartFlag(quic_opport_bundle_qpack_decoder_data)) {
+      // QPACK decoder instructions and RESET_STREAM and STOP_SENDING frames are
+      // sent in a single packet.
+      EXPECT_EQ(packets_sent_before + 1, packets_sent_now);
+    } else {
+      // Make sure 2 packets were sent, one for QPACK instructions, another for
+      // RESET_STREAM and STOP_SENDING.
+      EXPECT_EQ(packets_sent_before + 2, packets_sent_now);
+    }
   }
 
   // WaitForEvents waits 50ms and returns true if there are outstanding
@@ -3017,6 +3039,7 @@ TEST_P(EndToEndTest,
     return;
   }
   override_client_connection_id_length_ = kQuicDefaultConnectionIdLength;
+  SetQuicRestartFlag(quic_opport_bundle_qpack_decoder_data, false);
   ASSERT_TRUE(Initialize());
   SendSynchronousFooRequestAndCheckResponse();
 
@@ -5345,7 +5368,7 @@ TEST_P(EndToEndTest, ClientValidateNewNetwork) {
 }
 
 TEST_P(EndToEndTest, ClientMultiPortConnection) {
-  client_config_.SetClientConnectionOptions(QuicTagVector{kMPQC});
+  client_config_.SetClientConnectionOptions(QuicTagVector{kMPQC, kMPQM});
   ASSERT_TRUE(Initialize());
   if (!version_.HasIetfQuicFrames()) {
     return;
@@ -5391,7 +5414,7 @@ TEST_P(EndToEndTest, ClientMultiPortConnection) {
 }
 
 TEST_P(EndToEndTest, ClientMultiPortMigrationOnPathDegrading) {
-  client_config_.SetClientConnectionOptions(QuicTagVector{kMPQC});
+  client_config_.SetClientConnectionOptions(QuicTagVector{kMPQC, kMPQM});
   ASSERT_TRUE(Initialize());
   if (!version_.HasIetfQuicFrames()) {
     return;
@@ -5685,8 +5708,6 @@ TEST_P(EndToEndPacketReorderingTest,
     ASSERT_TRUE(Initialize());
     return;
   }
-  SetQuicReloadableFlag(quic_retire_cid_on_reverse_path_validation_failure,
-                        true);
   override_client_connection_id_length_ = kQuicDefaultConnectionIdLength;
   ASSERT_TRUE(Initialize());
 
@@ -5788,6 +5809,10 @@ TEST_P(EndToEndPacketReorderingTest,
 
 TEST_P(EndToEndPacketReorderingTest, Buffer0RttRequest) {
   ASSERT_TRUE(Initialize());
+  if (!version_.UsesTls() &&
+      GetQuicReloadableFlag(quic_require_handshake_confirmation)) {
+    return;
+  }
   // Finish one request to make sure handshake established.
   client_->SendSynchronousRequest("/foo");
   // Disconnect for next 0-rtt request.
@@ -6435,6 +6460,26 @@ TEST_P(EndToEndTest, TlsResumptionDisabledOnTheFly) {
   }
 
   ADD_FAILURE() << "Client should not have 10 resumption tickets.";
+}
+
+TEST_P(EndToEndTest, BlockServerUntilSettingsReceived) {
+  SetQuicReloadableFlag(quic_block_until_settings_received_copt, true);
+  // Force loss to test data stream being blocked when SETTINGS are missing.
+  SetPacketLossPercentage(30);
+  client_extra_copts_.push_back(kBSUS);
+  ASSERT_TRUE(Initialize());
+
+  if (!version_.UsesHttp3()) {
+    return;
+  }
+
+  SendSynchronousFooRequestAndCheckResponse();
+
+  QuicSpdySession* server_session = GetServerSession();
+  EXPECT_FALSE(GetClientSession()->ShouldBufferRequestsUntilSettings());
+  server_thread_->ScheduleAndWaitForCompletion([server_session] {
+    EXPECT_TRUE(server_session->ShouldBufferRequestsUntilSettings());
+  });
 }
 
 TEST_P(EndToEndTest, WebTransportSessionSetup) {
@@ -7208,7 +7253,7 @@ TEST_P(EndToEndTest, ServerReportsEct0) {
   EXPECT_EQ(ecn->ce, 0);
   EXPECT_TRUE(client_connection->set_ecn_codepoint(ECN_ECT0));
   client_->SendSynchronousRequest("/foo");
-  if (!GetQuicRestartFlag(quic_receive_ecn2) ||
+  if (!GetQuicRestartFlag(quic_receive_ecn3) ||
       !VersionHasIetfQuicFrames(version_.transport_version)) {
     EXPECT_EQ(ecn->ect0, 0);
   } else {
@@ -7233,7 +7278,7 @@ TEST_P(EndToEndTest, ServerReportsEct1) {
   EXPECT_EQ(ecn->ce, 0);
   EXPECT_TRUE(client_connection->set_ecn_codepoint(ECN_ECT1));
   client_->SendSynchronousRequest("/foo");
-  if (!GetQuicRestartFlag(quic_receive_ecn2) ||
+  if (!GetQuicRestartFlag(quic_receive_ecn3) ||
       !VersionHasIetfQuicFrames(version_.transport_version)) {
     EXPECT_EQ(ecn->ect1, 0);
   } else {
@@ -7258,7 +7303,7 @@ TEST_P(EndToEndTest, ServerReportsCe) {
   EXPECT_EQ(ecn->ce, 0);
   EXPECT_TRUE(client_connection->set_ecn_codepoint(ECN_CE));
   client_->SendSynchronousRequest("/foo");
-  if (!GetQuicRestartFlag(quic_receive_ecn2) ||
+  if (!GetQuicRestartFlag(quic_receive_ecn3) ||
       !VersionHasIetfQuicFrames(version_.transport_version)) {
     EXPECT_EQ(ecn->ce, 0);
   } else {
@@ -7287,7 +7332,7 @@ TEST_P(EndToEndTest, ClientReportsEct1) {
   server_thread_->Pause();
   EXPECT_EQ(ecn->ect0, 0);
   EXPECT_EQ(ecn->ce, 0);
-  if (!GetQuicRestartFlag(quic_receive_ecn2) ||
+  if (!GetQuicRestartFlag(quic_receive_ecn3) ||
       !VersionHasIetfQuicFrames(version_.transport_version)) {
     EXPECT_EQ(ecn->ect1, 0);
   } else {
@@ -7414,6 +7459,52 @@ TEST_P(EndToEndTest, DoNotAdvertisePreferredAddressWithoutSPAD) {
       }));
   ASSERT_TRUE(Initialize());
   EXPECT_TRUE(client_->client()->WaitForHandshakeConfirmed());
+}
+
+TEST_P(EndToEndTest, MaxPacingRate) {
+  const std::string huge_response(10 * 1024 * 1024, 'a');  // 10 MB
+  ASSERT_TRUE(Initialize());
+
+  if (!GetQuicReloadableFlag(quic_pacing_remove_non_initial_burst)) {
+    return;
+  }
+
+  AddToCache("/10MB_response", 200, huge_response);
+
+  ASSERT_TRUE(client_->client()->WaitForHandshakeConfirmed());
+
+  auto set_server_max_pacing_rate = [&](QuicBandwidth max_pacing_rate) {
+    QuicSpdySession* server_session = GetServerSession();
+    ASSERT_NE(server_session, nullptr);
+    server_session->connection()->SetMaxPacingRate(max_pacing_rate);
+  };
+
+  // Set up the first response to be paced at 2 MB/s.
+  server_thread_->ScheduleAndWaitForCompletion([&]() {
+    set_server_max_pacing_rate(
+        QuicBandwidth::FromBytesPerSecond(2 * 1024 * 1024));
+  });
+
+  QuicTime start = QuicDefaultClock::Get()->Now();
+  SendSynchronousRequestAndCheckResponse(client_.get(), "/10MB_response",
+                                         huge_response);
+  QuicTime::Delta duration = QuicDefaultClock::Get()->Now() - start;
+  QUIC_LOG(INFO) << "Response 1 duration: " << duration;
+  EXPECT_GE(duration, QuicTime::Delta::FromMilliseconds(5000));
+  EXPECT_LE(duration, QuicTime::Delta::FromMilliseconds(7500));
+
+  // Set up the second response to be paced at 512 KB/s.
+  server_thread_->ScheduleAndWaitForCompletion([&]() {
+    set_server_max_pacing_rate(QuicBandwidth::FromBytesPerSecond(512 * 1024));
+  });
+
+  start = QuicDefaultClock::Get()->Now();
+  SendSynchronousRequestAndCheckResponse(client_.get(), "/10MB_response",
+                                         huge_response);
+  duration = QuicDefaultClock::Get()->Now() - start;
+  QUIC_LOG(INFO) << "Response 2 duration: " << duration;
+  EXPECT_GE(duration, QuicTime::Delta::FromSeconds(20));
+  EXPECT_LE(duration, QuicTime::Delta::FromSeconds(25));
 }
 
 }  // namespace

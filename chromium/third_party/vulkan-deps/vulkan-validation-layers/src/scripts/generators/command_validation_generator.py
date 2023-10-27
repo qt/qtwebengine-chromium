@@ -14,394 +14,195 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os,sys,json
-from generator import *
-from common_codegen import *
-
-# This is a workaround to use a Python 2.7 and 3.x compatible syntax
-from io import open
-
+import os
+import sys
+from generators.generator_utils import (buildListVUID, getVUID)
+from generators.vulkan_object import (Queues, CommandScope)
+from generators.base_generator import BaseGenerator
 #
 # CommandValidationOutputGenerator - Generate implicit vkCmd validation for CoreChecks
-class CommandValidationOutputGenerator(OutputGenerator):
+class CommandValidationOutputGenerator(BaseGenerator):
     def __init__(self,
-                 errFile = sys.stderr,
-                 warnFile = sys.stderr,
-                 diagFile = sys.stdout):
-        OutputGenerator.__init__(self, errFile, warnFile, diagFile)
-
-        self.valid_vuids = set()                          # Set of all valid VUIDs
-        self.vuid_dict = dict()                           # VUID dictionary (from JSON)
-        self.commands = dict()                            # dictionary of all vkCmd* calls to cmdInfo
-        self.alias_dict = dict()                          # Dict of cmd aliases
-        self.header_file = False                          # Header file generation flag
-        self.source_file = False                          # Source file generation flag
-
-    #
-    # Walk the JSON-derived dict and find all "vuid" key values
-    def ExtractVUIDs(self, d):
-        if hasattr(d, 'items'):
-            for k, v in d.items():
-                if k == "vuid":
-                    yield v
-                elif isinstance(v, dict):
-                    for s in self.ExtractVUIDs(v):
-                        yield s
-                elif isinstance (v, list):
-                    for l in v:
-                        for s in self.ExtractVUIDs(l):
-                            yield s
-
+                 valid_usage_file):
+        BaseGenerator.__init__(self)
+        self.valid_vuids = buildListVUID(valid_usage_file)
     #
     # Called at beginning of processing as file is opened
-    def beginFile(self, genOpts):
-        OutputGenerator.beginFile(self, genOpts)
-        self.header_file = (genOpts.filename == 'command_validation.h')
-        self.source_file = (genOpts.filename == 'command_validation.cpp')
+    def generate(self):
+        self.write(f'''// *** THIS FILE IS GENERATED - DO NOT EDIT ***
+// See {os.path.basename(__file__)} for modifications
 
-        if not self.header_file and not self.source_file:
-            print("Error: Output Filenames have changed, update generator source.\n")
-            sys.exit(1)
+/***************************************************************************
+*
+* Copyright (c) 2021-2023 Valve Corporation
+* Copyright (c) 2021-2023 LunarG, Inc.
+*
+* Licensed under the Apache License, Version 2.0 (the "License");
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+*
+*     http://www.apache.org/licenses/LICENSE-2.0
+*
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an "AS IS" BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+****************************************************************************/\n''')
+        self.write('// NOLINTBEGIN') # Wrap for clang-tidy to ignore
 
-        # Build a set of all vuid text strings found in validusage.json
-        self.valid_usage_path = genOpts.valid_usage_path
-        vu_json_filename = os.path.join(self.valid_usage_path + os.sep, 'validusage.json')
-        if os.path.isfile(vu_json_filename):
-            json_file = open(vu_json_filename, 'r', encoding='utf-8')
-            self.vuid_dict = json.load(json_file)
-            json_file.close()
-        if len(self.vuid_dict) == 0:
-            print("Error: Could not find, or error loading %s/validusage.json\n", vu_json_filename)
-            sys.exit(1)
-        for json_vuid_string in self.ExtractVUIDs(self.vuid_dict):
-            self.valid_vuids.add(json_vuid_string)
+        if self.filename == 'command_validation.cpp':
+            self.generateSource()
+        else:
+            self.write(f'\nFile name {self.filename} has no code to generate\n')
 
-        # File Comment
-        file_comment = '// *** THIS FILE IS GENERATED - DO NOT EDIT ***\n'
-        file_comment += '// See {} for modifications\n'.format(os.path.basename(__file__))
-        write(file_comment, file=self.outFile)
-        # Copyright Statement
-        copyright = ''
-        copyright += '\n'
-        copyright += '/***************************************************************************\n'
-        copyright += ' *\n'
-        copyright += ' * Copyright (c) 2021-2023 The Khronos Group Inc.\n'
-        copyright += ' *\n'
-        copyright += ' * Licensed under the Apache License, Version 2.0 (the "License");\n'
-        copyright += ' * you may not use this file except in compliance with the License.\n'
-        copyright += ' * You may obtain a copy of the License at\n'
-        copyright += ' *\n'
-        copyright += ' *     http://www.apache.org/licenses/LICENSE-2.0\n'
-        copyright += ' *\n'
-        copyright += ' * Unless required by applicable law or agreed to in writing, software\n'
-        copyright += ' * distributed under the License is distributed on an "AS IS" BASIS,\n'
-        copyright += ' * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n'
-        copyright += ' * See the License for the specific language governing permissions and\n'
-        copyright += ' * limitations under the License.\n'
-        copyright += ' ****************************************************************************/\n'
-        write(copyright, file=self.outFile)
+        self.write('// NOLINTEND') # Wrap for clang-tidy to ignore
 
-        if self.source_file:
-            write('#include "error_message/logging.h"', file=self.outFile)
-            write('#include "core_checks/core_validation.h"', file=self.outFile)
-        elif self.header_file:
-            write('#pragma once', file=self.outFile)
-            write('#include <array>', file=self.outFile)
+    def generateSource(self):
+        out = []
+        out.append('''
+#include "error_message/logging.h"
+#include "core_checks/core_validation.h"
 
-    #
-    # Write generated file content to output file
-    def endFile(self):
-        if self.header_file:
-            write(self.commandTypeEnum(), file=self.outFile)
-            write(self.commandNameList(), file=self.outFile)
-        elif self.source_file:
-            write(self.commandRecordingList(), file=self.outFile)
-            write(self.commandQueueTypeList(), file=self.outFile)
-            write(self.commandRenderPassList(), file=self.outFile)
-            write(self.commandVideoCodingList(), file=self.outFile)
-            write(self.commandBufferLevelList(), file=self.outFile)
-            write(self.validateFunction(), file=self.outFile)
-        # Finish processing in superclass
-        OutputGenerator.endFile(self)
-
-    #
-    # Retrieve the type and name for a parameter
-    def getTypeNameTuple(self, param):
-        type = ''
-        name = ''
-        for elem in param:
-            if elem.tag == 'type':
-                type = noneStr(elem.text)
-            elif elem.tag == 'name':
-                name = noneStr(elem.text)
-        return (type, name)
-
-    #
-    # Capture command parameter info to be used for param check code generation.
-    def genCmd(self, cmdinfo, name, alias):
-        OutputGenerator.genCmd(self, cmdinfo, name, alias)
-        # Get first param type
-        params = cmdinfo.elem.findall('param')
-        info = self.getTypeNameTuple(params[0])
-        if name.startswith('vkCmd') and info[0] == 'VkCommandBuffer':
-            self.commands[name] = cmdinfo
-            if alias is not None:
-                self.alias_dict[name] = alias
-    #
-    # List the enum for the commands
-    def commandTypeEnum(self):
-        output = '''
-// Used as key for maps of all vkCmd* calls
-// Does not include vkBeginCommandBuffer/vkEndCommandBuffer
-typedef enum CMD_TYPE {
-    CMD_NONE = 0,\n'''
-
-        counter = 1
-        for name, cmdinfo in sorted(self.commands.items()):
-            output += '    CMD_' + name[5:].upper() + ' = ' + str(counter) + ',\n'
-            counter += 1
-
-        output += '    CMD_RANGE_SIZE = ' + str(counter)
-        output += '''
-} CMD_TYPE;'''
-        return output
-
-    #
-    # For each CMD_TYPE give a string name
-    def commandNameList(self):
-        output = '''
-static const std::array<const char *, CMD_RANGE_SIZE> kGeneratedCommandNameList = {{
-    "Command_Undefined",\n'''
-        for name, cmdinfo in sorted(self.commands.items()):
-            output += '    \"' + name + '\",\n'
-        output += '}};'
-        return output
-
-    #
-    # For each CMD_TYPE give a string name add a *-recording VUID
-    # Each vkCmd* will have one
-    def commandRecordingList(self):
-        output = '''
-static const std::array<const char *, CMD_RANGE_SIZE> kGeneratedMustBeRecordingList = {{
-    kVUIDUndefined,\n'''
-        for name, cmdinfo in sorted(self.commands.items()):
-            if name in self.alias_dict:
-                name = self.alias_dict[name]
-            vuid = 'VUID-' + name + '-commandBuffer-recording'
-            if vuid not in self.valid_vuids:
-                print("Warning: Could not find {} in validusage.json".format(vuid))
-                vuid = vuid.replace('VUID-', 'UNASSIGNED-')
-            output += '    \"' + vuid + '\",\n'
-        output += '}};'
-        return output
-
-    #
-    # For each CMD_TYPE give a queue type and string name add a *-commandBuffer-cmdpool VUID
-    # Each vkCmd* will have one
-    def commandQueueTypeList(self):
-        output = '''
-struct CommandSupportedQueueType {
-    VkQueueFlags flags;
-    const char* vuid;
+enum CMD_SCOPE_TYPE {
+    CMD_SCOPE_INSIDE,
+    CMD_SCOPE_OUTSIDE,
+    CMD_SCOPE_BOTH
 };
-static const std::array<CommandSupportedQueueType, CMD_RANGE_SIZE> kGeneratedQueueTypeList = {{
-    {VK_QUEUE_FLAG_BITS_MAX_ENUM, kVUIDUndefined},\n'''
-        for name, cmdinfo in sorted(self.commands.items()):
-            if name in self.alias_dict:
-                name = self.alias_dict[name]
-            flags = []
-            queues = cmdinfo.elem.attrib.get('queues').split(',')
-            for queue in queues:
-                if queue == 'graphics':
-                    flags.append("VK_QUEUE_GRAPHICS_BIT")
-                elif queue == 'compute':
-                    flags.append("VK_QUEUE_COMPUTE_BIT")
-                elif queue == 'transfer':
-                    flags.append("VK_QUEUE_TRANSFER_BIT")
-                elif queue == 'sparse_binding':
-                    flags.append("VK_QUEUE_SPARSE_BINDING_BIT")
-                elif queue == 'protected':
-                    flags.append("VK_QUEUE_PROTECTED_BIT")
-                elif queue == 'decode':
-                    flags.append("VK_QUEUE_VIDEO_DECODE_BIT_KHR")
-                elif queue == 'encode':
-                    flags.append("VK_QUEUE_VIDEO_ENCODE_BIT_KHR")
-                elif queue == 'opticalflow':
-                    flags.append("VK_QUEUE_OPTICAL_FLOW_BIT_NV")
-                else:
-                    print(f'A new queue type {queue} was added to VkQueueFlagBits and need to update generation code')
-                    sys.exit(1)
-            vuid = 'VUID-' + name + '-commandBuffer-cmdpool'
-            if vuid not in self.valid_vuids:
-                print("Warning: Could not find {} in validusage.json".format(vuid))
-                vuid = vuid.replace('VUID-', 'UNASSIGNED-')
-            output += '    {' + ' | '.join(flags) + ', \"' + vuid + '\"},\n'
-        output += '}};'
-        return output
 
-    #
-    # For each CMD_TYPE give a the renderpass restriction and a *-renderpass VUID
-    def commandRenderPassList(self):
-        output = '''
-enum CMD_RENDER_PASS_TYPE {
-    CMD_RENDER_PASS_INSIDE,
-    CMD_RENDER_PASS_OUTSIDE,
-    CMD_RENDER_PASS_BOTH
+struct CommandValidationInfo {
+    const char* recording_vuid;
+    const char* buffer_level_vuid;
+
+    VkQueueFlags queue_flags;
+    const char* queue_vuid;
+
+    CMD_SCOPE_TYPE render_pass;
+    const char* render_pass_vuid;
+
+    CMD_SCOPE_TYPE video_coding;
+    const char* video_coding_vuid;
 };
-struct CommandSupportedRenderPass {
-    CMD_RENDER_PASS_TYPE renderPass;
-    const char* vuid;
-};
-static const std::array<CommandSupportedRenderPass, CMD_RANGE_SIZE> kGeneratedRenderPassList = {{
-    {CMD_RENDER_PASS_BOTH, kVUIDUndefined}, // CMD_NONE\n'''
-        for name, cmdinfo in sorted(self.commands.items()):
-            if name in self.alias_dict:
-                name = self.alias_dict[name]
-            render_pass_type = ''
-            render_pass = cmdinfo.elem.attrib.get('renderpass')
-            if render_pass == 'inside':
-                render_pass_type = 'CMD_RENDER_PASS_INSIDE'
-            elif render_pass == 'outside':
-                render_pass_type = 'CMD_RENDER_PASS_OUTSIDE'
-            elif render_pass != 'both':
-                print("renderpass attribute was %s and not known, need to update generation code", renderpass)
+
+using Func = vvl::Func;
+''')
+
+        out.append('static const vvl::unordered_map<Func, CommandValidationInfo> kCommandValidationTable {\n')
+        for command in [x for x in self.vk.commands.values() if x.name.startswith('vkCmd')]:
+            out.append(f'{{Func::{command.name}, {{\n')
+            # recording_vuid
+            alias_name = command.name if command.alias is None else command.alias
+            vuid = getVUID(self.valid_vuids, f'VUID-{alias_name}-commandBuffer-recording')
+            out.append(f'    {vuid},\n')
+
+            # buffer_level_vuid
+            if command.primary and command.secondary:
+                out.append('    nullptr,\n')
+            elif command.primary:
+                vuid = getVUID(self.valid_vuids, f'VUID-{alias_name}-bufferlevel')
+                out.append(f'    {vuid},\n')
+            else:
+                # Currently there is only "primary" or "primary,secondary" in XML
+                # Hard to predict what might change, so will error out instead if assumption breaks
+                print('cmdbufferlevel attribute was and not known, need to update generation code')
                 sys.exit(1)
 
-            # Only will be a VUID if not BOTH
-            if render_pass == 'both':
-                output += '    {CMD_RENDER_PASS_BOTH, kVUIDUndefined},\n'
-            else:
-                vuid = 'VUID-' + name + '-renderpass'
-                if vuid not in self.valid_vuids:
-                    print("Warning: Could not find {} in validusage.json".format(vuid))
-                    vuid = vuid.replace('VUID-', 'UNASSIGNED-')
-                output += '    {' + render_pass_type + ', \"' + vuid + '\"},\n'
-        output += '}};'
-        return output
+            # queue_flags / queue_vuid
+            queue_flags = []
+            queue_flags.extend(["VK_QUEUE_GRAPHICS_BIT"] if Queues.GRAPHICS & command.queues else [])
+            queue_flags.extend(["VK_QUEUE_COMPUTE_BIT"] if Queues.COMPUTE & command.queues else [])
+            queue_flags.extend(["VK_QUEUE_TRANSFER_BIT"] if Queues.TRANSFER & command.queues else [])
+            queue_flags.extend(["VK_QUEUE_SPARSE_BINDING_BIT"] if Queues.SPARSE_BINDING & command.queues else [])
+            queue_flags.extend(["VK_QUEUE_PROTECTED_BIT"] if Queues.PROTECTED & command.queues else [])
+            queue_flags.extend(["VK_QUEUE_VIDEO_DECODE_BIT_KHR"] if Queues.DECODE & command.queues else [])
+            queue_flags.extend(["VK_QUEUE_VIDEO_ENCODE_BIT_KHR"] if Queues.ENCODE & command.queues else [])
+            queue_flags.extend(["VK_QUEUE_OPTICAL_FLOW_BIT_NV"] if Queues.OPTICAL_FLOW & command.queues else [])
+            queue_flags = ' | '.join(queue_flags)
 
-    #
-    # For each CMD_TYPE give a videocoding restriction and a *-videocoding VUID
-    def commandVideoCodingList(self):
-        output = '''
-enum CMD_VIDEO_CODING_TYPE {
-    CMD_VIDEO_CODING_INSIDE,
-    CMD_VIDEO_CODING_OUTSIDE,
-    CMD_VIDEO_CODING_BOTH
-};
-struct CommandSupportedVideoCoding {
-    CMD_VIDEO_CODING_TYPE videoCoding;
-    const char* vuid;
-};
-static const std::array<CommandSupportedVideoCoding, CMD_RANGE_SIZE> kGeneratedVideoCodingList = {{
-    {CMD_VIDEO_CODING_BOTH, kVUIDUndefined}, // CMD_NONE\n'''
-        for name, cmdinfo in sorted(self.commands.items()):
-            if name in self.alias_dict:
-                name = self.alias_dict[name]
-            video_coding_type = ''
-            video_coding = cmdinfo.elem.attrib.get('videocoding')
-            if video_coding is None:
-                video_coding = 'outside'
-            if video_coding == 'inside':
-                video_coding_type = 'CMD_VIDEO_CODING_INSIDE'
-            elif video_coding == 'outside':
-                video_coding_type = 'CMD_VIDEO_CODING_OUTSIDE'
-            elif video_coding != 'both':
-                print("videocoding attribute was %s and not known, need to update generation code", video_coding)
-                sys.exit(1)
+            vuid = getVUID(self.valid_vuids, f'VUID-{alias_name}-commandBuffer-cmdpool')
+            out.append(f'    {queue_flags}, {vuid},\n')
 
-            # Only will be a VUID if not BOTH
-            if video_coding == 'both':
-                output += '    {CMD_VIDEO_CODING_BOTH, kVUIDUndefined},\n'
-            else:
-                vuid = 'VUID-' + name + '-videocoding'
-                if vuid not in self.valid_vuids:
-                    print("Warning: Could not find {} in validusage.json".format(vuid))
-                    vuid = vuid.replace('VUID-', 'UNASSIGNED-')
-                output += '    {' + video_coding_type + ', \"' + vuid + '\"},\n'
-        output += '}};'
-        return output
+            # render_pass / render_pass_vuid
+            renderPassType = 'CMD_SCOPE_BOTH'
+            vuid = '"kVUIDUndefined"' # Only will be a VUID if not BOTH
+            if command.renderPass is CommandScope.INSIDE:
+                renderPassType = 'CMD_SCOPE_INSIDE'
+                vuid = getVUID(self.valid_vuids, f'VUID-{alias_name}-renderpass')
+            elif command.renderPass is CommandScope.OUTSIDE:
+                renderPassType = 'CMD_SCOPE_OUTSIDE'
+                vuid = getVUID(self.valid_vuids, f'VUID-{alias_name}-renderpass')
+            out.append(f'    {renderPassType}, {vuid},\n')
 
-    #
-    # For each CMD_TYPE give a buffer level restriction and add a *-bufferlevel VUID
-    def commandBufferLevelList(self):
-        output = '''
-static const std::array<const char *, CMD_RANGE_SIZE> kGeneratedBufferLevelList = {{
-    kVUIDUndefined, // CMD_NONE\n'''
-        for name, cmdinfo in sorted(self.commands.items()):
-            if name in self.alias_dict:
-                name = self.alias_dict[name]
-            buffer_level = cmdinfo.elem.attrib.get('cmdbufferlevel')
-            # Currently there is only "primary" or "primary,secondary" in XML
-            # Hard to predict what might change, so will error out instead if assumption breaks
-            if buffer_level == "primary,secondary":
-                output += '    nullptr,\n'
-            elif buffer_level == "primary":
-                vuid = 'VUID-' + name + '-bufferlevel'
-                if vuid not in self.valid_vuids:
-                    print("Warning: Could not find {} in validusage.json".format(vuid))
-                    vuid = vuid.replace('VUID-', 'UNASSIGNED-')
-                output += '    \"' + vuid + '\",\n'
-            else:
-                print("cmdbufferlevel attribute was %s and not known, need to update generation code", buffer_level)
-                sys.exit(1)
-        output += '}};'
-        return output
+            # video_coding / video_coding_vuid
+            videoCodingType = 'CMD_SCOPE_BOTH'
+            vuid = '"kVUIDUndefined"' # Only will be a VUID if not BOTH
+            if command.videoCoding is CommandScope.INSIDE:
+                videoCodingType = 'CMD_SCOPE_INSIDE'
+                vuid = getVUID(self.valid_vuids, f'VUID-{alias_name}-videocoding')
+            elif command.videoCoding is CommandScope.OUTSIDE or command.videoCoding is CommandScope.NONE:
+                videoCodingType = 'CMD_SCOPE_OUTSIDE'
+                vuid = getVUID(self.valid_vuids, f'VUID-{alias_name}-videocoding')
+            out.append(f'    {videoCodingType}, {vuid},\n')
 
-    #
-    # The main function to validate all the commands
-    def validateFunction(self):
-        output = '''
-// Used to handle all the implicit VUs that are autogenerated from the registry
-bool CoreChecks::ValidateCmd(const CMD_BUFFER_STATE &cb_state, const CMD_TYPE cmd) const {
+            out.append('}},\n')
+        out.append('};\n')
+
+
+        #
+        # The main function to validate all the commands
+        # TODO - Remove C++ code from being a single python string
+        out.append('''
+// Ran on all vkCmd* commands
+// Because it validate the implicit VUs that stateless can't, if this fails, it is likely
+// the input is very bad and other checks will crash dereferencing null pointers
+bool CoreChecks::ValidateCmd(const CMD_BUFFER_STATE &cb_state, const Location& loc) const {
     bool skip = false;
-    const char *caller_name = CommandTypeString(cmd);
+
+    auto info_it = kCommandValidationTable.find(loc.function);
+    if (info_it == kCommandValidationTable.end()) {
+        assert(false);
+    }
+    const auto& info = info_it->second;
 
     // Validate the given command being added to the specified cmd buffer,
     // flagging errors if CB is not in the recording state or if there's an issue with the Cmd ordering
     switch (cb_state.state) {
-        case CB_RECORDING:
-            skip |= ValidateCmdSubpassState(cb_state, cmd);
+        case CbState::Recording:
+            skip |= ValidateCmdSubpassState(cb_state, loc);
             break;
 
-        case CB_INVALID_COMPLETE:
-        case CB_INVALID_INCOMPLETE:
-            skip |= ReportInvalidCommandBuffer(cb_state, caller_name);
+        case CbState::InvalidComplete:
+        case CbState::InvalidIncomplete:
+            skip |= ReportInvalidCommandBuffer(cb_state, loc);
             break;
 
         default:
-            assert(cmd != CMD_NONE);
-            const auto error = kGeneratedMustBeRecordingList[cmd];
-            skip |= LogError(cb_state.commandBuffer(), error, "You must call vkBeginCommandBuffer() before this call to %s.",
-                            caller_name);
+            assert(loc.function != Func::Empty);
+            skip |= LogError(info.recording_vuid, cb_state.commandBuffer(), loc, "was called before vkBeginCommandBuffer().");
     }
 
     // Validate the command pool from which the command buffer is from that the command is allowed for queue type
-    const auto supportedQueueType = kGeneratedQueueTypeList[cmd];
-    skip |= ValidateCmdQueueFlags(cb_state, caller_name, supportedQueueType.flags, supportedQueueType.vuid);
+    skip |= ValidateCmdQueueFlags(cb_state, loc, info.queue_flags, info.queue_vuid);
 
     // Validate if command is inside or outside a render pass if applicable
-    const auto supportedRenderPass = kGeneratedRenderPassList[cmd];
-    if (supportedRenderPass.renderPass == CMD_RENDER_PASS_INSIDE) {
-        skip |= OutsideRenderPass(cb_state, caller_name, supportedRenderPass.vuid);
-    } else if (supportedRenderPass.renderPass == CMD_RENDER_PASS_OUTSIDE) {
-        skip |= InsideRenderPass(cb_state, caller_name, supportedRenderPass.vuid);
+    if (info.render_pass == CMD_SCOPE_INSIDE) {
+        skip |= OutsideRenderPass(cb_state, loc, info.render_pass_vuid);
+    } else if (info.render_pass == CMD_SCOPE_OUTSIDE) {
+        skip |= InsideRenderPass(cb_state, loc, info.render_pass_vuid);
     }
 
     // Validate if command is inside or outside a video coding scope if applicable
-    const auto supportedVideoCoding = kGeneratedVideoCodingList[cmd];
-    if (supportedVideoCoding.videoCoding == CMD_VIDEO_CODING_INSIDE) {
-        skip |= OutsideVideoCodingScope(cb_state, caller_name, supportedVideoCoding.vuid);
-    } else if (supportedVideoCoding.videoCoding == CMD_VIDEO_CODING_OUTSIDE) {
-        skip |= InsideVideoCodingScope(cb_state, caller_name, supportedVideoCoding.vuid);
+    if (info.video_coding == CMD_SCOPE_INSIDE) {
+        skip |= OutsideVideoCodingScope(cb_state, loc, info.video_coding_vuid);
+    } else if (info.video_coding == CMD_SCOPE_OUTSIDE) {
+        skip |= InsideVideoCodingScope(cb_state, loc, info.video_coding_vuid);
     }
 
     // Validate if command has to be recorded in a primary command buffer
-    const auto supportedBufferLevel = kGeneratedBufferLevelList[cmd];
-    if (supportedBufferLevel != nullptr) {
-        skip |= ValidatePrimaryCommandBuffer(cb_state, caller_name, supportedBufferLevel);
+    if (info.buffer_level_vuid != nullptr) {
+        skip |= ValidatePrimaryCommandBuffer(cb_state, loc, info.buffer_level_vuid);
     }
 
     return skip;
-}'''
-        return output
-
+}''')
+        self.write("".join(out))

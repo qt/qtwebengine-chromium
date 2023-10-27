@@ -30,7 +30,6 @@ if(WIN32)
         set(CMAKE_C_STANDARD_LIBRARIES ${CMAKE_CXX_STANDARD_LIBRARIES})
     endif()
 
-    target_compile_options(loader_specific_options INTERFACE -D_CRT_SECURE_NO_WARNINGS)
     # ~~~
     # Build dev_ext_trampoline.c and unknown_ext_chain.c with /O2 to allow tail-call optimization.
     # Setup two CMake targets (loader-norm and loader-opt) for the different compilation flags.
@@ -217,15 +216,23 @@ elseif(UNIX) # i.e.: Linux & Apple
             # Forces compiler to write the intermediate asm file, needed so that we can get sizeof/offset of info out of it.
             target_compile_options(asm_offset PRIVATE -save-temps=obj)
             if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+                set(ASM_OFFSET_EXECUTABLE_LOCATION "$<TARGET_FILE_DIR:asm_offset>/gen_defines.asm")
                 set(ASM_OFFSET_INTERMEDIATE_LOCATION "$<TARGET_FILE_DIR:asm_offset>/CMakeFiles/asm_offset.dir/asm_offset.c.s")
             elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+                set(ASM_OFFSET_EXECUTABLE_LOCATION "$<TARGET_FILE_DIR:asm_offset>/gen_defines.asm")
                 set(ASM_OFFSET_INTERMEDIATE_LOCATION "$<TARGET_FILE_DIR:asm_offset>/CMakeFiles/asm_offset.dir/asm_offset.s")
+            elseif(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+            # Need to use the current binary dir since the asm_offset.s file is in that folder rather than the bundle
+                set(ASM_OFFSET_EXECUTABLE_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/gen_defines.asm")
+                set(ASM_OFFSET_INTERMEDIATE_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/asm_offset.dir/asm_offset.s")
+            else()
+                message(FATAL_ERROR "CXX_COMPILER_ID not supported!")
             endif()
 
             find_package(Python3 REQUIRED QUIET)
             # Run parse_asm_values.py on asm_offset's assembly file to generate the gen_defines.asm, which the asm code depends on
             add_custom_command(TARGET asm_offset POST_BUILD
-                COMMAND Python3::Interpreter ${PROJECT_SOURCE_DIR}/scripts/parse_asm_values.py "$<TARGET_FILE_DIR:asm_offset>/gen_defines.asm"
+                COMMAND Python3::Interpreter ${PROJECT_SOURCE_DIR}/scripts/parse_asm_values.py "${ASM_OFFSET_EXECUTABLE_LOCATION}"
                     "${ASM_OFFSET_INTERMEDIATE_LOCATION}" "GAS" "${CMAKE_CXX_COMPILER_ID}" "${ASM_OFFSET_SYSTEM_PROCESSOR}"
                 BYPRODUCTS gen_defines.asm
             )
@@ -317,10 +324,7 @@ else()
     set_target_properties(vulkan
                           PROPERTIES SOVERSION "1"
                           VERSION ${VULKAN_LOADER_VERSION})
-    target_link_libraries(vulkan PRIVATE ${CMAKE_DL_LIBS} m)
-    if (NOT ANDROID)
-        target_link_libraries(vulkan PRIVATE Threads::Threads)
-    endif()
+    target_link_libraries(vulkan PRIVATE ${CMAKE_DL_LIBS} m Threads::Threads)
 
     if (LOADER_ENABLE_ADDRESS_SANITIZER)
         target_compile_options(vulkan PUBLIC -fsanitize=address)
@@ -361,7 +365,6 @@ else()
         # framework version does not have to be "A", this part of the Apple toolchain expects it.
         # https://forums.developer.apple.com/thread/65963
 
-# cmake-format: off
         set_target_properties(vulkan-framework PROPERTIES
             OUTPUT_NAME vulkan
             FRAMEWORK TRUE
@@ -375,18 +378,12 @@ else()
             PUBLIC_HEADER DESTINATION vulkan
             FRAMEWORK DESTINATION loader
         )
-# cmake-format: on
     endif()
 endif()
 
 option(LOADER_USE_UNSAFE_FILE_SEARCH "Allows the loader to search in unsafe locations")
 if (LOADER_USE_UNSAFE_FILE_SEARCH)
     target_compile_definitions(vulkan PRIVATE LOADER_USE_UNSAFE_FILE_SEARCH)
-endif()
-
-option(LOADER_DISABLE_DYNAMIC_LIBRARY_UNLOADING "Causes the loader to not unload dynamic libraries.")
-if (LOADER_DISABLE_DYNAMIC_LIBRARY_UNLOADING)
-    target_compile_definitions(vulkan PRIVATE LOADER_DISABLE_DYNAMIC_LIBRARY_UNLOADING)
 endif()
 
 # common attributes of the vulkan library

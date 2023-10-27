@@ -38,6 +38,7 @@ MaybeError PhysicalDeviceBase::Initialize() {
     EnableFeature(Feature::DawnNative);
     EnableFeature(Feature::DawnInternalUsages);
     EnableFeature(Feature::ImplicitDeviceSynchronization);
+    EnableFeature(Feature::ChromiumExperimentalReadWriteStorageTexture);
     InitializeSupportedFeaturesImpl();
 
     DAWN_TRY_CONTEXT(
@@ -49,14 +50,6 @@ MaybeError PhysicalDeviceBase::Initialize() {
     NormalizeLimits(&mLimits.v1);
 
     return {};
-}
-
-bool PhysicalDeviceBase::HasFeature(wgpu::FeatureName feature) const {
-    return mSupportedFeatures.IsEnabled(feature);
-}
-
-size_t PhysicalDeviceBase::EnumerateFeatures(wgpu::FeatureName* features) const {
-    return mSupportedFeatures.EnumerateFeatures(features);
 }
 
 ResultOrError<Ref<DeviceBase>> PhysicalDeviceBase::CreateDevice(AdapterBase* adapter,
@@ -110,14 +103,34 @@ InstanceBase* PhysicalDeviceBase::GetInstance() const {
     return mInstance.Get();
 }
 
-FeaturesSet PhysicalDeviceBase::GetSupportedFeatures() const {
-    return mSupportedFeatures;
+bool PhysicalDeviceBase::IsFeatureSupportedWithToggles(wgpu::FeatureName feature,
+                                                       const TogglesState& toggles) const {
+    MaybeError validateResult = ValidateFeatureSupportedWithToggles(feature, toggles);
+    if (validateResult.IsError()) {
+        validateResult.AcquireError();
+        return false;
+    } else {
+        return true;
+    }
+}
+
+FeaturesSet PhysicalDeviceBase::GetSupportedFeatures(const TogglesState& toggles) const {
+    FeaturesSet supportedFeaturesWithToggles;
+    // Iterate each PhysicalDevice's supported feature and check if it is supported with given
+    // toggles
+    for (Feature feature : IterateBitSet(mSupportedFeatures.featuresBitSet)) {
+        if (IsFeatureSupportedWithToggles(ToAPI(feature), toggles)) {
+            supportedFeaturesWithToggles.EnableFeature(feature);
+        }
+    }
+    return supportedFeaturesWithToggles;
 }
 
 bool PhysicalDeviceBase::SupportsAllRequiredFeatures(
-    const ityp::span<size_t, const wgpu::FeatureName>& features) const {
+    const ityp::span<size_t, const wgpu::FeatureName>& features,
+    const TogglesState& toggles) const {
     for (wgpu::FeatureName f : features) {
-        if (!mSupportedFeatures.IsEnabled(f)) {
+        if (!IsFeatureSupportedWithToggles(f, toggles)) {
             return false;
         }
     }

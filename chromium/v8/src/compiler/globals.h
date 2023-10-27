@@ -32,6 +32,8 @@ enum class StackCheckKind : uint8_t {
   kWasm,
 };
 
+enum class CanThrow : uint8_t { kNo, kYes };
+
 inline std::ostream& operator<<(std::ostream& os, StackCheckKind kind) {
   switch (kind) {
     case StackCheckKind::kJSFunctionEntry:
@@ -102,6 +104,16 @@ const int kMaxFastLiteralDepth = 3;
 const int kMaxFastLiteralProperties = JSObject::kMaxInObjectProperties;
 
 enum BaseTaggedness : uint8_t { kUntaggedBase, kTaggedBase };
+
+enum class MemoryAccessKind : uint8_t {
+  kNormal,
+  kUnaligned,
+  kProtected,
+};
+
+size_t hash_value(MemoryAccessKind);
+
+V8_EXPORT_PRIVATE std::ostream& operator<<(std::ostream&, MemoryAccessKind);
 
 }  // namespace compiler
 }  // namespace internal

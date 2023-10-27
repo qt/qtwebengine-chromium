@@ -24,7 +24,7 @@ TQ_OBJECT_CONSTRUCTORS_IMPL(FunctionTemplateInfo)
 TQ_OBJECT_CONSTRUCTORS_IMPL(ObjectTemplateInfo)
 TQ_OBJECT_CONSTRUCTORS_IMPL(FunctionTemplateRareData)
 
-NEVER_READ_ONLY_SPACE_IMPL(TemplateInfo)
+NEVER_READ_ONLY_SPACE_IMPL(ObjectTemplateInfo)
 
 BOOL_ACCESSORS(FunctionTemplateInfo, relaxed_flag, undetectable,
                UndetectableBit::kShift)
@@ -56,29 +56,32 @@ void FunctionTemplateInfo::set_relaxed_flag(int32_t flags) {
 }
 
 // static
-FunctionTemplateRareData FunctionTemplateInfo::EnsureFunctionTemplateRareData(
+Tagged<FunctionTemplateRareData>
+FunctionTemplateInfo::EnsureFunctionTemplateRareData(
     Isolate* isolate, Handle<FunctionTemplateInfo> function_template_info) {
-  HeapObject extra = function_template_info->rare_data(isolate, kAcquireLoad);
-  if (extra.IsUndefined(isolate)) {
+  Tagged<HeapObject> extra =
+      function_template_info->rare_data(isolate, kAcquireLoad);
+  if (IsUndefined(extra, isolate)) {
     return AllocateFunctionTemplateRareData(isolate, function_template_info);
   } else {
     return FunctionTemplateRareData::cast(extra);
   }
 }
 
-#define RARE_ACCESSORS(Name, CamelName, Type, Default)                        \
-  DEF_GETTER(FunctionTemplateInfo, Get##CamelName, Type) {                    \
-    HeapObject extra = rare_data(cage_base, kAcquireLoad);                    \
-    HeapObject undefined = GetReadOnlyRoots(cage_base).undefined_value();     \
-    return extra == undefined ? Default                                       \
-                              : FunctionTemplateRareData::cast(extra).Name(); \
-  }                                                                           \
-  inline void FunctionTemplateInfo::Set##CamelName(                           \
-      Isolate* isolate, Handle<FunctionTemplateInfo> function_template_info,  \
-      Handle<Type> Name) {                                                    \
-    FunctionTemplateRareData rare_data =                                      \
-        EnsureFunctionTemplateRareData(isolate, function_template_info);      \
-    rare_data.set_##Name(*Name);                                              \
+#define RARE_ACCESSORS(Name, CamelName, Type, Default)                         \
+  DEF_GETTER(FunctionTemplateInfo, Get##CamelName, Tagged<Type>) {             \
+    Tagged<HeapObject> extra = rare_data(cage_base, kAcquireLoad);             \
+    Tagged<Undefined> undefined =                                              \
+        GetReadOnlyRoots(cage_base).undefined_value();                         \
+    return extra == undefined ? Default                                        \
+                              : FunctionTemplateRareData::cast(extra)->Name(); \
+  }                                                                            \
+  inline void FunctionTemplateInfo::Set##CamelName(                            \
+      Isolate* isolate, Handle<FunctionTemplateInfo> function_template_info,   \
+      Handle<Type> Name) {                                                     \
+    Tagged<FunctionTemplateRareData> rare_data =                               \
+        EnsureFunctionTemplateRareData(isolate, function_template_info);       \
+    rare_data->set_##Name(*Name);                                              \
   }
 
 RARE_ACCESSORS(prototype_template, PrototypeTemplate, HeapObject, undefined)
@@ -94,7 +97,7 @@ RARE_ACCESSORS(instance_call_handler, InstanceCallHandler, HeapObject,
                undefined)
 RARE_ACCESSORS(access_check_info, AccessCheckInfo, HeapObject, undefined)
 RARE_ACCESSORS(c_function_overloads, CFunctionOverloads, FixedArray,
-               *GetReadOnlyRoots(cage_base).empty_fixed_array())
+               GetReadOnlyRoots(cage_base).empty_fixed_array())
 #undef RARE_ACCESSORS
 
 int FunctionTemplateInfo::InstanceType() const {
@@ -122,37 +125,38 @@ bool TemplateInfo::should_cache() const {
 bool TemplateInfo::is_cached() const { return serial_number() > kUncached; }
 
 bool FunctionTemplateInfo::instantiated() {
-  return shared_function_info().IsSharedFunctionInfo();
+  return IsSharedFunctionInfo(shared_function_info());
 }
 
-inline bool FunctionTemplateInfo::BreakAtEntry() {
-  Object maybe_shared = shared_function_info();
-  if (maybe_shared.IsSharedFunctionInfo()) {
-    SharedFunctionInfo shared = SharedFunctionInfo::cast(maybe_shared);
-    return shared.BreakAtEntry();
+inline bool FunctionTemplateInfo::BreakAtEntry(Isolate* isolate) {
+  Tagged<Object> maybe_shared = shared_function_info();
+  if (IsSharedFunctionInfo(maybe_shared)) {
+    Tagged<SharedFunctionInfo> shared = SharedFunctionInfo::cast(maybe_shared);
+    return shared->BreakAtEntry(isolate);
   }
   return false;
 }
 
-FunctionTemplateInfo FunctionTemplateInfo::GetParent(Isolate* isolate) {
-  Object parent = GetParentTemplate();
-  return parent.IsUndefined(isolate) ? FunctionTemplateInfo()
-                                     : FunctionTemplateInfo::cast(parent);
+Tagged<FunctionTemplateInfo> FunctionTemplateInfo::GetParent(Isolate* isolate) {
+  Tagged<Object> parent = GetParentTemplate();
+  return IsUndefined(parent, isolate) ? Tagged<FunctionTemplateInfo>{}
+                                      : FunctionTemplateInfo::cast(parent);
 }
 
-ObjectTemplateInfo ObjectTemplateInfo::GetParent(Isolate* isolate) {
-  Object maybe_ctor = constructor();
-  if (maybe_ctor.IsUndefined(isolate)) return ObjectTemplateInfo();
-  FunctionTemplateInfo constructor = FunctionTemplateInfo::cast(maybe_ctor);
+Tagged<ObjectTemplateInfo> ObjectTemplateInfo::GetParent(Isolate* isolate) {
+  Tagged<Object> maybe_ctor = constructor();
+  if (IsUndefined(maybe_ctor, isolate)) return ObjectTemplateInfo();
+  Tagged<FunctionTemplateInfo> constructor =
+      FunctionTemplateInfo::cast(maybe_ctor);
   while (true) {
-    constructor = constructor.GetParent(isolate);
+    constructor = constructor->GetParent(isolate);
     if (constructor.is_null()) return ObjectTemplateInfo();
-    Object maybe_obj = constructor.GetInstanceTemplate();
-    if (!maybe_obj.IsUndefined(isolate)) {
+    Tagged<Object> maybe_obj = constructor->GetInstanceTemplate();
+    if (!IsUndefined(maybe_obj, isolate)) {
       return ObjectTemplateInfo::cast(maybe_obj);
     }
   }
-  return ObjectTemplateInfo();
+  return Tagged<ObjectTemplateInfo>();
 }
 
 int ObjectTemplateInfo::embedder_field_count() const {
@@ -180,8 +184,24 @@ void ObjectTemplateInfo::set_code_like(bool is_code_like) {
   return set_data(IsCodeKindBit::update(data(), is_code_like));
 }
 
-bool FunctionTemplateInfo::IsTemplateFor(JSObject object) {
-  return IsTemplateFor(object.map());
+bool FunctionTemplateInfo::IsTemplateFor(Tagged<JSObject> object) const {
+  return IsTemplateFor(object->map());
+}
+
+bool TemplateInfo::TryGetIsolate(Isolate** isolate) const {
+  if (GetIsolateFromHeapObject(*this, isolate)) return true;
+  Isolate* isolate_value = Isolate::TryGetCurrent();
+  if (isolate_value != nullptr) {
+    *isolate = isolate_value;
+    return true;
+  }
+  return false;
+}
+
+Isolate* TemplateInfo::GetIsolateChecked() const {
+  Isolate* isolate;
+  CHECK(TryGetIsolate(&isolate));
+  return isolate;
 }
 
 }  // namespace internal

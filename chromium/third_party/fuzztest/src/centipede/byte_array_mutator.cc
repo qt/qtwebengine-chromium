@@ -27,20 +27,17 @@
 namespace centipede {
 
 //============= CmpDictionary ===============
-bool CmpDictionary::SetFromCmpData(ByteSpan cmp_data) {
+bool CmpDictionary::SetFromMetadata(const ExecutionMetadata &metadata) {
   dictionary_.clear();
-  for (size_t i = 0; i < cmp_data.size();) {
-    auto size = cmp_data[i];
-    if (size > DictEntry::kMaxEntrySize) return false;
-    if (size < kMinEntrySize) return false;
-    if (i + 2 * size + 1 > cmp_data.size()) return false;
-    ByteSpan a(cmp_data.begin() + i + 1, size);
-    ByteSpan b(cmp_data.begin() + i + size + 1, size);
-    // TODO(kcc): disregard boring CMP pairs, such as e.g. `1 CMP 0`.
-    dictionary_.emplace_back(a, b);
-    dictionary_.emplace_back(b, a);
-    i += 1 + 2 * size;
-  }
+  if (!metadata.ForEachCmpEntry([&](ByteSpan a, ByteSpan b) {
+        auto size = a.size();
+        if (size > DictEntry::kMaxEntrySize) return;
+        if (size < kMinEntrySize) return;
+        // TODO(kcc): disregard boring CMP pairs, such as e.g. `1 CMP 0`.
+        dictionary_.emplace_back(a, b);
+        dictionary_.emplace_back(b, a);
+      }))
+    return false;
   std::sort(dictionary_.begin(), dictionary_.end());
   return true;
 }
@@ -322,18 +319,23 @@ void ByteArrayMutator::CrossOver(ByteArray &data, const ByteArray &other) {
 static const KnobId knob_mutate_or_crossover =
     Knobs::NewId("mutate_or_crossover");
 
-void ByteArrayMutator::MutateMany(const std::vector<ByteArray> &inputs,
+void ByteArrayMutator::MutateMany(const std::vector<MutationInputRef> &inputs,
                                   size_t num_mutants,
                                   std::vector<ByteArray> &mutants) {
+  if (inputs.empty()) abort();
+  // TODO(xinhaoyuan): Consider metadata in other inputs instead of always the
+  // first one.
+  SetMetadata(inputs[0].metadata != nullptr ? *inputs[0].metadata
+                                            : ExecutionMetadata());
   size_t num_inputs = inputs.size();
   mutants.resize(num_mutants);
   for (auto &mutant : mutants) {
-    mutant = inputs[rng_() % num_inputs];
+    mutant = inputs[rng_() % num_inputs].data;
     if (mutant.size() <= max_len_ &&
         knobs_.GenerateBool(knob_mutate_or_crossover, rng_())) {
       // Do crossover only if the mutant is not over the max_len_.
       // Perform crossover with some other input. It may be the same input.
-      const auto &other_input = inputs[rng_() % num_inputs];
+      const auto &other_input = inputs[rng_() % num_inputs].data;
       CrossOver(mutant, other_input);
     } else {
       // Perform mutation.

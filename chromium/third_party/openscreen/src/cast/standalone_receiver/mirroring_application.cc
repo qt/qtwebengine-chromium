@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -49,7 +49,9 @@ bool MirroringApplication::Launch(const std::string& app_id,
     return false;
   }
 
+#if defined(MAC_OSX)
   wake_lock_ = ScopedWakeLock::Create(task_runner_);
+#endif  // defined(MAC_OSX)
   environment_ = std::make_unique<Environment>(
       &Clock::now, task_runner_,
       IPEndpoint{interface_address_, kDefaultCastStreamingPort});

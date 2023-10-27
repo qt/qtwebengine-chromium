@@ -34,6 +34,9 @@ typedef NS_CLOSED_ENUM(NSInteger, GNCStatus) {
   GNCStatusBleError,
   GNCStatusWifiLanError,
   GNCStatusPayloadUnknown,
+  GNCStatusUnknown,
+  GNCStatusReset,
+  GNCStatusTimeout,
 };
 
 /**

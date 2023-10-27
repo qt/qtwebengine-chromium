@@ -61,17 +61,18 @@
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_split.h"
 #include "absl/synchronization/mutex.h"
+#include "absl/time/time.h"
 #include "absl/types/span.h"
 #include "./centipede/blob_file.h"
 #include "./centipede/control_flow.h"
 #include "./centipede/coverage.h"
 #include "./centipede/defs.h"
 #include "./centipede/environment.h"
-#include "./centipede/execution_result.h"
 #include "./centipede/feature.h"
 #include "./centipede/feature_set.h"
 #include "./centipede/logging.h"
 #include "./centipede/remote_file.h"
+#include "./centipede/runner_result.h"
 #include "./centipede/rusage_profiler.h"
 #include "./centipede/rusage_stats.h"
 #include "./centipede/shard_reader.h"
@@ -182,8 +183,14 @@ void Centipede::ExportCorpusFromLocalDir(const Environment &env,
 
 void Centipede::UpdateAndMaybeLogStats(std::string_view log_type,
                                        size_t min_log_level) {
+  auto [max_corpus_size, avg_corpus_size] = corpus_.MaxAndAvgSize();
+
+  stats_.unix_micros = absl::ToUnixMicros(absl::Now());
   stats_.corpus_size = corpus_.NumActive();
   stats_.num_covered_pcs = fs_.CountFeatures(feature_domains::kPCs);
+  stats_.max_corpus_element_size = max_corpus_size;
+  stats_.avg_corpus_element_size = avg_corpus_size;
+  stats_.num_executions = num_runs_;
 
   if (env_.log_level < min_log_level) return;
 
@@ -194,7 +201,6 @@ void Centipede::UpdateAndMaybeLogStats(std::string_view log_type,
   double execs_per_sec =
       fuzz_time_secs > 0 ? static_cast<double>(num_runs_) / fuzz_time_secs : 0;
   if (execs_per_sec > 1.) execs_per_sec = std::round(execs_per_sec);
-  auto [max_corpus_size, avg_corpus_size] = corpus_.MaxAndAvgSize();
   static const auto rusage_scope = perf::RUsageScope::ThisProcess();
   auto num_cmp_features = fs_.CountFeatures(feature_domains::kCMP) +
                           fs_.CountFeatures(feature_domains::kCMPEq) +
@@ -216,7 +222,10 @@ void Centipede::UpdateAndMaybeLogStats(std::string_view log_type,
   LogIfNotZero(fs_.CountFeatures(feature_domains::kBoundedPath), "path");
   LogIfNotZero(fs_.CountFeatures(feature_domains::kPCPair), "pair");
   LogIfNotZero(fs_.CountFeatures(feature_domains::kCallStack), "stk");
-  LogIfNotZero(fs_.CountFeatures(feature_domains::kUserDefined), "usr");
+  for (size_t i = 0; i < std::size(feature_domains::kUserDomains); ++i) {
+    LogIfNotZero(fs_.CountFeatures(feature_domains::kUserDomains[i]),
+                 absl::StrCat("usr", i));
+  }
   os << " corp: " << corpus_.NumActive() << "/" << corpus_.NumTotal();
   LogIfNotZero(coverage_frontier_.NumFunctionsInFrontier(), "fr");
   LogIfNotZero(num_crashes_, "crash");
@@ -337,8 +346,8 @@ bool Centipede::RunBatch(const std::vector<ByteArray> &input_vec,
       batch_gained_new_coverage = true;
       CHECK_GT(fv.size(), 0UL);
       if (function_filter_passed) {
-        const auto &cmp_args = batch_result.results()[i].cmp_args();
-        corpus_.Add(input_vec[i], fv, cmp_args, fs_, coverage_frontier_);
+        corpus_.Add(input_vec[i], fv, batch_result.results()[i].metadata(), fs_,
+                    coverage_frontier_);
       }
       if (corpus_file != nullptr) {
         CHECK_OK(corpus_file->Write(input_vec[i]));
@@ -610,17 +619,35 @@ void Centipede::ReloadAllShardsAndWriteDistilledCorpus() {
   }
 }
 
+void Centipede::LoadSeedInputs() {
+  std::vector<ByteArray> seed_inputs;
+  const size_t num_seeds_available =
+      user_callbacks_.GetSeeds(env_.batch_size, seed_inputs);
+  if (num_seeds_available > env_.batch_size) {
+    LOG(WARNING) << "More seeds available than requested: "
+                 << num_seeds_available << " > " << env_.batch_size;
+  }
+  if (seed_inputs.empty()) {
+    LOG(WARNING)
+        << "No seeds returned - will use the default seed of single byte {0}";
+    seed_inputs.push_back({0});
+  }
+
+  RunBatch(seed_inputs, /*corpus_file=*/nullptr, /*features_file=*/nullptr,
+           /*unconditional_features_file=*/nullptr);
+
+  // Forcely add all seed inputs to avoid empty corpus if none of them increased
+  // coverage and passed the filters.
+  if (corpus_.NumTotal() == 0) {
+    for (const auto &seed_input : seed_inputs)
+      corpus_.Add(seed_input, {}, {}, fs_, coverage_frontier_);
+  }
+}
+
 void Centipede::FuzzingLoop() {
   LOG(INFO) << "Shard: " << env_.my_shard_index << "/" << env_.total_shards
             << " " << TemporaryLocalDirPath() << " "
             << "seed: " << env_.seed << "\n\n\n";
-
-  {
-    // Execute a dummy input.
-    BatchResult batch_result;
-    user_callbacks_.Execute(env_.binary, {user_callbacks_.DummyValidInput()},
-                            batch_result);
-  }
 
   UpdateAndMaybeLogStats("begin-fuzz", 0);
 
@@ -641,10 +668,8 @@ void Centipede::FuzzingLoop() {
   CHECK_OK(
       features_file->Open(env_.MakeFeaturesPath(env_.my_shard_index), "a"));
 
-  if (corpus_.NumTotal() == 0) {
-    corpus_.Add(user_callbacks_.DummyValidInput(), {}, {}, fs_,
-                coverage_frontier_);
-  }
+  // Load seed corpus when there is no external corpus loaded.
+  if (corpus_.NumTotal() == 0) LoadSeedInputs();
 
   UpdateAndMaybeLogStats("init-done", 0);
 
@@ -671,19 +696,18 @@ void Centipede::FuzzingLoop() {
     CHECK_LT(new_runs, env_.num_runs);
     auto remaining_runs = env_.num_runs - new_runs;
     auto batch_size = std::min(env_.batch_size, remaining_runs);
-    std::vector<ByteArray> inputs, mutants;
-    inputs.resize(env_.mutate_batch_size);
+    std::vector<MutationInputRef> mutation_inputs;
+    std::vector<ByteArray> mutants;
+    mutation_inputs.reserve(env_.mutate_batch_size);
     for (size_t i = 0; i < env_.mutate_batch_size; i++) {
       const auto &corpus_record = env_.use_corpus_weights
                                       ? corpus_.WeightedRandom(rng_())
                                       : corpus_.UniformRandom(rng_());
-      inputs[i] = corpus_record.data;
-      // Use the cmp_args of the first input.
-      // See the related TODO around SetCmpDictionary.
-      if (i == 0) user_callbacks_.SetCmpDictionary(corpus_record.cmp_args);
+      mutation_inputs.push_back(
+          {.data = corpus_record.data, .metadata = &corpus_record.metadata});
     }
 
-    user_callbacks_.Mutate(inputs, batch_size, mutants);
+    user_callbacks_.Mutate(mutation_inputs, batch_size, mutants);
     bool gained_new_coverage =
         RunBatch(mutants, corpus_file.get(), features_file.get(), nullptr);
     new_runs += mutants.size();

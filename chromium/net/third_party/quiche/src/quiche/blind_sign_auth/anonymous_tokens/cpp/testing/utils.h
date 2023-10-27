@@ -17,6 +17,7 @@
 
 #include <random>
 #include <string>
+#include <utility>
 
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
@@ -24,6 +25,22 @@
 
 namespace private_membership {
 namespace anonymous_tokens {
+
+struct TestRsaPublicKey {
+  std::string n;
+  std::string e;
+};
+
+struct TestRsaPrivateKey {
+  std::string n;
+  std::string e;
+  std::string d;
+  std::string p;
+  std::string q;
+  std::string dp;
+  std::string dq;
+  std::string crt;
+};
 
 struct IetfStandardRsaBlindSignatureTestVector {
   std::string n;
@@ -63,7 +80,7 @@ absl::StatusOr<std::string> TestSign(absl::string_view blinded_data,
 // anonympous_tokens/public/cpp/crypto
 absl::StatusOr<std::string> TestSignWithPublicMetadata(
     absl::string_view blinded_data, absl::string_view public_metadata,
-    const RSA& rsa_key);
+    const RSA& rsa_key, bool use_rsa_public_exponent);
 
 // Returns the IETF test example from
 // https://datatracker.ietf.org/doc/draft-irtf-cfrg-rsa-blind-signatures/
@@ -76,6 +93,27 @@ GetIetfStandardRsaBlindSignatureTestVector();
 // Note that all test vectors use the same RSA key pair.
 std::vector<IetfRsaBlindSignatureWithPublicMetadataTestVector>
 GetIetfRsaBlindSignatureWithPublicMetadataTestVectors();
+
+// Returns the IETF test with Public Metadata examples that disregard the RSA
+// public exponent during partially blind RSA signatures protocol execution.
+//
+// Note that all test vectors use the same RSA key pair.
+std::vector<IetfRsaBlindSignatureWithPublicMetadataTestVector>
+GetIetfPartiallyBlindRSASignatureNoPublicExponentTestVectors();
+
+// Method returns fixed 2048-bit strong RSA modulus based key pair for testing.
+std::pair<TestRsaPublicKey, TestRsaPrivateKey> GetStrongTestRsaKeyPair2048();
+
+// Method returns another fixed 2048-bit strong RSA modulus based key pair for
+// testing.
+std::pair<TestRsaPublicKey, TestRsaPrivateKey>
+GetAnotherStrongTestRsaKeyPair2048();
+
+// Method returns fixed 3072-bit strong RSA modulus based key pair for testing.
+std::pair<TestRsaPublicKey, TestRsaPrivateKey> GetStrongTestRsaKeyPair3072();
+
+// Method returns fixed 4096-bit strong RSA modulus based key pair for testing.
+std::pair<TestRsaPublicKey, TestRsaPrivateKey> GetStrongTestRsaKeyPair4096();
 
 // Outputs a random string of n characters.
 std::string RandomString(int n, std::uniform_int_distribution<int>* distr_u8,

@@ -173,8 +173,6 @@ class V8_EXPORT_PRIVATE CodeGenerator final : public GapResolver::Assembler {
   void AddProtectedInstructionLanding(uint32_t instr_offset,
                                       uint32_t landing_offset);
 
-  bool wasm_runtime_exception_support() const;
-
   SourcePosition start_source_position() const {
     return start_source_position_;
   }
@@ -468,7 +466,7 @@ class V8_EXPORT_PRIVATE CodeGenerator final : public GapResolver::Assembler {
   ZoneDeque<DeoptimizationExit*> deoptimization_exits_;
   ZoneDeque<DeoptimizationLiteral> deoptimization_literals_;
   size_t inlined_function_count_ = 0;
-  TranslationArrayBuilder translations_;
+  FrameTranslationBuilder translations_;
   int handler_table_offset_ = 0;
 
   // Deoptimization exits must be as small as possible, since their count grows

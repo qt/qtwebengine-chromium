@@ -339,10 +339,11 @@ const AstRawString* AstValueFactory::GetTwoByteStringInternal(
 }
 
 const AstRawString* AstValueFactory::GetString(
-    String literal, const SharedStringAccessGuardIfNeeded& access_guard) {
+    Tagged<String> literal,
+    const SharedStringAccessGuardIfNeeded& access_guard) {
   const AstRawString* result = nullptr;
   DisallowGarbageCollection no_gc;
-  String::FlatContent content = literal.GetFlatContent(no_gc, access_guard);
+  String::FlatContent content = literal->GetFlatContent(no_gc, access_guard);
   if (content.IsOneByte()) {
     result = GetOneByteStringInternal(content.ToOneByteVector());
   } else {
@@ -398,7 +399,7 @@ const AstRawString* AstValueFactory::GetString(
         // Copy literal contents for later comparison.
         int length = literal_bytes.length();
         uint8_t* new_literal_bytes =
-            ast_raw_string_zone()->NewArray<uint8_t>(length);
+            ast_raw_string_zone()->AllocateArray<uint8_t>(length);
         memcpy(new_literal_bytes, literal_bytes.begin(), length);
         AstRawString* new_string = ast_raw_string_zone()->New<AstRawString>(
             is_one_byte, base::Vector<const uint8_t>(new_literal_bytes, length),

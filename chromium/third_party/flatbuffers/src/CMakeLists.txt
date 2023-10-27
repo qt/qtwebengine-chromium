@@ -160,13 +160,13 @@ set(FlatBuffers_Compiler_SRCS
   src/idl_gen_csharp.cpp
   src/idl_gen_dart.cpp
   src/idl_gen_kotlin.cpp
+  src/idl_gen_kotlin_kmp.cpp
   src/idl_gen_go.cpp
   src/idl_gen_java.cpp
   src/idl_gen_ts.cpp
   src/idl_gen_php.cpp
   src/idl_gen_python.cpp
   src/idl_gen_lobster.cpp
-  src/idl_gen_lua.cpp
   src/idl_gen_rust.cpp
   src/idl_gen_fbs.cpp
   src/idl_gen_grpc.cpp
@@ -234,6 +234,8 @@ set(FlatBuffers_Tests_SRCS
   tests/native_type_test_impl.cpp
   tests/alignment_test.h
   tests/alignment_test.cpp
+  tests/64bit/offset64_test.h
+  tests/64bit/offset64_test.cpp
   include/flatbuffers/code_generators.h
   src/code_generators.cpp
 )
@@ -246,7 +248,6 @@ set(FlatBuffers_Tests_CPP17_SRCS
 )
 
 set(FlatBuffers_Sample_Binary_SRCS
-  include/flatbuffers/flatbuffers.h
   samples/sample_binary.cpp
 )
 
@@ -490,12 +491,13 @@ endif()
 function(compile_schema SRC_FBS OPT OUT_GEN_FILE) 
   get_filename_component(SRC_FBS_DIR ${SRC_FBS} PATH)
   string(REGEX REPLACE "\\.fbs$" "_generated.h" GEN_HEADER ${SRC_FBS})
-  add_custom_command(TARGET flatc POST_BUILD
-      COMMAND "${FLATBUFFERS_FLATC_EXECUTABLE}"
+  add_custom_command(
+    OUTPUT ${GEN_HEADER}
+    COMMAND "${FLATBUFFERS_FLATC_EXECUTABLE}"
       ${OPT}
       -o "${SRC_FBS_DIR}"
       "${CMAKE_CURRENT_SOURCE_DIR}/${SRC_FBS}"
-    BYPRODUCTS ${GEN_HEADER}
+    DEPENDS flatc ${SRC_FBS}
     COMMENT "flatc generation: `${SRC_FBS}` -> `${GEN_HEADER}`"
     )
   set(${OUT_GEN_FILE} ${GEN_HEADER} PARENT_SCOPE)
@@ -508,25 +510,39 @@ endfunction()
 
 function(compile_schema_for_samples SRC_FBS OPT)
   compile_schema("${SRC_FBS}" "${OPT}" GEN_FILE)
-  target_sources(flatsamplebinary PRIVATE ${GEN_FILE})
-  target_sources(flatsampletext PRIVATE ${GEN_FILE})
-  target_sources(flatsamplebfbs PRIVATE ${GEN_FILE})
+  target_sources(flatsample PRIVATE ${GEN_FILE})
 endfunction()
 
 if(FLATBUFFERS_BUILD_TESTS)
-  include_directories(${CMAKE_CURRENT_BINARY_DIR}/tests)
   add_executable(flattests ${FlatBuffers_Tests_SRCS})
   target_link_libraries(flattests PRIVATE $<BUILD_INTERFACE:ProjectConfig>)
-  target_include_directories(flattests PUBLIC src)
+  target_include_directories(flattests PUBLIC 
+    # Ideally everything is fully qualified from the root directories
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}
+    # TODO(derekbailey): update includes to fully qualify src/ and tests/
+    src 
+    tests 
+    ${CMAKE_CURRENT_BINARY_DIR}/tests 
+  )
+
+  # Have tests load data from the source directory, not the build directory.
+  add_definitions(-DFLATBUFFERS_TEST_PATH_PREFIX=${CMAKE_CURRENT_SOURCE_DIR}/)
 
   # The flattest target needs some generated files
   SET(FLATC_OPT --cpp --gen-mutable --gen-object-api --reflect-names)
   SET(FLATC_OPT_COMP ${FLATC_OPT};--gen-compare)
+  SET(FLATC_OPT_SCOPED_ENUMS ${FLATC_OPT_COMP};--scoped-enums)
 
   compile_schema_for_test(tests/alignment_test.fbs "${FLATC_OPT_COMP}")
+  compile_schema_for_test(tests/arrays_test.fbs "${FLATC_OPT_SCOPED_ENUMS}")
   compile_schema_for_test(tests/native_inline_table_test.fbs "${FLATC_OPT_COMP}")
   compile_schema_for_test(tests/native_type_test.fbs "${FLATC_OPT}")
   compile_schema_for_test(tests/key_field/key_field_sample.fbs "${FLATC_OPT_COMP}")
+  compile_schema_for_test(tests/64bit/test_64bit.fbs "${FLATC_OPT_COMP};--bfbs-gen-embed")
+  compile_schema_for_test(tests/64bit/evolution/v1.fbs "${FLATC_OPT_COMP}")
+  compile_schema_for_test(tests/64bit/evolution/v2.fbs "${FLATC_OPT_COMP}")
+  compile_schema_for_test(tests/union_underlying_type_test.fbs "${FLATC_OPT_SCOPED_ENUMS}")
 
   if(FLATBUFFERS_CODE_SANITIZE)
     add_fsanitize_to_target(flattests ${FLATBUFFERS_CODE_SANITIZE})
@@ -537,16 +553,24 @@ if(FLATBUFFERS_BUILD_TESTS)
   add_executable(flatsamplebinary ${FlatBuffers_Sample_Binary_SRCS})
   add_executable(flatsampletext ${FlatBuffers_Sample_Text_SRCS})
   add_executable(flatsamplebfbs ${FlatBuffers_Sample_BFBS_SRCS})
-  
-  target_link_libraries(flatsamplebinary PRIVATE $<BUILD_INTERFACE:ProjectConfig>)
-  target_link_libraries(flatsampletext PRIVATE $<BUILD_INTERFACE:ProjectConfig>)
-  target_link_libraries(flatsamplebfbs PRIVATE $<BUILD_INTERFACE:ProjectConfig>)
 
+  # Add a library so there is a single target that the generated samples can 
+  # link too.
+  add_library(flatsample INTERFACE)
+
+  # Since flatsample has no sources, we have to explicitly set the linker lang.
+  set_target_properties(flatsample PROPERTIES LINKER_LANGUAGE CXX)
+  
   compile_schema_for_samples(samples/monster.fbs "${FLATC_OPT_COMP}")
+
+  target_link_libraries(flatsamplebinary PRIVATE $<BUILD_INTERFACE:ProjectConfig> flatsample)
+  target_link_libraries(flatsampletext PRIVATE $<BUILD_INTERFACE:ProjectConfig> flatsample)
+  target_link_libraries(flatsamplebfbs PRIVATE $<BUILD_INTERFACE:ProjectConfig> flatsample)
 
   if(FLATBUFFERS_BUILD_CPP17)
     add_executable(flattests_cpp17 ${FlatBuffers_Tests_CPP17_SRCS})
     target_link_libraries(flattests_cpp17 PRIVATE $<BUILD_INTERFACE:ProjectConfig>)
+    target_include_directories(flattests_cpp17 PUBLIC src tests)
     target_compile_features(flattests_cpp17 PRIVATE cxx_std_17) # requires cmake 3.8
 
     if(FLATBUFFERS_CODE_SANITIZE)

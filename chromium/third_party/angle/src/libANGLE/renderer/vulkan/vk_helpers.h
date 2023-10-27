@@ -10,6 +10,7 @@
 #define LIBANGLE_RENDERER_VULKAN_VK_HELPERS_H_
 
 #include "common/MemoryBuffer.h"
+#include "libANGLE/renderer/vulkan/MemoryTracking.h"
 #include "libANGLE/renderer/vulkan/Suballocation.h"
 #include "libANGLE/renderer/vulkan/vk_cache_utils.h"
 #include "libANGLE/renderer/vulkan/vk_format_utils.h"
@@ -999,6 +1000,7 @@ class RenderPassAttachment final
     void finalizeLoadStore(Context *context,
                            uint32_t currentCmdCount,
                            bool hasUnresolveAttachment,
+                           bool hasResolveAttachment,
                            RenderPassLoadOp *loadOp,
                            RenderPassStoreOp *storeOp,
                            bool *isInvalidatedOut);
@@ -1101,6 +1103,10 @@ enum class RenderPassUsage
     // Right now it is only tracked for depth stencil attachment
     DepthReadOnlyAttachment,
     StencilReadOnlyAttachment,
+    // This is special case of RenderTargetAttachment where the render target access is formed
+    // feedback loop. Right now it is only tracked for depth stencil attachment
+    DepthFeedbackLoop,
+    StencilFeedbackLoop,
     // Attached to the texture sampler of the current renderpass commands
     ColorTextureSampler,
     DepthTextureSampler,
@@ -1110,6 +1116,10 @@ enum class RenderPassUsage
     EnumCount = InvalidEnum,
 };
 using RenderPassUsageFlags = angle::PackedEnumBitSet<RenderPassUsage, uint16_t>;
+constexpr RenderPassUsageFlags kDepthStencilReadOnlyBits = RenderPassUsageFlags(
+    {RenderPassUsage::DepthReadOnlyAttachment, RenderPassUsage::StencilReadOnlyAttachment});
+constexpr RenderPassUsageFlags kDepthStencilFeedbackModeBits = RenderPassUsageFlags(
+    {RenderPassUsage::DepthFeedbackLoop, RenderPassUsage::StencilFeedbackLoop});
 
 // The following are used to help track the state of an invalidated attachment.
 // This value indicates an "infinite" CmdCount that is not valid for comparing
@@ -1405,7 +1415,7 @@ class RenderPassCommandBufferHelper final : public CommandBufferHelperCommon
         return mCommandBuffers[mCurrentSubpassCommandBufferIndex];
     }
 
-    bool empty() const { return !started(); }
+    bool empty() const { return mCommandBuffers[0].empty(); }
 
     angle::Result attachCommandPool(Context *context, SecondaryCommandPool *commandPool);
     void detachCommandPool(SecondaryCommandPool **commandPoolOut);
@@ -1493,9 +1503,6 @@ class RenderPassCommandBufferHelper final : public CommandBufferHelperCommon
 
     angle::Result nextSubpass(ContextVk *contextVk, RenderPassCommandBuffer **commandBufferOut);
 
-    void updateStartedRenderPassWithDepthMode(bool readOnlyDepthMode);
-    void updateStartedRenderPassWithStencilMode(bool readOnlyStencilMode);
-
     void beginTransformFeedback(size_t validBufferCount,
                                 const VkBuffer *counterBuffers,
                                 const VkDeviceSize *counterBufferOffsets,
@@ -1568,6 +1575,11 @@ class RenderPassCommandBufferHelper final : public CommandBufferHelperCommon
                    VK_ATTACHMENT_LOAD_OP_CLEAR;
     }
 
+    bool hasDepthStencilWriteOrClear() const
+    {
+        return hasDepthWriteOrClear() || hasStencilWriteOrClear();
+    }
+
     const RenderPassDesc &getRenderPassDesc() const { return mRenderPassDesc; }
     const AttachmentOpsArray &getAttachmentOps() const { return mAttachmentOps; }
 
@@ -1581,6 +1593,12 @@ class RenderPassCommandBufferHelper final : public CommandBufferHelperCommon
         }
     }
     void addCommandDiagnostics(ContextVk *contextVk);
+
+    // Readonly depth stencil mode and feedback loop mode
+    void updateDepthReadOnlyMode(RenderPassUsageFlags dsUsageFlags);
+    void updateStencilReadOnlyMode(RenderPassUsageFlags dsUsageFlags);
+    void updateDepthStencilReadOnlyMode(RenderPassUsageFlags dsUsageFlags,
+                                        VkImageAspectFlags dsAspectFlags);
 
   private:
     uint32_t getSubpassCommandBufferCount() const { return mCurrentSubpassCommandBufferIndex + 1; }
@@ -1596,7 +1614,9 @@ class RenderPassCommandBufferHelper final : public CommandBufferHelperCommon
         return mPreviousSubpassesCmdCount + getCommandBuffer().getRenderPassWriteCommandCount();
     }
 
-    void updateStartedRenderPassWithDepthStencilMode(bool readOnlyDepthStencilMode,
+    void updateStartedRenderPassWithDepthStencilMode(RenderPassAttachment *resolveAttachment,
+                                                     bool renderPassHasWriteOrClear,
+                                                     RenderPassUsageFlags dsUsageFlags,
                                                      RenderPassUsage readOnlyAttachmentUsage);
 
     // We can't determine the image layout at the renderpass start time since their full usage
@@ -2469,6 +2489,10 @@ class ImageHelper final : public Resource, public angle::Subject
     }
     const Semaphore &getAcquireNextImageSemaphore() const { return mAcquireNextImageSemaphore; }
     void resetAcquireNextImageSemaphore() { mAcquireNextImageSemaphore.release(); }
+    bool isBackedByExternalMemory() const
+    {
+        return mMemoryAllocationType == MemoryAllocationType::ImageExternal;
+    }
 
   private:
     ANGLE_ENABLE_STRUCT_PADDING_WARNINGS
@@ -2714,7 +2738,8 @@ class ImageHelper final : public Resource, public angle::Subject
                                       void *pixels);
 
     bool canCopyWithTransformForReadPixels(const PackPixelsParams &packPixelsParams,
-                                           const angle::Format *readFormat);
+                                           const angle::Format *readFormat,
+                                           ptrdiff_t pixelsOffset);
     bool canCopyWithComputeForReadPixels(const PackPixelsParams &packPixelsParams,
                                          const angle::Format *readFormat,
                                          ptrdiff_t pixelsOffset);
@@ -3198,7 +3223,7 @@ class ShaderProgramHelper : angle::NonCopyable
     // exists in cache.
     template <typename PipelineHash>
     ANGLE_INLINE angle::Result createGraphicsPipeline(
-        ContextVk *contextVk,
+        vk::Context *context,
         GraphicsPipelineCache<PipelineHash> *graphicsPipelines,
         PipelineCacheAccess *pipelineCache,
         const RenderPass &compatibleRenderPass,
@@ -3209,19 +3234,19 @@ class ShaderProgramHelper : angle::NonCopyable
         const GraphicsPipelineDesc **descPtrOut,
         PipelineHelper **pipelineOut) const
     {
-        return graphicsPipelines->createPipeline(contextVk, pipelineCache, compatibleRenderPass,
+        return graphicsPipelines->createPipeline(context, pipelineCache, compatibleRenderPass,
                                                  pipelineLayout, mShaders, specConsts, source,
                                                  pipelineDesc, descPtrOut, pipelineOut);
     }
 
-    void createMonolithicPipelineCreationTask(ContextVk *contextVk,
+    void createMonolithicPipelineCreationTask(vk::Context *context,
                                               PipelineCacheAccess *pipelineCache,
                                               const GraphicsPipelineDesc &desc,
                                               const PipelineLayout &pipelineLayout,
                                               const SpecializationConstants &specConsts,
                                               PipelineHelper *pipeline) const;
 
-    angle::Result getOrCreateComputePipeline(ContextVk *contextVk,
+    angle::Result getOrCreateComputePipeline(vk::Context *context,
                                              ComputePipelineCache *computePipelines,
                                              PipelineCacheAccess *pipelineCache,
                                              const PipelineLayout &pipelineLayout,

@@ -120,19 +120,18 @@ V8_EXPORT_PRIVATE Handle<Code> CompileCWasmEntry(
 // and manipulated in wasm-compiler.{h,cc} instead of inside the Wasm decoder.
 // (Note that currently, the globals base is immutable, so not cached here.)
 struct WasmInstanceCacheNodes {
-  // Cache the memory start and size of the first memory.
-  // TODO(clemensb): Reconsider this for better performance of additional
-  // memories.
-  Node* mem0_start = nullptr;
-  Node* mem0_size = nullptr;
+  // Cache the memory start and size of one fixed memory per function. Which one
+  // is determined by {WasmGraphBuilder::cached_memory_index}.
+  Node* mem_start = nullptr;
+  Node* mem_size = nullptr;
 
   // For iteration support. Defined outside the class for MSVC compatibility.
   using FieldPtr = Node* WasmInstanceCacheNodes::*;
   static const FieldPtr kFields[2];
 };
 inline constexpr WasmInstanceCacheNodes::FieldPtr
-    WasmInstanceCacheNodes::kFields[] = {&WasmInstanceCacheNodes::mem0_start,
-                                         &WasmInstanceCacheNodes::mem0_size};
+    WasmInstanceCacheNodes::kFields[] = {&WasmInstanceCacheNodes::mem_start,
+                                         &WasmInstanceCacheNodes::mem_size};
 
 struct WasmLoopInfo {
   Node* header;
@@ -177,18 +176,6 @@ class WasmGraphBuilder {
     kInstanceMode,
     kWasmApiFunctionRefMode,
     kNoSpecialParameterMode
-  };
-  enum EnforceBoundsCheck : bool {  // --
-    kNeedsBoundsCheck = true,
-    kCanOmitBoundsCheck = false
-  };
-  enum BoundsCheckResult {
-    // Dynamically checked (using 1-2 conditional branches).
-    kDynamicallyChecked,
-    // OOB handled via the trap handler.
-    kTrapHandler,
-    // Statically known to be in bounds.
-    kInBounds
   };
 
   V8_EXPORT_PRIVATE WasmGraphBuilder(
@@ -247,7 +234,7 @@ class WasmGraphBuilder {
   Node* Unop(wasm::WasmOpcode opcode, Node* input,
              wasm::ValueType type = wasm::kWasmBottom,
              wasm::WasmCodePosition position = wasm::kNoCodePosition);
-  Node* MemoryGrow(Node* input);
+  Node* MemoryGrow(const wasm::WasmMemory* memory, Node* input);
   Node* Throw(uint32_t tag_index, const wasm::WasmTag* tag,
               const base::Vector<Node*> values,
               wasm::WasmCodePosition position);
@@ -349,7 +336,7 @@ class WasmGraphBuilder {
   //-----------------------------------------------------------------------
   // Operations that concern the linear memory.
   //-----------------------------------------------------------------------
-  Node* CurrentMemoryPages();
+  Node* CurrentMemoryPages(const wasm::WasmMemory* memory);
   void TraceMemoryOperation(bool is_store, MachineRepresentation, Node* index,
                             uintptr_t offset, wasm::WasmCodePosition);
   Node* LoadMem(const wasm::WasmMemory* memory, wasm::ValueType type,
@@ -432,13 +419,15 @@ class WasmGraphBuilder {
                  wasm::WasmCodePosition position);
   void AtomicFence();
 
-  void MemoryInit(uint32_t data_segment_index, Node* dst, Node* src, Node* size,
+  void MemoryInit(const wasm::WasmMemory* memory, uint32_t data_segment_index,
+                  Node* dst, Node* src, Node* size,
                   wasm::WasmCodePosition position);
-  void MemoryCopy(Node* dst, Node* src, Node* size,
-                  wasm::WasmCodePosition position);
+  void MemoryCopy(const wasm::WasmMemory* dst_memory,
+                  const wasm::WasmMemory* src_memory, Node* dst, Node* src,
+                  Node* size, wasm::WasmCodePosition position);
   void DataDrop(uint32_t data_segment_index, wasm::WasmCodePosition position);
-  void MemoryFill(Node* dst, Node* fill, Node* size,
-                  wasm::WasmCodePosition position);
+  void MemoryFill(const wasm::WasmMemory* memory, Node* dst, Node* fill,
+                  Node* size, wasm::WasmCodePosition position);
 
   void TableInit(uint32_t table_index, uint32_t elem_segment_index, Node* dst,
                  Node* src, Node* size, wasm::WasmCodePosition position);
@@ -515,9 +504,11 @@ class WasmGraphBuilder {
   Node* StringNewWtf8(uint32_t memory, unibrow::Utf8Variant variant,
                       Node* offset, Node* size);
   Node* StringNewWtf8Array(unibrow::Utf8Variant variant, Node* array,
-                           Node* start, Node* end);
+                           CheckForNull null_check, Node* start, Node* end,
+                           wasm::WasmCodePosition position);
   Node* StringNewWtf16(uint32_t memory, Node* offset, Node* size);
-  Node* StringNewWtf16Array(Node* array, Node* start, Node* end);
+  Node* StringNewWtf16Array(Node* array, CheckForNull null_check, Node* start,
+                            Node* end, wasm::WasmCodePosition position);
   Node* StringAsWtf16(Node* string, CheckForNull null_check,
                       wasm::WasmCodePosition position);
   Node* StringConst(uint32_t index);
@@ -543,8 +534,8 @@ class WasmGraphBuilder {
   Node* StringConcat(Node* head, CheckForNull head_null_check, Node* tail,
                      CheckForNull tail_null_check,
                      wasm::WasmCodePosition position);
-  Node* StringEqual(Node* a, CheckForNull a_null_check, Node* b,
-                    CheckForNull b_null_check, wasm::WasmCodePosition position);
+  Node* StringEqual(Node* a, wasm::ValueType a_type, Node* b,
+                    wasm::ValueType b_type, wasm::WasmCodePosition position);
   Node* StringIsUSVSequence(Node* str, CheckForNull null_check,
                             wasm::WasmCodePosition position);
   Node* StringAsWtf8(Node* str, CheckForNull null_check,
@@ -561,6 +552,8 @@ class WasmGraphBuilder {
   Node* StringViewWtf16GetCodeUnit(Node* string, CheckForNull null_check,
                                    Node* offset,
                                    wasm::WasmCodePosition position);
+  Node* StringCodePointAt(Node* string, CheckForNull null_check, Node* offset,
+                          wasm::WasmCodePosition position);
   Node* StringViewWtf16Encode(uint32_t memory, Node* string,
                               CheckForNull null_check, Node* offset,
                               Node* start, Node* length,
@@ -581,6 +574,7 @@ class WasmGraphBuilder {
   Node* StringCompare(Node* lhs, CheckForNull null_check_lhs, Node* rhs,
                       CheckForNull null_check_rhs,
                       wasm::WasmCodePosition position);
+  Node* StringFromCharCode(Node* char_code);
   Node* StringFromCodePoint(Node* code_point);
   Node* StringHash(Node* string, CheckForNull null_check,
                    wasm::WasmCodePosition position);
@@ -622,6 +616,19 @@ class WasmGraphBuilder {
     inlining_id_ = inlining_id;
   }
 
+  bool has_cached_memory() const {
+    return cached_memory_index_ != kNoCachedMemoryIndex;
+  }
+  int cached_memory_index() const {
+    DCHECK(has_cached_memory());
+    return cached_memory_index_;
+  }
+  void set_cached_memory_index(int cached_memory_index) {
+    DCHECK_LE(0, cached_memory_index);
+    DCHECK(!has_cached_memory());
+    cached_memory_index_ = cached_memory_index;
+  }
+
  protected:
   Node* NoContextConstant();
 
@@ -629,9 +636,17 @@ class WasmGraphBuilder {
   Node* BuildLoadIsolateRoot();
   Node* UndefinedValue();
 
+  // Get a memory start or size, using the cached SSA value if available.
+  Node* MemStart(uint32_t mem_index);
+  Node* MemSize(uint32_t mem_index);
+
+  // Load a memory start or size (without using the cache).
+  Node* LoadMemStart(uint32_t mem_index);
+  Node* LoadMemSize(uint32_t mem_index);
+
   // MemBuffer is only called with valid offsets (after bounds checking), so the
   // offset fits in a platform-dependent uintptr_t.
-  Node* MemBuffer(uintptr_t offset);
+  Node* MemBuffer(uint32_t mem_index, uintptr_t offset);
 
   // BoundsCheckMem receives a 32/64-bit index (depending on
   // {memory->is_memory64}) and returns a ptrsize index and information about
@@ -744,7 +759,8 @@ class WasmGraphBuilder {
                        MachineType result_type, wasm::TrapReason trap_zero,
                        wasm::WasmCodePosition position);
 
-  void MemTypeToUintPtrOrOOBTrap(std::initializer_list<Node**> nodes,
+  void MemTypeToUintPtrOrOOBTrap(bool is_memory64,
+                                 std::initializer_list<Node**> nodes,
                                  wasm::WasmCodePosition position);
 
   void GetGlobalBaseAndOffset(const wasm::WasmGlobal&, Node** base_node,
@@ -873,19 +889,15 @@ class WasmGraphBuilder {
   Isolate* const isolate_;
   SetOncePointer<Node> instance_node_;
   NullCheckStrategy null_check_strategy_;
+  static constexpr int kNoCachedMemoryIndex = -1;
+  int cached_memory_index_ = kNoCachedMemoryIndex;
 };
-
-enum WasmCallKind { kWasmFunction, kWasmImportWrapper, kWasmCapiFunction };
 
 V8_EXPORT_PRIVATE void BuildInlinedJSToWasmWrapper(
     Zone* zone, MachineGraph* mcgraph, const wasm::FunctionSig* signature,
     const wasm::WasmModule* module, Isolate* isolate,
     compiler::SourcePositionTable* spt, wasm::WasmFeatures features,
     Node* frame_state, bool set_in_wasm_flag);
-
-V8_EXPORT_PRIVATE CallDescriptor* GetWasmCallDescriptor(
-    Zone* zone, const wasm::FunctionSig* signature,
-    WasmCallKind kind = kWasmFunction, bool need_frame_state = false);
 
 V8_EXPORT_PRIVATE CallDescriptor* GetI32WasmCallDescriptor(
     Zone* zone, const CallDescriptor* call_descriptor);

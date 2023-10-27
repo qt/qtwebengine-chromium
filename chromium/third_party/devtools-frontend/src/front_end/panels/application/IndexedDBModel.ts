@@ -461,6 +461,9 @@ export class IndexedDBModel extends SDK.SDKModel.SDKModel<EventTypes> implements
 
   storageBucketDeleted(_event: Protocol.Storage.StorageBucketDeletedEvent): void {
   }
+
+  attributionReportingSourceRegistered(_event: Protocol.Storage.AttributionReportingSourceRegisteredEvent): void {
+  }
 }
 
 SDK.SDKModel.SDKModel.register(IndexedDBModel, {capabilities: SDK.Target.Capability.Storage, autostart: false});
@@ -503,6 +506,10 @@ export class DatabaseId {
   constructor(storageBucket: Protocol.Storage.StorageBucket, name: string) {
     this.storageBucket = storageBucket;
     this.name = name;
+  }
+
+  inBucket(storageBucket: Protocol.Storage.StorageBucket): boolean {
+    return this.storageBucket.name === storageBucket.name;
   }
 
   equals(databaseId: DatabaseId): boolean {

@@ -114,7 +114,7 @@ const char* Builtins::Lookup(Address pc) {
   if (!initialized_) return nullptr;
   for (Builtin builtin_ix = Builtins::kFirst; builtin_ix <= Builtins::kLast;
        ++builtin_ix) {
-    if (code(builtin_ix).contains(isolate_, pc)) {
+    if (code(builtin_ix)->contains(isolate_, pc)) {
       return name(builtin_ix);
     }
   }
@@ -179,14 +179,14 @@ FullObjectSlot Builtins::builtin_tier0_slot(Builtin builtin) {
   return FullObjectSlot(location);
 }
 
-void Builtins::set_code(Builtin builtin, Code code) {
-  DCHECK_EQ(builtin, code.builtin_id());
+void Builtins::set_code(Builtin builtin, Tagged<Code> code) {
+  DCHECK_EQ(builtin, code->builtin_id());
   DCHECK(Internals::HasHeapObjectTag(code.ptr()));
   // The given builtin may be uninitialized thus we cannot check its type here.
   isolate_->builtin_table()[Builtins::ToInt(builtin)] = code.ptr();
 }
 
-Code Builtins::code(Builtin builtin) {
+Tagged<Code> Builtins::code(Builtin builtin) {
   Address ptr = isolate_->builtin_table()[Builtins::ToInt(builtin)];
   return Code::cast(Object(ptr));
 }
@@ -291,8 +291,8 @@ void Builtins::PrintBuiltinCode() {
                      base::CStrVector(v8_flags.print_builtin_code_filter))) {
       CodeTracer::Scope trace_scope(isolate_->GetCodeTracer());
       OFStream os(trace_scope.file());
-      Code builtin_code = code(builtin);
-      builtin_code.Disassemble(builtin_name, os, isolate_);
+      Tagged<Code> builtin_code = code(builtin);
+      builtin_code->Disassemble(builtin_name, os, isolate_);
       os << "\n";
     }
   }
@@ -305,9 +305,9 @@ void Builtins::PrintBuiltinSize() {
        ++builtin) {
     const char* builtin_name = name(builtin);
     const char* kind = KindNameOf(builtin);
-    Code code = Builtins::code(builtin);
+    Tagged<Code> code = Builtins::code(builtin);
     PrintF(stdout, "%s Builtin, %s, %d\n", kind, builtin_name,
-           code.instruction_size());
+           code->instruction_size());
   }
 }
 
@@ -318,8 +318,8 @@ Address Builtins::CppEntryOf(Builtin builtin) {
 }
 
 // static
-bool Builtins::IsBuiltin(const Code code) {
-  return Builtins::IsBuiltinId(code.builtin_id());
+bool Builtins::IsBuiltin(const Tagged<Code> code) {
+  return Builtins::IsBuiltinId(code->builtin_id());
 }
 
 bool Builtins::IsBuiltinHandle(Handle<HeapObject> maybe_code,
@@ -334,8 +334,8 @@ bool Builtins::IsBuiltinHandle(Handle<HeapObject> maybe_code,
 }
 
 // static
-bool Builtins::IsIsolateIndependentBuiltin(Code code) {
-  Builtin builtin = code.builtin_id();
+bool Builtins::IsIsolateIndependentBuiltin(Tagged<Code> code) {
+  Builtin builtin = code->builtin_id();
   return Builtins::IsBuiltinId(builtin) &&
          Builtins::IsIsolateIndependent(builtin);
 }
@@ -347,8 +347,8 @@ void Builtins::InitializeIsolateDataTables(Isolate* isolate) {
 
   // The entry table.
   for (Builtin i = Builtins::kFirst; i <= Builtins::kLast; ++i) {
-    DCHECK(Builtins::IsBuiltinId(isolate->builtins()->code(i).builtin_id()));
-    DCHECK(!isolate->builtins()->code(i).has_instruction_stream());
+    DCHECK(Builtins::IsBuiltinId(isolate->builtins()->code(i)->builtin_id()));
+    DCHECK(!isolate->builtins()->code(i)->has_instruction_stream());
     isolate_data->builtin_entry_table()[ToInt(i)] =
         embedded_data.InstructionStartOf(i);
   }
@@ -397,27 +397,27 @@ Handle<Code> Builtins::CreateInterpreterEntryTrampolineForProfiling(
   DCHECK_NOT_NULL(isolate->embedded_blob_code());
   DCHECK_NE(0, isolate->embedded_blob_code_size());
 
-  Code code = isolate->builtins()->code(
+  Tagged<Code> code = isolate->builtins()->code(
       Builtin::kInterpreterEntryTrampolineForProfiling);
 
   CodeDesc desc;
-  desc.buffer = reinterpret_cast<uint8_t*>(code.instruction_start());
+  desc.buffer = reinterpret_cast<uint8_t*>(code->instruction_start());
 
-  int instruction_size = code.instruction_size();
+  int instruction_size = code->instruction_size();
   desc.buffer_size = instruction_size;
   desc.instr_size = instruction_size;
 
   // Ensure the code doesn't require creation of metadata, otherwise respective
   // fields of CodeDesc should be initialized.
-  DCHECK_EQ(code.safepoint_table_size(), 0);
-  DCHECK_EQ(code.handler_table_size(), 0);
-  DCHECK_EQ(code.constant_pool_size(), 0);
+  DCHECK_EQ(code->safepoint_table_size(), 0);
+  DCHECK_EQ(code->handler_table_size(), 0);
+  DCHECK_EQ(code->constant_pool_size(), 0);
   // TODO(v8:11036): The following DCHECK currently fails if the mksnapshot is
   // run with enabled code comments, i.e. --interpreted_frames_native_stack is
   // incompatible with --code-comments at mksnapshot-time. If ever needed,
   // implement support.
-  DCHECK_EQ(code.code_comments_size(), 0);
-  DCHECK_EQ(code.unwinding_info_size(), 0);
+  DCHECK_EQ(code->code_comments_size(), 0);
+  DCHECK_EQ(code->unwinding_info_size(), 0);
 
   desc.safepoint_table_offset = instruction_size;
   desc.handler_table_offset = instruction_size;

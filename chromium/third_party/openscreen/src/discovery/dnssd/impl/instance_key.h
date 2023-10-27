@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -36,10 +36,10 @@ class InstanceKey : public ServiceKey {
               absl::string_view domain);
 
   InstanceKey(const InstanceKey& other);
-  InstanceKey(InstanceKey&& other);
+  InstanceKey(InstanceKey&& other) noexcept;
 
   InstanceKey& operator=(const InstanceKey& rhs);
-  InstanceKey& operator=(InstanceKey&& rhs);
+  InstanceKey& operator=(InstanceKey&& rhs) noexcept;
 
   DomainName GetName() const override;
 

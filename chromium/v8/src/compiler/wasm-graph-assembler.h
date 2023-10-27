@@ -29,6 +29,9 @@ class WasmGraphAssembler : public GraphAssembler {
       : GraphAssembler(mcgraph, zone, BranchSemantics::kMachine),
         simplified_(zone) {}
 
+  // TODOC(mliedtke): What is the difference between CallRuntimeStub and
+  // CallBuiltin and what are the considerations to take into account when
+  // choosing between them?
   template <typename... Args>
   Node* CallRuntimeStub(wasm::WasmCode::RuntimeStubId stub_id,
                         Operator::Properties properties, Args... args) {
@@ -109,8 +112,7 @@ class WasmGraphAssembler : public GraphAssembler {
 
   Node* Allocate(int size);
 
-  Node* Allocate(Node* size,
-                 AllowLargeObjects allow_large = AllowLargeObjects::kTrue);
+  Node* Allocate(Node* size);
 
   Node* LoadFromObject(MachineType type, Node* base, Node* offset);
 
@@ -147,8 +149,15 @@ class WasmGraphAssembler : public GraphAssembler {
                                        value);
   }
 
+  Node* BuildDecodeSandboxedExternalPointer(Node* handle,
+                                            ExternalPointerTag tag,
+                                            Node* isolate_root);
   Node* BuildLoadExternalPointerFromObject(Node* object, int offset,
                                            ExternalPointerTag tag,
+                                           Node* isolate_root);
+
+  Node* BuildLoadExternalPointerFromObject(Node* object, int offset,
+                                           Node* index, ExternalPointerTag tag,
                                            Node* isolate_root);
 
   Node* IsSmi(Node* object);
@@ -190,6 +199,10 @@ class WasmGraphAssembler : public GraphAssembler {
 
   Node* LoadByteArrayElement(Node* byte_array, Node* index_intptr,
                              MachineType type);
+
+  Node* LoadExternalPointerArrayElement(Node* array, Node* index_intptr,
+                                        ExternalPointerTag tag,
+                                        Node* isolate_root);
 
   Node* StoreFixedArrayElement(Node* array, int index, Node* value,
                                ObjectAccess access);

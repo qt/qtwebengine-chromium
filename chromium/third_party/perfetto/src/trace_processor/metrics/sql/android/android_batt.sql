@@ -13,15 +13,15 @@
 -- See the License for the specific language governing permissions and
 -- limitations under the License.
 --
-SELECT IMPORT('android.battery');
-SELECT IMPORT('android.battery_stats');
+INCLUDE PERFETTO MODULE android.battery;
+INCLUDE PERFETTO MODULE android.battery_stats;
 
 DROP VIEW IF EXISTS battery_view;
 CREATE VIEW battery_view AS
 SELECT * FROM android_battery_charge;
 
 DROP TABLE IF EXISTS android_batt_wakelocks_merged;
-CREATE TABLE android_batt_wakelocks_merged AS
+CREATE PERFETTO TABLE android_batt_wakelocks_merged AS
 SELECT
   MIN(ts) AS ts,
   MAX(ts_end) AS ts_end
@@ -57,7 +57,7 @@ FROM track t JOIN slice s ON s.track_id = t.id
 WHERE t.name = 'Suspend/Resume Minimal';
 
 DROP TABLE IF EXISTS suspend_slice_;
-CREATE TABLE suspend_slice_ AS
+CREATE PERFETTO TABLE suspend_slice_ AS
 SELECT ts, dur FROM suspend_slice_from_minimal
 UNION ALL
 SELECT
@@ -191,10 +191,10 @@ FROM (
          dur,
          value_name AS slice_name,
          CASE track_name
-         WHEN 'battery_stats.mobile_radio' THEN 'Cellular radio'
+         WHEN 'battery_stats.mobile_radio' THEN 'Cellular interface'
          WHEN 'battery_stats.data_conn' THEN 'Cellular connection'
          WHEN 'battery_stats.phone_signal_strength' THEN 'Cellular strength'
-         WHEN 'battery_stats.wifi_radio' THEN 'WiFi radio'
+         WHEN 'battery_stats.wifi_radio' THEN 'WiFi interface'
          WHEN 'battery_stats.wifi_suppl' THEN 'Wifi supplicant state'
          WHEN 'battery_stats.wifi_signal_strength' THEN 'WiFi strength'
          ELSE NULL

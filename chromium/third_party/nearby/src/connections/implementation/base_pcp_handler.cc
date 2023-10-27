@@ -28,15 +28,18 @@
 #include "absl/types/span.h"
 #include "connections/advertising_options.h"
 #include "connections/connection_options.h"
+#include "connections/implementation/endpoint_channel_manager.h"
+#include "connections/implementation/client_proxy.h"
 #include "connections/implementation/flags/nearby_connections_feature_flags.h"
 #include "connections/implementation/mediums/utils.h"
 #include "connections/implementation/offline_frames.h"
 #include "connections/implementation/proto/offline_wire_formats.pb.h"
 #include "connections/medium_selector.h"
 #include "connections/status.h"
-#include "connections/v3/connections_device.h"
+#include "connections/v3/connection_listening_options.h"
 #include "connections/v3/listeners.h"
 #include "internal/flags/nearby_flags.h"
+#include "internal/interop/device.h"
 #include "internal/platform/base64_utils.h"
 #include "internal/platform/bluetooth_connection_info.h"
 #include "internal/platform/bluetooth_utils.h"
@@ -57,8 +60,10 @@ constexpr int kEndpointCancelAlarmTimeout = 10;
 
 using ::location::nearby::connections::ConnectionRequestFrame;
 using ::location::nearby::connections::ConnectionResponseFrame;
+using ::location::nearby::connections::ConnectionsDevice;
 using ::location::nearby::connections::MediumMetadata;
 using ::location::nearby::connections::OfflineFrame;
+using ::location::nearby::connections::PresenceDevice;
 using ::location::nearby::connections::V1Frame;
 using ::securegcm::UKey2Handshake;
 
@@ -76,6 +81,12 @@ BasePcpHandler::BasePcpHandler(Mediums* mediums,
       bwu_manager_(bwu_manager) {}
 
 BasePcpHandler::~BasePcpHandler() {
+  NEARBY_LOGS(VERBOSE) << __func__;
+  Shutdown();
+}
+
+void BasePcpHandler::Shutdown() {
+  if (closed_.Set(true)) return;
   NEARBY_LOGS(INFO) << "Initiating shutdown of BasePcpHandler("
                     << strategy_.GetName() << ")";
   DisconnectFromEndpointManager();
@@ -350,24 +361,29 @@ Status BasePcpHandler::StartDiscovery(ClientProxy* client,
                     << GetStringValueOfSupportedMediums(
                            stripped_discovery_options);
   RunOnPcpHandlerThread(
-      "start-discovery", [this, client, service_id, stripped_discovery_options,
-                          &listener, &response]() RUN_ON_PCP_HANDLER_THREAD() {
-        // Ask the implementation to attempt to start discovery.
-        auto result =
-            StartDiscoveryImpl(client, service_id, stripped_discovery_options);
-        if (!result.status.Ok()) {
-          response.Set(result.status);
-          return;
-        }
+      "start-discovery",
+      [this, client, service_id, stripped_discovery_options, &listener,
+       &response]() RUN_ON_PCP_HANDLER_THREAD()
+          ABSL_LOCKS_EXCLUDED(discovered_endpoint_mutex_) {
+            // Ask the implementation to attempt to start discovery.
+            auto result = StartDiscoveryImpl(client, service_id,
+                                             stripped_discovery_options);
+            if (!result.status.Ok()) {
+              response.Set(result.status);
+              return;
+            }
 
-        // Now that we've succeeded, mark the client as discovering and clear
-        // out any old endpoints we had discovered.
-        discovered_endpoints_.clear();
-        client->StartedDiscovery(service_id, GetStrategy(), listener,
-                                 absl::MakeSpan(result.mediums),
-                                 stripped_discovery_options);
-        response.Set({Status::kSuccess});
-      });
+            // Now that we've succeeded, mark the client as discovering and
+            // clear out any old endpoints we had discovered.
+            {
+              MutexLock lock(&discovered_endpoint_mutex_);
+              discovered_endpoints_.clear();
+            }
+            client->StartedDiscovery(service_id, GetStrategy(), listener,
+                                     absl::MakeSpan(result.mediums),
+                                     stripped_discovery_options);
+            response.Set({Status::kSuccess});
+          });
   return WaitForResult(absl::StrCat("StartDiscovery(", service_id, ")"),
                        client->GetClientId(), &response);
 }
@@ -611,7 +627,7 @@ Status BasePcpHandler::RequestConnection(
 
         // If our child class says we can't send any more outgoing connections,
         // listen to them.
-        if (ShouldEnforceTopologyConstraints(client->GetAdvertisingOptions()) &&
+        if (client->ShouldEnforceTopologyConstraints() &&
             !CanSendOutgoingConnection(client)) {
           NEARBY_LOGS(INFO)
               << "In requestConnection(), client=" << client->GetClientId()
@@ -680,11 +696,16 @@ Status BasePcpHandler::RequestConnection(
                "to endpoint_id="
             << endpoint_id;
 
+        client->OnRequestConnection(GetStrategy(), endpoint_id,
+                                    connection_options);
+
         ConnectionInfo connection_info =
             FillConnectionInfo(client, info, connection_options);
 
-        Exception write_exception =
-            WriteConnectionRequestFrame(connection_info, channel.get());
+        const NearbyDevice* local_device = client->GetLocalDevice();
+        Exception write_exception = WriteConnectionRequestFrame(
+            local_device->GetType(), local_device->ToProtoBytes(),
+            connection_info, channel.get());
 
         if (!write_exception.Ok()) {
           NEARBY_LOGS(INFO) << "Failed to send connection request: endpoint_id="
@@ -829,6 +850,7 @@ void BasePcpHandler::StripOutUnavailableMediums(
 // Get any single discovered endpoint for a given endpoint_id.
 BasePcpHandler::DiscoveredEndpoint* BasePcpHandler::GetDiscoveredEndpoint(
     const std::string& endpoint_id) {
+  MutexLock lock(&discovered_endpoint_mutex_);
   auto it = discovered_endpoints_.find(endpoint_id);
   if (it == discovered_endpoints_.end()) {
     return nullptr;
@@ -839,6 +861,7 @@ BasePcpHandler::DiscoveredEndpoint* BasePcpHandler::GetDiscoveredEndpoint(
 std::vector<BasePcpHandler::DiscoveredEndpoint*>
 BasePcpHandler::GetDiscoveredEndpoints(const std::string& endpoint_id) {
   std::vector<BasePcpHandler::DiscoveredEndpoint*> result;
+  MutexLock lock(&discovered_endpoint_mutex_);
   auto it = discovered_endpoints_.equal_range(endpoint_id);
   for (auto item = it.first; item != it.second; item++) {
     result.push_back(item->second.get());
@@ -855,6 +878,7 @@ std::vector<BasePcpHandler::DiscoveredEndpoint*>
 BasePcpHandler::GetDiscoveredEndpoints(
     const location::nearby::proto::connections::Medium medium) {
   std::vector<BasePcpHandler::DiscoveredEndpoint*> result;
+  MutexLock lock(&discovered_endpoint_mutex_);
   for (const auto& item : discovered_endpoints_) {
     if (item.second->medium == medium) {
       result.push_back(item.second.get());
@@ -942,8 +966,30 @@ bool BasePcpHandler::CanReceiveIncomingConnection(ClientProxy* client) const {
 }
 
 Exception BasePcpHandler::WriteConnectionRequestFrame(
+    NearbyDevice::Type device_type, absl::string_view device_proto_bytes,
     const ConnectionInfo& conection_info, EndpointChannel* endpoint_channel) {
-  return endpoint_channel->Write(parser::ForConnectionRequest(conection_info));
+  ConnectionsDevice connections_device_frame;
+  PresenceDevice presence_device_frame;
+  switch (device_type) {
+    case NearbyDevice::kConnectionsDevice:
+      if (connections_device_frame.ParseFromString(
+              std::string(device_proto_bytes))) {  // NOLINT
+        return endpoint_channel->Write(parser::ForConnectionRequestConnections(
+            connections_device_frame, conection_info));
+      }
+      return {Exception::kInvalidProtocolBuffer};
+    case NearbyDevice::kPresenceDevice:
+      if (presence_device_frame.ParseFromString(
+              std::string(device_proto_bytes))) {  // NOLINT
+        return endpoint_channel->Write(parser::ForConnectionRequestPresence(
+            presence_device_frame, conection_info));
+      }
+      return {Exception::kInvalidProtocolBuffer};
+    default:
+      // Legacy.
+      return endpoint_channel->Write(
+          parser::ForConnectionRequestConnections({}, conection_info));
+  }
 }
 
 void BasePcpHandler::ProcessPreConnectionInitiationFailure(
@@ -968,30 +1014,13 @@ void BasePcpHandler::ProcessPreConnectionInitiationFailure(
 }
 
 void BasePcpHandler::ProcessPreConnectionResultFailure(
-    ClientProxy* client, const std::string& endpoint_id) {
+    ClientProxy* client, const std::string& endpoint_id,
+    bool should_call_disconnect_endpoint, const DisconnectionReason& reason) {
   auto item = pending_connections_.extract(endpoint_id);
-  endpoint_manager_->DiscardEndpoint(client, endpoint_id);
+  if (should_call_disconnect_endpoint) {
+    endpoint_manager_->DiscardEndpoint(client, endpoint_id, reason);
+  }
   client->OnConnectionRejected(endpoint_id, {Status::kError});
-}
-
-bool BasePcpHandler::ShouldEnforceTopologyConstraints(
-    const AdvertisingOptions& local_advertising_options) const {
-  // Topology constraints only matter for the advertiser.
-  // For discoverers, we'll always enforce them.
-  if (local_advertising_options.strategy.IsNone()) {
-    return true;
-  }
-
-  return local_advertising_options.enforce_topology_constraints;
-}
-
-bool BasePcpHandler::AutoUpgradeBandwidth(
-    const AdvertisingOptions& local_advertising_options) const {
-  if (local_advertising_options.strategy.IsNone()) {
-    return true;
-  }
-
-  return local_advertising_options.auto_upgrade_bandwidth;
 }
 
 Status BasePcpHandler::AcceptConnection(ClientProxy* client,
@@ -1024,7 +1053,9 @@ Status BasePcpHandler::AcceptConnection(ClientProxy* client,
           NEARBY_LOGS(ERROR) << "Channel destroyed before Accept; bring down "
                                 "connection: endpoint_id="
                              << endpoint_id;
-          ProcessPreConnectionResultFailure(client, endpoint_id);
+          ProcessPreConnectionResultFailure(
+              client, endpoint_id, /* should_call_disconnect_endpoint= */ true,
+              DisconnectionReason::IO_ERROR);
           response.Set({Status::kEndpointUnknown});
           return;
         }
@@ -1036,7 +1067,9 @@ Status BasePcpHandler::AcceptConnection(ClientProxy* client,
           NEARBY_LOGS(INFO)
               << "AcceptConnection: failed to send response: endpoint_id="
               << endpoint_id;
-          ProcessPreConnectionResultFailure(client, endpoint_id);
+          ProcessPreConnectionResultFailure(
+              client, endpoint_id, /* should_call_disconnect_endpoint= */ true,
+              DisconnectionReason::IO_ERROR);
           response.Set({Status::kEndpointIoError});
           return;
         }
@@ -1082,7 +1115,9 @@ Status BasePcpHandler::RejectConnection(ClientProxy* client,
               << "Channel destroyed before Reject; bring down connection: "
                  "endpoint_id="
               << endpoint_id;
-          ProcessPreConnectionResultFailure(client, endpoint_id);
+          ProcessPreConnectionResultFailure(
+              client, endpoint_id, /* should_call_disconnect_endpoint= */ true,
+              DisconnectionReason::IO_ERROR);
           response.Set({Status::kEndpointUnknown});
           return;
         }
@@ -1094,7 +1129,9 @@ Status BasePcpHandler::RejectConnection(ClientProxy* client,
           NEARBY_LOGS(INFO)
               << "RejectConnection: failed to send response: endpoint_id="
               << endpoint_id;
-          ProcessPreConnectionResultFailure(client, endpoint_id);
+          ProcessPreConnectionResultFailure(
+              client, endpoint_id, /* should_call_disconnect_endpoint= */ true,
+              DisconnectionReason::IO_ERROR);
           response.Set({Status::kEndpointIoError});
           return;
         }
@@ -1158,6 +1195,16 @@ void BasePcpHandler::OnIncomingFrame(
           client->SetRemoteOsInfo(endpoint_id, connection_response.os_info());
         }
 
+        if (connection_response.has_safe_to_disconnect_version()) {
+          NEARBY_LOGS(INFO)
+              << "[safe-to-disconnect]: endpoint_id=" << endpoint_id
+              << "; Version = "
+              << connection_response.safe_to_disconnect_version();
+          client->SetRemoteSafeToDisconnectVersion(
+              endpoint_id, connection_response.safe_to_disconnect_version());
+        }
+        channel_manager_->UpdateSafeToDisconnectForEndpoint(endpoint_id,
+                         client->IsSafeToDisconnectEnabled(endpoint_id));
         EvaluateConnectionResult(client, endpoint_id,
                                  /* can_close_immediately= */ true);
 
@@ -1169,13 +1216,14 @@ void BasePcpHandler::OnIncomingFrame(
 void BasePcpHandler::OnEndpointDisconnect(ClientProxy* client,
                                           const std::string& service_id,
                                           const std::string& endpoint_id,
-                                          CountDownLatch barrier) {
+                                          CountDownLatch barrier,
+                                          DisconnectionReason reason) {
   if (stop_.Get()) {
     barrier.CountDown();
     return;
   }
   RunOnPcpHandlerThread("on-endpoint-disconnect",
-                        [this, client, endpoint_id, barrier]()
+                        [this, client, endpoint_id, barrier, reason]()
                             RUN_ON_PCP_HANDLER_THREAD() mutable {
                               auto item = pending_alarms_.find(endpoint_id);
                               if (item != pending_alarms_.end()) {
@@ -1183,8 +1231,10 @@ void BasePcpHandler::OnEndpointDisconnect(ClientProxy* client,
                                 alarm->Cancel();
                                 pending_alarms_.erase(item);
                               }
-                              ProcessPreConnectionResultFailure(client,
-                                                                endpoint_id);
+                              ProcessPreConnectionResultFailure(
+                                  client, endpoint_id,
+                                  /* should_call_disconnect_endpoint= */ false,
+                                  reason);
                               barrier.CountDown();
                             });
 }
@@ -1200,7 +1250,7 @@ void BasePcpHandler::OnEndpointFound(
   // Check if we've seen this endpoint ID before.
   std::string& endpoint_id = endpoint->endpoint_id;
   NEARBY_LOGS(INFO) << "OnEndpointFound: id=" << endpoint_id << " [enter]";
-
+  MutexLock lock(&discovered_endpoint_mutex_);
   auto range = discovered_endpoints_.equal_range(endpoint->endpoint_id);
   bool is_range_empty = range.first == range.second;
   DiscoveredEndpoint* owned_endpoint = nullptr;
@@ -1253,7 +1303,7 @@ void BasePcpHandler::OnEndpointLost(
     ClientProxy* client, const BasePcpHandler::DiscoveredEndpoint& endpoint) {
   // Look up the DiscoveredEndpoint we have in our cache.
   NEARBY_LOGS(INFO) << "OnEndpointLost: id=" << endpoint.endpoint_id;
-
+  MutexLock lock(&discovered_endpoint_mutex_);
   auto range = discovered_endpoints_.equal_range(endpoint.endpoint_id);
   bool is_range_empty = range.first == range.second;
   if (is_range_empty) {
@@ -1288,6 +1338,70 @@ void BasePcpHandler::OnEndpointLost(
     discovered_endpoints_.erase(item);
     break;
   }
+}
+
+Status BasePcpHandler::UpdateAdvertisingOptions(
+    ClientProxy* client, absl::string_view service_id,
+    const AdvertisingOptions& advertising_options) {
+  Future<Status> status;
+  RunOnPcpHandlerThread(
+      "update-advertising-options",
+      [this, client, service_id, advertising_options, &status]()
+          RUN_ON_PCP_HANDLER_THREAD() mutable {
+            StartOperationResult result = UpdateAdvertisingOptionsImpl(
+                client, service_id, client->GetLocalEndpointId(),
+                client->GetLocalEndpointInfo(), advertising_options);
+            if (!result.status.Ok()) {
+              status.Set(result.status);
+              return;
+            }
+            client->UpdateAdvertisingOptions(advertising_options);
+            status.Set({Status::kSuccess});
+          });
+  return status.Get().GetResult();
+}
+
+Status BasePcpHandler::UpdateDiscoveryOptions(
+    ClientProxy* client, absl::string_view service_id,
+    const DiscoveryOptions& discovery_options) {
+  Future<Status> status;
+  RunOnPcpHandlerThread(
+      "update-discovery-options",
+      [this, client, service_id, discovery_options, &status]()
+          RUN_ON_PCP_HANDLER_THREAD() mutable {
+            StartOperationResult result = UpdateDiscoveryOptionsImpl(
+                client, service_id, client->GetLocalEndpointId(),
+                client->GetLocalEndpointInfo(), discovery_options);
+            if (!result.status.Ok()) {
+              status.Set(result.status);
+              return;
+            }
+            client->UpdateDiscoveryOptions(discovery_options);
+            status.Set({Status::kSuccess});
+          });
+  return status.Get().GetResult();
+}
+
+bool BasePcpHandler::NeedsToTurnOffAdvertisingMedium(
+    Medium medium, const AdvertisingOptions& old_options,
+    const AdvertisingOptions& new_options) {
+  auto old_enabled_mediums = old_options.allowed.GetMediums(/*value=*/true);
+  auto new_disabled_mediums = new_options.allowed.GetMediums(/*value=*/false);
+  return (std::find(old_enabled_mediums.begin(), old_enabled_mediums.end(),
+                    medium) != old_enabled_mediums.end()) &&
+         (std::find(new_disabled_mediums.begin(), new_disabled_mediums.end(),
+                    medium) != new_disabled_mediums.end());
+}
+
+bool BasePcpHandler::NeedsToTurnOffDiscoveryMedium(
+    Medium medium, const DiscoveryOptions& old_options,
+    const DiscoveryOptions& new_options) {
+  auto old_enabled_mediums = old_options.allowed.GetMediums(/*value=*/true);
+  auto new_disabled_mediums = new_options.allowed.GetMediums(/*value=*/false);
+  return (std::find(old_enabled_mediums.begin(), old_enabled_mediums.end(),
+                    medium) != old_enabled_mediums.end()) &&
+         (std::find(new_disabled_mediums.begin(), new_disabled_mediums.end(),
+                    medium) != new_disabled_mediums.end());
 }
 
 bool BasePcpHandler::IsPreferred(
@@ -1326,7 +1440,8 @@ bool BasePcpHandler::IsPreferred(
 Exception BasePcpHandler::OnIncomingConnection(
     ClientProxy* client, const ByteArray& remote_endpoint_info,
     std::unique_ptr<EndpointChannel> channel,
-    location::nearby::proto::connections::Medium medium) {
+    location::nearby::proto::connections::Medium medium,
+    NearbyDevice::Type listening_device_type) {
   absl::Time start_time = SystemClock::ElapsedRealtime();
 
   //  Fixes an NPE in ClientProxy.OnConnectionAccepted. The crash happened when
@@ -1351,7 +1466,8 @@ Exception BasePcpHandler::OnIncomingConnection(
       NEARBY_LOGS(ERROR)
           << "Failed to parse incoming connection request; client="
           << client->GetClientId()
-          << "; device=" << absl::BytesToHexString(remote_endpoint_info.data());
+          << "; device=" << absl::BytesToHexString(remote_endpoint_info.data())
+          << "with error: " << wrapped_frame.exception();
       ProcessPreConnectionInitiationFailure(
           client, medium, "", channel.get(),
           /* is_incoming= */ false, start_time, {Status::kError}, nullptr);
@@ -1388,9 +1504,25 @@ Exception BasePcpHandler::OnIncomingConnection(
 
   // If our child class says we can't accept any more incoming connections,
   // listen to them.
-  if (ShouldEnforceTopologyConstraints(client->GetAdvertisingOptions()) &&
+  if (client->ShouldEnforceTopologyConstraints() &&
       !CanReceiveIncomingConnection(client)) {
     NEARBY_LOGS(ERROR) << "Incoming connections are currently disallowed.";
+    return {Exception::kIo};
+  }
+
+  // Make sure we only accept connections from the device type we're explicitly
+  // listening to.
+  NearbyDevice::Type incoming_type =
+      connection_request.has_connections_device()
+          ? NearbyDevice::Type::kConnectionsDevice
+      : connection_request.has_presence_device()
+          ? NearbyDevice::Type::kPresenceDevice
+          // Legacy clients will be treated as Connections devices.
+          : NearbyDevice::Type::kConnectionsDevice;
+  if (listening_device_type != incoming_type) {
+    NEARBY_LOGS(WARNING) << "Device requesting a connection is the wrong type."
+                         << "Expected type: " << listening_device_type
+                         << ", got type: " << incoming_type;
     return {Exception::kIo};
   }
 
@@ -1545,7 +1677,9 @@ void BasePcpHandler::ProcessTieBreakLoss(
       client, info->channel->GetMedium(), endpoint_id, info->channel.get(),
       info->is_incoming, info->start_time, {Status::kEndpointIoError},
       info->result.lock().get());
-  ProcessPreConnectionResultFailure(client, endpoint_id);
+  ProcessPreConnectionResultFailure(client, endpoint_id,
+                                    /* should_call_disconnect_endpoint= */ true,
+                                    DisconnectionReason::IO_ERROR);
 }
 
 bool BasePcpHandler::AppendRemoteBluetoothMacAddressEndpoint(
@@ -1555,6 +1689,7 @@ bool BasePcpHandler::AppendRemoteBluetoothMacAddressEndpoint(
   if (!local_discovery_options.allowed.bluetooth) {
     return false;
   }
+  MutexLock lock(&discovered_endpoint_mutex_);
 
   auto it = discovered_endpoints_.equal_range(endpoint_id);
   if (it.first == it.second) {
@@ -1600,6 +1735,7 @@ bool BasePcpHandler::AppendWebRTCEndpoint(
   if (!local_discovery_options.allowed.web_rtc) {
     return false;
   }
+  MutexLock lock(&discovered_endpoint_mutex_);
 
   bool should_connect_web_rtc = false;
   auto it = discovered_endpoints_.equal_range(endpoint_id);
@@ -1690,14 +1826,16 @@ void BasePcpHandler::EvaluateConnectionResult(ClientProxy* client,
 
     // Clean up the channel in EndpointManager if it's no longer required.
     if (can_close_immediately) {
-      endpoint_manager_->DiscardEndpoint(client, endpoint_id);
+      endpoint_manager_->DiscardEndpoint(client, endpoint_id,
+                                         DisconnectionReason::UNFINISHED);
     } else {
       pending_alarms_.emplace(
           endpoint_id,
           std::make_unique<CancelableAlarm>(
               "BasePcpHandler.evaluateConnectionResult() delayed close",
               [this, client, endpoint_id]() {
-                endpoint_manager_->DiscardEndpoint(client, endpoint_id);
+                endpoint_manager_->DiscardEndpoint(
+                    client, endpoint_id, DisconnectionReason::UNFINISHED);
               },
               kRejectedConnectionCloseDelay, &alarm_executor_));
     }
@@ -1721,8 +1859,7 @@ void BasePcpHandler::EvaluateConnectionResult(ClientProxy* client,
                            medium);
 
   // Kick off the bandwidth upgrade for incoming connections.
-  if (connection_info.is_incoming &&
-      AutoUpgradeBandwidth(client->GetAdvertisingOptions())) {
+  if (connection_info.is_incoming && client->AutoUpgradeBandwidth()) {
     bwu_manager_->InitiateBwuForEndpoint(client, endpoint_id);
   }
 }

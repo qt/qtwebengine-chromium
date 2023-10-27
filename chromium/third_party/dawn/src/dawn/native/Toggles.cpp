@@ -132,10 +132,6 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
      {"disable_indexed_draw_buffers",
       "Disables the use of indexed draw buffer state which is unsupported on some platforms.",
       "https://crbug.com/dawn/582", ToggleStage::Device}},
-    {Toggle::DisableSnormRead,
-     {"disable_snorm_read",
-      "Disables reading from Snorm textures which is unsupported on some platforms.",
-      "https://crbug.com/dawn/667", ToggleStage::Device}},
     {Toggle::DisableDepthRead,
      {"disable_depth_read",
       "Disables reading from depth textures which is unsupported on some platforms.",
@@ -148,10 +144,6 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
      {"disable_depth_stencil_read",
       "Disables reading from depth/stencil textures which is unsupported on some platforms.",
       "https://crbug.com/dawn/667", ToggleStage::Device}},
-    {Toggle::DisableBGRARead,
-     {"disable_bgra_read",
-      "Disables reading from BGRA textures which is unsupported on some platforms.",
-      "https://crbug.com/dawn/1393", ToggleStage::Device}},
     {Toggle::DisableSampleVariables,
      {"disable_sample_variables",
       "Disables gl_SampleMask and related functionality which is unsupported on some platforms.",
@@ -165,7 +157,7 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
      {"use_dxc",
       "Use DXC instead of FXC for compiling HLSL when both dxcompiler.dll and dxil.dll is "
       "available.",
-      "https://crbug.com/dawn/402", ToggleStage::Device}},
+      "https://crbug.com/dawn/402", ToggleStage::Adapter}},
     {Toggle::DisableRobustness,
      {"disable_robustness", "Disable robust buffer access", "https://crbug.com/dawn/480",
       ToggleStage::Device}},
@@ -327,12 +319,11 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "This toggle is enabled by default on Metal backend where GPU counters cannot be stored to"
       "sampleBufferAttachments on empty blit encoder.",
       "https://crbug.com/dawn/1473", ToggleStage::Device}},
-    {Toggle::VulkanSplitCommandBufferOnDepthStencilComputeSampleAfterRenderPass,
-     {"vulkan_split_command_buffer_on_depth_stencil_compute_sample_after_render_pass",
-      "Splits any command buffer that samples a depth/stencil texture in a compute pass after that "
-      "texture was used as an attachment for a prior render pass. This toggle is enabled by "
-      "default on Qualcomm GPUs, which have been observed experiencing a driver crash in this "
-      "situation.",
+    {Toggle::VulkanSplitCommandBufferOnComputePassAfterRenderPass,
+     {"vulkan_split_command_buffer_on_compute_pass_after_render_pass",
+      "Splits any command buffer where a compute pass is recorded after a render pass. This "
+      "toggle is enabled by default on Qualcomm GPUs, which have been observed experiencing a "
+      "driver crash in this situation.",
       "https://crbug.com/dawn/1564", ToggleStage::Device}},
     {Toggle::DisableSubAllocationFor2DTextureWithCopyDstOrRenderAttachment,
      {"disable_sub_allocation_for_2d_texture_with_copy_dst_or_render_attachment",
@@ -401,6 +392,16 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "Use a blit instead of a copy command to copy stencil aspect of a texture to a buffer."
       "Workaround for OpenGLES.",
       "https://crbug.com/dawn/1782", ToggleStage::Device}},
+    {Toggle::UseBlitForSnormTextureToBufferCopy,
+     {"use_blit_for_snorm_texture_to_buffer_copy",
+      "Use a blit instead of a copy command to copy snorm texture to a buffer."
+      "Workaround for OpenGLES.",
+      "https://crbug.com/dawn/1781", ToggleStage::Device}},
+    {Toggle::UseBlitForBGRA8UnormTextureToBufferCopy,
+     {"use_blit_for_bgra8unorm_texture_to_buffer_copy",
+      "Use a blit instead of a copy command to copy bgra8unorm texture to a buffer."
+      "Workaround for OpenGLES.",
+      "https://crbug.com/dawn/1393", ToggleStage::Device}},
     {Toggle::D3D12ReplaceAddWithMinusWhenDstFactorIsZeroAndSrcFactorIsDstAlpha,
      {"d3d12_replace_add_with_minus_when_dst_factor_is_zero_and_src_factor_is_dst_alpha",
       "Replace the blending operation 'Add' with 'Minus' when dstBlendFactor is 'Zero' and "
@@ -428,6 +429,32 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "Disable Tint robustness transform on textures when VK_EXT_robustness2 is supported and "
       "robustImageAccess2 == VK_TRUE.",
       "https://crbug.com/tint/1890", ToggleStage::Device}},
+    {Toggle::VulkanUseBufferRobustAccess2,
+     {"vulkan_use_buffer_robust_access_2",
+      "Disable index clamping on the runtime-sized arrays on buffers in Tint robustness transform "
+      "when VK_EXT_robustness2 is supported and robustBufferAccess2 == VK_TRUE.",
+      "https://crbug.com/tint/1890", ToggleStage::Device}},
+    {Toggle::D3D12Use64KBAlignedMSAATexture,
+     {"d3d12_use_64kb_alignment_msaa_texture",
+      "Create MSAA textures with 64KB (D3D12_SMALL_MSAA_RESOURCE_PLACEMENT_ALIGNMENT) alignment.",
+      "https://crbug.com/dawn/282", ToggleStage::Device}},
+    {Toggle::ResolveMultipleAttachmentInSeparatePasses,
+     {"resolve_multiple_attachments_in_separate_passes",
+      "When multiple MSAA attachments are used in a render pass, splits any resolve steps into a "
+      "separate render pass per resolve target. "
+      "This workaround is enabled by default on ARM Mali drivers.",
+      "https://crbug.com/dawn/1550", ToggleStage::Device}},
+    {Toggle::D3D12CreateNotZeroedHeap,
+     {"d3d12_create_not_zeroed_heap",
+      "Create D3D12 heap with D3D12_HEAP_FLAG_CREATE_NOT_ZEROED when it is supported. It is safe "
+      "because in Dawn we always clear the resources manually when needed.",
+      "https://crbug.com/dawn/484", ToggleStage::Device}},
+    {Toggle::D3D12DontUseNotZeroedHeapFlagOnTexturesAsCommitedResources,
+     {"d3d12_dont_use_not_zeroed_heap_flag_on_textures_as_commited_resources",
+      "Don't set the heap flag D3D12_HEAP_FLAG_CREATE_NOT_ZEROED on the D3D12 textures created "
+      "with CreateCommittedResource() as a workaround of some driver issues on Intel Gen9 and "
+      "Gen11 GPUs.",
+      "https://crbug.com/dawn/484", ToggleStage::Device}},
     {Toggle::NoWorkaroundSampleMaskBecomesZeroForAllButLastColorTarget,
      {"no_workaround_sample_mask_becomes_zero_for_all_but_last_color_target",
       "MacOS 12.0+ Intel has a bug where the sample mask is only applied for the last color "
@@ -479,7 +506,7 @@ TogglesState TogglesState::CreateFromTogglesDescriptor(const DawnTogglesDescript
     }
 
     TogglesInfo togglesInfo;
-    for (uint32_t i = 0; i < togglesDesc->enabledTogglesCount; ++i) {
+    for (uint32_t i = 0; i < togglesDesc->enabledToggleCount; ++i) {
         Toggle toggle = togglesInfo.ToggleNameToEnum(togglesDesc->enabledToggles[i]);
         if (toggle != Toggle::InvalidEnum) {
             const ToggleInfo* toggleInfo = togglesInfo.GetToggleInfo(toggle);
@@ -491,7 +518,7 @@ TogglesState TogglesState::CreateFromTogglesDescriptor(const DawnTogglesDescript
             }
         }
     }
-    for (uint32_t i = 0; i < togglesDesc->disabledTogglesCount; ++i) {
+    for (uint32_t i = 0; i < togglesDesc->disabledToggleCount; ++i) {
         Toggle toggle = togglesInfo.ToggleNameToEnum(togglesDesc->disabledToggles[i]);
         if (toggle != Toggle::InvalidEnum) {
             const ToggleInfo* toggleInfo = togglesInfo.GetToggleInfo(toggle);
@@ -627,6 +654,17 @@ const char* ToggleEnumToName(Toggle toggle) {
         kToggleNameAndInfoList[static_cast<size_t>(toggle)];
     ASSERT(toggleNameAndInfo.toggle == toggle);
     return toggleNameAndInfo.info.name;
+}
+
+// static
+std::vector<const ToggleInfo*> TogglesInfo::AllToggleInfos() {
+    std::vector<const ToggleInfo*> infos;
+    infos.reserve(kToggleNameAndInfoList.size());
+
+    for (const auto& entry : kToggleNameAndInfoList) {
+        infos.push_back(&(entry.info));
+    }
+    return infos;
 }
 
 TogglesInfo::TogglesInfo() = default;

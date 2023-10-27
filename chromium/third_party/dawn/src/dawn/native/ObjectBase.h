@@ -19,6 +19,7 @@
 #include <string>
 
 #include "dawn/common/LinkedList.h"
+#include "dawn/common/Ref.h"
 #include "dawn/common/RefCounted.h"
 #include "dawn/native/Forward.h"
 
@@ -101,7 +102,6 @@ class ApiObjectBase : public ObjectBase, public LinkNode<ApiObjectBase> {
 
     // Dawn API
     void APISetLabel(const char* label);
-    void APIRelease();
 
   protected:
     // Overriding of the RefCounted's DeleteThis function ensures that instances of objects

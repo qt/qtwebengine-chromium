@@ -14,20 +14,30 @@
 
 #include "./centipede/environment.h"
 
+#include <algorithm>
 #include <charconv>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>  // NOLINT
+#include <limits>
 #include <string>
+#include <system_error>  // NOLINT
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/flags/flag.h"
+#include "absl/log/check.h"
+#include "absl/log/log.h"
+#include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
+#include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "./centipede/defs.h"
+#include "./centipede/knobs.h"
 #include "./centipede/logging.h"
 #include "./centipede/remote_file.h"
 #include "./centipede/util.h"
@@ -43,6 +53,10 @@ ABSL_FLAG(std::string, binary, "", "The target binary.");
 ABSL_FLAG(std::string, coverage_binary, "",
           "The actual binary from which coverage is collected - if different "
           "from --binary.");
+ABSL_FLAG(std::string, binary_hash, "",
+          "If not-empty, this hash string is used instead of the hash of the "
+          "contents of coverage_binary. Use this flag when the coverage_binary "
+          "is not available nor needed, e.g. when using --distill.");
 ABSL_FLAG(std::string, clang_coverage_binary, "",
           "A clang source-based code coverage binary used to produce "
           "human-readable reports. Do not add this binary to extra_binaries. "
@@ -85,6 +99,9 @@ ABSL_FLAG(size_t, batch_size, 1000,
     });
 ABSL_FLAG(size_t, mutate_batch_size, 2,
           "Mutate this many inputs to produce batch_size mutants");
+ABSL_FLAG(bool, use_legacy_default_mutator, false,
+          "When set, use the legacy ByteArrayMutator as the default mutator. "
+          "Otherwise, the FuzzTest domain based mutator will be used.");
 ABSL_FLAG(size_t, load_other_shard_frequency, 10,
           "Load a random other shard after processing this many batches. Use 0 "
           "to disable loading other shards.  For now, choose the value of this "
@@ -140,12 +157,20 @@ ABSL_FLAG(size_t, timeout_per_batch, 0,
 ABSL_FLAG(absl::Time, stop_at, absl::InfiniteFuture(),
           "Stop fuzzing in all shards (--total_shards) at approximately this "
           "time in ISO-8601/RFC-3339 format, e.g. 2023-04-06T23:35:02Z. "
-          "If a given shard is still running all its --num_runs inputs "
-          "at that time, it will gracefully wind down by letting the current "
-          "batch of inputs to finish and then exiting. Tip: use `date` to "
-          "conveniently specify this flag: "
-          "--stop_at=$(date --date='+45 minutes' --utc --iso-8601=seconds). "
-          "A special value 'infinite-future' (the default) is also supported.");
+          "If a given shard is still running at that time, it will gracefully "
+          "wind down by letting the current batch of inputs to finish and then "
+          "exiting. A special value 'infinite-future' (the default) is "
+          "supported. Tip: `date` is useful for conversion of mostly free "
+          "format human readable date/time strings, e.g. "
+          "--stop_at=$(date --date='next Monday 6pm' --utc --iso-8601=seconds) "
+          ". Also see --stop_after. If both are specified, the last one wins.");
+ABSL_FLAG(absl::Duration, stop_after, absl::InfiniteDuration(),
+          "Equivalent to setting --stop_at to the current date/time + this "
+          "duration. If both flags are specified, the last one wins.")
+    .OnUpdate([]() {
+      absl::SetFlag(  //
+          &FLAGS_stop_at, absl::Now() + absl::GetFlag(FLAGS_stop_after));
+    });
 ABSL_FLAG(bool, fork_server, true,
           "If true (default) tries to execute the target(s) via the fork "
           "server, if supported by the target(s). Prepend the binary path with "
@@ -167,7 +192,7 @@ ABSL_FLAG(bool, use_coverage_frontier, false,
 ABSL_FLAG(size_t, max_corpus_size, 100000,
           "Indicates the number of inputs in the in-memory corpus after which"
           "more aggressive pruning will be applied.");
-ABSL_FLAG(int, crossover_level, 50,
+ABSL_FLAG(size_t, crossover_level, 50,
           "Defines how much crossover is used during mutations. 0 means no "
           "crossover, 100 means the most aggressive crossover. See "
           "https://en.wikipedia.org/wiki/Crossover_(genetic_algorithm).");
@@ -177,9 +202,15 @@ ABSL_FLAG(bool, use_pc_features, true,
 ABSL_FLAG(bool, use_cmp_features, true,
           "When available from instrumentation, use features derived from "
           "instrumentation of CMP instructions.");
-ABSL_FLAG(bool, use_callstack_features, false,
+ABSL_FLAG(size_t, callstack_level, 0,
           "When available from instrumentation, use features derived from "
-          "observing the function call stack.");
+          "observing the function call stacks. 0 means no callstack features."
+          "Values between 1 and 100 define how aggressively to use the "
+          "callstacks. Level N roughly corresponds to N call frames.")
+    .OnUpdate([]() {
+      QCHECK_LE(absl::GetFlag(FLAGS_callstack_level), 100)
+          << "--" << FLAGS_callstack_level.Name() << " must be in [0,100]";
+    });
 ABSL_FLAG(bool, use_auto_dictionary, true,
           "If true, use automatically-generated dictionary derived from "
           "intercepting comparison instructions, memcmp, and similar.");
@@ -187,7 +218,11 @@ ABSL_FLAG(size_t, path_level, 0,  // Not ready for wide usage.
           "When available from instrumentation, use features derived from "
           "bounded execution paths. Be careful, may cause exponential feature "
           "explosion. 0 means no path features. Values between 1 and 100 "
-          "define how aggressively to use the paths.");
+          "define how aggressively to use the paths.")
+    .OnUpdate([]() {
+      QCHECK_LE(absl::GetFlag(FLAGS_path_level), 100)
+          << "--" << FLAGS_path_level.Name() << " must be in [0,100]";
+    });
 ABSL_FLAG(bool, use_dataflow_features, true,
           "When available from instrumentation, use features derived from "
           "data flows.");
@@ -245,6 +280,16 @@ ABSL_FLAG(std::string, runner_dl_path_suffix, "",
           "The value could be the full path, like '/path/to/my.so' "
           "or a suffix, like '/my.so' or 'my.so'."
           "This flag is experimental and may be removed in future");
+// TODO(kcc): --distill and several others better be sub-command, not flags.
+// TODO(kcc): deprecate --distill_shards once --distill is ready.
+ABSL_FLAG(bool, distill, false,
+          "Experimental reimplementation of distillation - not ready yet. "
+          "All `total_shards` shards of the corpus in `workdir` are loaded "
+          "together with features for `binary`. "
+          "`num_threads` independent distillation threads work concurrently "
+          "loading the shards in random order. "
+          "Each distillation thread writes a minimized (distilled) "
+          "corpus to workdir/distilled-BINARY.`my_shard_index`.");
 ABSL_FLAG(size_t, distill_shards, 0,
           "The first --distill_shards will write the distilled corpus to "
           "workdir/distilled-BINARY.SHARD files. Also, if --corpus_dir is "
@@ -276,7 +321,7 @@ ABSL_FLAG(std::string, for_each_blob, "",
           "arguments, copies each blob to a temporary file, and applies this "
           "command to that temporary file. %P is replaced with the temporary "
           "file's path and %H is replaced with the blob's hash. Example:\n"
-          "$ centipede --for_each_blob='ls -l  %P && echo %H' corpus.0");
+          "$ centipede --for_each_blob='ls -l  %P && echo %H' corpus.000000");
 ABSL_FLAG(std::string, experiment, "",
           "A colon-separated list of values, each of which is a flag followed "
           "by = and a comma-separated list of values. Example: "
@@ -305,6 +350,12 @@ ABSL_FLAG(std::string, function_filter, "",
 ABSL_FLAG(size_t, shmem_size_mb, 1024,
           "Size of the shared memory regions used to communicate between the "
           "ending and the runner.");
+ABSL_FLAG(
+    bool, use_posix_shmem, false,
+    "[INTERNAL] When true, uses shm_open/shm_unlink instead of memfd_create to "
+    "allocate shared memory. You may want this if your target doesn't have "
+    "access to /proc/<arbitrary_pid> subdirs or the memfd_create syscall is "
+    "not supported.");
 ABSL_FLAG(bool, dry_run, false,
           "Initializes as much of Centipede as possible without actually "
           "running any fuzzing. Useful to validate the rest of the command "
@@ -341,9 +392,9 @@ size_t ComputeTimeoutPerBatch(  //
       timeout_per_batch =
           std::ceil(std::log(estimated_mean_time_per_input + 1.0) * batch_size);
     }
-    LOG(INFO) << "--" << FLAGS_timeout_per_batch.Name()
-              << " default wasn't overridden; auto-computed to be "
-              << timeout_per_batch << " sec (see --help for details)";
+    VLOG(1) << "--" << FLAGS_timeout_per_batch.Name()
+            << " not set on command line: auto-computed " << timeout_per_batch
+            << " sec (see --help for details)";
   }
   return timeout_per_batch;
 }
@@ -368,6 +419,8 @@ Environment::Environment(const std::vector<std::string> &argv)
       max_len(absl::GetFlag(FLAGS_max_len)),
       batch_size(absl::GetFlag(FLAGS_batch_size)),
       mutate_batch_size(absl::GetFlag(FLAGS_mutate_batch_size)),
+      use_legacy_default_mutator(
+          absl::GetFlag(FLAGS_use_legacy_default_mutator)),
       load_other_shard_frequency(
           absl::GetFlag(FLAGS_load_other_shard_frequency)),
       serialize_shard_loads(absl::GetFlag(FLAGS_serialize_shard_loads)),
@@ -390,7 +443,7 @@ Environment::Environment(const std::vector<std::string> &argv)
       use_pc_features(absl::GetFlag(FLAGS_use_pc_features)),
       path_level(absl::GetFlag(FLAGS_path_level)),
       use_cmp_features(absl::GetFlag(FLAGS_use_cmp_features)),
-      use_callstack_features(absl::GetFlag(FLAGS_use_callstack_features)),
+      callstack_level(absl::GetFlag(FLAGS_callstack_level)),
       use_auto_dictionary(absl::GetFlag(FLAGS_use_auto_dictionary)),
       use_dataflow_features(absl::GetFlag(FLAGS_use_dataflow_features)),
       use_counter_features(absl::GetFlag(FLAGS_use_counter_features)),
@@ -400,6 +453,7 @@ Environment::Environment(const std::vector<std::string> &argv)
       require_pc_table(absl::GetFlag(FLAGS_require_pc_table)),
       telemetry_frequency(absl::GetFlag(FLAGS_telemetry_frequency)),
       print_runner_log(absl::GetFlag(FLAGS_print_runner_log)),
+      distill(absl::GetFlag(FLAGS_distill)),
       distill_shards(absl::GetFlag(FLAGS_distill_shards)),
       log_features_shards(absl::GetFlag(FLAGS_log_features_shards)),
       knobs_file(absl::GetFlag(FLAGS_knobs_file)),
@@ -422,10 +476,12 @@ Environment::Environment(const std::vector<std::string> &argv)
       max_num_crash_reports(absl::GetFlag(FLAGS_num_crash_reports)),
       minimize_crash_file_path(absl::GetFlag(FLAGS_minimize_crash)),
       shmem_size_mb(absl::GetFlag(FLAGS_shmem_size_mb)),
+      use_posix_shmem(absl::GetFlag(FLAGS_use_posix_shmem)),
       dry_run(absl::GetFlag(FLAGS_dry_run)),
-      cmd(binary),
       binary_name(std::filesystem::path(coverage_binary).filename().string()),
-      binary_hash(HashOfFileContents(coverage_binary)) {
+      binary_hash(absl::GetFlag(FLAGS_binary_hash).empty()
+                      ? HashOfFileContents(coverage_binary)
+                      : absl::GetFlag(FLAGS_binary_hash)) {
   if (size_t j = absl::GetFlag(FLAGS_j)) {
     total_shards = j;
     num_threads = j;
@@ -512,6 +568,13 @@ std::string Environment::MakeCorpusStatsPath(
     std::string_view annotation) const {
   return std::filesystem::path(workdir).append(absl::StrFormat(
       "corpus-stats-%s.%0*d%s.json", binary_name, kDigitsInShardIndex,
+      my_shard_index, NormalizeAnnotation(annotation)));
+}
+
+std::string Environment::MakeFuzzingStatsPath(
+    std::string_view annotation) const {
+  return std::filesystem::path(workdir).append(absl::StrFormat(
+      "fuzzing-stats-%s.%0*d%s.csv", binary_name, kDigitsInShardIndex,
       my_shard_index, NormalizeAnnotation(annotation)));
 }
 
@@ -621,12 +684,13 @@ void Environment::SetFlagForExperiment(std::string_view name,
   // Handle bool flags.
   absl::flat_hash_map<std::string, bool *> bool_flags{
       {"use_cmp_features", &use_cmp_features},
-      {"use_callstack_features", &use_callstack_features},
       {"use_auto_dictionary", &use_auto_dictionary},
       {"use_dataflow_features", &use_dataflow_features},
       {"use_counter_features", &use_counter_features},
       {"use_pcpair_features", &use_pcpair_features},
-      {"use_coverage_frontier", &use_coverage_frontier}};
+      {"use_coverage_frontier", &use_coverage_frontier},
+      {"use_legacy_default_mutator", &use_legacy_default_mutator},
+  };
   auto bool_iter = bool_flags.find(name);
   if (bool_iter != bool_flags.end()) {
     *bool_iter->second = GetBoolFlag(value);
@@ -636,10 +700,12 @@ void Environment::SetFlagForExperiment(std::string_view name,
   // Handle int flags.
   absl::flat_hash_map<std::string, size_t *> int_flags{
       {"path_level", &path_level},
+      {"callstack_level", &callstack_level},
       {"max_corpus_size", &max_corpus_size},
       {"max_len", &max_len},
-      {"path_level", &path_level},
-      {"mutate_batch_size", &mutate_batch_size}};
+      {"crossover_level", &crossover_level},
+      {"mutate_batch_size", &mutate_batch_size},
+  };
   auto int_iter = int_flags.find(name);
   if (int_iter != int_flags.end()) {
     *int_iter->second = GetIntFlag(value);

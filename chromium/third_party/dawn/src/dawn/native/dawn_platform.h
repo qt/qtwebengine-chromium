@@ -52,13 +52,25 @@ static constexpr wgpu::TextureUsage kPresentTextureUsage =
 static constexpr wgpu::TextureUsage kReadOnlyRenderAttachment =
     static_cast<wgpu::TextureUsage>(0x40000000);
 
+// Add an extra texture usage (readonly storage texture usage) for resource tracking
+static constexpr wgpu::TextureUsage kReadOnlyStorageTexture =
+    static_cast<wgpu::TextureUsage>(0x08000000);
+
 // Internal usage to help tracking when a subresource is used as render attachment usage
 // more than once in a render pass.
 static constexpr wgpu::TextureUsage kAgainAsRenderAttachment =
     static_cast<wgpu::TextureUsage>(0x80000001);
 
+// Add an extra texture usage (load resolve texture to MSAA) for render pass resource tracking
+static constexpr wgpu::TextureUsage kResolveAttachmentLoadingUsage =
+    static_cast<wgpu::TextureUsage>(0x10000000);
+
 static constexpr wgpu::BufferBindingType kInternalStorageBufferBinding =
     static_cast<wgpu::BufferBindingType>(0xFFFFFFFF);
+
+// Extra TextureSampleType for sampling from a resolve attachment.
+static constexpr wgpu::TextureSampleType kInternalResolveAttachmentSampleType =
+    static_cast<wgpu::TextureSampleType>(0xFFFFFFFF);
 }  // namespace dawn::native
 
 #endif  // SRC_DAWN_NATIVE_DAWN_PLATFORM_H_

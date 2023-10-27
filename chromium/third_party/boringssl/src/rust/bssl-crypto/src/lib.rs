@@ -26,8 +26,14 @@
 
 extern crate core;
 
+/// Authenticated Encryption with Additional Data algorithms.
+pub mod aead;
+
 /// AES block operations.
 pub mod aes;
+
+/// Ciphers.
+pub mod cipher;
 
 /// Hash functions.
 pub mod digest;
@@ -44,7 +50,7 @@ pub mod hmac;
 /// Random number generation.
 pub mod rand;
 
-/// BoringSSL implemented memory-manipulation operations.
+/// Memory-manipulation operations.
 pub mod mem;
 
 #[cfg(test)]

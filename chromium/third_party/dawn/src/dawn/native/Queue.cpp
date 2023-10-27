@@ -167,6 +167,10 @@ class ErrorQueue : public QueueBase {
     MaybeError SubmitImpl(uint32_t commandCount, CommandBufferBase* const* commands) override {
         UNREACHABLE();
     }
+    bool HasPendingCommands() const override { UNREACHABLE(); }
+    ResultOrError<ExecutionSerial> CheckAndUpdateCompletedSerials() override { UNREACHABLE(); }
+    void ForceEventualFlushOfCommands() override { UNREACHABLE(); }
+    MaybeError WaitForIdleForDestruction() override { UNREACHABLE(); }
 };
 }  // namespace
 
@@ -236,16 +240,16 @@ void QueueBase::APIOnSubmittedWorkDone(uint64_t signalValue,
 
 void QueueBase::TrackTask(std::unique_ptr<TrackTaskCallback> task, ExecutionSerial serial) {
     // If the task depends on a serial which is not submitted yet, force a flush.
-    if (serial > GetDevice()->GetLastSubmittedCommandSerial()) {
-        GetDevice()->ForceEventualFlushOfCommands();
+    if (serial > GetLastSubmittedCommandSerial()) {
+        ForceEventualFlushOfCommands();
     }
 
-    ASSERT(serial <= GetDevice()->GetScheduledWorkDoneSerial());
+    ASSERT(serial <= GetScheduledWorkDoneSerial());
 
     // If the serial indicated command has been completed, the task will be moved to callback task
     // manager.
-    if (serial <= GetDevice()->GetCompletedCommandSerial()) {
-        task->SetFinishedSerial(GetDevice()->GetCompletedCommandSerial());
+    if (serial <= GetCompletedCommandSerial()) {
+        task->SetFinishedSerial(GetCompletedCommandSerial());
         GetDevice()->GetCallbackTaskManager()->AddCallbackTask(std::move(task));
     } else {
         mTasksInFlight.Enqueue(std::move(task), serial);
@@ -253,8 +257,8 @@ void QueueBase::TrackTask(std::unique_ptr<TrackTaskCallback> task, ExecutionSeri
 }
 
 void QueueBase::TrackTaskAfterEventualFlush(std::unique_ptr<TrackTaskCallback> task) {
-    GetDevice()->ForceEventualFlushOfCommands();
-    TrackTask(std::move(task), GetDevice()->GetScheduledWorkDoneSerial());
+    ForceEventualFlushOfCommands();
+    TrackTask(std::move(task), GetScheduledWorkDoneSerial());
 }
 
 void QueueBase::Tick(ExecutionSerial finishedSerial) {
@@ -292,9 +296,10 @@ void QueueBase::APIWriteBuffer(BufferBase* buffer,
                                uint64_t bufferOffset,
                                const void* data,
                                size_t size) {
-    DAWN_UNUSED(GetDevice()->ConsumedError(WriteBuffer(buffer, bufferOffset, data, size),
-                                           "calling %s.WriteBuffer(%s, %s, (%d bytes))", this,
-                                           buffer, bufferOffset, size));
+    DAWN_UNUSED(
+        GetDevice()->ConsumedError(WriteBuffer(buffer, bufferOffset, data, size),
+                                   "calling %s.WriteBuffer(%s, (%d bytes), data, (%d bytes))", this,
+                                   buffer, bufferOffset, size));
 }
 
 MaybeError QueueBase::WriteBuffer(BufferBase* buffer,
@@ -337,7 +342,7 @@ void QueueBase::APIWriteTexture(const ImageCopyTexture* destination,
                                 const Extent3D* writeSize) {
     DAWN_UNUSED(GetDevice()->ConsumedError(
         WriteTextureInternal(destination, data, dataSize, *dataLayout, writeSize),
-        "calling %s.WriteTexture(%s, (%s bytes), %s, %s)", destination, dataSize, dataLayout,
+        "calling %s.WriteTexture(%s, (%u bytes), %s, %s)", this, destination, dataSize, dataLayout,
         writeSize));
 }
 

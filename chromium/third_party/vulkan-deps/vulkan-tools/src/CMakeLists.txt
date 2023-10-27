@@ -19,6 +19,10 @@ cmake_minimum_required(VERSION 3.17.2)
 
 project(Vulkan-Tools)
 
+# This variable enables downstream users to customize the target API
+# variant (e.g. Vulkan SC)
+set(API_TYPE "vulkan")
+
 add_subdirectory(scripts)
 
 # User-interface declarations ----------------------------------------------------------------------------------------------------
@@ -33,8 +37,6 @@ option(BUILD_ICD "Build icd" ON)
 # Installing the Mock ICD to system directories is probably not desired since this ICD is not a very complete implementation.
 # Require the user to ask that it be installed if they really want it.
 option(INSTALL_ICD "Install icd" OFF)
-
-set(API_TYPE "vulkan")
 
 if (UNIX AND NOT APPLE) # i.e. Linux
     option(ENABLE_ADDRESS_SANITIZER "Use addres sanitization" OFF)
@@ -51,29 +53,6 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 # "Helper" targets that don't have interesting source code should set their FOLDER property to this
 set(TOOLS_HELPER_FOLDER "Helper Targets")
 
-# ~~~
-# Find Vulkan Headers and Loader
-# Search order:
-#  User-supplied CMAKE_PREFIX_PATH containing paths to the header and/or loader install dirs
-#  CMake options VULKAN_HEADERS_INSTALL_DIR and/or VULKAN_LOADER_INSTALL_DIR
-#  Env vars VULKAN_HEADERS_INSTALL_DIR and/or VULKAN_LOADER_INSTALL_DIR
-#  If on MacOS
-#   CMake option MOTLENVK_REPO_ROOT
-#   Env vars MOLTENVK_REPO_ROOT
-#  Fallback to FindVulkan operation using SDK install or system installed components.
-# ~~~
-set(VULKAN_HEADERS_INSTALL_DIR "HEADERS-NOTFOUND" CACHE PATH "Absolute path to a Vulkan-Headers install directory")
-set(VULKAN_LOADER_INSTALL_DIR "LOADER-NOTFOUND" CACHE PATH "Absolute path to a Vulkan-Loader install directory")
-if(WIN32 AND "${VULKAN_LOADER_INSTALL_DIR}" STREQUAL "LOADER-NOTFOUND")
-    if(CMAKE_CL_64)
-        set(VULKAN_LOADER_INSTALL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/x64")
-    else()
-        set(VULKAN_LOADER_INSTALL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/x86")
-    endif()
-endif()
-set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH};${VULKAN_HEADERS_INSTALL_DIR};${VULKAN_LOADER_INSTALL_DIR};
-    $ENV{VULKAN_HEADERS_INSTALL_DIR};$ENV{VULKAN_LOADER_INSTALL_DIR})
-
 if(APPLE)
     set(MOLTENVK_REPO_ROOT "MOLTENVK-NOTFOUND" CACHE PATH "Absolute path to a MoltenVK repo directory")
     if(NOT MOLTENVK_REPO_ROOT AND NOT DEFINED ENV{MOLTENVK_REPO_ROOT})
@@ -85,13 +64,15 @@ if(APPLE)
     endif()
     message(STATUS "Using MoltenVK repo location at ${MOLTENVK_REPO_ROOT}")
 endif()
-message(STATUS "Using find_package to locate Vulkan")
-find_package(Vulkan)
+
 find_package(VulkanHeaders REQUIRED CONFIG)
-get_filename_component(Vulkan_LIBRARY_DIR ${Vulkan_LIBRARY} DIRECTORY)
-message(STATUS "Vulkan FOUND = ${Vulkan_FOUND}")
-message(STATUS "Vulkan Lib Dir = ${Vulkan_LIBRARY_DIR}")
-message(STATUS "Vulkan Lib = ${Vulkan_LIBRARY}")
+
+# Find and create the Vulkan::Vulkan library
+find_library(Vulkan_LIBRARY NAMES vulkan vulkan-1)
+add_library(Vulkan::Vulkan UNKNOWN IMPORTED)
+set_target_properties(Vulkan::Vulkan PROPERTIES
+    IMPORTED_LOCATION ${Vulkan_LIBRARY})
+target_link_libraries(Vulkan::Vulkan INTERFACE Vulkan::Headers)
 
 include(GNUInstallDirs)
 
@@ -149,9 +130,14 @@ option(TOOLS_CODEGEN "Enable helper codegen target")
 if (TOOLS_CODEGEN)
     find_package(Python3 REQUIRED QUIET)
     add_custom_target(tools_codegen
-        COMMAND Python3::Interpreter ${PROJECT_SOURCE_DIR}/scripts/generate_source.py ${VULKAN_HEADERS_REGISTRY_DIRECTORY} --incremental --api ${API_TYPE}
+        COMMAND Python3::Interpreter ${PROJECT_SOURCE_DIR}/scripts/generate_source.py
+            "${VULKAN_HEADERS_INSTALL_DIR}/${CMAKE_INSTALL_DATADIR}/vulkan/registry"
+            --incremental --api ${API_TYPE}
     )
 endif()
+
+# Default to using the static CRT
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 if(APPLE)
     include(mac_common.cmake)

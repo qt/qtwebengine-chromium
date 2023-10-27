@@ -28,7 +28,9 @@
 #include "connections/listeners.h"
 #include "connections/params.h"
 #include "connections/payload.h"
+#include "connections/v3/advertising_options.h"
 #include "connections/v3/connection_listening_options.h"
+#include "connections/v3/discovery_options.h"
 #include "connections/v3/listeners.h"
 #include "connections/v3/listening_result.h"
 #include "internal/analytics/event_logger.h"
@@ -273,7 +275,7 @@ class Core {
   //     Status::STATUS_OUT_OF_ORDER_API_CALL if the app is currently
   //         connected to remote endpoints; call StopAllEndpoints first.
   void StartAdvertisingV3(absl::string_view service_id,
-                          const AdvertisingOptions& advertising_options,
+                          const v3::AdvertisingOptions& advertising_options,
                           const NearbyDevice& local_device,
                           v3::ConnectionListener listener,
                           ResultCallback callback);
@@ -296,7 +298,7 @@ class Core {
   //     Status::STATUS_OUT_OF_ORDER_API_CALL if the app is currently
   //         connected to remote endpoints; call StopAllEndpoints first.
   void StartAdvertisingV3(absl::string_view service_id,
-                          const AdvertisingOptions& advertising_options,
+                          const v3::AdvertisingOptions& advertising_options,
                           v3::ConnectionListener listener,
                           ResultCallback callback);
 
@@ -322,7 +324,7 @@ class Core {
   //     Status::STATUS_OUT_OF_ORDER_API_CALL if the app is currently
   //         connected to remote endpoints; call StopAllEndpoints first.
   void StartDiscoveryV3(absl::string_view service_id,
-                        const DiscoveryOptions& discovery_options,
+                        const v3::DiscoveryOptions& discovery_options,
                         v3::DiscoveryListener listener_cb,
                         ResultCallback callback);
 
@@ -337,6 +339,8 @@ class Core {
   // Starts listening for incoming connections.
   //
   // options - The options for listening for a connection.
+  //   - options.listening_device_type will be checked to make sure it is one of
+  //   kConnectionsDevice or kPresenceDevice before starting the operation.
   // service_id - The service ID to listen for.
   // listener_cb - The connection listener to broadcast any updates.
   // result_cb - to access the status of the operation when available.
@@ -502,7 +506,7 @@ class Core {
   // advertising_options - The new advertising options a client wishes to use.
   // result_cb - to access the status of the operation when available.
   void UpdateAdvertisingOptionsV3(absl::string_view service_id,
-                                  AdvertisingOptions advertising_options,
+                                  v3::AdvertisingOptions advertising_options,
                                   ResultCallback result_cb);
 
   // Updates DiscoveryOptions. It compares the old DiscoveryOptions and the new
@@ -511,13 +515,22 @@ class Core {
   // discovery_options - The new discovery options a client wishes to use.
   // result_cb - to access the status of the operation when available.
   void UpdateDiscoveryOptionsV3(absl::string_view service_id,
-                                DiscoveryOptions discovery_options,
+                                v3::DiscoveryOptions discovery_options,
                                 ResultCallback result_cb);
 
   // Registers a DeviceProvider to provide functionality for Nearby Connections
   // to interact with the DeviceProvider for retrieving the local device.
-  void RegisterDeviceProvider(std::unique_ptr<NearbyDeviceProvider> provider) {
-    client_.RegisterDeviceProvider(std::move(provider));
+  void RegisterDeviceProvider(NearbyDeviceProvider* provider) {
+    client_.RegisterDeviceProvider(provider);
+  }
+
+  // Like RegisterDeviceProvider(NearbyDeviceProvider*) above, but for
+  // a Connections device provider, so Connections can manage the lifetime of
+  // this device provider. If an external provider is registered, this provider
+  // will be ignored.
+  void RegisterConnectionsDeviceProvider(
+      std::unique_ptr<v3::ConnectionsDeviceProvider> provider) {
+    client_.RegisterConnectionsDeviceProvider(std::move(provider));
   }
 
  private:

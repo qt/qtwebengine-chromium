@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,11 +7,11 @@
 
 #include <vector>
 
-#include "absl/types/span.h"
 #include "cast/streaming/frame_crypto.h"
 #include "cast/streaming/frame_id.h"
 #include "cast/streaming/rtcp_common.h"
 #include "cast/streaming/rtp_packet_parser.h"
+#include "platform/base/span.h"
 
 namespace openscreen {
 namespace cast {
@@ -61,7 +61,7 @@ class FrameCollector {
  private:
   struct PayloadChunk {
     std::vector<uint8_t> buffer;
-    absl::Span<const uint8_t> payload;  // Once set, is within |buffer.data()|.
+    ByteView payload;  // Once set, is within |buffer.data()|.
 
     PayloadChunk();
     ~PayloadChunk();

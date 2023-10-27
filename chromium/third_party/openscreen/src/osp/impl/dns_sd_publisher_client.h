@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,7 @@
 #include "discovery/dnssd/public/dns_sd_service.h"
 #include "discovery/public/dns_sd_service_publisher.h"
 #include "osp/impl/service_publisher_impl.h"
-#include "platform/api/serial_delete_ptr.h"
+#include "platform/api/task_runner_deleter.h"
 
 namespace openscreen {
 
@@ -36,11 +36,11 @@ class DnsSdPublisherClient final : public ServicePublisherImpl::Delegate {
   DnsSdPublisherClient(DnsSdPublisherClient&&) noexcept = delete;
 
   void StartPublisherInternal(const ServicePublisher::Config& config);
-  SerialDeletePtr<discovery::DnsSdService> CreateDnsSdServiceInternal(
-      const ServicePublisher::Config& config);
+  std::unique_ptr<discovery::DnsSdService, TaskRunnerDeleter>
+  CreateDnsSdServiceInternal(const ServicePublisher::Config& config);
 
   TaskRunner& task_runner_;
-  SerialDeletePtr<discovery::DnsSdService> dns_sd_service_;
+  std::unique_ptr<discovery::DnsSdService, TaskRunnerDeleter> dns_sd_service_;
 
   using OspDnsSdPublisher =
       discovery::DnsSdServicePublisher<ServicePublisher::Config>;

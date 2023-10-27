@@ -136,10 +136,6 @@ export const generatedProperties = [
  },
  {
   "inherited": true,
-  "name": "-webkit-highlight"
- },
- {
-  "inherited": true,
   "keywords": [
    "auto",
    "loose",
@@ -393,12 +389,6 @@ export const generatedProperties = [
    "none"
   ],
   "name": "anchor-name"
- },
- {
-  "keywords": [
-   "none"
-  ],
-  "name": "anchor-scroll"
  },
  {
   "longhands": [
@@ -1708,7 +1698,8 @@ export const generatedProperties = [
    "ex-height",
    "cap-height",
    "ch-width",
-   "ic-width"
+   "ic-width",
+   "from-font"
   ],
   "name": "font-size-adjust"
  },
@@ -2773,6 +2764,12 @@ export const generatedProperties = [
   "name": "position-fallback"
  },
  {
+  "keywords": [
+   "normal"
+  ],
+  "name": "position-fallback-bounds"
+ },
+ {
   "name": "prefix"
  },
  {
@@ -3068,13 +3065,9 @@ export const generatedProperties = [
  {
   "longhands": [
    "scroll-timeline-name",
-   "scroll-timeline-axis",
-   "scroll-timeline-attachment"
+   "scroll-timeline-axis"
   ],
   "name": "scroll-timeline"
- },
- {
-  "name": "scroll-timeline-attachment"
  },
  {
   "name": "scroll-timeline-axis"
@@ -3269,6 +3262,14 @@ export const generatedProperties = [
    "end"
   ],
   "name": "text-anchor"
+ },
+ {
+  "inherited": true,
+  "keywords": [
+   "normal",
+   "no-autospace"
+  ],
+  "name": "text-autospace"
  },
  {
   "keywords": [
@@ -3510,7 +3511,10 @@ export const generatedProperties = [
  },
  {
   "keywords": [
+   "content-box",
+   "border-box",
    "fill-box",
+   "stroke-box",
    "view-box"
   ],
   "name": "transform-box"
@@ -3530,9 +3534,13 @@ export const generatedProperties = [
    "transition-property",
    "transition-duration",
    "transition-timing-function",
-   "transition-delay"
+   "transition-delay",
+   "transition-behavior"
   ],
   "name": "transition"
+ },
+ {
+  "name": "transition-behavior"
  },
  {
   "name": "transition-delay"
@@ -3611,13 +3619,9 @@ export const generatedProperties = [
  {
   "longhands": [
    "view-timeline-name",
-   "view-timeline-axis",
-   "view-timeline-attachment"
+   "view-timeline-axis"
   ],
   "name": "view-timeline"
- },
- {
-  "name": "view-timeline-attachment"
  },
  {
   "name": "view-timeline-axis"
@@ -3687,17 +3691,11 @@ export const generatedProperties = [
  {
   "inherited": true,
   "keywords": [
-   "normal"
-  ],
-  "name": "word-boundary-detection"
- },
- {
-  "inherited": true,
-  "keywords": [
    "normal",
    "break-all",
    "keep-all",
-   "break-word"
+   "break-word",
+   "auto-phrase"
   ],
   "name": "word-break"
  },
@@ -3847,11 +3845,6 @@ export const generatedPropertyValues = {
   ]
  },
  "anchor-name": {
-  "values": [
-   "none"
-  ]
- },
- "anchor-scroll": {
   "values": [
    "none"
   ]
@@ -4583,7 +4576,8 @@ export const generatedPropertyValues = {
    "ex-height",
    "cap-height",
    "ch-width",
-   "ic-width"
+   "ic-width",
+   "from-font"
   ]
  },
  "font-stretch": {
@@ -5151,6 +5145,11 @@ export const generatedPropertyValues = {
    "none"
   ]
  },
+ "position-fallback-bounds": {
+  "values": [
+   "normal"
+  ]
+ },
  "quotes": {
   "values": [
    "auto",
@@ -5415,6 +5414,12 @@ export const generatedPropertyValues = {
    "end"
   ]
  },
+ "text-autospace": {
+  "values": [
+   "normal",
+   "no-autospace"
+  ]
+ },
  "text-box-trim": {
   "values": [
    "none",
@@ -5580,7 +5585,10 @@ export const generatedPropertyValues = {
  },
  "transform-box": {
   "values": [
+   "content-box",
+   "border-box",
    "fill-box",
+   "stroke-box",
    "view-box"
   ]
  },
@@ -5688,17 +5696,13 @@ export const generatedPropertyValues = {
    "auto"
   ]
  },
- "word-boundary-detection": {
-  "values": [
-   "normal"
-  ]
- },
  "word-break": {
   "values": [
    "normal",
    "break-all",
    "keep-all",
-   "break-word"
+   "break-word",
+   "auto-phrase"
   ]
  },
  "word-spacing": {

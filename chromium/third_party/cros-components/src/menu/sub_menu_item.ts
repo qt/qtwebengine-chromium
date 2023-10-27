@@ -11,9 +11,8 @@ import './menu_item';
 
 import {css, CSSResultGroup, html, LitElement} from 'lit';
 
-// From google3/chrome/apps/common/client/icons/chromeos/ic_chevron-right.svg
 const chevronIcon =
-    html`<svg width="20" height="20" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" slot="end" id="icon">
+    html`<svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" slot="end" id="icon" data-variant="icon">
       <path fill-rule="evenodd" clip-rule="evenodd" d="M6.66669 13.825L10.7872 10L6.66669 6.175L7.93524 5L13.3334 10L7.93524 15L6.66669 13.825Z"/>
     </svg>`;
 /**
@@ -28,10 +27,33 @@ export class SubMenuItem extends LitElement {
   // selected state.
   static override styles: CSSResultGroup = css`
     md-sub-menu-item {
-      --md-menu-item-list-item-selected-container-color: #00000000;
+      --md-list-item-disabled-label-text-color: var(--cros-sys-on_surface);
+      --md-list-item-disabled-label-text-opacity: var(--cros-sys-opacity-disabled);
+      --md-list-item-disabled-trailing-icon-opacity: var(--cros-sys-opacity-disabled);
+      --md-list-item-focus-label-text-color: var(--cros-sys-on_surface);
+      --md-list-item-hover-label-text-color: var(--cros-sys-on_surface);
+      --md-list-item-label-text-color: var(--cros-sys-on_surface);
+      --md-list-item-label-text-type: var(--cros-button-2-font);
+      --md-list-item-pressed-label-text-color: var(--cros-sys-on_surface);
+      --md-menu-item-selected-container-color: var(--cros-sys-hover_on_subtle);
+      --md-list-item-trailing-space: 16px;
+      --md-list-item-trailing-element-headline-trailing-element-space: 48px;
     }
-    :host-context(html[dir=rtl]) #icon {
+    #icon {
+      width: 20px;
+      height: 20px;
+      fill: var(--cros-sys-on_surface);
+    }
+    :host-context([dir=rtl]) #icon {
       transform: scaleX(-1);
+    }
+    md-sub-menu-item::part(focus-ring) {
+      --md-focus-ring-active-width: 2px;
+      --md-focus-ring-color: var(--cros-sys-focus_ring);
+      --md-focus-ring-width: 2px;
+    }
+    md-sub-menu-item[selected]:hover::part(ripple) {
+      --md-ripple-hover-opacity: 0;
     }
   `;
 
@@ -111,7 +133,9 @@ export class SubMenuItem extends LitElement {
     return html`
       <md-sub-menu-item
           .headline=${this.headline}
-          .disabled=${this.disabled}>
+          .disabled=${this.disabled}
+          aria-haspopup='menu'
+        >
       ${chevronIcon}<slot name='submenu' slot='submenu'></slot>
       </md-sub-menu-item>`;
   }

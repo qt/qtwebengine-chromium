@@ -25,6 +25,16 @@ const UIStrings = {
    *@description Text in Console Prompt of the Console panel
    */
   consolePrompt: 'Console prompt',
+  /**
+   *@description Warning shown to users when pasting text into the DevTools console.
+   *@example {allow pasting} PH1
+   */
+  selfXssWarning:
+      'Warning: Don’t paste code into the DevTools Console that you don’t understand or haven’t reviewed yourself. This could allow attackers to steal your identity or take control of your computer. Please type ‘{PH1}’ below to allow pasting.',
+  /**
+   *@description Text a user needs to type in order to confirm that they are aware of the danger of pasting code into the DevTools console.
+   */
+  allowPasting: 'allow pasting',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/console/ConsolePrompt.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -51,6 +61,7 @@ export class ConsolePrompt extends Common.ObjectWrapper.eventMixin<EventTypes, t
   #argumentHintsState: CodeMirror.StateField<CodeMirror.Tooltip|null>;
 
   #editorHistory: TextEditor.TextEditorHistory.TextEditorHistory;
+  #selfXssWarningShown = false;
 
   constructor() {
     super();
@@ -269,10 +280,35 @@ export class ConsolePrompt extends Common.ObjectWrapper.eventMixin<EventTypes, t
     if (forceEvaluate || selection.main.head < doc.length) {
       return true;
     }
-    return await TextEditor.JavaScript.isExpressionComplete(doc.toString());
+    const currentExecutionContext = UI.Context.Context.instance().flavor(SDK.RuntimeModel.ExecutionContext);
+    const isExpressionComplete = await TextEditor.JavaScript.isExpressionComplete(doc.toString());
+    if (currentExecutionContext !== UI.Context.Context.instance().flavor(SDK.RuntimeModel.ExecutionContext)) {
+      // We should not evaluate if the current context has changed since user action
+      return false;
+    }
+    return isExpressionComplete;
+  }
+
+  showSelfXssWarning(): void {
+    Common.Console.Console.instance().warn(
+        i18nString(UIStrings.selfXssWarning, {PH1: i18nString(UIStrings.allowPasting)}));
+    this.#selfXssWarningShown = true;
   }
 
   private async handleEnter(forceEvaluate?: boolean): Promise<void> {
+    if (this.#selfXssWarningShown && this.text() === i18nString(UIStrings.allowPasting)) {
+      Common.Console.Console.instance().log(this.text());
+      this.editor.dispatch({
+        changes: {from: 0, to: this.editor.state.doc.length},
+        scrollIntoView: true,
+      });
+      Common.Settings.Settings.instance()
+          .createSetting('disableSelfXssWarning', false, Common.Settings.SettingStorageType.Synced)
+          .set(true);
+      this.#selfXssWarningShown = false;
+      return;
+    }
+
     if (await this.enterWillEvaluate(forceEvaluate)) {
       this.appendCommand(this.text(), true);
       TextEditor.JavaScript.closeArgumentsHintsTooltip(this.editor.editor, this.#argumentHintsState);
@@ -325,7 +361,7 @@ export class ConsolePrompt extends Common.ObjectWrapper.eventMixin<EventTypes, t
         ?.evaluateCommandInConsole(executionContext, message, expression, useCommandLineAPI);
   }
 
-  private async substituteNames(expression: string, mapping: Map<string, string>): Promise<string> {
+  private async substituteNames(expression: string, mapping: Map<string, string|null>): Promise<string> {
     try {
       return await Formatter.FormatterWorkerPool.formatterWorkerPool().javaScriptSubstitute(expression, mapping);
     } catch {

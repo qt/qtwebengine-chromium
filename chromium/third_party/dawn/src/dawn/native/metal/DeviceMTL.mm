@@ -18,7 +18,7 @@
 #include "dawn/common/Platform.h"
 #include "dawn/native/Adapter.h"
 #include "dawn/native/BackendConnection.h"
-#include "dawn/native/BindGroupLayout.h"
+#include "dawn/native/ChainUtils_autogen.h"
 #include "dawn/native/Commands.h"
 #include "dawn/native/ErrorData.h"
 #include "dawn/native/metal/BindGroupLayoutMTL.h"
@@ -32,6 +32,8 @@
 #include "dawn/native/metal/RenderPipelineMTL.h"
 #include "dawn/native/metal/SamplerMTL.h"
 #include "dawn/native/metal/ShaderModuleMTL.h"
+#include "dawn/native/metal/SharedFenceMTL.h"
+#include "dawn/native/metal/SharedTextureMemoryMTL.h"
 #include "dawn/native/metal/SwapChainMTL.h"
 #include "dawn/native/metal/TextureMTL.h"
 #include "dawn/native/metal/UtilsMetal.h"
@@ -121,9 +123,7 @@ Device::Device(AdapterBase* adapter,
                NSPRef<id<MTLDevice>> mtlDevice,
                const DeviceDescriptor* descriptor,
                const TogglesState& deviceToggles)
-    : DeviceBase(adapter, descriptor, deviceToggles),
-      mMtlDevice(std::move(mtlDevice)),
-      mCompletedSerial(0) {
+    : DeviceBase(adapter, descriptor, deviceToggles), mMtlDevice(std::move(mtlDevice)) {
     // On macOS < 11.0, we only can check whether counter sampling is supported, and the counter
     // only can be sampled between command boundary using sampleCountersInBuffer API if it's
     // supported.
@@ -144,16 +144,8 @@ Device::~Device() {
 }
 
 MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
-    mCommandQueue.Acquire([*mMtlDevice newCommandQueue]);
-    if (mCommandQueue == nil) {
-        return DAWN_INTERNAL_ERROR("Failed to allocate MTLCommandQueue.");
-    }
-
-    if (@available(macOS 10.14, *)) {
-        mMtlSharedEvent.Acquire([*mMtlDevice newSharedEvent]);
-    }
-
-    DAWN_TRY(mCommandContext.PrepareNextCommandBuffer(*mCommandQueue));
+    Ref<Queue> queue;
+    DAWN_TRY_ASSIGN(queue, Queue::Create(this, &descriptor->defaultQueue));
 
     if (mIsTimestampQueryEnabled && !IsToggleEnabled(Toggle::DisableTimestampQueryConversion)) {
         // Make a best guess of timestamp period based on device vendor info, and converge it to
@@ -168,23 +160,22 @@ MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
                                    // value is, the more we can trust the measured value.
         mKalmanInfo->P = 1.0f;
 
-        if (@available(macos 10.15, iOS 14.0, *)) {
+        if (@available(macOS 10.15, iOS 14.0, *)) {
             // Sample CPU timestamp and GPU timestamp for first time at device creation
             [*mMtlDevice sampleTimestamps:&mCpuTimestamp gpuTimestamp:&mGpuTimestamp];
         }
     }
 
-    return DeviceBase::Initialize(AcquireRef(new Queue(this, &descriptor->defaultQueue)));
+    return DeviceBase::Initialize(std::move(queue));
 }
 
 ResultOrError<Ref<BindGroupBase>> Device::CreateBindGroupImpl(
     const BindGroupDescriptor* descriptor) {
     return BindGroup::Create(this, descriptor);
 }
-ResultOrError<Ref<BindGroupLayoutBase>> Device::CreateBindGroupLayoutImpl(
-    const BindGroupLayoutDescriptor* descriptor,
-    PipelineCompatibilityToken pipelineCompatibilityToken) {
-    return BindGroupLayout::Create(this, descriptor, pipelineCompatibilityToken);
+ResultOrError<Ref<BindGroupLayoutInternalBase>> Device::CreateBindGroupLayoutImpl(
+    const BindGroupLayoutDescriptor* descriptor) {
+    return BindGroupLayout::Create(this, descriptor);
 }
 ResultOrError<Ref<BufferBase>> Device::CreateBufferImpl(const BufferDescriptor* descriptor) {
     return Buffer::Create(this, descriptor);
@@ -251,32 +242,48 @@ ResultOrError<wgpu::TextureUsage> Device::GetSupportedSurfaceUsageImpl(
     return usages;
 }
 
-ResultOrError<ExecutionSerial> Device::CheckAndUpdateCompletedSerials() {
-    uint64_t frontendCompletedSerial{GetCompletedCommandSerial()};
-    // sometimes we increase the serials, in which case the completed serial in
-    // the device base will surpass the completed serial we have in the metal backend, so we
-    // must update ours when we see that the completed serial from device base has
-    // increased.
-    //
-    // This update has to be atomic otherwise there is a race with the `addCompletedHandler`
-    // call below and this call could set the mCompletedSerial backwards.
-    uint64_t current = mCompletedSerial.load();
-    while (frontendCompletedSerial > current &&
-           !mCompletedSerial.compare_exchange_weak(current, frontendCompletedSerial)) {
-    }
+ResultOrError<Ref<SharedTextureMemoryBase>> Device::ImportSharedTextureMemoryImpl(
+    const SharedTextureMemoryDescriptor* baseDescriptor) {
+    DAWN_TRY(ValidateSingleSType(baseDescriptor->nextInChain,
+                                 wgpu::SType::SharedTextureMemoryIOSurfaceDescriptor));
 
-    return ExecutionSerial(mCompletedSerial.load());
+    const SharedTextureMemoryIOSurfaceDescriptor* descriptor = nullptr;
+    FindInChain(baseDescriptor->nextInChain, &descriptor);
+
+    DAWN_INVALID_IF(descriptor == nullptr,
+                    "SharedTextureMemoryIOSurfaceDescriptor must be chained.");
+
+    DAWN_INVALID_IF(!HasFeature(Feature::SharedTextureMemoryIOSurface), "%s is not enabled.",
+                    wgpu::FeatureName::SharedTextureMemoryIOSurface);
+
+    return SharedTextureMemory::Create(this, baseDescriptor->label, descriptor);
+}
+
+ResultOrError<Ref<SharedFenceBase>> Device::ImportSharedFenceImpl(
+    const SharedFenceDescriptor* baseDescriptor) {
+    DAWN_TRY(ValidateSingleSType(baseDescriptor->nextInChain,
+                                 wgpu::SType::SharedFenceMTLSharedEventDescriptor));
+
+    const SharedFenceMTLSharedEventDescriptor* descriptor = nullptr;
+    FindInChain(baseDescriptor->nextInChain, &descriptor);
+
+    DAWN_INVALID_IF(descriptor == nullptr, "SharedFenceMTLSharedEventDescriptor must be chained.");
+
+    DAWN_INVALID_IF(!HasFeature(Feature::SharedFenceMTLSharedEvent), "%s is not enabled.",
+                    wgpu::FeatureName::SharedFenceMTLSharedEvent);
+    if (@available(macOS 10.14, ios 12.0, *)) {
+        return SharedFence::Create(this, baseDescriptor->label, descriptor);
+    }
+    UNREACHABLE();
 }
 
 MaybeError Device::TickImpl() {
-    if (mCommandContext.NeedsSubmit()) {
-        DAWN_TRY(SubmitPendingCommandBuffer());
-    }
+    DAWN_TRY(ToBackend(GetQueue())->SubmitPendingCommandBuffer());
 
     // Just run timestamp period calculation when timestamp feature is enabled and timestamp
     // conversion is not disabled.
     if (mIsTimestampQueryEnabled && !IsToggleEnabled(Toggle::DisableTimestampQueryConversion)) {
-        if (@available(macos 10.15, iOS 14.0, *)) {
+        if (@available(macOS 10.15, iOS 14.0, *)) {
             UpdateTimestampPeriod(GetMTLDevice(), mKalmanInfo.get(), &mCpuTimestamp, &mGpuTimestamp,
                                   &mTimestampPeriod);
         }
@@ -289,89 +296,8 @@ id<MTLDevice> Device::GetMTLDevice() {
     return mMtlDevice.Get();
 }
 
-id<MTLCommandQueue> Device::GetMTLQueue() {
-    return mCommandQueue.Get();
-}
-
 CommandRecordingContext* Device::GetPendingCommandContext(Device::SubmitMode submitMode) {
-    if (submitMode == DeviceBase::SubmitMode::Normal) {
-        mCommandContext.SetNeedsSubmit();
-    }
-    mCommandContext.MarkUsed();
-    return &mCommandContext;
-}
-
-bool Device::HasPendingCommands() const {
-    return mCommandContext.NeedsSubmit();
-}
-
-void Device::ForceEventualFlushOfCommands() {
-    if (mCommandContext.WasUsed()) {
-        mCommandContext.SetNeedsSubmit();
-    }
-}
-
-MaybeError Device::SubmitPendingCommandBuffer() {
-    if (!mCommandContext.NeedsSubmit()) {
-        return {};
-    }
-
-    IncrementLastSubmittedCommandSerial();
-
-    // Acquire the pending command buffer, which is retained. It must be released later.
-    NSPRef<id<MTLCommandBuffer>> pendingCommands = mCommandContext.AcquireCommands();
-
-    // Replace mLastSubmittedCommands with the mutex held so we avoid races between the
-    // schedule handler and this code.
-    {
-        std::lock_guard<std::mutex> lock(mLastSubmittedCommandsMutex);
-        mLastSubmittedCommands = pendingCommands;
-    }
-
-    // Make a local copy of the pointer to the commands because it's not clear how ObjC blocks
-    // handle types with copy / move constructors being referenced in the block..
-    id<MTLCommandBuffer> pendingCommandsPointer = pendingCommands.Get();
-    [*pendingCommands addScheduledHandler:^(id<MTLCommandBuffer>) {
-        // This is DRF because we hold the mutex for mLastSubmittedCommands and pendingCommands
-        // is a local value (and not the member itself).
-        std::lock_guard<std::mutex> lock(mLastSubmittedCommandsMutex);
-        if (this->mLastSubmittedCommands.Get() == pendingCommandsPointer) {
-            this->mLastSubmittedCommands = nullptr;
-        }
-    }];
-
-    // Update the completed serial once the completed handler is fired. Make a local copy of
-    // mLastSubmittedSerial so it is captured by value.
-    ExecutionSerial pendingSerial = GetLastSubmittedCommandSerial();
-    // this ObjC block runs on a different thread
-    [*pendingCommands addCompletedHandler:^(id<MTLCommandBuffer>) {
-        TRACE_EVENT_ASYNC_END0(GetPlatform(), GPUWork, "DeviceMTL::SubmitPendingCommandBuffer",
-                               uint64_t(pendingSerial));
-        ASSERT(uint64_t(pendingSerial) > mCompletedSerial.load());
-        this->mCompletedSerial = uint64_t(pendingSerial);
-    }];
-
-    TRACE_EVENT_ASYNC_BEGIN0(GetPlatform(), GPUWork, "DeviceMTL::SubmitPendingCommandBuffer",
-                             uint64_t(pendingSerial));
-    if (@available(macOS 10.14, *)) {
-        id rawEvent = *mMtlSharedEvent;
-        id<MTLSharedEvent> sharedEvent = static_cast<id<MTLSharedEvent>>(rawEvent);
-        [*pendingCommands encodeSignalEvent:sharedEvent value:static_cast<uint64_t>(pendingSerial)];
-    }
-    [*pendingCommands commit];
-
-    return mCommandContext.PrepareNextCommandBuffer(*mCommandQueue);
-}
-
-void Device::ExportLastSignaledEvent(ExternalImageMTLSharedEventDescriptor* desc) {
-    // Ensure commands are submitted before getting the last submited serial.
-    // Ignore the error since we still want to export the serial of the last successful
-    // submission - that was the last serial that was actually signaled.
-    ForceEventualFlushOfCommands();
-    DAWN_UNUSED(ConsumedError(SubmitPendingCommandBuffer()));
-
-    desc->sharedEvent = *mMtlSharedEvent;
-    desc->signaledValue = static_cast<uint64_t>(GetLastSubmittedCommandSerial());
+    return ToBackend(GetQueue())->GetPendingCommandContext(submitMode);
 }
 
 MaybeError Device::CopyFromStagingToBufferImpl(BufferBase* source,
@@ -450,43 +376,10 @@ Ref<Texture> Device::CreateTextureWrappingIOSurface(
     return result;
 }
 
-void Device::WaitForCommandsToBeScheduled() {
-    if (ConsumedError(SubmitPendingCommandBuffer())) {
-        return;
-    }
-
-    // Only lock the object while we take a reference to it, otherwise we could block further
-    // progress if the driver calls the scheduled handler (which also acquires the lock) before
-    // finishing the waitUntilScheduled.
-    NSPRef<id<MTLCommandBuffer>> lastSubmittedCommands;
-    {
-        std::lock_guard<std::mutex> lock(mLastSubmittedCommandsMutex);
-        lastSubmittedCommands = mLastSubmittedCommands;
-    }
-    [*lastSubmittedCommands waitUntilScheduled];
-}
-
-MaybeError Device::WaitForIdleForDestruction() {
-    // Forget all pending commands.
-    mCommandContext.AcquireCommands();
-    DAWN_TRY(CheckPassedSerials());
-
-    // Wait for all commands to be finished so we can free resources
-    while (GetCompletedCommandSerial() != GetLastSubmittedCommandSerial()) {
-        usleep(100);
-        DAWN_TRY(CheckPassedSerials());
-    }
-
-    return {};
-}
-
 void Device::DestroyImpl() {
     ASSERT(GetState() == State::Disconnected);
 
-    // Forget all pending commands.
-    mCommandContext.AcquireCommands();
-
-    mCommandQueue = nullptr;
+    GetQueue()->Destroy();
     mMtlDevice = nullptr;
     mMockBlitMtlBuffer = nullptr;
 }
@@ -501,6 +394,10 @@ uint64_t Device::GetOptimalBufferToTextureCopyOffsetAlignment() const {
 
 float Device::GetTimestampPeriodInNS() const {
     return mTimestampPeriod;
+}
+
+bool Device::IsResolveTextureBlitWithDrawSupported() const {
+    return true;
 }
 
 bool Device::UseCounterSamplingAtCommandBoundary() const {

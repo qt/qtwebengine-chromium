@@ -32,34 +32,31 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-import type * as TextUtils from '../../models/text_utils/text_utils.js';
+import type * as ProtocolProxyApi from '../../generated/protocol-proxy-api.js';
+import * as Protocol from '../../generated/protocol.js';
+import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Common from '../common/common.js';
+import {type Serializer} from '../common/Settings.js';
 import * as Host from '../host/host.js';
 import * as i18n from '../i18n/i18n.js';
 import * as Platform from '../platform/platform.js';
-import type * as ProtocolProxyApi from '../../generated/protocol-proxy-api.js';
-import * as Protocol from '../../generated/protocol.js';
 
 import {Cookie} from './Cookie.js';
-
 import {
-  Events as NetworkRequestEvents,
-  NetworkRequest,
   type BlockedCookieWithReason,
   type ContentData,
+  Events as NetworkRequestEvents,
   type ExtraRequestInfo,
   type ExtraResponseInfo,
   type MIME_TYPE,
   type NameValue,
+  NetworkRequest,
   type WebBundleInfo,
   type WebBundleInnerRequestInfo,
 } from './NetworkRequest.js';
-
-import {Capability, type Target} from './Target.js';
 import {SDKModel} from './SDKModel.js';
-
-import {TargetManager, type SDKModelObserver} from './TargetManager.js';
-import {type Serializer} from '../common/Settings.js';
+import {Capability, type Target} from './Target.js';
+import {type SDKModelObserver, TargetManager} from './TargetManager.js';
 
 const UIStrings = {
   /**
@@ -95,13 +92,6 @@ const UIStrings = {
    *@example {https://example.com} PH1
    */
   requestWasBlockedByDevtoolsS: 'Request was blocked by DevTools: "{PH1}"',
-  /**
-   *@description Text in Network Manager
-   *@example {https://example.com} PH1
-   *@example {application} PH2
-   */
-  crossoriginReadBlockingCorb:
-      'Cross-Origin Read Blocking (CORB) blocked cross-origin response {PH1} with MIME type {PH2}. See https://www.chromestatus.com/feature/5629709824032768 for more details.',
   /**
    *@description Message in Network Manager
    *@example {XHR} PH1
@@ -190,7 +180,7 @@ export class NetworkManager extends SDKModel<EventTypes> {
     }
     const response = await manager.#networkAgent.invoke_searchInResponseBody(
         {requestId, query: query, caseSensitive: caseSensitive, isRegex: isRegex});
-    return response.result || [];
+    return TextUtils.TextUtils.performSearchInSearchMatches(response.result || [], query, caseSensitive, isRegex);
   }
 
   static async requestContentData(request: NetworkRequest): Promise<ContentData> {
@@ -715,8 +705,7 @@ export class NetworkDispatcher implements ProtocolProxyApi.NetworkDispatcher {
     this.updateNetworkRequest(networkRequest);
   }
 
-  loadingFinished({requestId, timestamp: finishTime, encodedDataLength, shouldReportCorbBlocking}:
-                      Protocol.Network.LoadingFinishedEvent): void {
+  loadingFinished({requestId, timestamp: finishTime, encodedDataLength}: Protocol.Network.LoadingFinishedEvent): void {
     let networkRequest: NetworkRequest|null|undefined = this.#requestsById.get(requestId);
     if (!networkRequest) {
       networkRequest = this.maybeAdoptMainResourceRequest(requestId);
@@ -725,7 +714,7 @@ export class NetworkDispatcher implements ProtocolProxyApi.NetworkDispatcher {
       return;
     }
     this.getExtraInfoBuilder(requestId).finished();
-    this.finishNetworkRequest(networkRequest, finishTime, encodedDataLength, shouldReportCorbBlocking);
+    this.finishNetworkRequest(networkRequest, finishTime, encodedDataLength);
     this.#manager.dispatchEventToListeners(Events.LoadingFinished, networkRequest);
   }
 
@@ -996,8 +985,10 @@ export class NetworkDispatcher implements ProtocolProxyApi.NetworkDispatcher {
   }
 
   private finishNetworkRequest(
-      networkRequest: NetworkRequest, finishTime: number, encodedDataLength: number,
-      shouldReportCorbBlocking?: boolean): void {
+      networkRequest: NetworkRequest,
+      finishTime: number,
+      encodedDataLength: number,
+      ): void {
     networkRequest.endTime = finishTime;
     networkRequest.finished = true;
     if (encodedDataLength >= 0) {
@@ -1012,13 +1003,6 @@ export class NetworkDispatcher implements ProtocolProxyApi.NetworkDispatcher {
     }
     this.#manager.dispatchEventToListeners(Events.RequestFinished, networkRequest);
     MultitargetNetworkManager.instance().inflightMainResourceRequests.delete(networkRequest.requestId());
-
-    if (shouldReportCorbBlocking) {
-      const message =
-          i18nString(UIStrings.crossoriginReadBlockingCorb, {PH1: networkRequest.url(), PH2: networkRequest.mimeType});
-      this.#manager.dispatchEventToListeners(
-          Events.MessageGenerated, {message: message, requestId: networkRequest.requestId(), warning: true});
-    }
 
     if (Common.Settings.Settings.instance().moduleSetting('monitoringXHREnabled').get() &&
         networkRequest.resourceType().category() === Common.ResourceType.resourceCategories.XHR) {
@@ -1481,7 +1465,7 @@ export class MultitargetNetworkManager extends Common.ObjectWrapper.ObjectWrappe
 
   setInterceptionHandlerForPatterns(
       patterns: InterceptionPattern[], requestInterceptor: (arg0: InterceptedRequest) => Promise<void>): Promise<void> {
-    // Note: requestInterceptors may recieve interception #requests for patterns they did not subscribe to.
+    // Note: requestInterceptors may receive interception #requests for patterns they did not subscribe to.
     this.#urlsForRequestInterceptor.deleteAll(requestInterceptor);
     for (const newPattern of patterns) {
       this.#urlsForRequestInterceptor.set(requestInterceptor, newPattern);
@@ -1706,6 +1690,7 @@ export class InterceptedRequest {
       const setCookieHeadersFromOverrides = responseHeaders.filter(header => header.name === 'set-cookie');
       this.networkRequest.setCookieHeaders =
           InterceptedRequest.mergeSetCookieHeaders(originalSetCookieHeaders, setCookieHeadersFromOverrides);
+      this.networkRequest.hasOverriddenContent = isBodyOverridden;
     }
 
     void this.#fetchAgent.invoke_fulfillRequest({requestId: this.requestId, responseCode, body, responseHeaders});

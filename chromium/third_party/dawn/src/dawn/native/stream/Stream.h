@@ -31,6 +31,11 @@
 #include "dawn/native/stream/Sink.h"
 #include "dawn/native/stream/Source.h"
 
+namespace dawn::ityp {
+template <typename Index, size_t N>
+class bitset;
+}  // namespace dawn::ityp
+
 namespace dawn::native::stream {
 
 // Base Stream template for specialization. Specializations may define static methods:
@@ -144,6 +149,13 @@ class Stream<std::bitset<N>, std::enable_if_t<!detail::BitsetSupportsToUllong(N)
         }
         return {};
     }
+};
+
+template <typename Index, size_t N>
+class Stream<ityp::bitset<Index, N>> {
+  public:
+    static void Write(Sink* s, const ityp::bitset<Index, N>& v) { StreamIn(s, v.AsBase()); }
+    static MaybeError Read(Source* s, ityp::bitset<Index, N>* v) { StreamOut(s, &v->AsBase()); }
 };
 
 // Stream specialization for enums.
@@ -301,6 +313,19 @@ class Stream<std::unordered_map<K, V>> {
             ordered.begin(), ordered.end(),
             [](const std::pair<K, V>& a, const std::pair<K, V>& b) { return a.first < b.first; });
         StreamIn(sink, ordered);
+    }
+    static MaybeError Read(Source* s, std::unordered_map<K, V>* m) {
+        using SizeT = decltype(std::declval<std::vector<std::pair<K, V>>>().size());
+        SizeT size;
+        DAWN_TRY(StreamOut(s, &size));
+        *m = {};
+        m->reserve(size);
+        for (SizeT i = 0; i < size; ++i) {
+            std::pair<K, V> p;
+            DAWN_TRY(StreamOut(s, &p));
+            m->insert(std::move(p));
+        }
+        return {};
     }
 };
 

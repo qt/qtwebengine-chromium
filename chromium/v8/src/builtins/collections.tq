@@ -42,10 +42,22 @@ extern macro CollectionsBuiltinsAssembler::TableHasKey(
 extern macro CollectionsBuiltinsAssembler::TableHasKey(
     implicit context: Context)(OrderedHashMap, Object): bool;
 
+extern macro CollectionsBuiltinsAssembler::DeleteFromSetTable(
+    implicit context: Context)(OrderedHashSet, Object): Smi labels NotFound;
+
+extern runtime OrderedHashSetShrink(implicit context: Context)(OrderedHashSet):
+    OrderedHashSet;
+
 // Direct iteration helpers.
 @export
 struct KeyIndexPair {
   key: JSAny;
+  index: intptr;
+}
+
+@export
+struct OrderedHashSetIndexPair {
+  table: OrderedHashSet;
   index: intptr;
 }
 
@@ -66,17 +78,25 @@ struct UnmodifiedOrderedHashSetIterator {
   current: KeyIndexPair;
 }
 
+extern macro CollectionsBuiltinsAssembler::TransitionOrderedHashSetNoUpdate(
+    OrderedHashSet, intptr): OrderedHashSetIndexPair;
+
 extern macro CollectionsBuiltinsAssembler::NextKeyIndexPair(
     OrderedHashSet, intptr): KeyIndexPair labels Done;
 
 // The underlying table can be resized during iteration.
 struct OrderedHashSetIterator {
   macro Next(): JSAny labels Done {
+    // Transition the table and index in case it was modified during iteration.
+    const tableAndIndex =
+        TransitionOrderedHashSetNoUpdate(this.table, this.current.index);
+    this.table = tableAndIndex.table;
+    this.current.index = tableAndIndex.index;
     this.current = NextKeyIndexPair(this.table, this.current.index)
         otherwise Done;
     return this.current.key;
   }
-  const table: OrderedHashSet;
+  table: OrderedHashSet;
   current: KeyIndexPair;
 }
 
@@ -106,16 +126,19 @@ macro NewUnmodifiedOrderedHashSetIterator(table: OrderedHashSet):
     numBuckets: numBuckets,
     usedCapacity: usedCapacity,
     current: KeyIndexPair {
-      key: Undefined, index: 0
+      key:
+        Undefined, index: 0
     }
   };
 }
 
-macro NewOrderedHashSetIterator(table: OrderedHashSet): OrderedHashSetIterator {
+macro NewOrderedHashSetIterator(table: OrderedHashSet):
+    OrderedHashSetIterator {
   return OrderedHashSetIterator{
     table: table,
     current: KeyIndexPair {
-      key: Undefined, index: 0
+      key:
+        Undefined, index: 0
     }
   };
 }
@@ -127,11 +150,18 @@ struct KeyValueIndexTuple {
   index: intptr;
 }
 extern macro
-CollectionsBuiltinsAssembler::NextKeyValueIndexTupleUnmodifiedTable(
-    OrderedHashMap, int32, int32, intptr): KeyValueIndexTuple labels Done;
+    CollectionsBuiltinsAssembler::NextKeyValueIndexTupleUnmodifiedTable(
+        OrderedHashMap, int32, int32, intptr): KeyValueIndexTuple labels Done;
 
 extern macro CollectionsBuiltinsAssembler::NextKeyValueIndexTuple(
     OrderedHashMap, intptr): KeyValueIndexTuple labels Done;
+
+extern macro
+    CollectionsBuiltinsAssembler::UnsafeStoreValueInOrderedHashMapEntry(
+        OrderedHashMap, Object, intptr): void;
+
+const kOrderedHashMapEntrySize:
+    constexpr int32 generates 'OrderedHashMap::kEntrySize';
 
 // The underlying table must not be resized during iteration!
 struct UnmodifiedOrderedHashMapIterator {
@@ -141,6 +171,19 @@ struct UnmodifiedOrderedHashMapIterator {
         otherwise Done;
     return KeyValuePair{key: this.current.key, value: this.current.value};
   }
+
+  macro UnsafeStoreValueAtCurrentEntry(value: Object): void {
+    // There is no current entry if the iterator is not yet advanced. The
+    // current entry is at the previous index, as we've already advanced the
+    // index.
+    dcheck(this.current.index > 0);
+    const entry =
+        (Convert<int32>(this.current.index) - 1) * kOrderedHashMapEntrySize +
+        this.numBuckets;
+    UnsafeStoreValueInOrderedHashMapEntry(
+        this.table, value, Convert<intptr>(entry));
+  }
+
   const table: OrderedHashMap;
   const numBuckets: int32;
   const usedCapacity: int32;
@@ -168,7 +211,8 @@ macro NewUnmodifiedOrderedHashMapIterator(table: OrderedHashMap):
     numBuckets: numBuckets,
     usedCapacity: usedCapacity,
     current: KeyValueIndexTuple {
-      key: Undefined, value: Undefined, index: 0
+      key:
+        Undefined, value: Undefined, index: 0
     }
   };
 }
@@ -223,8 +267,9 @@ transitioning macro LoadKeyValuePair(implicit context: Context)(o: JSAny):
 }
 
 // https://tc39.es/proposal-set-methods/#sec-getsetrecord
-transitioning macro GetSetRecord(implicit context: Context)(
-    obj: JSAny, methodName: constexpr string): SetRecord {
+transitioning macro GetSetRecord(
+    implicit context: Context)(obj: JSAny,
+    methodName: constexpr string): SetRecord {
   // 1. If obj is not an Object, throw a TypeError exception.
   const obj = Cast<JSReceiver>(obj)
       otherwise ThrowTypeError(MessageTemplate::kArgumentIsNonObject, methodName);
@@ -263,8 +308,9 @@ transitioning macro GetSetRecord(implicit context: Context)(
 }
 
 // https://tc39.es/proposal-set-methods/#sec-getkeysiterator
-transitioning macro GetKeysIterator(implicit context: Context)(
-    set: JSReceiver, keys: Callable): iterator::IteratorRecord {
+transitioning macro GetKeysIterator(
+    implicit context: Context)(set: JSReceiver,
+    keys: Callable): iterator::IteratorRecord {
   // 1. Let keysIter be ? Call(setRec.[[Keys]], setRec.[[Set]]).
   const keysIter = Call(context, keys, set);
 
@@ -312,26 +358,21 @@ macro CheckSetRecordHasJSMapMethods(setRecord: SetRecord):
     goto HasUserProvidedMethods;
 }
 
-macro FastIntersect<T : type extends FixedArray>(implicit context: Context)(
-    collectionToIterate: OrderedHashSet, table: T, methodName: String,
+macro ShrinkOrderedHashSetIfNeeded(
+    implicit context: Context)(numberOfElements: Smi,
     resultSetData: OrderedHashSet): OrderedHashSet {
-  let result = Cast<OrderedHashSet>(
-      CloneFixedArray(resultSetData, ExtractFixedArrayFlag::kFixedArrays))
-      otherwise unreachable;
+  dcheck(
+      Convert<int32>(numberOfElements) ==
+      LoadOrderedHashTableMetadata(
+          resultSetData, kOrderedHashSetNumberOfElementsIndex));
+  let result = resultSetData;
 
-  let iter =
-      collections::NewUnmodifiedOrderedHashSetIterator(collectionToIterate);
-  try {
-    while (true) {
-      const nextValue = iter.Next() otherwise Done;
-
-      if (TableHasKey(table, nextValue)) {
-        result = AddToSetTable(result, nextValue, methodName);
-      }
-    }
-  } label Done {
-    return result;
+  // Shrink the result table if # of element is less than # buckets/2
+  const numberOfBuckets =
+      LoadOrderedHashTableMetadata(result, kOrderedHashSetNumberOfBucketsIndex);
+  if (Convert<int32>(numberOfElements) < (numberOfBuckets / 2)) {
+    result = OrderedHashSetShrink(result);
   }
-  unreachable;
+  return result;
 }
 }

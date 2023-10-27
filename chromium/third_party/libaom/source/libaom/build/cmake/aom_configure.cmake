@@ -13,8 +13,6 @@ if(AOM_BUILD_CMAKE_AOM_CONFIGURE_CMAKE_)
 endif() # AOM_BUILD_CMAKE_AOM_CONFIGURE_CMAKE_
 set(AOM_BUILD_CMAKE_AOM_CONFIGURE_CMAKE_ 1)
 
-include(FindGit)
-include(FindPerl)
 include(FindThreads)
 
 include("${AOM_ROOT}/build/cmake/aom_config_defaults.cmake")
@@ -214,7 +212,6 @@ elseif(AOM_TARGET_CPU MATCHES "arm")
 endif()
 
 if(CONFIG_ANALYZER)
-  include(FindwxWidgets)
   find_package(wxWidgets REQUIRED adv base core)
   include(${wxWidgets_USE_FILE})
 endif()

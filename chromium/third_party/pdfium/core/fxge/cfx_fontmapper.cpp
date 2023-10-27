@@ -26,7 +26,6 @@
 #include "core/fxge/systemfontinfo_iface.h"
 #include "third_party/base/check_op.h"
 #include "third_party/base/containers/contains.h"
-#include "third_party/base/cxx17_backports.h"
 
 namespace {
 
@@ -461,7 +460,7 @@ void CFX_FontMapper::AddInstalledFont(const ByteString& name,
     ScopedFontDeleter scoped_font(m_pFontInfo.get(), font_handle);
     ByteString new_name = GetPSNameFromTT(font_handle);
     if (!new_name.IsEmpty())
-      m_LocalizedTTFonts.push_back(std::make_pair(new_name, name));
+      m_LocalizedTTFonts.emplace_back(new_name, name);
   }
   m_InstalledTTFonts.push_back(name);
   m_LastFamily = name;

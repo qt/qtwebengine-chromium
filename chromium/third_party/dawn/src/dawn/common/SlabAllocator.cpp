@@ -196,7 +196,6 @@ void SlabAllocatorImpl::Deallocate(void* ptr) {
     ASSERT(slab != nullptr);
 
     bool slabWasFull = slab->blocksInUse == mBlocksPerSlab;
-
     ASSERT(slab->blocksInUse != 0);
     PushFront(slab, node);
 

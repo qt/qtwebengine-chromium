@@ -93,7 +93,7 @@ struct AspectInfo {
 
 // The number of formats Dawn knows about. Asserts in BuildFormatTable ensure that this is the
 // exact number of known format.
-static constexpr uint32_t kKnownFormatCount = 95;
+static constexpr uint32_t kKnownFormatCount = 102;
 
 using FormatIndex = TypedInteger<struct FormatIndexT, uint32_t>;
 
@@ -112,6 +112,7 @@ struct Format {
     // A format can be known but not supported because it is part of a disabled extension.
     UnsupportedReason unsupportedReason;
     bool supportsStorageUsage = false;
+    bool supportsReadWriteStorageUsage = false;
     bool supportsMultisample = false;
     bool supportsResolveTarget = false;
     Aspect aspects{};
@@ -126,6 +127,7 @@ struct Format {
     bool HasStencil() const;
     bool HasDepthOrStencil() const;
     bool HasAlphaChannel() const;
+    bool IsSnorm() const;
 
     // IsMultiPlanar() returns true if the format allows selecting a plane index. This is only
     // allowed by multi-planar formats (ex. NV12).
@@ -150,6 +152,9 @@ struct Format {
     // Returns true if the formats are texture view format compatible.
     // Currently means they differ only in sRGB-ness.
     bool ViewCompatibleWith(const Format& otherFormat) const;
+
+    // Returns the aspect's size given the texture's size.
+    Extent3D GetAspectSize(Aspect aspect, const Extent3D& textureSize) const;
 
   private:
     // Used to store the aspectInfo for one or more planes. For single plane "color" formats,

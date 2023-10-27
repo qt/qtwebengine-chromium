@@ -69,7 +69,6 @@ function getHeadlessEnvVar(headless) {
     }
 }
 function createStatusReport(results) {
-    var _a;
     const table = new Table({
         head: ['Title', 'Status', 'File', 'Duration'],
         chars: {
@@ -96,7 +95,7 @@ function createStatusReport(results) {
     const resultTextColor = white;
     for (const result of results) {
         const row = [];
-        const duration = ((_a = result.finishedAt) === null || _a === void 0 ? void 0 : _a.getTime()) - result.startedAt.getTime() || 0;
+        const duration = result.finishedAt?.getTime() - result.startedAt.getTime() || 0;
         const status = result.success
             ? resultTextColor(bgGreen(' Success '))
             : resultTextColor(bgRed(' Failure '));
@@ -138,7 +137,7 @@ async function runFiles(files, opts = {
             result.title = recording.title;
             const { default: puppeteer } = await import('puppeteer');
             browser = await puppeteer.launch({
-                headless: opts.headless,
+                headless: opts.headless ? 'new' : false,
             });
             const page = await browser.newPage();
             const extension = new Extension(browser, page);
@@ -153,7 +152,7 @@ async function runFiles(files, opts = {
         finally {
             result.finishedAt = new Date();
             results.push(result);
-            await (browser === null || browser === void 0 ? void 0 : browser.close());
+            await browser?.close();
         }
     }
     if (opts.log) {

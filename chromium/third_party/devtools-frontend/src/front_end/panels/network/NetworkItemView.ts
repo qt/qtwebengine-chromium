@@ -35,16 +35,16 @@ import * as SDK from '../../core/sdk/sdk.js';
 import * as NetworkForward from '../../panels/network/forward/forward.js';
 import * as IconButton from '../../ui/components/icon_button/icon_button.js';
 import * as LegacyWrapper from '../../ui/components/legacy_wrapper/legacy_wrapper.js';
+import type * as SourceFrame from '../../ui/legacy/components/source_frame/source_frame.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
 import * as NetworkComponents from './components/components.js';
 import {EventSourceMessagesView} from './EventSourceMessagesView.js';
-
 import {type NetworkTimeCalculator} from './NetworkTimeCalculator.js';
 import {RequestCookiesView} from './RequestCookiesView.js';
 import {RequestHeadersView} from './RequestHeadersView.js';
-import {RequestPayloadView} from './RequestPayloadView.js';
 import {RequestInitiatorView} from './RequestInitiatorView.js';
+import {RequestPayloadView} from './RequestPayloadView.js';
 import {RequestPreviewView} from './RequestPreviewView.js';
 import {RequestResponseView} from './RequestResponseView.js';
 import {RequestTimingView} from './RequestTimingView.js';
@@ -114,7 +114,7 @@ const UIStrings = {
   /**
    *@description Label of a tab in the network panel. Previously known as 'Trust Tokens'.
    */
-  trustTokens: 'Private State Tokens',
+  trustTokens: 'Private state tokens',
   /**
    *@description Title of the Private State Token tab in the Network panel. Previously known as 'Trust Token tab'.
    */
@@ -159,6 +159,12 @@ export class NetworkItemView extends UI.TabbedPane.TabbedPane {
           headersTab, i18nString(UIStrings.headers),
           LegacyWrapper.LegacyWrapper.legacyWrapper(UI.Widget.VBox, this.headersViewComponent),
           i18nString(UIStrings.headers));
+
+      if (this.requestInternal.hasOverriddenHeaders()) {
+        const icon = new IconButton.Icon.Icon();
+        icon.data = {iconName: 'small-status-dot', color: 'var(--color-purple-bright)', width: '16px', height: '16px'};
+        this.setTabIcon(NetworkForward.UIRequestLocation.UIRequestTabs.HeadersComponent, icon);
+      }
     } else {
       this.appendTab(headersTab, i18nString(UIStrings.headers), this.headersView, i18nString(UIStrings.headers));
     }
@@ -193,6 +199,12 @@ export class NetworkItemView extends UI.TabbedPane.TabbedPane {
       this.appendTab(
           NetworkForward.UIRequestLocation.UIRequestTabs.Response, i18nString(UIStrings.response), this.responseView,
           i18nString(UIStrings.rawResponseData));
+
+      if (this.requestInternal.hasOverriddenContent) {
+        const icon = new IconButton.Icon.Icon();
+        icon.data = {iconName: 'small-status-dot', color: 'var(--color-purple-bright)', width: '16px', height: '16px'};
+        this.setTabIcon(NetworkForward.UIRequestLocation.UIRequestTabs.Response, icon);
+      }
     }
 
     this.appendTab(
@@ -310,11 +322,9 @@ export class NetworkItemView extends UI.TabbedPane.TabbedPane {
     return this.requestInternal;
   }
 
-  async revealResponseBody(line?: number): Promise<void> {
+  async revealResponseBody(position: SourceFrame.SourceFrame.RevealPosition): Promise<void> {
     this.selectTabInternal(NetworkForward.UIRequestLocation.UIRequestTabs.Response);
-    if (this.responseView && typeof line === 'number') {
-      await this.responseView.revealLine((line as number));
-    }
+    await this.responseView?.revealPosition(position);
   }
 
   revealHeader(section: NetworkForward.UIRequestLocation.UIHeaderSection, header: string|undefined): void {

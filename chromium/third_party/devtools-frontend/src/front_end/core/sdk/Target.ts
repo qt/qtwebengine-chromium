@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 import * as Common from '../common/common.js';
-import * as Host from '../host/host.js';
 import * as Platform from '../platform/platform.js';
 import * as ProtocolClient from '../protocol_client/protocol_client.js';
 import type * as Protocol from '../../generated/protocol.js';
@@ -64,6 +63,9 @@ export class Target extends ProtocolClient.InspectorBackend.TargetBase {
         this.#capabilitiesMask = Capability.JS | Capability.Log | Capability.Network | Capability.Target |
             Capability.IO | Capability.Media | Capability.Inspector;
         break;
+      case Type.SharedStorageWorklet:
+        this.#capabilitiesMask = Capability.JS | Capability.Log | Capability.Inspector;
+        break;
       case Type.Worker:
         this.#capabilitiesMask = Capability.JS | Capability.Log | Capability.Network | Capability.Target |
             Capability.IO | Capability.Media | Capability.Emulation;
@@ -78,7 +80,7 @@ export class Target extends ProtocolClient.InspectorBackend.TargetBase {
         this.#capabilitiesMask = Capability.Target | Capability.IO;
         break;
       case Type.Tab:
-        this.#capabilitiesMask = Capability.Target;
+        this.#capabilitiesMask = Capability.Target | Capability.Tracing;
         break;
     }
     this.#typeInternal = type;
@@ -202,10 +204,6 @@ export class Target extends ProtocolClient.InspectorBackend.TargetBase {
     this.#inspectedURLInternal = inspectedURL;
     const parsedURL = Common.ParsedURL.ParsedURL.fromString(inspectedURL);
     this.#inspectedURLName = parsedURL ? parsedURL.lastPathComponentWithFragment() : '#' + this.#idInternal;
-    if (this.parentTarget()?.type() !== Type.Frame) {
-      Host.InspectorFrontendHost.InspectorFrontendHostInstance.inspectedURLChanged(
-          inspectedURL || Platform.DevToolsPath.EmptyUrlString);
-    }
     this.#targetManagerInternal.onInspectedURLChange(this);
     if (!this.#nameInternal) {
       this.#targetManagerInternal.onNameChange(this);
@@ -252,6 +250,7 @@ export enum Type {
   ServiceWorker = 'service-worker',
   Worker = 'worker',
   SharedWorker = 'shared-worker',
+  SharedStorageWorklet = 'shared-storage-worklet',
   Node = 'node',
   Browser = 'browser',
   AuctionWorklet = 'auction-worklet',

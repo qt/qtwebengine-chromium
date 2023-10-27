@@ -50,6 +50,17 @@ cc_library(
     ],
 )
 
+cc_test(
+    name = "backend_test",
+    srcs = ["backend_test.cc"],
+    deps = [
+        ":antlr_frontend",
+        ":backend",
+        ":grammar_info",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_library(
     name = "code_generation",
     srcs = ["code_generation.cc"],
@@ -65,7 +76,7 @@ cc_test(
     srcs = ["code_generation_test.cc"],
     data = [
         "testdata/expected_json_grammar.h",
-        "@com_google_fuzztest//grammars:JSON.g4",
+        "@com_google_fuzztest//fuzztest/grammars:JSON.g4",
     ],
     deps = [
         ":code_generation",

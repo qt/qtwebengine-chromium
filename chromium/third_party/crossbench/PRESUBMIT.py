@@ -76,7 +76,7 @@ def CheckChange(input_api, output_api, on_commit):
             name="pytype",
             cmd=[
                 input_api.python3_executable, "-m", "pytype", "--keep-going",
-                "--jobs=auto",
+                "--jobs=auto", "--overriding-parameter-count-checks",
                 str(testing_path / "crossbench"),
                 str(testing_path / "tests")
             ],

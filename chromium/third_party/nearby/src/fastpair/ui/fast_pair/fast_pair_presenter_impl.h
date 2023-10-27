@@ -17,8 +17,8 @@
 
 #include <memory>
 
+#include "fastpair/common/device_metadata.h"
 #include "fastpair/common/fast_pair_device.h"
-#include "fastpair/repository/device_metadata.h"
 #include "fastpair/ui/fast_pair/fast_pair_notification_controller.h"
 #include "fastpair/ui/fast_pair/fast_pair_presenter.h"
 
@@ -48,13 +48,10 @@ class FastPairPresenterImpl : public FastPairPresenter {
   void ShowDiscovery(FastPairDevice& device,
                      FastPairNotificationController& notification_controller,
                      DiscoveryCallback callback) override;
-
- private:
-  // observer_list of notification_controller is updated
-  void OnDiscoveryMetadataRetrieved(
-      FastPairDevice& device, const DeviceMetadata& device_metadata,
-      FastPairNotificationController& notification_controller);
-  DiscoveryCallback callback_;
+  void ShowPairingResult(
+      FastPairDevice& device,
+      FastPairNotificationController& notification_controller,
+      bool success) override;
 };
 }  // namespace fastpair
 }  // namespace nearby

@@ -107,7 +107,7 @@ Return FindStorageBufferBindingAliasing(
     StackVector<std::pair<BindGroupIndex, BindingIndex>, 8> textureBindingIndices;
 
     for (BindGroupIndex groupIndex : IterateBitSet(pipelineLayout->GetBindGroupLayoutsMask())) {
-        BindGroupLayoutBase* bgl = bindGroups[groupIndex]->GetLayout();
+        BindGroupLayoutInternalBase* bgl = bindGroups[groupIndex]->GetLayout();
 
         for (BindingIndex bindingIndex{0}; bindingIndex < bgl->GetBufferCount(); ++bindingIndex) {
             const BindingInfo& bindingInfo = bgl->GetBindingInfo(bindingIndex);
@@ -156,8 +156,11 @@ Return FindStorageBufferBindingAliasing(
 
             switch (bindingInfo.storageTexture.access) {
                 case wgpu::StorageTextureAccess::WriteOnly:
+                case wgpu::StorageTextureAccess::ReadWrite:
                     break;
-                // Continue for other StorageTextureAccess type when we have any.
+                case wgpu::StorageTextureAccess::ReadOnly:
+                    continue;
+                case wgpu::StorageTextureAccess::Undefined:
                 default:
                     UNREACHABLE();
             }
@@ -340,7 +343,7 @@ MaybeError CommandBufferStateTracker::ValidateNoDifferentTextureViewsOnSameTextu
     for (BindGroupIndex groupIndex :
          IterateBitSet(mLastPipelineLayout->GetBindGroupLayoutsMask())) {
         BindGroupBase* bindGroup = mBindgroups[groupIndex];
-        BindGroupLayoutBase* bgl = bindGroup->GetLayout();
+        BindGroupLayoutInternalBase* bgl = bindGroup->GetLayout();
 
         for (BindingIndex bindingIndex{0}; bindingIndex < bgl->GetBindingCount(); ++bindingIndex) {
             const BindingInfo& bindingInfo = bgl->GetBindingInfo(bindingIndex);
@@ -495,6 +498,9 @@ MaybeError CommandBufferStateTracker::ValidateOperation(ValidationAspects requir
 
     DAWN_TRY(CheckMissingAspects(requiredAspects & ~mAspects));
 
+    // Validation for kMaxBindGroupsPlusVertexBuffers is skipped because it is not necessary so far.
+    static_assert(kMaxBindGroups + kMaxVertexBuffers <= kMaxBindGroupsPlusVertexBuffers);
+
     return {};
 }
 
@@ -602,8 +608,8 @@ MaybeError CommandBufferStateTracker::CheckMissingAspects(ValidationAspects aspe
             DAWN_INVALID_IF(mBindgroups[i] == nullptr, "No bind group set at group index %u.",
                             static_cast<uint32_t>(i));
 
-            BindGroupLayoutBase* requiredBGL = mLastPipelineLayout->GetBindGroupLayout(i);
-            BindGroupLayoutBase* currentBGL = mBindgroups[i]->GetLayout();
+            BindGroupLayoutBase* requiredBGL = mLastPipelineLayout->GetFrontendBindGroupLayout(i);
+            BindGroupLayoutBase* currentBGL = mBindgroups[i]->GetFrontendLayout();
 
             DAWN_INVALID_IF(
                 requiredBGL->GetPipelineCompatibilityToken() != PipelineCompatibilityToken(0) &&
@@ -629,7 +635,8 @@ MaybeError CommandBufferStateTracker::CheckMissingAspects(ValidationAspects aspe
                 mBindgroups[i], static_cast<uint32_t>(i), currentBGL, mLastPipeline);
 
             DAWN_INVALID_IF(
-                mLastPipelineLayout->GetBindGroupLayout(i) != mBindgroups[i]->GetLayout(),
+                requiredBGL->GetInternalBindGroupLayout() !=
+                    currentBGL->GetInternalBindGroupLayout(),
                 "Bind group layout %s of pipeline layout %s does not match layout %s of bind "
                 "group %s set at group index %u.",
                 requiredBGL, mLastPipelineLayout, currentBGL, mBindgroups[i],

@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -74,12 +74,12 @@ class DnsSdInstanceEndpoint : public DnsSdInstance {
             std::move(types)...) {}
 
   DnsSdInstanceEndpoint(const DnsSdInstanceEndpoint& other);
-  DnsSdInstanceEndpoint(DnsSdInstanceEndpoint&& other);
+  DnsSdInstanceEndpoint(DnsSdInstanceEndpoint&& other) noexcept;
 
   ~DnsSdInstanceEndpoint() override;
 
   DnsSdInstanceEndpoint& operator=(const DnsSdInstanceEndpoint& rhs);
-  DnsSdInstanceEndpoint& operator=(DnsSdInstanceEndpoint&& rhs);
+  DnsSdInstanceEndpoint& operator=(DnsSdInstanceEndpoint&& rhs) noexcept;
 
   // Returns the address associated with this DNS-SD record. In any valid
   // record, at least one will be set.

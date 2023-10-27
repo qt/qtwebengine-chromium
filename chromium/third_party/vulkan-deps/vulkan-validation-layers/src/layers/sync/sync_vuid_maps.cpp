@@ -16,22 +16,19 @@
  * limitations under the License.
  */
 #include "sync/sync_vuid_maps.h"
-#include "sync/sync_utils.h"
-#include "error_message/core_error_location.h"
+#include "error_message/error_location.h"
 #include "core_checks/core_validation.h"
 #include "generated/enum_flag_bits.h"
 
 #include <cassert>
-#include <array>
-#include <vector>
 
 namespace sync_vuid_maps {
-using core_error::Entry;
-using core_error::Field;
-using core_error::FindVUID;
-using core_error::Func;
-using core_error::Key;
-using core_error::Struct;
+using vvl::Entry;
+using vvl::Field;
+using vvl::FindVUID;
+using vvl::Func;
+using vvl::Key;
+using vvl::Struct;
 
 const std::map<VkPipelineStageFlags2KHR, std::string> kFeatureNameMap{
     {VK_PIPELINE_STAGE_2_GEOMETRY_SHADER_BIT_KHR, "geometryShader"},
@@ -247,7 +244,7 @@ static const std::map<VkPipelineStageFlags2KHR, std::vector<Entry>> kStageMaskEr
      }},
 };
 
-static const std::array<Entry, 12> kStageMaskErrorsNoneWithSync2{{
+static const std::array<Entry, 12> kStageMaskErrorsNone{{
     {Key(Func::vkCmdPipelineBarrier, Field::srcStageMask), "VUID-vkCmdPipelineBarrier-srcStageMask-03937"},
     {Key(Func::vkCmdPipelineBarrier, Field::dstStageMask), "VUID-vkCmdPipelineBarrier-dstStageMask-03937"},
     {Key(Func::vkCmdResetEvent, Field::stageMask), "VUID-vkCmdResetEvent-stageMask-03937"},
@@ -262,46 +259,7 @@ static const std::array<Entry, 12> kStageMaskErrorsNoneWithSync2{{
     {Key(Struct::VkSubpassDependency2, Field::dstStageMask), "VUID-VkSubpassDependency2-dstStageMask-03937"},
 }};
 
-static const std::array<Entry, 12> kStageMaskErrorsNoneWithoutSync2{{
-    {Key(Func::vkCmdPipelineBarrier, Field::srcStageMask), "VUID-vkCmdPipelineBarrier-srcStageMask-04996"},
-    {Key(Func::vkCmdPipelineBarrier, Field::dstStageMask), "VUID-vkCmdPipelineBarrier-dstStageMask-04996"},
-    {Key(Func::vkCmdResetEvent, Field::stageMask), "VUID-vkCmdResetEvent-stageMask-04996"},
-    {Key(Func::vkCmdSetEvent, Field::stageMask), "VUID-vkCmdSetEvent-stageMask-04996"},
-    {Key(Func::vkCmdWaitEvents, Field::srcStageMask), "VUID-vkCmdWaitEvents-srcStageMask-04996"},
-    {Key(Func::vkCmdWaitEvents, Field::dstStageMask), "VUID-vkCmdWaitEvents-dstStageMask-04996"},
-    {Key(Func::vkCmdWriteTimestamp, Field::pipelineStage), "VUID-vkCmdWriteTimestamp-pipelineStage-06490"},
-    {Key(Struct::VkSubmitInfo, Field::pWaitDstStageMask), "VUID-VkSubmitInfo-pWaitDstStageMask-04996"},
-    {Key(Struct::VkSubpassDependency, Field::srcStageMask), "VUID-VkSubpassDependency-srcStageMask-04996"},
-    {Key(Struct::VkSubpassDependency, Field::dstStageMask), "VUID-VkSubpassDependency-dstStageMask-04996"},
-    {Key(Struct::VkSubpassDependency2, Field::srcStageMask), "VUID-VkSubpassDependency2-srcStageMask-04996"},
-    {Key(Struct::VkSubpassDependency2, Field::dstStageMask), "VUID-VkSubpassDependency2-dstStageMask-04996"},
-}};
-
-static const std::array<Entry, 21> kStageMaskErrorsShadingRateKHR{{
-    {Key(Struct::VkBufferMemoryBarrier2, Field::dstStageMask), "VUID-VkBufferMemoryBarrier2-dstStageMask-07317"},
-    {Key(Struct::VkBufferMemoryBarrier2, Field::srcStageMask), "VUID-VkBufferMemoryBarrier2-srcStageMask-07317"},
-    {Key(Func::vkCmdPipelineBarrier, Field::dstStageMask), "VUID-vkCmdPipelineBarrier-dstStageMask-07319"},
-    {Key(Func::vkCmdPipelineBarrier, Field::srcStageMask), "VUID-vkCmdPipelineBarrier-srcStageMask-07319"},
-    {Key(Func::vkCmdResetEvent2, Field::stageMask), "VUID-vkCmdResetEvent2-stageMask-07317"},
-    {Key(Func::vkCmdResetEvent, Field::stageMask), "VUID-vkCmdResetEvent-stageMask-07319"},
-    {Key(Func::vkCmdSetEvent, Field::stageMask), "VUID-vkCmdSetEvent-stageMask-07319"},
-    {Key(Func::vkCmdWaitEvents, Field::dstStageMask), "VUID-vkCmdWaitEvents-dstStageMask-07319"},
-    {Key(Func::vkCmdWaitEvents, Field::srcStageMask), "VUID-vkCmdWaitEvents-srcStageMask-07319"},
-    {Key(Func::vkCmdWriteTimestamp2, Field::stage), "VUID-vkCmdWriteTimestamp2-stage-07317"},
-    {Key(Func::vkCmdWriteTimestamp, Field::pipelineStage), "VUID-vkCmdWriteTimestamp-fragmentShadingRate-07315"},
-    {Key(Struct::VkImageMemoryBarrier2, Field::dstStageMask), "VUID-VkImageMemoryBarrier2-dstStageMask-07317"},
-    {Key(Struct::VkImageMemoryBarrier2, Field::srcStageMask), "VUID-VkImageMemoryBarrier2-srcStageMask-07317"},
-    {Key(Struct::VkMemoryBarrier2, Field::dstStageMask), "VUID-VkMemoryBarrier2-dstStageMask-07317"},
-    {Key(Struct::VkMemoryBarrier2, Field::srcStageMask), "VUID-VkMemoryBarrier2-srcStageMask-07317"},
-    {Key(Struct::VkSemaphoreSubmitInfo, Field::stageMask), "VUID-VkSemaphoreSubmitInfo-stageMask-07317"},
-    {Key(Struct::VkSubmitInfo, Field::pWaitDstStageMask), "VUID-VkSubmitInfo-pWaitDstStageMask-07319"},
-    {Key(Struct::VkSubpassDependency, Field::srcStageMask), "VUID-VkSubpassDependency-srcStageMask-07319"},
-    {Key(Struct::VkSubpassDependency, Field::dstStageMask), "VUID-VkSubpassDependency-dstStageMask-07319"},
-    {Key(Struct::VkSubpassDependency2, Field::srcStageMask), "VUID-VkSubpassDependency2-srcStageMask-07319"},
-    {Key(Struct::VkSubpassDependency2, Field::dstStageMask), "VUID-VkSubpassDependency2-dstStageMask-07319"},
-}};
-
-static const std::array<Entry, 21> kStageMaskErrorsShadingRateKHRAndNV{{
+static const std::array<Entry, 21> kStageMaskErrorsShadingRate{{
     {Key(Struct::VkBufferMemoryBarrier2, Field::dstStageMask), "VUID-VkBufferMemoryBarrier2-dstStageMask-07316"},
     {Key(Struct::VkBufferMemoryBarrier2, Field::srcStageMask), "VUID-VkBufferMemoryBarrier2-srcStageMask-07316"},
     {Key(Func::vkCmdPipelineBarrier, Field::dstStageMask), "VUID-vkCmdPipelineBarrier-dstStageMask-07318"},
@@ -325,45 +283,15 @@ static const std::array<Entry, 21> kStageMaskErrorsShadingRateKHRAndNV{{
     {Key(Struct::VkSubpassDependency2, Field::dstStageMask), "VUID-VkSubpassDependency2-dstStageMask-07318"},
 }};
 
-[[maybe_unused]] static const std::array<Entry, 21> kStageMaskErrorsShadingRateNV{{
-    {Key(Struct::VkBufferMemoryBarrier2, Field::dstStageMask), "VUID-VkBufferMemoryBarrier2-dstStageMask-04956"},
-    {Key(Struct::VkBufferMemoryBarrier2, Field::srcStageMask), "VUID-VkBufferMemoryBarrier2-srcStageMask-04956"},
-    {Key(Func::vkCmdPipelineBarrier, Field::dstStageMask), "VUID-vkCmdPipelineBarrier-dstStageMask-04097"},
-    {Key(Func::vkCmdPipelineBarrier, Field::srcStageMask), "VUID-vkCmdPipelineBarrier-srcStageMask-04097"},
-    {Key(Func::vkCmdResetEvent2, Field::stageMask), "VUID-vkCmdResetEvent2-stageMask-04956"},
-    {Key(Func::vkCmdResetEvent, Field::stageMask), "VUID-vkCmdResetEvent-stageMask-04097"},
-    {Key(Func::vkCmdSetEvent, Field::stageMask), "VUID-vkCmdSetEvent-stageMask-04097"},
-    {Key(Func::vkCmdWaitEvents, Field::dstStageMask), "VUID-vkCmdWaitEvents-dstStageMask-04097"},
-    {Key(Func::vkCmdWaitEvents, Field::srcStageMask), "VUID-vkCmdWaitEvents-srcStageMask-04097"},
-    {Key(Func::vkCmdWriteTimestamp2, Field::stage), "VUID-vkCmdWriteTimestamp2-stage-04956"},
-    {Key(Func::vkCmdWriteTimestamp, Field::pipelineStage), "VUID-vkCmdWriteTimestamp-pipelineStage-04081"},
-    {Key(Struct::VkImageMemoryBarrier2, Field::dstStageMask), "VUID-VkImageMemoryBarrier2-dstStageMask-04956"},
-    {Key(Struct::VkImageMemoryBarrier2, Field::srcStageMask), "VUID-VkImageMemoryBarrier2-srcStageMask-04956"},
-    {Key(Struct::VkMemoryBarrier2, Field::dstStageMask), "VUID-VkMemoryBarrier2-dstStageMask-04956"},
-    {Key(Struct::VkMemoryBarrier2, Field::srcStageMask), "VUID-VkMemoryBarrier2-srcStageMask-04956"},
-    {Key(Struct::VkSemaphoreSubmitInfo, Field::stageMask), "VUID-VkSemaphoreSubmitInfo-stageMask-04956"},
-    {Key(Struct::VkSubmitInfo, Field::pWaitDstStageMask), "VUID-VkSubmitInfo-pWaitDstStageMask-04097"},
-    {Key(Struct::VkSubpassDependency, Field::srcStageMask), "VUID-VkSubpassDependency-srcStageMask-04097"},
-    {Key(Struct::VkSubpassDependency, Field::dstStageMask), "VUID-VkSubpassDependency-dstStageMask-04097"},
-    {Key(Struct::VkSubpassDependency2, Field::srcStageMask), "VUID-VkSubpassDependency2-srcStageMask-04097"},
-    {Key(Struct::VkSubpassDependency2, Field::dstStageMask), "VUID-VkSubpassDependency2-dstStageMask-04097"},
-}};
-
 const std::string &GetBadFeatureVUID(const Location &loc, VkPipelineStageFlags2 bit, const DeviceExtensions &device_extensions) {
     // special case for the NONE stage because it depends on sync2 extension being enabled
     if (bit == VK_PIPELINE_STAGE_2_NONE) {
-        const bool sync2_enabled = IsExtEnabled(device_extensions.vk_khr_synchronization2);
-        return sync2_enabled ? FindVUID(loc, kStageMaskErrorsNoneWithSync2) : FindVUID(loc, kStageMaskErrorsNoneWithoutSync2);
+        return FindVUID(loc, kStageMaskErrorsNone);
     }
 
     // special case for FRAGMENT_SHADING_RATE_ATTACHMENT because it depends on KHR and/or NV extensions being enabled.
-    // NOTE: the kStageMaskErrorsShadingRateNV table above is only for the VUID coverage tooling and corresponding vuids
-    // are not used for reporting. Those vuids can only be found in the NV-but-not-KHR version of the specification, which
-    // is not one of the published documents. Instead the following approach is used: if NV extension is enabled then report
-    // KHR+NV vuid (all extensions spec), otherwise report KHR vuid (khr extensions spec).
     if (bit == VK_PIPELINE_STAGE_2_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR) {
-        const bool nv_enabled = IsExtEnabled(device_extensions.vk_nv_shading_rate_image);
-        return nv_enabled ? FindVUID(loc, kStageMaskErrorsShadingRateKHRAndNV) : FindVUID(loc, kStageMaskErrorsShadingRateKHR);
+        return FindVUID(loc, kStageMaskErrorsShadingRate);
     }
 
     const auto &result = FindVUID(bit, loc, kStageMaskErrors);
@@ -460,12 +388,12 @@ static const std::map<VkAccessFlags2KHR, std::array<Entry, 6>> kAccessMask2Commo
      }}},
     {VK_ACCESS_2_SHADER_READ_BIT_KHR,
      {{
-         {Key(Struct::VkMemoryBarrier2, Field::srcAccessMask), "VUID-VkMemoryBarrier2-srcAccessMask-03908"},
-         {Key(Struct::VkMemoryBarrier2, Field::dstAccessMask), "VUID-VkMemoryBarrier2-dstAccessMask-03908"},
-         {Key(Struct::VkBufferMemoryBarrier2, Field::srcAccessMask), "VUID-VkBufferMemoryBarrier2-srcAccessMask-03908"},
-         {Key(Struct::VkBufferMemoryBarrier2, Field::dstAccessMask), "VUID-VkBufferMemoryBarrier2-dstAccessMask-03908"},
-         {Key(Struct::VkImageMemoryBarrier2, Field::srcAccessMask), "VUID-VkImageMemoryBarrier2-srcAccessMask-03908"},
-         {Key(Struct::VkImageMemoryBarrier2, Field::dstAccessMask), "VUID-VkImageMemoryBarrier2-dstAccessMask-03908"},
+         {Key(Struct::VkMemoryBarrier2, Field::srcAccessMask), "VUID-VkMemoryBarrier2-srcAccessMask-07454"},
+         {Key(Struct::VkMemoryBarrier2, Field::dstAccessMask), "VUID-VkMemoryBarrier2-dstAccessMask-07454"},
+         {Key(Struct::VkBufferMemoryBarrier2, Field::srcAccessMask), "VUID-VkBufferMemoryBarrier2-srcAccessMask-07454"},
+         {Key(Struct::VkBufferMemoryBarrier2, Field::dstAccessMask), "VUID-VkBufferMemoryBarrier2-dstAccessMask-07454"},
+         {Key(Struct::VkImageMemoryBarrier2, Field::srcAccessMask), "VUID-VkImageMemoryBarrier2-srcAccessMask-07454"},
+         {Key(Struct::VkImageMemoryBarrier2, Field::dstAccessMask), "VUID-VkImageMemoryBarrier2-dstAccessMask-07454"},
      }}},
     {VK_ACCESS_2_SHADER_WRITE_BIT_KHR,
      {{
@@ -738,69 +666,59 @@ const std::string &GetBadAccessFlagsVUID(const Location &loc, VkAccessFlags2KHR 
     return result2;
 }
 
-struct Vuids0625X {
-    const char *ray_query_off_rt_on;
-    const char *ray_query_off_rt_off;
-    const char *ray_query_on_rt_on;
-    const char *ray_query_on_rt_off;
-};
-
-static const char *WhichAccessMaskRayQueryVuid(const DeviceExtensions &device_extensions, const Vuids0625X &vuids) {
-    // This logic is based on VUIDs 06254, 06255, 06256 and 06257 from commonvalidity/access_mask_2_common.adoc
-    if (!IsExtEnabled(device_extensions.vk_khr_ray_query)) {
-        if (IsExtEnabled(device_extensions.vk_khr_ray_tracing_pipeline) || IsExtEnabled(device_extensions.vk_nv_ray_tracing)) {
-            return vuids.ray_query_off_rt_on;
-        } else {
-            return vuids.ray_query_off_rt_off;
-        }
-    } else {
-        if (IsExtEnabled(device_extensions.vk_khr_ray_tracing_pipeline) || IsExtEnabled(device_extensions.vk_nv_ray_tracing)) {
-            return vuids.ray_query_on_rt_on;
-        } else {
-            return vuids.ray_query_on_rt_off;
-        }
-    }
-}
-
-// commonvalidity/access_mask_2_common.adoc
+// commonvalidity/access_mask_common.adoc/access_mask_2_common.adoc
 static const auto &GetLocation2VUIDMap() {
-    static const std::map<Key, Vuids0625X> Location2VUID{
-        {Key(Struct::VkMemoryBarrier2, Field::srcAccessMask),
-         {"VUID-VkMemoryBarrier2-srcAccessMask-06254", "VUID-VkMemoryBarrier2-srcAccessMask-06255",
-          "VUID-VkMemoryBarrier2-srcAccessMask-06256", "VUID-VkMemoryBarrier2-srcAccessMask-06257"}},
+    static const std::map<Key, std::string> Location2VUID{
+        // Sync2 barriers. This can match different functions that work with VkDependencyInfo
+        {Key(Struct::VkMemoryBarrier2, Field::srcAccessMask), "VUID-VkMemoryBarrier2-srcAccessMask-06256"},
+        {Key(Struct::VkMemoryBarrier2, Field::dstAccessMask), "VUID-VkMemoryBarrier2-dstAccessMask-06256"},
+        {Key(Struct::VkBufferMemoryBarrier2, Field::srcAccessMask), "VUID-VkBufferMemoryBarrier2-srcAccessMask-06256"},
+        {Key(Struct::VkBufferMemoryBarrier2, Field::dstAccessMask), "VUID-VkBufferMemoryBarrier2-dstAccessMask-06256"},
+        {Key(Struct::VkImageMemoryBarrier2, Field::srcAccessMask), "VUID-VkImageMemoryBarrier2-srcAccessMask-06256"},
+        {Key(Struct::VkImageMemoryBarrier2, Field::dstAccessMask), "VUID-VkImageMemoryBarrier2-dstAccessMask-06256"},
 
-        {Key(Struct::VkMemoryBarrier2, Field::dstAccessMask),
-         {"VUID-VkMemoryBarrier2-dstAccessMask-06254", "VUID-VkMemoryBarrier2-dstAccessMask-06255",
-          "VUID-VkMemoryBarrier2-dstAccessMask-06256", "VUID-VkMemoryBarrier2-dstAccessMask-06257"}},
+        // Sync1 barrier. This matches only vkCmdPipelineBarrier.
+        {Key(Func::vkCmdPipelineBarrier, Struct::VkMemoryBarrier, Field::srcAccessMask),
+         "VUID-vkCmdPipelineBarrier-srcAccessMask-06257"},
+        {Key(Func::vkCmdPipelineBarrier, Struct::VkMemoryBarrier, Field::dstAccessMask),
+         "VUID-vkCmdPipelineBarrier-dstAccessMask-06257"},
+        {Key(Func::vkCmdPipelineBarrier, Struct::VkBufferMemoryBarrier, Field::srcAccessMask),
+         "VUID-vkCmdPipelineBarrier-srcAccessMask-06257"},
+        {Key(Func::vkCmdPipelineBarrier, Struct::VkBufferMemoryBarrier, Field::dstAccessMask),
+         "VUID-vkCmdPipelineBarrier-dstAccessMask-06257"},
+        {Key(Func::vkCmdPipelineBarrier, Struct::VkImageMemoryBarrier, Field::srcAccessMask),
+         "VUID-vkCmdPipelineBarrier-srcAccessMask-06257"},
+        {Key(Func::vkCmdPipelineBarrier, Struct::VkImageMemoryBarrier, Field::dstAccessMask),
+         "VUID-vkCmdPipelineBarrier-dstAccessMask-06257"},
 
-        {Key(Struct::VkBufferMemoryBarrier2, Field::srcAccessMask),
-         {"VUID-VkBufferMemoryBarrier2-srcAccessMask-06254", "VUID-VkBufferMemoryBarrier2-srcAccessMask-06255",
-          "VUID-VkBufferMemoryBarrier2-srcAccessMask-06256", "VUID-VkBufferMemoryBarrier2-srcAccessMask-06257"}},
-
-        {Key(Struct::VkBufferMemoryBarrier2, Field::dstAccessMask),
-         {"VUID-VkBufferMemoryBarrier2-dstAccessMask-06254", "VUID-VkBufferMemoryBarrier2-dstAccessMask-06255",
-          "VUID-VkBufferMemoryBarrier2-dstAccessMask-06256", "VUID-VkBufferMemoryBarrier2-dstAccessMask-06257"}},
-
-        {Key(Struct::VkImageMemoryBarrier2, Field::srcAccessMask),
-         {"VUID-VkImageMemoryBarrier2-srcAccessMask-06254", "VUID-VkImageMemoryBarrier2-srcAccessMask-06255",
-          "VUID-VkImageMemoryBarrier2-srcAccessMask-06256", "VUID-VkImageMemoryBarrier2-srcAccessMask-06257"}},
-
-        {Key(Struct::VkImageMemoryBarrier2, Field::dstAccessMask),
-         {"VUID-VkImageMemoryBarrier2-dstAccessMask-06254", "VUID-VkImageMemoryBarrier2-dstAccessMask-06255",
-          "VUID-VkImageMemoryBarrier2-dstAccessMask-06256", "VUID-VkImageMemoryBarrier2-dstAccessMask-06257"}},
+        // Sync1 event wait. This matches only vkCmdWaitEvents.
+        {Key(Func::vkCmdWaitEvents, Struct::VkMemoryBarrier, Field::srcAccessMask), "VUID-vkCmdWaitEvents-srcAccessMask-06257"},
+        {Key(Func::vkCmdWaitEvents, Struct::VkMemoryBarrier, Field::dstAccessMask), "VUID-vkCmdWaitEvents-dstAccessMask-06257"},
+        {Key(Func::vkCmdWaitEvents, Struct::VkBufferMemoryBarrier, Field::srcAccessMask),
+         "VUID-vkCmdWaitEvents-srcAccessMask-06257"},
+        {Key(Func::vkCmdWaitEvents, Struct::VkBufferMemoryBarrier, Field::dstAccessMask),
+         "VUID-vkCmdWaitEvents-dstAccessMask-06257"},
+        {Key(Func::vkCmdWaitEvents, Struct::VkImageMemoryBarrier, Field::srcAccessMask),
+         "VUID-vkCmdWaitEvents-srcAccessMask-06257"},
+        {Key(Func::vkCmdWaitEvents, Struct::VkImageMemoryBarrier, Field::dstAccessMask),
+         "VUID-vkCmdWaitEvents-dstAccessMask-06257"},
     };
-    assert(Location2VUID.size() == 6);
     return Location2VUID;
 }
 
-const char *GetAccessMaskRayQueryVUIDSelector(const Location &loc, const DeviceExtensions &device_extensions) {
-    const Key key(loc.structure, loc.field);
-    auto it = GetLocation2VUIDMap().find(key);
-    if (it != GetLocation2VUIDMap().end()) {
-        const Vuids0625X &vuids = it->second;
-        return WhichAccessMaskRayQueryVuid(device_extensions, vuids);
+const std::string &GetAccessMaskRayQueryVUIDSelector(const Location &loc, const DeviceExtensions &device_extensions) {
+    // At first try exact match: VUID for specific parameter (struct + field) of specific function
+    const Key key_full(loc.function, loc.structure, loc.field);
+    if (auto it = GetLocation2VUIDMap().find(key_full); it != GetLocation2VUIDMap().end()) {
+        return it->second;
     }
-    return nullptr;
+    // Try to match VUID based on parameter (so can be used by multiple functions)
+    const Key key_struct_field(loc.structure, loc.field);
+    if (auto it = GetLocation2VUIDMap().find(key_struct_field); it != GetLocation2VUIDMap().end()) {
+        return it->second;
+    }
+    static const std::string unhandled("UNASSIGNED-CoreChecks-unhandled-bad-access-flags");
+    return unhandled;
 }
 
 static const std::vector<Entry> kQueueCapErrors{
@@ -838,49 +756,80 @@ const std::string &GetStageQueueCapVUID(const Location &loc, VkPipelineStageFlag
 }
 
 static const std::map<QueueError, std::vector<Entry>> kBarrierQueueErrors{
-    {QueueError::kSrcOrDstMustBeIgnore,
+    {QueueError::kSrcNoExternalExt,
      {
-         // this isn't an error for synchronization2, so we don't need the 2KHR versions
-         {Key(Struct::VkBufferMemoryBarrier), "VUID-VkBufferMemoryBarrier-synchronization2-03853"},
-         {Key(Struct::VkImageMemoryBarrier), "VUID-VkImageMemoryBarrier-synchronization2-03857"},
+         {Key(Struct::VkBufferMemoryBarrier2), "VUID-VkBufferMemoryBarrier2-None-09097"},
+         {Key(Struct::VkBufferMemoryBarrier), "VUID-VkBufferMemoryBarrier-None-09097"},
+         {Key(Struct::VkImageMemoryBarrier2), "VUID-VkImageMemoryBarrier2-None-09119"},
+         {Key(Struct::VkImageMemoryBarrier), "VUID-VkImageMemoryBarrier-None-09119"},
      }},
-
-    {QueueError::kSpecialOrIgnoreOnly,
+    {QueueError::kDstNoExternalExt,
      {
-         {Key(Struct::VkBufferMemoryBarrier2), "VUID-VkBufferMemoryBarrier2-buffer-04088"},
-         {Key(Struct::VkBufferMemoryBarrier), "VUID-VkBufferMemoryBarrier-buffer-04088"},
-         {Key(Struct::VkImageMemoryBarrier2), "VUID-VkImageMemoryBarrier2-image-04071"},
-         {Key(Struct::VkImageMemoryBarrier), "VUID-VkImageMemoryBarrier-image-04071"},
+         {Key(Struct::VkBufferMemoryBarrier2), "VUID-VkBufferMemoryBarrier2-None-09098"},
+         {Key(Struct::VkBufferMemoryBarrier), "VUID-VkBufferMemoryBarrier-None-09098"},
+         {Key(Struct::VkImageMemoryBarrier2), "VUID-VkImageMemoryBarrier2-None-09120"},
+         {Key(Struct::VkImageMemoryBarrier), "VUID-VkImageMemoryBarrier-None-09120"},
      }},
-    {QueueError::kSrcAndDstValidOrSpecial,
+    {QueueError::kSrcNoForeignExt,
      {
-         {Key(Struct::VkBufferMemoryBarrier2), "VUID-VkBufferMemoryBarrier2-buffer-04089"},
-         {Key(Struct::VkBufferMemoryBarrier), "VUID-VkBufferMemoryBarrier-buffer-04089"},
-         {Key(Struct::VkImageMemoryBarrier2), "VUID-VkImageMemoryBarrier2-image-04072"},
-         {Key(Struct::VkImageMemoryBarrier), "VUID-VkImageMemoryBarrier-image-04072"},
+         {Key(Struct::VkBufferMemoryBarrier2), "VUID-VkBufferMemoryBarrier2-srcQueueFamilyIndex-09099"},
+         {Key(Struct::VkBufferMemoryBarrier), "VUID-VkBufferMemoryBarrier-srcQueueFamilyIndex-09099"},
+         {Key(Struct::VkImageMemoryBarrier2), "VUID-VkImageMemoryBarrier2-srcQueueFamilyIndex-09121"},
+         {Key(Struct::VkImageMemoryBarrier), "VUID-VkImageMemoryBarrier-srcQueueFamilyIndex-09121"},
      }},
-
-    {QueueError::kSrcAndDestMustBeIgnore,
+    {QueueError::kDstNoForeignExt,
      {
-         // this isn't an error for synchronization2, so we don't need the 2KHR versions
-         {Key(Struct::VkBufferMemoryBarrier), "VUID-VkBufferMemoryBarrier-synchronization2-03852"},
-         {Key(Struct::VkImageMemoryBarrier), "VUID-VkImageMemoryBarrier-synchronization2-03856"},
+         {Key(Struct::VkBufferMemoryBarrier2), "VUID-VkBufferMemoryBarrier2-dstQueueFamilyIndex-09100"},
+         {Key(Struct::VkBufferMemoryBarrier), "VUID-VkBufferMemoryBarrier-dstQueueFamilyIndex-09100"},
+         {Key(Struct::VkImageMemoryBarrier2), "VUID-VkImageMemoryBarrier2-dstQueueFamilyIndex-09122"},
+         {Key(Struct::VkImageMemoryBarrier), "VUID-VkImageMemoryBarrier-dstQueueFamilyIndex-09122"},
      }},
-    {QueueError::kSrcAndDstBothValid,
+    {QueueError::kSync1ConcurrentNoIgnored,
      {
-         {Key(Struct::VkBufferMemoryBarrier2), "VUID-VkBufferMemoryBarrier2-buffer-04086"},
-         {Key(Struct::VkBufferMemoryBarrier), "VUID-VkBufferMemoryBarrier-buffer-04086"},
-         {Key(Struct::VkImageMemoryBarrier2), "VUID-VkImageMemoryBarrier2-image-04069"},
-         {Key(Struct::VkImageMemoryBarrier), "VUID-VkImageMemoryBarrier-image-04069"},
+         {Key(Struct::VkBufferMemoryBarrier), "VUID-VkBufferMemoryBarrier-None-09049"},
+         {Key(Struct::VkImageMemoryBarrier), "VUID-VkImageMemoryBarrier-None-09052"},
+     }},
+    {QueueError::kSync1ConcurrentSrc,
+     {
+         {Key(Struct::VkBufferMemoryBarrier), "VUID-VkBufferMemoryBarrier-None-09050"},
+         {Key(Struct::VkImageMemoryBarrier), "VUID-VkImageMemoryBarrier-None-09053"},
+     }},
+    {QueueError::kSync1ConcurrentDst,
+     {
+         {Key(Struct::VkBufferMemoryBarrier), "VUID-VkBufferMemoryBarrier-None-09051"},
+         {Key(Struct::VkImageMemoryBarrier), "VUID-VkImageMemoryBarrier-None-09054"},
+     }},
+    {QueueError::kExclusiveSrc,
+     {
+         {Key(Struct::VkBufferMemoryBarrier2), "VUID-VkBufferMemoryBarrier2-buffer-09095"},
+         {Key(Struct::VkBufferMemoryBarrier), "VUID-VkBufferMemoryBarrier-buffer-09095"},
+         {Key(Struct::VkImageMemoryBarrier2), "VUID-VkImageMemoryBarrier2-image-09117"},
+         {Key(Struct::VkImageMemoryBarrier), "VUID-VkImageMemoryBarrier-image-09117"},
+     }},
+    {QueueError::kExclusiveDst,
+     {
+         {Key(Struct::VkBufferMemoryBarrier2), "VUID-VkBufferMemoryBarrier2-buffer-09096"},
+         {Key(Struct::VkBufferMemoryBarrier), "VUID-VkBufferMemoryBarrier-buffer-09096"},
+         {Key(Struct::VkImageMemoryBarrier2), "VUID-VkImageMemoryBarrier2-image-09118"},
+         {Key(Struct::VkImageMemoryBarrier), "VUID-VkImageMemoryBarrier-image-09118"},
+     }},
+    {QueueError::kHostStage,
+     {
+         {Key(Struct::VkBufferMemoryBarrier2), "VUID-VkBufferMemoryBarrier2-srcStageMask-03851"},
+         {Key(Struct::VkImageMemoryBarrier2), "VUID-VkImageMemoryBarrier2-srcStageMask-03854"},
      }},
 };
 
 const std::map<QueueError, std::string> kQueueErrorSummary{
-    {QueueError::kSrcOrDstMustBeIgnore, "Source or destination queue family must be ignored."},
-    {QueueError::kSpecialOrIgnoreOnly, "Source or destination queue family must be special or ignored."},
-    {QueueError::kSrcAndDstValidOrSpecial, "Source and destination queue family must be valid, ignored, or special."},
-    {QueueError::kSrcAndDestMustBeIgnore, "Source and destination queue family must both be ignored."},
-    {QueueError::kSrcAndDstBothValid, "Source and destination queue family must both be valid."},
+    {QueueError::kSrcNoExternalExt, "Source queue family must not be VK_QUEUE_FAMILY_EXTERNAL."},
+    {QueueError::kDstNoExternalExt, "Destination queue family must not be VK_QUEUE_FAMILY_EXTERNAL."},
+    {QueueError::kSrcNoForeignExt, "Source queue family must not be VK_QUEUE_FAMILY_FOREIGN_EXT."},
+    {QueueError::kDstNoForeignExt, "Destination queue family must not be VK_QUEUE_FAMILY_FOREIGN_EXT."},
+    {QueueError::kSync1ConcurrentNoIgnored, "Source or destination queue family must be VK_QUEUE_FAMILY_IGNORED."},
+    {QueueError::kSync1ConcurrentSrc, "Source queue family must be VK_QUEUE_FAMILY_IGNORED or VK_QUEUE_FAMILY_EXTERNAL."},
+    {QueueError::kSync1ConcurrentDst, "Destination queue family must be VK_QUEUE_FAMILY_IGNORED or VK_QUEUE_FAMILY_EXTERNAL."},
+    {QueueError::kExclusiveSrc, "Source queue family must be valid when using VK_SHARING_MODE_EXCLUSIVE."},
+    {QueueError::kExclusiveDst, "Destination queue family must be valid when using VK_SHARING_MODE_EXCLUSIVE."},
 };
 
 const std::string &GetBarrierQueueVUID(const Location &loc, QueueError error) {
@@ -1060,11 +1009,6 @@ static const std::map<ImageError, std::vector<Entry>> kImageErrors{
          {Key(Struct::VkImageMemoryBarrier), "VUID-VkImageMemoryBarrier-image-01671"},
          {Key(Struct::VkImageMemoryBarrier2), "VUID-VkImageMemoryBarrier2-image-01671"},
      }},
-    {ImageError::kNotColorAspectYcbcr,
-     {
-         {Key(Struct::VkImageMemoryBarrier), "VUID-VkImageMemoryBarrier-image-02902"},
-         {Key(Struct::VkImageMemoryBarrier2), "VUID-VkImageMemoryBarrier2-image-02902"},
-     }},
     {ImageError::kBadMultiplanarAspect,
      {
          {Key(Struct::VkImageMemoryBarrier), "VUID-VkImageMemoryBarrier-image-01672"},
@@ -1076,11 +1020,6 @@ static const std::map<ImageError, std::vector<Entry>> kImageErrors{
          {Key(Struct::VkImageMemoryBarrier2), "VUID-VkImageMemoryBarrier2-image-03319"},
      }},
     {ImageError::kNotDepthAndStencilAspect,
-     {
-         {Key(Struct::VkImageMemoryBarrier), "VUID-VkImageMemoryBarrier-image-01207"},
-         {Key(Struct::VkImageMemoryBarrier2), "VUID-VkImageMemoryBarrier2-image-01207"},
-     }},
-    {ImageError::kNotSeparateDepthAndStencilAspect,
      {
          {Key(Struct::VkImageMemoryBarrier), "VUID-VkImageMemoryBarrier-image-03320"},
          {Key(Struct::VkImageMemoryBarrier2), "VUID-VkImageMemoryBarrier2-image-03320"},
@@ -1146,13 +1085,6 @@ static const std::map<SubmitError, std::vector<Entry>> kSubmitErrors{
          {Key(Func::vkQueueSubmit), "VUID-vkQueueSubmit-pSignalSemaphores-00067"},
          {Key(Func::vkQueueBindSparse), "VUID-vkQueueBindSparse-pSignalSemaphores-01115"},
          {Key(Func::vkQueueSubmit2), "VUID-vkQueueSubmit2-semaphore-03868"},
-     }},
-    {SubmitError::kOldBinaryCannotBeSignalled,
-     {
-         {Key(Func::vkQueueSubmit), "VUID-vkQueueSubmit-pWaitSemaphores-00069"},
-         {Key(Func::vkQueueSubmit2), "VUID-vkQueueSubmit2-semaphore-03872"},
-         {Key(Func::vkQueueBindSparse), "VUID-vkQueueBindSparse-pWaitSemaphores-01117"},
-         {Key(Func::vkQueuePresentKHR), "VUID-vkQueuePresentKHR-pWaitSemaphores-01295"},
      }},
     {SubmitError::kBinaryCannotBeSignalled,
      {

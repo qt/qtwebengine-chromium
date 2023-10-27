@@ -394,10 +394,12 @@ EIGEN_ALWAYS_INLINE void vecColLoop(Index j, LhsMapper& lhs, RhsMapper& rhs, __v
     b0 = vec_mergeh(b0.m_val, b1.m_val);
   }
 
-  LhsMapper lhs2 = lhs.getSubMapper(0, j);
+  using LhsSubMapper = typename LhsMapper::SubMapper;
+
+  LhsSubMapper lhs2 = lhs.getSubMapper(0, j);
   BFLOAT16_UNROLL
   for(Index k = 0; k < num_acc; k += 2) {
-    loadVecLoop<num_acc, LhsMapper, zero>(k, lhs2, a0, b1);
+    loadVecLoop<num_acc, LhsSubMapper, zero>(k, lhs2, a0, b1);
   }
 
   multVec<num_acc>(quad_acc, a0, b0);
@@ -418,12 +420,14 @@ void colVecColLoopBody(Index& row, Index cend, Index rows, LhsMapper& lhs, RhsMa
 
     zeroAccumulators<num_acc>(quad_acc);
 
-    LhsMapper lhs2 = lhs.getSubMapper(row, 0);
+    using LhsSubMapper = typename LhsMapper::SubMapper;
+
+    LhsSubMapper lhs2 = lhs.getSubMapper(row, 0);
     for(Index j = 0; j + 2 <= cend; j += 2) {
-      vecColLoop<num_acc, LhsMapper, RhsMapper, false, linear>(j, lhs2, rhs, quad_acc);
+      vecColLoop<num_acc, LhsSubMapper, RhsMapper, false, linear>(j, lhs2, rhs, quad_acc);
     }
     if (cend & 1) {
-      vecColLoop<num_acc, LhsMapper, RhsMapper, true, linear>(cend - 1, lhs2, rhs, quad_acc);
+      vecColLoop<num_acc, LhsSubMapper, RhsMapper, true, linear>(cend - 1, lhs2, rhs, quad_acc);
     }
 
     disassembleAccumulators<num_acc>(quad_acc, acc);
@@ -490,6 +494,33 @@ EIGEN_ALWAYS_INLINE void calcVecColLoops(Index cend, Index rows, LhsMapper& lhs,
   }
 }
 
+template<typename RhsMapper, typename LhsMapper, typename = void>
+struct UseMMAStride : std::false_type {
+  static EIGEN_ALWAYS_INLINE void run(Index j2, Index jend, Index rows, LhsMapper& lhs, RhsMapper& rhs, Packet4f pAlpha, float *result)
+  {
+    using RhsSubMapper = typename RhsMapper::SubMapper;
+
+    RhsSubMapper rhs2 = rhs.getSubMapper(j2, 0);
+    calcVecColLoops<LhsMapper, RhsSubMapper, false>(jend - j2, rows, lhs, rhs2, pAlpha, result);
+  }
+};
+
+template<typename RhsMapper, typename LhsMapper>
+struct UseMMAStride<RhsMapper, LhsMapper, std::enable_if_t<std::is_member_function_pointer<
+                           decltype(&RhsMapper::stride)>::value>> : std::true_type {
+  static EIGEN_ALWAYS_INLINE void run(Index j2, Index jend, Index rows, LhsMapper& lhs, RhsMapper& rhs, Packet4f pAlpha, float *result)
+  {
+    using RhsSubMapper = typename RhsMapper::SubMapper;
+
+    RhsSubMapper rhs2 = rhs.getSubMapper(j2, 0);
+    if (rhs.stride() == 1) {
+      calcVecColLoops<LhsMapper, RhsSubMapper, true>(jend - j2, rows, lhs, rhs2, pAlpha, result);
+    } else {
+      calcVecColLoops<LhsMapper, RhsSubMapper, false>(jend - j2, rows, lhs, rhs2, pAlpha, result);
+    }
+  }
+};
+
 template<typename LhsMapper, typename RhsMapper>
 void gemvMMA_bfloat16_col(
   Index rows, Index cols,
@@ -498,8 +529,6 @@ void gemvMMA_bfloat16_col(
   bfloat16* res, Index resIncr,
   bfloat16 alpha)
 {
-  typedef typename RhsMapper::LinearMapper LinearMapper;
-
   EIGEN_UNUSED_VARIABLE(resIncr);
   eigen_internal_assert(resIncr == 1);
 
@@ -523,14 +552,10 @@ void gemvMMA_bfloat16_col(
   {
     Index jend = numext::mini(j2 + block_cols, cols);
 
-    LhsMapper lhs2 = lhs.getSubMapper(0, j2);
-    if (rhs.stride() == 1) {
-      LinearMapper rhs3 = rhs2.getLinearMapper(j2, 0);
-      calcVecColLoops<LhsMapper, LinearMapper, true>(jend - j2, rows, lhs2, rhs3, pAlpha, result);
-    } else {
-      RhsMapper rhs3 = rhs2.getSubMapper(j2, 0);
-      calcVecColLoops<LhsMapper, RhsMapper, false>(jend - j2, rows, lhs2, rhs3, pAlpha, result);
-    }
+    using LhsSubMapper = typename LhsMapper::SubMapper;
+
+    LhsSubMapper lhs2 = lhs.getSubMapper(0, j2);
+    UseMMAStride<RhsMapper, LhsSubMapper>::run(j2, jend, rows, lhs2, rhs2, pAlpha, result);
   }
 
   convertArrayPointerF32toBF16(result, rows, res);

@@ -233,15 +233,15 @@ Runtime::FunctionId BytecodeArrayIterator::GetIntrinsicIdOperand(
 template <typename IsolateT>
 Handle<Object> BytecodeArrayIterator::GetConstantAtIndex(
     int index, IsolateT* isolate) const {
-  return handle(bytecode_array()->constant_pool().get(index), isolate);
+  return handle(bytecode_array()->constant_pool()->get(index), isolate);
 }
 
 bool BytecodeArrayIterator::IsConstantAtIndexSmi(int index) const {
-  return bytecode_array()->constant_pool().get(index).IsSmi();
+  return IsSmi(bytecode_array()->constant_pool()->get(index));
 }
 
-Smi BytecodeArrayIterator::GetConstantAtIndexAsSmi(int index) const {
-  return Smi::cast(bytecode_array()->constant_pool().get(index));
+Tagged<Smi> BytecodeArrayIterator::GetConstantAtIndexAsSmi(int index) const {
+  return Smi::cast(bytecode_array()->constant_pool()->get(index));
 }
 
 template <typename IsolateT>
@@ -265,7 +265,7 @@ int BytecodeArrayIterator::GetRelativeJumpTargetOffset() const {
     }
     return relative_offset;
   } else if (interpreter::Bytecodes::IsJumpConstant(bytecode)) {
-    Smi smi = GetConstantAtIndexAsSmi(GetIndexOperand(0));
+    Tagged<Smi> smi = GetConstantAtIndexAsSmi(GetIndexOperand(0));
     return smi.value();
   } else {
     UNREACHABLE();

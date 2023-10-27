@@ -89,7 +89,7 @@ const UIStrings = {
   /**
    *@description Text in Main
    */
-  focusDebuggee: 'Focus debuggee',
+  focusDebuggee: 'Focus page',
   /**
    *@description Text in Main
    */
@@ -159,8 +159,6 @@ export class MainImpl {
   }
 
   #initializeGlobalsForLayoutTests(): void {
-    // @ts-ignore layout test global
-    self.Common = self.Common || {};
     // @ts-ignore layout test global
     self.UI = self.UI || {};
     // @ts-ignore layout test global
@@ -266,9 +264,6 @@ export class MainImpl {
     const globalStorage = new Common.Settings.SettingsStorage(prefs, hostUnsyncedStorage, storagePrefix);
     Common.Settings.Settings.instance({forceNew: true, syncedStorage, globalStorage, localStorage});
 
-    // @ts-ignore layout test global
-    self.Common.settings = Common.Settings.Settings.instance();
-
     if (!Host.InspectorFrontendHost.isUnderTest()) {
       new Common.Settings.VersionController().updateVersion();
     }
@@ -326,7 +321,8 @@ export class MainImpl {
     Root.Runtime.experiments.register(
         'evaluateExpressionsWithSourceMaps', 'Resolve variable names in expressions using source maps', undefined);
     Root.Runtime.experiments.register('instrumentationBreakpoints', 'Enable instrumentation breakpoints', true);
-    Root.Runtime.experiments.register('setAllBreakpointsEagerly', 'Set all breakpoints eagerly at startup', true);
+    Root.Runtime.experiments.register('setAllBreakpointsEagerly', 'Set all breakpoints eagerly at startup');
+    Root.Runtime.experiments.register('useSourceMapScopes', 'Use scope information from source maps', true);
 
     // Dual-screen
     Root.Runtime.experiments.register(
@@ -378,9 +374,12 @@ export class MainImpl {
         Root.Runtime.ExperimentName.HIGHLIGHT_ERRORS_ELEMENTS_PANEL,
         'Highlights a violating node or attribute in the Elements panel DOM tree');
 
-    // Local overrides for response headers
+    // Local overrides
     Root.Runtime.experiments.register(
         Root.Runtime.ExperimentName.HEADER_OVERRIDES, 'Local overrides for response headers');
+    Root.Runtime.experiments.register(
+        Root.Runtime.ExperimentName.DELETE_OVERRIDES_TEMP_ENABLE, 'Enable "Delete all overrides" temporarily',
+        undefined, 'https://goo.gle/devtools-overrides', 'https://crbug.com/1473681');
 
     // Enable color picking outside the browser window (using Eyedropper API)
     Root.Runtime.experiments.register(
@@ -403,6 +402,7 @@ export class MainImpl {
     Root.Runtime.experiments.register(
         Root.Runtime.ExperimentName.PRELOADING_STATUS_PANEL, 'Enable Preloading Status Panel in Application panel',
         true);
+    Root.Runtime.experiments.setEnabled(Root.Runtime.ExperimentName.PRELOADING_STATUS_PANEL, true);
 
     Root.Runtime.experiments.register(
         Root.Runtime.ExperimentName.DISABLE_COLOR_FORMAT_SETTING,
@@ -413,6 +413,12 @@ export class MainImpl {
         Root.Runtime.ExperimentName.OUTERMOST_TARGET_SELECTOR,
         'Enable background page selector (e.g. for prerendering debugging)', false);
 
+    Root.Runtime.experiments.register(
+        Root.Runtime.ExperimentName.SELF_XSS_WARNING, 'Show warning about Self-XSS when pasting code');
+
+    Root.Runtime.experiments.register(
+        Root.Runtime.ExperimentName.STORAGE_BUCKETS_TREE, 'Enable Storage Buckets Tree in Application panel', true);
+
     Root.Runtime.experiments.enableExperimentsByDefault([
       'sourceOrderViewer',
       'cssTypeComponentLength',
@@ -420,10 +426,12 @@ export class MainImpl {
       ...('EyeDropper' in window ? [Root.Runtime.ExperimentName.EYEDROPPER_COLOR_PICKER] : []),
       'keyboardShortcutEditor',
       'sourcesPrettyPrint',
+      'setAllBreakpointsEagerly',
       Root.Runtime.ExperimentName.DISABLE_COLOR_FORMAT_SETTING,
       Root.Runtime.ExperimentName.TIMELINE_AS_CONSOLE_PROFILE_RESULT_PANEL,
       Root.Runtime.ExperimentName.WASM_DWARF_DEBUGGING,
       Root.Runtime.ExperimentName.HEADER_OVERRIDES,
+      Root.Runtime.ExperimentName.OUTERMOST_TARGET_SELECTOR,
     ]);
 
     Root.Runtime.experiments.setNonConfigurableExperiments([
@@ -448,8 +456,12 @@ export class MainImpl {
       }
     }
 
-    for (const experiment of Root.Runtime.experiments.enabledExperiments()) {
-      Host.userMetrics.experimentEnabledAtLaunch(experiment.name);
+    for (const experiment of Root.Runtime.experiments.allConfigurableExperiments()) {
+      if (experiment.isEnabled()) {
+        Host.userMetrics.experimentEnabledAtLaunch(experiment.name);
+      } else {
+        Host.userMetrics.experimentDisabledAtLaunch(experiment.name);
+      }
     }
   }
   async #createAppUI(): Promise<void> {

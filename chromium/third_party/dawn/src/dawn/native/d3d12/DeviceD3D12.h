@@ -18,6 +18,7 @@
 #include <memory>
 #include <vector>
 
+#include "dawn/common/MutexProtected.h"
 #include "dawn/common/SerialQueue.h"
 #include "dawn/native/d3d/DeviceD3D.h"
 #include "dawn/native/d3d12/CommandRecordingContext.h"
@@ -89,8 +90,6 @@ class Device final : public d3d::Device {
 
     void ReferenceUntilUnused(ComPtr<IUnknown> object);
 
-    void ForceEventualFlushOfCommands() override;
-
     MaybeError ExecutePendingCommandContext();
 
     MaybeError CopyFromStagingToBufferImpl(BufferBase* source,
@@ -120,25 +119,28 @@ class Device final : public d3d::Device {
 
     void DeallocateMemory(ResourceHeapAllocation& allocation);
 
-    ShaderVisibleDescriptorAllocator* GetViewShaderVisibleDescriptorAllocator() const;
-    ShaderVisibleDescriptorAllocator* GetSamplerShaderVisibleDescriptorAllocator() const;
+    MutexProtected<ShaderVisibleDescriptorAllocator>& GetViewShaderVisibleDescriptorAllocator()
+        const;
+    MutexProtected<ShaderVisibleDescriptorAllocator>& GetSamplerShaderVisibleDescriptorAllocator()
+        const;
 
     // Returns nullptr when descriptor count is zero.
-    StagingDescriptorAllocator* GetViewStagingDescriptorAllocator(uint32_t descriptorCount) const;
+    MutexProtected<StagingDescriptorAllocator>* GetViewStagingDescriptorAllocator(
+        uint32_t descriptorCount) const;
 
-    StagingDescriptorAllocator* GetSamplerStagingDescriptorAllocator(
+    MutexProtected<StagingDescriptorAllocator>* GetSamplerStagingDescriptorAllocator(
         uint32_t descriptorCount) const;
 
     SamplerHeapCache* GetSamplerHeapCache();
 
-    StagingDescriptorAllocator* GetRenderTargetViewAllocator() const;
+    MutexProtected<StagingDescriptorAllocator>& GetRenderTargetViewAllocator() const;
 
-    StagingDescriptorAllocator* GetDepthStencilViewAllocator() const;
+    MutexProtected<StagingDescriptorAllocator>& GetDepthStencilViewAllocator() const;
 
     ResultOrError<Ref<d3d::Fence>> CreateFence(
         const d3d::ExternalImageDXGIFenceDescriptor* descriptor) override;
     ResultOrError<std::unique_ptr<d3d::ExternalImageDXGIImpl>> CreateExternalImageDXGIImplImpl(
-        const d3d::ExternalImageDescriptorDXGISharedHandle* descriptor) override;
+        const ExternalImageDescriptor* descriptor) override;
 
     Ref<TextureBase> CreateD3DExternalTexture(const TextureDescriptor* descriptor,
                                               ComPtr<IUnknown> d3dTexture,
@@ -164,6 +166,12 @@ class Device final : public d3d::Device {
     // Dawn APIs
     void SetLabelImpl() override;
 
+    // TODO(dawn:1413) move these methods to the d3d12::Queue.
+    void ForceEventualFlushOfCommands();
+    bool HasPendingCommands() const;
+    ResultOrError<ExecutionSerial> CheckAndUpdateCompletedSerials();
+    MaybeError WaitForIdleForDestruction();
+
   private:
     using Base = d3d::Device;
 
@@ -173,9 +181,8 @@ class Device final : public d3d::Device {
 
     ResultOrError<Ref<BindGroupBase>> CreateBindGroupImpl(
         const BindGroupDescriptor* descriptor) override;
-    ResultOrError<Ref<BindGroupLayoutBase>> CreateBindGroupLayoutImpl(
-        const BindGroupLayoutDescriptor* descriptor,
-        PipelineCompatibilityToken pipelineCompatibilityToken) override;
+    ResultOrError<Ref<BindGroupLayoutInternalBase>> CreateBindGroupLayoutImpl(
+        const BindGroupLayoutDescriptor* descriptor) override;
     ResultOrError<Ref<BufferBase>> CreateBufferImpl(const BufferDescriptor* descriptor) override;
     ResultOrError<Ref<PipelineLayoutBase>> CreatePipelineLayoutImpl(
         const PipelineLayoutDescriptor* descriptor) override;
@@ -205,9 +212,12 @@ class Device final : public d3d::Device {
                                            WGPUCreateRenderPipelineAsyncCallback callback,
                                            void* userdata) override;
 
+    ResultOrError<Ref<SharedTextureMemoryBase>> ImportSharedTextureMemoryImpl(
+        const SharedTextureMemoryDescriptor* descriptor) override;
+    ResultOrError<Ref<SharedFenceBase>> ImportSharedFenceImpl(
+        const SharedFenceDescriptor* descriptor) override;
+
     void DestroyImpl() override;
-    MaybeError WaitForIdleForDestruction() override;
-    bool HasPendingCommands() const override;
 
     MaybeError CheckDebugLayerAndGenerateErrors();
     void AppendDebugLayerMessages(ErrorData* error) override;
@@ -218,7 +228,6 @@ class Device final : public d3d::Device {
 
     ComPtr<ID3D12Fence> mFence;
     HANDLE mFenceEvent = nullptr;
-    ResultOrError<ExecutionSerial> CheckAndUpdateCompletedSerials() override;
 
     ComPtr<ID3D12Device> mD3d12Device;  // Device is owned by adapter and will not be outlived.
     ComPtr<ID3D12CommandQueue> mCommandQueue;
@@ -247,21 +256,25 @@ class Device final : public d3d::Device {
 
     // Index corresponds to Log2Ceil(descriptorCount) where descriptorCount is in
     // the range [0, kMaxSamplerDescriptorsPerBindGroup].
-    std::array<std::unique_ptr<StagingDescriptorAllocator>, kNumViewDescriptorAllocators + 1>
+    std::array<std::unique_ptr<MutexProtected<StagingDescriptorAllocator>>,
+               kNumViewDescriptorAllocators + 1>
         mViewAllocators;
 
     // Index corresponds to Log2Ceil(descriptorCount) where descriptorCount is in
     // the range [0, kMaxViewDescriptorsPerBindGroup].
-    std::array<std::unique_ptr<StagingDescriptorAllocator>, kNumSamplerDescriptorAllocators + 1>
+    std::array<std::unique_ptr<MutexProtected<StagingDescriptorAllocator>>,
+               kNumSamplerDescriptorAllocators + 1>
         mSamplerAllocators;
 
-    std::unique_ptr<StagingDescriptorAllocator> mRenderTargetViewAllocator;
+    std::unique_ptr<MutexProtected<StagingDescriptorAllocator>> mRenderTargetViewAllocator;
 
-    std::unique_ptr<StagingDescriptorAllocator> mDepthStencilViewAllocator;
+    std::unique_ptr<MutexProtected<StagingDescriptorAllocator>> mDepthStencilViewAllocator;
 
-    std::unique_ptr<ShaderVisibleDescriptorAllocator> mViewShaderVisibleDescriptorAllocator;
+    std::unique_ptr<MutexProtected<ShaderVisibleDescriptorAllocator>>
+        mViewShaderVisibleDescriptorAllocator;
 
-    std::unique_ptr<ShaderVisibleDescriptorAllocator> mSamplerShaderVisibleDescriptorAllocator;
+    std::unique_ptr<MutexProtected<ShaderVisibleDescriptorAllocator>>
+        mSamplerShaderVisibleDescriptorAllocator;
 
     // Sampler cache needs to be destroyed before the CPU sampler allocator to ensure the final
     // release is called.

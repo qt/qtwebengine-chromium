@@ -35,6 +35,7 @@ import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
+import {assertNotNullOrUndefined} from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
@@ -43,7 +44,7 @@ import type * as Formatter from '../../models/formatter/formatter.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import * as WorkspaceDiff from '../../models/workspace_diff/workspace_diff.js';
-import {formatCSSChangesFromDiff} from '../../panels/utils/utils.js';
+import {PanelUtils} from '../../panels/utils/utils.js';
 import * as DiffView from '../../ui/components/diff_view/diff_view.js';
 import * as IconButton from '../../ui/components/icon_button/icon_button.js';
 import * as InlineEditor from '../../ui/legacy/components/inline_editor/inline_editor.js';
@@ -51,27 +52,23 @@ import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
 import * as ElementsComponents from './components/components.js';
-
-import {ComputedStyleModel, type ComputedStyleChangedEvent} from './ComputedStyleModel.js';
+import {type ComputedStyleChangedEvent, ComputedStyleModel} from './ComputedStyleModel.js';
 import {ElementsPanel} from './ElementsPanel.js';
 import {ElementsSidebarPane} from './ElementsSidebarPane.js';
 import {ImagePreviewPopover} from './ImagePreviewPopover.js';
+import * as LayersWidget from './LayersWidget.js';
 import {StyleEditorWidget} from './StyleEditorWidget.js';
-import {StylePropertyHighlighter} from './StylePropertyHighlighter.js';
-import stylesSidebarPaneStyles from './stylesSidebarPane.css.js';
-
-import {activeHints, type StylePropertyTreeElement} from './StylePropertyTreeElement.js';
 import {
-  StylePropertiesSection,
   BlankStylePropertiesSection,
-  KeyframePropertiesSection,
   HighlightPseudoStylePropertiesSection,
+  KeyframePropertiesSection,
+  RegisteredPropertiesSection,
+  StylePropertiesSection,
   TryRuleSection,
 } from './StylePropertiesSection.js';
-
-import * as LayersWidget from './LayersWidget.js';
-import {assertNotNullOrUndefined} from '../../core/platform/platform.js';
-
+import {StylePropertyHighlighter} from './StylePropertyHighlighter.js';
+import {activeHints, type StylePropertyTreeElement} from './StylePropertyTreeElement.js';
+import stylesSidebarPaneStyles from './stylesSidebarPane.css.js';
 import {WebCustomData} from './WebCustomData.js';
 
 const UIStrings = {
@@ -183,6 +180,10 @@ const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
 // Number of ms elapsed with no keypresses to determine is the input is finished, to announce results
 const FILTER_IDLE_PERIOD = 500;
+// Minimum number of @property rules for the @property section block to be folded initially
+const MIN_FOLDED_SECTIONS_COUNT = 5;
+// Title of the registered properties section
+export const REGISTERED_PROPERTY_SECTION_NAME = '@property';
 
 // Highlightable properties are those that can be hovered in the sidebar to trigger a specific
 // highlighting mode on the current element.
@@ -239,6 +240,7 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
   #webCustomData?: WebCustomData;
   #hintPopoverHelper: UI.PopoverHelper.PopoverHelper;
   #evaluatedCSSVarPopoverHelper: UI.PopoverHelper.PopoverHelper;
+  #elementPopoverHooks = new WeakMap<Node, () => HTMLElement | undefined>();
 
   activeCSSAngle: InlineEditor.CSSAngle.CSSAngle|null;
   #urlToChangeTracker: Map<Platform.DevToolsPath.UrlString, ChangeTracker> = new Map();
@@ -371,19 +373,6 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
         }
       }
 
-      if (hoveredNode.matches('.nesting-symbol')) {
-        return {
-          box: hoveredNode.boxInWindow(),
-          show: async(popover: UI.GlassPane.GlassPane): Promise<boolean> => {
-            popover.setIgnoreLeftMargin(true);
-            const element = document.createElement('span');
-            element.textContent = (hoveredNode as HTMLElement).dataset.nestingSelectors || '';
-            popover.contentElement.appendChild(element);
-            return true;
-          },
-        };
-      }
-
       if (hoveredNode.matches('.simple-selector')) {
         const specificity = StylePropertiesSection.getSpecificityStoredForNodeElement(hoveredNode);
         return {
@@ -409,29 +398,29 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
 
     // Bind cssVarSwatch Popover.
     this.#evaluatedCSSVarPopoverHelper = new UI.PopoverHelper.PopoverHelper(this.contentElement, event => {
-      const link = event.composedPath()[0];
-      if (!link || !(link instanceof Element) || !link.matches('.link-swatch-link')) {
-        return null;
+      for (let e = event.composedPath().length - 1; e >= 0; --e) {
+        const element = event.composedPath()[e] as Element;
+        const hook = this.#elementPopoverHooks.get(element);
+        const contents = hook ? hook() : undefined;
+        if (contents) {
+          return {
+            box: element.boxInWindow(),
+            show: async(popover: UI.GlassPane.GlassPane): Promise<boolean> => {
+              popover.contentElement.classList.add('borderless-popover');
+              popover.contentElement.appendChild(contents);
+              return true;
+            },
+          };
+        }
       }
-
-      const linkContainer = event.composedPath()[2];
-      if (!linkContainer || !(linkContainer instanceof Element) || !linkContainer.matches('.css-var-link')) {
-        return null;
-      }
-
-      const variableValue = link.getAttribute('data-title') || '';
-
-      return {
-        box: link.boxInWindow(),
-        show: async(popover: UI.GlassPane.GlassPane): Promise<boolean> => {
-          const popupElement = new ElementsComponents.CSSVariableValueView.CSSVariableValueView(variableValue);
-          popover.contentElement.appendChild(popupElement);
-          return true;
-        },
-      };
+      return null;
     });
     this.#evaluatedCSSVarPopoverHelper.setDisableOnClick(true);
     this.#evaluatedCSSVarPopoverHelper.setTimeout(500, 200);
+  }
+
+  addPopover(element: Node, contents: () => HTMLElement | undefined): void {
+    this.#elementPopoverHooks.set(element, contents);
   }
 
   private onScroll(_event: Event): void {
@@ -446,7 +435,7 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     this.userOperation = userOperation;
   }
 
-  static createExclamationMark(property: SDK.CSSProperty.CSSProperty, title: string|null): Element {
+  createExclamationMark(property: SDK.CSSProperty.CSSProperty, title: HTMLElement|string|null): Element {
     const exclamationElement = (document.createElement('span', {is: 'dt-icon-label'}) as UI.UIUtils.DevToolsIconLabel);
     exclamationElement.className = 'exclamation-mark';
     if (!StylesSidebarPane.ignoreErrorsForProperty(property)) {
@@ -454,14 +443,18 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
           .data = {iconName: 'warning-filled', color: 'var(--icon-warning)', width: '14px', height: '14px'};
     }
     let invalidMessage: string|Common.UIString.LocalizedString;
-    if (title) {
+    if (typeof title === 'string') {
       UI.Tooltip.Tooltip.install(exclamationElement, title);
       invalidMessage = title;
     } else {
       invalidMessage = SDK.CSSMetadata.cssMetadata().isCSSPropertyName(property.name) ?
           i18nString(UIStrings.invalidPropertyValue) :
           i18nString(UIStrings.unknownPropertyName);
-      UI.Tooltip.Tooltip.install(exclamationElement, invalidMessage);
+      if (!title) {
+        UI.Tooltip.Tooltip.install(exclamationElement, invalidMessage);
+      } else {
+        this.addPopover(exclamationElement, () => title);
+      }
     }
     const invalidString =
         i18nString(UIStrings.invalidString, {PH1: invalidMessage, PH2: property.name, PH3: property.value});
@@ -571,8 +564,12 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     this.update();
   }
 
-  jumpToProperty(propertyName: string): void {
-    this.decorator.findAndHighlightPropertyName(propertyName);
+  jumpToProperty(propertyName: string, sectionName?: string, blockName?: string): boolean {
+    return this.decorator.findAndHighlightPropertyName(propertyName, sectionName, blockName);
+  }
+
+  jumpToSection(sectionName: string, blockName: string): void {
+    this.decorator.findAndHighlightSection(sectionName, blockName);
   }
 
   jumpToSectionBlock(section: string): void {
@@ -1232,6 +1229,18 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
       blocks.push(block);
     }
 
+    if (matchedStyles.registeredProperties().length > 0) {
+      const expandedByDefault = matchedStyles.registeredProperties().length <= MIN_FOLDED_SECTIONS_COUNT;
+      const block = SectionBlock.createRegisteredPropertiesBlock(expandedByDefault);
+      for (const propertyRule of matchedStyles.registeredProperties()) {
+        this.idleCallbackManager.schedule(() => {
+          block.sections.push(new RegisteredPropertiesSection(
+              this, matchedStyles, propertyRule.style(), sectionIdx, propertyRule.propertyName(), expandedByDefault));
+          sectionIdx++;
+        });
+      }
+      blocks.push(block);
+    }
     // If we have seen a layer in matched styles we enable
     // the layer widget button.
     if (sawLayers) {
@@ -1452,7 +1461,7 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
       if (!diffResponse || diffResponse?.diff.length < 2) {
         continue;
       }
-      const changes = await formatCSSChangesFromDiff(diffResponse.diff);
+      const changes = await PanelUtils.formatCSSChangesFromDiff(diffResponse.diff);
       if (changes.length > 0) {
         allChanges += `/* ${escapeUrlAsCssComment(url)} */\n\n${changes}\n\n`;
       }
@@ -1652,9 +1661,34 @@ const MAX_LINK_LENGTH = 23;
 export class SectionBlock {
   private readonly titleElementInternal: Element|null;
   sections: StylePropertiesSection[];
-  constructor(titleElement: Element|null) {
+  #expanded = false;
+  #icon: UI.Icon.Icon|undefined;
+  constructor(titleElement: Element|null, expandable?: boolean, expandedByDefault?: boolean) {
     this.titleElementInternal = titleElement;
     this.sections = [];
+    this.#expanded = expandedByDefault ?? false;
+
+    if (expandable && titleElement instanceof HTMLElement) {
+      this.#icon =
+          UI.Icon.Icon.create(this.#expanded ? 'triangle-down' : 'triangle-right', 'section-block-expand-icon');
+      titleElement.classList.toggle('empty-section', !this.#expanded);
+      UI.ARIAUtils.setExpanded(titleElement, this.#expanded);
+      titleElement.appendChild(this.#icon);
+      // Intercept focus to avoid highlight on click.
+      titleElement.tabIndex = -1;
+      titleElement.addEventListener('click', () => this.expand(!this.#expanded), false);
+    }
+  }
+
+  expand(expand: boolean): void {
+    if (!this.titleElementInternal || !this.#icon) {
+      return;
+    }
+    this.titleElementInternal.classList.toggle('empty-section', !expand);
+    this.#icon.setIconType(expand ? 'triangle-down' : 'triangle-right');
+    UI.ARIAUtils.setExpanded(this.titleElementInternal, expand);
+    this.#expanded = expand;
+    this.sections.forEach(section => section.element.classList.toggle('hidden', !expand));
   }
 
   static createPseudoTypeBlock(pseudoType: Protocol.DOM.PseudoType, pseudoArgument: string|null): SectionBlock {
@@ -1680,6 +1714,14 @@ export class SectionBlock {
     });
     separatorElement.appendChild(link);
     return new SectionBlock(separatorElement);
+  }
+
+  static createRegisteredPropertiesBlock(expandedByDefault: boolean): SectionBlock {
+    const separatorElement = document.createElement('div');
+    const block = new SectionBlock(separatorElement, true, expandedByDefault);
+    separatorElement.className = 'sidebar-separator';
+    separatorElement.appendChild(document.createTextNode(REGISTERED_PROPERTY_SECTION_NAME));
+    return block;
   }
 
   static createKeyframesBlock(keyframesName: string): SectionBlock {

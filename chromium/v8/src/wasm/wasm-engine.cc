@@ -29,6 +29,7 @@
 #include "src/wasm/module-instantiate.h"
 #include "src/wasm/pgo.h"
 #include "src/wasm/stacks.h"
+#include "src/wasm/std-object-sizes.h"
 #include "src/wasm/streaming-decoder.h"
 #include "src/wasm/wasm-debug.h"
 #include "src/wasm/wasm-limits.h"
@@ -134,10 +135,10 @@ class WasmGCForegroundTask : public CancelableTask {
 class WeakScriptHandle {
  public:
   explicit WeakScriptHandle(Handle<Script> script) : script_id_(script->id()) {
-    DCHECK(script->name().IsString() || script->name().IsUndefined());
-    if (script->name().IsString()) {
+    DCHECK(IsString(script->name()) || IsUndefined(script->name()));
+    if (IsString(script->name())) {
       std::unique_ptr<char[]> source_url =
-          String::cast(script->name()).ToCString();
+          String::cast(script->name())->ToCString();
       // Convert from {unique_ptr} to {shared_ptr}.
       source_url_ = {source_url.release(), source_url.get_deleter()};
     }
@@ -524,7 +525,7 @@ Handle<WasmModuleObject> WasmEngine::FinalizeTranslatedAsmJs(
     Isolate* isolate, Handle<AsmWasmData> asm_wasm_data,
     Handle<Script> script) {
   std::shared_ptr<NativeModule> native_module =
-      asm_wasm_data->managed_native_module().get();
+      asm_wasm_data->managed_native_module()->get();
   Handle<WasmModuleObject> module_object =
       WasmModuleObject::New(isolate, std::move(native_module), script);
   return module_object;
@@ -909,9 +910,11 @@ Handle<WasmModuleObject> WasmEngine::ImportNativeModule(
   {
     base::MutexGuard lock(&mutex_);
     DCHECK_EQ(1, isolates_.count(isolate));
-    isolates_[isolate]->native_modules.insert(native_module);
+    IsolateInfo* isolate_info = isolates_.find(isolate)->second.get();
+    isolate_info->native_modules.insert(native_module);
     DCHECK_EQ(1, native_modules_.count(native_module));
     native_modules_[native_module]->isolates.insert(isolate);
+    if (isolate_info->log_codes) native_module->EnableCodeLogging();
   }
 
   // Finish the Wasm script now and make it public to the debugger.
@@ -940,7 +943,9 @@ void WasmEngine::DumpAndResetTurboStatistics() {
   base::MutexGuard guard(&mutex_);
   if (compilation_stats_ != nullptr) {
     StdoutStream os;
-    os << AsPrintableStatistics{*compilation_stats_.get(), false} << std::endl;
+    os << AsPrintableStatistics{"Turbofan Wasm", *compilation_stats_.get(),
+                                false}
+       << std::endl;
   }
   compilation_stats_.reset();
 }
@@ -949,7 +954,9 @@ void WasmEngine::DumpTurboStatistics() {
   base::MutexGuard guard(&mutex_);
   if (compilation_stats_ != nullptr) {
     StdoutStream os;
-    os << AsPrintableStatistics{*compilation_stats_.get(), false} << std::endl;
+    os << AsPrintableStatistics{"Turbofan Wasm", *compilation_stats_.get(),
+                                false}
+       << std::endl;
   }
 }
 
@@ -1103,51 +1110,112 @@ void WasmEngine::RemoveIsolate(Isolate* isolate) {
   }
 #endif  // V8_ENABLE_WASM_GDB_REMOTE_DEBUGGING
 
+  // Keep a WasmCodeRefScope which dies after the {mutex_} is released, to avoid
+  // deadlock when code actually dies, as that requires taking the {mutex_}.
+  WasmCodeRefScope code_ref_scope_for_dead_code;
+
   base::MutexGuard guard(&mutex_);
-  auto it = isolates_.find(isolate);
-  DCHECK_NE(isolates_.end(), it);
-  std::unique_ptr<IsolateInfo> info = std::move(it->second);
-  isolates_.erase(it);
-  for (auto* native_module : info->native_modules) {
+
+  // Lookup the IsolateInfo; do not remove it yet (that happens below).
+  auto isolates_it = isolates_.find(isolate);
+  DCHECK_NE(isolates_.end(), isolates_it);
+  IsolateInfo* isolate_info = isolates_it->second.get();
+
+  // Remove the isolate from the per-native-module info, and other cleanup.
+  for (auto* native_module : isolate_info->native_modules) {
     DCHECK_EQ(1, native_modules_.count(native_module));
-    DCHECK_EQ(1, native_modules_[native_module]->isolates.count(isolate));
-    auto* module = native_modules_[native_module].get();
-    module->isolates.erase(isolate);
-    if (current_gc_info_) {
-      for (WasmCode* code : module->potentially_dead_code) {
-        current_gc_info_->dead_code.erase(code);
-      }
+    NativeModuleInfo* native_module_info =
+        native_modules_.find(native_module)->second.get();
+
+    // Check that the {NativeModule::log_code_} field has the expected value,
+    // and update if the dying isolate was the last one with code logging
+    // enabled.
+    auto has_isolate_with_code_logging = [this, native_module_info] {
+      return std::any_of(native_module_info->isolates.begin(),
+                         native_module_info->isolates.end(),
+                         [this](Isolate* isolate) {
+                           return isolates_.find(isolate)->second->log_codes;
+                         });
+    };
+    DCHECK_EQ(native_module->log_code(), has_isolate_with_code_logging());
+    DCHECK_EQ(1, native_module_info->isolates.count(isolate));
+    native_module_info->isolates.erase(isolate);
+    if (!has_isolate_with_code_logging()) {
+      native_module->DisableCodeLogging();
     }
+
+    // Remove any debug code and other info for this isolate.
     if (native_module->HasDebugInfo()) {
       native_module->GetDebugInfo()->RemoveIsolate(isolate);
     }
   }
+
+  // Abort any outstanding GC.
   if (current_gc_info_) {
     if (RemoveIsolateFromCurrentGC(isolate)) PotentiallyFinishCurrentGC();
   }
-  if (auto* task = info->log_codes_task) {
+
+  // Cancel outstanding code logging and clear the {code_to_log} vector.
+  if (auto* task = isolate_info->log_codes_task) {
     task->Cancel();
-    for (auto& log_entry : info->code_to_log) {
-      WasmCode::DecrementRefCount(base::VectorOf(log_entry.second.code));
+    for (auto& [script_id, code_to_log] : isolate_info->code_to_log) {
+      for (WasmCode* code : code_to_log.code) {
+        // Keep a reference in the {code_ref_scope_for_dead_code} such that the
+        // code cannot become dead immediately.
+        WasmCodeRefScope::AddRef(code);
+        code->DecRefOnLiveCode();
+      }
     }
-    info->code_to_log.clear();
+    isolate_info->code_to_log.clear();
   }
-  DCHECK(info->code_to_log.empty());
+  DCHECK(isolate_info->code_to_log.empty());
+
+  // Finally remove the {IsolateInfo} for this isolate.
+  isolates_.erase(isolates_it);
 }
 
 void WasmEngine::LogCode(base::Vector<WasmCode*> code_vec) {
   if (code_vec.empty()) return;
+  NativeModule* native_module = code_vec[0]->native_module();
+  if (!native_module->log_code()) return;
   using TaskToSchedule =
       std::pair<std::shared_ptr<v8::TaskRunner>, std::unique_ptr<LogCodesTask>>;
   std::vector<TaskToSchedule> to_schedule;
   {
     base::MutexGuard guard(&mutex_);
-    NativeModule* native_module = code_vec[0]->native_module();
     DCHECK_EQ(1, native_modules_.count(native_module));
-    for (Isolate* isolate : native_modules_[native_module]->isolates) {
+    NativeModuleInfo* native_module_info =
+        native_modules_.find(native_module)->second.get();
+    for (Isolate* isolate : native_module_info->isolates) {
       DCHECK_EQ(1, isolates_.count(isolate));
       IsolateInfo* info = isolates_[isolate].get();
       if (info->log_codes == false) continue;
+
+      auto script_it = info->scripts.find(native_module);
+      // If the script does not yet exist, logging will happen later. If the
+      // weak handle is cleared already, we also don't need to log any more.
+      if (script_it == info->scripts.end()) continue;
+
+      // If this is the first code to log in that isolate, request an interrupt
+      // to log the newly added code as soon as possible.
+      if (info->code_to_log.empty()) {
+        isolate->stack_guard()->RequestLogWasmCode();
+      }
+
+      WeakScriptHandle& weak_script_handle = script_it->second;
+      auto& log_entry = info->code_to_log[weak_script_handle.script_id()];
+      if (!log_entry.source_url) {
+        log_entry.source_url = weak_script_handle.source_url();
+      }
+      log_entry.code.insert(log_entry.code.end(), code_vec.begin(),
+                            code_vec.end());
+
+      // Increment the reference count for the added {log_entry.code} entries.
+      for (WasmCode* code : code_vec) {
+        DCHECK_EQ(native_module, code->native_module());
+        code->IncRef();
+      }
+
       if (info->log_codes_task == nullptr) {
         auto new_task = std::make_unique<LogCodesTask>(
             &mutex_, &info->log_codes_task, isolate, this);
@@ -1164,24 +1232,6 @@ void WasmEngine::LogCode(base::Vector<WasmCode*> code_vec) {
         to_schedule.emplace_back(info->foreground_task_runner,
                                  std::move(new_task));
       }
-      if (info->code_to_log.empty()) {
-        isolate->stack_guard()->RequestLogWasmCode();
-      }
-      for (WasmCode* code : code_vec) {
-        DCHECK_EQ(native_module, code->native_module());
-        code->IncRef();
-      }
-
-      auto script_it = info->scripts.find(native_module);
-      // If the script does not yet exist, logging will happen later. If the
-      // weak handle is cleared already, we also don't need to log any more.
-      if (script_it == info->scripts.end()) continue;
-      auto& log_entry = info->code_to_log[script_it->second.script_id()];
-      if (!log_entry.source_url) {
-        log_entry.source_url = script_it->second.source_url();
-      }
-      log_entry.code.insert(log_entry.code.end(), code_vec.begin(),
-                            code_vec.end());
     }
   }
   for (auto& [runner, task] : to_schedule) {
@@ -1193,7 +1243,13 @@ void WasmEngine::EnableCodeLogging(Isolate* isolate) {
   base::MutexGuard guard(&mutex_);
   auto it = isolates_.find(isolate);
   DCHECK_NE(isolates_.end(), it);
-  it->second->log_codes = true;
+  IsolateInfo* info = it->second.get();
+  info->log_codes = true;
+  // Also set {NativeModule::log_code_} for all native modules currently used by
+  // this isolate.
+  for (NativeModule* native_module : info->native_modules) {
+    native_module->EnableCodeLogging();
+  }
 }
 
 void WasmEngine::LogOutstandingCodesForIsolate(Isolate* isolate) {
@@ -1210,13 +1266,13 @@ void WasmEngine::LogOutstandingCodesForIsolate(Isolate* isolate) {
   bool should_log = WasmCode::ShouldBeLogged(isolate);
 
   TRACE_EVENT0("v8.wasm", "wasm.LogCode");
-  for (auto& pair : code_to_log) {
-    for (WasmCode* code : pair.second.code) {
+  for (auto& [script_id, code_to_log] : code_to_log) {
+    for (WasmCode* code : code_to_log.code) {
       if (should_log) {
-        code->LogCode(isolate, pair.second.source_url.get(), pair.first);
+        code->LogCode(isolate, code_to_log.source_url.get(), script_id);
       }
     }
-    WasmCode::DecrementRefCount(base::VectorOf(pair.second.code));
+    WasmCode::DecrementRefCount(base::VectorOf(code_to_log.code));
   }
 }
 
@@ -1243,14 +1299,19 @@ std::shared_ptr<NativeModule> WasmEngine::NewNativeModule(
     }
     native_modules_kept_alive_for_pgo->emplace_back(native_module);
   }
-  auto pair = native_modules_.insert(std::make_pair(
+  auto [iterator, inserted] = native_modules_.insert(std::make_pair(
       native_module.get(), std::make_unique<NativeModuleInfo>(native_module)));
-  DCHECK(pair.second);  // inserted new entry.
-  pair.first->second.get()->isolates.insert(isolate);
-  auto* isolate_info = isolates_[isolate].get();
+  DCHECK(inserted);
+  NativeModuleInfo* native_module_info = iterator->second.get();
+  native_module_info->isolates.insert(isolate);
+  DCHECK_EQ(1, isolates_.count(isolate));
+  IsolateInfo* isolate_info = isolates_.find(isolate)->second.get();
   isolate_info->native_modules.insert(native_module.get());
   if (isolate_info->keep_in_debug_state) {
     native_module->SetDebugState(kDebugging);
+  }
+  if (isolate_info->log_codes) {
+    native_module->EnableCodeLogging();
   }
 
   // Record memory protection key support.
@@ -1682,6 +1743,50 @@ void WasmEngine::PotentiallyFinishCurrentGC() {
   int8_t next_gc_sequence_index = current_gc_info_->next_gc_sequence_index;
   current_gc_info_.reset();
   if (next_gc_sequence_index != 0) TriggerGC(next_gc_sequence_index);
+}
+
+size_t WasmEngine::EstimateCurrentMemoryConsumption() const {
+  UPDATE_WHEN_CLASS_CHANGES(WasmEngine, 680);
+  UPDATE_WHEN_CLASS_CHANGES(IsolateInfo, 256);
+  UPDATE_WHEN_CLASS_CHANGES(NativeModuleInfo, 144);
+  UPDATE_WHEN_CLASS_CHANGES(CurrentGCInfo, 96);
+  size_t result = sizeof(WasmEngine);
+  result += type_canonicalizer_.EstimateCurrentMemoryConsumption();
+  {
+    base::MutexGuard lock(&mutex_);
+    result += ContentSize(async_compile_jobs_);
+    result += async_compile_jobs_.size() * sizeof(AsyncCompileJob);
+
+    // TODO(14106): Do we care about {compilation_stats_}?
+    // TODO(14106): Do we care about {code_tracer_}?
+
+    result += ContentSize(isolates_);
+    result += isolates_.size() * sizeof(IsolateInfo);
+    for (const auto& [isolate, isolate_info] : isolates_) {
+      result += ContentSize(isolate_info->native_modules);
+      result += ContentSize(isolate_info->scripts);
+      result += ContentSize(isolate_info->code_to_log);
+    }
+
+    result += ContentSize(native_modules_);
+    result += native_modules_.size() * sizeof(NativeModuleInfo);
+    for (const auto& [native_module, native_module_info] : native_modules_) {
+      result += native_module->EstimateCurrentMemoryConsumption();
+      result += ContentSize(native_module_info->isolates);
+      result += ContentSize(native_module_info->potentially_dead_code);
+      result += ContentSize(native_module_info->dead_code);
+    }
+
+    if (current_gc_info_) {
+      result += sizeof(CurrentGCInfo);
+      result += ContentSize(current_gc_info_->outstanding_isolates);
+      result += ContentSize(current_gc_info_->dead_code);
+    }
+  }
+  if (v8_flags.trace_wasm_offheap_memory) {
+    PrintF("WasmEngine: %zu\n", result);
+  }
+  return result;
 }
 
 namespace {

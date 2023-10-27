@@ -18,7 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "./centipede/int_utils.h"
+#include "./centipede/rolling_hash.h"
 
 namespace centipede {
 // CallStack maintains a function call stack for the current thread.
@@ -71,6 +71,8 @@ class CallStack {
   }
 
   // Returns the hash of the current call stack.
+  // Only the last `window_size` frames are used to compute the hash.
+  // `ResetWindowSize(window_size)` must be called at the initialization time.
   uint32_t Hash() const { return depth_ == 0 ? 0 : hashes_[depth_ - 1]; }
 
   // Updates the call stack and its hash on function entry.
@@ -87,8 +89,18 @@ class CallStack {
     pc_[depth_] = pc;
     sp_[depth_] = sp;
     uint32_t previous_hash = depth_ == 0 ? 0 : hashes_[depth_ - 1];
-    hashes_[depth_] = CRC32(previous_hash, pc);
+    uintptr_t previous_pc =
+        depth_ >= window_size_ ? pc_[depth_ - window_size_] : 0;
+    hashes_[depth_] = rolling_hash_.Update(previous_hash, pc, previous_pc);
     ++depth_;
+  }
+
+  // Resets the call stack.
+  // `window_size` is the number of stack frames used to compute the hash.
+  void Reset(size_t window_size) {
+    depth_ = 0;
+    window_size_ = window_size;
+    rolling_hash_.Reset(window_size);
   }
 
  private:
@@ -97,6 +109,8 @@ class CallStack {
   uintptr_t pc_[kMaxDepth];
   uintptr_t sp_[kMaxDepth];
   uint32_t hashes_[kMaxDepth];
+  RollingHash rolling_hash_;
+  size_t window_size_;
 };
 
 }  // namespace centipede

@@ -24,7 +24,7 @@
 #include <unordered_set>
 #include <vector>
 
-#include "dawn/common/RefCounted.h"
+#include "dawn/common/Ref.h"
 #include "dawn/common/ityp_array.h"
 #include "dawn/common/ityp_bitset.h"
 #include "dawn/native/Adapter.h"
@@ -44,7 +44,7 @@ namespace dawn::native {
 class CallbackTaskManager;
 class DeviceBase;
 class Surface;
-class XlibXcbFunctions;
+class X11Functions;
 
 using BackendsBitset = ityp::bitset<wgpu::BackendType, kEnumCount<wgpu::BackendType>>;
 using BackendsArray = ityp::
@@ -65,6 +65,8 @@ class InstanceBase final : public RefCountedWithExternalCount {
     // Deprecated: Discover physical devices and save them on the instance.
     void DiscoverDefaultPhysicalDevices();
     bool DiscoverPhysicalDevices(const PhysicalDeviceDiscoveryOptionsBase* options);
+
+    // Deprecated. Use EnumerateAdapters instead.
     // Return adapters created on physical device discovered by the instance.
     std::vector<Ref<AdapterBase>> GetAdapters() const;
 
@@ -139,7 +141,7 @@ class InstanceBase final : public RefCountedWithExternalCount {
     const Ref<CallbackTaskManager>& GetCallbackTaskManager() const;
 
     // Get backend-independent libraries that need to be loaded dynamically.
-    const XlibXcbFunctions* GetOrCreateXlibXcbFunctions();
+    const X11Functions* GetOrLoadX11Functions();
 
     // Dawn API
     Surface* APICreateSurface(const SurfaceDescriptor* descriptor);
@@ -157,8 +159,9 @@ class InstanceBase final : public RefCountedWithExternalCount {
     MaybeError Initialize(const InstanceDescriptor* descriptor);
     void SetPlatform(dawn::platform::Platform* platform);
 
-    // Lazily creates connections to all backends that have been compiled.
-    void EnsureBackendConnection(wgpu::BackendType backendType);
+    // Lazily creates connections to all backends that have been compiled, may return null even for
+    // compiled in backends.
+    BackendConnection* GetBackendConnection(wgpu::BackendType backendType);
 
     // Deprecated: Discover physical devices with options, and save them on the instance.
     void DeprecatedDiscoverPhysicalDevices(const RequestAdapterOptions* options);
@@ -166,13 +169,18 @@ class InstanceBase final : public RefCountedWithExternalCount {
     std::vector<Ref<PhysicalDeviceBase>> EnumeratePhysicalDevices(
         const RequestAdapterOptions* options);
 
+    // Helper function that create adapter on given physical device handling required adapter
+    // toggles descriptor.
+    Ref<AdapterBase> CreateAdapter(Ref<PhysicalDeviceBase> physicalDevice,
+                                   FeatureLevel featureLevel,
+                                   const DawnTogglesDescriptor* requiredAdapterToggles,
+                                   wgpu::PowerPreference powerPreference) const;
+
     void ConsumeError(std::unique_ptr<ErrorData> error);
 
     std::unordered_set<std::string> warningMessages;
 
     std::vector<std::string> mRuntimeSearchPaths;
-
-    BackendsBitset mBackendsConnected;
 
     bool mBeginCaptureOnStartup = false;
     bool mEnableAdapterBlocklist = false;
@@ -184,16 +192,16 @@ class InstanceBase final : public RefCountedWithExternalCount {
     BlobCache mPassthroughBlobCache;
 
     BackendsArray mBackends;
+    BackendsBitset mBackendsTried;
+
     std::vector<Ref<PhysicalDeviceBase>> mDeprecatedPhysicalDevices;
     bool mDeprecatedDiscoveredDefaultPhysicalDevices = false;
 
     TogglesState mToggles;
-
-    FeaturesInfo mFeaturesInfo;
     TogglesInfo mTogglesInfo;
 
 #if defined(DAWN_USE_X11)
-    std::unique_ptr<XlibXcbFunctions> mXlibXcbFunctions;
+    std::unique_ptr<X11Functions> mX11Functions;
 #endif  // defined(DAWN_USE_X11)
 
     Ref<CallbackTaskManager> mCallbackTaskManager;

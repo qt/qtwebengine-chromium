@@ -19,6 +19,8 @@
 #include "vp9/common/vp9_scan.h"
 #include "vp9/encoder/vp9_encoder.h"
 #include "vp9/encoder/vp9_tpl_model.h"
+#include "vpx/internal/vpx_codec_internal.h"
+#include "vpx/vpx_codec.h"
 
 static int init_gop_frames(VP9_COMP *cpi, GF_PICTURE *gf_picture,
                            const GF_GROUP *gf_group, int *tpl_group_frames) {
@@ -398,6 +400,8 @@ static void tpl_store_before_propagation(VpxTplBlockStats *tpl_block_stats,
     for (idx = 0; idx < mi_width; ++idx) {
       VpxTplBlockStats *tpl_block_stats_ptr =
           &tpl_block_stats[(mi_row + idy) * stride + mi_col + idx];
+      tpl_block_stats_ptr->row = mi_row * 8;
+      tpl_block_stats_ptr->col = mi_col * 8;
       tpl_block_stats_ptr->inter_cost = src_stats->inter_cost;
       tpl_block_stats_ptr->intra_cost = src_stats->intra_cost;
       tpl_block_stats_ptr->recrf_dist = recon_error << TPL_DEP_COST_SCALE_LOG2;
@@ -497,18 +501,15 @@ static void get_quantize_error(MACROBLOCK *x, int plane, tran_low_t *coeff,
 
 #if CONFIG_VP9_HIGHBITDEPTH
   if (xd->cur_buf->flags & YV12_FLAG_HIGHBITDEPTH) {
-    vp9_highbd_quantize_fp_32x32(coeff, pix_num, p->round_fp, p->quant_fp,
-                                 qcoeff, dqcoeff, pd->dequant, eob,
-                                 scan_order->scan, scan_order->iscan);
+    vp9_highbd_quantize_fp_32x32(coeff, pix_num, p, qcoeff, dqcoeff,
+                                 pd->dequant, eob, scan_order);
   } else {
-    vp9_quantize_fp_32x32(coeff, pix_num, p->round_fp, p->quant_fp, qcoeff,
-                          dqcoeff, pd->dequant, eob, scan_order->scan,
-                          scan_order->iscan);
+    vp9_quantize_fp_32x32(coeff, pix_num, p, qcoeff, dqcoeff, pd->dequant, eob,
+                          scan_order);
   }
 #else
-  vp9_quantize_fp_32x32(coeff, pix_num, p->round_fp, p->quant_fp, qcoeff,
-                        dqcoeff, pd->dequant, eob, scan_order->scan,
-                        scan_order->iscan);
+  vp9_quantize_fp_32x32(coeff, pix_num, p, qcoeff, dqcoeff, pd->dequant, eob,
+                        scan_order);
 #endif  // CONFIG_VP9_HIGHBITDEPTH
 
   *recon_error = vp9_block_error(coeff, dqcoeff, pix_num, sse) >> shift;
@@ -1507,6 +1508,16 @@ void vp9_setup_tpl_stats(VP9_COMP *cpi) {
   // TPL stats has extra frames from next GOP. Trim those extra frames for
   // Qmode.
   trim_tpl_stats(&cpi->common.error, &cpi->tpl_gop_stats, extended_frame_count);
+
+  if (cpi->ext_ratectrl.ready &&
+      cpi->ext_ratectrl.funcs.send_tpl_gop_stats != NULL) {
+    const vpx_codec_err_t codec_status =
+        vp9_extrc_send_tpl_stats(&cpi->ext_ratectrl, &cpi->tpl_gop_stats);
+    if (codec_status != VPX_CODEC_OK) {
+      vpx_internal_error(&cpi->common.error, codec_status,
+                         "vp9_extrc_send_tpl_stats() failed");
+    }
+  }
 
 #if CONFIG_NON_GREEDY_MV
   cpi->tpl_ready = 1;

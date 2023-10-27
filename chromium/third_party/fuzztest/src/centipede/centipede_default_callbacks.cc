@@ -31,19 +31,9 @@ CentipedeDefaultCallbacks::CentipedeDefaultCallbacks(const Environment &env)
     LoadDictionary(dictionary_path);
   }
 
-  // TODO(b/267096672): This logic is unreliable: improve.
-  // Check if a custom mutator is available in the target.
-  LOG(INFO) << "Detecting custom mutator in target...";
-  std::vector<ByteArray> mutants(1);
-  const bool external_mutator_ran =
-      MutateViaExternalBinary(env_.binary, {{0}}, mutants);
-  if (external_mutator_ran && mutants.size() == 1 && !mutants.front().empty()) {
-    custom_mutator_is_usable_ = true;
-    LOG(INFO) << "Custom mutator detected: will use it";
-  } else {
-    LOG(INFO) << "Custom mutator undetected or misbehaving: will use built-in";
-    LOG(INFO) << VV(external_mutator_ran) << VV(mutants.size());
-    LOG_IF(INFO, !mutants.empty()) << VV(mutants.front().size());
+  if (env_.has_input_wildcards) {
+    LOG(INFO) << "Disabling custom mutator for standalone target";
+    custom_mutator_is_usable_ = false;
   }
 }
 
@@ -54,17 +44,33 @@ bool CentipedeDefaultCallbacks::Execute(std::string_view binary,
          0;
 }
 
-void CentipedeDefaultCallbacks::Mutate(const std::vector<ByteArray> &inputs,
-                                       size_t num_mutants,
-                                       std::vector<ByteArray> &mutants) {
+void CentipedeDefaultCallbacks::Mutate(
+    const std::vector<MutationInputRef> &inputs, size_t num_mutants,
+    std::vector<ByteArray> &mutants) {
   mutants.resize(num_mutants);
-  if (custom_mutator_is_usable_) {
-    CHECK(MutateViaExternalBinary(env_.binary, inputs, mutants))
-        << "Custom mutator in " << env_.binary << " failed, aborting";
-    return;
+  if (num_mutants == 0) return;
+  // Try to use the custom mutator if it hasn't been disabled.
+  if (custom_mutator_is_usable_.value_or(true)) {
+    if (MutateViaExternalBinary(env_.binary, inputs, mutants)) {
+      if (!custom_mutator_is_usable_.has_value()) {
+        LOG(INFO) << "Custom mutator detected: will use it";
+        custom_mutator_is_usable_ = true;
+      }
+      if (!mutants.empty()) return;
+      LOG(WARNING)
+          << "No mutants returned from the custom mutator - falling "
+             "back to the internal mutator. Check the custom mutator if this "
+             "happens frequently";
+    } else {
+      LOG(INFO) << "Custom mutator undetected or misbehaving:";
+      CHECK(!custom_mutator_is_usable_.has_value())
+          << "Custom mutator is unreliable, aborting";
+      LOG(INFO) << "Falling back to the internal default mutator.";
+      custom_mutator_is_usable_ = false;
+    }
   }
-  // No custom mutator.
-  byte_array_mutator_.MutateMany(inputs, num_mutants, mutants);
+  // Fallback of the internal mutator.
+  CentipedeCallbacks::Mutate(inputs, num_mutants, mutants);
 }
 
 }  // namespace centipede

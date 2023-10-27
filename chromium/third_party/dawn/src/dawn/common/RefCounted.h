@@ -17,10 +17,13 @@
 
 #include <atomic>
 #include <cstdint>
-
-#include "dawn/common/RefBase.h"
+#include <type_traits>
 
 namespace dawn {
+
+namespace detail {
+class WeakRefData;
+}  // namespace detail
 
 class RefCount {
   public:
@@ -32,6 +35,9 @@ class RefCount {
 
     // Add a reference.
     void Increment();
+    // Tries to add a reference. Returns false if the ref count is already at 0. This is used when
+    // operating on a raw pointer to a RefCounted instead of a valid Ref that may be soon deleted.
+    bool TryIncrement();
 
     // Remove a reference. Returns true if this was the last reference.
     bool Decrement();
@@ -58,6 +64,9 @@ class RefCounted {
     void APIRelease() { ReleaseAndLockBeforeDestroy(); }
 
   protected:
+    // Friend class is needed to access the RefCount to TryIncrement.
+    friend class detail::WeakRefData;
+
     virtual ~RefCounted();
 
     void ReleaseAndLockBeforeDestroy();
@@ -69,26 +78,6 @@ class RefCounted {
 
     RefCount mRefCount;
 };
-
-template <typename T>
-struct RefCountedTraits {
-    static constexpr T* kNullValue = nullptr;
-    static void Reference(T* value) { value->Reference(); }
-    static void Release(T* value) { value->Release(); }
-};
-
-template <typename T>
-class Ref : public RefBase<T*, RefCountedTraits<T>> {
-  public:
-    using RefBase<T*, RefCountedTraits<T>>::RefBase;
-};
-
-template <typename T>
-Ref<T> AcquireRef(T* pointee) {
-    Ref<T> ref;
-    ref.Acquire(pointee);
-    return ref;
-}
 
 }  // namespace dawn
 

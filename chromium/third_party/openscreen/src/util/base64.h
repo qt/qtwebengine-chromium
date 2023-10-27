@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,14 +11,14 @@
 #include <vector>
 
 #include "absl/strings/string_view.h"
-#include "absl/types/span.h"
 #include "platform/base/error.h"
+#include "platform/base/span.h"
 
 namespace openscreen {
 namespace base64 {
 
 // Encodes the input binary data in base64.
-std::string Encode(absl::Span<const uint8_t> input);
+std::string Encode(ByteView input);
 
 // Encodes the input string in base64.
 std::string Encode(absl::string_view input);

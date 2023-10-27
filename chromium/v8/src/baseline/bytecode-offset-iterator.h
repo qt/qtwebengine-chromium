@@ -22,8 +22,8 @@ class V8_EXPORT_PRIVATE BytecodeOffsetIterator {
   explicit BytecodeOffsetIterator(Handle<ByteArray> mapping_table,
                                   Handle<BytecodeArray> bytecodes);
   // Non-handlified version for use when no GC can happen.
-  explicit BytecodeOffsetIterator(ByteArray mapping_table,
-                                  BytecodeArray bytecodes);
+  explicit BytecodeOffsetIterator(Tagged<ByteArray> mapping_table,
+                                  Tagged<BytecodeArray> bytecodes);
   ~BytecodeOffsetIterator();
 
   inline void Advance() {
@@ -65,8 +65,7 @@ class V8_EXPORT_PRIVATE BytecodeOffsetIterator {
     return current_bytecode_offset_;
   }
 
-  static void UpdatePointersCallback(LocalIsolate*, GCType, GCCallbackFlags,
-                                     void* iterator) {
+  static void UpdatePointersCallback(void* iterator) {
     reinterpret_cast<BytecodeOffsetIterator*>(iterator)->UpdatePointers();
   }
 

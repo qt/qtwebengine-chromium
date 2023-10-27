@@ -149,7 +149,7 @@ class V8_EXPORT_PRIVATE Scope : public NON_EXPORTED_BASE(ZoneObject) {
   template <typename IsolateT>
   EXPORT_TEMPLATE_DECLARE(V8_EXPORT_PRIVATE)
   static Scope* DeserializeScopeChain(IsolateT* isolate, Zone* zone,
-                                      ScopeInfo scope_info,
+                                      Tagged<ScopeInfo> scope_info,
                                       DeclarationScope* script_scope,
                                       AstValueFactory* ast_value_factory,
                                       DeserializationMode deserialization_mode);
@@ -318,6 +318,14 @@ class V8_EXPORT_PRIVATE Scope : public NON_EXPORTED_BASE(ZoneObject) {
   //   end position: end position of last token of 'stmt'
   // * For the scope of a switch statement
   //     switch (tag) { cases }
+  //   start position: start position of '{'
+  //   end position: end position of '}'
+  // * For the scope of a class literal or declaration
+  //     class A extends B { body }
+  //   start position: start position of 'class'
+  //   end position: end position of '}'
+  // * For the scope of a class member initializer functions:
+  //     class A extends B { body }
   //   start position: start position of '{'
   //   end position: end position of '}'
   int start_position() const { return start_position_; }
@@ -1483,7 +1491,7 @@ class V8_EXPORT_PRIVATE ClassScope : public Scope {
   // If the reparsed scope declares any variable that needs allocation
   // fixup using the scope info, needs_allocation_fixup is true.
   void FinalizeReparsedClassScope(Isolate* isolate,
-                                  MaybeHandle<ScopeInfo> outer_scope_info,
+                                  MaybeHandle<ScopeInfo> maybe_class_scope_info,
                                   AstValueFactory* ast_value_factory,
                                   bool needs_allocation_fixup);
 #ifdef DEBUG

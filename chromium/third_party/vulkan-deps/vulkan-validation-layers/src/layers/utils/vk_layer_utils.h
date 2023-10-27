@@ -25,7 +25,6 @@
 #include <string>
 #include <vector>
 #include <bitset>
-#include <iomanip>
 #include "cast_utils.h"
 #include "generated/vk_extension_helper.h"
 #include "generated/vk_format_utils.h"
@@ -61,17 +60,6 @@ static inline VkExtent3D CastTo3D(const VkExtent2D &d2) {
 static inline VkOffset3D CastTo3D(const VkOffset2D &d2) {
     VkOffset3D d3 = {d2.x, d2.y, 0};
     return d3;
-}
-
-// Convert integer API version to a string
-static inline std::string StringAPIVersion(APIVersion version) {
-    std::stringstream version_name;
-    if (!version.valid()) {
-        return "<unrecognized>";
-    }
-    version_name << version.major() << "." << version.minor() << "." << version.patch() << " (0x" << std::setfill('0')
-                 << std::setw(8) << std::hex << version.value() << ")";
-    return version_name.str();
 }
 
 // Traits objects to allow string_join to operate on collections of const char *
@@ -808,6 +796,18 @@ static inline void ToUpper(std::string &str) {
     // std::toupper() returns int which can cause compiler warnings
     transform(str.begin(), str.end(), str.begin(),
               [](char c) { return static_cast<char>(std::toupper(c)); });
+}
+
+// The standard does not specify the value of data() for zero-sized contatiners as being null or non-null,
+// only that it is not dereferenceable.
+//
+// Vulkan VUID's OTOH frequently require NULLs for zero-sized entries, or for option entries with non-zero counts
+template <typename T>
+const typename T::value_type *DataOrNull(const T &container) {
+    if (!container.empty()) {
+        return container.data();
+    }
+    return nullptr;
 }
 
 }  // namespace vvl

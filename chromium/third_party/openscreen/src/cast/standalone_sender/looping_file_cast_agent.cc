@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -60,7 +60,9 @@ void LoopingFileCastAgent::Connect(ConnectionSettings settings) {
                           : DeviceMediaPolicy::kAudioOnly;
 
   task_runner_.PostTask([this, policy] {
+#if defined(MAC_OSX)
     wake_lock_ = ScopedWakeLock::Create(task_runner_);
+#endif  // defined(MAC_OSX)
     socket_factory_.Connect(connection_settings_->receiver_endpoint, policy,
                             &router_);
   });
@@ -288,6 +290,7 @@ void LoopingFileCastAgent::CreateAndStartSession() {
       remote_connection_->peer_id,
       connection_settings_->use_android_rtp_hack};
   current_session_ = std::make_unique<SenderSession>(std::move(config));
+  current_session_->SetStatsClient(this);
   OSP_DCHECK(!message_port_.source_id().empty());
 
   AudioCaptureConfig audio_config;
@@ -342,6 +345,16 @@ void LoopingFileCastAgent::OnError(const SenderSession* session, Error error) {
   Shutdown();
 }
 
+void LoopingFileCastAgent::OnStatisticsUpdated(
+    const SenderStats& updated_stats) {
+  // Only log every 10 times, or roughly every 5 seconds.
+  constexpr int kLoggingInterval = 10;
+  if ((num_times_on_statistics_updated_called_++ % kLoggingInterval) == 0) {
+    OSP_VLOG << __func__ << ": updated_stats=" << updated_stats.ToString();
+  }
+  last_reported_statistics_ = absl::make_optional<SenderStats>(updated_stats);
+}
+
 void LoopingFileCastAgent::OnReady() {
   OSP_DCHECK(cast_mode_ == CastMode::kRemoting);
   is_ready_for_remoting_ = true;
@@ -373,6 +386,11 @@ void LoopingFileCastAgent::Shutdown() {
   }
   OSP_DCHECK(message_port_.source_id().empty());
   environment_.reset();
+
+  if (last_reported_statistics_) {
+    OSP_LOG_INFO << "Last reported statistics="
+                 << last_reported_statistics_->ToString();
+  }
 
   if (platform_remote_connection_) {
     const VirtualConnection connection = *platform_remote_connection_;

@@ -17,7 +17,7 @@
 #include "core/fxge/cfx_path.h"
 #include "core/fxge/renderdevicedriver_iface.h"
 #include "third_party/base/check_op.h"
-#include "third_party/base/span.h"
+#include "third_party/base/containers/span.h"
 #include "third_party/skia/include/core/SkPoint.h"
 #include "third_party/skia/include/core/SkRSXform.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
@@ -108,6 +108,7 @@ class CFX_SkiaDeviceDriver final : public RenderDeviceDriverIface {
                        int bitmap_alpha,
                        BlendMode blend_type) override;
   void SetGroupKnockout(bool group_knockout) override;
+  bool SyncInternalBitmaps() override;
 
   bool StretchDIBits(const RetainPtr<CFX_DIBBase>& pBitmap,
                      uint32_t color,
@@ -130,7 +131,7 @@ class CFX_SkiaDeviceDriver final : public RenderDeviceDriverIface {
   bool ContinueDIBits(CFX_ImageRenderer* handle,
                       PauseIndicatorIface* pPause) override;
 
-  bool DrawBitsWithMask(const RetainPtr<CFX_DIBBase>& pBitmap,
+  bool DrawBitsWithMask(const RetainPtr<CFX_DIBBase>& pSource,
                         const RetainPtr<CFX_DIBBase>& pMask,
                         int bitmap_alpha,
                         const CFX_Matrix& matrix,
@@ -204,7 +205,7 @@ class CFX_SkiaDeviceDriver final : public RenderDeviceDriverIface {
                    uint32_t color,
                    const CFX_TextRenderOptions& options);
 
-  bool StartDIBitsSkia(const RetainPtr<CFX_DIBBase>& pBitmap,
+  bool StartDIBitsSkia(const RetainPtr<CFX_DIBBase>& pSource,
                        const FX_RECT& src_rect,
                        int bitmap_alpha,
                        uint32_t color,

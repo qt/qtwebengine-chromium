@@ -162,13 +162,9 @@ TEST_P(BluetoothClassicTest, CanConnect) {
   CountDownLatch accept_latch(1);
   EXPECT_TRUE(bt_server.StartAcceptingConnections(
       std::string(kServiceName1),
-      {
-          .accepted_cb =
-              [&socket_for_server, &accept_latch](const std::string& service_id,
-                                                  BluetoothSocket socket) {
-                socket_for_server = std::move(socket);
-                accept_latch.CountDown();
-              },
+      [&](const std::string& service_id, BluetoothSocket socket) {
+        socket_for_server = std::move(socket);
+        accept_latch.CountDown();
       }));
   CancellationFlag flag;
   BluetoothSocket socket_for_client =
@@ -217,13 +213,9 @@ TEST_P(BluetoothClassicTest, CanCancelBeforeConnect) {
   CountDownLatch accept_latch(1);
   EXPECT_TRUE(bt_server.StartAcceptingConnections(
       std::string(kServiceName1),
-      {
-          .accepted_cb =
-              [&socket_for_server, &accept_latch](const std::string& service_id,
-                                                  BluetoothSocket socket) {
-                socket_for_server = std::move(socket);
-                accept_latch.CountDown();
-              },
+      [&](const std::string& service_id, BluetoothSocket socket) {
+        socket_for_server = std::move(socket);
+        accept_latch.CountDown();
       }));
   CancellationFlag flag(true);
   BluetoothSocket socket_for_client =
@@ -288,13 +280,9 @@ TEST_P(BluetoothClassicTest, CanCancelDuringConnect) {
   CountDownLatch accept_latch(1);
   EXPECT_TRUE(bt_server.StartAcceptingConnections(
       std::string(kServiceName1),
-      {
-          .accepted_cb =
-              [&socket_for_server, &accept_latch](const std::string& service_id,
-                                                  BluetoothSocket socket) {
-                socket_for_server = std::move(socket);
-                accept_latch.CountDown();
-              },
+      [&](const std::string& service_id, BluetoothSocket socket) {
+        socket_for_server = std::move(socket);
+        accept_latch.CountDown();
       }));
   CancellationFlag flag;
   BluetoothSocket socket_for_client =
@@ -355,18 +343,15 @@ TEST_P(BluetoothClassicTest, CanCancelDuringConnect_MultipleEndpoints) {
   EXPECT_TRUE(latch.Await(kWaitDuration).result());
   EXPECT_TRUE(bt_server.TurnOffDiscoverability());
   ASSERT_TRUE(discovered_device.IsValid());
-  BluetoothSocket socket_for_server;
+  BluetoothSocket socket_for_server1;
+  BluetoothSocket socket_for_server2;
   CountDownLatch accept_latch(1);
 
   EXPECT_TRUE(bt_server.StartAcceptingConnections(
       std::string(kServiceName1),
-      {
-          .accepted_cb =
-              [&socket_for_server, &accept_latch](const std::string& service_id,
-                                                  BluetoothSocket socket) {
-                socket_for_server = std::move(socket);
-                accept_latch.CountDown();
-              },
+      [&](const std::string& service_id, BluetoothSocket socket) {
+        socket_for_server1 = std::move(socket);
+        accept_latch.CountDown();
       }));
   CancellationFlag flag;
   BluetoothSocket socket_for_client1 =
@@ -377,13 +362,9 @@ TEST_P(BluetoothClassicTest, CanCancelDuringConnect_MultipleEndpoints) {
   medium_a_->CancelDuringConnectToService();
   EXPECT_TRUE(bt_server.StartAcceptingConnections(
       std::string(kServiceName2),
-      {
-          .accepted_cb =
-              [&socket_for_server, &accept_latch](const std::string& service_id,
-                                                  BluetoothSocket socket) {
-                socket_for_server = std::move(socket);
-                accept_latch.CountDown();
-              },
+      [&](const std::string& service_id, BluetoothSocket socket) {
+        socket_for_server2 = std::move(socket);
+        accept_latch.CountDown();
       }));
 
   BluetoothSocket socket_for_client2 =
@@ -394,10 +375,12 @@ TEST_P(BluetoothClassicTest, CanCancelDuringConnect_MultipleEndpoints) {
     EXPECT_TRUE(accept_latch.Await(kWaitDuration).result());
     EXPECT_TRUE(bt_server.StopAcceptingConnections(std::string(kServiceName1)));
     EXPECT_TRUE(bt_server.StopAcceptingConnections(std::string(kServiceName2)));
-    EXPECT_TRUE(socket_for_server.IsValid());
+    EXPECT_TRUE(socket_for_server1.IsValid());
+    EXPECT_TRUE(socket_for_server2.IsValid());
     EXPECT_TRUE(socket_for_client1.IsValid());
     EXPECT_TRUE(socket_for_client2.IsValid());
-    EXPECT_TRUE(socket_for_server.GetRemoteDevice().IsValid());
+    EXPECT_TRUE(socket_for_server1.GetRemoteDevice().IsValid());
+    EXPECT_TRUE(socket_for_server2.GetRemoteDevice().IsValid());
     EXPECT_TRUE(socket_for_client1.GetRemoteDevice().IsValid());
     EXPECT_TRUE(socket_for_client2.GetRemoteDevice().IsValid());
   } else {

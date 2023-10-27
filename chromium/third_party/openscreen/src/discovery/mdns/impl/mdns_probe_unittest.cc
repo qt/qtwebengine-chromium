@@ -118,7 +118,8 @@ TEST_F(MdnsProbeTests, CancelationWhenMatchingMessageReceived) {
   OnMessageReceived(CreateMessage(name_));
 }
 
-TEST_F(MdnsProbeTests, TestNoCancelationOnUnrelatedMessages) {
+// TODO(issuetracker.google.com/issues/243611087): Occasionally flaky in bots.
+TEST_F(MdnsProbeTests, DISABLED_TestNoCancelationOnUnrelatedMessages) {
   OnMessageReceived(CreateMessage(name2_));
 
   EXPECT_CALL(sender_, SendMulticast(_));

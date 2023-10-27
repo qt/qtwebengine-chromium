@@ -1448,7 +1448,7 @@ bool Converter::Convert(wgpu::BindGroupEntry& out, const interop::GPUBindGroupEn
     }
     if (auto* res = std::get_if<interop::Interface<interop::GPUExternalTexture>>(&in.resource)) {
         // TODO(crbug.com/dawn/1129): External textures
-        UNIMPLEMENTED();
+        UNIMPLEMENTED(env, {});
     }
     Napi::Error::New(env, "invalid value for GPUBindGroupEntry.resource")
         .ThrowAsJavaScriptException();
@@ -1610,6 +1610,12 @@ bool Converter::Convert(wgpu::FeatureName& out, interop::GPUFeatureName in) {
         case interop::GPUFeatureName::kFloat32Filterable:
             out = wgpu::FeatureName::Float32Filterable;
             return true;
+        case interop::GPUFeatureName::kChromiumExperimentalSubgroups:
+            out = wgpu::FeatureName::ChromiumExperimentalSubgroups;
+            return true;
+        case interop::GPUFeatureName::kChromiumExperimentalSubgroupUniformControlFlow:
+            out = wgpu::FeatureName::ChromiumExperimentalSubgroupUniformControlFlow;
+            return true;
     }
     return false;
 }
@@ -1649,9 +1655,14 @@ bool Converter::Convert(interop::GPUFeatureName& out, wgpu::FeatureName in) {
         case wgpu::FeatureName::Float32Filterable:
             out = interop::GPUFeatureName::kFloat32Filterable;
             return true;
+        case wgpu::FeatureName::ChromiumExperimentalSubgroups:
+            out = interop::GPUFeatureName::kChromiumExperimentalSubgroups;
+            return true;
+        case wgpu::FeatureName::ChromiumExperimentalSubgroupUniformControlFlow:
+            out = interop::GPUFeatureName::kChromiumExperimentalSubgroupUniformControlFlow;
+            return true;
 
         case wgpu::FeatureName::PipelineStatisticsQuery:
-        case wgpu::FeatureName::DawnShaderFloat16:
         case wgpu::FeatureName::DawnInternalUsages:
         case wgpu::FeatureName::DawnMultiPlanarFormats:
         case wgpu::FeatureName::DawnNative:
@@ -1660,6 +1671,11 @@ bool Converter::Convert(interop::GPUFeatureName& out, wgpu::FeatureName in) {
         case wgpu::FeatureName::ImplicitDeviceSynchronization:
         case wgpu::FeatureName::SurfaceCapabilities:
         case wgpu::FeatureName::TransientAttachments:
+        case wgpu::FeatureName::MSAARenderToSingleSampled:
+        case wgpu::FeatureName::PixelLocalStorageCoherent:
+        case wgpu::FeatureName::PixelLocalStorageNonCoherent:
+        case wgpu::FeatureName::DualSourceBlending:
+        case wgpu::FeatureName::D3D11MultithreadProtected:
         case wgpu::FeatureName::Undefined:
             return false;
     }
@@ -1750,7 +1766,6 @@ bool Converter::Convert(wgpu::ComputePipelineDescriptor& out,
 
 bool Converter::Convert(wgpu::RenderPipelineDescriptor& out,
                         const interop::GPURenderPipelineDescriptor& in) {
-    wgpu::RenderPipelineDescriptor desc{};
     return Convert(out.label, in.label) &&                //
            Convert(out.layout, in.layout) &&              //
            Convert(out.vertex, in.vertex) &&              //
@@ -1762,6 +1777,11 @@ bool Converter::Convert(wgpu::RenderPipelineDescriptor& out,
 
 bool Converter::Convert(wgpu::PipelineLayout& out, const interop::GPUAutoLayoutMode& in) {
     out = nullptr;
+    return true;
+}
+
+bool Converter::Convert(wgpu::Bool& out, const bool& in) {
+    out = in;
     return true;
 }
 

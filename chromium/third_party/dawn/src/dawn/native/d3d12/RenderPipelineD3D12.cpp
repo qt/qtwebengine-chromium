@@ -30,6 +30,7 @@
 #include "dawn/native/d3d12/ShaderModuleD3D12.h"
 #include "dawn/native/d3d12/TextureD3D12.h"
 #include "dawn/native/d3d12/UtilsD3D12.h"
+#include "dawn/platform/metrics/HistogramMacros.h"
 
 namespace dawn::native::d3d12 {
 namespace {
@@ -113,6 +114,14 @@ D3D12_BLEND D3D12Blend(wgpu::BlendFactor factor) {
             return D3D12_BLEND_BLEND_FACTOR;
         case wgpu::BlendFactor::OneMinusConstant:
             return D3D12_BLEND_INV_BLEND_FACTOR;
+        case wgpu::BlendFactor::Src1:
+            return D3D12_BLEND_SRC1_COLOR;
+        case wgpu::BlendFactor::OneMinusSrc1:
+            return D3D12_BLEND_INV_SRC1_COLOR;
+        case wgpu::BlendFactor::Src1Alpha:
+            return D3D12_BLEND_SRC1_ALPHA;
+        case wgpu::BlendFactor::OneMinusSrc1Alpha:
+            return D3D12_BLEND_INV_SRC1_ALPHA;
     }
 }
 
@@ -129,6 +138,10 @@ D3D12_BLEND D3D12AlphaBlend(wgpu::BlendFactor factor) {
             return D3D12_BLEND_DEST_ALPHA;
         case wgpu::BlendFactor::OneMinusDst:
             return D3D12_BLEND_INV_DEST_ALPHA;
+        case wgpu::BlendFactor::Src1:
+            return D3D12_BLEND_SRC1_ALPHA;
+        case wgpu::BlendFactor::OneMinusSrc1:
+            return D3D12_BLEND_INV_SRC1_ALPHA;
 
         // Other blend factors translate to the same D3D12 enum as the color blend factors.
         default:
@@ -399,23 +412,39 @@ MaybeError RenderPipeline::Initialize() {
 
     // Try to see if we have anything in the blob cache.
     Blob blob = device->LoadCachedBlob(GetCacheKey());
-    const bool cacheHit = !blob.Empty();
+    bool cacheHit = !blob.Empty();
     if (cacheHit) {
         // Cache hits, attach cached blob to descriptor.
         descriptorD3D12.CachedPSO.pCachedBlob = blob.Data();
         descriptorD3D12.CachedPSO.CachedBlobSizeInBytes = blob.Size();
     }
 
-    DAWN_TRY(CheckHRESULT(device->GetD3D12Device()->CreateGraphicsPipelineState(
-                              &descriptorD3D12, IID_PPV_ARGS(&mPipelineState)),
-                          "D3D12 create graphics pipeline state"));
+    // We don't use the scoped cache histogram counters for the cache hit here so that we can
+    // condition on whether it fails appropriately.
+    auto* d3d12Device = device->GetD3D12Device();
+    platform::metrics::DawnHistogramTimer cacheTimer(device->GetPlatform());
+    HRESULT result =
+        d3d12Device->CreateGraphicsPipelineState(&descriptorD3D12, IID_PPV_ARGS(&mPipelineState));
+    if (cacheHit && result == D3D12_ERROR_DRIVER_VERSION_MISMATCH) {
+        // See dawn:1878 where it is possible for the PSO creation to fail with this error.
+        cacheHit = false;
+        descriptorD3D12.CachedPSO.pCachedBlob = nullptr;
+        descriptorD3D12.CachedPSO.CachedBlobSizeInBytes = 0;
+        cacheTimer.Reset();
+        result = d3d12Device->CreateGraphicsPipelineState(&descriptorD3D12,
+                                                          IID_PPV_ARGS(&mPipelineState));
+    }
+    DAWN_TRY(CheckHRESULT(result, "D3D12 create graphics pipeline state"));
 
     if (!cacheHit) {
         // Cache misses, need to get pipeline cached blob and store.
+        cacheTimer.RecordMicroseconds("D3D12.CreateGraphicsPipelineState.CacheMiss");
         ComPtr<ID3DBlob> d3dBlob;
         DAWN_TRY(CheckHRESULT(GetPipelineState()->GetCachedBlob(&d3dBlob),
                               "D3D12 render pipeline state get cached blob"));
         device->StoreCachedBlob(GetCacheKey(), CreateBlob(std::move(d3dBlob)));
+    } else {
+        cacheTimer.RecordMicroseconds("D3D12.CreateGraphicsPipelineState.CacheHit");
     }
 
     SetLabelImpl();

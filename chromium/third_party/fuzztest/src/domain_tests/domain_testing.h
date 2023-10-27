@@ -27,9 +27,6 @@
 #include <utility>
 #include <vector>
 
-#include "google/protobuf/repeated_field.h"
-#include "google/protobuf/util/field_comparator.h"
-#include "google/protobuf/util/message_differencer.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/container/flat_hash_set.h"
@@ -43,8 +40,32 @@
 #include "./fuzztest/internal/serialization.h"
 #include "./fuzztest/internal/test_protobuf.pb.h"
 #include "./fuzztest/internal/type_support.h"
+#include "google/protobuf/util/field_comparator.h"
+#include "google/protobuf/util/message_differencer.h"
 
 namespace fuzztest {
+
+// Status matchers.
+
+MATCHER_P(StatusIs, status_code, "") { return arg.code() == status_code; }
+
+MATCHER_P2(StatusIs, status_code, message, "") {
+  return (arg.code() == status_code) &&
+         testing::Matches(message)(std::string(arg.message()));
+}
+
+MATCHER_P(IsInvalid, message, "") {
+  return testing::ExplainMatchResult(
+      StatusIs(absl::StatusCode::kInvalidArgument, message), arg,
+      result_listener);
+}
+
+#ifndef ASSERT_OK
+#define ASSERT_OK(x) ASSERT_THAT(x, StatusIs(absl::StatusCode::kOk))
+#endif  // ASSERT_OK
+#ifndef EXPECT_OK
+#define EXPECT_OK(x) EXPECT_THAT(x, StatusIs(absl::StatusCode::kOk))
+#endif  // EXPECT_OK
 
 // Tests whether arg is in the range [a, b].
 MATCHER_P2(IsInClosedRange, a, b,
@@ -206,7 +227,7 @@ void VerifyRoundTripThroughConversion(const Value<Domain>& v,
   {
     auto corpus_value = domain.FromValue(v.user_value);
     ASSERT_TRUE(corpus_value) << v;
-    ASSERT_TRUE(domain.ValidateCorpusValue(*corpus_value));
+    ASSERT_OK(domain.ValidateCorpusValue(*corpus_value));
     auto new_v = domain.GetValue(*corpus_value);
     EXPECT_TRUE(Eq{}(v.user_value, new_v))
         << "v=" << v << " new_v=" << testing::PrintToString(new_v);
@@ -218,7 +239,7 @@ void VerifyRoundTripThroughConversion(const Value<Domain>& v,
     auto parsed_corpus = domain.ParseCorpus(*parsed);
     ASSERT_TRUE(parsed_corpus)
         << serialized << " value = " << testing::PrintToString(v.user_value);
-    ASSERT_TRUE(domain.ValidateCorpusValue(*parsed_corpus));
+    ASSERT_OK(domain.ValidateCorpusValue(*parsed_corpus));
     EXPECT_TRUE(Eq{}(v.user_value, domain.GetValue(*parsed_corpus)));
   }
 }
@@ -261,6 +282,31 @@ auto GenerateValues(Domain domain, int num_seeds = 10,
       EXPECT_NE(previous, value) << "Value=" << value << " Prev=" << previous;
     }
     values.merge(mutations);
+  }
+
+  return values;
+}
+
+template <typename Domain>
+auto GenerateNonUniqueValues(Domain domain, int num_seeds = 10,
+                             int num_mutations = 100) {
+  absl::BitGen bitgen;
+
+  std::vector<Value<Domain>> seeds;
+  while (seeds.size() < num_seeds) {
+    seeds.push_back(Value(domain, bitgen));
+  }
+
+  auto values = seeds;
+
+  for (const auto& seed : seeds) {
+    auto value = seed;
+    std::vector<Value<Domain>> mutations = {value};
+    while (mutations.size() < num_mutations) {
+      value.Mutate(domain, bitgen, false);
+      mutations.push_back(value);
+    }
+    values.insert(values.end(), mutations.begin(), mutations.end());
   }
 
   return values;

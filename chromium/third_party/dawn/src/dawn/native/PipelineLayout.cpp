@@ -23,6 +23,8 @@
 #include "dawn/common/Numeric.h"
 #include "dawn/common/ityp_stack_vec.h"
 #include "dawn/native/BindGroupLayout.h"
+#include "dawn/native/ChainUtils.h"
+#include "dawn/native/CommandValidation.h"
 #include "dawn/native/Device.h"
 #include "dawn/native/ObjectContentHasher.h"
 #include "dawn/native/ObjectType_autogen.h"
@@ -33,7 +35,14 @@ namespace dawn::native {
 MaybeError ValidatePipelineLayoutDescriptor(DeviceBase* device,
                                             const PipelineLayoutDescriptor* descriptor,
                                             PipelineCompatibilityToken pipelineCompatibilityToken) {
-    DAWN_INVALID_IF(descriptor->nextInChain != nullptr, "nextInChain is not nullptr.");
+    const PipelineLayoutPixelLocalStorage* pls = nullptr;
+    FindInChain(descriptor->nextInChain, &pls);
+    if (pls != nullptr) {
+        DAWN_TRY(ValidateHasPLSFeature(device));
+
+        // TODO(dawn:1704): Validate limits, formats, offsets don't collide and the total size.
+    }
+
     DAWN_INVALID_IF(descriptor->bindGroupLayoutCount > kMaxBindGroups,
                     "bindGroupLayoutCount (%i) is larger than the maximum allowed (%i).",
                     descriptor->bindGroupLayoutCount, kMaxBindGroups);
@@ -47,8 +56,9 @@ MaybeError ValidatePipelineLayoutDescriptor(DeviceBase* device,
                         "created as part of a pipeline's default layout.",
                         i, descriptor->bindGroupLayouts[i]);
 
-        AccumulateBindingCounts(&bindingCounts,
-                                descriptor->bindGroupLayouts[i]->GetBindingCountInfo());
+        AccumulateBindingCounts(
+            &bindingCounts,
+            descriptor->bindGroupLayouts[i]->GetInternalBindGroupLayout()->GetBindingCountInfo());
     }
 
     DAWN_TRY(ValidateBindingCounts(device->GetLimits(), bindingCounts));
@@ -84,10 +94,7 @@ PipelineLayoutBase::PipelineLayoutBase(DeviceBase* device,
 PipelineLayoutBase::~PipelineLayoutBase() = default;
 
 void PipelineLayoutBase::DestroyImpl() {
-    if (IsCachedReference()) {
-        // Do not uncache the actual cached object if we are a blueprint.
-        GetDevice()->UncachePipelineLayout(this);
-    }
+    Uncache();
 }
 
 // static
@@ -338,7 +345,8 @@ ObjectType PipelineLayoutBase::GetType() const {
     return ObjectType::PipelineLayout;
 }
 
-const BindGroupLayoutBase* PipelineLayoutBase::GetBindGroupLayout(BindGroupIndex group) const {
+const BindGroupLayoutBase* PipelineLayoutBase::GetFrontendBindGroupLayout(
+    BindGroupIndex group) const {
     ASSERT(!IsError());
     ASSERT(group < kMaxBindGroupsTyped);
     ASSERT(mMask[group]);
@@ -347,13 +355,22 @@ const BindGroupLayoutBase* PipelineLayoutBase::GetBindGroupLayout(BindGroupIndex
     return bgl;
 }
 
-BindGroupLayoutBase* PipelineLayoutBase::GetBindGroupLayout(BindGroupIndex group) {
+BindGroupLayoutBase* PipelineLayoutBase::GetFrontendBindGroupLayout(BindGroupIndex group) {
     ASSERT(!IsError());
     ASSERT(group < kMaxBindGroupsTyped);
     ASSERT(mMask[group]);
     BindGroupLayoutBase* bgl = mBindGroupLayouts[group].Get();
     ASSERT(bgl != nullptr);
     return bgl;
+}
+
+const BindGroupLayoutInternalBase* PipelineLayoutBase::GetBindGroupLayout(
+    BindGroupIndex group) const {
+    return GetFrontendBindGroupLayout(group)->GetInternalBindGroupLayout();
+}
+
+BindGroupLayoutInternalBase* PipelineLayoutBase::GetBindGroupLayout(BindGroupIndex group) {
+    return GetFrontendBindGroupLayout(group)->GetInternalBindGroupLayout();
 }
 
 const BindGroupLayoutMask& PipelineLayoutBase::GetBindGroupLayoutsMask() const {

@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -51,13 +51,11 @@ FakeQuicBridge::~FakeQuicBridge() = default;
 
 void FakeQuicBridge::PostClientPacket() {
   UdpPacket packet;
-  packet.set_socket(client_socket_.get());
   client_socket_->MockReceivePacket(std::move(packet));
 }
 
 void FakeQuicBridge::PostServerPacket() {
   UdpPacket packet;
-  packet.set_socket(server_socket_.get());
   server_socket_->MockReceivePacket(std::move(packet));
 }
 

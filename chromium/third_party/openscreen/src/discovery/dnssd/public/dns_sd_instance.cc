@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -80,13 +80,13 @@ DnsSdInstance::DnsSdInstance(std::string instance_id,
 
 DnsSdInstance::DnsSdInstance(const DnsSdInstance& other) = default;
 
-DnsSdInstance::DnsSdInstance(DnsSdInstance&& other) = default;
+DnsSdInstance::DnsSdInstance(DnsSdInstance&& other) noexcept = default;
 
 DnsSdInstance::~DnsSdInstance() = default;
 
 DnsSdInstance& DnsSdInstance::operator=(const DnsSdInstance& rhs) = default;
 
-DnsSdInstance& DnsSdInstance::operator=(DnsSdInstance&& rhs) = default;
+DnsSdInstance& DnsSdInstance::operator=(DnsSdInstance&& rhs) noexcept = default;
 
 // static
 bool IsInstanceValid(const std::string& instance) {

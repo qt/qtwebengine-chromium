@@ -232,14 +232,17 @@ class FPDFViewEmbedderTest : public EmbedderTest {
     int width = static_cast<int>(FPDF_GetPageWidth(page));
     int height = static_cast<int>(FPDF_GetPageHeight(page));
 
-    FPDF_RECORDER opaque_recorder = FPDF_RenderPageSkp(page, width, height);
-    ASSERT_TRUE(opaque_recorder);
+    sk_sp<SkPicture> picture;
+    {
+      auto recorder = std::make_unique<SkPictureRecorder>();
+      recorder->beginRecording(width, height);
 
-    SkPictureRecorder* recorder =
-        reinterpret_cast<SkPictureRecorder*>(opaque_recorder);
-    sk_sp<SkPicture> picture = recorder->finishRecordingAsPicture();
-    delete recorder;
-    ASSERT_TRUE(picture);
+      FPDF_RenderPageSkia(
+          reinterpret_cast<FPDF_SKIA_CANVAS>(recorder->getRecordingCanvas()),
+          page, width, height);
+      picture = recorder->finishRecordingAsPicture();
+      ASSERT_TRUE(picture);
+    }
 
     ScopedFPDFBitmap bitmap = SkPictureToPdfiumBitmap(
         std::move(picture), SkISize::Make(width, height));
@@ -540,14 +543,7 @@ TEST_F(FPDFViewEmbedderTest, EmptyDocument) {
     EXPECT_FALSE(FPDF_GetFileVersion(document(), &version));
     EXPECT_EQ(0, version);
   }
-  {
-#ifdef PDF_ENABLE_XFA
-    const unsigned long kExpected = static_cast<uint32_t>(-1);
-#else   // PDF_ENABLE_XFA
-    const unsigned long kExpected = 0;
-#endif  // PDF_ENABLE_XFA
-    EXPECT_EQ(kExpected, FPDF_GetDocPermissions(document()));
-  }
+  EXPECT_EQ(0U, FPDF_GetDocPermissions(document()));
   EXPECT_EQ(-1, FPDF_GetSecurityHandlerRevision(document()));
   EXPECT_EQ(0, FPDF_GetPageCount(document()));
   EXPECT_TRUE(FPDF_VIEWERREF_GetPrintScaling(document()));
@@ -1476,6 +1472,27 @@ TEST_F(FPDFViewEmbedderTest, RenderBug664284WithNoNativeText) {
   UnloadPage(page);
 }
 
+TEST_F(FPDFViewEmbedderTest, RenderAnnotationWithPrintingFlag) {
+  const char* annotation_checksum = []() {
+    if (CFX_DefaultRenderDevice::SkiaIsDefaultRenderer()) {
+      return "eaece6b8041c0cb9b33398e5b6d5ddda";
+    }
+    return "c108ba6e0a9743652f12e4bc223f9b32";
+  }();
+  static const char kPrintingChecksum[] = "3e235b9f88f652f2b97b1fc393924849";
+  ASSERT_TRUE(OpenDocument("bug_1658.pdf"));
+  FPDF_PAGE page = LoadPage(0);
+  ASSERT_TRUE(page);
+
+  // A yellow highlight is rendered with `FPDF_ANNOT` flag.
+  TestRenderPageBitmapWithFlags(page, FPDF_ANNOT, annotation_checksum);
+
+  // After adding `FPDF_PRINTING` flag, the yellow highlight is not rendered.
+  TestRenderPageBitmapWithFlags(page, FPDF_PRINTING | FPDF_ANNOT,
+                                kPrintingChecksum);
+  UnloadPage(page);
+}
+
 // TODO(crbug.com/pdfium/1955): Remove this test once pixel tests can pass with
 // `reverse-byte-order` option.
 TEST_F(FPDFViewEmbedderTest, RenderBlueAndRedImagesWithReverByteOrderFlag) {
@@ -1889,10 +1906,6 @@ restore
 }
 
 TEST_F(FPDFViewEmbedderTest, ImageMask) {
-  // TODO(crbug.com/pdfium/1500): Fix this test and enable.
-  if (CFX_DefaultRenderDevice::SkiaIsDefaultRenderer())
-    return;
-
   ASSERT_TRUE(OpenDocument("bug_674771.pdf"));
   FPDF_PAGE page = LoadPage(0);
   ASSERT_TRUE(page);

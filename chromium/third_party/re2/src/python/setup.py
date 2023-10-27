@@ -51,9 +51,6 @@ class BuildExt(setuptools.command.build_ext.build_ext):
     # For @pybind11_bazel's `python_configure()`.
     os.environ['PYTHON_BIN_PATH'] = sys.executable
 
-    cmd = ['bazel', 'clean', '--expunge']
-    self.spawn(cmd)
-
     cmd = ['bazel', 'build']
     if 'BAZEL_CPU' in os.environ:
       cmd.append(f'--cpu={os.environ["BAZEL_CPU"].lower()}')
@@ -64,6 +61,9 @@ class BuildExt(setuptools.command.build_ext.build_ext):
     # is the filename in the destination directory, which is what's needed.
     shutil.copyfile('../bazel-bin/python/_re2.so',
                     self.get_ext_fullpath(ext.name))
+
+    cmd = ['bazel', 'clean', '--expunge']
+    self.spawn(cmd)
 
 
 def include_dirs():
@@ -84,7 +84,7 @@ ext_module = setuptools.Extension(
 
 setuptools.setup(
     name='google-re2',
-    version='1.0',
+    version='1.1',
     description='RE2 Python bindings',
     long_description=long_description,
     long_description_content_type='text/plain',
@@ -98,8 +98,8 @@ setuptools.setup(
         'Intended Audience :: Developers',
         'License :: OSI Approved :: BSD License',
         'Programming Language :: C++',
-        'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 3.8',
     ],
     cmdclass={'build_ext': BuildExt},
-    python_requires='~=3.7',
+    python_requires='~=3.8',
 )

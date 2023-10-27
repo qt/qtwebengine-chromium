@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,10 +7,10 @@
 
 #include <stdint.h>
 
-#include "absl/types/span.h"
 #include "cast/streaming/frame_crypto.h"
 #include "cast/streaming/rtp_defines.h"
 #include "cast/streaming/ssrc.h"
+#include "platform/base/span.h"
 
 namespace openscreen {
 namespace cast {
@@ -38,9 +38,9 @@ class RtpPacketizer {
   // re-transmitted, this method should be called to generate it again. Returns
   // the subspan of |buffer| that contains the packet. |buffer| must be at least
   // as large as the |max_packet_size| passed to the constructor.
-  absl::Span<uint8_t> GeneratePacket(const EncryptedFrame& frame,
-                                     FramePacketId packet_id,
-                                     absl::Span<uint8_t> buffer);
+  ByteBuffer GeneratePacket(const EncryptedFrame& frame,
+                            FramePacketId packet_id,
+                            ByteBuffer buffer);
 
   // Given |frame|, compute the total number of packets over which the whole
   // frame will be split-up. Returns -1 if the frame is too large and cannot be

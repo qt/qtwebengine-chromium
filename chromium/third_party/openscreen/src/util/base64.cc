@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,7 +17,7 @@
 namespace openscreen {
 namespace base64 {
 
-std::string Encode(absl::Span<const uint8_t> input) {
+std::string Encode(ByteView input) {
   return Encode(absl::string_view(reinterpret_cast<const char*>(input.data()),
                                   input.size()));
 }

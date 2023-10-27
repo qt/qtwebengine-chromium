@@ -101,8 +101,40 @@ D3D11_BLEND D3DBlendFactor(wgpu::BlendFactor blendFactor) {
             return D3D11_BLEND_BLEND_FACTOR;
         case wgpu::BlendFactor::OneMinusConstant:
             return D3D11_BLEND_INV_BLEND_FACTOR;
+        case wgpu::BlendFactor::Src1:
+            return D3D11_BLEND_SRC1_COLOR;
+        case wgpu::BlendFactor::OneMinusSrc1:
+            return D3D11_BLEND_INV_SRC1_COLOR;
+        case wgpu::BlendFactor::Src1Alpha:
+            return D3D11_BLEND_SRC1_ALPHA;
+        case wgpu::BlendFactor::OneMinusSrc1Alpha:
+            return D3D11_BLEND_INV_SRC1_ALPHA;
         default:
             UNREACHABLE();
+    }
+}
+
+// When a blend factor is defined for the alpha channel, any of the factors that don't
+// explicitly state that they apply to alpha should be treated as their explicitly-alpha
+// equivalents. See: https://github.com/gpuweb/gpuweb/issues/65
+D3D11_BLEND D3DBlendAlphaFactor(wgpu::BlendFactor factor) {
+    switch (factor) {
+        case wgpu::BlendFactor::Src:
+            return D3D11_BLEND_SRC_ALPHA;
+        case wgpu::BlendFactor::OneMinusSrc:
+            return D3D11_BLEND_INV_SRC_ALPHA;
+        case wgpu::BlendFactor::Dst:
+            return D3D11_BLEND_DEST_ALPHA;
+        case wgpu::BlendFactor::OneMinusDst:
+            return D3D11_BLEND_INV_DEST_ALPHA;
+        case wgpu::BlendFactor::Src1:
+            return D3D11_BLEND_SRC1_ALPHA;
+        case wgpu::BlendFactor::OneMinusSrc1:
+            return D3D11_BLEND_INV_SRC1_ALPHA;
+
+        // Other blend factors translate to the same D3D11 enum as the color blend factors.
+        default:
+            return D3DBlendFactor(factor);
     }
 }
 
@@ -330,8 +362,8 @@ MaybeError RenderPipeline::InitializeBlendState() {
             }
             rtBlendDesc.DestBlend = D3DBlendFactor(descriptor->blend->color.dstFactor);
             rtBlendDesc.BlendOp = D3DBlendOperation(descriptor->blend->color.operation);
-            rtBlendDesc.SrcBlendAlpha = D3DBlendFactor(descriptor->blend->alpha.srcFactor);
-            rtBlendDesc.DestBlendAlpha = D3DBlendFactor(descriptor->blend->alpha.dstFactor);
+            rtBlendDesc.SrcBlendAlpha = D3DBlendAlphaFactor(descriptor->blend->alpha.srcFactor);
+            rtBlendDesc.DestBlendAlpha = D3DBlendAlphaFactor(descriptor->blend->alpha.dstFactor);
             rtBlendDesc.BlendOpAlpha = D3DBlendOperation(descriptor->blend->alpha.operation);
         }
         rtBlendDesc.RenderTargetWriteMask = D3DColorWriteMask(descriptor->writeMask);

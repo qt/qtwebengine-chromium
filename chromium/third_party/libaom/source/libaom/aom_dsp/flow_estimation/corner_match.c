@@ -147,13 +147,13 @@ static void improve_correspondence(const unsigned char *src,
   }
 }
 
-int aom_determine_correspondence(const unsigned char *src,
-                                 const int *src_corners, int num_src_corners,
-                                 const unsigned char *ref,
-                                 const int *ref_corners, int num_ref_corners,
-                                 int width, int height, int src_stride,
-                                 int ref_stride,
-                                 Correspondence *correspondences) {
+static int determine_correspondence(const unsigned char *src,
+                                    const int *src_corners, int num_src_corners,
+                                    const unsigned char *ref,
+                                    const int *ref_corners, int num_ref_corners,
+                                    int width, int height, int src_stride,
+                                    int ref_stride,
+                                    Correspondence *correspondences) {
   // TODO(sarahparker) Improve this to include 2-way match
   int i, j;
   int num_correspondences = 0;
@@ -230,7 +230,7 @@ bool av1_compute_global_motion_feature_match(
   correspondences = (Correspondence *)aom_malloc(src_corners->num_corners *
                                                  sizeof(*correspondences));
   if (!correspondences) return false;
-  num_correspondences = aom_determine_correspondence(
+  num_correspondences = determine_correspondence(
       src_buffer, src_corners->corners, src_corners->num_corners, ref_buffer,
       ref_corners->corners, ref_corners->num_corners, src_width, src_height,
       src_stride, ref_stride, correspondences);

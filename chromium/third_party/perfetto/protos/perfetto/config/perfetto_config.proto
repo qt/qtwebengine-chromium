@@ -404,6 +404,73 @@ message AndroidPolledStateConfig {
 
 // End of protos/perfetto/config/android/android_polled_state_config.proto
 
+// Begin of protos/perfetto/config/android/android_sdk_sysprop_guard_config.proto
+
+// Data source that controls the system properties used to guard initialization
+// of track_event producers (i.e. Skia) in apps using HWUI, and certain
+// processes like SurfaceFlinger.
+//
+// This data source only tells Skia to initialized the Perfetto SDK and start
+// routing data to the Track Event system instead of ATrace. For those events
+// to actually show up in a trace, the track_event data source must be used as
+// well. The Perfetto SDK cannot be de-initialized, so some long-lived apps and
+// processes may need to be restarted for Skia to revert to using ATrace if
+// Track Events are no longer desired.
+//
+// In addition to switching Skia to use Perfetto's track_event data source,
+// this "guard" also controls Skia's "broad tracing", which removes Skia's
+// internal tracing constraints and allows the track_event config to specify
+// which categories should be traced. Filtering to the "skia.always" category
+// *tag* in a track_event config can be used to re-enable the standard
+// constraints typically used with ATrace.
+//
+// Data source name: android.sdk_sysprop_guard
+// Introduced in Android 14 (U) QPR1.
+// Next id: 4
+message AndroidSdkSyspropGuardConfig {
+  // If true, configures SurfaceFlinger to initialize Skia's Perfetto
+  // integration with the track_event data source in RenderEngine.
+  // If false or omitted, the simpler ATrace fallback is used.
+  //
+  // NOTE: once enabled, Skia will only revert to ATrace if SurfaceFlinger is
+  // restarted.
+  //
+  // Specifically this sets the following system properties:
+  //   - debug.renderengine.skia_tracing_enabled
+  //   - debug.renderengine.skia_use_perfetto_track_events
+  //
+  // Does not affect actual track_event data *collection*, which must be
+  // configured seperately.
+  optional bool surfaceflinger_skia_track_events = 1;
+
+  // If true, configures HWUI apps to initialize Skia's Perfetto integration
+  // with the track_event data source. hwui_package_name_filter
+  // can be used to control which apps are affected.
+  // If false or omitted, the simpler ATrace fallback is used.
+  //
+  // NOTE: once enabled, Skia will only revert to ATrace if the app is
+  // restarted.
+  //
+  // ATTENTION: affects ALL HWUI APPS if hwui_package_name_filter is not set!
+  // If filtering is NOT set, this controls these GLOBAL system properties:
+  //   - debug.hwui.skia_tracing_enabled
+  //   - debug.hwui.skia_use_perfetto_track_events
+  // If filtering IS set, this controls these APP-SPECIFIC system properties,
+  // for each package listed in the filter:
+  //   - debug.hwui.skia_tracing_enabled.<package.name>
+  //   - debug.hwui.skia_use_perfetto_track_events.<package.name>
+  //
+  // Does not affect actual track_event data *collection*, which must be
+  // configured seperately.
+  optional bool hwui_skia_track_events = 2;
+
+  // If non-empty, hwui_skia_track_events applies to only the packages listed.
+  // Otherwise, hwui_skia_track_events applies globally to all HWUI apps.
+  repeated string hwui_package_name_filter = 3;
+}
+
+// End of protos/perfetto/config/android/android_sdk_sysprop_guard_config.proto
+
 // Begin of protos/perfetto/config/android/android_system_property_config.proto
 
 // Data source that polls for system properties.
@@ -469,6 +536,68 @@ message PackagesListConfig {
 }
 
 // End of protos/perfetto/config/android/packages_list_config.proto
+
+// Begin of protos/perfetto/config/android/surfaceflinger_layers_config.proto
+
+// Custom configuration for the "android.surfaceflinger.layers" data source.
+message SurfaceFlingerLayersConfig {
+  enum Mode {
+    MODE_UNSPECIFIED = 0;
+
+    // Trace layers snapshots. A snapshot is taken every time a layers change
+    // occurs.
+    MODE_ACTIVE = 1;
+
+    // Default mode (applied by SurfaceFlinger if no mode is specified).
+    // Generate layers snapshots from the transactions kept in the
+    // SurfaceFlinger's internal ring buffer.
+    // The layers snapshots generation occurs when this data source is flushed.
+    MODE_GENERATED = 2;
+
+    // Trace a single layers snapshot.
+    MODE_DUMP = 3;
+  }
+  optional Mode mode = 1;
+
+  enum TraceFlag {
+    TRACE_FLAG_UNSPECIFIED = 0;
+    TRACE_FLAG_INPUT = 0x02;
+    TRACE_FLAG_COMPOSITION = 0x04;
+    TRACE_FLAG_EXTRA = 0x08;
+    TRACE_FLAG_HWC = 0x10;
+    TRACE_FLAG_BUFFERS = 0x20;
+    TRACE_FLAG_VIRTUAL_DISPLAYS = 0x40;
+
+    // INPUT | COMPOSITION | EXTRA
+    TRACE_FLAG_ALL = 0x0e;
+  }
+  repeated TraceFlag trace_flags = 2;
+}
+
+// End of protos/perfetto/config/android/surfaceflinger_layers_config.proto
+
+// Begin of protos/perfetto/config/android/surfaceflinger_transactions_config.proto
+
+// Custom configuration for the "android.surfaceflinger.transactions" data
+// source.
+message SurfaceFlingerTransactionsConfig {
+  enum Mode {
+    MODE_UNSPECIFIED = 0;
+
+    // Default mode (applied by SurfaceFlinger if no mode is specified).
+    // SurfaceFlinger writes its internal ring buffer of transactions every time
+    // the data source is flushed. The ring buffer contains the SurfaceFlinger's
+    // initial state and the latest transactions.
+    MODE_CONTINUOUS = 1;
+
+    // SurfaceFlinger writes the initial state and then each incoming
+    // transaction until the data source is stopped.
+    MODE_ACTIVE = 2;
+  }
+  optional Mode mode = 1;
+}
+
+// End of protos/perfetto/config/android/surfaceflinger_transactions_config.proto
 
 // Begin of protos/perfetto/config/chrome/chrome_config.proto
 
@@ -2557,7 +2686,7 @@ message TrackEventConfig {
 // Begin of protos/perfetto/config/data_source_config.proto
 
 // The configuration that is passed to each data source when starting tracing.
-// Next id: 123
+// Next id: 125
 message DataSourceConfig {
   enum SessionInitiator {
     SESSION_INITIATOR_UNSPECIFIED = 0;
@@ -2680,6 +2809,19 @@ message DataSourceConfig {
   optional NetworkPacketTraceConfig network_packet_trace_config = 120
       [lazy = true];
 
+  // Data source name: android.surfaceflinger.layers
+  optional SurfaceFlingerLayersConfig surfaceflinger_layers_config = 121
+      [lazy = true];
+
+  // Data source name: android.surfaceflinger.transactions
+  optional SurfaceFlingerTransactionsConfig surfaceflinger_transactions_config =
+      123 [lazy = true];
+
+  // Data source name: android.sdk_sysprop_guard
+  // Introduced in Android 14 (U) QPR1.
+  optional AndroidSdkSyspropGuardConfig android_sdk_sysprop_guard_config = 124
+      [lazy = true];
+
   // This is a fallback mechanism to send a free-form text config to the
   // producer. In theory this should never be needed. All the code that
   // is part of the platform (i.e. traced service) is supposed to *not* truncate
@@ -2731,6 +2873,21 @@ message TraceConfig {
       DISCARD = 2;
     }
     optional FillPolicy fill_policy = 4;
+
+    // When true the buffer is moved (rather than copied) onto the cloned
+    // session, and an empty buffer of the same size is allocated in the source
+    // tracing session. This feature will likely get deprecated in the future.
+    // It been introduced mainly to support the surfaceflinger snapshot dump
+    // for bugreports, where SF can dumps O(400MB) into the bugreport trace. In
+    // that case we don't want to retain another in-memory copy of the buffer.
+    optional bool transfer_on_clone = 5;
+
+    // Used in conjuction with transfer_on_clone. When true the buffer is
+    // cleared before issuing the Flush(reason=kTraceClone). This is to ensure
+    // that if the data source took too long to write the data in a previous
+    // clone-related flush, we don't end up with a mixture of leftovers from
+    // the previous write and new data.
+    optional bool clear_before_clone = 6;
   }
   repeated BufferConfig buffers = 1;
 
@@ -3183,6 +3340,73 @@ message TraceConfig {
     // The bytecode as implemented in Android U. Adds support for string
     // filtering.
     optional bytes bytecode_v2 = 2;
+
+    // =========================
+    // String filtering
+    // =========================
+
+    // The principles and terminology of string filtering is heavily inspired by
+    // iptables. A "rule" decide how strings should be filtered. Each rule
+    // contains a "policy" which indicates the algorithm to use for filtering.
+    // A "chain" is a list of rules which will be sequentially checked against
+    // each string.
+    //
+    // The first rule which applies to the string terminates filtering for that
+    // string. If no rules apply, the string is left unchanged.
+
+    // A policy specifies which algorithm should be used for filtering the
+    // string.
+    enum StringFilterPolicy {
+      SFP_UNSPECIFIED = 0;
+
+      // Tries to match the string field against |regex_pattern|. If it
+      // matches, all matching groups are "redacted" (i.e. replaced with a
+      // constant string) and filtering is terminated (i.e. no further rules are
+      // checked). If it doesn't match, the string is left unchanged and the
+      // next rule in chain is considered.
+      SFP_MATCH_REDACT_GROUPS = 1;
+
+      // Like |SFP_MATCH_REDACT_GROUPS| but tries to do some pre-work before
+      // checking the regex. Specifically, it tries to parse the string field as
+      // an atrace tracepoint and checks if the post-tgid field starts with
+      // |atrace_post_tgid_starts_with|. The regex matching is only performed if
+      // this check succeeds.
+      SFP_ATRACE_MATCH_REDACT_GROUPS = 2;
+
+      // Tries to match the string field against |regex_pattern|. If it
+      // matches, filtering is terminated (i.e. no further rules are checked).
+      // If it doesn't match, the string is left unchanged and the next rule in
+      // chain is considered.
+      SFP_MATCH_BREAK = 3;
+
+      // Like |SFP_MATCH_BREAK| but tries to do some pre-work before checking
+      // the regex. Specifically, it tries to parse the string field as an
+      // atrace tracepoint and checks if the post-tgid field starts with
+      // |atrace_post_tgid_starts_with|. The regex matching is only performed if
+      // this check succeeds.
+      SFP_ATRACE_MATCH_BREAK = 4;
+    }
+
+    // A rule specifies how strings should be filtered.
+    message StringFilterRule {
+      // The policy (i.e. algorithm) dictating how strings matching this rule
+      // should be handled.
+      optional StringFilterPolicy policy = 1;
+
+      // The regex pattern used to match against each string.
+      optional string regex_pattern = 2;
+
+      // The string which should appear after the tgid in atrace tracepoint
+      // strings.
+      optional string atrace_payload_starts_with = 3;
+    }
+
+    // A chain is a list of rules which string will be sequentially checked
+    // against.
+    message StringFilterChain {
+      repeated StringFilterRule rules = 1;
+    }
+    optional StringFilterChain string_filter_chain = 3;
   }
   // old field number for trace_filter
   reserved 32;

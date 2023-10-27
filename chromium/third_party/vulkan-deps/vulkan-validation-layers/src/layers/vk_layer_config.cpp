@@ -88,7 +88,16 @@ std::string GetEnvironment(const char *variable) {
     delete[] buffer;
     return output;
 #elif defined(__ANDROID__)
-    const prop_info *prop_info = __system_property_find(variable);
+    std::string var = variable;
+
+    if (std::string_view{variable} != kForceDefaultCallbackKey) {
+        // kForceDefaultCallbackKey is a special key that needs to be recognized for backwards compatibilty.
+        // For all other strings, prefix the requested variable with "debug.vvl." so that desktop environment settings can be used
+        // on Android.
+        var = "debug.vvl." + var;
+    }
+
+    const prop_info *prop_info = __system_property_find(var.data());
 
     if (prop_info) {
         std::string property;
@@ -419,7 +428,13 @@ void PrintMessageType(VkFlags vk_flags, char *msg_flags) {
 
 // Require at least NDK 20 to build Validation Layers. Makes everything simpler to just have people building the layers to use a
 // recent (over 2 years old) version of the NDK.
-#if __NDK_MAJOR__ < 20
+//
+// This avoids issues with older NDKs which complicate correct CMake builds:
+// Example:
+//
+// The NDK toolchain file in r23 contains a bug which means CMAKE_ANDROID_EXCEPTIONS might not be set correctly in some
+// circumstances, if not set directly by the developer.
+#if __NDK_MAJOR__ < 25
 #error "Validation Layers require at least NDK r20 or greater to build"
 #endif
 

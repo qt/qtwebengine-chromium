@@ -200,6 +200,10 @@ struct loader_device {
     } extensions;
 
     struct loader_device *next;
+
+    // Makes vkGetDeviceProcAddr check if core functions are supported by the current app_api_version.
+    // Only set to true if VK_KHR_maintenance5 is enabled.
+    bool should_ignore_device_commands_from_newer_version;
 };
 
 // Per ICD information
@@ -311,6 +315,8 @@ struct loader_instance {
     loader_settings settings;
 
     bool portability_enumeration_enabled;
+    bool portability_enumeration_flag_bit_set;
+    bool portability_enumeration_extension_enabled;
 
     bool wsi_surface_enabled;
 #if defined(VK_USE_PLATFORM_WIN32_KHR)
@@ -490,4 +496,10 @@ struct loader_envvar_disable_layers_filter {
     bool disable_all;
     bool disable_all_implicit;
     bool disable_all_explicit;
+};
+
+struct loader_envvar_all_filters {
+    struct loader_envvar_filter enable_filter;
+    struct loader_envvar_disable_layers_filter disable_filter;
+    struct loader_envvar_filter allow_filter;
 };

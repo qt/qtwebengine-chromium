@@ -4,35 +4,55 @@
 
 from __future__ import annotations
 
+import argparse
 import logging
 import pathlib
 import re
 import tempfile
-from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Optional, Tuple, cast
 
 from crossbench import helper
-from crossbench.browsers.browser import (Browser, convert_flags_to_label)
+from crossbench.browsers.browser import Browser
+from crossbench.browsers.browser_helper import convert_flags_to_label
 from crossbench.browsers.viewport import Viewport
 from crossbench.flags import ChromeFeatures, ChromeFlags, Flags, JSFlags
+from crossbench.types import JsonDict
 
 if TYPE_CHECKING:
-  from crossbench.runner import Run, Runner
+  from crossbench.browsers.splash_screen import SplashScreen
+  from crossbench import plt
+  from crossbench.runner.run import Run
+  from crossbench.runner.runner import Runner
+
 
 
 class Chromium(Browser):
   MIN_HEADLESS_NEW_VERSION = 112
-  DEFAULT_FLAGS = [
+  DEFAULT_FLAGS = (
       "--no-default-browser-check",
       "--disable-component-update",
       "--disable-sync",
-      "--no-experiments",
-      "--enable-benchmarking",
       "--disable-extensions",
       "--no-first-run",
-      # limit the effects of putting the browser in the background:
+  )
+  FLAGS_FOR_DISABLING_BACKGROUND_INTERVENTIONS = (
       "--disable-background-timer-throttling",
       "--disable-renderer-backgrounding",
-  ]
+  )
+  # All flags that might affect how finch / field-trials are loaded.
+  FIELD_TRIAL_FLAGS = (
+      "--force-fieldtrials",
+      "--variations-server-url",
+      "--variations-insecure-server-url",
+      "--variations-test-seed-path",
+      "--enable-field-trial-config",
+      "--disable-variations-safe-mode",
+  )
+  NO_EXPERIMENTS_FLAGS = (
+      "--no-experiments",
+      "--enable-benchmarking",
+      "--disable-field-trial-config",
+  )
 
   @classmethod
   def default_path(cls) -> pathlib.Path:
@@ -51,24 +71,28 @@ class Chromium(Browser):
       self,
       label: str,
       path: pathlib.Path,
-      js_flags: Flags.InitialDataType = None,
-      flags: Flags.InitialDataType = None,
+      flags: Optional[Flags.InitialDataType] = None,
+      js_flags: Optional[Flags.InitialDataType] = None,
       cache_dir: Optional[pathlib.Path] = None,
       type: str = "chromium",  # pylint: disable=redefined-builtin
-      viewport: Viewport = Viewport.DEFAULT,
-      platform: Optional[helper.Platform] = None):
+      driver_path: Optional[pathlib.Path] = None,
+      viewport: Optional[Viewport] = None,
+      splash_screen: Optional[SplashScreen] = None,
+      platform: Optional[plt.Platform] = None):
     super().__init__(
-        label, path, type=type, viewport=viewport, platform=platform)
-    assert not isinstance(js_flags, str), (
-        f"js_flags should be a list, but got: {repr(js_flags)}")
-    assert not isinstance(
-        flags, str), (f"flags should be a list, but got: {repr(flags)}")
-    self._flags: ChromeFlags = self.default_flags(self.DEFAULT_FLAGS)
-    self._flags.update(flags)
-    self.js_flags.update(js_flags)
-    self._maybe_disable_gpu_compositing()
+        label,
+        path,
+        flags=None,
+        type=type,
+        driver_path=driver_path,
+        viewport=viewport,
+        splash_screen=splash_screen,
+        platform=platform)
+    self._flags: ChromeFlags = self._create_flags(flags, js_flags)
     if cache_dir is None:
-      cache_dir = self._flags.get("--user-data-dir")
+      maybe_cache_dir = self._flags.get("--user-data-dir", None)
+      if maybe_cache_dir:
+        cache_dir = pathlib.Path(maybe_cache_dir)
     if cache_dir is None:
       # pylint: disable=bad-option-value, consider-using-with
       self.cache_dir = pathlib.Path(
@@ -78,6 +102,47 @@ class Chromium(Browser):
       self.cache_dir = cache_dir
       self.clear_cache_dir = False
     self._stdout_log_file = None
+
+  def _create_flags(self, flags: Flags.InitialDataType,
+                    js_flags: Flags.InitialDataType) -> ChromeFlags:
+    assert not isinstance(js_flags, str), (
+        f"js_flags should be a list, but got: {repr(js_flags)}")
+    assert not isinstance(
+        flags, str), (f"flags should be a list, but got: {repr(flags)}")
+    self._flags = self.default_flags(self.DEFAULT_FLAGS)
+    self._flags.update(flags)
+
+    if "--allow-background-interventions" in self._flags.data:
+      # The --allow-background-interventions flag should have no value.
+      assert self._flags.get("--allow-background-interventions") is None
+    else:
+      self._flags.update(self.FLAGS_FOR_DISABLING_BACKGROUND_INTERVENTIONS)
+
+    # Explicitly disable field-trials by default on all chrome flavours:
+    # By default field-trials are enabled on non-Chrome branded builds, but
+    # are auto-enabled on everything else. This gives very confusing results
+    # when comparing local builds to official binaries.
+    field_trial_flags = [
+        flag for flag in self.FIELD_TRIAL_FLAGS if flag in self._flags
+    ]
+    if not field_trial_flags:
+      logging.info("Disabling experiments/finch/field-trials for %s", self)
+      for flag in self.NO_EXPERIMENTS_FLAGS:
+        self._flags.set(flag)
+    else:
+      logging.warning("Running with field-trials or finch experiments.")
+      no_finch_flags = [
+          flag for flag in self.NO_EXPERIMENTS_FLAGS if flag in self._flags
+      ]
+      if no_finch_flags:
+        raise argparse.ArgumentTypeError(
+            "Conflicting flag groups set: "
+            f"{field_trial_flags} vs {no_finch_flags}.\n"
+            "Cannot enable and disable finch / field-trials at the same time.")
+
+    self.js_flags.update(js_flags)
+    self._maybe_disable_gpu_compositing()
+    return self._flags
 
   def _maybe_disable_gpu_compositing(self) -> None:
     # Chrome Remote Desktop provide no GPU and older chrome versions
@@ -92,7 +157,12 @@ class Chromium(Browser):
     assert self.path
     version_string = self.platform.app_version(self.path)
     # Sample output: "Chromium 90.0.4430.212 dev" => "90.0.4430.212"
-    return re.findall(r"[\d\.]+", version_string)[0]
+    matches = re.findall(r"[\d\.]+", version_string)
+    if not matches:
+      raise ValueError(
+          f"Could not extract version number from '{version_string}' "
+          f"for '{self.path}'")
+    return str(matches[0])
 
   @property
   def is_headless(self) -> bool:
@@ -115,15 +185,16 @@ class Chromium(Browser):
   def features(self) -> ChromeFeatures:
     return self._flags.features
 
-  def details_json(self) -> Dict[str, Any]:
-    details = super().details_json()
+  def details_json(self) -> JsonDict:
+    details: JsonDict = super().details_json()
     if self.log_file:
-      details["log"][self.type] = str(self.chrome_log_file)
-      details["log"]["stdout"] = str(self.stdout_log_file)
+      log = cast(JsonDict, details["log"])
+      log[self.type] = str(self.chrome_log_file)
+      log["stdout"] = str(self.stdout_log_file)
     details["js_flags"] = tuple(self.js_flags.get_list())
     return details
 
-  def _get_browser_flags(self, run: Run) -> Tuple[str, ...]:
+  def _get_browser_flags_for_run(self, run: Run) -> Tuple[str, ...]:
     js_flags_copy = self.js_flags.copy()
     js_flags_copy.update(run.extra_js_flags)
 
@@ -134,14 +205,16 @@ class Chromium(Browser):
     if len(js_flags_copy):
       flags_copy["--js-flags"] = str(js_flags_copy)
     if user_data_dir := self.flags.get("--user-data-dir"):
-      assert user_data_dir == self.cache_dir, (
-          f"--user-data-dir path: {user_data_dir} was passed"
-          f"but does not match cache-dir: {self.cache_dir}")
+      assert user_data_dir == str(
+          self.cache_dir), (f"--user-data-dir path: {user_data_dir} was passed "
+                            f"but does not match cache-dir: {self.cache_dir}")
     if self.cache_dir:
       flags_copy["--user-data-dir"] = str(self.cache_dir)
     if self.log_file:
       flags_copy.set("--enable-logging")
       flags_copy["--log-file"] = str(self.chrome_log_file)
+
+    flags_copy = self._filter_flags_for_run(flags_copy)
 
     return tuple(flags_copy.get_list())
 

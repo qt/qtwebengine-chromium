@@ -5,9 +5,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import * as i18n from '../../core/i18n/i18n.js';
-import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
 import * as TraceEngine from '../trace/trace.js';
+import type * as CPUProfile from '../cpu_profile/cpu_profile.js';
 
 import {RecordType, TimelineModelImpl} from './TimelineModel.js';
 
@@ -29,18 +29,18 @@ export class TimelineJSProfileProcessor {
    * which contains the call hierarchy.
    */
   static generateConstructedEventsFromCpuProfileDataModel(
-      jsProfileModel: SDK.CPUProfileDataModel.CPUProfileDataModel,
-      thread: SDK.TracingModel.Thread): SDK.TracingModel.Event[] {
+      jsProfileModel: CPUProfile.CPUProfileDataModel.CPUProfileDataModel,
+      thread: TraceEngine.Legacy.Thread): TraceEngine.Legacy.Event[] {
     const samples = jsProfileModel.samples || [];
     const timestamps = jsProfileModel.timestamps;
     const jsEvents = [];
-    const nodeToStackMap = new Map<SDK.ProfileTreeModel.ProfileNode|null, Protocol.Runtime.CallFrame[]>();
+    const nodeToStackMap = new Map<CPUProfile.ProfileTreeModel.ProfileNode|null, Protocol.Runtime.CallFrame[]>();
 
-    let prevNode: SDK.ProfileTreeModel.ProfileNode = jsProfileModel.root;
+    let prevNode: CPUProfile.ProfileTreeModel.ProfileNode = jsProfileModel.root;
     let prevCallFrames: Protocol.Runtime.CallFrame[] = [];
     // Adds call stacks to fake trace events using the tree in CPUProfileDataModel
     for (let i = 0; i < samples.length; ++i) {
-      const node: SDK.ProfileTreeModel.ProfileNode|null = jsProfileModel.nodeByIndex(i);
+      const node: CPUProfile.ProfileTreeModel.ProfileNode|null = jsProfileModel.nodeByIndex(i);
       if (!node) {
         console.error(`Node with unknown id ${samples[i]} at index ${i}`);
         continue;
@@ -71,8 +71,8 @@ export class TimelineJSProfileProcessor {
           node === jsProfileModel.programNode || node === jsProfileModel.gcNode ? RecordType.JSSystemSample :
                                                                                   RecordType.JSSample;
 
-      const jsSampleEvent = new SDK.TracingModel.ConstructedEvent(
-          SDK.TracingModel.DevToolsTimelineEventCategory, name, TraceEngine.Types.TraceEvents.Phase.INSTANT,
+      const jsSampleEvent = new TraceEngine.Legacy.ConstructedEvent(
+          TraceEngine.Legacy.DevToolsTimelineEventCategory, name, TraceEngine.Types.TraceEvents.Phase.INSTANT,
           timestamps[i], thread);
       jsSampleEvent.args['data'] = {stackTrace: callFrames};
       jsEvents.push(jsSampleEvent);
@@ -83,7 +83,7 @@ export class TimelineJSProfileProcessor {
     return jsEvents;
   }
 
-  static isJSSampleEvent(e: SDK.TracingModel.Event): boolean {
+  static isJSSampleEvent(e: TraceEngine.Legacy.Event): boolean {
     return e.name === RecordType.JSSample || e.name === RecordType.JSSystemSample || e.name === RecordType.JSIdleSample;
   }
 
@@ -101,17 +101,17 @@ export class TimelineJSProfileProcessor {
    * @returns the input event array with the new synthetic events
    * representing call frames.
    */
-  static generateJSFrameEvents(events: SDK.TracingModel.Event[], config: {
+  static generateJSFrameEvents(events: TraceEngine.Legacy.Event[], config: {
     showAllEvents: boolean,
     showRuntimeCallStats: boolean,
     showNativeFunctions: boolean,
-  }): SDK.TracingModel.Event[] {
+  }): TraceEngine.Legacy.Event[] {
     function equalFrames(frame1: Protocol.Runtime.CallFrame, frame2: Protocol.Runtime.CallFrame): boolean {
       return frame1.scriptId === frame2.scriptId && frame1.functionName === frame2.functionName &&
           frame1.lineNumber === frame2.lineNumber;
     }
 
-    function isJSInvocationEvent(e: SDK.TracingModel.Event): boolean {
+    function isJSInvocationEvent(e: TraceEngine.Legacy.Event): boolean {
       switch (e.name) {
         case RecordType.RunMicrotasks:
         case RecordType.FunctionCall:
@@ -128,9 +128,9 @@ export class TimelineJSProfileProcessor {
       return false;
     }
 
-    const jsFrameEvents: SDK.TracingModel.Event[] = [];
-    const jsFramesStack: SDK.TracingModel.Event[] = [];
-    const lockedJsStackDepth: number[] = [];
+    const jsFrameEvents: TraceEngine.Legacy.Event[] = [];
+    const jsFramesStack: TraceEngine.Legacy.Event[] = [];
+    let lockedJsStackDepth: number[] = [];
     let ordinal = 0;
     /**
      * `isJSInvocationEvent()` relies on an allowlist of invocation events that will parent JSFrames.
@@ -145,24 +145,51 @@ export class TimelineJSProfileProcessor {
      * We expect they'll either be trace events happening within JS (eg forced layout),
      * or, in the fakeJSInvocation case, the JS finished and we're seeing the subsequent event.
      */
-    function onStartEvent(e: SDK.TracingModel.CompatibleTraceEvent): void {
-      if (SDK.TracingModel.eventIsFromNewEngine(e)) {
+    function onStartEvent(e: TraceEngine.Legacy.CompatibleTraceEvent): void {
+      if (TraceEngine.Legacy.eventIsFromNewEngine(e)) {
         // TODO(crbug.com/1431175) support CPU profiles in new engine.
         return;
       }
+
+      // Top level events cannot be nested into JS frames so we reset
+      // the stack when we find one.
+      if (e.name === TraceEngine.Types.TraceEvents.KnownEventName.RunMicrotasks ||
+          e.name === TraceEngine.Types.TraceEvents.KnownEventName.RunTask) {
+        lockedJsStackDepth = [];
+        truncateJSStack(0, e.startTime);
+        fakeJSInvocation = false;
+      }
+
       if (fakeJSInvocation) {
-        truncateJSStack((lockedJsStackDepth.pop() as number), e.startTime);
+        truncateJSStack(lockedJsStackDepth.pop() || 0, e.startTime);
         fakeJSInvocation = false;
       }
       e.ordinal = ++ordinal;
       extractStackTrace(e);
-      // For the duration of the event we cannot go beyond the stack associated with it.
+      // Keep track of the call frames in the stack before the event
+      // happened. For the duration of this event, these frames cannot
+      // change (none can be terminated before this event finishes).
+      //
+      // Also, every frame that is opened after this event, is consider
+      // to be a descendat of the event. So once the event finishes, the
+      // frames that were opened after it, need to be closed (see
+      // onEndEvent).
+      //
+      // TODO(crbug.com/1417439):
+      // The assumption that the stack on top of the event cannot change
+      // is incorrect. For example, the JS call that parents the trace
+      // event might have been sampled after the event was dispatched.
+      // In this case the JS call would be discarded if this event isn't
+      // an invocation event, otherwise the call will be considered a
+      // child of the event. In both cases, the result would be
+      // incorrect.
+
       lockedJsStackDepth.push(jsFramesStack.length);
     }
 
     function onInstantEvent(
-        e: SDK.TracingModel.CompatibleTraceEvent, parent: SDK.TracingModel.CompatibleTraceEvent|null): void {
-      if (SDK.TracingModel.eventIsFromNewEngine(e) || SDK.TracingModel.eventIsFromNewEngine(parent)) {
+        e: TraceEngine.Legacy.CompatibleTraceEvent, parent: TraceEngine.Legacy.CompatibleTraceEvent|null): void {
+      if (TraceEngine.Legacy.eventIsFromNewEngine(e) || TraceEngine.Legacy.eventIsFromNewEngine(parent)) {
         // TODO(crbug.com/1431175) support CPU profiles in new engine.
         return;
       }
@@ -182,12 +209,15 @@ export class TimelineJSProfileProcessor {
       }
     }
 
-    function onEndEvent(e: SDK.TracingModel.CompatibleTraceEvent): void {
-      if (SDK.TracingModel.eventIsFromNewEngine(e)) {
+    function onEndEvent(e: TraceEngine.Legacy.CompatibleTraceEvent): void {
+      if (TraceEngine.Legacy.eventIsFromNewEngine(e)) {
         // TODO(crbug.com/1431175) support CPU profiles in new engine.
         return;
       }
-      truncateJSStack((lockedJsStackDepth.pop() as number), (e.endTime as number));
+      // Because the event has ended, any frames that happened after
+      // this event are terminated. Frames that are ancestors to this
+      // event are extended to cover its ending.
+      truncateJSStack(lockedJsStackDepth.pop() || 0, e.endTime || e.startTime);
     }
 
     /**
@@ -214,7 +244,7 @@ export class TimelineJSProfileProcessor {
         depth = jsFramesStack.length;
       }
       for (let k = 0; k < jsFramesStack.length; ++k) {
-        jsFramesStack[k].setEndTime(time);
+        jsFramesStack[k].setEndTime(Math.max((jsFramesStack[k].endTime as number), time));
       }
       jsFramesStack.length = depth;
     }
@@ -254,7 +284,7 @@ export class TimelineJSProfileProcessor {
     /**
      * Update tracked stack using this event's call stack.
      */
-    function extractStackTrace(e: SDK.TracingModel.Event): void {
+    function extractStackTrace(e: TraceEngine.Legacy.Event): void {
       const callFrames: Protocol.Runtime.CallFrame[] = TimelineJSProfileProcessor.isJSSampleEvent(e) ?
           e.args['data']['stackTrace'].slice().reverse() :
           jsFramesStack.map(frameEvent => frameEvent.args['data']);
@@ -262,7 +292,6 @@ export class TimelineJSProfileProcessor {
       const endTime = e.endTime || e.startTime;
       const minFrames = Math.min(callFrames.length, jsFramesStack.length);
       let i;
-
       // Merge a sample's stack frames with the stack frames we have
       // so far if we detect they are equivalent.
       // Graphically
@@ -318,8 +347,8 @@ export class TimelineJSProfileProcessor {
             jsFrameType = RecordType.JSSystemFrame;
             break;
         }
-        const jsFrameEvent = new SDK.TracingModel.ConstructedEvent(
-            SDK.TracingModel.DevToolsTimelineEventCategory, jsFrameType, TraceEngine.Types.TraceEvents.Phase.COMPLETE,
+        const jsFrameEvent = new TraceEngine.Legacy.ConstructedEvent(
+            TraceEngine.Legacy.DevToolsTimelineEventCategory, jsFrameType, TraceEngine.Types.TraceEvents.Phase.COMPLETE,
             e.startTime, e.thread);
         jsFrameEvent.ordinal = e.ordinal;
         jsFrameEvent.addArgs({data: frame});
@@ -329,7 +358,7 @@ export class TimelineJSProfileProcessor {
       }
     }
 
-    const firstTopLevelEvent = events.find(SDK.TracingModel.TracingModel.isTopLevelEvent);
+    const firstTopLevelEvent = events.find(TraceEngine.Legacy.TracingModel.isTopLevelEvent);
     const startTime = firstTopLevelEvent ? firstTopLevelEvent.startTime : 0;
     TimelineModelImpl.forEachEvent(events, onStartEvent, onEndEvent, onInstantEvent, startTime);
     return jsFrameEvents;
@@ -350,8 +379,8 @@ export class TimelineJSProfileProcessor {
   }
 
   static createFakeTraceFromCpuProfile(profile: any, tid: number, injectPageEvent: boolean, name?: string|null):
-      SDK.TracingManager.EventPayload[] {
-    const events: SDK.TracingManager.EventPayload[] = [];
+      TraceEngine.TracingManager.EventPayload[] {
+    const events: TraceEngine.TracingManager.EventPayload[] = [];
 
     if (injectPageEvent) {
       appendEvent('TracingStartedInPage', {data: {'sessionId': '1'}}, 0, 0, 'M');
@@ -359,7 +388,7 @@ export class TimelineJSProfileProcessor {
     if (!name) {
       name = i18nString(UIStrings.threadS, {PH1: tid});
     }
-    appendEvent(SDK.TracingModel.MetadataEvent.ThreadName, {name}, 0, 0, 'M', '__metadata');
+    appendEvent(TraceEngine.Legacy.MetadataEvent.ThreadName, {name}, 0, 0, 'M', '__metadata');
     if (!profile) {
       return events;
     }
@@ -371,11 +400,11 @@ export class TimelineJSProfileProcessor {
     appendEvent('CpuProfile', {data: {'cpuProfile': profile}}, profile.endTime, 0, 'I');
     return events;
 
-    function appendEvent(
-        name: string, args: any, ts: number, dur?: number, ph?: string, cat?: string): SDK.TracingManager.EventPayload {
+    function appendEvent(name: string, args: any, ts: number, dur?: number, ph?: string, cat?: string):
+        TraceEngine.TracingManager.EventPayload {
       const event =
           ({cat: cat || 'disabled-by-default-devtools.timeline', name, ph: ph || 'X', pid: 1, tid, ts, args} as
-           SDK.TracingManager.EventPayload);
+           TraceEngine.TracingManager.EventPayload);
       if (dur) {
         event.dur = dur;
       }

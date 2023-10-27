@@ -189,11 +189,11 @@ VkColorSpaceKHR MapEglColorSpaceToVkColorSpace(RendererVk *renderer, EGLenum EGL
             return VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
         case EGL_GL_COLORSPACE_LINEAR:
         case EGL_GL_COLORSPACE_SRGB_KHR:
-        case EGL_GL_COLORSPACE_DISPLAY_P3_PASSTHROUGH_EXT:
             return VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
         case EGL_GL_COLORSPACE_DISPLAY_P3_LINEAR_EXT:
             return VK_COLOR_SPACE_DISPLAY_P3_LINEAR_EXT;
         case EGL_GL_COLORSPACE_DISPLAY_P3_EXT:
+        case EGL_GL_COLORSPACE_DISPLAY_P3_PASSTHROUGH_EXT:
             return VK_COLOR_SPACE_DISPLAY_P3_NONLINEAR_EXT;
         case EGL_GL_COLORSPACE_SCRGB_LINEAR_EXT:
             return VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT;
@@ -203,6 +203,8 @@ VkColorSpaceKHR MapEglColorSpaceToVkColorSpace(RendererVk *renderer, EGLenum EGL
             return VK_COLOR_SPACE_BT2020_LINEAR_EXT;
         case EGL_GL_COLORSPACE_BT2020_PQ_EXT:
             return VK_COLOR_SPACE_HDR10_ST2084_EXT;
+        case EGL_GL_COLORSPACE_BT2020_HLG_EXT:
+            return VK_COLOR_SPACE_HDR10_HLG_EXT;
         default:
             UNREACHABLE();
             return VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
@@ -1546,6 +1548,26 @@ angle::Result WindowSurfaceVk::createSwapChain(vk::Context *context,
     swapchainInfo.clipped     = VK_TRUE;
     swapchainInfo.oldSwapchain = lastSwapchain;
 
+#if defined(ANGLE_PLATFORM_WINDOWS)
+    // On some AMD drivers we need to explicitly enable the extension and set
+    // it to "disallowed" mode in order to avoid seeing impossible-to-handle
+    // extension-specific error codes from swapchain functions.
+    VkSurfaceFullScreenExclusiveInfoEXT fullscreen = {};
+    fullscreen.sType               = VK_STRUCTURE_TYPE_SURFACE_FULL_SCREEN_EXCLUSIVE_INFO_EXT;
+    fullscreen.fullScreenExclusive = VK_FULL_SCREEN_EXCLUSIVE_DISALLOWED_EXT;
+
+    VkSurfaceFullScreenExclusiveWin32InfoEXT fullscreenWin32 = {};
+    fullscreenWin32.sType    = VK_STRUCTURE_TYPE_SURFACE_FULL_SCREEN_EXCLUSIVE_WIN32_INFO_EXT;
+    fullscreenWin32.hmonitor = MonitorFromWindow((HWND)mNativeWindowType, MONITOR_DEFAULTTONEAREST);
+
+    if (renderer->getFeatures().supportsFullScreenExclusive.enabled &&
+        renderer->getFeatures().forceDisableFullScreenExclusive.enabled)
+    {
+        vk::AddToPNextChain(&swapchainInfo, &fullscreen);
+        vk::AddToPNextChain(&swapchainInfo, &fullscreenWin32);
+    }
+#endif
+
     if (context->getFeatures().supportsSwapchainMaintenance1.enabled)
     {
         swapchainInfo.flags |= VK_SWAPCHAIN_CREATE_DEFERRED_MEMORY_ALLOCATION_BIT_EXT;
@@ -2020,8 +2042,16 @@ angle::Result WindowSurfaceVk::prePresentSubmit(ContextVk *contextVk,
     vk::Framebuffer &currentFramebuffer = chooseFramebuffer(SwapchainResolveMode::Disabled);
 
     // Make sure deferred clears are applied, if any.
-    ANGLE_TRY(
-        image.image->flushStagedUpdates(contextVk, gl::LevelIndex(0), gl::LevelIndex(1), 0, 1, {}));
+    if (mColorImageMS.valid())
+    {
+        ANGLE_TRY(mColorImageMS.flushStagedUpdates(contextVk, gl::LevelIndex(0), gl::LevelIndex(1),
+                                                   0, 1, {}));
+    }
+    else
+    {
+        ANGLE_TRY(image.image->flushStagedUpdates(contextVk, gl::LevelIndex(0), gl::LevelIndex(1),
+                                                  0, 1, {}));
+    }
 
     // If user calls eglSwapBuffer without use it, image may already in Present layout (if swap
     // without any draw) or Undefined (first time present). In this case, if

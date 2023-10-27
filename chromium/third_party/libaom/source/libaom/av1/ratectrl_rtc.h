@@ -77,6 +77,13 @@ struct AV1CdefInfo {
   int damping;
 };
 
+struct AV1SegmentationData {
+  const uint8_t *segmentation_map;
+  size_t segmentation_map_size;
+  const int *delta_q;
+  size_t delta_q_size;
+};
+
 class AV1RateControlRTC {
  public:
   static std::unique_ptr<AV1RateControlRTC> Create(
@@ -90,8 +97,8 @@ class AV1RateControlRTC {
   AV1LoopfilterLevel GetLoopfilterLevel() const;
   // GetCdefInfo() needs to be called after ComputeQP()
   AV1CdefInfo GetCdefInfo() const;
-  signed char *GetCyclicRefreshMap() const;
-  int *GetDeltaQ() const;
+  // Returns the segmentation map used for cyclic refresh, based on 4x4 blocks.
+  bool GetSegmentationData(AV1SegmentationData *segmentation_data) const;
   void ComputeQP(const AV1FrameParamsRTC &frame_params);
   // Feedback to rate control with the size of current encoded frame
   void PostEncodeUpdate(uint64_t encoded_frame_size);

@@ -50,10 +50,12 @@ namespace dawn::native::vulkan {
 namespace {
 
 // Destroy the semaphore when out of scope.
-class ScopedSignalSemaphore : public NonMovable {
+class ScopedSignalSemaphore : public NonCopyable {
   public:
     ScopedSignalSemaphore(Device* device, VkSemaphore semaphore)
         : mDevice(device), mSemaphore(semaphore) {}
+    ScopedSignalSemaphore(ScopedSignalSemaphore&& other)
+        : mDevice(other.mDevice), mSemaphore(std::exchange(other.mSemaphore, VK_NULL_HANDLE)) {}
     ~ScopedSignalSemaphore() {
         if (mSemaphore != VK_NULL_HANDLE) {
             mDevice->GetFencedDeleter()->DeleteWhenUnused(mSemaphore);
@@ -152,10 +154,9 @@ ResultOrError<Ref<BindGroupBase>> Device::CreateBindGroupImpl(
     const BindGroupDescriptor* descriptor) {
     return BindGroup::Create(this, descriptor);
 }
-ResultOrError<Ref<BindGroupLayoutBase>> Device::CreateBindGroupLayoutImpl(
-    const BindGroupLayoutDescriptor* descriptor,
-    PipelineCompatibilityToken pipelineCompatibilityToken) {
-    return BindGroupLayout::Create(this, descriptor, pipelineCompatibilityToken);
+ResultOrError<Ref<BindGroupLayoutInternalBase>> Device::CreateBindGroupLayoutImpl(
+    const BindGroupLayoutDescriptor* descriptor) {
+    return BindGroupLayout::Create(this, descriptor);
 }
 ResultOrError<Ref<BufferBase>> Device::CreateBufferImpl(const BufferDescriptor* descriptor) {
     return Buffer::Create(this, descriptor);
@@ -225,7 +226,7 @@ ResultOrError<wgpu::TextureUsage> Device::GetSupportedSurfaceUsageImpl(
 MaybeError Device::TickImpl() {
     RecycleCompletedCommands();
 
-    ExecutionSerial completedSerial = GetCompletedCommandSerial();
+    ExecutionSerial completedSerial = GetQueue()->GetCompletedCommandSerial();
 
     for (Ref<DescriptorSetAllocator>& allocator :
          mDescriptorAllocatorsPendingDeallocation.IterateUpTo(completedSerial)) {
@@ -264,7 +265,7 @@ uint32_t Device::GetGraphicsQueueFamily() const {
     return mQueueFamily;
 }
 
-VkQueue Device::GetQueue() const {
+VkQueue Device::GetVkQueue() const {
     return mQueue;
 }
 
@@ -314,10 +315,12 @@ MaybeError Device::SubmitPendingCommands() {
             fn, &mRecordingContext, mRecordingContext.mappableBuffersForEagerTransition);
     }
 
-    ScopedSignalSemaphore externalTextureSemaphore(this, VK_NULL_HANDLE);
-    if (mRecordingContext.externalTexturesForEagerTransition.size() > 0) {
-        // Create an external semaphore for all external textures that have been used in the pending
-        // submit.
+    std::vector<ScopedSignalSemaphore> externalTextureSemaphores;
+    for (size_t i = 0; i < mRecordingContext.externalTexturesForEagerTransition.size(); ++i) {
+        // Create an external semaphore for each external textures that have been used in the
+        // pending submit.
+        auto& externalTextureSemaphore =
+            externalTextureSemaphores.emplace_back(this, VK_NULL_HANDLE);
         DAWN_TRY_ASSIGN(*externalTextureSemaphore.InitializeInto(),
                         mExternalSemaphoreService->CreateExportableSemaphore());
     }
@@ -336,7 +339,7 @@ MaybeError Device::SubmitPendingCommands() {
     std::vector<VkPipelineStageFlags> dstStageMasks(mRecordingContext.waitSemaphores.size(),
                                                     VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
 
-    if (externalTextureSemaphore.Get() != VK_NULL_HANDLE) {
+    for (auto& externalTextureSemaphore : externalTextureSemaphores) {
         mRecordingContext.signalSemaphores.push_back(externalTextureSemaphore.Get());
     }
 
@@ -366,7 +369,7 @@ MaybeError Device::SubmitPendingCommands() {
     for (VkSemaphore semaphore : mRecordingContext.waitSemaphores) {
         mDeleter->DeleteWhenUnused(semaphore);
     }
-    IncrementLastSubmittedCommandSerial();
+    GetQueue()->IncrementLastSubmittedCommandSerial();
     ExecutionSerial lastSubmittedSerial = GetLastSubmittedCommandSerial();
     mFencesInFlight.emplace(fence, lastSubmittedSerial);
 
@@ -376,23 +379,19 @@ MaybeError Device::SubmitPendingCommands() {
         mCommandsInFlight.Enqueue(submittedCommands, lastSubmittedSerial);
     }
 
-    if (mRecordingContext.externalTexturesForEagerTransition.size() > 0) {
+    auto externalTextureSemaphoreIter = externalTextureSemaphores.begin();
+    for (auto* texture : mRecordingContext.externalTexturesForEagerTransition) {
         // Export the signal semaphore.
         ExternalSemaphoreHandle semaphoreHandle;
-        DAWN_TRY_ASSIGN(semaphoreHandle,
-                        mExternalSemaphoreService->ExportSemaphore(externalTextureSemaphore.Get()));
+        DAWN_TRY_ASSIGN(semaphoreHandle, mExternalSemaphoreService->ExportSemaphore(
+                                             externalTextureSemaphoreIter->Get()));
+        ++externalTextureSemaphoreIter;
 
         // Update all external textures, eagerly transitioned in the submit, with the exported
-        // handle, and the duplicated handles.
-        bool first = true;
-        for (auto* texture : mRecordingContext.externalTexturesForEagerTransition) {
-            ExternalSemaphoreHandle handle =
-                (first ? semaphoreHandle
-                       : mExternalSemaphoreService->DuplicateHandle(semaphoreHandle));
-            first = false;
-            texture->UpdateExternalSemaphoreHandle(handle);
-        }
+        // handles.
+        texture->UpdateExternalSemaphoreHandle(semaphoreHandle);
     }
+    DAWN_ASSERT(externalTextureSemaphoreIter == externalTextureSemaphores.end());
 
     mRecordingContext = CommandRecordingContext();
     DAWN_TRY(PrepareRecordingContext());
@@ -520,14 +519,26 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(VkPhysicalDevice vkPhysica
                           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES);
     }
 
+    if (HasFeature(Feature::DualSourceBlending)) {
+        usedKnobs.features.dualSrcBlend = VK_TRUE;
+    }
+
     if (mDeviceInfo.HasExt(DeviceExt::Robustness2)) {
         ASSERT(usedKnobs.HasExt(DeviceExt::Robustness2));
 
         usedKnobs.robustness2Features = mDeviceInfo.robustness2Features;
-        // TODO(tint:1890): investigate how we can safely disable buffer access in Tint when
-        // robustBufferAccess2 == TRUE
-        usedKnobs.robustness2Features.robustBufferAccess2 = VK_FALSE;
         featuresChain.Add(&usedKnobs.robustness2Features);
+    }
+
+    if (HasFeature(Feature::ChromiumExperimentalSubgroupUniformControlFlow)) {
+        ASSERT(
+            usedKnobs.HasExt(DeviceExt::ShaderSubgroupUniformControlFlow) &&
+            mDeviceInfo.shaderSubgroupUniformControlFlowFeatures.shaderSubgroupUniformControlFlow ==
+                VK_TRUE);
+
+        usedKnobs.shaderSubgroupUniformControlFlowFeatures =
+            mDeviceInfo.shaderSubgroupUniformControlFlowFeatures;
+        featuresChain.Add(&usedKnobs.shaderSubgroupUniformControlFlowFeatures);
     }
 
     // Find a universal queue family
@@ -641,7 +652,7 @@ ResultOrError<ExecutionSerial> Device::CheckAndUpdateCompletedSerials() {
 
         mUnusedFences.push_back(fence);
 
-        ASSERT(fenceSerial > GetCompletedCommandSerial());
+        ASSERT(fenceSerial > GetQueue()->GetCompletedCommandSerial());
         mFencesInFlight.pop();
     }
     return fenceSerial;
@@ -733,10 +744,10 @@ ResultOrError<CommandPoolAndBuffer> Device::BeginVkCommandBuffer() {
 }
 
 void Device::RecycleCompletedCommands() {
-    for (auto& commands : mCommandsInFlight.IterateUpTo(GetCompletedCommandSerial())) {
+    for (auto& commands : mCommandsInFlight.IterateUpTo(GetQueue()->GetCompletedCommandSerial())) {
         mUnusedCommands.push_back(commands);
     }
-    mCommandsInFlight.ClearUpTo(GetCompletedCommandSerial());
+    mCommandsInFlight.ClearUpTo(GetQueue()->GetCompletedCommandSerial());
 }
 
 MaybeError Device::CopyFromStagingToBufferImpl(BufferBase* source,
@@ -1004,7 +1015,7 @@ MaybeError Device::WaitForIdleForDestruction() {
     while (!mFencesInFlight.empty()) {
         VkFence fence = mFencesInFlight.front().first;
         ExecutionSerial fenceSerial = mFencesInFlight.front().second;
-        ASSERT(fenceSerial > GetCompletedCommandSerial());
+        ASSERT(fenceSerial > GetQueue()->GetCompletedCommandSerial());
 
         VkResult result = VkResult::WrapUnsafe(VK_TIMEOUT);
         do {
@@ -1091,7 +1102,7 @@ void Device::DestroyImpl() {
     }
     mUnusedFences.clear();
 
-    ExecutionSerial completedSerial = GetCompletedCommandSerial();
+    ExecutionSerial completedSerial = GetQueue()->GetCompletedCommandSerial();
     for (Ref<DescriptorSetAllocator>& allocator :
          mDescriptorAllocatorsPendingDeallocation.IterateUpTo(completedSerial)) {
         allocator->FinishDeallocation(completedSerial);

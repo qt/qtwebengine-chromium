@@ -14,52 +14,30 @@
 
 #include "./centipede/control_flow.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>  // NOLINT
 #include <fstream>
 #include <queue>
 #include <string>
+#include <string_view>
 #include <vector>
 
+#include "absl/log/check.h"
+#include "absl/log/log.h"
 #include "absl/strings/match.h"
+#include "absl/strings/str_split.h"
 #include "./centipede/command.h"
 #include "./centipede/defs.h"
 #include "./centipede/logging.h"
+#include "./centipede/pc_info.h"
 #include "./centipede/util.h"
 
 namespace centipede {
 
-PCTable GetPcTableFromBinary(std::string_view binary_path,
-                             std::string_view objdump_path,
-                             std::string_view tmp_path,
-                             bool *uses_legacy_trace_pc_instrumentation) {
-  PCTable res = GetPcTableFromBinaryWithPcTable(binary_path, tmp_path);
-  if (res.empty()) {
-    // Fall back to trace-pc.
-    LOG(INFO) << "Fall back to GetPcTableFromBinaryWithTracePC";
-    res = GetPcTableFromBinaryWithTracePC(binary_path, objdump_path, tmp_path);
-    *uses_legacy_trace_pc_instrumentation = true;
-  } else {
-    *uses_legacy_trace_pc_instrumentation = false;
-  }
-  return res;
-}
-
-PCTable GetPcTableFromBinaryWithPcTable(std::string_view binary_path,
-                                        std::string_view tmp_path) {
-  Command cmd(binary_path, {},
-              {absl::StrCat("CENTIPEDE_RUNNER_FLAGS=:dump_pc_table:arg1=",
-                            tmp_path, ":")},
-              "/dev/null");
-  int exit_code = cmd.Execute();
-  if (exit_code) {
-    LOG(INFO) << __func__
-              << ": Failed to get PC table from binary: " << VV(binary_path)
-              << VV(cmd.ToString()) << VV(exit_code) << "; see logs above";
-    return {};
-  }
+PCTable ReadPcTableFromFile(std::string_view file_path) {
   ByteArray pc_infos_as_bytes;
-  ReadFromLocalFile(tmp_path, pc_infos_as_bytes);
-  std::filesystem::remove(tmp_path);
+  ReadFromLocalFile(file_path, pc_infos_as_bytes);
   CHECK_EQ(pc_infos_as_bytes.size() % sizeof(PCInfo), 0);
   size_t pc_table_size = pc_infos_as_bytes.size() / sizeof(PCInfo);
   const auto *pc_infos = reinterpret_cast<PCInfo *>(pc_infos_as_bytes.data());
@@ -71,14 +49,13 @@ PCTable GetPcTableFromBinaryWithPcTable(std::string_view binary_path,
 PCTable GetPcTableFromBinaryWithTracePC(std::string_view binary_path,
                                         std::string_view objdump_path,
                                         std::string_view tmp_path) {
-  // Run objdump -d on the binary. Assumes objdump in PATH.
+  const std::string stderr_path = absl::StrCat(tmp_path, ".log");
   Command cmd(objdump_path, {"-d", std::string(binary_path)}, {}, tmp_path,
-              "/dev/null");
+              stderr_path);
   int exit_code = cmd.Execute();
-  if (exit_code) {
-    LOG(INFO) << __func__
-              << ": Failed to get PC table for binary: " << VV(binary_path)
-              << VV(cmd.ToString()) << VV(exit_code) << "; see logs above";
+  std::filesystem::remove(stderr_path);
+  if (exit_code != EXIT_SUCCESS) {
+    std::filesystem::remove(tmp_path);
     return {};
   }
   PCTable pc_table;
@@ -106,28 +83,30 @@ PCTable GetPcTableFromBinaryWithTracePC(std::string_view binary_path,
   return pc_table;
 }
 
-CFTable GetCfTableFromBinary(std::string_view binary_path,
-                             std::string_view tmp_path) {
-  Command cmd(binary_path, {},
-              {absl::StrCat("CENTIPEDE_RUNNER_FLAGS=:dump_cf_table:arg1=",
-                            tmp_path, ":")},
-              "/dev/null", "/dev/null");
-  int cmd_exit_code = cmd.Execute();
-  if (cmd_exit_code != EXIT_SUCCESS) {
-    LOG(ERROR) << "CF table dumping failed: " << VV(cmd.ToString())
-               << VV(cmd_exit_code);
-    return {};
-  }
+CFTable ReadCfTableFromFile(std::string_view file_path) {
   ByteArray cf_infos_as_bytes;
-  ReadFromLocalFile(tmp_path, cf_infos_as_bytes);
-  std::filesystem::remove(tmp_path);
-
+  ReadFromLocalFile(file_path, cf_infos_as_bytes);
   size_t cf_table_size = cf_infos_as_bytes.size() / sizeof(CFTable::value_type);
   const auto *cf_infos =
       reinterpret_cast<CFTable::value_type *>(cf_infos_as_bytes.data());
   CFTable cf_table{cf_infos, cf_infos + cf_table_size};
   CHECK_EQ(cf_table.size(), cf_table_size);
   return cf_table;
+}
+
+DsoTable ReadDsoTableFromFile(std::string_view file_path) {
+  DsoTable result;
+  std::string data;
+  ReadFromLocalFile(file_path, data);
+  for (const auto &line : absl::StrSplit(data, '\n', absl::SkipEmpty())) {
+    // Use std::string; there is no std::stoul for std::string_view.
+    const std::vector<std::string> tokens =
+        absl::StrSplit(line, ' ', absl::SkipEmpty());
+    CHECK_EQ(tokens.size(), 2) << VV(line);
+    result.push_back(
+        {.path = tokens[0], .num_instrumented_pcs = std::stoul(tokens[1])});
+  }
+  return result;
 }
 
 void ControlFlowGraph::InitializeControlFlowGraph(const CFTable &cf_table,

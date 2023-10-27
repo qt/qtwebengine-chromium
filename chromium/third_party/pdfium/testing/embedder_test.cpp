@@ -415,7 +415,6 @@ bool EmbedderTest::OpenDocumentHelper(const char* password,
   if (doc_type == FORMTYPE_XFA_FULL || doc_type == FORMTYPE_XFA_FOREGROUND)
     FPDF_LoadXFA(document_ptr);
 
-  (void)FPDF_GetDocPermissions(document_ptr);
   return true;
 }
 
@@ -678,7 +677,6 @@ int EmbedderTest::BytesPerPixelForFormat(int format) {
       return 4;
     default:
       NOTREACHED_NORETURN();
-      return 0;
   }
 }
 

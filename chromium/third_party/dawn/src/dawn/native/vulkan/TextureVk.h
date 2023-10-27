@@ -108,7 +108,7 @@ class Texture final : public TextureBase {
 
   private:
     ~Texture() override;
-    Texture(Device* device, const TextureDescriptor* descriptor, TextureState state);
+    Texture(Device* device, const TextureDescriptor* descriptor);
 
     MaybeError InitializeAsInternalTexture(VkImageUsageFlags extraUsages);
     MaybeError InitializeFromExternal(const ExternalImageDescriptorVk* descriptor,
@@ -142,6 +142,7 @@ class Texture final : public TextureBase {
     bool CanReuseWithoutBarrier(wgpu::TextureUsage lastUsage, wgpu::TextureUsage usage);
 
     VkImage mHandle = VK_NULL_HANDLE;
+    bool mOwnsHandle = false;
     ResourceMemoryAllocation mMemoryAllocation;
     VkDeviceMemory mExternalAllocation = VK_NULL_HANDLE;
 

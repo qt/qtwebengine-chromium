@@ -263,6 +263,9 @@ class QUIC_EXPORT_PRIVATE QuicConnectionVisitorInterface {
   // Called when the client receives a preferred address from its peer.
   virtual void OnServerPreferredAddressAvailable(
       const QuicSocketAddress& server_preferred_address) = 0;
+
+  // Asks session to bundle data opportunistically with outgoing data.
+  virtual void MaybeBundleOpportunistically() = 0;
 };
 
 // Interface which gets callbacks from the QuicConnection at interesting
@@ -281,7 +284,7 @@ class QUIC_EXPORT_PRIVATE QuicConnectionDebugVisitor
                             EncryptionLevel /*encryption_level*/,
                             const QuicFrames& /*retransmittable_frames*/,
                             const QuicFrames& /*nonretransmittable_frames*/,
-                            QuicTime /*sent_time*/) {}
+                            QuicTime /*sent_time*/, uint32_t /*batch_id*/) {}
 
   // Called when a coalesced packet is successfully serialized.
   virtual void OnCoalescedPacketSent(
@@ -625,6 +628,9 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // Whether |result| represents a MSG TOO BIG write error.
   bool IsMsgTooBig(const QuicPacketWriter* writer, const WriteResult& result);
 
+  // Called from the SendAlarmDelegate to initiate writing data.
+  virtual void OnSendAlarm();
+
   // If the socket is not blocked, writes queued packets.
   void WriteIfNotBlocked();
 
@@ -724,7 +730,7 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // QuicPacketCreator::DelegateInterface
   bool ShouldGeneratePacket(HasRetransmittableData retransmittable,
                             IsHandshake handshake) override;
-  const QuicFrames MaybeBundleAckOpportunistically() override;
+  const QuicFrames MaybeBundleOpportunistically() override;
   QuicPacketBuffer GetPacketBuffer() override;
   void OnSerializedPacket(SerializedPacket packet) override;
   void OnUnrecoverableError(QuicErrorCode error,
@@ -1279,6 +1285,10 @@ class QUIC_EXPORT_PRIVATE QuicConnection
 
   bool in_probe_time_out() const { return in_probe_time_out_; }
 
+  QuicNetworkBlackholeDetector& blackhole_detector() {
+    return blackhole_detector_;
+  }
+
   // Ensures the network blackhole delay is longer than path degrading delay.
   static QuicTime::Delta CalculateNetworkBlackholeDelay(
       QuicTime::Delta blackhole_delay, QuicTime::Delta path_degrading_delay,
@@ -1700,10 +1710,6 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // any path.
   void RetirePeerIssuedConnectionIdsNoLongerOnPath();
 
-  // When path validation fails, proactively retire peer issued connection IDs
-  // no longer used on any path.
-  void RetirePeerIssuedConnectionIdsOnPathValidationFailure();
-
   // Writes the given packet to socket, encrypted with packet's
   // encryption_level. Returns true on successful write, and false if the writer
   // was blocked and the write needs to be tried again. Notifies the
@@ -1974,7 +1980,8 @@ class QUIC_EXPORT_PRIVATE QuicConnection
 
   // Process NewConnectionIdFrame either sent from peer or synsthesized from
   // preferred_address transport parameter.
-  bool OnNewConnectionIdFrameInner(const QuicNewConnectionIdFrame& frame);
+  NewConnectionIdResult OnNewConnectionIdFrameInner(
+      const QuicNewConnectionIdFrame& frame);
 
   // Called to patch missing client connection ID on default/alternative paths
   // when a new client connection ID is received.
@@ -2355,11 +2362,17 @@ class QUIC_EXPORT_PRIVATE QuicConnection
 
   std::unique_ptr<MultiPortStats> multi_port_stats_;
 
+  // If true, connection will migrate to multi-port path upon path degrading.
+  bool multi_port_migration_enabled_ = false;
+
   // Client side only.
   bool active_migration_disabled_ = false;
 
   const bool ignore_gquic_probing_ =
       GetQuicReloadableFlag(quic_ignore_gquic_probing);
+
+  const bool ignore_duplicate_new_cid_frame_ =
+      GetQuicReloadableFlag(quic_ignore_duplicate_new_cid_frame);
 
   RetransmittableOnWireBehavior retransmittable_on_wire_behavior_ = DEFAULT;
 

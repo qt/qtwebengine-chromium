@@ -176,6 +176,10 @@ message FileMetadata {
   optional string source_url = 2;
   // File path.
   optional string path = 3;
+  // Referrer URL from which the download process was initiated.
+  optional string referrer_url = 4;
+  // File creation time.
+  optional uint64 crtime = 5;
 }
 
 // File metadata along with the restriction.
@@ -198,14 +202,18 @@ message IsDlpPolicyMatchedResponse {
 }
 
 message GetFilesSourcesRequest {
+  // TODO(b/292089803): Remove once not used by Chrome.
   // A list of files inodes.
   repeated uint64 files_inodes = 1;
+  // A list of paths to the files.
+  repeated string files_paths = 2;
 }
 
 message GetFilesSourcesResponse {
   // Error message, empty if no error occurred.
   optional string error_message = 1;
   // A list of files source urls.
+  // Contains |path| only if it was provided in the request.
   repeated FileMetadata files_metadata = 2;
 }
 

@@ -85,6 +85,9 @@ void BalsaFrame::Reset() {
   if (trailer_ != nullptr) {
     trailer_->Clear();
   }
+  if (trailers_ != nullptr) {
+    trailers_->Clear();
+  }
 }
 
 namespace {
@@ -407,8 +410,16 @@ bool BalsaFrame::FindColonsAndParseIntoKeyValue(const Lines& lines,
         break;
       }
 
-      if (header_properties::IsInvalidHeaderKeyChar(*current)) {
-        // Generally invalid characters were found earlier.
+      // Generally invalid characters were found earlier.
+      if (http_validation_policy().disallow_double_quote_in_header_name) {
+        if (header_properties::IsInvalidHeaderKeyChar(*current)) {
+          HandleError(is_trailer
+                          ? BalsaFrameEnums::INVALID_TRAILER_NAME_CHARACTER
+                          : BalsaFrameEnums::INVALID_HEADER_NAME_CHARACTER);
+          return false;
+        }
+      } else if (header_properties::IsInvalidHeaderKeyCharAllowDoubleQuote(
+                     *current)) {
         HandleError(is_trailer
                         ? BalsaFrameEnums::INVALID_TRAILER_NAME_CHARACTER
                         : BalsaFrameEnums::INVALID_HEADER_NAME_CHARACTER);
@@ -556,7 +567,9 @@ void BalsaFrame::ProcessHeaderLines(const Lines& lines, bool is_trailer,
   QUICHE_DCHECK(!lines.empty());
   QUICHE_DVLOG(1) << "******@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@**********\n";
 
-  if (is_request() && track_invalid_chars()) {
+  if ((is_request() || http_validation_policy()
+                           .disallow_invalid_header_characters_in_response) &&
+      track_invalid_chars()) {
     if (CheckHeaderLinesForInvalidChars(lines, headers)) {
       if (invalid_chars_error_enabled()) {
         HandleError(BalsaFrameEnums::INVALID_HEADER_CHARACTER);
@@ -833,7 +846,7 @@ size_t BalsaFrame::ProcessHeaders(const char* message_start,
     // the max_header_length_ (for example after processing the first line)
     // we handle it gracefully.
     if (headers_->GetReadableBytesFromHeaderStream() > max_header_length_) {
-      HandleError(BalsaFrameEnums::HEADERS_TOO_LONG);
+      HandleHeadersTooLongError();
       return message_current - original_message_start;
     }
 
@@ -965,7 +978,7 @@ size_t BalsaFrame::ProcessInput(const char* input, size_t size) {
     // READING_HEADER_AND_FIRSTLINE) in which case we directly declare an error.
     if (header_length > max_header_length_ ||
         (header_length == max_header_length_ && size > 0)) {
-      HandleError(BalsaFrameEnums::HEADERS_TOO_LONG);
+      HandleHeadersTooLongError();
       return current - input;
     }
     const size_t bytes_to_process =
@@ -981,7 +994,7 @@ size_t BalsaFrame::ProcessInput(const char* input, size_t size) {
       const size_t header_length_after =
           headers_->GetReadableBytesFromHeaderStream();
       if (header_length_after >= max_header_length_) {
-        HandleError(BalsaFrameEnums::HEADERS_TOO_LONG);
+        HandleHeadersTooLongError();
       }
     }
     return current - input;
@@ -1250,7 +1263,7 @@ size_t BalsaFrame::ProcessInput(const char* input, size_t size) {
           const char c = *current;
           ++current;
           ++trailer_length_;
-          if (trailer_ != nullptr) {
+          if (GetTrailers() != nullptr) {
             // Reuse the header length limit for trailer, which is just a bunch
             // of headers.
             if (trailer_length_ > max_header_length_) {
@@ -1266,14 +1279,22 @@ size_t BalsaFrame::ProcessInput(const char* input, size_t size) {
           }
           if (HeaderFramingFound(c) != 0) {
             parse_state_ = BalsaFrameEnums::MESSAGE_FULLY_READ;
-            if (trailer_ != nullptr) {
-              trailer_->WriteFromFramer(on_entry, current - on_entry);
-              trailer_->DoneWritingFromFramer();
-              ProcessHeaderLines(trailer_lines_, true /*is_trailer*/, trailer_);
+            if (BalsaHeaders* trailers = GetTrailers(); trailers != nullptr) {
+              trailers->WriteFromFramer(on_entry, current - on_entry);
+              trailers->DoneWritingFromFramer();
+              ProcessHeaderLines(trailer_lines_, true /*is_trailer*/, trailers);
               if (parse_state_ == BalsaFrameEnums::ERROR) {
                 return current - input;
               }
-              visitor_->ProcessTrailers(*trailer_);
+              if (trailers_ != nullptr) {
+                visitor_->OnTrailers(std::move(trailers_));
+
+                // Allows trailers to be delivered without another call to
+                // EnableTrailers() in case the framer is Reset().
+                trailers_ = std::make_unique<BalsaHeaders>();
+              } else {
+                visitor_->ProcessTrailers(*trailer_);
+              }
             }
             visitor_->OnTrailerInput(
                 absl::string_view(on_entry, current - on_entry));
@@ -1281,8 +1302,8 @@ size_t BalsaFrame::ProcessInput(const char* input, size_t size) {
             return current - input;
           }
         }
-        if (trailer_ != nullptr) {
-          trailer_->WriteFromFramer(on_entry, current - on_entry);
+        if (BalsaHeaders* trailers = GetTrailers(); trailers != nullptr) {
+          trailers->WriteFromFramer(on_entry, current - on_entry);
         }
         visitor_->OnTrailerInput(
             absl::string_view(on_entry, current - on_entry));
@@ -1327,6 +1348,36 @@ size_t BalsaFrame::ProcessInput(const char* input, size_t size) {
                           << " memory corruption?!";            // COV_NF_LINE
     }
   }
+}
+
+void BalsaFrame::HandleHeadersTooLongError() {
+  if (parse_truncated_headers_even_when_headers_too_long_) {
+    const size_t len = headers_->GetReadableBytesFromHeaderStream();
+    const char* stream_begin = headers_->OriginalHeaderStreamBegin();
+
+    if (last_slash_n_idx_ < len && stream_begin[last_slash_n_idx_] != '\r') {
+      // We write an end to the truncated line, and a blank line to end the
+      // headers, to end up with something that will parse.
+      static const absl::string_view kTwoLineEnds = "\r\n\r\n";
+      headers_->WriteFromFramer(kTwoLineEnds.data(), kTwoLineEnds.size());
+
+      // This is the last, truncated line.
+      lines_.push_back(std::make_pair(last_slash_n_idx_, len + 2));
+      // A blank line to end the headers.
+      lines_.push_back(std::make_pair(len + 2, len + 4));
+    }
+
+    ProcessHeaderLines(lines_, /*is_trailer=*/false, headers_);
+  }
+
+  HandleError(BalsaFrameEnums::HEADERS_TOO_LONG);
+}
+
+BalsaHeaders* BalsaFrame::GetTrailers() const {
+  if (trailers_ != nullptr) {
+    return trailers_.get();
+  }
+  return trailer_;
 }
 
 const int32_t BalsaFrame::kValidTerm1;

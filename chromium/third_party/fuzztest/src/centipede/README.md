@@ -1,11 +1,14 @@
 
 # Centipede - a distributed fuzzing engine. Work-in-progress.
 
-**Important:** Centipede is being merged into
+**Important:** Centipede is merged into
 [FuzzTest](https://github.com/google/fuzztest)
 to consolidate fuzzing development - see documentation
 [here](https://github.com/google/fuzztest/blob/main/centipede/USER_MIGRATION.md)
 for user migration.
+
+See also:
+[Rich coverage signal and consequences for scaling (slides)](https://docs.google.com/presentation/d/16Zov-QmGZjGrEoTr6Qh2fyp-bvgOa4cmqxPrXw4fNeE/)
 
 ## Why Centipede
 
@@ -257,8 +260,8 @@ tree $WD
 ```
 ...
 ├── <fuzz target name>-d9d90139ee2ccc687f7c9d5821bcc04b8a847df5
-│   └── features.0
-└── corpus.0
+│   └── features.000000
+└── corpus.000000
 ```
 
 ### Run 5 concurrent fuzzing jobs
@@ -279,34 +282,81 @@ tree $WD
 ```
 ...
 ├── <fuzz target name>-d9d90139ee2ccc687f7c9d5821bcc04b8a847df5
-│   ├── features.0
-│   ├── features.1
-│   ├── features.2
-│   ├── features.3
-│   └── features.4
-├── corpus.0
-├── corpus.1
-├── corpus.2
-├── corpus.3
-└── corpus.4
+│   ├── features.000000
+│   ├── features.000001
+│   ├── features.000002
+│   ├── features.000003
+│   └── features.000004
+├── corpus.000000
+├── corpus.000001
+├── corpus.000002
+├── corpus.000003
+└── corpus.000004
 ```
 
 ## Corpus distillation
 
 Each Centipede shard typically does not cover all features that the entire
-corpus covers. In order to distill the corpus, a Centipede process will need to
-read all shards. Currently, distillation works like this:
+corpus covers. Besides, all shards combined will have plenty of redundancy. In
+order to distill the corpus, a Centipede process will need to read all shards.
+Distillation works like this:
 
-* Run fuzzing as described above, so that all shards have their feature sets
-  computed. Stop fuzzing.
-* Then, run the same fuzzing jobs, but with `--distill_shards=N`. This will
-  cause the first `N` jobs to produce `N` independent distilled corpus files
-  (one per job). Each of the distilled corpora should have the same features as
-  the full corpus, but the inputs might be very different between these
-  distilled corpora.
+First, run fuzzing as described above, so that all shards have their feature
+sets computed. Stop fuzzing.
 
-If you need to also export the distilled corpus to a libFuzzer-style directory
-(local dir with one file per input), add `--corpus_dir=DIR`.
+Then, run the same command line, but with `--distill --total_shards=N
+--num_threads=K`. This will read `N` corpus shards and produce `K` independent
+distilled corpus files. Each of the distilled corpora should have the same
+features as the `N` shards combined, but the inputs might be different between
+the `K` distilled corpora. In most cases `K==1` is sufficient, i.e. you simply
+omit `--num_threads=K`.
+
+The `--distill` flag requires that you pass the `--binary` or
+`--coverage_binary` so that it knows where to look for the `features` files, but
+it will not execute the binary. By default, when you pass `--binary` or
+`--coverage_binary`, Centipede computes a hash of the binary file. If the binary
+is not present on disk, you need to additionally pass `--binary_hash=<HASH>` and
+then you only need to pass the base name of the binary. E.g. if you fuzzed with
+`--binary=/path/to/foo`, and `/path/to/foo` is not present on disk during
+distillation, you can still pass `--binary=/path/to/foo --binary_hash=<HASH>`,
+but you can also pass `--binary=foo --binary_hash=<HASH>` or
+`--binary=/invalid/path/foo --binary_hash=<HASH>`.
+
+Unlike fuzzing, the distillation step is not distributed and needs to run on a
+single machine. The distillation is a much lighter-weight process than fuzzing
+because it does not require executing the target, and thus it doesn't need to be
+distributed. Distillation is however IO-bound.
+
+```shell
+$BIN_DIR/centipede --binary=$FUZZ_TARGET --workdir=$WD \
+  --binary_hash=a5e87c9b6057e5ffd3b32a5b9a9ef3978527e9cd  --distill \
+  --total_shards=5 --num_threads=3
+```
+
+Note: `--binary=$FUZZ_TARGET` in this example does not point to a real file and
+so we also pass `--binary_hash=<HASH>`.
+
+The result of this command is that `$WD` will now contain 3 distilled versions
+of the corpus:
+
+```shell
+tree $WD
+```
+
+```
+...
+├── distilled-byte_cmp_4.000000
+├── distilled-byte_cmp_4.000001
+├── distilled-byte_cmp_4.000002
+
+```
+
+### Deprecated but still works
+
+Use the deprecated flag `--distill_shards=N` to produce `N` independent
+distilled corpus files. This option requires the target binary to be present on
+disk. If you need to also export the distilled corpus to a libFuzzer-style
+directory (local dir with one file per input), add `--corpus_dir=DIR`.
 
 ## Coverage Reports
 

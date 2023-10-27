@@ -129,11 +129,8 @@ wgpu::Device CreateCppDawnDevice() {
 
     instance = std::make_unique<dawn::native::Instance>();
 
-    wgpu::RequestAdapterOptionsBackendType backendTypeOptions = {};
-    backendTypeOptions.backendType = backendType;
-
     wgpu::RequestAdapterOptions options = {};
-    options.nextInChain = &backendTypeOptions;
+    options.backendType = backendType;
 
     // Get an adapter for the backend to use, and create the device.
     dawn::native::Adapter backendAdapter = instance->EnumerateAdapters(&options)[0];
@@ -151,9 +148,9 @@ wgpu::Device CreateCppDawnDevice() {
     toggles.chain.sType = WGPUSType_DawnTogglesDescriptor;
     toggles.chain.next = nullptr;
     toggles.enabledToggles = enableToggleNames.data();
-    toggles.enabledTogglesCount = static_cast<uint32_t>(enableToggleNames.size());
+    toggles.enabledToggleCount = enableToggleNames.size();
     toggles.disabledToggles = disabledToggleNames.data();
-    toggles.disabledTogglesCount = static_cast<uint32_t>(disabledToggleNames.size());
+    toggles.disabledToggleCount = disabledToggleNames.size();
 
     WGPUDeviceDescriptor deviceDesc = {};
     deviceDesc.nextInChain = reinterpret_cast<WGPUChainedStruct*>(&toggles);

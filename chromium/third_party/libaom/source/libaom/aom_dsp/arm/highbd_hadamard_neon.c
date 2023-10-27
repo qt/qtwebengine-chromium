@@ -109,7 +109,7 @@ void aom_highbd_hadamard_8x8_neon(const int16_t *src_diff, ptrdiff_t src_stride,
   // For the first pass we can stay in 16-bit elements (4095*8 = 32760).
   hadamard_highbd_col8_first_pass(&s0, &s1, &s2, &s3, &s4, &s5, &s6, &s7);
 
-  transpose_s16_8x8(&s0, &s1, &s2, &s3, &s4, &s5, &s6, &s7);
+  transpose_elems_inplace_s16_8x8(&s0, &s1, &s2, &s3, &s4, &s5, &s6, &s7);
 
   // For the second pass we need to widen to 32-bit elements, so we're
   // processing 4 columns at a time.
@@ -195,15 +195,15 @@ void aom_highbd_hadamard_32x32_neon(const int16_t *src_diff,
     int32x4_t a2 = vld1q_s32(coeff + 4 * i + 512);
     int32x4_t a3 = vld1q_s32(coeff + 4 * i + 768);
 
-    int32x4_t b0 = vhaddq_s32(a0, a1);
-    int32x4_t b1 = vhsubq_s32(a0, a1);
-    int32x4_t b2 = vhaddq_s32(a2, a3);
-    int32x4_t b3 = vhsubq_s32(a2, a3);
+    int32x4_t b0 = vshrq_n_s32(vaddq_s32(a0, a1), 2);
+    int32x4_t b1 = vshrq_n_s32(vsubq_s32(a0, a1), 2);
+    int32x4_t b2 = vshrq_n_s32(vaddq_s32(a2, a3), 2);
+    int32x4_t b3 = vshrq_n_s32(vsubq_s32(a2, a3), 2);
 
-    int32x4_t c0 = vhaddq_s32(b0, b2);
-    int32x4_t c1 = vhaddq_s32(b1, b3);
-    int32x4_t c2 = vhsubq_s32(b0, b2);
-    int32x4_t c3 = vhsubq_s32(b1, b3);
+    int32x4_t c0 = vaddq_s32(b0, b2);
+    int32x4_t c1 = vaddq_s32(b1, b3);
+    int32x4_t c2 = vsubq_s32(b0, b2);
+    int32x4_t c3 = vsubq_s32(b1, b3);
 
     vst1q_s32(coeff + 4 * i, c0);
     vst1q_s32(coeff + 4 * i + 256, c1);

@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,7 +14,7 @@ std::string ReadEntireFileToString(absl::string_view filename) {
     return {};
   }
   fseek(file, 0, SEEK_END);
-  long file_size = ftell(file);
+  long file_size = ftell(file);  // NOLINT
   fseek(file, 0, SEEK_SET);
   std::string contents(file_size, 0);
   int bytes_read = 0;

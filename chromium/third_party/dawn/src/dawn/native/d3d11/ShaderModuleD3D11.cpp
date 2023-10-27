@@ -32,6 +32,7 @@
 #include "dawn/native/d3d11/PlatformFunctionsD3D11.h"
 #include "dawn/native/d3d11/UtilsD3D11.h"
 #include "dawn/platform/DawnPlatform.h"
+#include "dawn/platform/metrics/HistogramMacros.h"
 #include "dawn/platform/tracing/TraceEvent.h"
 
 #include "tint/tint.h"
@@ -103,7 +104,7 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
             break;
     }
 
-    tint::writer::BindingRemapperOptions bindingRemapper;
+    tint::BindingRemapperOptions bindingRemapper;
     // D3D11 registers like `t3` and `c3` have the same bindingOffset number in
     // the remapping but should not be considered a collision because they have
     // different types.
@@ -118,9 +119,9 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
 
         for (const auto& [binding, bindingInfo] : groupBindingInfo) {
             BindingIndex bindingIndex = groupLayout->GetBindingIndex(binding);
-            tint::writer::BindingPoint srcBindingPoint{static_cast<uint32_t>(group),
-                                                       static_cast<uint32_t>(binding)};
-            tint::writer::BindingPoint dstBindingPoint{0u, indices[bindingIndex]};
+            tint::BindingPoint srcBindingPoint{static_cast<uint32_t>(group),
+                                               static_cast<uint32_t>(binding)};
+            tint::BindingPoint dstBindingPoint{0u, indices[bindingIndex]};
             if (srcBindingPoint != dstBindingPoint) {
                 bindingRemapper.binding_points.emplace(srcBindingPoint, dstBindingPoint);
             }
@@ -138,13 +139,13 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
             uint32_t plane1Slot = indices[groupLayout->GetBindingIndex(expansion.plane1)];
             uint32_t paramsSlot = indices[groupLayout->GetBindingIndex(expansion.params)];
             bindingRemapper.binding_points.emplace(
-                tint::writer::BindingPoint{static_cast<uint32_t>(group),
-                                           static_cast<uint32_t>(expansion.plane1)},
-                tint::writer::BindingPoint{0u, plane1Slot});
+                tint::BindingPoint{static_cast<uint32_t>(group),
+                                   static_cast<uint32_t>(expansion.plane1)},
+                tint::BindingPoint{0u, plane1Slot});
             bindingRemapper.binding_points.emplace(
-                tint::writer::BindingPoint{static_cast<uint32_t>(group),
-                                           static_cast<uint32_t>(expansion.params)},
-                tint::writer::BindingPoint{0u, paramsSlot});
+                tint::BindingPoint{static_cast<uint32_t>(group),
+                                   static_cast<uint32_t>(expansion.params)},
+                tint::BindingPoint{0u, paramsSlot});
         }
     }
 
@@ -156,10 +157,19 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     req.hlsl.inputProgram = GetTintProgram();
     req.hlsl.entryPointName = programmableStage.entryPoint.c_str();
     req.hlsl.stage = stage;
-    // D3D11 (HLSL SM5.0) doesn't support spaces, so we have to put the firstIndex in the default
-    // space(0)
-    req.hlsl.firstIndexOffsetRegisterSpace = 0;
-    req.hlsl.firstIndexOffsetShaderRegister = PipelineLayout::kNumWorkgroupsConstantBufferSlot;
+    // Put the firstIndex into the internally reserved group and binding to avoid conflicting with
+    // any existing bindings.
+    req.hlsl.firstIndexOffsetRegisterSpace = PipelineLayout::kReservedConstantsBindGroupIndex;
+    req.hlsl.firstIndexOffsetShaderRegister = PipelineLayout::kFirstIndexOffsetBindingNumber;
+    // Remap to the desired space and binding, [0, kFirstIndexOffsetConstantBufferSlot].
+    {
+        tint::BindingPoint srcBindingPoint{req.hlsl.firstIndexOffsetRegisterSpace,
+                                           req.hlsl.firstIndexOffsetShaderRegister};
+        // D3D11 (HLSL SM5.0) doesn't support spaces, so we have to put the firstIndex in the
+        // default space(0)
+        tint::BindingPoint dstBindingPoint{0u, PipelineLayout::kFirstIndexOffsetConstantBufferSlot};
+        bindingRemapper.binding_points.emplace(srcBindingPoint, dstBindingPoint);
+    }
 
     req.hlsl.usesNumWorkgroups = entryPoint.usesNumWorkgroups;
     // D3D11 (HLSL SM5.0) doesn't support spaces, so we have to put the numWorkgroups in the default
@@ -181,7 +191,7 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     CacheResult<d3d::CompiledShader> compiledShader;
     MaybeError compileError = [&]() -> MaybeError {
         DAWN_TRY_LOAD_OR_RUN(compiledShader, device, std::move(req), d3d::CompiledShader::FromBlob,
-                             d3d::CompileShader);
+                             d3d::CompileShader, "D3D11.CompileShader");
         return {};
     }();
 

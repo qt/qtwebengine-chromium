@@ -1,31 +1,34 @@
+// *** THIS FILE IS GENERATED - DO NOT EDIT ***
+// See layer_chassis_generator.py for modifications
 
-// This file is ***GENERATED***.  Do Not Edit.
-// See layer_chassis_generator.py for modifications.
+/***************************************************************************
+*
+* Copyright (c) 2015-2023 The Khronos Group Inc.
+* Copyright (c) 2015-2023 Valve Corporation
+* Copyright (c) 2015-2023 LunarG, Inc.
+* Copyright (c) 2015-2023 Google Inc.
+* Copyright (c) 2023-2023 RasterGrid Kft.
+*
+* Licensed under the Apache License, Version 2.0 (the "License");
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+*
+*     http://www.apache.org/licenses/LICENSE-2.0
+*
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an "AS IS" BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+****************************************************************************/
 
-/* Copyright (c) 2015-2023 The Khronos Group Inc.
- * Copyright (c) 2015-2023 Valve Corporation
- * Copyright (c) 2015-2023 LunarG, Inc.
- * Copyright (c) 2015-2023 Google Inc.
- * Copyright (c) 2023-2023 RasterGrid Kft.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// NOLINTBEGIN
+
 #pragma once
 
-
 // This source code creates dispatch vectors for each chassis api intercept,
-// i.e., PreCallValidateFoo, PreCallRecordFoo, PostCallRecordFoo, etc., ensuring that 
-// each vector contains only the validation objects that override that particular base 
+// i.e., PreCallValidateFoo, PreCallRecordFoo, PostCallRecordFoo, etc., ensuring that
+// each vector contains only the validation objects that override that particular base
 // class virtual function. Preventing non-overridden calls from reaching the default
 // functions saved about 5% in multithreaded applications.
 
@@ -858,6 +861,18 @@ typedef enum InterceptId{
     InterceptIdPreCallValidateGetDeviceImageSparseMemoryRequirementsKHR,
     InterceptIdPreCallRecordGetDeviceImageSparseMemoryRequirementsKHR,
     InterceptIdPostCallRecordGetDeviceImageSparseMemoryRequirementsKHR,
+    InterceptIdPreCallValidateCmdBindIndexBuffer2KHR,
+    InterceptIdPreCallRecordCmdBindIndexBuffer2KHR,
+    InterceptIdPostCallRecordCmdBindIndexBuffer2KHR,
+    InterceptIdPreCallValidateGetRenderingAreaGranularityKHR,
+    InterceptIdPreCallRecordGetRenderingAreaGranularityKHR,
+    InterceptIdPostCallRecordGetRenderingAreaGranularityKHR,
+    InterceptIdPreCallValidateGetDeviceImageSubresourceLayoutKHR,
+    InterceptIdPreCallRecordGetDeviceImageSubresourceLayoutKHR,
+    InterceptIdPostCallRecordGetDeviceImageSubresourceLayoutKHR,
+    InterceptIdPreCallValidateGetImageSubresourceLayout2KHR,
+    InterceptIdPreCallRecordGetImageSubresourceLayout2KHR,
+    InterceptIdPostCallRecordGetImageSubresourceLayout2KHR,
     InterceptIdPreCallValidateDebugMarkerSetObjectTagEXT,
     InterceptIdPreCallRecordDebugMarkerSetObjectTagEXT,
     InterceptIdPostCallRecordDebugMarkerSetObjectTagEXT,
@@ -993,6 +1008,27 @@ typedef enum InterceptId{
     InterceptIdPreCallValidateGetMemoryAndroidHardwareBufferANDROID,
     InterceptIdPreCallRecordGetMemoryAndroidHardwareBufferANDROID,
     InterceptIdPostCallRecordGetMemoryAndroidHardwareBufferANDROID,
+    InterceptIdPreCallValidateCreateExecutionGraphPipelinesAMDX,
+    InterceptIdPreCallRecordCreateExecutionGraphPipelinesAMDX,
+    InterceptIdPostCallRecordCreateExecutionGraphPipelinesAMDX,
+    InterceptIdPreCallValidateGetExecutionGraphPipelineScratchSizeAMDX,
+    InterceptIdPreCallRecordGetExecutionGraphPipelineScratchSizeAMDX,
+    InterceptIdPostCallRecordGetExecutionGraphPipelineScratchSizeAMDX,
+    InterceptIdPreCallValidateGetExecutionGraphPipelineNodeIndexAMDX,
+    InterceptIdPreCallRecordGetExecutionGraphPipelineNodeIndexAMDX,
+    InterceptIdPostCallRecordGetExecutionGraphPipelineNodeIndexAMDX,
+    InterceptIdPreCallValidateCmdInitializeGraphScratchMemoryAMDX,
+    InterceptIdPreCallRecordCmdInitializeGraphScratchMemoryAMDX,
+    InterceptIdPostCallRecordCmdInitializeGraphScratchMemoryAMDX,
+    InterceptIdPreCallValidateCmdDispatchGraphAMDX,
+    InterceptIdPreCallRecordCmdDispatchGraphAMDX,
+    InterceptIdPostCallRecordCmdDispatchGraphAMDX,
+    InterceptIdPreCallValidateCmdDispatchGraphIndirectAMDX,
+    InterceptIdPreCallRecordCmdDispatchGraphIndirectAMDX,
+    InterceptIdPostCallRecordCmdDispatchGraphIndirectAMDX,
+    InterceptIdPreCallValidateCmdDispatchGraphIndirectCountAMDX,
+    InterceptIdPreCallRecordCmdDispatchGraphIndirectCountAMDX,
+    InterceptIdPostCallRecordCmdDispatchGraphIndirectCountAMDX,
     InterceptIdPreCallValidateCmdSetSampleLocationsEXT,
     InterceptIdPreCallRecordCmdSetSampleLocationsEXT,
     InterceptIdPostCallRecordCmdSetSampleLocationsEXT,
@@ -1158,6 +1194,21 @@ typedef enum InterceptId{
     InterceptIdPreCallValidateCmdSetStencilOpEXT,
     InterceptIdPreCallRecordCmdSetStencilOpEXT,
     InterceptIdPostCallRecordCmdSetStencilOpEXT,
+    InterceptIdPreCallValidateCopyMemoryToImageEXT,
+    InterceptIdPreCallRecordCopyMemoryToImageEXT,
+    InterceptIdPostCallRecordCopyMemoryToImageEXT,
+    InterceptIdPreCallValidateCopyImageToMemoryEXT,
+    InterceptIdPreCallRecordCopyImageToMemoryEXT,
+    InterceptIdPostCallRecordCopyImageToMemoryEXT,
+    InterceptIdPreCallValidateCopyImageToImageEXT,
+    InterceptIdPreCallRecordCopyImageToImageEXT,
+    InterceptIdPostCallRecordCopyImageToImageEXT,
+    InterceptIdPreCallValidateTransitionImageLayoutEXT,
+    InterceptIdPreCallRecordTransitionImageLayoutEXT,
+    InterceptIdPostCallRecordTransitionImageLayoutEXT,
+    InterceptIdPreCallValidateGetImageSubresourceLayout2EXT,
+    InterceptIdPreCallRecordGetImageSubresourceLayout2EXT,
+    InterceptIdPostCallRecordGetImageSubresourceLayout2EXT,
     InterceptIdPreCallValidateReleaseSwapchainImagesEXT,
     InterceptIdPreCallRecordReleaseSwapchainImagesEXT,
     InterceptIdPostCallRecordReleaseSwapchainImagesEXT,
@@ -1233,9 +1284,6 @@ typedef enum InterceptId{
     InterceptIdPreCallValidateCmdSetFragmentShadingRateEnumNV,
     InterceptIdPreCallRecordCmdSetFragmentShadingRateEnumNV,
     InterceptIdPostCallRecordCmdSetFragmentShadingRateEnumNV,
-    InterceptIdPreCallValidateGetImageSubresourceLayout2EXT,
-    InterceptIdPreCallRecordGetImageSubresourceLayout2EXT,
-    InterceptIdPostCallRecordGetImageSubresourceLayout2EXT,
     InterceptIdPreCallValidateGetDeviceFaultInfoEXT,
     InterceptIdPreCallRecordGetDeviceFaultInfoEXT,
     InterceptIdPostCallRecordGetDeviceFaultInfoEXT,
@@ -1377,6 +1425,15 @@ typedef enum InterceptId{
     InterceptIdPreCallValidateCmdDecompressMemoryIndirectCountNV,
     InterceptIdPreCallRecordCmdDecompressMemoryIndirectCountNV,
     InterceptIdPostCallRecordCmdDecompressMemoryIndirectCountNV,
+    InterceptIdPreCallValidateGetPipelineIndirectMemoryRequirementsNV,
+    InterceptIdPreCallRecordGetPipelineIndirectMemoryRequirementsNV,
+    InterceptIdPostCallRecordGetPipelineIndirectMemoryRequirementsNV,
+    InterceptIdPreCallValidateCmdUpdatePipelineIndirectBufferNV,
+    InterceptIdPreCallRecordCmdUpdatePipelineIndirectBufferNV,
+    InterceptIdPostCallRecordCmdUpdatePipelineIndirectBufferNV,
+    InterceptIdPreCallValidateGetPipelineIndirectDeviceAddressNV,
+    InterceptIdPreCallRecordGetPipelineIndirectDeviceAddressNV,
+    InterceptIdPostCallRecordGetPipelineIndirectDeviceAddressNV,
     InterceptIdPreCallValidateCmdSetTessellationDomainOriginEXT,
     InterceptIdPreCallRecordCmdSetTessellationDomainOriginEXT,
     InterceptIdPostCallRecordCmdSetTessellationDomainOriginEXT,
@@ -1488,9 +1545,6 @@ typedef enum InterceptId{
     InterceptIdPreCallValidateCmdOpticalFlowExecuteNV,
     InterceptIdPreCallRecordCmdOpticalFlowExecuteNV,
     InterceptIdPostCallRecordCmdOpticalFlowExecuteNV,
-    InterceptIdPreCallValidateCreateShadersEXT,
-    InterceptIdPreCallRecordCreateShadersEXT,
-    InterceptIdPostCallRecordCreateShadersEXT,
     InterceptIdPreCallValidateDestroyShaderEXT,
     InterceptIdPreCallRecordDestroyShaderEXT,
     InterceptIdPostCallRecordDestroyShaderEXT,
@@ -1649,7 +1703,6 @@ void ValidationObject::InitObjectDispatchVectors() {
     };
 
     intercept_vectors.resize(InterceptIdCount);
-
     BUILD_DISPATCH_VECTOR(PreCallValidateGetDeviceQueue);
     BUILD_DISPATCH_VECTOR(PreCallRecordGetDeviceQueue);
     BUILD_DISPATCH_VECTOR(PostCallRecordGetDeviceQueue);
@@ -2211,24 +2264,6 @@ void ValidationObject::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallValidateCreateSharedSwapchainsKHR);
     BUILD_DISPATCH_VECTOR(PreCallRecordCreateSharedSwapchainsKHR);
     BUILD_DISPATCH_VECTOR(PostCallRecordCreateSharedSwapchainsKHR);
-#ifdef VK_USE_PLATFORM_XLIB_KHR
-#endif
-#ifdef VK_USE_PLATFORM_XLIB_KHR
-#endif
-#ifdef VK_USE_PLATFORM_XCB_KHR
-#endif
-#ifdef VK_USE_PLATFORM_XCB_KHR
-#endif
-#ifdef VK_USE_PLATFORM_WAYLAND_KHR
-#endif
-#ifdef VK_USE_PLATFORM_WAYLAND_KHR
-#endif
-#ifdef VK_USE_PLATFORM_ANDROID_KHR
-#endif
-#ifdef VK_USE_PLATFORM_WIN32_KHR
-#endif
-#ifdef VK_USE_PLATFORM_WIN32_KHR
-#endif
     BUILD_DISPATCH_VECTOR(PreCallValidateCreateVideoSessionKHR);
     BUILD_DISPATCH_VECTOR(PreCallRecordCreateVideoSessionKHR);
     BUILD_DISPATCH_VECTOR(PostCallRecordCreateVideoSessionKHR);
@@ -2449,8 +2484,6 @@ void ValidationObject::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallRecordUnmapMemory2KHR);
     BUILD_DISPATCH_VECTOR(PostCallRecordUnmapMemory2KHR);
 #ifdef VK_ENABLE_BETA_EXTENSIONS
-#endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     BUILD_DISPATCH_VECTOR(PreCallValidateGetEncodedVideoSessionParametersKHR);
     BUILD_DISPATCH_VECTOR(PreCallRecordGetEncodedVideoSessionParametersKHR);
     BUILD_DISPATCH_VECTOR(PostCallRecordGetEncodedVideoSessionParametersKHR);
@@ -2514,6 +2547,18 @@ void ValidationObject::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallValidateGetDeviceImageSparseMemoryRequirementsKHR);
     BUILD_DISPATCH_VECTOR(PreCallRecordGetDeviceImageSparseMemoryRequirementsKHR);
     BUILD_DISPATCH_VECTOR(PostCallRecordGetDeviceImageSparseMemoryRequirementsKHR);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdBindIndexBuffer2KHR);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdBindIndexBuffer2KHR);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdBindIndexBuffer2KHR);
+    BUILD_DISPATCH_VECTOR(PreCallValidateGetRenderingAreaGranularityKHR);
+    BUILD_DISPATCH_VECTOR(PreCallRecordGetRenderingAreaGranularityKHR);
+    BUILD_DISPATCH_VECTOR(PostCallRecordGetRenderingAreaGranularityKHR);
+    BUILD_DISPATCH_VECTOR(PreCallValidateGetDeviceImageSubresourceLayoutKHR);
+    BUILD_DISPATCH_VECTOR(PreCallRecordGetDeviceImageSubresourceLayoutKHR);
+    BUILD_DISPATCH_VECTOR(PostCallRecordGetDeviceImageSubresourceLayoutKHR);
+    BUILD_DISPATCH_VECTOR(PreCallValidateGetImageSubresourceLayout2KHR);
+    BUILD_DISPATCH_VECTOR(PreCallRecordGetImageSubresourceLayout2KHR);
+    BUILD_DISPATCH_VECTOR(PostCallRecordGetImageSubresourceLayout2KHR);
     BUILD_DISPATCH_VECTOR(PreCallValidateDebugMarkerSetObjectTagEXT);
     BUILD_DISPATCH_VECTOR(PreCallRecordDebugMarkerSetObjectTagEXT);
     BUILD_DISPATCH_VECTOR(PostCallRecordDebugMarkerSetObjectTagEXT);
@@ -2577,14 +2622,10 @@ void ValidationObject::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallValidateGetShaderInfoAMD);
     BUILD_DISPATCH_VECTOR(PreCallRecordGetShaderInfoAMD);
     BUILD_DISPATCH_VECTOR(PostCallRecordGetShaderInfoAMD);
-#ifdef VK_USE_PLATFORM_GGP
-#endif
 #ifdef VK_USE_PLATFORM_WIN32_KHR
     BUILD_DISPATCH_VECTOR(PreCallValidateGetMemoryWin32HandleNV);
     BUILD_DISPATCH_VECTOR(PreCallRecordGetMemoryWin32HandleNV);
     BUILD_DISPATCH_VECTOR(PostCallRecordGetMemoryWin32HandleNV);
-#endif
-#ifdef VK_USE_PLATFORM_VI_NN
 #endif
     BUILD_DISPATCH_VECTOR(PreCallValidateCmdBeginConditionalRenderingEXT);
     BUILD_DISPATCH_VECTOR(PreCallRecordCmdBeginConditionalRenderingEXT);
@@ -2595,10 +2636,6 @@ void ValidationObject::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallValidateCmdSetViewportWScalingNV);
     BUILD_DISPATCH_VECTOR(PreCallRecordCmdSetViewportWScalingNV);
     BUILD_DISPATCH_VECTOR(PostCallRecordCmdSetViewportWScalingNV);
-#ifdef VK_USE_PLATFORM_XLIB_XRANDR_EXT
-#endif
-#ifdef VK_USE_PLATFORM_XLIB_XRANDR_EXT
-#endif
     BUILD_DISPATCH_VECTOR(PreCallValidateDisplayPowerControlEXT);
     BUILD_DISPATCH_VECTOR(PreCallRecordDisplayPowerControlEXT);
     BUILD_DISPATCH_VECTOR(PostCallRecordDisplayPowerControlEXT);
@@ -2629,10 +2666,6 @@ void ValidationObject::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallValidateSetHdrMetadataEXT);
     BUILD_DISPATCH_VECTOR(PreCallRecordSetHdrMetadataEXT);
     BUILD_DISPATCH_VECTOR(PostCallRecordSetHdrMetadataEXT);
-#ifdef VK_USE_PLATFORM_IOS_MVK
-#endif
-#ifdef VK_USE_PLATFORM_MACOS_MVK
-#endif
     BUILD_DISPATCH_VECTOR(PreCallValidateSetDebugUtilsObjectNameEXT);
     BUILD_DISPATCH_VECTOR(PreCallRecordSetDebugUtilsObjectNameEXT);
     BUILD_DISPATCH_VECTOR(PostCallRecordSetDebugUtilsObjectNameEXT);
@@ -2666,6 +2699,41 @@ void ValidationObject::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallValidateGetMemoryAndroidHardwareBufferANDROID);
     BUILD_DISPATCH_VECTOR(PreCallRecordGetMemoryAndroidHardwareBufferANDROID);
     BUILD_DISPATCH_VECTOR(PostCallRecordGetMemoryAndroidHardwareBufferANDROID);
+#endif
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+    BUILD_DISPATCH_VECTOR(PreCallValidateCreateExecutionGraphPipelinesAMDX);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCreateExecutionGraphPipelinesAMDX);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCreateExecutionGraphPipelinesAMDX);
+#endif
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+    BUILD_DISPATCH_VECTOR(PreCallValidateGetExecutionGraphPipelineScratchSizeAMDX);
+    BUILD_DISPATCH_VECTOR(PreCallRecordGetExecutionGraphPipelineScratchSizeAMDX);
+    BUILD_DISPATCH_VECTOR(PostCallRecordGetExecutionGraphPipelineScratchSizeAMDX);
+#endif
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+    BUILD_DISPATCH_VECTOR(PreCallValidateGetExecutionGraphPipelineNodeIndexAMDX);
+    BUILD_DISPATCH_VECTOR(PreCallRecordGetExecutionGraphPipelineNodeIndexAMDX);
+    BUILD_DISPATCH_VECTOR(PostCallRecordGetExecutionGraphPipelineNodeIndexAMDX);
+#endif
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdInitializeGraphScratchMemoryAMDX);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdInitializeGraphScratchMemoryAMDX);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdInitializeGraphScratchMemoryAMDX);
+#endif
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdDispatchGraphAMDX);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdDispatchGraphAMDX);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdDispatchGraphAMDX);
+#endif
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdDispatchGraphIndirectAMDX);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdDispatchGraphIndirectAMDX);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdDispatchGraphIndirectAMDX);
+#endif
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdDispatchGraphIndirectCountAMDX);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdDispatchGraphIndirectCountAMDX);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdDispatchGraphIndirectCountAMDX);
 #endif
     BUILD_DISPATCH_VECTOR(PreCallValidateCmdSetSampleLocationsEXT);
     BUILD_DISPATCH_VECTOR(PreCallRecordCmdSetSampleLocationsEXT);
@@ -2778,15 +2846,9 @@ void ValidationObject::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallValidateSetLocalDimmingAMD);
     BUILD_DISPATCH_VECTOR(PreCallRecordSetLocalDimmingAMD);
     BUILD_DISPATCH_VECTOR(PostCallRecordSetLocalDimmingAMD);
-#ifdef VK_USE_PLATFORM_FUCHSIA
-#endif
-#ifdef VK_USE_PLATFORM_METAL_EXT
-#endif
     BUILD_DISPATCH_VECTOR(PreCallValidateGetBufferDeviceAddressEXT);
     BUILD_DISPATCH_VECTOR(PreCallRecordGetBufferDeviceAddressEXT);
     BUILD_DISPATCH_VECTOR(PostCallRecordGetBufferDeviceAddressEXT);
-#ifdef VK_USE_PLATFORM_WIN32_KHR
-#endif
 #ifdef VK_USE_PLATFORM_WIN32_KHR
     BUILD_DISPATCH_VECTOR(PreCallValidateAcquireFullScreenExclusiveModeEXT);
     BUILD_DISPATCH_VECTOR(PreCallRecordAcquireFullScreenExclusiveModeEXT);
@@ -2844,6 +2906,21 @@ void ValidationObject::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallValidateCmdSetStencilOpEXT);
     BUILD_DISPATCH_VECTOR(PreCallRecordCmdSetStencilOpEXT);
     BUILD_DISPATCH_VECTOR(PostCallRecordCmdSetStencilOpEXT);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCopyMemoryToImageEXT);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCopyMemoryToImageEXT);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCopyMemoryToImageEXT);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCopyImageToMemoryEXT);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCopyImageToMemoryEXT);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCopyImageToMemoryEXT);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCopyImageToImageEXT);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCopyImageToImageEXT);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCopyImageToImageEXT);
+    BUILD_DISPATCH_VECTOR(PreCallValidateTransitionImageLayoutEXT);
+    BUILD_DISPATCH_VECTOR(PreCallRecordTransitionImageLayoutEXT);
+    BUILD_DISPATCH_VECTOR(PostCallRecordTransitionImageLayoutEXT);
+    BUILD_DISPATCH_VECTOR(PreCallValidateGetImageSubresourceLayout2EXT);
+    BUILD_DISPATCH_VECTOR(PreCallRecordGetImageSubresourceLayout2EXT);
+    BUILD_DISPATCH_VECTOR(PostCallRecordGetImageSubresourceLayout2EXT);
     BUILD_DISPATCH_VECTOR(PreCallValidateReleaseSwapchainImagesEXT);
     BUILD_DISPATCH_VECTOR(PreCallRecordReleaseSwapchainImagesEXT);
     BUILD_DISPATCH_VECTOR(PostCallRecordReleaseSwapchainImagesEXT);
@@ -2921,20 +2998,9 @@ void ValidationObject::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallValidateCmdSetFragmentShadingRateEnumNV);
     BUILD_DISPATCH_VECTOR(PreCallRecordCmdSetFragmentShadingRateEnumNV);
     BUILD_DISPATCH_VECTOR(PostCallRecordCmdSetFragmentShadingRateEnumNV);
-    BUILD_DISPATCH_VECTOR(PreCallValidateGetImageSubresourceLayout2EXT);
-    BUILD_DISPATCH_VECTOR(PreCallRecordGetImageSubresourceLayout2EXT);
-    BUILD_DISPATCH_VECTOR(PostCallRecordGetImageSubresourceLayout2EXT);
     BUILD_DISPATCH_VECTOR(PreCallValidateGetDeviceFaultInfoEXT);
     BUILD_DISPATCH_VECTOR(PreCallRecordGetDeviceFaultInfoEXT);
     BUILD_DISPATCH_VECTOR(PostCallRecordGetDeviceFaultInfoEXT);
-#ifdef VK_USE_PLATFORM_WIN32_KHR
-#endif
-#ifdef VK_USE_PLATFORM_WIN32_KHR
-#endif
-#ifdef VK_USE_PLATFORM_DIRECTFB_EXT
-#endif
-#ifdef VK_USE_PLATFORM_DIRECTFB_EXT
-#endif
     BUILD_DISPATCH_VECTOR(PreCallValidateCmdSetVertexInputEXT);
     BUILD_DISPATCH_VECTOR(PreCallRecordCmdSetVertexInputEXT);
     BUILD_DISPATCH_VECTOR(PostCallRecordCmdSetVertexInputEXT);
@@ -3013,10 +3079,6 @@ void ValidationObject::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallValidateCmdSetPrimitiveRestartEnableEXT);
     BUILD_DISPATCH_VECTOR(PreCallRecordCmdSetPrimitiveRestartEnableEXT);
     BUILD_DISPATCH_VECTOR(PostCallRecordCmdSetPrimitiveRestartEnableEXT);
-#ifdef VK_USE_PLATFORM_SCREEN_QNX
-#endif
-#ifdef VK_USE_PLATFORM_SCREEN_QNX
-#endif
     BUILD_DISPATCH_VECTOR(PreCallValidateCmdSetColorWriteEnableEXT);
     BUILD_DISPATCH_VECTOR(PreCallRecordCmdSetColorWriteEnableEXT);
     BUILD_DISPATCH_VECTOR(PostCallRecordCmdSetColorWriteEnableEXT);
@@ -3095,6 +3157,15 @@ void ValidationObject::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallValidateCmdDecompressMemoryIndirectCountNV);
     BUILD_DISPATCH_VECTOR(PreCallRecordCmdDecompressMemoryIndirectCountNV);
     BUILD_DISPATCH_VECTOR(PostCallRecordCmdDecompressMemoryIndirectCountNV);
+    BUILD_DISPATCH_VECTOR(PreCallValidateGetPipelineIndirectMemoryRequirementsNV);
+    BUILD_DISPATCH_VECTOR(PreCallRecordGetPipelineIndirectMemoryRequirementsNV);
+    BUILD_DISPATCH_VECTOR(PostCallRecordGetPipelineIndirectMemoryRequirementsNV);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdUpdatePipelineIndirectBufferNV);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdUpdatePipelineIndirectBufferNV);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdUpdatePipelineIndirectBufferNV);
+    BUILD_DISPATCH_VECTOR(PreCallValidateGetPipelineIndirectDeviceAddressNV);
+    BUILD_DISPATCH_VECTOR(PreCallRecordGetPipelineIndirectDeviceAddressNV);
+    BUILD_DISPATCH_VECTOR(PostCallRecordGetPipelineIndirectDeviceAddressNV);
     BUILD_DISPATCH_VECTOR(PreCallValidateCmdSetTessellationDomainOriginEXT);
     BUILD_DISPATCH_VECTOR(PreCallRecordCmdSetTessellationDomainOriginEXT);
     BUILD_DISPATCH_VECTOR(PostCallRecordCmdSetTessellationDomainOriginEXT);
@@ -3206,9 +3277,6 @@ void ValidationObject::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallValidateCmdOpticalFlowExecuteNV);
     BUILD_DISPATCH_VECTOR(PreCallRecordCmdOpticalFlowExecuteNV);
     BUILD_DISPATCH_VECTOR(PostCallRecordCmdOpticalFlowExecuteNV);
-    BUILD_DISPATCH_VECTOR(PreCallValidateCreateShadersEXT);
-    BUILD_DISPATCH_VECTOR(PreCallRecordCreateShadersEXT);
-    BUILD_DISPATCH_VECTOR(PostCallRecordCreateShadersEXT);
     BUILD_DISPATCH_VECTOR(PreCallValidateDestroyShaderEXT);
     BUILD_DISPATCH_VECTOR(PreCallRecordDestroyShaderEXT);
     BUILD_DISPATCH_VECTOR(PostCallRecordDestroyShaderEXT);
@@ -3304,5 +3372,6 @@ void ValidationObject::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallValidateCmdDrawMeshTasksIndirectCountEXT);
     BUILD_DISPATCH_VECTOR(PreCallRecordCmdDrawMeshTasksIndirectCountEXT);
     BUILD_DISPATCH_VECTOR(PostCallRecordCmdDrawMeshTasksIndirectCountEXT);
-};
+}
 
+// NOLINTEND

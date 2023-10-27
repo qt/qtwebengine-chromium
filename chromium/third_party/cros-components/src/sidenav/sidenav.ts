@@ -6,10 +6,11 @@
 
 import './sidenav_item';
 
-import {castExists} from 'google3/javascript/common/asserts/asserts';
 import {css, CSSResultGroup, html, LitElement} from 'lit';
 
-import {SidenavItem, TreeItemCollapsedEvent, TreeItemEnabledChangedEvent, TreeItemExpandedEvent} from './sidenav_item';
+import {castExists} from '../helpers/helpers';
+
+import {SidenavItem, SidenavItemCollapsedEvent, SidenavItemEnabledChangedEvent, SidenavItemExpandedEvent} from './sidenav_item';
 import {isRTL, isSidenavItem, shadowPiercingActiveItem} from './sidenav_util';
 
 /**
@@ -21,6 +22,13 @@ declare interface ExtendedElement extends Element {
   // instead of this. Perhaps a mix of intersection observer and scrollTo.
   scrollIntoViewIfNeeded: (centerIfNeeded: boolean) => void;
 }
+
+const ATTRIBUTE_OBSERVER_CONFIG = {
+  attributes: true,
+  childList: true,
+  subtree: true,
+  attributeFilter: ['may-have-children']
+};
 
 /**
  * True iff `item` is not disabled and every parent of it allows children to be
@@ -138,9 +146,33 @@ export class Sidenav extends LitElement {
     return this.items.find(item => item.tabIndex === 0) || null;
   }
 
+  /**
+   * Listens for changes on sidenav children and recalculates the sidenav's
+   * state if necessary.
+   */
+  private readonly itemAttributeObserver =
+      new MutationObserver((mutationList: MutationRecord[]) => {
+        for (const mutation of mutationList) {
+          if (mutation.type === 'attributes' &&
+              (mutation.target as Element).tagName === 'CROS-SIDENAV-ITEM' &&
+              mutation.attributeName === 'may-have-children') {
+            this.updateLayered();
+            return;
+          }
+          if (mutation.type === 'childList') {
+            this.updateLayered();
+            return;
+          }
+        }
+      });
+
   constructor() {
     super();
     this.doubleclickExpands = false;
+
+    // Listen for changes to children, to update the Sidenav's state if
+    // necessary.
+    this.itemAttributeObserver.observe(this, ATTRIBUTE_OBSERVER_CONFIG);
   }
 
   override render() {
@@ -182,18 +214,34 @@ export class Sidenav extends LitElement {
     // has a selected/tabbable item.
     if (!this.items.some(item => item.enabled) &&
         this.selectableItems.length > 0) {
-      this.enableItem(this.selectableItems[0]);
+      this.enableItem(castExists(this.selectableItems[0]));
+    }
+
+    this.updateLayered();
+  }
+
+  /**
+   * Infers whether this sidenav has nested children (i.e. is layered), and
+   * sets `inLayered` on all the children.
+   */
+  private updateLayered() {
+    const layered = this.querySelectorAll(
+                            'cros-sidenav-item cros-sidenav-item, ' +
+                            'cros-sidenav-item[may-have-children]')
+                        .length > 0;
+    for (const item of this.querySelectorAll('cros-sidenav-item')) {
+      item.inLayered = layered;
     }
   }
 
   /** Handles the expanded event of the tree item. */
-  private onSidenavItemExpanded(e: TreeItemExpandedEvent) {
+  private onSidenavItemExpanded(e: SidenavItemExpandedEvent) {
     const treeItem = e.detail.item;
     (treeItem as unknown as ExtendedElement).scrollIntoViewIfNeeded(false);
   }
 
   /** Handles the collapse event of the tree item. */
-  private onSidenavItemCollapsed(e: TreeItemCollapsedEvent) {
+  private onSidenavItemCollapsed(e: SidenavItemCollapsedEvent) {
     const collapsedItem = e.detail.item;
     // If the currently selected tree item (`oldSelectedItem`) is a descent of
     // another tree item (`treeItem`) which is going to be collapsed, we need to
@@ -207,7 +255,7 @@ export class Sidenav extends LitElement {
   }
 
   /** Handles when that enabled status of an item has changed. */
-  private onSidenavItemEnabledChanged(e: TreeItemEnabledChangedEvent) {
+  private onSidenavItemEnabledChanged(e: SidenavItemEnabledChangedEvent) {
     const item = e.detail.item;
 
     if (item.enabled) {

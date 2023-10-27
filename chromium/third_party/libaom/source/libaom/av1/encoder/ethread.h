@@ -55,8 +55,6 @@ void av1_row_mt_mem_dealloc(AV1_COMP *cpi);
 
 void av1_global_motion_estimation_mt(AV1_COMP *cpi);
 
-void av1_gm_dealloc(AV1GlobalMotionSync *gm_sync_data);
-
 #if !CONFIG_REALTIME_ONLY
 void av1_tpl_row_mt_sync_read_dummy(AV1TplRowMultiThreadSync *tpl_mt_sync,
                                     int r, int c);

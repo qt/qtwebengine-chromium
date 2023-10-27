@@ -182,6 +182,7 @@ class blas_data_mapper<Scalar,Index,StorageOrder,AlignmentType,1>
 {
 public:
   typedef BlasLinearMapper<Scalar, Index, AlignmentType> LinearMapper;
+  typedef blas_data_mapper<Scalar, Index, StorageOrder, AlignmentType> SubMapper;
   typedef BlasVectorMapper<Scalar, Index> VectorMapper;
 
   EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE blas_data_mapper(Scalar* data, Index stride, Index incr=1)
@@ -191,9 +192,9 @@ public:
     eigen_assert(incr==1);
   }
 
-  EIGEN_DEVICE_FUNC  EIGEN_ALWAYS_INLINE blas_data_mapper<Scalar, Index, StorageOrder, AlignmentType>
+  EIGEN_DEVICE_FUNC  EIGEN_ALWAYS_INLINE SubMapper
   getSubMapper(Index i, Index j) const {
-    return blas_data_mapper<Scalar, Index, StorageOrder, AlignmentType>(&operator()(i, j), m_stride);
+    return SubMapper(&operator()(i, j), m_stride);
   }
 
   EIGEN_DEVICE_FUNC  EIGEN_ALWAYS_INLINE LinearMapper getLinearMapper(Index i, Index j) const {
@@ -316,12 +317,13 @@ class blas_data_mapper
 {
 public:
   typedef BlasLinearMapper<Scalar, Index, AlignmentType,Incr> LinearMapper;
+  typedef blas_data_mapper SubMapper;
 
   EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE blas_data_mapper(Scalar* data, Index stride, Index incr) : m_data(data), m_stride(stride), m_incr(incr) {}
 
-  EIGEN_DEVICE_FUNC  EIGEN_ALWAYS_INLINE blas_data_mapper
+  EIGEN_DEVICE_FUNC  EIGEN_ALWAYS_INLINE SubMapper
   getSubMapper(Index i, Index j) const {
-    return blas_data_mapper(&operator()(i, j), m_stride, m_incr.value());
+    return SubMapper(&operator()(i, j), m_stride, m_incr.value());
   }
 
   EIGEN_DEVICE_FUNC  EIGEN_ALWAYS_INLINE LinearMapper getLinearMapper(Index i, Index j) const {
@@ -448,10 +450,12 @@ protected:
 template<typename Scalar, typename Index, int StorageOrder>
 class const_blas_data_mapper : public blas_data_mapper<const Scalar, Index, StorageOrder> {
   public:
+  typedef const_blas_data_mapper<Scalar, Index, StorageOrder> SubMapper;
+
   EIGEN_ALWAYS_INLINE const_blas_data_mapper(const Scalar *data, Index stride) : blas_data_mapper<const Scalar, Index, StorageOrder>(data, stride) {}
 
-  EIGEN_ALWAYS_INLINE const_blas_data_mapper<Scalar, Index, StorageOrder> getSubMapper(Index i, Index j) const {
-    return const_blas_data_mapper<Scalar, Index, StorageOrder>(&(this->operator()(i, j)), this->m_stride);
+  EIGEN_ALWAYS_INLINE SubMapper getSubMapper(Index i, Index j) const {
+    return SubMapper(&(this->operator()(i, j)), this->m_stride);
   }
 };
 

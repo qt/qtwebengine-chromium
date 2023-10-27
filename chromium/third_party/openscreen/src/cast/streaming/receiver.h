@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,7 +14,6 @@
 #include <vector>
 
 #include "absl/types/optional.h"
-#include "absl/types/span.h"
 #include "cast/streaming/clock_drift_smoother.h"
 #include "cast/streaming/compound_rtcp_builder.h"
 #include "cast/streaming/environment.h"
@@ -232,8 +231,7 @@ class Receiver : public ReceiverBase {
   bool is_pli_enabled_;       // Whether picture loss indication is enabled.
 
   // Buffer for serializing/sending RTCP packets.
-  const int rtcp_buffer_capacity_;
-  const std::unique_ptr<uint8_t[]> rtcp_buffer_;
+  std::vector<uint8_t> rtcp_buffer_;
 
   // Schedules tasks to ensure RTCP reports are sent within a bounded interval.
   // Not scheduled until after this Receiver has processed the first packet from

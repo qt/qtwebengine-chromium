@@ -94,5 +94,10 @@ fn license_ignore_dirs() -> Vec<&'static str> {
         "**/Session.vim",
         "**/*.properties",
         "**/third_party/**",
+        "**/*.png",
+        "**/*.ico",
+        "**/node_modules/**",
+        "**/.angular/**",
+        "**/.editorconfig",
     ]
 }

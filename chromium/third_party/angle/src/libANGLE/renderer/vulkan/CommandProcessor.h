@@ -129,6 +129,12 @@ class CommandProcessorTask
 {
   public:
     CommandProcessorTask() { initTask(); }
+    ~CommandProcessorTask()
+    {
+        // Render passes are cached in RenderPassCache.  The handle stored in the task references a
+        // render pass that is managed by that cache.
+        mRenderPass.release();
+    }
 
     void initTask();
 
@@ -189,7 +195,7 @@ class CommandProcessorTask
     }
     const VkPresentInfoKHR &getPresentInfo() const { return mPresentInfo; }
     SwapchainStatus *getSwapchainStatus() const { return mSwapchainStatus; }
-    const RenderPass *getRenderPass() const { return mRenderPass; }
+    const RenderPass &getRenderPass() const { return mRenderPass; }
     OutsideRenderPassCommandBufferHelper *getOutsideRenderPassCommandBuffer() const
     {
         return mOutsideRenderPassCommandBuffer;
@@ -211,7 +217,7 @@ class CommandProcessorTask
     // ProcessCommands
     OutsideRenderPassCommandBufferHelper *mOutsideRenderPassCommandBuffer;
     RenderPassCommandBufferHelper *mRenderPassCommandBuffer;
-    const RenderPass *mRenderPass;
+    RenderPass mRenderPass;
 
     // Flush data
     VkSemaphore mSemaphore;
@@ -466,13 +472,19 @@ class CommandQueue : angle::NonCopyable
     }
     angle::Result postSubmitCheck(Context *context);
 
+    // Similar to finishOneCommandBatchAndCleanupImpl(), but returns if no command exists in the
+    // queue.
+    angle::Result finishOneCommandBatchAndCleanup(Context *context,
+                                                  uint64_t timeout,
+                                                  bool *anyFinished);
+
     // All these private APIs are called with mutex locked, so we must not take lock again.
   private:
     // Check the first command buffer in mInFlightCommands and update mLastCompletedSerials if
     // finished
     angle::Result checkOneCommandBatch(Context *context, bool *finished);
     // Similar to checkOneCommandBatch, except we will wait for it to finish
-    angle::Result finishOneCommandBatchAndCleanup(Context *context, uint64_t timeout);
+    angle::Result finishOneCommandBatchAndCleanupImpl(Context *context, uint64_t timeout);
     // Walk mFinishedCommands, reset and recycle all command buffers.
     angle::Result retireFinishedCommandsLocked(Context *context);
     // Walk mInFlightCommands, check and update mLastCompletedSerials for all commands that are

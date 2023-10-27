@@ -108,8 +108,6 @@ struct ShaderInterfaceVariableInfo
     // vertex attribute aliasing transformation only.
     uint8_t attributeComponentCount = 0;
     uint8_t attributeLocationCount  = 0;
-    // Indicate if this variable has been deduplicated.
-    bool isDuplicate = false;
 };
 
 uint32_t SpvGetXfbBufferBlockId(const uint32_t bufferIndex);
@@ -127,13 +125,14 @@ void SpvAssignTransformFeedbackLocations(gl::ShaderType shaderType,
                                          SpvProgramInterfaceInfo *programInterfaceInfo,
                                          ShaderInterfaceVariableInfoMap *variableInfoMapOut);
 
-// Retrieves the compiled SPIR-V code for each shader stage, and calls |SpvAssignLocations|.
-void SpvGetShaderSpirvCode(const gl::Context *context,
-                           const SpvSourceOptions &options,
+// Retrieves the compiled SPIR-V code for each shader stage.
+void SpvGetShaderSpirvCode(const gl::ProgramState &programState,
+                           gl::ShaderMap<const angle::spirv::Blob *> *spirvBlobsOut);
+
+// Calls |SpvAssign*Locations| as necessary.
+void SpvAssignAllLocations(const SpvSourceOptions &options,
                            const gl::ProgramState &programState,
                            const gl::ProgramLinkedResources &resources,
-                           SpvProgramInterfaceInfo *programInterfaceInfo,
-                           gl::ShaderMap<const angle::spirv::Blob *> *spirvBlobsOut,
                            ShaderInterfaceVariableInfoMap *variableInfoMapOut);
 
 angle::Result SpvTransformSpirvCode(const SpvTransformOptions &options,

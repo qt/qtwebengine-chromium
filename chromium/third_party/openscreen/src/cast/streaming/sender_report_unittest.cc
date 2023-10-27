@@ -1,13 +1,13 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include <cmath>
 
-#include "absl/types/span.h"
 #include "cast/streaming/sender_report_builder.h"
 #include "cast/streaming/sender_report_parser.h"
 #include "gtest/gtest.h"
+#include "platform/base/span.h"
 
 namespace openscreen {
 namespace cast {
@@ -71,7 +71,7 @@ TEST_F(SenderReportTest, Parsing) {
   // should be detected as "well-formed" by the parser and it should also
   // provide a Sender Report result. Also, it shouldn't matter what the ordering
   // is.
-  const absl::Span<const uint8_t> kCompoundCombinations[2][2] = {
+  const ByteView kCompoundCombinations[2][2] = {
       {kSenderReportPacket, kOtherPacket},
       {kOtherPacket, kSenderReportPacket},
   };
@@ -97,8 +97,7 @@ TEST_F(SenderReportTest, Parsing) {
 
 // Tests that the SenderReportParser will not try to parse an empty packet.
 TEST_F(SenderReportTest, WillNotParseEmptyPacket) {
-  const uint8_t kEmptyPacket[] = {};
-  EXPECT_FALSE(parser()->Parse(absl::Span<const uint8_t>(kEmptyPacket, 0)));
+  EXPECT_FALSE(parser()->Parse(ByteView()));
 }
 
 // Tests that the SenderReportParser will not parse anything from garbage data.

@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -130,18 +130,6 @@ bool TryParseAspectRatioConstraint(const Json::Value& value,
   }
   *out = constraint.value();
   return true;
-}
-
-template <typename T>
-Json::Value PrimitiveVectorToJson(const std::vector<T>& vec) {
-  Json::Value array(Json::ValueType::arrayValue);
-  array.resize(vec.size());
-
-  for (Json::Value::ArrayIndex i = 0; i < vec.size(); ++i) {
-    array[i] = Json::Value(vec[i]);
-  }
-
-  return array;
 }
 
 template <typename T>
@@ -406,19 +394,19 @@ Json::Value Answer::ToJson() const {
     root[kDisplay] = display->ToJson();
   }
   root[kUdpPort] = udp_port;
-  root[kSendIndexes] = PrimitiveVectorToJson(send_indexes);
-  root[kSsrcs] = PrimitiveVectorToJson(ssrcs);
+  root[kSendIndexes] = json::PrimitiveVectorToJson(send_indexes);
+  root[kSsrcs] = json::PrimitiveVectorToJson(ssrcs);
   // Some sender do not handle empty array properly, so we omit these fields
   // if they are empty.
   if (!receiver_rtcp_event_log.empty()) {
     root[kReceiverRtcpEventLog] =
-        PrimitiveVectorToJson(receiver_rtcp_event_log);
+        json::PrimitiveVectorToJson(receiver_rtcp_event_log);
   }
   if (!receiver_rtcp_dscp.empty()) {
-    root[kReceiverRtcpDscp] = PrimitiveVectorToJson(receiver_rtcp_dscp);
+    root[kReceiverRtcpDscp] = json::PrimitiveVectorToJson(receiver_rtcp_dscp);
   }
   if (!rtp_extensions.empty()) {
-    root[kRtpExtensions] = PrimitiveVectorToJson(rtp_extensions);
+    root[kRtpExtensions] = json::PrimitiveVectorToJson(rtp_extensions);
   }
   return root;
 }

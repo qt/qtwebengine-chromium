@@ -248,8 +248,19 @@ MaybeError ValidateDepthStencilState(const DeviceBase* device,
     return {};
 }
 
-MaybeError ValidateMultisampleState(const MultisampleState* descriptor) {
-    DAWN_INVALID_IF(descriptor->nextInChain != nullptr, "nextInChain must be nullptr.");
+MaybeError ValidateMultisampleState(const DeviceBase* device, const MultisampleState* descriptor) {
+    const DawnMultisampleStateRenderToSingleSampled* msaaRenderToSingleSampledDesc = nullptr;
+    FindInChain(descriptor->nextInChain, &msaaRenderToSingleSampledDesc);
+    if (msaaRenderToSingleSampledDesc != nullptr) {
+        DAWN_INVALID_IF(!device->HasFeature(Feature::MSAARenderToSingleSampled),
+                        "The msaaRenderToSingleSampledDesc is not empty while the "
+                        "msaa-render-to-single-sampled feature is not enabled.");
+
+        DAWN_INVALID_IF(descriptor->count <= 1,
+                        "The msaaRenderToSingleSampledDesc is not empty while multisample count "
+                        "(%u) is not > 1.",
+                        descriptor->count);
+    }
 
     DAWN_INVALID_IF(!IsValidSampleCount(descriptor->count),
                     "Multisample count (%u) is not supported.", descriptor->count);
@@ -261,7 +272,23 @@ MaybeError ValidateMultisampleState(const MultisampleState* descriptor) {
     return {};
 }
 
-MaybeError ValidateBlendComponent(BlendComponent blendComponent) {
+MaybeError ValidateBlendComponent(BlendComponent blendComponent, bool dualSourceBlendingEnabled) {
+    if (!dualSourceBlendingEnabled) {
+        DAWN_INVALID_IF(blendComponent.srcFactor == wgpu::BlendFactor::Src1 ||
+                            blendComponent.srcFactor == wgpu::BlendFactor::OneMinusSrc1 ||
+                            blendComponent.srcFactor == wgpu::BlendFactor::Src1Alpha ||
+                            blendComponent.srcFactor == wgpu::BlendFactor::OneMinusSrc1Alpha,
+                        "Source blend factor is %s while dualSourceBlending is not enabled.",
+                        blendComponent.srcFactor);
+
+        DAWN_INVALID_IF(blendComponent.dstFactor == wgpu::BlendFactor::Src1 ||
+                            blendComponent.dstFactor == wgpu::BlendFactor::OneMinusSrc1 ||
+                            blendComponent.dstFactor == wgpu::BlendFactor::Src1Alpha ||
+                            blendComponent.dstFactor == wgpu::BlendFactor::OneMinusSrc1Alpha,
+                        "Destination blend factor is %s while dualSourceBlending is not enabled.",
+                        blendComponent.dstFactor);
+    }
+
     if (blendComponent.operation == wgpu::BlendOperation::Min ||
         blendComponent.operation == wgpu::BlendOperation::Max) {
         DAWN_INVALID_IF(blendComponent.srcFactor != wgpu::BlendFactor::One ||
@@ -280,8 +307,10 @@ MaybeError ValidateBlendState(DeviceBase* device, const BlendState* descriptor) 
     DAWN_TRY(ValidateBlendOperation(descriptor->color.operation));
     DAWN_TRY(ValidateBlendFactor(descriptor->color.srcFactor));
     DAWN_TRY(ValidateBlendFactor(descriptor->color.dstFactor));
-    DAWN_TRY(ValidateBlendComponent(descriptor->alpha));
-    DAWN_TRY(ValidateBlendComponent(descriptor->color));
+
+    bool dualSourceBlendingEnabled = device->HasFeature(Feature::DualSourceBlending);
+    DAWN_TRY(ValidateBlendComponent(descriptor->alpha, dualSourceBlendingEnabled));
+    DAWN_TRY(ValidateBlendComponent(descriptor->color, dualSourceBlendingEnabled));
 
     return {};
 }
@@ -601,7 +630,7 @@ MaybeError ValidateRenderPipelineDescriptor(DeviceBase* device,
                          "validating depthStencil state.");
     }
 
-    DAWN_TRY_CONTEXT(ValidateMultisampleState(&descriptor->multisample),
+    DAWN_TRY_CONTEXT(ValidateMultisampleState(device, &descriptor->multisample),
                      "validating multisample state.");
 
     DAWN_INVALID_IF(
@@ -796,10 +825,7 @@ RenderPipelineBase::RenderPipelineBase(DeviceBase* device,
 RenderPipelineBase::~RenderPipelineBase() = default;
 
 void RenderPipelineBase::DestroyImpl() {
-    if (IsCachedReference()) {
-        // Do not uncache the actual cached object if we are a blueprint.
-        GetDevice()->UncacheRenderPipeline(this);
-    }
+    Uncache();
 
     // Remove reference to the attachment state so that we don't have lingering references to
     // it preventing it from being uncached in the device.

@@ -18,7 +18,7 @@ const UIStrings = {
   /**
    *@description Text in Application Panel Sidebar of the Application panel
    */
-  cacheStorage: 'Cache Storage',
+  cacheStorage: 'Cache storage',
   /**
    *@description A context menu item in the Application Panel Sidebar of the Application panel
    */
@@ -99,17 +99,28 @@ export class ServiceWorkerCacheTreeElement extends ExpandableApplicationPanelTre
     this.addCache(model, cache);
   }
 
+  private cacheInTree(cache: SDK.ServiceWorkerCacheModel.Cache): boolean {
+    if (this.storageBucket) {
+      return cache.inBucket(this.storageBucket);
+    }
+    return true;
+  }
+
   private addCache(
       model: SDK.ServiceWorkerCacheModel.ServiceWorkerCacheModel, cache: SDK.ServiceWorkerCacheModel.Cache): void {
-    const swCacheTreeElement =
-        new SWCacheTreeElement(this.resourcesPanel, model, cache, this.storageBucket === undefined);
-    this.swCacheTreeElements.add(swCacheTreeElement);
-    this.appendChild(swCacheTreeElement);
+    if (this.cacheInTree(cache)) {
+      const swCacheTreeElement =
+          new SWCacheTreeElement(this.resourcesPanel, model, cache, this.storageBucket === undefined);
+      this.swCacheTreeElements.add(swCacheTreeElement);
+      this.appendChild(swCacheTreeElement);
+    }
   }
 
   private cacheRemoved(event: Common.EventTarget.EventTargetEvent<SDK.ServiceWorkerCacheModel.CacheEvent>): void {
     const {model, cache} = event.data;
-    this.removeCache(model, cache);
+    if (this.cacheInTree(cache)) {
+      this.removeCache(model, cache);
+    }
   }
 
   private removeCache(

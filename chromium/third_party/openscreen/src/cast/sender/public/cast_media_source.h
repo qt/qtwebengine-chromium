@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,11 +19,11 @@ class CastMediaSource {
 
   CastMediaSource(std::string source, std::vector<std::string> app_ids);
   CastMediaSource(const CastMediaSource& other);
-  CastMediaSource(CastMediaSource&& other);
+  CastMediaSource(CastMediaSource&& other) noexcept;
   ~CastMediaSource();
 
   CastMediaSource& operator=(const CastMediaSource& other);
-  CastMediaSource& operator=(CastMediaSource&& other);
+  CastMediaSource& operator=(CastMediaSource&& other) noexcept;
 
   bool ContainsAppId(const std::string& app_id) const;
   bool ContainsAnyAppIdFrom(const std::vector<std::string>& app_ids) const;

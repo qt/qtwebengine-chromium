@@ -4,21 +4,55 @@
 
 #include "quiche/quic/core/quic_dispatcher.h"
 
+#include <openssl/ssl.h>
+
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <list>
 #include <memory>
+#include <ostream>
 #include <string>
 #include <utility>
+#include <vector>
 
+#include "absl/base/macros.h"
 #include "absl/base/optimization.h"
 #include "absl/container/flat_hash_set.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
+#include "absl/types/optional.h"
 #include "quiche/quic/core/chlo_extractor.h"
+#include "quiche/quic/core/connection_id_generator.h"
+#include "quiche/quic/core/crypto/crypto_handshake_message.h"
 #include "quiche/quic/core/crypto/crypto_protocol.h"
+#include "quiche/quic/core/crypto/quic_compressed_certs_cache.h"
+#include "quiche/quic/core/frames/quic_connection_close_frame.h"
+#include "quiche/quic/core/frames/quic_frame.h"
+#include "quiche/quic/core/frames/quic_rst_stream_frame.h"
+#include "quiche/quic/core/frames/quic_stop_sending_frame.h"
+#include "quiche/quic/core/quic_alarm.h"
+#include "quiche/quic/core/quic_alarm_factory.h"
+#include "quiche/quic/core/quic_blocked_writer_interface.h"
+#include "quiche/quic/core/quic_buffered_packet_store.h"
+#include "quiche/quic/core/quic_connection.h"
 #include "quiche/quic/core/quic_connection_id.h"
+#include "quiche/quic/core/quic_constants.h"
+#include "quiche/quic/core/quic_crypto_server_stream_base.h"
+#include "quiche/quic/core/quic_data_writer.h"
 #include "quiche/quic/core/quic_error_codes.h"
+#include "quiche/quic/core/quic_framer.h"
+#include "quiche/quic/core/quic_packet_creator.h"
+#include "quiche/quic/core/quic_packet_writer.h"
+#include "quiche/quic/core/quic_packets.h"
 #include "quiche/quic/core/quic_session.h"
+#include "quiche/quic/core/quic_stream_frame_data_producer.h"
+#include "quiche/quic/core/quic_stream_send_buffer.h"
+#include "quiche/quic/core/quic_time.h"
 #include "quiche/quic/core/quic_time_wait_list_manager.h"
 #include "quiche/quic/core/quic_types.h"
 #include "quiche/quic/core/quic_utils.h"
+#include "quiche/quic/core/quic_version_manager.h"
 #include "quiche/quic/core/quic_versions.h"
 #include "quiche/quic/core/tls_chlo_extractor.h"
 #include "quiche/quic/platform/api/quic_bug_tracker.h"
@@ -27,6 +61,8 @@
 #include "quiche/quic/platform/api/quic_logging.h"
 #include "quiche/quic/platform/api/quic_socket_address.h"
 #include "quiche/quic/platform/api/quic_stack_trace.h"
+#include "quiche/common/platform/api/quiche_logging.h"
+#include "quiche/common/quiche_buffer_allocator.h"
 #include "quiche/common/quiche_callbacks.h"
 #include "quiche/common/quiche_text_utils.h"
 
@@ -105,7 +141,7 @@ class PacketCollector : public QuicPacketCreator::DelegateInterface,
     return true;
   }
 
-  const QuicFrames MaybeBundleAckOpportunistically() override {
+  const QuicFrames MaybeBundleOpportunistically() override {
     QUICHE_DCHECK(false);
     return {};
   }
@@ -303,6 +339,7 @@ void QuicDispatcher::ProcessPacket(const QuicSocketAddress& self_address,
                 << " bytes:" << std::endl
                 << quiche::QuicheTextUtils::HexDump(
                        absl::string_view(packet.data(), packet.length()));
+  ++num_packets_received_;
   ReceivedPacketInfo packet_info(self_address, peer_address, packet);
   std::string detailed_error;
   QuicErrorCode error;
@@ -528,7 +565,7 @@ bool QuicDispatcher::MaybeDispatchPacket(
   // processing using our preferred version.
   if (packet_info.version_flag) {
     if (!IsSupportedVersion(packet_info.version)) {
-      if (ShouldCreateSessionForUnknownVersion(packet_info.version_label)) {
+      if (ShouldCreateSessionForUnknownVersion(packet_info)) {
         return false;
       }
       // Since the version is not supported, send a version negotiation
@@ -851,7 +888,7 @@ void QuicDispatcher::OnCanWrite() {
   temp_list.swap(write_blocked_list_);
   QUICHE_DCHECK(write_blocked_list_.empty());
 
-  // Give each blocked writer a chance to write what they indended to write.
+  // Give each blocked writer a chance to write what they intended to write.
   // If they are blocked again, they will call |OnWriteBlocked| to add
   // themselves back into |write_blocked_list_|.
   while (!temp_list.empty()) {
@@ -1056,7 +1093,7 @@ void QuicDispatcher::StatelesslyTerminateConnection(
 }
 
 bool QuicDispatcher::ShouldCreateSessionForUnknownVersion(
-    QuicVersionLabel /*version_label*/) {
+    const ReceivedPacketInfo& /*packet_info*/) {
   return false;
 }
 
@@ -1064,13 +1101,20 @@ void QuicDispatcher::OnExpiredPackets(
     QuicConnectionId server_connection_id,
     BufferedPacketList early_arrived_packets) {
   QUIC_CODE_COUNT(quic_reject_buffered_packets_expired);
+  QuicErrorCode error_code = QUIC_HANDSHAKE_FAILED;
+  if (GetQuicReloadableFlag(
+          quic_new_error_code_when_packets_buffered_too_long)) {
+    QUIC_RELOADABLE_FLAG_COUNT(
+        quic_new_error_code_when_packets_buffered_too_long);
+    error_code = QUIC_HANDSHAKE_FAILED_PACKETS_BUFFERED_TOO_LONG;
+  }
   StatelesslyTerminateConnection(
       server_connection_id,
       early_arrived_packets.ietf_quic ? IETF_QUIC_LONG_HEADER_PACKET
                                       : GOOGLE_QUIC_PACKET,
       /*version_flag=*/true,
       early_arrived_packets.version.HasLengthPrefixedConnectionIds(),
-      early_arrived_packets.version, QUIC_HANDSHAKE_FAILED,
+      early_arrived_packets.version, error_code,
       "Packets buffered for too long",
       quic::QuicTimeWaitListManager::SEND_STATELESS_RESET);
 }
@@ -1254,7 +1298,7 @@ std::shared_ptr<QuicSession> QuicDispatcher::CreateSessionFromChlo(
   std::string alpn = SelectAlpn(parsed_chlo.alpns);
   std::unique_ptr<QuicSession> session =
       CreateQuicSession(*server_connection_id, self_address, peer_address, alpn,
-                        version, parsed_chlo);
+                        version, parsed_chlo, ConnectionIdGenerator());
   if (ABSL_PREDICT_FALSE(session == nullptr)) {
     QUIC_BUG(quic_bug_10287_8)
         << "CreateQuicSession returned nullptr for " << *server_connection_id

@@ -43,7 +43,7 @@ Error MdnsSender::SendMessage(const MdnsMessage& message,
 }
 
 void MdnsSender::OnSendError(UdpSocket* socket, Error error) {
-  OSP_LOG_ERROR << "Error sending packet";
+  OSP_LOG_ERROR << "Error sending packet " << error;
 }
 
 }  // namespace discovery

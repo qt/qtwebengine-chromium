@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,8 +14,8 @@
 #include "discovery/public/dns_sd_service_factory.h"
 #include "discovery/public/dns_sd_service_watcher.h"
 #include "platform/api/network_interface.h"
-#include "platform/api/serial_delete_ptr.h"
 #include "platform/api/task_runner.h"
+#include "platform/api/task_runner_deleter.h"
 #include "platform/base/ip_address.h"
 #include "util/alarm.h"
 #include "util/chrono_helpers.h"
@@ -50,7 +50,7 @@ class ReceiverChooser final : public discovery::ReportingClient {
   void PrintMenuAndHandleChoice();
 
   ResultCallback result_callback_;
-  SerialDeletePtr<discovery::DnsSdService> service_;
+  std::unique_ptr<discovery::DnsSdService, TaskRunnerDeleter> service_;
   std::unique_ptr<discovery::DnsSdServiceWatcher<ReceiverInfo>> watcher_;
   std::vector<ReceiverInfo> discovered_receivers_;
   Alarm menu_alarm_;

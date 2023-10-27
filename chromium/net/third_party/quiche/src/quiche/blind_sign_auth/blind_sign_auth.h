@@ -5,20 +5,15 @@
 #ifndef QUICHE_BLIND_SIGN_AUTH_BLIND_SIGN_AUTH_H_
 #define QUICHE_BLIND_SIGN_AUTH_BLIND_SIGN_AUTH_H_
 
-#include <functional>
 #include <memory>
 #include <string>
-#include <utility>
-#include <vector>
 
-#include "quiche/blind_sign_auth/proto/public_metadata.pb.h"
+#include "absl/status/status.h"
 #include "absl/status/statusor.h"
-#include "absl/strings/string_view.h"
 #include "absl/time/time.h"
-#include "absl/types/span.h"
 #include "quiche/blind_sign_auth/anonymous_tokens/cpp/client/anonymous_tokens_rsa_bssa_client.h"
-#include "quiche/blind_sign_auth/anonymous_tokens/proto/anonymous_tokens.pb.h"
 #include "quiche/blind_sign_auth/blind_sign_auth_interface.h"
+#include "quiche/blind_sign_auth/blind_sign_auth_protos.h"
 #include "quiche/blind_sign_auth/blind_sign_http_interface.h"
 #include "quiche/blind_sign_auth/blind_sign_http_response.h"
 #include "quiche/common/platform/api/quiche_export.h"
@@ -38,26 +33,26 @@ class QUICHE_EXPORT BlindSignAuth : public BlindSignAuthInterface {
   // The GetTokens callback will run on the same thread as the
   // BlindSignHttpInterface callbacks.
   // Callers can make multiple concurrent requests to GetTokens.
-  void GetTokens(absl::string_view oauth_token, int num_tokens,
-                 std::function<void(absl::StatusOr<absl::Span<BlindSignToken>>)>
-                     callback) override;
+  void GetTokens(std::string oauth_token, int num_tokens,
+                 SignedTokenCallback callback) override;
 
  private:
-  void GetInitialDataCallback(
-      absl::StatusOr<BlindSignHttpResponse> response,
-      absl::string_view oauth_token, int num_tokens,
-      std::function<void(absl::StatusOr<absl::Span<BlindSignToken>>)> callback);
+  void GetInitialDataCallback(std::string oauth_token, int num_tokens,
+                              SignedTokenCallback callback,
+                              absl::StatusOr<BlindSignHttpResponse> response);
   void AuthAndSignCallback(
-      absl::StatusOr<BlindSignHttpResponse> response,
       privacy::ppn::PublicMetadataInfo public_metadata_info,
       absl::Time public_key_expiry_time,
       private_membership::anonymous_tokens::AnonymousTokensSignRequest
           at_sign_request,
-      private_membership::anonymous_tokens::AnonymousTokensRsaBssaClient*
+      std::unique_ptr<
+          private_membership::anonymous_tokens::AnonymousTokensRsaBssaClient>
           bssa_client,
-      std::function<void(absl::StatusOr<absl::Span<BlindSignToken>>)> callback);
+      SignedTokenCallback callback,
+      absl::StatusOr<BlindSignHttpResponse> response);
   absl::Status FingerprintPublicMetadata(
       const privacy::ppn::PublicMetadata& metadata, uint64_t* fingerprint);
+  absl::StatusCode HttpCodeToStatusCode(int http_code);
 
   BlindSignHttpInterface* http_fetcher_ = nullptr;
 };

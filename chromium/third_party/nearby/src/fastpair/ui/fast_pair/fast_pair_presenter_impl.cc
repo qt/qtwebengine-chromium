@@ -15,14 +15,10 @@
 #include "fastpair/ui/fast_pair/fast_pair_presenter_impl.h"
 
 #include <memory>
-#include <optional>
 #include <utility>
 
 #include "fastpair/common/fast_pair_device.h"
-#include "fastpair/repository/device_metadata.h"
-#include "fastpair/server_access/fast_pair_repository.h"
 #include "fastpair/ui/fast_pair/fast_pair_notification_controller.h"
-#include "internal/platform/logging.h"
 
 namespace nearby {
 namespace fastpair {
@@ -51,22 +47,14 @@ void FastPairPresenterImpl::ShowDiscovery(
     FastPairDevice& device,
     FastPairNotificationController& notification_controller,
     DiscoveryCallback callback) {
-  callback_ = std::move(callback);
-  FastPairRepository::Get()->GetDeviceMetadata(
-      device.GetModelId(), [&](const DeviceMetadata& device_metadata) {
-        NEARBY_LOGS(INFO) << __func__
-                          << "Retrieved metadata to notification controller.";
-        OnDiscoveryMetadataRetrieved(device, device_metadata,
-                                     notification_controller);
-      });
+  notification_controller.ShowGuestDiscoveryNotification(device,
+                                                         std::move(callback));
 }
 
-void FastPairPresenterImpl::OnDiscoveryMetadataRetrieved(
-    FastPairDevice& device, const DeviceMetadata& device_metadata,
-    FastPairNotificationController& notification_controller) {
-  device.SetVersion(device_metadata.GetFastPairVersion());
-  notification_controller.ShowGuestDiscoveryNotification(device_metadata,
-                                                         std::move(callback_));
+void FastPairPresenterImpl::ShowPairingResult(
+    FastPairDevice& device,
+    FastPairNotificationController& notification_controller, bool success) {
+  notification_controller.ShowPairingResultNotification(device, success);
 }
 }  // namespace fastpair
 }  // namespace nearby

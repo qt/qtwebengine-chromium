@@ -18,29 +18,9 @@ syntax = "proto2";
 
 package perfetto.protos;
 
-import "protos/perfetto/metrics/android/process_metadata.proto";
+import "protos/perfetto/metrics/android/android_blocking_call.proto";
 
 // Blocking calls inside System UI Notifications. Shows count and total duration for each.
 message AndroidSysUINotificationsBlockingCallsMetric {
-  repeated BlockingCall blocking_calls = 1;
-
-  // Blocking call on the main thread.
-  message BlockingCall {
-    // Name of the blocking call
-    optional string name = 1;
-    // Number of times it happened within the CUJ
-    optional int64 cnt = 2;
-    // Total duration within the CUJ
-    optional int64 total_dur_ms = 3;
-    // Maximal duration within the CUJ
-    optional int64 max_dur_ms = 4;
-    // Minimal duration within the CUJ
-    optional int64 min_dur_ms = 5;
-    // Total duration within the CUJ in nanoseconds
-    optional int64 total_dur_ns = 6;
-    // Maximal duration within the CUJ in nanoseconds
-    optional int64 max_dur_ns = 7;
-    // Minimal duration within the CUJ in nanoseconds
-    optional int64 min_dur_ns = 8;
-  }
+  repeated AndroidBlockingCall blocking_calls = 1;
 }

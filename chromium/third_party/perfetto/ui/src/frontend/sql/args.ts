@@ -52,7 +52,8 @@ export async function getArgs(
       value_type as valueType,
       display_value as displayValue
     FROM args
-    WHERE arg_set_id = ${argSetId}`);
+    WHERE arg_set_id = ${argSetId}
+    ORDER BY key`);
   const it = query.iter({
     id: NUM,
     type: STR,
@@ -62,7 +63,7 @@ export async function getArgs(
     stringValue: STR_NULL,
     realValue: NUM_NULL,
     valueType: STR,
-    displayValue: STR,
+    displayValue: STR_NULL,
   });
 
   const result: Arg[] = [];
@@ -74,7 +75,7 @@ export async function getArgs(
       flatKey: it.flatKey,
       key: it.key,
       value,
-      displayValue: it.displayValue,
+      displayValue: it.displayValue ?? 'NULL',
     });
   }
 

@@ -16,6 +16,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "gtest/gtest.h"
 #include "absl/strings/escaping.h"
@@ -24,17 +25,23 @@
 #include "fastpair/common/protocol.h"
 #include "fastpair/internal/mediums/mediums.h"
 #include "fastpair/proto/fastpair_rpcs.proto.h"
+#include "fastpair/repository/fake_fast_pair_repository.h"
+#include "fastpair/repository/fast_pair_device_repository.h"
 #include "fastpair/scanning/scanner_broker.h"
-#include "fastpair/server_access/fake_fast_pair_repository.h"
+#include "fastpair/testing/fast_pair_service_data_creator.h"
 #include "internal/platform/byte_array.h"
 #include "internal/platform/count_down_latch.h"
 #include "internal/platform/medium_environment.h"
+#include "internal/platform/single_thread_executor.h"
 
 namespace nearby {
 namespace fastpair {
 namespace {
-
-constexpr absl::Duration kTaskWaitTimeout = absl::Milliseconds(1000);
+constexpr int kNotDiscoverableAdvHeader = 0b00000110;
+constexpr int kAccountKeyFilterHeader = 0b01100000;
+constexpr int kSaltHeader = 0b00010001;
+constexpr absl::string_view kAccountKeyFilter("112233445566");
+constexpr absl::string_view kSalt("01");
 constexpr absl::string_view kServiceID{"Fast Pair"};
 constexpr absl::string_view kModelId{"718c17"};
 constexpr absl::string_view kFastPairServiceUuid{
@@ -64,38 +71,62 @@ class ScannerBrokerObserver : public ScannerBroker::Observer {
   CountDownLatch* lost_latch_ = nullptr;
 };
 
-class ScannerBrokerImplTest : public testing::Test {
- protected:
-  MediumEnvironment& env_{MediumEnvironment::Instance()};
+class MediumEnvironmentStarter {
+ public:
+  MediumEnvironmentStarter() { MediumEnvironment::Instance().Start(); }
+  ~MediumEnvironmentStarter() { MediumEnvironment::Instance().Stop(); }
 };
 
-TEST_F(ScannerBrokerImplTest, CanStartScanning) {
-  env_.Start();
+class ScannerBrokerImplTest : public testing::Test {
+ protected:
+  void SetUp() override {
+    MediumEnvironment::Instance().Start();
+    advertiser_ble_address_ =
+        mediums_advertiser_.GetBle().GetMedium().GetAdapter().GetMacAddress();
+  }
+
+  void TearDown() override { MediumEnvironment::Instance().Stop(); }
+
+  // The medium environment must be initialized (started)
+  // before registering medium.
+  MediumEnvironmentStarter env_;
+  Mediums mediums_scanner_;
+  Mediums mediums_advertiser_;
+  std::string advertiser_ble_address_;
+};
+
+TEST_F(ScannerBrokerImplTest, FoundDiscoverableAdvertisement) {
+  SingleThreadExecutor executor;
+  FastPairDeviceRepository devices{&executor};
+
   // Setup FakeFastPairRepository
   std::string decoded_key;
   absl::Base64Unescape(kPublicAntiSpoof, &decoded_key);
-  SingleThreadExecutor executor;
-  FastPairDeviceRepository devices(&executor);
   proto::Device metadata;
   auto repository_ = std::make_unique<FakeFastPairRepository>();
   metadata.mutable_anti_spoofing_key_pair()->set_public_key(decoded_key);
   repository_->SetFakeMetadata(kModelId, metadata);
 
-  // Create Fast Pair Scanner and add its observer
-  Mediums mediums_1;
-  auto scanner_broker =
-      std::make_unique<ScannerBrokerImpl>(mediums_1, &executor, &devices);
+  // Create Scanner and ScannerBrokerObserver
+  auto scanner_broker = std::make_unique<ScannerBrokerImpl>(
+      mediums_scanner_, &executor, &devices);
   CountDownLatch accept_latch(1);
   CountDownLatch lost_latch(1);
+  CountDownLatch device_removed(1);
+  FastPairDeviceRepository::RemoveDeviceCallback callback =
+      [&](const FastPairDevice& device) {
+        EXPECT_EQ(device.GetBleAddress(), advertiser_ble_address_);
+        device_removed.CountDown();
+      };
+  devices.AddObserver(&callback);
   ScannerBrokerObserver observer(scanner_broker.get(), &accept_latch,
                                  &lost_latch);
 
   // Create Advertiser and startAdvertising
-  Mediums mediums_2;
   std::string service_id(kServiceID);
   ByteArray advertisement_bytes{absl::HexStringToBytes(kModelId)};
   std::string fast_pair_service_uuid(kFastPairServiceUuid);
-  mediums_2.GetBle().GetMedium().StartAdvertising(
+  mediums_advertiser_.GetBle().GetMedium().StartAdvertising(
       service_id, advertisement_bytes, fast_pair_service_uuid);
 
   // Fast Pair scanner startScanning
@@ -103,16 +134,77 @@ TEST_F(ScannerBrokerImplTest, CanStartScanning) {
       scanner_broker->StartScanning(Protocol::kFastPairInitialPairing);
 
   // Notify device found
-  EXPECT_TRUE(accept_latch.Await(kTaskWaitTimeout).result());
+  accept_latch.Await();
 
   // Advertiser stopAdvertising
-  mediums_2.GetBle().GetMedium().StopAdvertising(service_id);
+  mediums_advertiser_.GetBle().GetMedium().StopAdvertising(service_id);
 
   // Notify device lost
-  EXPECT_TRUE(lost_latch.Await(kTaskWaitTimeout).result());
+  lost_latch.Await();
+  device_removed.Await();
   scanning_session.reset();
-  env_.Stop();
 }
+
+TEST_F(ScannerBrokerImplTest, FoundNonDiscoverableAdvertisement) {
+  SingleThreadExecutor executor;
+  FastPairDeviceRepository devices{&executor};
+
+  // Setup FakeFastPairRepository
+  auto repository = std::make_unique<FakeFastPairRepository>();
+  proto::Device metadata;
+  repository->SetFakeMetadata(kModelId, metadata);
+  repository->SetResultOfCheckIfAssociatedWithCurrentAccount(AccountKey(),
+                                                             kModelId);
+
+  // Create Scanner and ScannerBrokerObserver
+  auto scanner_broker = std::make_unique<ScannerBrokerImpl>(
+      mediums_scanner_, &executor, &devices);
+  CountDownLatch accept_latch(1);
+  CountDownLatch lost_latch(1);
+  CountDownLatch device_removed(1);
+  FastPairDeviceRepository::RemoveDeviceCallback callback =
+      [&](const FastPairDevice& device) {
+        EXPECT_EQ(device.GetBleAddress(), advertiser_ble_address_);
+        device_removed.CountDown();
+      };
+  devices.AddObserver(&callback);
+  ScannerBrokerObserver observer(scanner_broker.get(), &accept_latch,
+                                 &lost_latch);
+
+  // Create Advertiser and startAdvertising
+  std::string service_id(kServiceID);
+  std::vector<uint8_t> service_data =
+      FastPairServiceDataCreator::Builder()
+          .SetHeader(kNotDiscoverableAdvHeader)
+          .SetModelId(kModelId)
+          .AddExtraFieldHeader(kAccountKeyFilterHeader)
+          .AddExtraField(kAccountKeyFilter)
+          .AddExtraFieldHeader(kSaltHeader)
+          .AddExtraField(kSalt)
+          .Build()
+          ->CreateServiceData();
+  ByteArray advertisement_bytes(
+      std::string(service_data.begin(), service_data.end()));
+  std::string fast_pair_service_uuid(kFastPairServiceUuid);
+  mediums_advertiser_.GetBle().GetMedium().StartAdvertising(
+      service_id, advertisement_bytes, fast_pair_service_uuid);
+
+  // Fast Pair scanner startScanning
+  auto scanning_session =
+      scanner_broker->StartScanning(Protocol::kFastPairInitialPairing);
+
+  // Notify device found
+  accept_latch.Await();
+
+  // Advertiser stopAdvertising
+  mediums_advertiser_.GetBle().GetMedium().StopAdvertising(service_id);
+
+  // Notify device lost
+  lost_latch.Await();
+  device_removed.Await();
+  scanning_session.reset();
+}
+
 }  // namespace
 }  // namespace fastpair
 }  // namespace nearby

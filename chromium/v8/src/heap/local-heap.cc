@@ -49,7 +49,6 @@ LocalHeap::LocalHeap(Heap* heap, ThreadKind kind,
                      std::unique_ptr<PersistentHandles> persistent_handles)
     : heap_(heap),
       is_main_thread_(kind == ThreadKind::kMain),
-      is_in_trampoline_(false),
       state_(ThreadState::Parked()),
       allocation_failed_(false),
       main_thread_parked_(false),
@@ -67,9 +66,7 @@ LocalHeap::LocalHeap(Heap* heap, ThreadKind kind,
       if (heap_->incremental_marking()->IsMarking()) {
         marking_barrier_->Activate(
             heap_->incremental_marking()->IsCompacting(),
-            heap_->incremental_marking()->IsMinorMarking()
-                ? MarkingBarrierType::kMinor
-                : MarkingBarrierType::kMajor);
+            heap_->incremental_marking()->marking_mode());
       }
 
       SetUpSharedMarking();
@@ -159,7 +156,7 @@ void LocalHeap::SetUpSharedMarking() {
     if (isolate->shared_space_isolate()
             ->heap()
             ->incremental_marking()
-            ->IsMarking()) {
+            ->IsMajorMarking()) {
       marking_barrier_->ActivateShared();
     }
   }
@@ -427,17 +424,20 @@ void LocalHeap::UnmarkSharedLinearAllocationArea() {
   }
 }
 
-Address LocalHeap::PerformCollectionAndAllocateAgain(
+AllocationResult LocalHeap::PerformCollectionAndAllocateAgain(
     int object_size, AllocationType type, AllocationOrigin origin,
     AllocationAlignment alignment) {
+  // All allocation tries in this method should have this flag enabled.
   CHECK(!allocation_failed_);
-  CHECK(!main_thread_parked_);
   allocation_failed_ = true;
   static const int kMaxNumberOfRetries = 3;
   int failed_allocations = 0;
   int parked_allocations = 0;
 
   for (int i = 0; i < kMaxNumberOfRetries; i++) {
+    // This flag needs to be reset for each iteration.
+    CHECK(!main_thread_parked_);
+
     if (!heap_->CollectGarbageFromAnyThread(this)) {
       main_thread_parked_ = true;
       parked_allocations++;
@@ -445,13 +445,16 @@ Address LocalHeap::PerformCollectionAndAllocateAgain(
 
     AllocationResult result = AllocateRaw(object_size, type, origin, alignment);
 
-    if (result.IsFailure()) {
-      failed_allocations++;
-    } else {
+    main_thread_parked_ = false;
+
+    if (!result.IsFailure()) {
+      CHECK(allocation_failed_);
       allocation_failed_ = false;
-      main_thread_parked_ = false;
-      return result.ToObjectChecked().address();
+      CHECK(!main_thread_parked_);
+      return result;
     }
+
+    failed_allocations++;
   }
 
   if (v8_flags.trace_gc) {
@@ -462,14 +465,16 @@ Address LocalHeap::PerformCollectionAndAllocateAgain(
         failed_allocations, parked_allocations);
   }
 
-  heap_->FatalProcessOutOfMemory("LocalHeap: allocation failed");
+  CHECK(allocation_failed_);
+  allocation_failed_ = false;
+  CHECK(!main_thread_parked_);
+  return AllocationResult::Failure();
 }
 
 void LocalHeap::AddGCEpilogueCallback(GCEpilogueCallback* callback, void* data,
-                                      GCType gc_type) {
+                                      GCCallbacksInSafepoint::GCType gc_type) {
   DCHECK(IsRunning());
-  gc_epilogue_callbacks_.Add(callback, LocalIsolate::FromHeap(this), gc_type,
-                             data);
+  gc_epilogue_callbacks_.Add(callback, data, gc_type);
 }
 
 void LocalHeap::RemoveGCEpilogueCallback(GCEpilogueCallback* callback,
@@ -478,13 +483,13 @@ void LocalHeap::RemoveGCEpilogueCallback(GCEpilogueCallback* callback,
   gc_epilogue_callbacks_.Remove(callback, data);
 }
 
-void LocalHeap::InvokeGCEpilogueCallbacksInSafepoint(GCType gc_type,
-                                                     GCCallbackFlags flags) {
-  gc_epilogue_callbacks_.Invoke(gc_type, flags);
+void LocalHeap::InvokeGCEpilogueCallbacksInSafepoint(
+    GCCallbacksInSafepoint::GCType gc_type) {
+  gc_epilogue_callbacks_.Invoke(gc_type);
 }
 
 void LocalHeap::NotifyObjectSizeChange(
-    HeapObject object, int old_size, int new_size,
+    Tagged<HeapObject> object, int old_size, int new_size,
     ClearRecordedSlots clear_recorded_slots) {
   heap()->NotifyObjectSizeChange(object, old_size, new_size,
                                  clear_recorded_slots);

@@ -14,179 +14,28 @@
 
 import m from 'mithril';
 
-import {Actions} from '../common/actions';
+import {raf} from '../core/raf_scheduler';
 import {VERSION} from '../gen/perfetto_version';
 
+import {classNames} from './classnames';
 import {globals} from './globals';
-import {runQueryInNewTab} from './query_result_tab';
-import {executeSearch} from './search_handler';
 import {taskTracker} from './task_tracker';
-
-const SEARCH = Symbol('search');
-const COMMAND = Symbol('command');
-type Mode = typeof SEARCH|typeof COMMAND;
-
-const PLACEHOLDER = {
-  [SEARCH]: 'Search',
-  [COMMAND]: 'e.g. select * from sched left join thread using(utid) limit 10',
-};
 
 export const DISMISSED_PANNING_HINT_KEY = 'dismissedPanningHint';
 
-let mode: Mode = SEARCH;
-let displayStepThrough = false;
-
-function onKeyDown(e: Event) {
-  const event = (e as KeyboardEvent);
-  const key = event.key;
-  if (key !== 'Enter') {
-    e.stopPropagation();
-  }
-  const txt = (e.target as HTMLInputElement);
-
-  if (mode === SEARCH && txt.value === '' && key === ':') {
-    e.preventDefault();
-    mode = COMMAND;
-    globals.rafScheduler.scheduleFullRedraw();
-    return;
-  }
-
-  if (mode === COMMAND && txt.value === '' && key === 'Backspace') {
-    mode = SEARCH;
-    globals.rafScheduler.scheduleFullRedraw();
-    return;
-  }
-
-  if (mode === SEARCH && key === 'Enter') {
-    txt.blur();
-  }
-
-  if (mode === COMMAND && key === 'Enter') {
-    const openInPinnedTab = event.metaKey || event.ctrlKey;
-    runQueryInNewTab(
-        txt.value,
-        openInPinnedTab ? 'Pinned query' : 'Omnibox query',
-        openInPinnedTab ? undefined : 'omnibox_query',
-    );
-  }
-}
-
-function onKeyUp(e: Event) {
-  e.stopPropagation();
-  const event = (e as KeyboardEvent);
-  const key = event.key;
-  const txt = e.target as HTMLInputElement;
-
-  if (key === 'Escape') {
-    mode = SEARCH;
-    txt.value = '';
-    txt.blur();
-    globals.rafScheduler.scheduleFullRedraw();
-    return;
-  }
-}
-
-class Omnibox implements m.ClassComponent {
-  oncreate(vnode: m.VnodeDOM) {
-    const txt = vnode.dom.querySelector('input') as HTMLInputElement;
-    txt.addEventListener('keydown', onKeyDown);
-    txt.addEventListener('keyup', onKeyUp);
-  }
-
-  view() {
-    const msgTTL = globals.state.status.timestamp + 1 - Date.now() / 1e3;
-    const engineIsBusy =
-        globals.state.engine !== undefined && !globals.state.engine.ready;
-
-    if (msgTTL > 0 || engineIsBusy) {
-      setTimeout(
-          () => globals.rafScheduler.scheduleFullRedraw(), msgTTL * 1000);
-      return m(
-          `.omnibox.message-mode`,
-          m(`input[placeholder=${globals.state.status.msg}][readonly]`, {
-            value: '',
-          }));
-    }
-
-    const commandMode = mode === COMMAND;
-    return m(
-        `.omnibox${commandMode ? '.command-mode' : ''}`,
-        m('input', {
-          placeholder: PLACEHOLDER[mode],
-          oninput: (e: InputEvent) => {
-            const value = (e.target as HTMLInputElement).value;
-            globals.dispatch(Actions.setOmnibox({
-              omnibox: value,
-              mode: commandMode ? 'COMMAND' : 'SEARCH',
-            }));
-            if (mode === SEARCH) {
-              displayStepThrough = value.length >= 4;
-              globals.dispatch(Actions.setSearchIndex({index: -1}));
-            }
-          },
-          value: globals.state.omniboxState.omnibox,
-        }),
-        displayStepThrough ?
-            m(
-                '.stepthrough',
-                m('.current',
-                  `${
-                      globals.currentSearchResults.totalResults === 0 ?
-                          '0 / 0' :
-                          `${globals.state.searchIndex + 1} / ${
-                              globals.currentSearchResults.totalResults}`}`),
-                m('button',
-                  {
-                    onclick: () => {
-                      executeSearch(true /* reverse direction */);
-                    },
-                  },
-                  m('i.material-icons.left', 'keyboard_arrow_left')),
-                m('button',
-                  {
-                    onclick: () => {
-                      executeSearch();
-                    },
-                  },
-                  m('i.material-icons.right', 'keyboard_arrow_right')),
-                ) :
-            '');
-  }
-}
-
 class Progress implements m.ClassComponent {
-  private loading: () => void;
-  private progressBar?: HTMLElement;
-
-  constructor() {
-    this.loading = () => this.loadingAnimation();
+  view(_vnode: m.Vnode): m.Children {
+    const classes = classNames(this.isLoading() && 'progress-anim');
+    return m('.progress', {class: classes});
   }
 
-  oncreate(vnodeDom: m.CVnodeDOM) {
-    this.progressBar = vnodeDom.dom as HTMLElement;
-    globals.rafScheduler.addRedrawCallback(this.loading);
-  }
-
-  onremove() {
-    globals.rafScheduler.removeRedrawCallback(this.loading);
-  }
-
-  view() {
-    return m('.progress');
-  }
-
-  loadingAnimation() {
-    if (this.progressBar === undefined) return;
+  private isLoading(): boolean {
     const engine = globals.getCurrentEngine();
-    if ((engine && !engine.ready) || globals.numQueuedQueries > 0 ||
-        taskTracker.hasPendingTasks()) {
-      this.progressBar.classList.add('progress-anim');
-    } else {
-      this.progressBar.classList.remove('progress-anim');
-    }
+    return (
+        (engine && !engine.ready) || globals.numQueuedQueries > 0 ||
+        taskTracker.hasPendingTasks());
   }
 }
-
 
 class NewVersionNotification implements m.ClassComponent {
   view() {
@@ -197,14 +46,13 @@ class NewVersionNotification implements m.ClassComponent {
           {
             onclick: () => {
               globals.frontendLocalState.newVersionAvailable = false;
-              globals.rafScheduler.scheduleFullRedraw();
+              raf.scheduleFullRedraw();
             },
           },
           'Dismiss'),
     );
   }
 }
-
 
 class HelpPanningNotification implements m.ClassComponent {
   view() {
@@ -226,7 +74,7 @@ class HelpPanningNotification implements m.ClassComponent {
             onclick: () => {
               globals.frontendLocalState.showPanningHint = false;
               localStorage.setItem(DISMISSED_PANNING_HINT_KEY, 'true');
-              globals.rafScheduler.scheduleFullRedraw();
+              raf.scheduleFullRedraw();
             },
           },
           'Dismiss'),
@@ -238,8 +86,10 @@ class TraceErrorIcon implements m.ClassComponent {
   view() {
     if (globals.embeddedMode) return;
 
+    const mode = globals.state.omniboxState.mode;
+
     const errors = globals.traceErrors;
-    if (!errors && !globals.metricError || mode === COMMAND) return;
+    if (!errors && !globals.metricError || mode === 'COMMAND') return;
     const message = errors ? `${errors} import or data loss errors detected.` :
                              `Metric error detected.`;
     return m(
@@ -253,14 +103,19 @@ class TraceErrorIcon implements m.ClassComponent {
   }
 }
 
-export class Topbar implements m.ClassComponent {
-  view() {
+export interface TopbarAttrs {
+  omnibox: m.Children;
+}
+
+export class Topbar implements m.ClassComponent<TopbarAttrs> {
+  view({attrs}: m.Vnode<TopbarAttrs>) {
+    const {omnibox} = attrs;
     return m(
         '.topbar',
         {class: globals.state.sidebarVisible ? '' : 'hide-sidebar'},
         globals.frontendLocalState.newVersionAvailable ?
             m(NewVersionNotification) :
-            m(Omnibox),
+            omnibox,
         m(Progress),
         m(HelpPanningNotification),
         m(TraceErrorIcon));

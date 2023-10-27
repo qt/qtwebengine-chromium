@@ -521,7 +521,12 @@ static void process_tpl_stats_frame(AV1_COMP *cpi) {
               cpi->ppi->p_rc.gfu_boost, gfu_boost,
               cpi->ppi->p_rc.num_stats_used_for_gfu_boost);
         } else {
-          const int gfu_boost = (int)(200.0 / cpi->rd.r0);
+          // TPL may only look at a subset of frame in the gf group when the
+          // speed feature 'reduce_num_frames' is on, which affects the r0
+          // calcuation. Thus, to compensate for TPL not using all frames a
+          // factor to adjust r0 is used.
+          const int gfu_boost =
+              (int)(200.0 * cpi->ppi->tpl_data.r0_adjust_factor / cpi->rd.r0);
           cpi->ppi->p_rc.gfu_boost = combine_prior_with_tpl_boost(
               MIN_BOOST_COMBINE_FACTOR, MAX_BOOST_COMBINE_FACTOR,
               cpi->ppi->p_rc.gfu_boost, gfu_boost, cpi->rc.frames_to_key);
@@ -689,6 +694,17 @@ void av1_scale_references(AV1_COMP *cpi, const InterpFilter filter,
       if (ref == NULL) {
         cpi->scaled_ref_buf[ref_frame - 1] = NULL;
         continue;
+      }
+
+      // For RTC-SVC: if force_zero_mode_spatial_ref is enabled, check if the
+      // motion search can be skipped for the references: last, golden, altref.
+      // If so, we can skip scaling that reference.
+      if (cpi->ppi->use_svc && cpi->svc.force_zero_mode_spatial_ref &&
+          cpi->ppi->rtc_ref.set_ref_frame_config) {
+        if (ref_frame == LAST_FRAME && cpi->svc.skip_mvsearch_last) continue;
+        if (ref_frame == GOLDEN_FRAME && cpi->svc.skip_mvsearch_gf) continue;
+        if (ref_frame == ALTREF_FRAME && cpi->svc.skip_mvsearch_altref)
+          continue;
       }
 
       if (ref->y_crop_width != cm->width || ref->y_crop_height != cm->height) {

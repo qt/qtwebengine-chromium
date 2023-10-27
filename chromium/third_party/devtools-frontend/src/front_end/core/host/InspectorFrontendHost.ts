@@ -37,11 +37,12 @@ import * as Platform from '../platform/platform.js';
 import * as Root from '../root/root.js';
 
 import {
-  EventDescriptors,
-  Events,
   type CanShowSurveyResult,
   type ContextMenuDescriptor,
+  type DoAidaConversationResult,
   type EnumeratedHistogram,
+  EventDescriptors,
+  Events,
   type EventTypes,
   type ExtensionDescriptor,
   type InspectorFrontendHostAPI,
@@ -448,6 +449,12 @@ export class InspectorFrontendHostStub implements InspectorFrontendHostAPI {
 
   async initialTargetId(): Promise<string|null> {
     return null;
+  }
+
+  doAidaConversation(request: string, callback: (result: DoAidaConversationResult) => void): void {
+    callback({
+      response: '{}',
+    });
   }
 }
 

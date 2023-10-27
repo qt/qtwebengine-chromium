@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -36,10 +36,10 @@ ServiceKey::ServiceKey(absl::string_view service, absl::string_view domain)
 }
 
 ServiceKey::ServiceKey(const ServiceKey& other) = default;
-ServiceKey::ServiceKey(ServiceKey&& other) = default;
+ServiceKey::ServiceKey(ServiceKey&& other) noexcept = default;
 
 ServiceKey& ServiceKey::operator=(const ServiceKey& rhs) = default;
-ServiceKey& ServiceKey::operator=(ServiceKey&& rhs) = default;
+ServiceKey& ServiceKey::operator=(ServiceKey&& rhs) noexcept = default;
 
 DomainName ServiceKey::GetName() const {
   std::string service_type = service_id().substr(0, service_id().size() - 5);

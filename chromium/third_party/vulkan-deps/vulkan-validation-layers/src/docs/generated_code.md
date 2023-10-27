@@ -3,7 +3,11 @@
 There is a lot of code generated in `layers/vulkan/generated/`. This is done to prevent errors forgetting to add support for new
 values when the Vulkan Headers or SPIR-V Grammer is updated.
 
-How to generate the code:
+- [How to generate the code](#how-to-generate-the-code)
+- [Adding and Editing code generation](#adding-and-editing-code-generation)
+- [How it works](#how-it-works)
+
+# How to generate the code
 
 - Linux:
 ```bash
@@ -34,17 +38,94 @@ cmake --build build --target vvl_codegen
 
 NOTE: `VVL_CODEGEN` is `OFF` by default to allow users to build `VVL` via `add_subdirectory` and to avoid potential issues for system/language package managers.
 
-## How it works
+## Tips
 
-`generate_source.py` sets up the environment and then calls into `lvl_genvk.py` where each file is generated at a time. Many of the generation scripts will generate both the `.cpp` source and `.h` header.
+If only dealing with a single file,  run `scripts/generate_source.py` with `--target`
+
+```bash
+# Example - only generates chassis.h
+scripts/generate_source.py external/Vulkan-Headers/registry/ external/SPIRV-Headers/include/spirv/unified1/ --target chassis.h
+```
+
+# Adding and Editing code generation
+
+> Make sure to look at the [python coding style guide](python_scripts_code_style.md)
+
+The `base_generator.py` and `vulkan_object.py` are the core of all generated code
+
+- `BaseGenerator`
+  - This is the only file that understands the `reg.py` flow in the `registry`
+  - most developers will never need to touch this file
+- `VulkanObject`
+  - Can be accessed with `self.vk`
+  - "C Header" like file that describes what information can be used when generating code
+  - Uses the [Python 3.7 Dataclasses](https://docs.python.org/3/library/dataclasses.html) to enforce a schema so developers
+
+Every "Generator" that extends `BaseGenerator` has a `def generate(self)` which is the "main" function
+
+## Using VulkanObject
+
+The following are examples of helpful things that can be done with VulkanObject
+
+```python
+#
+# Loop structs that have a sType
+for struct in [x for x in self.vk.structs.values() if x.sType]:
+    print(struct.name)
+
+#
+# Print each command parameter C string
+for command in self.vk.commands.value():
+    for param in command.params:
+        print(param.cDeclaration)
+
+#
+# Loop commands with Transfer Queues
+for command in [x for x in self.vk.commands.value() if Queues.TRANSFER & x.queues]:
+    print(command.name)
+
+#
+# Find enums that are extended with an Instance extension
+for enum in self.vk.enum.values():
+    for extension in [x for x in enum.extensions if x.instance]:
+        print(f'{enum.name} - {extension.name}')
+
+#
+# List all VkImageViewType enum flags
+for field in self.vk.enums['VkImageViewType'].fields:
+    print(field.name)
+```
+
+## Design philosophy
+
+> Written by someone who has written bad Vulkan code gen, debugged other's bad code gen, and rewrote all the scripts.
+
+### Avoid functions when possible
+
+All code gen has a single function that outputs one large string, there is zero dynamic control flow that occurs. (Generators don't take any runtime arguments other then file locations)
+
+While it seems useful to group your logic into a single function, it because hard to debug where all the sub-strings are appearing from in the final file.
+
+The few times it is good to use functions is
+
+- It returns a non-string value. (ex. sorting logic)
+- There is recursion needed (ex. walking down structs with more structs in it)
+
+### Avoid writting C/C++ code in python strings
+
+If you find yourself having many functions that are just written as python strings, it might be worth looking into having the file live in the actual layer code.
+
+### Choose code readability over clever python
+
+Code generation is **not** a bottleneck for performance, but trying add/edit/debug code generation scripts **is a bottleneck** for developer time. The main goal is make any python generating code as easy to understand as possible.
+
+# How it works
+
+`generate_source.py` sets up the environment and then calls into `run_generator.py` where each file is generated at a time. Many of the generation scripts will generate both the `.cpp` source and `.h` header.
 
 The Vulkan code is generated from [vk.xml](https://github.com/KhronosGroup/Vulkan-Headers/blob/main/registry/vk.xml) and uses the python helper functions in the `Vulkan-Headers/registry` folder.
 
 The SPIR-V code is generated from [SPIR-V Grammer](https://github.com/KhronosGroup/SPIRV-Headers/blob/main/include/spirv/unified1/spirv.core.grammar.json)
-
-## Tips
-
-If only dealing with a single file, comment out all the other file names in `scripts/generate_source.py` to speed up testing iterations.
 
 ## Implementation Details
 

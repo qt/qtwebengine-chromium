@@ -453,8 +453,11 @@ int av1_rc_drop_frame(AV1_COMP *cpi) {
 #else
   int64_t buffer_level = p_rc->buffer_level;
 #endif
-
-  if (!oxcf->rc_cfg.drop_frames_water_mark) {
+  // Never drop on key frame, or for frame whose base layer is key.
+  if (cpi->common.current_frame.frame_type == KEY_FRAME ||
+      (cpi->ppi->use_svc &&
+       cpi->svc.layer_context[cpi->svc.temporal_layer_id].is_key_frame) ||
+      !oxcf->rc_cfg.drop_frames_water_mark) {
     return 0;
   } else {
     if (buffer_level < 0) {
@@ -493,8 +496,16 @@ static int adjust_q_cbr(const AV1_COMP *cpi, int q, int active_worst_quality,
   const AV1_COMMON *const cm = &cpi->common;
   const SVC *const svc = &cpi->svc;
   const RefreshFrameInfo *const refresh_frame = &cpi->refresh_frame;
+  // Flag to indicate previous frame has overshoot, and buffer level
+  // for current frame is low (less than ~half of optimal). For such
+  // (inter) frames, if the source_sad is non-zero, relax the max_delta_up
+  // and clamp applied below.
+  const bool overshoot_buffer_low =
+      cpi->rc.rc_1_frame == -1 && rc->frame_source_sad > 1000 &&
+      p_rc->buffer_level < (p_rc->optimal_buffer_level >> 1) &&
+      rc->frames_since_key > 4;
   int max_delta_down;
-  int max_delta_up = 20;
+  int max_delta_up = overshoot_buffer_low ? 60 : 20;
   const int change_avg_frame_bandwidth =
       abs(rc->avg_frame_bandwidth - rc->prev_avg_frame_bandwidth) >
       0.1 * (rc->avg_frame_bandwidth);
@@ -530,14 +541,20 @@ static int adjust_q_cbr(const AV1_COMP *cpi, int q, int active_worst_quality,
       (width != cm->prev_frame->width || height != cm->prev_frame->height ||
        change_avg_frame_bandwidth);
   // Apply some control/clamp to QP under certain conditions.
-  if (cm->current_frame.frame_type != KEY_FRAME && rc->frames_since_key > 1 &&
+  // Delay the use of the clamping for svc until after num_temporal_layers,
+  // to make they have been set for each temporal layer.
+  if (!frame_is_intra_only(cm) && rc->frames_since_key > 1 &&
+      (!cpi->ppi->use_svc ||
+       svc->current_superframe > (unsigned int)svc->number_temporal_layers) &&
       !change_target_bits_mb && !cpi->rc.rtc_external_ratectrl &&
       (!cpi->oxcf.rc_cfg.gf_cbr_boost_pct ||
        !(refresh_frame->alt_ref_frame || refresh_frame->golden_frame))) {
     // If in the previous two frames we have seen both overshoot and undershoot
-    // clamp Q between the two.
+    // clamp Q between the two. Check for rc->q_1/2_frame > 0 in case they have
+    // not been set due to dropped frames.
     if (rc->rc_1_frame * rc->rc_2_frame == -1 &&
-        rc->q_1_frame != rc->q_2_frame) {
+        rc->q_1_frame != rc->q_2_frame && rc->q_1_frame > 0 &&
+        rc->q_2_frame > 0 && !overshoot_buffer_low) {
       int qclamp = clamp(q, AOMMIN(rc->q_1_frame, rc->q_2_frame),
                          AOMMAX(rc->q_1_frame, rc->q_2_frame));
       // If the previous frame had overshoot and the current q needs to
@@ -769,7 +786,7 @@ void av1_rc_update_rate_correction_factors(AV1_COMP *cpi, int is_encode_stage,
   // recorded as INTRA only key frames.
   if ((cpi->oxcf.q_cfg.aq_mode == CYCLIC_REFRESH_AQ) &&
       (cpi->cyclic_refresh->counter_encode_maxq_scene_change == 0) &&
-      (cm->current_frame.frame_type != KEY_FRAME) && (!cpi->ppi->use_svc)) {
+      !frame_is_intra_only(cm) && !cpi->ppi->use_svc) {
     cpi->rc.q_2_frame = cm->quant_params.base_qindex;
     cpi->rc.q_1_frame = cm->quant_params.base_qindex;
     cpi->rc.rc_2_frame = 0;
@@ -2984,13 +3001,18 @@ static void rc_scene_detection_onepass_rt(AV1_COMP *cpi,
   }
   int num_zero_temp_sad = 0;
   uint32_t min_thresh = 10000;
-  if (cpi->oxcf.tune_cfg.content != AOM_CONTENT_SCREEN) min_thresh = 100000;
+  if (cpi->oxcf.tune_cfg.content != AOM_CONTENT_SCREEN) {
+    min_thresh = cm->width * cm->height <= 320 * 240 && cpi->framerate < 10.0
+                     ? 50000
+                     : 100000;
+  }
   const BLOCK_SIZE bsize = BLOCK_64X64;
   // Loop over sub-sample of frame, compute average sad over 64x64 blocks.
   uint64_t avg_sad = 0;
   uint64_t tmp_sad = 0;
   int num_samples = 0;
-  const int thresh = 6;
+  const int thresh =
+      cm->width * cm->height <= 320 * 240 && cpi->framerate < 10.0 ? 5 : 6;
   // SAD is computed on 64x64 blocks
   const int sb_size_by_mb = (cm->seq_params->sb_size == BLOCK_128X128)
                                 ? (cm->seq_params->mib_size >> 1)
@@ -3003,10 +3025,12 @@ static void rc_scene_detection_onepass_rt(AV1_COMP *cpi,
   // Flag to check light change or not.
   const int check_light_change = 0;
   // TODO(marpan): There seems some difference along the bottom border when
-  // using the source_last_tl0 for last_source (when previous frame is dropped).
-  // Remove this bord parameter when issue is resolved: differene is that
+  // using the source_last_tl0 for last_source (used for temporal layers or
+  // when previous frame is dropped).
+  // Remove this bord parameter when issue is resolved: difference is that
   // non-zero sad exists along bottom border even though source is static.
-  const int border = rc->prev_frame_is_dropped;
+  const int border =
+      rc->prev_frame_is_dropped || cpi->svc.number_temporal_layers > 1;
   // Store blkwise SAD for later use
   if (width == cm->render_width && height == cm->render_height) {
     if (cpi->src_sad_blk_64x64 == NULL) {
@@ -3119,6 +3143,10 @@ static void resize_reset_rc(AV1_COMP *cpi, int resize_width, int resize_height,
   int qindex;
   double tot_scale_change = (double)(resize_width * resize_height) /
                             (double)(prev_width * prev_height);
+  // Disable the skip mv search for svc on resize frame.
+  svc->skip_mvsearch_last = 0;
+  svc->skip_mvsearch_gf = 0;
+  svc->skip_mvsearch_altref = 0;
   // Reset buffer level to optimal, update target size.
   p_rc->buffer_level = p_rc->optimal_buffer_level;
   p_rc->bits_off_target = p_rc->optimal_buffer_level;

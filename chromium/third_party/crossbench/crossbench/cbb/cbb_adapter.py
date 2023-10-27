@@ -13,15 +13,15 @@ with corresponding changes in CBB in google3
 import pathlib
 from typing import List, Optional, Type, Union
 
+from selenium import webdriver
+
 import crossbench.benchmarks.all as benchmarks
-from crossbench.benchmarks.benchmark import PressBenchmark
 import crossbench.browsers.browser
 import crossbench.browsers.webdriver as cb_webdriver
 import crossbench.env
-import crossbench.runner
-from selenium import webdriver
-
-from crossbench.stories import PressBenchmarkStory
+import crossbench.runner.runner
+from crossbench.benchmarks.benchmark import PressBenchmark
+from crossbench.stories.press_benchmark import PressBenchmarkStory
 
 press_benchmarks = [
     benchmarks.Speedometer20Benchmark,
@@ -88,9 +88,11 @@ def get_probe_result_file(benchmark_name: str,
   Args:
     benchmark_name: Name of the benchmark.
     browser: Browser instance.
-    output_dir: Path to the directory where the output of the benchmark execution was written.
-    probe_name: Optional name of the probe for the result file. If not specified, the first
-                probe from the default benchmark story will be used."""
+    output_dir: Path to the directory where the output of the benchmark
+                execution was written.
+    probe_name: Optional name of the probe for the result file. If not
+                specified, the first probe from the default benchmark story
+                will be used."""
   output_dir_path = pathlib.Path(output_dir)
   if probe_name is None:
     if benchmark_name not in press_benchmarks_dict:
@@ -109,15 +111,15 @@ def run_benchmark(output_folder: Union[str, pathlib.Path],
   """Runs the benchmark using crossbench runner.
 
   Args:
-    output_folder: Path to the directory where the output of the benchmark execution will be written.
+    output_folder: Path to the directory where the output of the benchmark
+                  execution will be written.
     browser_list: List of browsers to run the benchmark on.
     benchmark: The Benchmark instance to run.
   """
-  runner = crossbench.runner.Runner(
+  runner = crossbench.runner.runner.Runner(
       out_dir=pathlib.Path(output_folder),
       browsers=browser_list,
       benchmark=benchmark,
-      env_validation_mode=crossbench.env.ValidationMode.SKIP,
-      throw=True)
+      env_validation_mode=crossbench.env.ValidationMode.SKIP)
 
   runner.run()

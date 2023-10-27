@@ -29,14 +29,19 @@ ExternalProject_Add(
     BINARY_DIR "${CMAKE_SOURCE_DIR}/ukey2_c_ffi"
     INSTALL_COMMAND "")
 
-# GoogleTest requires at least C++14
-set(CMAKE_CXX_STANDARD 14)
-add_compile_options(-Wall -Werror -Wextra -Wimplicit-fallthrough -Wextra-semi
-        -Wno-missing-field-initializers -Wno-unused-parameter -Wno-psabi
-        -Wno-unneeded-internal-declaration
-        -Wno-ignored-pragma-optimize
-        -Wno-bitfield-constant-conversion -Wno-deprecated-this-capture -Wshadow
-        -Wsign-compare)
+# required for designated initializers on MSVC
+set(CMAKE_CXX_STANDARD 20)
+
+if(UNIX)
+    add_compile_options(-Wall -Werror -Wextra -Wimplicit-fallthrough -Wextra-semi
+            -Wno-missing-field-initializers -Wno-unused-parameter -Wno-psabi
+            -Wno-unneeded-internal-declaration
+            -Wno-ignored-pragma-optimize
+            -Wno-bitfield-constant-conversion -Wno-deprecated-this-capture -Wshadow
+            -Wsign-compare)
+elseif(MSVC)
+    add_compile_options(-W4 -MD)
+endif()
 
 include(FetchContent)
 FetchContent_Declare(
@@ -52,10 +57,29 @@ add_executable(ffi_test
   ukey2_ffi.h
   ukey2_bindings.h)
 
-target_link_libraries(ffi_test
-    "${CMAKE_SOURCE_DIR}/../../../../target/release/libukey2_c_ffi${CMAKE_SHARED_LIBRARY_SUFFIX}"
-    GTest::gtest_main
-    dl pthread)
+set(ukey2_c_ffi_FILENAME "${CMAKE_SHARED_LIBRARY_PREFIX}ukey2_c_ffi${CMAKE_SHARED_LIBRARY_SUFFIX}")
+
+if(UNIX)
+    target_link_libraries(
+        ffi_test
+        "${CMAKE_SOURCE_DIR}/../../../../target/release/${ukey2_c_ffi_FILENAME}"
+        GTest::gtest_main
+        dl pthread
+    )
+elseif(MSVC)
+    # MSVC requires linking to a static lib, which rust kindly generates
+    target_link_libraries(
+        ffi_test
+        "${CMAKE_SOURCE_DIR}/../../../../target/release/${ukey2_c_ffi_FILENAME}${CMAKE_STATIC_LIBRARY_SUFFIX}"
+        GTest::gtest_main
+    )
+    # MSVC requires that the dynamic lib be visible to the binary, and copying to the binary dir is an easy way to do that
+    get_target_property(ffi_test_BINARY_DIR ffi_test BINARY_DIR)
+    add_custom_command(
+        TARGET ffi_test POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy "${CMAKE_SOURCE_DIR}/../../../../target/release/${ukey2_c_ffi_FILENAME}" "${ffi_test_BINARY_DIR}/."
+    )
+endif()
 
 include(GoogleTest)
 gtest_discover_tests(ffi_test)

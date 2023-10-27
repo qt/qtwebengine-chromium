@@ -12,16 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {BottomTab, bottomTabRegistry, NewBottomTabArgs} from './bottom_tab';
-import {ColumnType} from '../common/query_result';
-import {globals} from './globals';
 import m from 'mithril';
-import {dictToTree, Tree, TreeNode} from './widgets/tree';
+
+import {ColumnType} from '../common/query_result';
+import {raf} from '../core/raf_scheduler';
+
+import {BottomTab, bottomTabRegistry, NewBottomTabArgs} from './bottom_tab';
 import {sqlValueToString} from './sql_utils';
 import {DetailsShell} from './widgets/details_shell';
 import {GridLayout} from './widgets/grid_layout';
 import {Section} from './widgets/section';
 import {SqlRef} from './widgets/sql_ref';
+import {dictToTree, Tree, TreeNode} from './widgets/tree';
 
 export interface ColumnConfig {
   displayName?: string;
@@ -32,7 +34,8 @@ export type Columns = {
 }
 
 export interface GenericSliceDetailsTabConfigBase {
-  sqlTableName: string, title: string;
+  sqlTableName: string;
+  title: string;
   // All columns are rendered if |columns| is undefined.
   columns?: Columns;
 }
@@ -62,7 +65,7 @@ export class GenericSliceDetailsTab extends
             this.config.id}`)
         .then((queryResult) => {
           this.data = queryResult.firstRow({});
-          globals.rafScheduler.scheduleFullRedraw();
+          raf.scheduleFullRedraw();
         });
   }
 

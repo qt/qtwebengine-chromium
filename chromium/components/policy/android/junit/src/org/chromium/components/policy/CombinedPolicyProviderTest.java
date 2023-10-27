@@ -17,7 +17,6 @@ import static org.mockito.Mockito.verify;
 
 import android.os.Bundle;
 
-import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Rule;
@@ -52,12 +51,6 @@ public class CombinedPolicyProviderTest {
         MockitoAnnotations.initMocks(this);
         mocker.mock(CombinedPolicyProviderJni.TEST_HOOKS, mCombinedPolicyConverterJniMock);
         CombinedPolicyProvider.setForTesting(new CombinedPolicyProvider());
-    }
-
-    @After
-    public void tearDown() {
-        CombinedPolicyProvider.setForTesting(null);
-        PolicyCache.resetForTesting();
     }
 
     /**

@@ -286,21 +286,14 @@ add_library(aom ${target_objs_aom} $<TARGET_OBJECTS:aom_rtcd>)
 
 if(BUILD_SHARED_LIBS)
   add_library(aom_static STATIC ${target_objs_aom} $<TARGET_OBJECTS:aom_rtcd>)
+  set_target_properties(aom_static PROPERTIES OUTPUT_NAME aom)
   if(MSVC OR (WIN32 AND NOT MINGW))
     # Fix race condition on the export library file between the two versions.
     # Affects MSVC in all three flavors (stock, Clang/CL, LLVM-- the latter sets
     # MSVC and MINGW both to FALSE).
-    set_target_properties(aom PROPERTIES ARCHIVE_OUTPUT_NAME "aom_shared")
+    set_target_properties(aom PROPERTIES ARCHIVE_OUTPUT_NAME "aom_dll")
   endif()
-  # Tests and examples rely on having unexported AV1 symbols visible. This is
-  # not the case on Windows platforms due to enforcement of the module
-  # definition file.
-  set(AOM_LIB aom_static)
-else()
-  set(AOM_LIB aom)
-endif()
 
-if(BUILD_SHARED_LIBS)
   if(NOT MSVC)
     # Extract version string and set VERSION/SOVERSION for the aom target.
     extract_version_string("${AOM_CONFIG_DIR}/config/aom_version.h"
@@ -362,9 +355,9 @@ setup_aom_scale_targets()
 setup_av1_targets()
 
 # Make all library targets depend on aom_rtcd to make sure it builds first.
-foreach(aom_tgt ${AOM_LIB_TARGETS})
-  if(NOT "${aom_tgt}" STREQUAL "aom_rtcd")
-    add_dependencies(${aom_tgt} aom_rtcd)
+foreach(aom_lib ${AOM_LIB_TARGETS})
+  if(NOT "${aom_lib}" STREQUAL "aom_rtcd")
+    add_dependencies(${aom_lib} aom_rtcd)
   endif()
 endforeach()
 
@@ -644,15 +637,15 @@ if(CONFIG_AV1_ENCODER)
     if(PKG_CONFIG_FOUND)
       pkg_check_modules(VMAF REQUIRED libvmaf)
       if(BUILD_SHARED_LIBS)
-        target_link_libraries(aom PRIVATE ${VMAF_LDFLAGS} ${VMAF_LIBRARIES})
-      else()
-        target_link_libraries(aom
-                              PRIVATE ${VMAF_LDFLAGS} ${VMAF_LIBRARIES} -static)
+        target_link_libraries(aom_static
+                              PRIVATE ${VMAF_LDFLAGS} ${VMAF_LIBRARIES})
       endif()
-      target_include_directories(aom PRIVATE ${VMAF_INCLUDE_DIRS})
+      target_link_libraries(aom PRIVATE ${VMAF_LDFLAGS} ${VMAF_LIBRARIES})
       target_include_directories(aom_dsp_encoder PRIVATE ${VMAF_INCLUDE_DIRS})
       if(VMAF_CFLAGS)
-        append_compiler_flag("${VMAF_CFLAGS}")
+        foreach(flag "${VMAF_CFLAGS}")
+          append_compiler_flag("${flag}")
+        endforeach()
       endif()
     else()
       message(FATAL_ERROR "CONFIG_TUNE_VMAF error: pkg-config not found.")
@@ -737,7 +730,7 @@ if(ENABLE_EXAMPLES AND CONFIG_AV1_ENCODER AND CONFIG_AV1_DECODER)
 endif()
 
 foreach(aom_app ${AOM_APP_TARGETS})
-  target_link_libraries(${aom_app} ${AOM_LIB_LINK_TYPE} ${AOM_LIB})
+  target_link_libraries(${aom_app} ${AOM_LIB_LINK_TYPE} aom)
 endforeach()
 
 if(ENABLE_EXAMPLES OR ENABLE_TESTS OR ENABLE_TOOLS)
@@ -863,7 +856,7 @@ set_user_flags()
 # Aomedia documentation rule.
 set(DOXYGEN_VERSION_VALUE 0)
 if(ENABLE_DOCS)
-  include(FindDoxygen)
+  find_package(Doxygen)
   if(DOXYGEN_FOUND)
     # Check if Doxygen version is >= minimum required version(i.e. 1.8.10).
     set(MINIMUM_DOXYGEN_VERSION 1008010)

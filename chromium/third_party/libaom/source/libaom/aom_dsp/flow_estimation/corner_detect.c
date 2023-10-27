@@ -24,9 +24,9 @@
 
 #define FAST_BARRIER 18
 
-size_t av1_get_corner_list_size() { return sizeof(CornerList); }
+size_t av1_get_corner_list_size(void) { return sizeof(CornerList); }
 
-CornerList *av1_alloc_corner_list() {
+CornerList *av1_alloc_corner_list(void) {
   CornerList *corners = (CornerList *)aom_calloc(1, sizeof(CornerList));
   if (!corners) {
     return NULL;
@@ -39,7 +39,7 @@ CornerList *av1_alloc_corner_list() {
   return corners;
 }
 
-void compute_corner_list(const ImagePyramid *pyr, CornerList *corners) {
+static void compute_corner_list(const ImagePyramid *pyr, CornerList *corners) {
   const uint8_t *buf = pyr->layers[0].buffer;
   int width = pyr->layers[0].width;
   int height = pyr->layers[0].height;

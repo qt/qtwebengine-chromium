@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import * as Common from '../../core/common/common.js';
+import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as InlineEditor from '../../ui/legacy/components/inline_editor/inline_editor.js';
@@ -385,7 +386,15 @@ export class AnimationUI {
     this.#keyframeMoved = keyframeIndex;
     this.#downMouseX = mouseEvent.clientX;
     event.consume(true);
-    if (this.#node) {
+
+    const viewManagerInstance = UI.ViewManager.ViewManager.instance();
+
+    const animationLocation = viewManagerInstance.locationNameForViewId('animations');
+    const elementsLocation = viewManagerInstance.locationNameForViewId('elements');
+
+    // Prevents revealing the node if the animations and elements view share the same view location.
+    // If they share the same view location, the animations view will change to the elements view when editing an animation
+    if (this.#node && animationLocation !== elementsLocation) {
       void Common.Revealer.reveal(this.#node);
     }
     return true;
@@ -416,6 +425,15 @@ export class AnimationUI {
     } else {
       this.#animationInternal.setTiming(this.duration(), this.delay());
     }
+
+    Host.userMetrics.animationPointDragged(
+        this.#mouseEventType === Events.AnimationDrag    ? Host.UserMetrics.AnimationPointDragType.AnimationDrag :
+            this.#mouseEventType === Events.KeyframeMove ? Host.UserMetrics.AnimationPointDragType.KeyframeMove :
+            this.#mouseEventType === Events.StartEndpointMove ?
+                                                           Host.UserMetrics.AnimationPointDragType.StartEndpointMove :
+            this.#mouseEventType === Events.FinishEndpointMove ?
+                                                           Host.UserMetrics.AnimationPointDragType.FinishEndpointMove :
+                                                           Host.UserMetrics.AnimationPointDragType.Other);
 
     this.#movementInMs = 0;
     this.redraw();

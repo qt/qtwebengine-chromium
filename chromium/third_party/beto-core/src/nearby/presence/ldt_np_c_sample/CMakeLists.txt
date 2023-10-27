@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-cmake_minimum_required(VERSION 3.0)
-
 include_directories(
     ${CMAKE_SOURCE_DIR}/ldt_np_adv_ffi/include/
     ${CMAKE_SOURCE_DIR}/ldt_np_c_sample/)
@@ -28,13 +26,28 @@ ExternalProject_Add(
     BINARY_DIR "${CMAKE_SOURCE_DIR}/ldt_np_adv_ffi"
     INSTALL_COMMAND "")
 
-add_executable(sample main.c)
-target_link_libraries(sample
+add_executable(ldt_c_sample main.c)
+target_link_libraries(
+    ldt_c_sample
     optimized "${CMAKE_SOURCE_DIR}/ldt_np_adv_ffi/target/release/${CMAKE_STATIC_LIBRARY_PREFIX}ldt_np_adv_ffi${CMAKE_STATIC_LIBRARY_SUFFIX}"
     debug "${CMAKE_SOURCE_DIR}/ldt_np_adv_ffi/target/debug/${CMAKE_STATIC_LIBRARY_PREFIX}ldt_np_adv_ffi${CMAKE_STATIC_LIBRARY_SUFFIX}"
-    dl pthread)
+    OpenSSL::SSL
+)
+
+if(UNIX)
+  target_link_libraries(
+    ldt_c_sample
+    dl pthread
+  )
+elseif(MSVC)
+  target_link_libraries(
+    ldt_c_sample
+    bcrypt ntdll userenv ws2_32
+  )
+endif()
+
 
 if(ENABLE_TESTS)
-    message(STATUS "Building tests")
+    message(STATUS "Enabling ldt tests")
     add_subdirectory(tests)
 endif()

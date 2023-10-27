@@ -101,7 +101,7 @@ export namespace Accessibility {
      */
     superseded?: boolean;
     /**
-     * The native markup source for this value, e.g. a <label> element.
+     * The native markup source for this value, e.g. a `<label>` element.
      */
     nativeSource?: AXValueNativeSourceType;
     /**
@@ -705,6 +705,7 @@ export namespace Audits {
     ExcludeSamePartyCrossPartyContext = 'ExcludeSamePartyCrossPartyContext',
     ExcludeDomainNonASCII = 'ExcludeDomainNonASCII',
     ExcludeThirdPartyCookieBlockedInFirstPartySet = 'ExcludeThirdPartyCookieBlockedInFirstPartySet',
+    ExcludeThirdPartyPhaseout = 'ExcludeThirdPartyPhaseout',
   }
 
   export const enum CookieWarningReason {
@@ -718,6 +719,7 @@ export namespace Audits {
     WarnSameSiteLaxCrossDowngradeLax = 'WarnSameSiteLaxCrossDowngradeLax',
     WarnAttributeValueExceedsMaxSize = 'WarnAttributeValueExceedsMaxSize',
     WarnDomainNonASCII = 'WarnDomainNonASCII',
+    WarnThirdPartyPhaseout = 'WarnThirdPartyPhaseout',
   }
 
   export const enum CookieOperation {
@@ -954,6 +956,7 @@ export namespace Audits {
     InvalidRegisterOsTriggerHeader = 'InvalidRegisterOsTriggerHeader',
     WebAndOsHeaders = 'WebAndOsHeaders',
     NoWebOrOsSupport = 'NoWebOrOsSupport',
+    NavigationRegistrationWithoutTransientUserActivation = 'NavigationRegistrationWithoutTransientUserActivation',
   }
 
   /**
@@ -1000,6 +1003,7 @@ export namespace Audits {
     FormLabelHasNeitherForNorNestedInput = 'FormLabelHasNeitherForNorNestedInput',
     FormLabelForMatchesNonExistingIdError = 'FormLabelForMatchesNonExistingIdError',
     FormInputHasWrongButWellIntendedAutocompleteValueError = 'FormInputHasWrongButWellIntendedAutocompleteValueError',
+    ResponseWasBlockedByORB = 'ResponseWasBlockedByORB',
   }
 
   /**
@@ -1013,6 +1017,7 @@ export namespace Audits {
     frameId?: Page.FrameId;
     violatingNodeId?: DOM.BackendNodeId;
     violatingNodeAttribute?: string;
+    request?: AffectedRequest;
   }
 
   /**
@@ -2045,7 +2050,7 @@ export namespace CSS {
     /**
      * Whether this stylesheet is mutable. Inline stylesheets become mutable
      * after they have been modified via CSSOM API.
-     * <link> element's stylesheets become mutable only if DevTools modifies them.
+     * `<link>` element's stylesheets become mutable only if DevTools modifies them.
      * Constructed stylesheets (new CSSStyleSheet()) are mutable immediately after creation.
      */
     isMutable: boolean;
@@ -2130,6 +2135,23 @@ export namespace CSS {
      * The array enumerates @scope at-rules starting with the innermost one, going outwards.
      */
     scopes?: CSSScope[];
+    /**
+     * The array keeps the types of ancestor CSSRules from the innermost going outwards.
+     */
+    ruleTypes?: CSSRuleType[];
+  }
+
+  /**
+   * Enum indicating the type of a CSS rule, used to represent the order of a style rule's ancestors.
+   * This list only contains rule types that are collected during the ancestor rule collection.
+   */
+  export const enum CSSRuleType {
+    MediaRule = 'MediaRule',
+    SupportsRule = 'SupportsRule',
+    ContainerRule = 'ContainerRule',
+    LayerRule = 'LayerRule',
+    ScopeRule = 'ScopeRule',
+    StyleRule = 'StyleRule',
   }
 
   /**
@@ -2601,6 +2623,39 @@ export namespace CSS {
   }
 
   /**
+   * Representation of a custom property registration through CSS.registerProperty
+   */
+  export interface CSSPropertyRegistration {
+    propertyName: string;
+    initialValue?: Value;
+    inherits: boolean;
+    syntax: string;
+  }
+
+  /**
+   * CSS property at-rule representation.
+   */
+  export interface CSSPropertyRule {
+    /**
+     * The css style sheet identifier (absent for user agent stylesheet and user-specified
+     * stylesheet rules) this rule came from.
+     */
+    styleSheetId?: StyleSheetId;
+    /**
+     * Parent stylesheet's origin.
+     */
+    origin: StyleSheetOrigin;
+    /**
+     * Associated property name.
+     */
+    propertyName: Value;
+    /**
+     * Associated style declaration.
+     */
+    style: CSSStyle;
+  }
+
+  /**
    * CSS keyframe rule representation.
    */
   export interface CSSKeyframeRule {
@@ -2789,6 +2844,14 @@ export namespace CSS {
      * A list of CSS position fallbacks matching this node.
      */
     cssPositionFallbackRules?: CSSPositionFallbackRule[];
+    /**
+     * A list of CSS at-property rules matching this node.
+     */
+    cssPropertyRules?: CSSPropertyRule[];
+    /**
+     * A list of CSS property registrations matching this node.
+     */
+    cssPropertyRegistrations?: CSSPropertyRegistration[];
     /**
      * Id of the first parent element that does not have display: contents.
      */
@@ -3260,8 +3323,8 @@ export namespace Cast {
  * the JavaScript object wrapper, etc. It is important that client receives DOM events only for the
  * nodes that are known to the client. Backend keeps track of the nodes that were sent to the client
  * and never sends the same node twice. It is client's responsibility to collect information about
- * the nodes that were sent to the client.<p>Note that `iframe` owner elements will return
- * corresponding document elements as their child nodes.</p>
+ * the nodes that were sent to the client. Note that `iframe` owner elements will return
+ * corresponding document elements as their child nodes.
  */
 export namespace DOM {
 
@@ -5858,8 +5921,8 @@ export namespace HeadlessExperimental {
 export namespace IO {
 
   /**
-   * This is either obtained from another method or specified as `blob:&lt;uuid&gt;` where
-   * `&lt;uuid&gt` is an UUID of a Blob.
+   * This is either obtained from another method or specified as `blob:<uuid>` where
+   * `<uuid>` is an UUID of a Blob.
    */
   export type StreamHandle = OpaqueIdentifier<string, 'Protocol.IO.StreamHandle'>;
 
@@ -7794,6 +7857,10 @@ export namespace Network {
     InvalidPrivateNetworkAccess = 'InvalidPrivateNetworkAccess',
     UnexpectedPrivateNetworkAccess = 'UnexpectedPrivateNetworkAccess',
     NoCorsRedirectModeNotFollow = 'NoCorsRedirectModeNotFollow',
+    PreflightMissingPrivateNetworkAccessId = 'PreflightMissingPrivateNetworkAccessId',
+    PreflightMissingPrivateNetworkAccessName = 'PreflightMissingPrivateNetworkAccessName',
+    PrivateNetworkAccessPermissionUnavailable = 'PrivateNetworkAccessPermissionUnavailable',
+    PrivateNetworkAccessPermissionDenied = 'PrivateNetworkAccessPermissionDenied',
   }
 
   export interface CorsErrorStatus {
@@ -8176,6 +8243,7 @@ export namespace Network {
     SamePartyFromCrossPartyContext = 'SamePartyFromCrossPartyContext',
     SamePartyConflictsWithOtherAttributes = 'SamePartyConflictsWithOtherAttributes',
     NameValuePairExceedsMaxSize = 'NameValuePairExceedsMaxSize',
+    DisallowedCharacter = 'DisallowedCharacter',
   }
 
   /**
@@ -8449,7 +8517,7 @@ export namespace Network {
      */
     signatures: SignedExchangeSignature[];
     /**
-     * Signed exchange header integrity hash in the form of "sha256-<base64-hash-value>".
+     * Signed exchange header integrity hash in the form of `sha256-<base64-hash-value>`.
      */
     headerIntegrity: string;
   }
@@ -8513,6 +8581,7 @@ export namespace Network {
     Deflate = 'deflate',
     Gzip = 'gzip',
     Br = 'br',
+    Zstd = 'zstd',
   }
 
   export const enum PrivateNetworkRequestPolicy {
@@ -9202,11 +9271,6 @@ export namespace Network {
      * Total number of bytes received for this request.
      */
     encodedDataLength: number;
-    /**
-     * Set when 1) response was blocked by Cross-Origin Read Blocking and also
-     * 2) this needs to be reported to the DevTools console.
-     */
-    shouldReportCorbBlocking?: boolean;
   }
 
   /**
@@ -10626,6 +10690,7 @@ export namespace Page {
     ChUaPlatform = 'ch-ua-platform',
     ChUaModel = 'ch-ua-model',
     ChUaMobile = 'ch-ua-mobile',
+    ChUaFormFactor = 'ch-ua-form-factor',
     ChUaFullVersion = 'ch-ua-full-version',
     ChUaFullVersionList = 'ch-ua-full-version-list',
     ChUaPlatformVersion = 'ch-ua-platform-version',
@@ -11317,6 +11382,8 @@ export namespace Page {
     ErrorDocument = 'ErrorDocument',
     FencedFramesEmbedder = 'FencedFramesEmbedder',
     CookieDisabled = 'CookieDisabled',
+    HTTPAuthRequired = 'HTTPAuthRequired',
+    CookieFlushed = 'CookieFlushed',
     WebSocket = 'WebSocket',
     WebTransport = 'WebTransport',
     WebRTC = 'WebRTC',
@@ -11328,14 +11395,12 @@ export namespace Page {
     DocumentLoaded = 'DocumentLoaded',
     DedicatedWorkerOrWorklet = 'DedicatedWorkerOrWorklet',
     OutstandingNetworkRequestOthers = 'OutstandingNetworkRequestOthers',
-    OutstandingIndexedDBTransaction = 'OutstandingIndexedDBTransaction',
     RequestedMIDIPermission = 'RequestedMIDIPermission',
     RequestedAudioCapturePermission = 'RequestedAudioCapturePermission',
     RequestedVideoCapturePermission = 'RequestedVideoCapturePermission',
     RequestedBackForwardCacheBlockedSensors = 'RequestedBackForwardCacheBlockedSensors',
     RequestedBackgroundWorkPermission = 'RequestedBackgroundWorkPermission',
     BroadcastChannel = 'BroadcastChannel',
-    IndexedDBConnection = 'IndexedDBConnection',
     WebXR = 'WebXR',
     SharedWorker = 'SharedWorker',
     WebLocks = 'WebLocks',
@@ -11458,6 +11523,11 @@ export namespace Page {
      * to false.
      */
     includeCommandLineAPI?: boolean;
+    /**
+     * If true, runs the script immediately on existing execution contexts or worlds.
+     * Default: false.
+     */
+    runImmediately?: boolean;
   }
 
   export interface AddScriptToEvaluateOnNewDocumentResponse extends ProtocolResponseWithError {
@@ -11827,6 +11897,10 @@ export namespace Page {
      * return as stream
      */
     transferMode?: PrintToPDFRequestTransferMode;
+    /**
+     * Whether or not to generate tagged (accessible) PDF. Defaults to embedder choice.
+     */
+    generateTaggedPDF?: boolean;
   }
 
   export interface PrintToPDFResponse extends ProtocolResponseWithError {
@@ -12180,7 +12254,7 @@ export namespace Page {
      */
     mode: FileChooserOpenedEventMode;
     /**
-     * Input node id. Only present for file choosers opened via an <input type="file"> element.
+     * Input node id. Only present for file choosers opened via an `<input type="file">` element.
      */
     backendNodeId?: DOM.BackendNodeId;
   }
@@ -13345,6 +13419,67 @@ export namespace Storage {
     durability: StorageBucketsDurability;
   }
 
+  export const enum AttributionReportingSourceType {
+    Navigation = 'navigation',
+    Event = 'event',
+  }
+
+  export type UnsignedInt64AsBase10 = string;
+
+  export type UnsignedInt128AsBase16 = string;
+
+  export type SignedInt64AsBase10 = string;
+
+  export interface AttributionReportingFilterDataEntry {
+    key: string;
+    values: string[];
+  }
+
+  export interface AttributionReportingAggregationKeysEntry {
+    key: string;
+    value: UnsignedInt128AsBase16;
+  }
+
+  export interface AttributionReportingSourceRegistration {
+    time: Network.TimeSinceEpoch;
+    /**
+     * duration in seconds
+     */
+    expiry?: integer;
+    /**
+     * duration in seconds
+     */
+    eventReportWindow?: integer;
+    /**
+     * duration in seconds
+     */
+    aggregatableReportWindow?: integer;
+    type: AttributionReportingSourceType;
+    sourceOrigin: string;
+    reportingOrigin: string;
+    destinationSites: string[];
+    eventId: UnsignedInt64AsBase10;
+    priority: SignedInt64AsBase10;
+    filterData: AttributionReportingFilterDataEntry[];
+    aggregationKeys: AttributionReportingAggregationKeysEntry[];
+    debugKey?: UnsignedInt64AsBase10;
+  }
+
+  export const enum AttributionReportingSourceRegistrationResult {
+    Success = 'success',
+    InternalError = 'internalError',
+    InsufficientSourceCapacity = 'insufficientSourceCapacity',
+    InsufficientUniqueDestinationCapacity = 'insufficientUniqueDestinationCapacity',
+    ExcessiveReportingOrigins = 'excessiveReportingOrigins',
+    ProhibitedByBrowserPolicy = 'prohibitedByBrowserPolicy',
+    SuccessNoised = 'successNoised',
+    DestinationReportingLimitReached = 'destinationReportingLimitReached',
+    DestinationGlobalLimitReached = 'destinationGlobalLimitReached',
+    DestinationBothLimitsReached = 'destinationBothLimitsReached',
+    ReportingOriginsPerSiteLimitReached = 'reportingOriginsPerSiteLimitReached',
+    ExceedsMaxChannelCapacity = 'exceedsMaxChannelCapacity',
+  }
+
   export interface GetStorageKeyForFrameRequest {
     frameId: Page.FrameId;
   }
@@ -13591,6 +13726,17 @@ export namespace Storage {
     deletedSites: string[];
   }
 
+  export interface SetAttributionReportingLocalTestingModeRequest {
+    /**
+     * If enabled, noise is suppressed and reports are sent immediately.
+     */
+    enabled: boolean;
+  }
+
+  export interface SetAttributionReportingTrackingRequest {
+    enable: boolean;
+  }
+
   /**
    * A cache's contents have been modified.
    */
@@ -13719,6 +13865,15 @@ export namespace Storage {
 
   export interface StorageBucketDeletedEvent {
     bucketId: string;
+  }
+
+  /**
+   * TODO(crbug.com/1458532): Add other Attribution Reporting events, e.g.
+   * trigger registration.
+   */
+  export interface AttributionReportingSourceRegisteredEvent {
+    registration: AttributionReportingSourceRegistration;
+    result: AttributionReportingSourceRegistrationResult;
   }
 }
 
@@ -14853,6 +15008,11 @@ export namespace Fetch {
    * The stage of the request can be determined by presence of responseErrorReason
    * and responseStatusCode -- the request is at the response stage if either
    * of these fields is present and in the request stage otherwise.
+   * Redirect responses and subsequent requests are reported similarly to regular
+   * responses and requests. Redirect responses may be distinguished by the value
+   * of `responseStatusCode` (which is one of 301, 302, 303, 307, 308) along with
+   * presence of the `location` header. Requests resulting from a redirect will
+   * have `redirectedRequestId` field set.
    */
   export interface RequestPausedEvent {
     /**
@@ -15592,7 +15752,7 @@ export namespace Preload {
     loaderId: Network.LoaderId;
     /**
      * Source text of JSON representing the rule set. If it comes from
-     * <script> tag, it is the textContent of the node. Note that it is
+     * `<script>` tag, it is the textContent of the node. Note that it is
      * a JSON for valid case.
      *
      * See also:
@@ -15602,9 +15762,9 @@ export namespace Preload {
     sourceText: string;
     /**
      * A speculation rule set is either added through an inline
-     * <script> tag or through an external resource via the
+     * `<script>` tag or through an external resource via the
      * 'Speculation-Rules' HTTP header. For the first case, we include
-     * the BackendNodeId of the relevant <script> tag. For the second
+     * the BackendNodeId of the relevant `<script>` tag. For the second
      * case, we include the external URL where the rule set was loaded
      * from, and also RequestId if Network domain is enabled.
      *
@@ -15710,7 +15870,6 @@ export namespace Preload {
     AudioOutputDeviceRequested = 'AudioOutputDeviceRequested',
     MixedContent = 'MixedContent',
     TriggerBackgrounded = 'TriggerBackgrounded',
-    EmbedderTriggeredAndCrossOriginRedirected = 'EmbedderTriggeredAndCrossOriginRedirected',
     MemoryLimitExceeded = 'MemoryLimitExceeded',
     FailToGetMemoryUsage = 'FailToGetMemoryUsage',
     DataSaverEnabled = 'DataSaverEnabled',
@@ -15744,6 +15903,8 @@ export namespace Preload {
     MemoryPressureAfterTriggered = 'MemoryPressureAfterTriggered',
     PrerenderingDisabledByDevTools = 'PrerenderingDisabledByDevTools',
     ResourceLoadBlockedByClient = 'ResourceLoadBlockedByClient',
+    SpeculationRuleRemoved = 'SpeculationRuleRemoved',
+    ActivatedWithAuxiliaryBrowsingContexts = 'ActivatedWithAuxiliaryBrowsingContexts',
   }
 
   /**
@@ -15832,6 +15993,8 @@ export namespace Preload {
     disabledByPreference: boolean;
     disabledByDataSaver: boolean;
     disabledByBatterySaver: boolean;
+    disabledByHoldbackPrefetchSpeculationRules: boolean;
+    disabledByHoldbackPrerenderSpeculationRules: boolean;
   }
 
   /**
@@ -15846,6 +16009,7 @@ export namespace Preload {
     prefetchUrl: string;
     status: PreloadingStatus;
     prefetchStatus: PrefetchStatus;
+    requestId: Network.RequestId;
   }
 
   /**
@@ -15855,6 +16019,11 @@ export namespace Preload {
     key: PreloadingAttemptKey;
     status: PreloadingStatus;
     prerenderStatus?: PrerenderFinalStatus;
+    /**
+     * This is used to give users more information about the name of Mojo interface
+     * that is incompatible with prerender and has caused the cancellation of the attempt.
+     */
+    disallowedMojoInterface?: string;
   }
 
   /**
@@ -15886,6 +16055,7 @@ export namespace FedCm {
   export const enum DialogType {
     AccountChooser = 'AccountChooser',
     AutoReauthn = 'AutoReauthn',
+    ConfirmIdpSignin = 'ConfirmIdpSignin',
   }
 
   /**
@@ -17364,6 +17534,12 @@ export namespace Runtime {
      * Deep serialization depth. Default is full depth. Respected only in `deep` serialization mode.
      */
     maxDepth?: integer;
+    /**
+     * Embedder-specific parameters. For example if connected to V8 in Chrome these control DOM
+     * serialization via `maxNodeDepth: integer` and `includeShadowTree: "none" | "open" | "all"`.
+     * Values can be only of type string or integer.
+     */
+    additionalParameters?: any;
   }
 
   export const enum DeepSerializedValueType {

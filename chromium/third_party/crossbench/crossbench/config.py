@@ -4,14 +4,22 @@
 
 from __future__ import annotations
 
+import abc
+import argparse
 import collections
 import enum
 import inspect
+import logging
+import pathlib
+import re
 import textwrap
-from typing import (Any, Callable, Dict, Iterable, List, Optional, Type, Union,
-                    cast)
+from typing import (Any, Callable, Dict, Generic, Iterable, List, Optional,
+                    Tuple, Type, TypeVar, Union, cast)
 
-from crossbench import helper
+import tabulate
+
+from crossbench import cli_helper, helper
+from crossbench import exception
 from crossbench.exception import ExceptionAnnotator
 
 ArgParserType = Union[Callable[[Any], Any], Type]
@@ -72,9 +80,8 @@ class _ConfigArg:
 
   def _validate_default(self) -> None:
     if self.is_enum:
-      enum_type: Type[enum.Enum] = cast(Type[enum.Enum], self.type)
-      assert isinstance(self.default, enum_type), (
-          f"Default must a {enum_type} enum, but got: {self.default}")
+      self._validate_enum_default()
+      return
     # TODO: Remove once pytype can handle self.type
     maybe_class: ArgParserType = self.type
     if self.is_list:
@@ -84,15 +91,24 @@ class _ConfigArg:
           f"List default should not be a string, but got: {repr(self.default)}")
       if inspect.isclass(maybe_class):
         for default_item in self.default:
-          assert isinstance(
-              default_item,
-              self.type), (f"Expected default list item of type={self.type}, "
-                           f"but got type={type(default_item)}: {default_item}")
-    elif self.type and inspect.isclass(maybe_class):
-      assert isinstance(
-          self.default,
-          self.type), (f"Expected default value of type={self.type}, "
-                       f"but got type={type(self.default)}: {self.default}")
+          if not isinstance(default_item, maybe_class):
+            raise ValueError(
+                f"Expected default list item of type={self.type}, "
+                f"but got type={type(default_item)}: {default_item}")
+    elif maybe_class and inspect.isclass(maybe_class):
+      if not isinstance(self.default, maybe_class):
+        raise ValueError(f"Expected default value of type={self.type}, "
+                         f"but got type={type(self.default)}: {self.default}")
+
+  def _validate_enum_default(self) -> None:
+    enum_type: Type[enum.Enum] = cast(Type[enum.Enum], self.type)
+    if self.is_list:
+      default_list = self.default
+    else:
+      default_list = [self.default]
+    for default in default_list:
+      assert isinstance(default, enum_type), (
+          f"Default must be a {enum_type} enum, but got: {self.default}")
 
   @property
   def cls(self) -> Type:
@@ -104,32 +120,45 @@ class _ConfigArg:
 
   @property
   def help_text(self) -> str:
-    items: List[str] = []
-    if self.help:
-      items.append(self.help)
+    items: List[Tuple[str, str]] = []
     if self.type is None:
       if self.is_list:
-        items.append("type    = list")
+        items.append(("type", "list"))
     else:
       if self.is_list:
-        items.append(f"type    = List[{self.type.__qualname__}]")
+        items.append(("type", f"List[{self.type.__qualname__}]"))
       else:
-        items.append(f"type    = {self.type.__qualname__}")
+        items.append(("type", str(self.type.__qualname__)))
 
     if self.default is None:
-      items.append("default = not set")
+      items.append(("default", "not set"))
     else:
       if self.is_list:
         if not self.default:
-          items.append("default = []")
+          items.append(("default", "[]"))
         else:
-          items.append(f"default = {','.join(map(str, self.default))}")
+          items.append(("default", ",".join(map(str, self.default))))
       else:
-        items.append(f"default = {self.default}")
-    if self.choices:
-      items.append(f"choices = {', '.join(map(str, self.choices))}")
+        items.append(("default", str(self.default)))
+    if self.is_enum:
+      items.extend(self._enum_help_text())
+    elif self.choices:
+      items.append(self._choices_help_text(self.choices))
 
-    return "\n".join(items)
+    text = tabulate.tabulate(items, tablefmt="presto")
+    if self.help:
+      return f"{self.help}\n{text}"
+    return text
+
+  def _choices_help_text(self, choices: Iterable) -> Tuple[str, str]:
+    return ("choices", ", ".join(map(str, choices)))
+
+  def _enum_help_text(self) -> List[Tuple[str, str]]:
+    if self.type and hasattr(self.type, "help_text_items"):
+      # See helper.EnumWithHelp
+      return [("choices", ""), *self.type.help_text_items()]
+    assert self.choices
+    return [self._choices_help_text(choice.value for choice in self.choices)]
 
   def parse(self, config_data: Dict[str, Any]) -> Any:
     data = config_data.pop(self.name, None)
@@ -167,26 +196,82 @@ class _ConfigArg:
       if not isinstance(data, (float, int)):
         raise ValueError(
             f"{self.cls_name}.{self.name}: Expected number, got {data}")
+    config_object_cls = self.type  # pytype needs a local for inspect.isclass.
+    if (inspect.isclass(config_object_cls) and
+        issubclass(config_object_cls, ConfigObject)):
+      return config_object_cls.parse(data)
     return self.type(data)
 
   def parse_enum_data(self, data: Any) -> enum.Enum:
     assert self.is_enum
     assert self.choices
-    if data in self.choices:
-      return data
     for enum_instance in self.choices:
-      if data == enum_instance.value:
+      if data in (enum_instance, enum_instance.value):
         return enum_instance
     raise ValueError("Expected enum {self.type}, but got {data}")
 
 
-class ConfigParser:
+_PATH_PREFIX = re.compile(r"(\./|/|[a-zA-Z]:\\)[^\\/]")
 
-  def __init__(self, title: str, cls: Type[object]):
+
+class ConfigObject(abc.ABC):
+  VALID_EXTENSIONS: Tuple[str, ...] = (".hjson", ".json")
+
+  @classmethod
+  def value_has_path_prefix(cls, value: str) -> bool:
+    return _PATH_PREFIX.match(value) is not None
+
+  @classmethod
+  def parse(cls, value: Any) -> ConfigObject:
+    if not value:
+      raise argparse.ArgumentTypeError("Empty config value")
+    if isinstance(value, dict):
+      return cls.load_dict(value)
+    if isinstance(value, (str, pathlib.Path)):
+      maybe_config = cls.maybe_load_path(value)
+      if maybe_config:
+        return maybe_config
+    if isinstance(value, str):
+      return cls.loads(value)
+    raise argparse.ArgumentTypeError(
+        f"Invalid config input type {type(value).__name__}: {value}")
+
+  @classmethod
+  @abc.abstractmethod
+  def loads(cls, value: str) -> ConfigObject:
+    raise NotImplementedError()
+
+  @classmethod
+  def maybe_load_path(
+      cls, value: Union[str, pathlib.Path]) -> Optional[ConfigObject]:
+    maybe_config_path = pathlib.Path(value)
+    if (maybe_config_path.suffix in cls.VALID_EXTENSIONS and
+        maybe_config_path.is_file()):
+      return cls.load_path(maybe_config_path)
+    return None
+
+  @classmethod
+  def load_path(cls, path: pathlib.Path) -> ConfigObject:
+    with exception.annotate_argparsing(f"Parsing {cls.__name__} file: {path}"):
+      data = cli_helper.parse_dict_hjson_file(path)
+      return cls.load_dict(data)
+
+  @classmethod
+  @abc.abstractmethod
+  def load_dict(cls, config: Dict[str, Any]) -> ConfigObject:
+    raise NotImplementedError()
+
+
+ConfigResultObjectT = TypeVar("ConfigResultObjectT", bound="object")
+
+
+class ConfigParser(Generic[ConfigResultObjectT]):
+
+  def __init__(self, title: str, cls: Type[ConfigResultObjectT]) -> None:
     self.title = title
     assert title, "No title provided"
     self._cls = cls
-    self._args: Dict[str, _ConfigArg] = dict()
+    self._args: Dict[str, _ConfigArg] = {}
 
   def add_argument(  # pylint: disable=redefined-builtin
       self,
@@ -201,15 +286,20 @@ class ConfigParser:
     self._args[name] = _ConfigArg(self, name, type, default, choices, help,
                                   is_list, required)
 
-  def kwargs_from_config(self, config_data: Dict[str, Any],
-                         throw: bool = False) -> Dict[str, Any]:
-    kwargs: Dict[str, Any] = {}
-    exceptions = ExceptionAnnotator(throw=throw)
-    for arg in self._args.values():
-      with exceptions.capture(f"Parsing ...['{arg.name}']:"):
-        kwargs[arg.name] = arg.parse(config_data)
-    exceptions.assert_success("Failed to parse config: {}", log=False)
-    return kwargs
+  def kwargs_from_config(self, config_data: Dict[str, Any]) -> Dict[str, Any]:
+    with exception.annotate_argparsing(
+        f"Parsing {self._cls.__name__} config dict:"):
+      kwargs: Dict[str, Any] = {}
+      for arg_parser in self._args.values():
+        with exception.annotate(f"Parsing ...['{arg_parser.name}']:"):
+          kwargs[arg_parser.name] = arg_parser.parse(config_data)
+      return kwargs
+
+  def parse(self, config_data: Dict[str, Any]) -> ConfigResultObjectT:
+    kwargs = self.kwargs_from_config(config_data)
+    if config_data:
+      logging.debug("Got unused properties: %s", config_data.keys())
+    return self.cls(**kwargs)
 
   @property
   def cls(self) -> Type:
@@ -224,8 +314,9 @@ class ConfigParser:
   def __str__(self) -> str:
     parts: List[str] = []
     doc_string = self.doc
+    wdith = 80
     if doc_string:
-      parts.append("\n".join(textwrap.wrap(doc_string, width=60)))
+      parts.append("\n".join(textwrap.wrap(doc_string, width=wdith)))
       parts.append("")
     if not self._args:
       if parts:
@@ -235,6 +326,6 @@ class ConfigParser:
     parts.append("")
     for arg in self._args.values():
       parts.append(f"{arg.name}:")
-      parts.extend(helper.wrap_lines(arg.help_text, width=58, indent="  "))
+      parts.extend(helper.wrap_lines(arg.help_text, width=wdith, indent="  "))
       parts.append("")
     return "\n".join(parts)

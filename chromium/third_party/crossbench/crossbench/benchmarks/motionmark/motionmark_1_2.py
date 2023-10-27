@@ -4,17 +4,22 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import itertools
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, List, Optional, Tuple
 
 import crossbench.probes.helper as probes_helper
 from crossbench.benchmarks.benchmark import PressBenchmark
+from crossbench.probes import metric
 from crossbench.probes.json import JsonResultProbe
 from crossbench.probes.results import ProbeResult
-from crossbench.stories import PressBenchmarkStory
+from crossbench.stories.press_benchmark import PressBenchmarkStory
 
 if TYPE_CHECKING:
-  from crossbench.runner import BrowsersRunGroup, Run, StoriesRunGroup, Actions
+  from crossbench.runner.actions import Actions
+  from crossbench.runner.groups import BrowsersRunGroup, StoriesRunGroup
+  from crossbench.runner.run import Run
+  from crossbench.types import JSON
 
 
 def _probe_skip_data_segments(path: Tuple[str, ...]) -> Optional[str]:
@@ -35,17 +40,17 @@ class MotionMark12Probe(JsonResultProbe):
     return window.benchmarkRunnerClient.results.results;
   """
 
-  def to_json(self, actions: Actions) -> Dict[str, Any]:
+  def to_json(self, actions: Actions) -> JSON:
     return actions.js(self.JS)
 
-  def flatten_json_data(self, json_data: List) -> Dict[str, Any]:
+  def flatten_json_data(self, json_data: List) -> JSON:
     assert isinstance(json_data, list) and len(json_data) == 1, (
         "Motion12MarkProbe requires a results list.")
     return probes_helper.Flatten(
         json_data[0], key_fn=_probe_skip_data_segments).data
 
   def merge_stories(self, group: StoriesRunGroup) -> ProbeResult:
-    merged = probes_helper.ValuesMerger.merge_json_list(
+    merged = metric.MetricsMerger.merge_json_list(
         story_group.results[self].json
         for story_group in group.repetitions_groups)
     return self.write_group_result(group, merged, write_csv=True)
@@ -159,12 +164,12 @@ class MotionMark12Story(PressBenchmarkStory):
     return cls.ALL_STORIES["MotionMark"]
 
   @property
-  def substory_duration(self) -> float:
-    return 35
+  def substory_duration(self) -> dt.timedelta:
+    return dt.timedelta(seconds=35)
 
-  def run(self, run: Run) -> None:
+  def setup(self, run: Run) -> None:
     with run.actions("Setup") as actions:
-      actions.navigate_to(self._url)
+      actions.show_url(self._url)
       actions.wait_js_condition(
           """return document.querySelector("tree > li") !== undefined""", 0.1,
           10)
@@ -189,6 +194,8 @@ class MotionMark12Story(PressBenchmarkStory):
           arguments=[self._substories])
       assert num_enabled > 0, "No tests were enabled"
       actions.wait(0.1)
+
+  def run(self, run: Run) -> None:
     with run.actions("Running") as actions:
       actions.js("window.benchmarkController.startBenchmark()")
       actions.wait(self.fast_duration)
@@ -199,7 +206,18 @@ class MotionMark12Story(PressBenchmarkStory):
           """, self.substory_duration / 4, self.slow_duration)
 
 
-class MotionMark12Benchmark(PressBenchmark):
+class MotionMarkBenchmark(PressBenchmark):
+
+  @classmethod
+  def short_base_name(cls) -> str:
+    return "mm"
+
+  @classmethod
+  def base_name(cls) -> str:
+    return "motionmark"
+
+
+class MotionMark12Benchmark(MotionMarkBenchmark):
   """
   Benchmark runner for MotionMark 1.2.
 
@@ -208,3 +226,7 @@ class MotionMark12Benchmark(PressBenchmark):
 
   NAME = "motionmark_1.2"
   DEFAULT_STORY_CLS = MotionMark12Story
+
+  @classmethod
+  def version(cls) -> Tuple[int, ...]:
+    return (1, 2)

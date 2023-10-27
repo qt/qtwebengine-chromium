@@ -642,11 +642,15 @@ void av1_cyclic_refresh_reset_resize(AV1_COMP *const cpi) {
 
 int av1_cyclic_refresh_disable_lf_cdef(AV1_COMP *const cpi) {
   CYCLIC_REFRESH *const cr = cpi->cyclic_refresh;
-  // TODO(marpan): Tune these conditons, add QP dependence.
-  if (cpi->sf.rt_sf.skip_lf_screen > 1 && !cpi->rc.high_source_sad) return 1;
+  const int qindex = cpi->common.quant_params.base_qindex;
   if (cpi->rc.frames_since_key > 30 && cr->percent_refresh > 0 &&
       cr->counter_encode_maxq_scene_change > 300 / cr->percent_refresh &&
-      cpi->rc.frame_source_sad < 1000)
+      cpi->rc.frame_source_sad < 1000 &&
+      qindex < 7 * (cpi->rc.worst_quality >> 3))
+    return 1;
+  // More aggressive skip.
+  else if (cpi->sf.rt_sf.skip_lf_screen > 1 && !cpi->rc.high_source_sad &&
+           cpi->rc.frame_source_sad < 50000 && qindex < cpi->rc.worst_quality)
     return 1;
   return 0;
 }

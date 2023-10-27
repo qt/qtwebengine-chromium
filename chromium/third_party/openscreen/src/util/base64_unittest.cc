@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -47,7 +47,7 @@ TEST(Base64Test, Basic) {
 TEST(Base64Test, Binary) {
   const uint8_t kData[] = {0x00, 0x01, 0xFE, 0xFF};
 
-  std::string binary_encoded = Encode(absl::MakeConstSpan(kData));
+  std::string binary_encoded = Encode(kData);
 
   // Check that encoding the same data through the StringPiece interface gives
   // the same results.

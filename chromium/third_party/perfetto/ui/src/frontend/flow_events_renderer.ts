@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {TPTime} from '../common/time';
+import {time} from '../common/time';
+
 import {TRACK_SHELL_WIDTH} from './css_constants';
 import {ALL_CATEGORIES, getFlowCategories} from './flow_events_panel';
 import {Flow, FlowPoint, globals} from './globals';
@@ -140,18 +141,25 @@ export class FlowEventsRenderer {
     };
   }
 
-  private getXCoordinate(ts: TPTime): number {
-    return globals.frontendLocalState.visibleTimeScale.tpTimeToPx(ts);
+  private getXCoordinate(ts: time): number {
+    return globals.frontendLocalState.visibleTimeScale.timeToPx(ts);
   }
 
   private getSliceRect(args: FlowEventsRendererArgs, point: FlowPoint):
       SliceRect|undefined {
+    const {visibleTimeScale, visibleTimeSpan, windowSpan} =
+        globals.frontendLocalState;
     const trackPanel = args.trackIdToTrackPanel.get(point.trackId) ?.panel;
     if (!trackPanel) {
       return undefined;
     }
     return trackPanel.getSliceRect(
-        point.sliceStartTs, point.sliceEndTs, point.depth);
+        visibleTimeScale,
+        visibleTimeSpan,
+        windowSpan,
+        point.sliceStartTs,
+        point.sliceEndTs,
+        point.depth);
   }
 
   render(ctx: CanvasRenderingContext2D, args: FlowEventsRendererArgs) {

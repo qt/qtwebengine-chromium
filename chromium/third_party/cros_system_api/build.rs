@@ -51,8 +51,18 @@ const BINDINGS_TO_GENERATE: &[(&str, &str, BindingsType)] = &[
         BindingsType::Client(OPTS),
     ),
     (
+        "org_chromium_printscanmgr",
+        "printscanmgr/dbus_bindings/org.chromium.printscanmgr.xml",
+        BindingsType::Client(OPTS),
+    ),
+    (
         "org_chromium_sessionmanagerinterface",
         "login_manager/dbus_bindings/org.chromium.SessionManagerInterface.xml",
+        BindingsType::Client(OPTS),
+    ),
+    (
+        "org_chromium_spaced",
+        "spaced/dbus_bindings/org.chromium.Spaced.xml",
         BindingsType::Client(OPTS),
     ),
     (
@@ -82,12 +92,20 @@ const PROTOS_TO_GENERATE: &[(&str, &str)] = &[
         "system_api/dbus/cryptohome/auth_factor.proto",
     ),
     (
+        "battery_saver",
+        "system_api/dbus/power_manager/battery_saver.proto",
+    ),
+    (
         "concierge_service",
         "system_api/dbus/vm_concierge/concierge_service.proto",
     ),
     ("dlcservice", "system_api/dbus/dlcservice/dlcservice.proto"),
     ("fido", "system_api/dbus/cryptohome/fido.proto"),
     ("key", "system_api/dbus/cryptohome/key.proto"),
+    (
+        "printscanmgr_service",
+        "system_api/dbus/printscanmgr/printscanmgr_service.proto",
+    ),
     ("rpc", "system_api/dbus/cryptohome/rpc.proto"),
     (
         "shadercached",

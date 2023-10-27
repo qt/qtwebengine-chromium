@@ -641,7 +641,7 @@ static int64_t get_sse(const AV1_COMP *cpi, const MACROBLOCK *x) {
         get_plane_block_size(mbmi->bsize, pd->subsampling_x, pd->subsampling_y);
     unsigned int sse;
 
-    if (x->skip_chroma_rd && plane) continue;
+    if (plane) continue;
 
     cpi->ppi->fn_ptr[bs].vf(p->src.buf, p->src.stride, pd->dst.buf,
                             pd->dst.stride, &sse);
@@ -2077,7 +2077,7 @@ static void search_tx_type(const AV1_COMP *cpi, MACROBLOCK *x, int plane,
   uint16_t tx_mask;
 
   // Use DCT_DCT transform for DC only block.
-  if (dc_only_blk)
+  if (dc_only_blk || cpi->sf.rt_sf.dct_only_palette_nonrd == 1)
     tx_mask = 1 << DCT_DCT;
   else
     tx_mask = get_tx_mask(cpi, x, plane, block, blk_row, blk_col, plane_bsize,

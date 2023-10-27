@@ -264,7 +264,7 @@ void FENCE_STATE::NotifyAndWait() {
         auto result = waiter.wait_until(GetCondWaitTimeout());
         if (result != std::future_status::ready) {
             dev_data_.LogError(Handle(), "UNASSIGNED-VkFence-state-timeout",
-                               "Timeout waiting for fence state to update. This is most likley a validation bug.");
+                               "Timeout waiting for fence state to update. This is most likely a validation bug.");
         }
     }
 }
@@ -352,15 +352,15 @@ void SEMAPHORE_STATE::EnqueueWait(QUEUE_STATE *queue, uint64_t queue_seq, uint64
     }
     auto result = timeline_.emplace(payload, TimePoint(wait_op));
     if (!result.second) {
-        result.first->second.wait_ops.emplace(wait_op);
+        result.first->second.AddWaitOp(wait_op);
     }
 }
 
-void SEMAPHORE_STATE::EnqueueAcquire(const char *func_name) {
+void SEMAPHORE_STATE::EnqueueAcquire(vvl::Func command) {
     auto guard = WriteLock();
     assert(type == VK_SEMAPHORE_TYPE_BINARY);
     auto payload = next_payload_++;
-    SemOp acquire(kBinaryAcquire, nullptr, 0, payload, func_name);
+    SemOp acquire(kBinaryAcquire, nullptr, 0, payload, command);
     timeline_.emplace(payload, acquire);
 }
 
@@ -371,6 +371,7 @@ std::optional<SemOp> SEMAPHORE_STATE::LastOp(const std::function<bool(const SemO
     for (auto pos = timeline_.rbegin(); pos != timeline_.rend(); ++pos) {
         auto &timepoint = pos->second;
         for (auto &op : timepoint.wait_ops) {
+            assert(op.payload == timepoint.wait_ops[0].payload);
             if (!filter || filter(op, true)) {
                 result.emplace(op);
                 break;
@@ -420,6 +421,7 @@ void SEMAPHORE_STATE::TimePoint::Notify() const {
         signal_op->Notify();
     }
     for (auto &wait : wait_ops) {
+        assert(wait.payload == wait_ops[0].payload);
         wait.Notify();
     }
 }
@@ -463,6 +465,7 @@ void SEMAPHORE_STATE::Retire(QUEUE_STATE *current_queue, uint64_t payload) {
             completed_ = *timepoint.signal_op;
         }
         for (auto &wait : timepoint.wait_ops) {
+            assert(wait.payload == timepoint.wait_ops[0].payload);
             completed_ = wait;
         }
         timepoint.completed.set_value();
@@ -488,7 +491,7 @@ void SEMAPHORE_STATE::Retire(QUEUE_STATE *current_queue, uint64_t payload) {
 }
 
 std::shared_future<void> SEMAPHORE_STATE::Wait(uint64_t payload) {
-    auto guard = ReadLock();
+    auto guard = WriteLock();
     if (payload <= completed_.payload) {
         std::promise<void> already_done;
         auto result = already_done.get_future();
@@ -499,7 +502,7 @@ std::shared_future<void> SEMAPHORE_STATE::Wait(uint64_t payload) {
     auto result = timeline_.emplace(payload, TimePoint(wait_op));
     auto &timepoint = result.first->second;
     if (!result.second) {
-        timepoint.wait_ops.emplace(wait_op);
+        timepoint.AddWaitOp(wait_op);
     }
     return timepoint.waiter;
 }
@@ -508,7 +511,9 @@ void SEMAPHORE_STATE::NotifyAndWait(uint64_t payload) {
     if (scope_ == kSyncScopeInternal) {
         Notify(payload);
         auto waiter = Wait(payload);
+        dev_data_.BeginBlockingOperation();
         auto result = waiter.wait_until(GetCondWaitTimeout());
+        dev_data_.EndBlockingOperation();
         if (result != std::future_status::ready) {
             dev_data_.LogError(Handle(), "UNASSIGNED-VkSemaphore-state-timeout",
                                "Timeout waiting for timeline semaphore state to update. This is most likely a validation bug."

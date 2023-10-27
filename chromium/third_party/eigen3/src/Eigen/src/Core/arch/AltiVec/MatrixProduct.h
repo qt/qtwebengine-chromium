@@ -15,8 +15,6 @@
 #define EIGEN_ALTIVEC_USE_CUSTOM_PACK    1
 #endif
 
-#include "MatrixProductCommon.h"
-
 #if !defined(EIGEN_ALTIVEC_DISABLE_MMA)
 #define EIGEN_ALTIVEC_DISABLE_MMA 0
 #endif
@@ -44,6 +42,8 @@
 #endif
 
 #endif // EIGEN_ALTIVEC_MMA_SUPPORT
+
+#include "MatrixProductCommon.h"
 
 #if defined(EIGEN_ALTIVEC_MMA_ONLY) || defined(EIGEN_ALTIVEC_MMA_DYNAMIC_DISPATCH)
   #include "MatrixProductMMA.h"
@@ -2713,12 +2713,10 @@ EIGEN_ALWAYS_INLINE bool supportsMMA()
 {
 #if defined(EIGEN_ALTIVEC_MMA_ONLY)
   return true;
-#else
-#if EIGEN_COMP_LLVM
-  return false;  // No dynamic dispatch for LLVM
-#else
+#elif defined(EIGEN_ALTIVEC_MMA_DYNAMIC_DISPATCH) && defined(__BUILTIN_CPU_SUPPORTS__)
   return __builtin_cpu_supports ("arch_3_1") && __builtin_cpu_supports ("mma");
-#endif
+#else
+  return false;  // No dynamic dispatch for LLVM or older GCC
 #endif
 }
 
