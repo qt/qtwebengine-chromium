@@ -923,6 +923,7 @@ Povolenia, ktoré ste už udelili aplikáciám, sa môžu vzťahovať na tento �
 <translation id="1723824996674794290">&amp;Nové okno</translation>
 <translation id="1724801751621173132">Režim vstupu</translation>
 <translation id="1725562816265788801">Posúvanie kariet</translation>
+<translation id="1726294682426724172">Medzi nové funkcie patria čarovný zmizík vo Fotkách Google na odstraňovanie rušivých prvkov, zlepšené nástroje na videohovory a ďalšie</translation>
 <translation id="1726503915437308071">Kurzíva</translation>
 <translation id="1729533290416704613">Tiež určuje, ktorá stránka sa zobrazí pri vyhľadávaní pomocou všeobecného poľa.</translation>
 <translation id="1730666151302379551">Nepamätám si staré heslo</translation>
@@ -3495,7 +3496,6 @@ Ak chcete spravovať nastavenia tohto účtu, nainštalujte si do zariadenia apl
 <translation id="3771851622616482156">Systém vás odhlási z tohto webu (aj v otvorených kartách)</translation>
 <translation id="3772046291955677288">Prečítal(a) som si <ph name="BEGIN_LINK1" />zmluvné podmienky spoločnosti Google<ph name="END_LINK1" /> aj <ph name="BEGIN_LINK2" />dodatočné zmluvné podmienky prehliadača Chrome a systému Chrome OS<ph name="END_LINK2" /> a súhlasím s nimi.</translation>
 <translation id="3774166835015494435">Najnovšie fotky a upozornenia</translation>
-<translation id="3774546890772201673">Aktualizujte <ph name="NAME" />.</translation>
 <translation id="3775432569830822555">Certifikát servera SSL</translation>
 <translation id="3775705724665058594">Odoslanie do zariadení</translation>
 <translation id="3776508619697147021">Weby môžu žiadať o automatické sťahovanie viacerých súborov</translation>
@@ -3940,6 +3940,7 @@ Môže to zahŕňať informácie o nainštalovanom softvéri, súboroch, prehli
 <translation id="4110485659976215879">Obnoviť varovanie</translation>
 <translation id="4110490973560452005">Dokončilo sa sťahovanie súboru: <ph name="FILE_NAME" />. Stláčaním klávesov Shift+F6 prejdite do oblasti panela so stiahnutými súbormi.</translation>
 <translation id="4112194537011183136"><ph name="DEVICE_NAME" /> (offline)</translation>
+<translation id="411318099524508025">Prebehla inovácia na verziu <ph name="NAME" />.</translation>
 <translation id="4113743276555482284">Heslo súboru</translation>
 <translation id="4114524937989710624">Zobrazujú sa navrhované súbory, ktoré vám pomôžu ľahko sa vrátiť k poslednej nedávnej aktivite na Disku Google.
         <ph name="BREAK" />
@@ -6771,7 +6772,7 @@ Na tento účet sa môžu vzťahovať povolenia, ktoré ste už udelili webom a�
 <translation id="6476482583633999078">Rýchlosť reči</translation>
 <translation id="6477822444490674459">Synchronizácia upozornení nie je podporovaná v pracovnom profile v telefóne. <ph name="LINK_BEGIN" />Ďalšie informácie<ph name="LINK_END" /></translation>
 <translation id="6478248366783946499">Ponechať nebezpečný súbor?</translation>
-<translation id="6479881432656947268">Navštívte Internetový obchod Chrome</translation>
+<translation id="6479881432656947268">Navštíviť Internetový obchod Chrome</translation>
 <translation id="6480327114083866287">Spravuje <ph name="MANAGER" /></translation>
 <translation id="6482559668224714696">Lupa na celú obrazovku</translation>
 <translation id="6483485061007832714">Otvorenie stiahnutého súboru</translation>
@@ -8758,7 +8759,6 @@ Súbor kľúča uložte na bezpečné miesto. Budete ho potrebovať na vytvoreni
 <translation id="8077120325605624147">Všetky weby, ktoré navštívite, vám môžu zobrazovať ľubovoľné reklamy</translation>
 <translation id="8077579734294125741">Ďalšie profily Chromu</translation>
 <translation id="80798452873915119">Weby môžu žiadať o povolenie spravovať okná na všetkých obrazovkách</translation>
-<translation id="807990231167557618">Váš Chromebook bol aktualizovaný.</translation>
 <translation id="8080028325999236607">Zavrieť všetky karty</translation>
 <translation id="808089508890593134">Google</translation>
 <translation id="8081623398548615289">Reláciu spravuje <ph name="MANAGER_NAME" />. Správcovia môžu odstrániť váš profil aj sledovať vašu sieťovú premávku.</translation>

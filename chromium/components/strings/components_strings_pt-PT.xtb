@@ -171,7 +171,7 @@ Se não permitir, isto será bloqueado pelas suas definições de privacidade. I
 <translation id="1322083935398004629">Política</translation>
 <translation id="132301787627749051">Pesquisar imagem da área de transferência</translation>
 <translation id="1323433172918577554">Mostrar mais</translation>
-<translation id="132390688737681464">Guardar e preencher endereços</translation>
+<translation id="132390688737681464">Guardar e preencher moradas</translation>
 <translation id="1329916999021038454">Enviar relatório</translation>
 <translation id="1330449323196174374">Dobra simétrica à esquerda</translation>
 <translation id="1333745675627230582">Jogar Chrome Dino</translation>
@@ -643,7 +643,7 @@ Se não permitir, isto será bloqueado pelas suas definições de privacidade. I
 <translation id="2277103315734023688">Procurar para a frente</translation>
 <translation id="2277753418458118549">Mostrar detalhes da ligação</translation>
 <translation id="22792995594807632">É necessária uma revisão antes de transferir</translation>
-<translation id="2283340219607151381">Guardar e preencher endereços</translation>
+<translation id="2283340219607151381">Guardar e preencher moradas</translation>
 <translation id="2283447177162560884">"<ph name="PAGE_TITLE" />" eliminado</translation>
 <translation id="2286383991450886080">34 x 44 pol.</translation>
 <translation id="2288422996159078444">Tudo o que escreve, todas as páginas que visualiza ou quaisquer outras atividades que realiza na Web estão a ser monitorizadas. O conteúdo dos sites pode ser alterado sem o seu conhecimento.</translation>
@@ -1860,7 +1860,6 @@ Se não permitir, isto será bloqueado pelas suas definições de privacidade. I
 <translation id="4852429274334674023">Sistemas operativos</translation>
 <translation id="4854853140771946034">Crie rapidamente uma nova nota no Google Keep</translation>
 <translation id="485902285759009870">A validar o código…</translation>
-<translation id="4862630594858951805">Quer receber emails quando o preço descer?</translation>
 <translation id="4864406669374375262">String da versão copiada para a área de transferência</translation>
 <translation id="486459320933704969">O teu adulto responsável ou tutor tem de indicar que podes visitar este Website.</translation>
 <translation id="4866506163384898554">Prima |<ph name="ACCELERATOR1" />| + |<ph name="ACCELERATOR2" />| para mostrar o cursor</translation>
@@ -2748,7 +2747,6 @@ Se não permitir, isto será bloqueado pelas suas definições de privacidade. I
 <translation id="6710594484020273272">&lt;Introduzir termo de pesquisa&gt;</translation>
 <translation id="671076103358959139">Símbolo de inscrição:</translation>
 <translation id="6711464428925977395">Existe um problema com o servidor proxy ou o endereço está incorreto.</translation>
-<translation id="6716013836112872184">Receba emails em <ph name="EMAIL" /> quando o preço descer em qualquer site.</translation>
 <translation id="6716672519412350405"><ph name="URL" /> quer criar um mapa 3D do ambiente à sua volta e monitorizar a posição da câmara.</translation>
 <translation id="6718612893943028815">Quer utilizar a câmara?</translation>
 <translation id="6721164594124191969">Etiquetas (brilhante)</translation>

@@ -2156,7 +2156,6 @@
     },
     {
       name: "LayoutIgnoreMarginsForSticky",
-      status: "stable",
     },
     {
       name: "LayoutNewFixedPositionInvalidation",
@@ -2957,7 +2956,7 @@
       // When enabled, gives the option to pretty-print JSON documents to
       // cleanly format the JSON and make it readable.
       name:"PrettyPrintJSONDocument",
-      status: "stable",
+      status: "experimental",
     },
     // The RTE feature encompasses multiple APIs, including: Attribution
     // Reporting, FLEDGE, Topics and Fenced Frames.

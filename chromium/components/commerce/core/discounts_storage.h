@@ -12,8 +12,12 @@
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/memory/ptr_util.h"
+#include "base/scoped_observation.h"
 #include "components/commerce/core/commerce_types.h"
 #include "components/commerce/core/proto/discounts_db_content.pb.h"
+#include "components/history/core/browser/history_service.h"
+#include "components/history/core/browser/history_service_observer.h"
+#include "components/history/core/browser/history_types.h"
 #include "components/session_proto_db/session_proto_storage.h"
 
 namespace commerce {
@@ -22,18 +26,42 @@ using DiscountsContent = discounts_db::DiscountsContentProto;
 using DiscountsKeyAndValues =
     std::vector<SessionProtoStorage<DiscountsContent>::KeyAndValue>;
 
-class DiscountsStorage {
+extern const char kDiscountsFetchResultHistogramName[];
+
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
+enum class DiscountsFetchResult {
+  // We got info back from OptGuide.
+  kInfoFromOptGuide = 0,
+  // We found valid info in local db. This is only recorded when we don't get
+  // info back from OptGuide.
+  kValidInfoInDb = 1,
+  // We found invalid info in local db. This is only recorded when we don't get
+  // info back from OptGuide.
+  kInvalidInfoInDb = 2,
+  // We don't get info back from OptGuide and don't find any info in local db.
+  kInfoNotFound = 3,
+
+  kMaxValue = kInfoNotFound
+};
+
+class DiscountsStorage : public history::HistoryServiceObserver {
  public:
   explicit DiscountsStorage(
-      SessionProtoStorage<DiscountsContent>* discounts_proto_db);
+      SessionProtoStorage<DiscountsContent>* discounts_proto_db,
+      history::HistoryService* history_service);
   DiscountsStorage(const DiscountsStorage&) = delete;
   DiscountsStorage& operator=(const DiscountsStorage&) = delete;
-  virtual ~DiscountsStorage();
+  ~DiscountsStorage() override;
 
   virtual void HandleServerDiscounts(
       const std::vector<std::string>& urls_to_check,
       DiscountsMap server_results,
       DiscountInfoCallback callback);
+
+  // history::HistoryServiceObserver:
+  void OnURLsDeleted(history::HistoryService* history_service,
+                     const history::DeletionInfo& deletion_info) override;
 
  private:
   void SaveDiscounts(const GURL& url, const std::vector<DiscountInfo>& infos);
@@ -52,6 +80,10 @@ class DiscountsStorage {
       const DiscountsContent& proto);
 
   raw_ptr<SessionProtoStorage<DiscountsContent>> proto_db_;
+
+  base::ScopedObservation<history::HistoryService,
+                          history::HistoryServiceObserver>
+      history_service_observation_{this};
 
   base::WeakPtrFactory<DiscountsStorage> weak_ptr_factory_{this};
 };

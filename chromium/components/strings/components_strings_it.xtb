@@ -1857,7 +1857,6 @@ In caso contrario l'uso sarà bloccato dalle impostazioni sulla privacy. I conte
 <translation id="4852429274334674023">Sistemi operativi</translation>
 <translation id="4854853140771946034">Crea rapidamente una nuova nota in Google Keep</translation>
 <translation id="485902285759009870">Verifica del codice in corso…</translation>
-<translation id="4862630594858951805">Vuoi ricevere email quando il prezzo cala?</translation>
 <translation id="4864406669374375262">Stringa di versione copiata negli appunti</translation>
 <translation id="486459320933704969">Un genitore o tutore deve autorizzarti a visitare questo sito web</translation>
 <translation id="4866506163384898554">Premi |<ph name="ACCELERATOR1" />| + |<ph name="ACCELERATOR2" />| per mostrare il cursore</translation>
@@ -2744,7 +2743,6 @@ In caso contrario l'uso sarà bloccato dalle impostazioni sulla privacy. I conte
 <translation id="6710594484020273272">&lt;Digita un termine di ricerca&gt;</translation>
 <translation id="671076103358959139">Token di registrazione:</translation>
 <translation id="6711464428925977395">Si è verificato un problema con il server proxy oppure l'indirizzo non è corretto.</translation>
-<translation id="6716013836112872184">Ricevi email all'indirizzo <ph name="EMAIL" /> quando il prezzo cala su qualsiasi sito.</translation>
 <translation id="6716672519412350405"><ph name="URL" /> vorrebbe creare una mappa 3D dell'ambiente circostante e monitorare la posizione della fotocamera</translation>
 <translation id="6718612893943028815">Usare la videocamera?</translation>
 <translation id="6721164594124191969">Etichette (lucide)</translation>
@@ -2907,7 +2905,7 @@ In caso contrario l'uso sarà bloccato dalle impostazioni sulla privacy. I conte
 <translation id="705310974202322020">{NUM_CARDS,plural, =1{Al momento questa carta non può essere salvata}other{Al momento queste carte non possono essere salvate}}</translation>
 <translation id="7053983685419859001">Blocca</translation>
 <translation id="7058163556978339998"><ph name="BROWSER" /> ha verificato che <ph name="ISSUER" />ha rilasciato il certificato di questo sito web.</translation>
-<translation id="7058774143982824355">Servizio analizzatore sintattico delle password CSV</translation>
+<translation id="7058774143982824355">Servizio parser delle password CSV</translation>
 <translation id="7061777300866737982">Sicurezza e protezione della casa</translation>
 <translation id="7062635574500127092">Verde petrolio</translation>
 <translation id="706295145388601875">Aggiungi e gestisci indirizzi nelle impostazioni di Chrome</translation>

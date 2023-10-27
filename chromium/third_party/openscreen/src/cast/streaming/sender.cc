@@ -225,7 +225,7 @@ Clock::duration Sender::GetCurrentRoundTripTime() const {
 }
 
 Sender::EnqueueFrameResult Sender::EnqueueFrame(const EncodedFrame& frame) {
-  // Assume the fields of the |frame| have all been set correctly, with
+  // Assume the fields of the `frame` have all been set correctly, with
   // monotonically increasing timestamps and a valid pointer to the data.
   OSP_DCHECK_EQ(frame.frame_id, GetNextFrameId());
   OSP_DCHECK_GE(frame.referenced_frame_id, FrameId::first());
@@ -236,7 +236,7 @@ Sender::EnqueueFrameResult Sender::EnqueueFrame(const EncodedFrame& frame) {
   OSP_DCHECK(frame.data.data());
 
   // Check whether enqueuing the frame would exceed the design limit for the
-  // span of FrameIds. Even if |num_frames_in_flight_| is less than
+  // span of FrameIds. Even if `num_frames_in_flight_` is less than
   // kMaxUnackedFrames, it's the span of FrameIds that is restricted.
   if ((frame.frame_id - checkpoint_frame_id_) > kMaxUnackedFrames) {
     return REACHED_ID_SPAN_LIMIT;
@@ -310,6 +310,7 @@ void Sender::CancelInFlightData() {
     ++checkpoint_frame_id_;
     CancelPendingFrame(checkpoint_frame_id_);
   }
+  DispatchCancellations();
 }
 
 void Sender::OnReceivedRtcpPacket(Clock::time_point arrival_time,
@@ -503,7 +504,6 @@ void Sender::OnReceiverCheckpoint(FrameId frame_id,
   }
   // CompoundRtcpParser should guarantee this:
   OSP_DCHECK(playout_delay >= milliseconds::zero());
-
   while (checkpoint_frame_id_ < frame_id) {
     ++checkpoint_frame_id_;
     PendingFrameSlot* const slot = get_slot_for(checkpoint_frame_id_);
@@ -511,10 +511,11 @@ void Sender::OnReceiverCheckpoint(FrameId frame_id,
       const RtpTimeTicks rtp_timestamp = slot->frame->rtp_timestamp;
       DispatchAckEvent(config_.stream_type, rtp_timestamp, checkpoint_frame_id_,
                        *environment_);
+      CancelPendingFrame(checkpoint_frame_id_);
     }
-    CancelPendingFrame(checkpoint_frame_id_);
   }
   latest_expected_frame_id_ = std::max(latest_expected_frame_id_, frame_id);
+  DispatchCancellations();
 
   if (playout_delay != target_playout_delay_ &&
       frame_id >= playout_delay_change_at_frame_id_) {
@@ -547,6 +548,7 @@ void Sender::OnReceiverHasFrames(std::vector<FrameId> acks) {
     CancelPendingFrame(id);
   }
   latest_expected_frame_id_ = std::max(latest_expected_frame_id_, acks.back());
+  DispatchCancellations();
 }
 
 void Sender::OnReceiverIsMissingPackets(std::vector<PacketNack> nacks) {
@@ -656,7 +658,7 @@ Sender::ChosenPacketAndWhen Sender::ChooseKickstartPacket() {
   ChosenPacketAndWhen chosen;
   chosen.slot = get_slot_for(last_enqueued_frame_id_);
   // Note: This frame cannot have been canceled since
-  // |latest_expected_frame_id_| hasn't yet reached this point.
+  // `latest_expected_frame_id_` hasn't yet reached this point.
   OSP_DCHECK(chosen.slot->is_active_for_frame(last_enqueued_frame_id_));
   chosen.packet_id = chosen.slot->send_flags.size() - 1;
 
@@ -667,7 +669,7 @@ Sender::ChosenPacketAndWhen Sender::ChooseKickstartPacket() {
   OSP_DCHECK_NE(time_last_sent, SenderPacketRouter::kNever);
 
   // The desired Kickstart interval is a fraction of the total
-  // |target_playout_delay_|. The reason for the specific ratio here is based on
+  // `target_playout_delay_`. The reason for the specific ratio here is based on
   // lost knowledge (from legacy implementations); but it makes sense (i.e., to
   // be a good "network citizen") to be less aggressive for larger playout delay
   // windows, and more aggressive for shorter ones to avoid too-late packet
@@ -690,6 +692,7 @@ Sender::ChosenPacketAndWhen Sender::ChooseKickstartPacket() {
 void Sender::CancelPendingFrame(FrameId frame_id) {
   TRACE_SCOPED1(TraceCategory::kSender, "CancelPendingFrame", "frame_id",
                 frame_id.ToString());
+
   PendingFrameSlot* const slot = get_slot_for(frame_id);
   if (!slot->is_active_for_frame(frame_id)) {
     return;  // Frame was already canceled.
@@ -702,8 +705,23 @@ void Sender::CancelPendingFrame(FrameId frame_id) {
   OSP_DCHECK_GT(num_frames_in_flight_, 0);
   --num_frames_in_flight_;
   if (observer_) {
-    observer_->OnFrameCanceled(frame_id);
+    pending_cancellations_.emplace_back(frame_id);
   }
+}
+
+void Sender::DispatchCancellations() {
+  if (observer_) {
+    for (const FrameId id : pending_cancellations_) {
+      observer_->OnFrameCanceled(id);
+    }
+  }
+  pending_cancellations_.clear();
+
+  // At this point, there should either be no frames in flight, or the frame
+  // immediately after `checkpoint_frame_id_` must be valid.
+  OSP_DCHECK((num_frames_in_flight_ == 0) ||
+             get_slot_for(checkpoint_frame_id_ + 1)
+                 ->is_active_for_frame(checkpoint_frame_id_ + 1));
 }
 
 void Sender::Observer::OnFrameCanceled(FrameId frame_id) {}

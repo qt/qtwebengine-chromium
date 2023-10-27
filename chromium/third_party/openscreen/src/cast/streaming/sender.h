@@ -109,11 +109,11 @@ class Sender final : public SenderPacketRouter::Sender,
     MAX_DURATION_IN_FLIGHT,
   };
 
-  // Constructs a Sender that attaches to the given |environment|-provided
-  // resources and |packet_router|. The |config| contains the settings that were
+  // Constructs a Sender that attaches to the given `environment`-provided
+  // resources and `packet_router`. The `config` contains the settings that were
   // agreed-upon by both sides from the OFFER/ANSWER exchange (i.e., the part of
   // the overall end-to-end connection process that occurs before Cast Streaming
-  // is started). The |rtp_payload_type| does not affect the behavior of this
+  // is started). The `rtp_payload_type` does not affect the behavior of this
   // Sender. It is simply passed along to a Receiver in the RTP packet stream.
   Sender(Environment* environment,
          SenderPacketRouter* packet_router,
@@ -166,14 +166,14 @@ class Sender final : public SenderPacketRouter::Sender,
   // Clock::duration::zero() if no reports have been received yet.
   Clock::duration GetCurrentRoundTripTime() const;
 
-  // Enqueues the given |frame| for sending as soon as possible. Returns OK if
+  // Enqueues the given `frame` for sending as soon as possible. Returns OK if
   // the frame is accepted, and some time later Observer::OnFrameCanceled() will
   // be called once it is no longer in-flight.
   //
-  // All fields of the |frame| must be set to valid values: the |frame_id| must
-  // be the same as GetNextFrameId(); both the |rtp_timestamp| and
-  // |reference_time| fields must be monotonically increasing relative to the
-  // prior frame; and the frame's |data| pointer must be set.
+  // All fields of the `frame` must be set to valid values: the `frame_id` must
+  // be the same as GetNextFrameId(); both the `rtp_timestamp` and
+  // `reference_time` fields must be monotonically increasing relative to the
+  // prior frame; and the frame's `data` pointer must be set.
   [[nodiscard]] EnqueueFrameResult EnqueueFrame(const EncodedFrame& frame);
 
   // Causes all pending operations to discard data when they are processed
@@ -192,7 +192,7 @@ class Sender final : public SenderPacketRouter::Sender,
     YetAnotherBitVector send_flags;
 
     // The time when each of the packets was last sent, or
-    // |SenderPacketRouter::kNever| if the packet has not been sent yet.
+    // `SenderPacketRouter::kNever` if the packet has not been sent yet.
     // Elements are indexed by FramePacketId. This is used to avoid
     // re-transmitting any given packet too frequently.
     std::vector<Clock::time_point> packet_sent_times;
@@ -251,15 +251,20 @@ class Sender final : public SenderPacketRouter::Sender,
   ChosenPacketAndWhen ChooseKickstartPacket();
 
   // Cancels sending (or resending) the given frame once it is known to have
-  // been cancelled by the sender fully received (e.g., based on the ACK
-  // feedback from the Receiver in a RTCP packet, or the receiver checkpoint
-  // frame). This clears the corresponding entry in |pending_frames_| and
-  // notifies the Observer. NOTE: every frame_id ends up being "cancelled" at
-  // least once.
+  // been either cancelled by the sender or fully received (e.g., based on the
+  // ACK feedback from the Receiver in a RTCP packet, or the receiver checkpoint
+  // frame). This clears the corresponding entry in `pending_frames_` and
+  // adds `frame_id` to the list of pending cancellations to be dispatched as
+  // part of DispatchCancellations(). NOTE: every frame_id ends up being
+  // "cancelled" at least once.
   void CancelPendingFrame(FrameId frame_id);
 
+  // Must be called after one or a series of CancelPendingFrame() calls in order
+  // to notify the observer, if any, about cancellations.
+  void DispatchCancellations();
+
   // Inline helper to return the slot that would contain the tracking info for
-  // the given |frame_id|.
+  // the given `frame_id`.
   const PendingFrameSlot* get_slot_for(FrameId frame_id) const {
     return &pending_frames_[(frame_id - FrameId::first()) %
                             pending_frames_.size()];
@@ -285,7 +290,7 @@ class Sender final : public SenderPacketRouter::Sender,
   std::array<PendingFrameSlot, kMaxUnackedFrames> pending_frames_{};
 
   // A count of the number of frames in-flight (i.e., the number of active
-  // entries in |pending_frames_|).
+  // entries in `pending_frames_`).
   int num_frames_in_flight_ = 0;
 
   // The ID of the last frame enqueued.
@@ -319,9 +324,9 @@ class Sender final : public SenderPacketRouter::Sender,
 
   // These are used to determine whether a key frame needs to be sent to the
   // Receiver. When the Receiver provides a picture loss notification, the
-  // current checkpoint frame ID is stored in |picture_lost_at_frame_id_|. Then,
-  // while |last_enqueued_key_frame_id_| is less than or equal to
-  // |picture_lost_at_frame_id_|, the Sender knows it still needs to send a key
+  // current checkpoint frame ID is stored in `picture_lost_at_frame_id_`. Then,
+  // while `last_enqueued_key_frame_id_` is less than or equal to
+  // `picture_lost_at_frame_id_`, the Sender knows it still needs to send a key
   // frame to resolve the picture loss condition. In all other cases, the
   // Receiver is either in a good state or is in the process of receiving the
   // key frame that will make that happen.
@@ -330,6 +335,11 @@ class Sender final : public SenderPacketRouter::Sender,
 
   // The current observer (optional).
   Observer* observer_ = nullptr;
+
+  // Because the observer may take action when frames are cancelled, such as
+  // calling APIs like EnqueueFrame(), `this` must be in a good state before
+  // the observer is notified of any pending frame cancellations.
+  std::vector<FrameId> pending_cancellations_;
 };
 
 }  // namespace cast

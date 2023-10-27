@@ -322,11 +322,11 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling V8
   # and whatever else without interference from each other.
-  'v8_revision': '6751500703a4c98fa31e8a6badfe8d481f570547',
+  'v8_revision': 'c09d5baf22298ed2a7c6f9fc2f008325212ee731',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling ANGLE
   # and whatever else without interference from each other.
-  'angle_revision': 'ed583cc8c7a2da23486aeedf0e4792624f92909f',
+  'angle_revision': '05f45adc147393562b518ca1f82a3ccba7ee40f7',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling SwiftShader
   # and whatever else without interference from each other.
@@ -345,7 +345,7 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling Fuchsia sdk
   # and whatever else without interference from each other.
-  'fuchsia_version': 'version:14.20230902.2.1',
+  'fuchsia_version': 'version:14.20230831.4.45',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling google-toolbox-for-mac
   # and whatever else without interference from each other.
@@ -409,7 +409,7 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling devtools-frontend
   # and whatever else without interference from each other.
-  'devtools_frontend_revision': '5439edbe2a128595937c2b58c1b9a22b38b5a413',
+  'devtools_frontend_revision': 'bcf0ed097be848d234fb5290c1e4d69672dc5405',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling libprotobuf-mutator
   # and whatever else without interference from each other.
@@ -849,7 +849,7 @@ deps = {
 
   'src/clank': {
     'url': Var('chrome_git') + '/clank/internal/apps.git' + '@' +
-    'bd661a46a8717f135aa99b575a845d0dc5028180',
+    '256d55244f0c48892677b6707e5d08dbe680e042',
     'condition': 'checkout_android and checkout_src_internal',
   },
 
@@ -1305,7 +1305,7 @@ deps = {
     Var('chromium_git') + '/devtools/devtools-frontend' + '@' + Var('devtools_frontend_revision'),
 
   'src/third_party/devtools-frontend-internal': {
-      'url': Var('chrome_git') + '/devtools/devtools-internal.git' + '@' + '4c417178ccd4c488fe0ef2986f7cf21d85e89f7b',
+      'url': Var('chrome_git') + '/devtools/devtools-internal.git' + '@' + '653fa36a656834ea2d28ef252f5f0b48ff474e3e',
     'condition': 'checkout_src_internal',
   },
 
@@ -1633,7 +1633,7 @@ deps = {
   },
 
   'src/third_party/libvpx/source/libvpx':
-    Var('chromium_git') + '/webm/libvpx.git' + '@' +  '6da1bd01d64d3d246b633bf25c766dfe751345b7',
+    Var('chromium_git') + '/webm/libvpx.git' + '@' +  '38a707faef72eeff89d669c553e7bfe9e08dba8f',
 
   'src/third_party/libwebm/source':
     Var('chromium_git') + '/webm/libwebm.git' + '@' + 'e4fbea0c9751ae8aa86629b197a28d8276a2b0da',
@@ -1766,7 +1766,7 @@ deps = {
     Var('chromium_git') + '/external/github.com/cisco/openh264' + '@' + '09a4f3ec842a8932341b195c5b01e141c8a16eb7',
 
   'src/third_party/openscreen/src':
-    Var('chromium_git') + '/openscreen' + '@' + '91b081e995ec03894ce54eded84ebd3b45247d13',
+    Var('chromium_git') + '/openscreen' + '@' + 'fd0e81e558086c30fa91a4af89361cef8d1327e4',
 
   'src/third_party/openxr/src': {
     'url': Var('chromium_git') + '/external/github.com/KhronosGroup/OpenXR-SDK' + '@' + '58a00cf85c39ad5ec4dc43a769624e420c06179a',
@@ -1962,7 +1962,7 @@ deps = {
     Var('chromium_git') + '/external/github.com/gpuweb/cts.git' + '@' + '4c8d2f67ecd03fbd3cb4c517ef8461427b6d635d',
 
   'src/third_party/webrtc':
-    Var('webrtc_git') + '/src.git' + '@' + '597e7ba370a973f64f822aa247cb2355de7c5f47',
+    Var('webrtc_git') + '/src.git' + '@' + 'd8f2b0380b3ec980af35ce4b92ba6a211ec8c76d',
 
   # Wuffs' canonical repository is at github.com/google/wuffs, but we use
   # Skia's mirror of Wuffs, the same as in upstream Skia's DEPS file.
@@ -2096,7 +2096,7 @@ deps = {
     'packages': [
       {
         'package': 'chromeos_internal/apps/media_app/app',
-        'version': 'FSYVD4ri9cEGCRH5V6bQ8yPkyEJsJCt5FDSSsLhqJb8C',
+        'version': 'YVQ3H_4TbqHx1eNIlrREtZnp0JFGSnLY4Rl_tW0nHzYC',
       },
     ],
     'condition': 'checkout_chromeos and checkout_src_internal',
@@ -4027,7 +4027,7 @@ deps = {
   'src/ui/gl/resources/angle-metal': {
     'packages': [{
        'package': 'chromium/gpu/angle-metal-shader-libraries',
-       'version': 'aeUpC6kkTbhimw4m_7ricveccDcAXfa8H5ww_LGerdYC',
+       'version': 'yT6uBcSeF9Qjjq450WRhpY3QnE1vbNQLLJsIzoC4J1QC',
     }],
     'dep_type': 'cipd',
     'condition': 'checkout_mac or checkout_ios',
@@ -4251,7 +4251,7 @@ deps = {
 
   'src/ios_internal':  {
       'url': Var('chrome_git') + '/chrome/ios_internal.git' + '@' +
-        '5c2e60edc5b7d0a626a4224f5edce181dca7f11a',
+        '4c62f76b9d5a4d40694bbf40e9b557a4e395cb47',
       'condition': 'checkout_ios and checkout_src_internal',
   },
 

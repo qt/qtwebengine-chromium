@@ -924,6 +924,7 @@ Load, mille olete juba rakendustele andnud, võivad selle konto puhul kehtida. S
 <translation id="1723824996674794290">&amp;Uus aken</translation>
 <translation id="1724801751621173132">Sisestusrežiim</translation>
 <translation id="1725562816265788801">Vahelehtede kerimine</translation>
+<translation id="1726294682426724172">Uute funktsioonide hulka kuulub teenuses Google Photos olev Maagiline kustutuskumm, mis eemaldab segavad tegurid, täiustatud videokõnede tööriistad ja palju muud</translation>
 <translation id="1726503915437308071">Kursiiv</translation>
 <translation id="1729533290416704613">Lisaks juhib omnikastikeses otsingu tegemise lehte.</translation>
 <translation id="1730666151302379551">Unusta vana parool</translation>
@@ -3499,7 +3500,6 @@ Selle konto seadete haldamiseks installige oma seadmesse Family Link.  Saatsime 
 <translation id="3771851622616482156">Teid logitakse sellelt saidilt (sh avatud vahelehtedel) välja</translation>
 <translation id="3772046291955677288">Olen <ph name="BEGIN_LINK1" />Google'i teenusetingimused<ph name="END_LINK1" /> ning <ph name="BEGIN_LINK2" />Chrome'i ja Chrome OS-i lisateenusetingimused<ph name="END_LINK2" /> läbi lugenud ning nõustun nendega.</translation>
 <translation id="3774166835015494435">Hiljutised fotod ja märguanded</translation>
-<translation id="3774546890772201673">Seadme <ph name="NAME" /> värskendamine</translation>
 <translation id="3775432569830822555">SSL-serveri sertifikaat</translation>
 <translation id="3775705724665058594">Saatmine teie seadmetesse</translation>
 <translation id="3776508619697147021">Saidid saavad küsida luba automaatselt mitu faili alla laadida</translation>
@@ -3944,6 +3944,7 @@ See võib hõlmata teavet installitud tarkvara, failide, teie brauseri ja seadme
 <translation id="4110485659976215879">Taasta hoiatus</translation>
 <translation id="4110490973560452005">Allalaadimine on lõpule viidud: <ph name="FILE_NAME" />. Allalaadimiste riba valikute vahel vahetamiseks vajutage klahvikombinatsiooni Tõstuklahv + F6.</translation>
 <translation id="4112194537011183136"><ph name="DEVICE_NAME" /> (võrguühenduseta)</translation>
+<translation id="411318099524508025">Olete üle läinud uuemale versioonile <ph name="NAME" />.</translation>
 <translation id="4113743276555482284">Faili parool</translation>
 <translation id="4114524937989710624">Näete soovitatud faile, mis aitavad teil Google Drive'is hõlpsalt naasta hiljutiste tegevuste juurde.
         <ph name="BREAK" />
@@ -6775,7 +6776,7 @@ Load, mille olete veebisaitidele ja rakendustele juba andnud, võivad kehtida ka
 <translation id="6476482583633999078">Kõne kiirus</translation>
 <translation id="6477822444490674459">Tööprofiili kasutavate telefonide puhul märguannete sünkroonimist ei toetata. <ph name="LINK_BEGIN" />Lisateave<ph name="LINK_END" /></translation>
 <translation id="6478248366783946499">Kas soovite ohtliku faili säilitada?</translation>
-<translation id="6479881432656947268">Chrome'i veebipoodi külastamine</translation>
+<translation id="6479881432656947268">Külastage Chrome'i veebipoodi</translation>
 <translation id="6480327114083866287">Haldab <ph name="MANAGER" /></translation>
 <translation id="6482559668224714696">Täisekraani luup</translation>
 <translation id="6483485061007832714">Allalaadimise avamine</translation>
@@ -8759,7 +8760,6 @@ Hoidke oma võtmefail kindlas kohas. Teil läheb seda oma laiendi uute versiooni
 <translation id="8077120325605624147">Mis tahes külastatav sait saab teile kuvada mis tahes reklaami</translation>
 <translation id="8077579734294125741">Muud Chrome'i profiilid</translation>
 <translation id="80798452873915119">Saidid võivad küsida luba kõikidel teie ekraanidel akende haldamiseks</translation>
-<translation id="807990231167557618">Teie Chromebook on värskendatud.</translation>
 <translation id="8080028325999236607">Sule kõik vahelehed</translation>
 <translation id="808089508890593134">Google</translation>
 <translation id="8081623398548615289">Teie seanssi haldab <ph name="MANAGER_NAME" />. Administraatorid saavad teie profiili kustutada ning ka teie võrguliiklust jälgida.</translation>
@@ -10160,7 +10160,7 @@ Load, mille olete veebisaitidele ja rakendustele juba andnud, võivad kehtida ka
 <translation id="9214695392875603905">Keeks</translation>
 <translation id="9215293857209265904">Lisati „<ph name="EXTENSION_NAME" />”</translation>
 <translation id="9215742531438648683">Google Play poe desinstallimine</translation>
-<translation id="9218430445555521422">Seadista vaikebrauseriks</translation>
+<translation id="9218430445555521422">Määra vaikeseadeks</translation>
 <translation id="9218842937876577955"><ph name="APP_NAME" /> (rakendust ei toetata)</translation>
 <translation id="9219582468404818260">Aidake meil luua parem veeb</translation>
 <translation id="9219741625496141320">Sirvimisandmed kustutati automaatselt</translation>

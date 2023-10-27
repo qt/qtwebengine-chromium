@@ -23,6 +23,7 @@
 #include "components/bookmarks/browser/bookmark_utils.h"
 #include "components/commerce/core/bookmark_update_manager.h"
 #include "components/commerce/core/commerce_feature_list.h"
+#include "components/commerce/core/commerce_utils.h"
 #include "components/commerce/core/discounts_storage.h"
 #include "components/commerce/core/metrics/metrics_utils.h"
 #include "components/commerce/core/metrics/scheduled_metrics_manager.h"
@@ -120,7 +121,8 @@ ShoppingService::ShoppingService(
         subscription_proto_db,
     power_bookmarks::PowerBookmarkService* power_bookmark_service,
     SessionProtoStorage<discounts_db::DiscountsContentProto>*
-        discounts_proto_db)
+        discounts_proto_db,
+    history::HistoryService* history_service)
     : country_on_startup_(country_on_startup),
       locale_on_startup_(locale_on_startup),
       opt_guide_(opt_guide),
@@ -198,8 +200,9 @@ ShoppingService::ShoppingService(
         std::make_unique<metrics::ScheduledMetricsManager>(pref_service_, this);
   }
 
-  if (IsDiscountInfoApiEnabled() && discounts_proto_db) {
-    discounts_storage_ = std::make_unique<DiscountsStorage>(discounts_proto_db);
+  if (IsDiscountInfoApiEnabled() && discounts_proto_db && history_service) {
+    discounts_storage_ =
+        std::make_unique<DiscountsStorage>(discounts_proto_db, history_service);
   }
 }
 
@@ -1233,6 +1236,8 @@ void ShoppingService::OnGetAllDiscountsFromOptGuide(
   for (auto res : results) {
     if (res.second.size() > 0) {
       map.insert(res);
+      base::UmaHistogramEnumeration(kDiscountsFetchResultHistogramName,
+                                    DiscountsFetchResult::kInfoFromOptGuide);
     } else {
       urls_to_check_in_db.push_back(res.first.spec());
     }

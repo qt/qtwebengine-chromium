@@ -932,6 +932,7 @@ Các quyền bạn từng cấp cho ứng dụng có thể áp dụng cho cả t
 <translation id="1723824996674794290">Cửa sổ &amp;Mới</translation>
 <translation id="1724801751621173132">Chế độ nhập</translation>
 <translation id="1725562816265788801">Cuộn thẻ</translation>
+<translation id="1726294682426724172">Các tính năng mới bao gồm Bút tẩy thần kỳ trên Google Photos (giúp bạn loại bỏ những điểm mà bạn chưa hài lòng), công cụ gọi video hiệu quả hơn và nhiều tính năng khác</translation>
 <translation id="1726503915437308071">Phông chữ nghiêng</translation>
 <translation id="1729533290416704613">Tiện ích này cũng điều khiển trang nào được hiển thị khi bạn tìm kiếm từ Thanh địa chỉ.</translation>
 <translation id="1730666151302379551">Quên mật khẩu cũ</translation>
@@ -3508,7 +3509,6 @@ Bạn có thể quản lý các tùy chọn cài đặt của tài khoản này 
 <translation id="3771851622616482156">Bạn sẽ bị đăng xuất khỏi trang web này, kể cả ở các thẻ đang mở</translation>
 <translation id="3772046291955677288">Tôi đã đọc và đồng ý với <ph name="BEGIN_LINK1" />Điều khoản dịch vụ của Google<ph name="END_LINK1" /> và <ph name="BEGIN_LINK2" />Điều khoản dịch vụ bổ sung của Google Chrome và Chrome OS<ph name="END_LINK2" />.</translation>
 <translation id="3774166835015494435">Thông báo và ảnh mới đây</translation>
-<translation id="3774546890772201673">Cập nhật <ph name="NAME" />.</translation>
 <translation id="3775432569830822555">Chứng chỉ Máy chủ SSL</translation>
 <translation id="3775705724665058594">Gửi đến thiết bị của bạn</translation>
 <translation id="3776508619697147021">Các trang web có thể yêu cầu tự động tải nhiều tệp xuống</translation>
@@ -3953,6 +3953,7 @@ Thông tin này có thể bao gồm thông tin về phần mềm đã cài đặ
 <translation id="4110485659976215879">Khôi phục cảnh báo</translation>
 <translation id="4110490973560452005">Đã tải xuống xong: <ph name="FILE_NAME" />. Nhấn tổ hợp phím Shift + F6 để chuyển tới khu vực thanh Tệp đã tải xuống.</translation>
 <translation id="4112194537011183136"><ph name="DEVICE_NAME" /> (không kết nối Internet)</translation>
+<translation id="411318099524508025">Bạn đã nâng cấp lên <ph name="NAME" />.</translation>
 <translation id="4113743276555482284">Mật khẩu của tệp</translation>
 <translation id="4114524937989710624">Bạn đang xem những tệp được đề xuất để giúp bạn dễ dàng trở lại hoạt động gần đây nhất của mình trong Google Drive.
         <ph name="BREAK" />
@@ -6411,7 +6412,7 @@ Các quyền bạn từng cấp cho trang web và ứng dụng có thể áp d�
 <translation id="615930144153753547">Các trang web có thể hiện hình ảnh</translation>
 <translation id="6160625263637492097">Cung cấp chứng chỉ để xác thực</translation>
 <translation id="6163363155248589649">Thườ&amp;ng</translation>
-<translation id="6163376401832887457">Cài đặt tài khoản Kerberos</translation>
+<translation id="6163376401832887457">Cài đặt Kerberos</translation>
 <translation id="6163522313638838258">Mở rộng tất cả...</translation>
 <translation id="6164393601566177235">Thêm trang web</translation>
 <translation id="6164832038898943453">Thêm ngôn ngữ cần tự động dịch</translation>
@@ -7632,7 +7633,7 @@ Bạn còn # mật khẩu bị lộ nữa. Trình quản lý mật khẩu của 
 <translation id="718427252411067142">Để ngăn người khác sử dụng mật khẩu của bạn, hãy mở ứng dụng để đổi mật khẩu</translation>
 <translation id="7186088072322679094">Giữ trong thanh công cụ</translation>
 <translation id="7186303001964993981"><ph name="ORIGIN" /> không thể mở thư mục này vì thư mục này chứa tệp hệ thống</translation>
-<translation id="7188508872042490670">Dữ liệu trang web</translation>
+<translation id="7188508872042490670">Dữ liệu trang web trên thiết bị</translation>
 <translation id="7189234443051076392">Hãy đảm bảo thiết bị của bạn có đủ dung lượng</translation>
 <translation id="7189451821249468368">Bạn không có đủ bản nâng cấp để đăng ký thiết bị này. Vui lòng liên hệ với bộ phận bán hàng để mua thêm. Nếu bạn nhận được thư này do nhầm lẫn, vui lòng liên hệ với nhóm hỗ trợ.</translation>
 <translation id="7189965711416741966">Đã thêm vân tay.</translation>
@@ -8769,7 +8770,6 @@ Giữ tệp khóa của bạn ở nơi an toàn. Bạn sẽ cần tệp khóa đ
 <translation id="8077120325605624147">Mọi trang web bạn truy cập đều có thể hiện quảng cáo cho bạn</translation>
 <translation id="8077579734294125741">Các hồ sơ khác trên Chrome</translation>
 <translation id="80798452873915119">Các trang web có thể yêu cầu quản lý các cửa sổ trên tất cả màn hình của bạn</translation>
-<translation id="807990231167557618">Chromebook của bạn đã được cập nhật.</translation>
 <translation id="8080028325999236607">Đóng tất cả các thẻ</translation>
 <translation id="808089508890593134">Google</translation>
 <translation id="8081623398548615289">Phiên của bạn chịu sự quản lý của <ph name="MANAGER_NAME" />. Quản trị viên có thể xoá hồ sơ của bạn cũng như giám sát lưu lượng truy cập mạng của bạn.</translation>

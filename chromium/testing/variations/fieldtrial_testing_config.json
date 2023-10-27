@@ -410,6 +410,21 @@
             ]
         }
     ],
+    "AndroidNoVisibleHintForTablets": [
+        {
+            "platforms": [
+                "android"
+            ],
+            "experiments": [
+                {
+                    "name": "Enabled",
+                    "enable_features": [
+                        "AndroidNoVisibleHintForTablets"
+                    ]
+                }
+            ]
+        }
+    ],
     "AndroidOmniboxPerf": [
         {
             "platforms": [
@@ -6183,7 +6198,7 @@
             ]
         }
     ],
-    "ExtensionTelemetryDisableOffstoreExtensionStudy": [
+    "ExtensionTelemetryDisableOffstoreExtensionsStudy": [
         {
             "platforms": [
                 "chromeos",
@@ -6196,7 +6211,7 @@
                 {
                     "name": "Enabled",
                     "enable_features": [
-                        "SafeBrowsingExtensionTelemetryDisableOffstoreExtension"
+                        "SafeBrowsingExtensionTelemetryDisableOffstoreExtensions"
                     ]
                 }
             ]
@@ -13868,6 +13883,27 @@
             ]
         }
     ],
+    "SafeBrowsingSkipSubresources": [
+        {
+            "platforms": [
+                "android",
+                "chromeos",
+                "chromeos_lacros",
+                "ios",
+                "linux",
+                "mac",
+                "windows"
+            ],
+            "experiments": [
+                {
+                    "name": "Enabled",
+                    "enable_features": [
+                        "SafeBrowsingSkipSubresources"
+                    ]
+                }
+            ]
+        }
+    ],
     "SafetyCheckNotificationPermissions": [
         {
             "platforms": [
@@ -16056,7 +16092,7 @@
             ]
         }
     ],
-    "ThreadPoolCap": [
+    "ThreadPoolCap2": [
         {
             "platforms": [
                 "android",
@@ -16070,12 +16106,12 @@
             ],
             "experiments": [
                 {
-                    "name": "EnabledWithRestricted2_20230515",
+                    "name": "EnabledWithRestricted3_20230907",
                     "params": {
-                        "restricted_count": "2"
+                        "restricted_count": "3"
                     },
                     "enable_features": [
-                        "ThreadPoolCap"
+                        "ThreadPoolCap2"
                     ]
                 }
             ]
