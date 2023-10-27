@@ -70,7 +70,7 @@
 <translation id="1054048317165655285">Completa la configuració al telèfon</translation>
 <translation id="1054153489933238809">Obre la &amp;imatge original en una pestanya nova</translation>
 <translation id="1055274863771110134">{NUM_WEEKS,plural, =1{Actualitza el dispositiu <ph name="DEVICE_TYPE" /> en un termini d'1 setmana}other{Actualitza el dispositiu <ph name="DEVICE_TYPE" /> en un termini de {NUM_WEEKS} setmanes}}</translation>
-<translation id="1056398434290692818">Navega enrere i endavant amb el gest de lliscar</translation>
+<translation id="1056398434290692818">Navega endarrere i endavant amb el gest de lliscar</translation>
 <translation id="1056898198331236512">Advertiment</translation>
 <translation id="1056980582064308040">En canviar la configuració, es reiniciarà el punt d'accés Wi‐Fi. Els dispositius que utilitzen el punt d'accés Wi‐Fi es desconnectaran.</translation>
 <translation id="1058262162121953039">PUK</translation>
@@ -2768,7 +2768,7 @@ Pots gestionar la configuració d'aquest compte instal·lant l'aplicació Family
 <translation id="3169930038976362151">Tria el tema que s'adapti a les teves necessitats. Per canviar el tema, el fons de pantalla, l'estalvi de pantalla i més, mantén premut l'escriptori.</translation>
 <translation id="3170072451822350649">També podeu <ph name="LINK_START" />navegar com a convidat<ph name="LINK_END" /> sense iniciar sessió.</translation>
 <translation id="31774765611822736">Pestanya nova a l'esquerra</translation>
-<translation id="3177689682958561933">Activa per navegar cap endavant i cap enrere</translation>
+<translation id="3177689682958561933">Activa per navegar endavant i endarrere</translation>
 <translation id="3177909033752230686">Idioma de la pàgina:</translation>
 <translation id="3177914167275935955">El teu dispositiu inclou una Llicència de Chrome Education, però el teu nom d'usuari no està associat a cap compte de Google for Education. Ves a g.co/workspace/edusignup des d'un dispositiu secundari i crea un compte de Google for Education.</translation>
 <translation id="3179982752812949580">Tipus de lletra del text</translation>
@@ -3937,7 +3937,6 @@ que pot incloure dades del programari instal·lat, de fitxers, del navegador i d
 <translation id="4110485659976215879">Restaura l'advertiment</translation>
 <translation id="4110490973560452005">S'ha completat la baixada: <ph name="FILE_NAME" />. Prem Maj+F6 per anar a l'àrea de la barra de baixades.</translation>
 <translation id="4112194537011183136"><ph name="DEVICE_NAME" /> (sense connexió)</translation>
-<translation id="411318099524508025">Se t'ha actualitzat a <ph name="NAME" />.</translation>
 <translation id="4113743276555482284">Contrasenya del fitxer</translation>
 <translation id="4114524937989710624">Veus suggeriments de fitxers per ajudar-te a trobar fàcilment la teva activitat més recent a Google Drive.
         <ph name="BREAK" />
@@ -9057,6 +9056,7 @@ Deseu el fitxer de clau en una ubicació segura. El necessitareu per crear versi
 <translation id="8324784016256120271">Els llocs web poden fer servir galetes per veure la teva activitat de navegació en diferents llocs web, per exemple, per personalitzar els anuncis</translation>
 <translation id="8325413836429495820">Sense permís per veure el porta-retalls</translation>
 <translation id="8326478304147373412">PKCS #7, cadena de certificats</translation>
+<translation id="832684045355488000">Se t'ha actualitzat a <ph name="NAME" /></translation>
 <translation id="8327386430364625757">Font matemàtica</translation>
 <translation id="8327538105740918488">Pots canviar aquesta contrasenya més endavant. Es desarà al <ph name="GOOGLE_PASSWORD_MANAGER" /> per a <ph name="EMAIL" />.</translation>
 <translation id="8327676037044516220">Configuració dels permisos i del contingut</translation>

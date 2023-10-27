@@ -3935,7 +3935,6 @@
 <translation id="4110485659976215879">Ескертуді қалпына келтіру</translation>
 <translation id="4110490973560452005">Жүктеп алу аяқталды: <ph name="FILE_NAME" />. Жүктеп алынғандар жолағы аумағына оралу үшін Shift+F6 пернелерін басыңыз.</translation>
 <translation id="4112194537011183136"><ph name="DEVICE_NAME" /> (офлайн)</translation>
-<translation id="411318099524508025"><ph name="NAME" /> нұсқасына жаңарттыңыз.</translation>
 <translation id="4113743276555482284">Файл құпия сөзі</translation>
 <translation id="4114524937989710624">Google Drive қызметіндегі соңғы іс-әрекеттерге оңай оралуға көмектесетін файлдарды көріп тұрсыз.
         <ph name="BREAK" />
@@ -4167,7 +4166,7 @@
 <translation id="431076611119798497">&amp;Мәліметтер</translation>
 <translation id="4311284648179069796">Оқып, өзгерту рұқсаты жоқ</translation>
 <translation id="4312701113286993760">{COUNT,plural, =1{1 Google аккаунты}other{<ph name="EXTRA_ACCOUNTS" /> Google аккаунты}}</translation>
-<translation id="4312866146174492540">Бөгеу (әдепкі)</translation>
+<translation id="4312866146174492540">Блоктау (әдепкі)</translation>
 <translation id="4314497418046265427">Телефонды <ph name="DEVICE_TYPE" /> құрылғысына жалғап, жұмыс өнімділігін арттырыңыз</translation>
 <translation id="4314815835985389558">Синхрондауды басқару</translation>
 <translation id="4316850752623536204">Әзірлеуші веб-сайты</translation>
@@ -7473,7 +7472,7 @@
 <translation id="7050037487872780845">Хотспот конфигурациясы жарамсыз</translation>
 <translation id="7051551856857948729">IBAN мәнін жасыру</translation>
 <translation id="7052237160939977163">Өнімділікті бақылау деректерін жіберу</translation>
-<translation id="7053983685419859001">Бөгеу</translation>
+<translation id="7053983685419859001">Блоктау</translation>
 <translation id="7055152154916055070">Бағыттау функциясына тыйым салынды.</translation>
 <translation id="7055451306017383754">Бөлісуден бас тарту мүмкін емес, себебі бұл қалтаны қолданба пайдаланып жатыр. Parallels Desktop өшкен соң ғана, қалтаны бөлісуден бас тартылады.</translation>
 <translation id="7056418393177503237">{0,plural, =1{Инкогнито}other{# инкогнито терезесі ашық}}</translation>
@@ -9049,6 +9048,7 @@
 <translation id="8324784016256120271">Сайттар, мысалы, жарнамаларды жекелендіру үшін түрлі сайттарда браузерді пайдалану мәліметіңізді көру үшін cookie файлдарын пайдалана алады.</translation>
 <translation id="8325413836429495820">Буфердегі контентті көруге рұқсаты жоқтар</translation>
 <translation id="8326478304147373412">PKCS #7, сертификаттар тізбегі</translation>
+<translation id="832684045355488000"><ph name="NAME" /> нұсқасына жаңарттыңыз</translation>
 <translation id="8327386430364625757">Математикалық қаріп</translation>
 <translation id="8327538105740918488">Бұл құпия сөзді кез келген уақытта өзгерте аласыз. <ph name="EMAIL" /> аккаунты үшін ол мына жерде сақталады: <ph name="GOOGLE_PASSWORD_MANAGER" />.</translation>
 <translation id="8327676037044516220">Рұқсаттар және контент параметрлері</translation>

@@ -631,6 +631,18 @@ void AXObject::SetAncestorsHaveDirtyDescendants() const {
     return;
   }
 
+  if (AXObjectCache().EntireDocumentIsDirty()) {
+    // No need to walk parent chain when marking the entire document dirty,
+    // as every node will have the bit set. In addition, attempting to repair
+    // the parent chain while marking everything dirty is actually against
+    // the point, because all child-parent relationships will be rebuilt
+    // from the top down.
+    if (LastKnownIsIncludedInTreeValue()) {
+      SetHasDirtyDescendants(true);
+    }
+    return;
+  }
+
   const AXObject* ancestor = this;
   bool can_repair_parents = AXObjectCache().IsProcessingDeferredEvents();
 
@@ -5620,8 +5632,12 @@ Element* AXObject::GetClosestElement() const {
   if (!element) {
     for (AXObject* parent = ParentObject(); parent;
          parent = parent->ParentObject()) {
-      if (parent) {
-        return parent->GetElement();
+      // It's possible to have a parent without a node here if the parent is a
+      // pseudo element descendant. Since we're looking for the nearest element,
+      // keep going up the ancestor chain until we find a parent that has one.
+      element = parent->GetElement();
+      if (element) {
+        return element;
       }
     }
   }
@@ -6518,6 +6534,9 @@ bool AXObject::PerformAction(const ui::AXActionData& action_data) {
   Node* node = GetNode();
   if (!node) {
     node = GetClosestElement();
+    if (!node) {
+      return false;
+    }
   }
 
   // In most cases, UpdateAllLifecyclePhasesExceptPaint() is enough, but if
@@ -6703,6 +6722,9 @@ bool AXObject::RequestScrollToMakeVisibleWithSubFocusAction(
   Node* node = GetNode();
   if (!node) {
     node = GetClosestElement();
+    if (!node) {
+      return false;
+    }
   }
 
   // In most cases, UpdateAllLifecyclePhasesExceptPaint() is enough, but if

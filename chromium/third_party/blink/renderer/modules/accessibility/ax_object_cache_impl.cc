@@ -1010,6 +1010,10 @@ void AXObjectCacheImpl::Invalidate(Document& document, AXID ax_id) {
 }
 
 AXID AXObjectCacheImpl::GetAXID(Node* node) {
+  AXID existing_axid = GetExistingAXID(node);
+  if (existing_axid != ui::AXNodeData::kInvalidAXID) {
+    return existing_axid;
+  }
   UpdateAXForAllDocuments();
   return GetExistingAXID(node);
 }
@@ -2681,6 +2685,8 @@ void AXObjectCacheImpl::ProcessDeferredAccessibilityEvents(Document& document) {
   }
 #endif
 
+  mark_all_dirty_ = false;
+
   // Build out tree, such that each node has computed its children.
   if (RuntimeEnabledFeatures::AccessibilityEagerAXTreeUpdateEnabled()) {
     UpdateTreeIfNeeded();
@@ -4216,15 +4222,6 @@ void AXObjectCacheImpl::MarkAXSubtreeDirty(AXObject* obj) {
 void AXObjectCacheImpl::MarkDocumentDirty() {
   CHECK(!IsFrozen());
   mark_all_dirty_ = true;
-  // Assume all nodes in the tree need to recompute their properties.
-  // Note that objects can remain in the tree without being re-created.
-  // However, they will be dropped if they are no longer needed as the tree
-  // structure is rebuilt from the top down.
-  for (auto& entry : objects_) {
-    AXObject* object = entry.value;
-    DCHECK(!object->IsDetached());
-    object->InvalidateCachedValues();
-  }
 
   ScheduleAXUpdate();
 }
@@ -4234,7 +4231,16 @@ void AXObjectCacheImpl::MarkDocumentDirtyWithCleanLayout() {
   // but will not create new AXObjects, which avoids resetting the user's
   // position in the content.
   DCHECK(mark_all_dirty_);
-  mark_all_dirty_ = false;
+
+  // Assume all nodes in the tree need to recompute their properties.
+  // Note that objects can remain in the tree without being re-created.
+  // However, they will be dropped if they are no longer needed as the tree
+  // structure is rebuilt from the top down.
+  for (auto& entry : objects_) {
+    AXObject* object = entry.value;
+    DCHECK(!object->IsDetached());
+    object->InvalidateCachedValues();
+  }
 
   // Don't keep previous parent-child relationships.
   // This loop operates on a copy of values in the objects_ map, because some

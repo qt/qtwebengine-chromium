@@ -2917,7 +2917,7 @@ Bạn có thể quản lý các tùy chọn cài đặt của tài khoản này 
 <translation id="3288047731229977326">Tiện ích chạy ở chế độ nhà phát triển có thể gây hại cho máy tính của bạn. Nếu bạn không phải là nhà phát triển, bạn nên vô hiệu hóa các tiện ích này chạy trong chế độ nhà phát triển để giữ an toàn.</translation>
 <translation id="3289668031376215426">Tự động viết hoa</translation>
 <translation id="3289856944988573801">Để kiểm tra các cập nhật, hãy sử dụng kết nối Ethernet hoặc Wi-Fi.</translation>
-<translation id="3289886661311231677">Bạn có thể chặn những chủ đề mà bạn không muốn chia sẻ với trang web. Chrome cũng tự động xoá những chủ đề đã tồn tại hơn 4 tuần.</translation>
+<translation id="3289886661311231677">Bạn có thể chặn những chủ đề bạn không muốn chia sẻ với trang web. Chrome cũng tự động xoá xoá khỏi danh sách những chủ đề đã hơn 4 tuần bạn không truy cập.</translation>
 <translation id="3290249595466894471">Đồng thời gửi một mẫu nhỏ dữ liệu hoạt động trên các trang, tệp đã tải xuống, tiện ích và thông tin hệ thống để giúp phát hiện các mối đe dọa mới</translation>
 <translation id="3293181007446299124">Nhật ký duyệt web của bạn được bảo mật trên thiết bị của bạn. Các báo cáo gửi đi sẽ được trì hoãn để bảo vệ danh tính của bạn</translation>
 <translation id="3293644607209440645">Gửi trang này</translation>
@@ -3492,7 +3492,7 @@ Bạn có thể quản lý các tùy chọn cài đặt của tài khoản này 
 <translation id="37613671848467444">Mở trong &amp;Cửa sổ ẩn danh</translation>
 <translation id="3761390540041101668">Cung cấp thông tin mô tả rõ ràng về vấn đề và các bước giúp tái hiện vấn đề (nếu được)</translation>
 <translation id="3761556954875533505">Cho phép trang web chỉnh sửa các tệp?</translation>
-<translation id="3763433740586298940">Bạn có thể chặn những trang web mà bạn không muốn. Chrome cũng tự động xoá khỏi danh sách các trang web mà đã hơn 30 ngày bạn không truy cập.</translation>
+<translation id="3763433740586298940">Bạn có thể chặn những trang web bạn không muốn. Chrome cũng tự động xoá khỏi danh sách những trang web đã hơn 30 ngày bạn không truy cập.</translation>
 <translation id="3763549179847864476">Nút quay lại trên Hướng dẫn về quyền riêng tư</translation>
 <translation id="3764314093345384080">Thông tin bản dựng chi tiết</translation>
 <translation id="3764583730281406327">{NUM_DEVICES,plural, =1{Kết nối với một thiết bị USB}other{Kết nối với # thiết bị USB}}</translation>
@@ -3953,7 +3953,6 @@ Thông tin này có thể bao gồm thông tin về phần mềm đã cài đặ
 <translation id="4110485659976215879">Khôi phục cảnh báo</translation>
 <translation id="4110490973560452005">Đã tải xuống xong: <ph name="FILE_NAME" />. Nhấn tổ hợp phím Shift + F6 để chuyển tới khu vực thanh Tệp đã tải xuống.</translation>
 <translation id="4112194537011183136"><ph name="DEVICE_NAME" /> (không kết nối Internet)</translation>
-<translation id="411318099524508025">Bạn đã nâng cấp lên <ph name="NAME" />.</translation>
 <translation id="4113743276555482284">Mật khẩu của tệp</translation>
 <translation id="4114524937989710624">Bạn đang xem những tệp được đề xuất để giúp bạn dễ dàng trở lại hoạt động gần đây nhất của mình trong Google Drive.
         <ph name="BREAK" />
@@ -9074,6 +9073,7 @@ Giữ tệp khóa của bạn ở nơi an toàn. Bạn sẽ cần tệp khóa đ
 <translation id="8324784016256120271">Các trang web có thể dùng cookie để giám sát hoạt động duyệt web của bạn trên nhiều trang web, chẳng hạn để điều chỉnh quảng cáo cho phù hợp với bạn</translation>
 <translation id="8325413836429495820">Không được phép xem bảng nhớ tạm của bạn</translation>
 <translation id="8326478304147373412">PKCS #7, chuỗi chứng chỉ</translation>
+<translation id="832684045355488000">Bạn đã nâng cấp lên <ph name="NAME" /></translation>
 <translation id="8327386430364625757">Phông chữ toán học</translation>
 <translation id="8327538105740918488">Bạn có thể thay đổi mật khẩu này bất cứ lúc nào về sau. Mật khẩu này sẽ được lưu vào <ph name="GOOGLE_PASSWORD_MANAGER" /> cho <ph name="EMAIL" />.</translation>
 <translation id="8327676037044516220">Các chế độ cài đặt nội dung và quyền</translation>
@@ -9667,7 +9667,7 @@ Giữ tệp khóa của bạn ở nơi an toàn. Bạn sẽ cần tệp khóa đ
 <translation id="8811923271770626905">Tiện ích này có thể chạy ở chế độ nền</translation>
 <translation id="8812593354822910461">Xóa cả dữ liệu duyệt web (<ph name="URL" />), việc này sẽ khiến bạn bị đăng xuất khỏi <ph name="DOMAIN" />. <ph name="LEARN_MORE" /></translation>
 <translation id="8813698869395535039">Không thể đăng nhập vào <ph name="USERNAME" /></translation>
-<translation id="8813872945700551674">Yêu cầu cha mẹ phê duyệt "<ph name="EXTENSION_NAME" />"</translation>
+<translation id="8813872945700551674">Yêu cầu cha mẹ phê duyệt tiện ích "<ph name="EXTENSION_NAME" />"</translation>
 <translation id="8813937837706331325">Mức tiết kiệm trung bình</translation>
 <translation id="8814190375133053267">Wi-Fi</translation>
 <translation id="8814319344131658221">Các ngôn ngữ hỗ trợ tính năng kiểm tra lỗi chính tả sẽ dựa trên các tùy chọn ngôn ngữ của bạn</translation>
@@ -9894,7 +9894,7 @@ Các quyền bạn từng cấp cho trang web và ứng dụng có thể áp d�
 <translation id="8991766915726096402">Khôi phục dữ liệu cục bộ</translation>
 <translation id="8992671062738341478"><ph name="WINDOW_TITLE" /> – Mức sử dụng bộ nhớ – <ph name="MEMORY_VALUE" /></translation>
 <translation id="8993059306046735527">Nếu quên mật khẩu vào <ph name="DEVICE_TYPE" />, bạn vẫn có thể khôi phục dữ liệu trên thiết bị của mình. Bạn sẽ cần đăng nhập vào Tài khoản Google hoặc sử dụng tính năng khôi phục tài khoản.</translation>
-<translation id="8993737615451556423">Cung cấp các tùy chọn điều khiển để tăng, giảm tốc độ và tạm dừng giọng đọc</translation>
+<translation id="8993737615451556423">Cung cấp các thao tác điều khiển để tăng, giảm tốc độ và tạm dừng giọng đọc</translation>
 <translation id="899384117894244799">Xóa người dùng bị hạn chế</translation>
 <translation id="8993945059918628059">Dùng ngón tay chạm vào cảm biến vân tay. Dữ liệu vân tay được lưu trữ an toàn và chỉ có trên <ph name="DEVICE_TYPE" /> của bạn.</translation>
 <translation id="899403249577094719">URL Cơ sở Chứng chỉ Netscape</translation>

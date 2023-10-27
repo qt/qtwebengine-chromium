@@ -37,8 +37,9 @@ Symbol SymbolTable::Register(std::string_view name) {
 }
 
 Symbol SymbolTable::RegisterInternal(std::string_view name) {
-    char* name_mem = name_allocator_.Allocate(name.length() + 1);
+    char* name_mem = Bitcast<char*>(name_allocator_.Allocate(name.length() + 1));
     if (name_mem == nullptr) {
+        TINT_ICE() << "failed to allocate memory for symbol's string";
         return Symbol();
     }
 
