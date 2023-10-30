@@ -1025,13 +1025,13 @@ BASE_FEATURE(kProcessPerSiteUpToMainFrameThreshold,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Specifies the threshold for `kProcessPerSiteUpToMainFrameThreshold` feature.
-constexpr base::FeatureParam<int> kProcessPerSiteMainFrameThreshold{
+const base::FeatureParam<int> kProcessPerSiteMainFrameThreshold{
     &kProcessPerSiteUpToMainFrameThreshold, "ProcessPerSiteMainFrameThreshold",
     2};
 
 // Allows process reuse for localhost and IP based hosts when
 // `kProcessPerSiteUpToMainFrameThreshold` is enabled.
-constexpr base::FeatureParam<bool> kProcessPerSiteMainFrameAllowIPAndLocalhost{
+const base::FeatureParam<bool> kProcessPerSiteMainFrameAllowIPAndLocalhost{
     &kProcessPerSiteUpToMainFrameThreshold,
     "ProcessPerSiteMainFrameAllowIPAndLocalhost", false};
 
@@ -1039,7 +1039,7 @@ constexpr base::FeatureParam<bool> kProcessPerSiteMainFrameAllowIPAndLocalhost{
 // even when DevTools was ever attached. This allows developers to test the
 // process sharing mode, since DevTools normally disables it for the field
 // trial participants.
-constexpr base::FeatureParam<bool>
+const base::FeatureParam<bool>
     kProcessPerSiteMainFrameAllowDevToolsAttached{
         &kProcessPerSiteUpToMainFrameThreshold,
         "ProcessPerSiteMainFrameAllowDevToolsAttached", false};
