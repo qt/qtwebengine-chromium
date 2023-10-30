@@ -160,16 +160,21 @@ void StatisticsAnalyzer::RecordFrameLatencies(const FrameEvent frame_event) {
     return;
   }
 
+  // Event is too old, don't bother.
+  const bool map_is_full = frame_infos->size() == kMaxRecentFrameInfoMapSize;
+  if (map_is_full && frame_event.rtp_timestamp <= frame_infos->begin()->first) {
+    return;
+  }
+
   auto it = frame_infos->find(frame_event.rtp_timestamp);
   if (it == frame_infos->end()) {
+    if (map_is_full) {
+      frame_infos->erase(frame_infos->begin());
+    }
     auto emplace_result =
         frame_infos->emplace(frame_event.rtp_timestamp, FrameInfo{});
     OSP_CHECK(emplace_result.second);
     it = emplace_result.first;
-
-    if (frame_infos->size() >= kMaxRecentFrameInfoMapSize) {
-      frame_infos->erase(frame_infos->begin());
-    }
   }
 
   switch (frame_event.type) {
