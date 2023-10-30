@@ -637,6 +637,7 @@ bool D3DImageBacking::ReadbackToMemory(const std::vector<SkPixmap>& pixmaps) {
 WGPUTextureUsageFlags D3DImageBacking::GetAllowedDawnUsages(
     WGPUDevice device,
     const WGPUTextureFormat wgpu_format) const {
+#if BUILDFLAG(USE_DAWN)
   // TODO(crbug.com/2709243): Figure out other SI flags, if any.
   const WGPUTextureUsageFlags kBasicUsage =
       WGPUTextureUsage_CopySrc | WGPUTextureUsage_CopyDst |
@@ -675,6 +676,9 @@ WGPUTextureUsageFlags D3DImageBacking::GetAllowedDawnUsages(
     default:
       return WGPUTextureUsage_None;
   }
+#else
+  return WGPUTextureUsage_None;
+#endif  // BUILDFLAG(USE_DAWN)
 }
 
 std::unique_ptr<DawnImageRepresentation> D3DImageBacking::ProduceDawn(
