@@ -51,7 +51,9 @@
 #endif
 
 #if BUILDFLAG(IS_OZONE)
+#if BUILDFLAG(ENABLE_VULKAN)
 #include "gpu/vulkan/drm_modifiers_filter_vulkan.h"
+#endif
 #include "ui/ozone/public/drm_modifiers_filter.h"
 #include "ui/ozone/public/ozone_platform.h"
 #include "ui/ozone/public/surface_factory_ozone.h"
