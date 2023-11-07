@@ -7,6 +7,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/feature_list.h"
+#include "content/common/content_export.h"
 
 namespace content {
 
