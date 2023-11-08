@@ -7,6 +7,8 @@
 
 #include <iterator>
 
+#include "src/base/logging.h"
+
 namespace v8 {
 namespace base {
 
