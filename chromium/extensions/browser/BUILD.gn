@@ -683,7 +683,6 @@ jumbo_source_set("browser_sources") {
 
     public_deps -= [
       "//extensions/browser/install",
-      "//extensions/browser/kiosk",
     ]
 
     deps -= [
