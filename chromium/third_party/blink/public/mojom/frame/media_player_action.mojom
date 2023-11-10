@@ -6,6 +6,7 @@ module blink.mojom;
 
 // Perform the below actions on the media player.
 enum MediaPlayerActionType {
+  kMute,
   kLoop,
   kControls,
   kSaveVideoFrameAs,
