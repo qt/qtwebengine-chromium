@@ -890,6 +890,8 @@ void Return::GenerateCode(MaglevAssembler* masm, const ProcessingState& state) {
   __ Ret();
 }
 
+#undef __
+
 }  // namespace maglev
 }  // namespace internal
 }  // namespace v8

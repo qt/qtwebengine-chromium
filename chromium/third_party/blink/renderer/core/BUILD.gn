@@ -392,6 +392,7 @@ jumbo_component("core") {
     "//third_party/blink/renderer/core/xml:xpath_generated",
   ]
   jumbo_excluded_sources = [ ]
+  jumbo_excluded_sources += rebase_path([ "attribution_reporting_to_mojom.cc" ], "", "fetch")
   jumbo_excluded_sources += rebase_path([ "frame_fetch_context.cc" ], "", "loader")
   jumbo_excluded_sources += rebase_path([ "image_loader.cc" ], "", "loader")
   jumbo_excluded_sources += rebase_path([ "create_window.cc" ], "", "page")

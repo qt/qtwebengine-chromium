@@ -557,7 +557,7 @@ void ServiceWorkerControlleeRequestHandler::ContinueWithActivatedVersion(
       }
       if (::features::kAsyncStartServiceWorkerForEmptyFetchHandler.Get()) {
         int duration =
-            features::kAsyncStartServiceWorkerForEmptyFetchHandlerDurationInMs
+            ::features::kAsyncStartServiceWorkerForEmptyFetchHandlerDurationInMs
                 .Get();
         constexpr int kDurationThresholdInMs = 10 * 1000;  // 10 seconds.
         if (duration < 0 || duration > kDurationThresholdInMs) {
@@ -599,9 +599,9 @@ void ServiceWorkerControlleeRequestHandler::ContinueWithActivatedVersion(
       // isn't started yet, skip the fetch handler and then start the
       // ServiceWorker.
       if (base::FeatureList::IsEnabled(
-              features::kServiceWorkerBypassFetchHandler) &&
-          features::kServiceWorkerBypassFetchHandlerTarget.Get() ==
-              features::ServiceWorkerBypassFetchHandlerTarget::
+              ::features::kServiceWorkerBypassFetchHandler) &&
+          ::features::kServiceWorkerBypassFetchHandlerTarget.Get() ==
+              ::features::ServiceWorkerBypassFetchHandlerTarget::
                   kAllOnlyIfServiceWorkerNotStarted) {
         switch (active_version->running_status()) {
           case EmbeddedWorkerStatus::STOPPED:

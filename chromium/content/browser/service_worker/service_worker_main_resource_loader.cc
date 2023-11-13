@@ -90,24 +90,24 @@ bool IsEligibleForRaceNetworkRequestByOriginTrial(
 bool IsEligibleForRaceNetworkRequest(
     scoped_refptr<ServiceWorkerVersion> version) {
   if (!base::FeatureList::IsEnabled(
-          features::kServiceWorkerBypassFetchHandler)) {
+          ::features::kServiceWorkerBypassFetchHandler)) {
     return false;
   }
-  if (features::kServiceWorkerBypassFetchHandlerTarget.Get() !=
-      features::ServiceWorkerBypassFetchHandlerTarget::
+  if (::features::kServiceWorkerBypassFetchHandlerTarget.Get() !=
+      ::features::ServiceWorkerBypassFetchHandlerTarget::
           kAllWithRaceNetworkRequest) {
     return false;
   }
 
-  switch (features::kServiceWorkerBypassFetchHandlerStrategy.Get()) {
+  switch (::features::kServiceWorkerBypassFetchHandlerStrategy.Get()) {
     // kFeatureOptIn means that the feature relies on the manual feature
     // toggle from about://flags etc, which is triggered by developers.
-    case features::ServiceWorkerBypassFetchHandlerStrategy::kFeatureOptIn:
+    case ::features::ServiceWorkerBypassFetchHandlerStrategy::kFeatureOptIn:
       return true;
     // If kAllowList, the allowlist should be specified. In this case,
     // RaceNetworkRequest is allowed only when the sha256 checksum of the
     // script is in the allowlist.
-    case features::ServiceWorkerBypassFetchHandlerStrategy::kAllowList:
+    case ::features::ServiceWorkerBypassFetchHandlerStrategy::kAllowList:
       return HasRaceNetworkRequestEligibleScript(version);
   }
 }

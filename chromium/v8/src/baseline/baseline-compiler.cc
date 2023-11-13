@@ -2399,6 +2399,8 @@ SaveAccumulatorScope::~SaveAccumulatorScope() {
   assembler_->Pop(kInterpreterAccumulatorRegister);
 }
 
+#undef  __
+
 }  // namespace baseline
 }  // namespace internal
 }  // namespace v8

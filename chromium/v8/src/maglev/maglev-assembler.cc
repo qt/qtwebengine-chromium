@@ -489,6 +489,8 @@ void MaglevAssembler::StoreFixedArrayElementWithWriteBarrier(
       kValueCanBeSmi);
 }
 
+#undef __
+
 }  // namespace maglev
 }  // namespace internal
 }  // namespace v8

@@ -330,7 +330,7 @@ bool IsPathRestrictionSatisfiedWithoutHeader(const GURL& scope,
 const base::flat_set<std::string> FetchHandlerBypassedHashStrings() {
   const static base::NoDestructor<base::flat_set<std::string>> result(
       base::SplitString(
-          features::kServiceWorkerBypassFetchHandlerBypassedHashStrings.Get(),
+          ::features::kServiceWorkerBypassFetchHandlerBypassedHashStrings.Get(),
           ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY));
 
   return *result;
