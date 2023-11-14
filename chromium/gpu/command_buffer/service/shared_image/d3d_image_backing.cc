@@ -25,7 +25,7 @@
 #include "ui/gl/gl_surface_egl.h"
 #include "ui/gl/scoped_restore_texture.h"
 
-#if BUILDFLAG(USE_SKIA_DAWN)
+#if BUILDFLAG(SKIA_USE_DAWN)
 #include "gpu/command_buffer/service/dawn_context_provider.h"
 #endif
 
