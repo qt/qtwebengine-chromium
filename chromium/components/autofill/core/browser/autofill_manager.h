@@ -189,7 +189,7 @@ class AutofillManager {
 #if !defined(TOOLKIT_QT)
   ~AutofillManager() override;
 #else
-  virtual ~AutofillManager() = default;
+  ~AutofillManager();
 #endif
 
   // The following will fail a DCHECK if called for a prerendered main frame.
@@ -322,10 +322,12 @@ class AutofillManager {
 
 #if !defined(TOOLKIT_QT)
   virtual void ReportAutofillWebOTPMetrics(bool used_web_otp) = 0;
+#endif
 
   // Resets cache.
   virtual void Reset();
 
+#if !defined(TOOLKIT_QT)
   // Invoked when the context menu is opened in a field.
   virtual void OnContextMenuShownInField(
       const FormGlobalId& form_global_id,
@@ -363,6 +365,7 @@ class AutofillManager {
   // Forwards call to the same-named `AutofillDriver` function.
   virtual void TriggerFormExtractionInAllFrames(
       base::OnceCallback<void(bool success)> form_extraction_finished_callback);
+#endif  // !defined(TOOLKIT_QT)
 
   void AddObserver(Observer* observer) { observers_.AddObserver(observer); }
 
@@ -377,15 +380,18 @@ class AutofillManager {
     }
   }
 
+#if !defined(TOOLKIT_QT)
   // Returns the present form structures seen by Autofill handler.
   const std::map<FormGlobalId, std::unique_ptr<FormStructure>>&
   form_structures() const {
     return form_structures_;
   }
+#endif  // !defined(TOOLKIT_QT)
 
   AutofillDriver& driver() { return *driver_; }
   const AutofillDriver& driver() const { return *driver_; }
 
+#if !defined(TOOLKIT_QT)
   AutofillDownloadManager* download_manager() {
     return client().GetDownloadManager();
   }
@@ -394,11 +400,6 @@ class AutofillManager {
   AutofillMetrics::FormInteractionsUkmLogger* form_interactions_ukm_logger() {
     return form_interactions_ukm_logger_.get();
   }
-
-#else
-  virtual void Reset() {}
-  AutofillDriver& driver() { return driver_; }
-  const AutofillDriver& driver() const { return driver_; }
 #endif  // !defined(TOOLKIT_QT)
 
  protected:

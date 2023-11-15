@@ -645,6 +645,7 @@ void ContentAutofillDriver::JavaScriptChangedAutofilledValue(
 void ContentAutofillDriver::OnContextMenuShownInField(
     const FormGlobalId& form_global_id,
     const FieldGlobalId& field_global_id) {
+#if !defined(TOOLKIT_QT)
   router().OnContextMenuShownInField(
       this, form_global_id, field_global_id,
       [](autofill::AutofillDriver* target, const FormGlobalId& form_global_id,
@@ -652,6 +653,7 @@ void ContentAutofillDriver::OnContextMenuShownInField(
         target->GetAutofillManager().OnContextMenuShownInField(form_global_id,
                                                                field_global_id);
       });
+#endif
 }
 
 void ContentAutofillDriver::Reset() {

@@ -427,6 +427,7 @@ class AutofillClient {
   // Gets the IbanManager instance associated with the client.
   virtual IbanManager* GetIbanManager();
 
+#if !defined(TOOLKIT_QT)
   // When the enterprise plus address feature is supported, gets the
   // KeyedService that manages that data.
   virtual plus_addresses::PlusAddressService* GetPlusAddressService();
@@ -441,7 +442,6 @@ class AutofillClient {
   // client (can be null for unsupported platforms).
   virtual MerchantPromoCodeManager* GetMerchantPromoCodeManager();
 
-#if !defined(TOOLKIT_QT)
   // Can be null on unsupported platforms.
   virtual CreditCardCvcAuthenticator* GetCvcAuthenticator();
   virtual CreditCardOtpAuthenticator* GetOtpAuthenticator();

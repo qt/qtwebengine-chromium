@@ -32,6 +32,8 @@ source_set("browser") {
 
     if (is_qtwebengine) {
       sources -= [
+        "passkey_model_utils.cc",
+        "passkey_model_utils.h",
         "passkey_sync_bridge.cc",
         "passkey_sync_bridge.h",
       ]

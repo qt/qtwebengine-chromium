@@ -249,10 +249,12 @@ void AutofillExternalDelegate::DidSelectSuggestion(
 
   switch (suggestion.popup_item_id) {
     case PopupItemId::kClearForm:
+#if !defined(TOOLKIT_QT)
       if (base::FeatureList::IsEnabled(features::kAutofillUndo)) {
         manager_->UndoAutofill(mojom::AutofillActionPersistence::kPreview,
                                query_form_, query_field_);
       }
+#endif
       break;
     case PopupItemId::kAddressEntry:
     case PopupItemId::kCreditCardEntry:
@@ -417,13 +419,13 @@ void AutofillExternalDelegate::DidAcceptSuggestion(
   }
 #else
   if (suggestion.popup_item_id == PopupItemId::kDatalistEntry) {
-    driver_->RendererShouldAcceptDataListSuggestion(query_field_.global_id(),
-                                                    suggestion.main_text.value);
+    manager_->driver().RendererShouldAcceptDataListSuggestion(
+        query_field_.global_id(), suggestion.main_text.value);
   } else {
-      // QtWebEngine supports datalist only.
-      NOTREACHED();
+    // QtWebEngine supports datalist only.
+    NOTREACHED();
   }
-  manager_->client()->HideAutofillPopup(PopupHidingReason::kAcceptSuggestion);
+  manager_->client().HideAutofillPopup(PopupHidingReason::kAcceptSuggestion);
 #endif  // !defined(TOOLKIT_QT)
 }
 

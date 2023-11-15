@@ -564,7 +564,7 @@ BrowserAutofillManager::BrowserAutofillManager(AutofillDriver* driver,
                                                const std::string& app_locale)
     : AutofillManager(driver, client),
       external_delegate_(
-          std::make_unique<AutofillExternalDelegate>(this, driver)) {
+          std::make_unique<AutofillExternalDelegate>(this)) {
 }
 
 #else
@@ -1694,7 +1694,7 @@ void BrowserAutofillManager::OnHidePopupImpl() {
     touch_to_fill_delegate_->HideTouchToFill();
   }
 #else
-  client()->HideAutofillPopup(PopupHidingReason::kRendererEvent);
+  client().HideAutofillPopup(PopupHidingReason::kRendererEvent);
 #endif
 }
 
@@ -2892,7 +2892,6 @@ std::vector<Suggestion> BrowserAutofillManager::GetCreditCardSuggestions(
                                                        context);
   return suggestions;
 }
-#endif  // !defined(TOOLKIT_QT)
 
 base::flat_map<std::string, VirtualCardUsageData::VirtualCardLastFour>
 BrowserAutofillManager::GetVirtualCreditCardsForStandaloneCvcField(
@@ -2934,6 +2933,7 @@ BrowserAutofillManager::GetVirtualCreditCardsForStandaloneCvcField(
   }
   return virtual_card_guid_to_last_four_map;
 }
+#endif  // !defined(TOOLKIT_QT)
 
 // TODO(crbug.com/1309848) Eliminate and replace with a listener?
 // Should we do the same with all the other BrowserAutofillManager events?

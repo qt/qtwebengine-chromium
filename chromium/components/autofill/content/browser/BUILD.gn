@@ -72,6 +72,8 @@ jumbo_static_library("browser") {
     sources -= [
       "autofill_log_router_factory.cc",
       "autofill_log_router_factory.h",
+      "renderer_forms_with_server_predictions.cc",
+      "renderer_forms_with_server_predictions.h",
     ]
   }
 }

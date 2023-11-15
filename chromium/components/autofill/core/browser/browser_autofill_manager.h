@@ -362,10 +362,12 @@ class BrowserAutofillManager : public AutofillManager,
   [[nodiscard]] AutofillField* GetAutofillField(const FormData& form,
                                                 const FormFieldData& field);
 
+#if !defined(TOOLKIT_QT)
   autofill_metrics::AutocompleteUnrecognizedFallbackEventLogger&
   GetAutocompleteUnrecognizedFallbackEventLogger() {
     return *autocomplete_unrecognized_fallback_logger_;
   }
+#endif  // !defined(TOOLKIT_QT)
 
  protected:
 #if !defined(TOOLKIT_QT)
@@ -495,7 +497,6 @@ class BrowserAutofillManager : public AutofillManager,
   // Gets the card referred to by the guid |unique_id|. Returns |nullptr| if
   // card does not exist.
   CreditCard* GetCreditCard(Suggestion::BackendId unique_id);
-#endif
 
   // Gets the profile referred to by the guid |unique_id|. Returns |nullptr| if
   // profile does not exist.
@@ -582,6 +583,7 @@ class BrowserAutofillManager : public AutofillManager,
   // DOM.
   base::flat_map<std::string, VirtualCardUsageData::VirtualCardLastFour>
   GetVirtualCreditCardsForStandaloneCvcField(const url::Origin& origin) const;
+#endif  // !defined(TOOLKIT_QT)
 
   // If |initial_interaction_timestamp_| is unset or is set to a later time than
   // |interaction_timestamp|, updates the cached timestamp.  The latter check is

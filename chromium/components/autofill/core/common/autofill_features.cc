@@ -481,9 +481,15 @@ BASE_FEATURE(kAutofillPageLanguageDetection,
 // Instead, all incoming events parse the form asynchronously and proceed
 // afterwards.
 // TODO(crbug.com/1309848) Remove once launched.
+#if !defined(TOOLKIT_QT)
 BASE_FEATURE(kAutofillParseAsync,
              "AutofillParseAsync",
              base::FEATURE_ENABLED_BY_DEFAULT);
+#else
+BASE_FEATURE(kAutofillParseAsync,
+             "AutofillParseAsync",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+#endif  // !defined(TOOLKIT_QT)
 
 // If enabled, local heuristics fall back to interpreting the fields' name as an
 // autocomplete type.

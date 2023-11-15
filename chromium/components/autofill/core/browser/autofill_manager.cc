@@ -151,8 +151,12 @@ void AutofillManager::LogAutofillTypePredictionsAvailable(
 #if defined(TOOLKIT_QT)
 AutofillManager::AutofillManager(AutofillDriver* driver,
                                  AutofillClient* client)
-    : driver_(driver),
-      client_(client) {}
+    : driver_(CHECK_DEREF(driver)),
+      client_(CHECK_DEREF(client)) {}
+
+AutofillManager::~AutofillManager() {
+  NotifyObservers(&Observer::OnAutofillManagerDestroyed);
+}
 #else
 AutofillManager::AutofillManager(AutofillDriver* driver, AutofillClient* client)
     : driver_(CHECK_DEREF(driver)),
@@ -307,7 +311,6 @@ void AutofillManager::OnDidFillAutofillFormData(
   if (!IsValidFormData(form))
     return;
 
-#if !defined(TOOLKIT_QT)
   NotifyObservers(&Observer::OnBeforeDidFillAutofillFormData, form.global_id());
   if (!base::FeatureList::IsEnabled(features::kAutofillParseAsync)) {
     OnDidFillAutofillFormDataImpl(form, timestamp);
@@ -315,6 +318,7 @@ void AutofillManager::OnDidFillAutofillFormData(
                     form.global_id());
     return;
   }
+#if !defined(TOOLKIT_QT)
   ParseFormAsync(
       form,
       ParsingCallback(&AutofillManager::OnDidFillAutofillFormDataImpl,
@@ -322,7 +326,7 @@ void AutofillManager::OnDidFillAutofillFormData(
           .Then(NotifyObserversCallback(
               &Observer::OnAfterDidFillAutofillFormData, form.global_id())));
 #else
-  OnDidFillAutofillFormDataImpl(form, timestamp);
+  NOTREACHED();
 #endif  // !defined(TOOLKIT_QT)
 }
 
@@ -333,9 +337,7 @@ void AutofillManager::OnFormSubmitted(const FormData& form,
     return;
   }
 
-#if !defined(TOOLKIT_QT)
   NotifyObservers(&Observer::OnFormSubmitted, form.global_id());
-#endif  // !defined(TOOLKIT_QT)
   OnFormSubmittedImpl(form, known_success, source);
 }
 
@@ -475,7 +477,6 @@ void AutofillManager::OnTextFieldDidChange(const FormData& form,
   if (!IsValidFormData(form) || !IsValidFormFieldData(field))
     return;
 
-#if !defined(TOOLKIT_QT)
   NotifyObservers(&Observer::OnBeforeTextFieldDidChange, form.global_id(),
                   field.global_id());
   if (!base::FeatureList::IsEnabled(features::kAutofillParseAsync)) {
@@ -484,6 +485,7 @@ void AutofillManager::OnTextFieldDidChange(const FormData& form,
                     field.global_id());
     return;
   }
+#if !defined(TOOLKIT_QT)
   ParseFormAsync(
       form,
       ParsingCallback(&AutofillManager::OnTextFieldDidChangeImpl, field,
@@ -491,7 +493,7 @@ void AutofillManager::OnTextFieldDidChange(const FormData& form,
           .Then(NotifyObserversCallback(&Observer::OnAfterTextFieldDidChange,
                                         form.global_id(), field.global_id())));
 #else
-  OnTextFieldDidChangeImpl(form, field, bounding_box, timestamp);
+  NOTREACHED();
 #endif  // !defined(TOOLKIT_QT)
 }
 
@@ -501,7 +503,6 @@ void AutofillManager::OnTextFieldDidScroll(const FormData& form,
   if (!IsValidFormData(form) || !IsValidFormFieldData(field))
     return;
 
-#if !defined(TOOLKIT_QT)
   NotifyObservers(&Observer::OnBeforeTextFieldDidScroll, form.global_id(),
                   field.global_id());
   if (!base::FeatureList::IsEnabled(features::kAutofillParseAsync)) {
@@ -510,6 +511,7 @@ void AutofillManager::OnTextFieldDidScroll(const FormData& form,
                     field.global_id());
     return;
   }
+#if !defined(TOOLKIT_QT)
   ParseFormAsync(
       form,
       ParsingCallback(&AutofillManager::OnTextFieldDidScrollImpl, field,
@@ -517,7 +519,7 @@ void AutofillManager::OnTextFieldDidScroll(const FormData& form,
           .Then(NotifyObserversCallback(&Observer::OnAfterTextFieldDidScroll,
                                         form.global_id(), field.global_id())));
 #else
-  OnTextFieldDidScrollImpl(form, field, bounding_box);
+  NOTREACHED();
 #endif  // !defined(TOOLKIT_QT)
 }
 
@@ -527,7 +529,6 @@ void AutofillManager::OnSelectControlDidChange(const FormData& form,
   if (!IsValidFormData(form) || !IsValidFormFieldData(field))
     return;
 
-#if !defined(TOOLKIT_QT)
   NotifyObservers(&Observer::OnBeforeSelectControlDidChange, form.global_id(),
                   field.global_id());
   if (!base::FeatureList::IsEnabled(features::kAutofillParseAsync)) {
@@ -536,6 +537,7 @@ void AutofillManager::OnSelectControlDidChange(const FormData& form,
                     field.global_id());
     return;
   }
+#if !defined(TOOLKIT_QT)
   ParseFormAsync(
       form, ParsingCallback(&AutofillManager::OnSelectControlDidChangeImpl,
                             field, bounding_box)
@@ -543,7 +545,7 @@ void AutofillManager::OnSelectControlDidChange(const FormData& form,
                     &Observer::OnAfterSelectControlDidChange, form.global_id(),
                     field.global_id())));
 #else
-  OnSelectControlDidChangeImpl(form, field, bounding_box);
+  NOTREACHED();
 #endif  // !defined(TOOLKIT_QT)
 }
 
@@ -555,7 +557,6 @@ void AutofillManager::OnAskForValuesToFill(
   if (!IsValidFormData(form) || !IsValidFormFieldData(field))
     return;
 
-#if !defined(TOOLKIT_QT)
   NotifyObservers(&Observer::OnBeforeAskForValuesToFill, form.global_id(),
                   field.global_id());
   if (!base::FeatureList::IsEnabled(features::kAutofillParseAsync)) {
@@ -564,6 +565,7 @@ void AutofillManager::OnAskForValuesToFill(
                     field.global_id());
     return;
   }
+#if !defined(TOOLKIT_QT)
   ParseFormAsync(
       form,
       ParsingCallback(&AutofillManager::OnAskForValuesToFillImpl, field,
@@ -571,7 +573,7 @@ void AutofillManager::OnAskForValuesToFill(
           .Then(NotifyObserversCallback(&Observer::OnAfterAskForValuesToFill,
                                         form.global_id(), field.global_id())));
 #else
-  OnAskForValuesToFillImpl(form, field, bounding_box, trigger_source);
+  NOTREACHED();
 #endif  // !defined(TOOLKIT_QT)
 }
 
@@ -581,16 +583,16 @@ void AutofillManager::OnFocusOnFormField(const FormData& form,
   if (!IsValidFormData(form) || !IsValidFormFieldData(field))
     return;
 
-#if !defined(TOOLKIT_QT)
   if (!base::FeatureList::IsEnabled(features::kAutofillParseAsync)) {
     OnFocusOnFormFieldImpl(form, field, bounding_box);
     return;
   }
+#if !defined(TOOLKIT_QT)
   ParseFormAsync(form, ParsingCallback(&AutofillManager::OnFocusOnFormFieldImpl,
                                        field, bounding_box)
                            .Then(NotifyNoObserversCallback()));
 #else
-  OnFocusOnFormFieldImpl(form, field, bounding_box);
+  NOTREACHED();
 #endif  // !defined(TOOLKIT_QT)
 }
 
@@ -616,17 +618,17 @@ void AutofillManager::OnSelectOrSelectListFieldOptionsDidChange(
   if (!IsValidFormData(form))
     return;
 
-#if !defined(TOOLKIT_QT)
   if (!base::FeatureList::IsEnabled(features::kAutofillParseAsync)) {
     OnSelectOrSelectListFieldOptionsDidChangeImpl(form);
     return;
   }
+#if !defined(TOOLKIT_QT)
   ParseFormAsync(
       form, ParsingCallback(
                 &AutofillManager::OnSelectOrSelectListFieldOptionsDidChangeImpl)
                 .Then(NotifyNoObserversCallback()));
 #else
-  OnSelectFieldOptionsDidChangeImpl(form);
+  NOTREACHED();
 #endif  // !defined(TOOLKIT_QT)
 }
 
@@ -637,7 +639,6 @@ void AutofillManager::OnJavaScriptChangedAutofilledValue(
   if (!IsValidFormData(form))
     return;
 
-#if !defined(TOOLKIT_QT)
   NotifyObservers(&Observer::OnBeforeJavaScriptChangedAutofilledValue,
                   form.global_id(), field.global_id());
   if (!base::FeatureList::IsEnabled(features::kAutofillParseAsync)) {
@@ -646,6 +647,7 @@ void AutofillManager::OnJavaScriptChangedAutofilledValue(
                     form.global_id(), field.global_id());
     return;
   }
+#if !defined(TOOLKIT_QT)
   ParseFormAsync(
       form,
       ParsingCallback(&AutofillManager::OnJavaScriptChangedAutofilledValueImpl,
@@ -654,7 +656,7 @@ void AutofillManager::OnJavaScriptChangedAutofilledValue(
               &Observer::OnAfterJavaScriptChangedAutofilledValue,
               form.global_id(), field.global_id())));
 #else
-  OnJavaScriptChangedAutofilledValueImpl(form, field, old_value);
+  NOTREACHED();
 #endif  // !defined(TOOLKIT_QT)
 }
 
@@ -1014,14 +1016,18 @@ FormStructure* AutofillManager::ParseForm(const FormData& form,
                   Observer::FieldTypeSource::kHeuristicsOrAutocomplete);
   return parsed_form_structure;
 }
+#endif  // !defined(TOOLKIT_QT)
 
 void AutofillManager::Reset() {
   parsing_weak_ptr_factory_.InvalidateWeakPtrs();
   NotifyObservers(&Observer::OnAutofillManagerReset);
+#if !defined(TOOLKIT_QT)
   form_structures_.clear();
   form_interactions_ukm_logger_ = CreateFormInteractionsUkmLogger();
+#endif  // !defined(TOOLKIT_QT)
 }
 
+#if !defined(TOOLKIT_QT)
 void AutofillManager::OnLoadedServerPredictions(
     std::string response,
     const std::vector<FormSignature>& queried_form_signatures) {

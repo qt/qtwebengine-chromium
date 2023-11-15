@@ -70,6 +70,7 @@ IbanManager* AutofillClient::GetIbanManager() {
   return nullptr;
 }
 
+#if !defined(TOOLKIT_QT)
 plus_addresses::PlusAddressService* AutofillClient::GetPlusAddressService() {
   return nullptr;
 }
@@ -86,7 +87,6 @@ MerchantPromoCodeManager* AutofillClient::GetMerchantPromoCodeManager() {
   return nullptr;
 }
 
-#if !defined(TOOLKIT_QT)
 std::unique_ptr<SingleFieldFormFillRouter>
 AutofillClient::CreateSingleFieldFormFillRouter() {
   return std::make_unique<SingleFieldFormFillRouter>(
