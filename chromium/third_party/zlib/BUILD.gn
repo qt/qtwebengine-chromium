@@ -136,30 +136,26 @@ source_set("zlib_adler32_simd") {
 
 if (use_arm_neon_optimizations) {
   config("zlib_arm_crc32_config") {
-    if (!is_qtwebengine) {
-      defines = [ "CRC32_ARMV8_CRC32" ]
-      if (is_android) {
-        defines += [ "ARMV8_OS_ANDROID" ]
-      } else if (is_linux || is_chromeos) {
-        defines += [ "ARMV8_OS_LINUX" ]
-      } else if (is_mac) {
-        defines += [ "ARMV8_OS_MACOS" ]
-      } else if (is_fuchsia) {
-        defines += [ "ARMV8_OS_FUCHSIA" ]
-      } else if (is_win) {
-        defines += [ "ARMV8_OS_WINDOWS" ]
-      } else {
-        assert(false, "Unsupported ARM OS")
-      }
+    defines = [ "CRC32_ARMV8_CRC32" ]
+    if (is_android) {
+      defines += [ "ARMV8_OS_ANDROID" ]
+    } else if (is_linux || is_chromeos) {
+      defines += [ "ARMV8_OS_LINUX" ]
+    } else if (is_mac) {
+      defines += [ "ARMV8_OS_MACOS" ]
+    } else if (is_fuchsia) {
+      defines += [ "ARMV8_OS_FUCHSIA" ]
+    } else if (is_win) {
+      defines += [ "ARMV8_OS_WINDOWS" ]
+    } else {
+      assert(false, "Unsupported ARM OS")
     }
   }
 
   source_set("zlib_arm_crc32") {
     visibility = [ ":*" ]
 
-    if (!is_qtwebengine) {
-      include_dirs = [ "." ]
-    }
+    include_dirs = [ "." ]
 
     if (!is_win && !is_clang) {
       assert(!use_thin_lto,
@@ -350,7 +346,7 @@ component("bundled_zlib") {
 
     if (use_x86_x64_optimizations) {
       deps += [ ":zlib_crc32_simd" ]
-    } else if (use_arm_neon_optimizations) {
+    } else if (use_arm_neon_optimizations && use_arm_crc32) {
       deps += [ ":zlib_arm_crc32" ]
     }
   } else {
