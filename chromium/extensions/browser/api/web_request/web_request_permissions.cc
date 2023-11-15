@@ -9,8 +9,10 @@
 #include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
 #include "build/chromeos_buildflags.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/safe_browsing/core/browser/hashprefix_realtime/hash_realtime_utils.h"
 #include "components/safe_browsing/core/common/features.h"
+#endif
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/common/url_constants.h"
 #include "extensions/browser/api/extensions_api_client.h"
@@ -344,9 +346,11 @@ bool WebRequestPermissions::HideRequest(
       // TODO(crbug.com/1476651): The following check should ideally be within
       // IsSafeBrowsingUrl. This will be possible if hash_realtime_utils is
       // moved to live within /content instead of /browser.
+#if !BUILDFLAG(IS_QTWEBENGINE)
       (safe_browsing::hash_realtime_utils::
            IsHashRealTimeLookupEligibleInSession() &&
        url == safe_browsing::kHashPrefixRealTimeLookupsRelayUrl.Get()) ||
+#endif
       (url.DomainIs("chrome.google.com") &&
        base::StartsWith(url.path_piece(), "/webstore",
                         base::CompareCase::SENSITIVE)) ||
