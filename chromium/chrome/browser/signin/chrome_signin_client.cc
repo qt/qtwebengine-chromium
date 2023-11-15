@@ -121,6 +121,8 @@ ChromeSigninClient::ChromeSigninClient(Profile* profile)
     : wait_for_network_callback_helper_(
 #if BUILDFLAG(IS_CHROMEOS_ASH)
           std::make_unique<WaitForNetworkCallbackHelperAsh>()
+#elif defined(TOOLKIT_QT)
+          nullptr
 #else
           std::make_unique<WaitForNetworkCallbackHelperChrome>()
 #endif
@@ -265,7 +267,11 @@ std::unique_ptr<GaiaAuthFetcher> ChromeSigninClient::CreateGaiaAuthFetcher(
 }
 
 version_info::Channel ChromeSigninClient::GetClientChannel() {
+#if !defined(TOOLKIT_QT)
   return chrome::GetChannel();
+#else
+  return {};
+#endif
 }
 
 SigninClient::SignoutDecision ChromeSigninClient::GetSignoutDecision(
