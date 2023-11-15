@@ -174,7 +174,9 @@
 
 PA_EXPORT_TEMPLATE_TEST(DEFAULT, );  // NOLINT
 PA_EXPORT_TEMPLATE_TEST(DEFAULT, __attribute__((visibility("default"))));
+#if !defined(__MINGW32__)
 PA_EXPORT_TEMPLATE_TEST(EXPORT_DLLEXPORT, __declspec(dllexport));
+#endif
 PA_EXPORT_TEMPLATE_TEST(DEFAULT, __declspec(dllimport));
 
 #undef PA_EXPORT_TEMPLATE_TEST

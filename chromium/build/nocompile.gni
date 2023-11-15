@@ -67,7 +67,7 @@ if (is_mac) {
   import("//build/config/mac/mac_sdk.gni")
 }
 
-if (is_win) {
+if (is_win && !is_qtwebengine) {
   import("//build/toolchain/win/win_toolchain_data.gni")
 }
 
