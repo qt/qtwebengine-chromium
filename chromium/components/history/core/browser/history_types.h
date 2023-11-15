@@ -27,8 +27,8 @@
 #include "components/sessions/core/session_id.h"
 #if !defined(TOOLKIT_QT)
 #include "components/sync_device_info/device_info.h"
-#include "third_party/abseil-cpp/absl/container/inlined_vector.h"
 #endif
+#include "third_party/abseil-cpp/absl/container/inlined_vector.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/base/page_transition_types.h"
 #include "url/gurl.h"
