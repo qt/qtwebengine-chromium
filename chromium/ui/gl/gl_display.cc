@@ -1110,7 +1110,7 @@ bool GLDisplayWGL::IsInitialized() const
 void GLDisplayWGL::Shutdown()
 {
 }
-bool GLDisplayWGL::InitializeFromDisplay(gl::GLDisplay*) {
+bool GLDisplayWGL::Initialize(gl::GLDisplay*) {
   // FIXME?
   return false;
 }

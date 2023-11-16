@@ -224,7 +224,7 @@ class GLDisplayWGL : public GLDisplay {
   void* GetDisplay() const override;
   bool IsInitialized() const override;
   void Shutdown() override;
-  bool InitializeFromDisplay(GLDisplay* display) override;
+  bool Initialize(GLDisplay* display) override;
 
   bool Init(bool software_rendering);
 
