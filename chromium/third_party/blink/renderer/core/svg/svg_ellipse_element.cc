@@ -154,8 +154,8 @@ void SVGEllipseElement::SynchronizeAllSVGAttributes() const {
 
 void SVGEllipseElement::CollectExtraStyleForPresentationAttribute(
     MutableCSSPropertyValueSet* style) {
-  for (auto* property : (SVGAnimatedPropertyBase*[]){cx_.Get(), cy_.Get(),
-                                                     rx_.Get(), ry_.Get()}) {
+  for (SVGAnimatedPropertyBase* property : {cx_.Get(), cy_.Get(),
+                                            rx_.Get(), ry_.Get()}) {
     DCHECK(property->HasPresentationAttributeMapping());
     if (property->IsAnimating()) {
       CollectStyleForPresentationAttribute(property->AttributeName(),
