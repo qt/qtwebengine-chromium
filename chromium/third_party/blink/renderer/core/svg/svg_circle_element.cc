@@ -136,8 +136,7 @@ void SVGCircleElement::SynchronizeAllSVGAttributes() const {
 
 void SVGCircleElement::CollectExtraStyleForPresentationAttribute(
     MutableCSSPropertyValueSet* style) {
-  for (auto* property :
-       (SVGAnimatedPropertyBase*[]){cx_.Get(), cy_.Get(), r_.Get()}) {
+  for (SVGAnimatedPropertyBase* property : {cx_.Get(), cy_.Get(), r_.Get()}) {
     DCHECK(property->HasPresentationAttributeMapping());
     if (property->IsAnimating()) {
       CollectStyleForPresentationAttribute(property->AttributeName(),
