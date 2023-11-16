@@ -37,7 +37,7 @@
 #include "device/fido/cros/discovery.h"
 #endif  // BUILDFLAG(IS_CHROMEOS)
 
-#if !BUILDFLAG(IS_CHROMEOS)
+#if !BUILDFLAG(IS_CHROMEOS) && !BUILDFLAG(IS_QTWEBENGINE)
 #include "device/fido/enclave/enclave_discovery.h"
 #endif
 
@@ -108,7 +108,7 @@ std::vector<std::unique_ptr<FidoDiscoveryBase>> FidoDiscoveryFactory::Create(
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_CHROMEOS)
       discoveries = MaybeCreatePlatformDiscovery();
 #endif
-#if !BUILDFLAG(IS_CHROMEOS)
+#if !BUILDFLAG(IS_CHROMEOS) && !BUILDFLAG(IS_QTWEBENGINE)
       MaybeCreateEnclaveDiscovery(discoveries);
 #endif
       return discoveries;
@@ -183,11 +183,13 @@ void FidoDiscoveryFactory::set_hid_ignore_list(
   hid_ignore_list_ = std::move(hid_ignore_list);
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 void FidoDiscoveryFactory::set_enclave_passkey_creation_callback(
     base::RepeatingCallback<void(sync_pb::WebauthnCredentialSpecifics)>
         callback) {
   enclave_passkey_creation_callback_ = callback;
 }
+#endif
 
 void FidoDiscoveryFactory::set_enclave_ui_request_stream(
     std::unique_ptr<FidoDiscoveryBase::EventStream<
@@ -268,7 +270,7 @@ void FidoDiscoveryFactory::
 }
 #endif
 
-#if !BUILDFLAG(IS_CHROMEOS)
+#if !BUILDFLAG(IS_CHROMEOS) && !BUILDFLAG(IS_QTWEBENGINE)
 void FidoDiscoveryFactory::MaybeCreateEnclaveDiscovery(
     std::vector<std::unique_ptr<FidoDiscoveryBase>>& discoveries) {
   if (!base::FeatureList::IsEnabled(kWebAuthnEnclaveAuthenticator) ||

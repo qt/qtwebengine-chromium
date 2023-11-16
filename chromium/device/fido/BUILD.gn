@@ -229,7 +229,6 @@ component("fido") {
     ]
 
     deps += [
-      "//components/sync/protocol:protocol",
       "//services/device/public/cpp/hid",
       "//services/device/public/cpp/usb",
       "//services/device/public/mojom",
