@@ -198,7 +198,7 @@ class PrintJob : public base::RefCountedThreadSafe<PrintJob> {
   // it.
   void UpdatePrintedDocument(scoped_refptr<PrintedDocument> new_document);
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_QTWEBENGINE)
   // Virtual to support testing.
   virtual void OnPdfPageConverted(uint32_t page_index,
                                   float scale_factor,

@@ -272,8 +272,13 @@ void PrinterQuery::UpdatePrintableArea(
     PrintSettings* print_settings,
     OnDidUpdatePrintableAreaCallback callback) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+#ifdef TOOLKIT_QT
+  scoped_refptr<PrintBackend> print_backend =
+      PrintBackend::CreateInstance(getApplicationLocale());
+#else
   scoped_refptr<PrintBackend> print_backend =
       PrintBackend::CreateInstance(g_browser_process->GetApplicationLocale());
+#endif
 
   // Blocking is needed here because Windows printer drivers are oftentimes
   // not thread-safe and have to be accessed on the UI thread.
