@@ -131,7 +131,7 @@ std::optional<LogEntry> GetRekorLogEntry(base::span<const uint8_t> log_entry) {
   if (!converter.Convert(log_entry_json.value(), &log_entry_result)) {
     return std::nullopt;
   }
-  return log_entry_result;
+  return std::optional<LogEntry>(log_entry_result);
 }
 
 std::optional<Body> GetRekorLogEntryBody(base::span<const uint8_t> log_entry) {

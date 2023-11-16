@@ -134,9 +134,11 @@ struct COMPONENT_EXPORT(DEVICE_FIDO) CredentialRequest {
   std::optional<std::vector<uint8_t>> secret;
   // Required for create() requests: the version/epoch of `wrapped_secret`.
   std::optional<int32_t> key_version;
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // entity optionally contains a passkey Sync entity. This may be omitted for
   // create() requests.
   std::unique_ptr<sync_pb::WebauthnCredentialSpecifics> entity;
+#endif
   // existing_cred_ids contains a list of credential IDs in the current
   // RP ID. Only populated for create() requests.
   std::vector<std::vector<uint8_t>> existing_cred_ids;
