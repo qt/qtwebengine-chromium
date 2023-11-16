@@ -26,6 +26,10 @@
 #include "services/device/public/mojom/usb_manager.mojom.h"
 #include "services/network/public/mojom/network_context.mojom-forward.h"
 
+#if !BUILDFLAG(IS_CHROMEOS) && !BUILDFLAG(IS_QTWEBENGINE)
+#include "components/sync/protocol/webauthn_credential_specifics.pb.h"
+#endif
+
 #if BUILDFLAG(IS_MAC)
 #include "base/apple/owned_objc.h"
 #include "device/fido/mac/authenticator_config.h"
