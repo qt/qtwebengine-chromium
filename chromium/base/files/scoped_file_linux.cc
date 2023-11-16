@@ -82,7 +82,10 @@ bool IsFDOwned(int fd) {
 
 }  // namespace base
 
-#if !defined(COMPONENT_BUILD)
+// Qt: Overriding libc functions from a library is not safe.
+// 'RTLD_NEXT' loads symbols from the next DSO in the link chain.
+//  It will fail if libc is linked before the library that tries to load.
+#if !defined(COMPONENT_BUILD) && !BUILDFLAG(IS_QTWEBENGINE)
 using LibcCloseFuncPtr = int (*)(int);
 
 // Load the libc close symbol to forward to from the close wrapper.
@@ -113,4 +116,4 @@ __attribute__((visibility("default"), noinline)) int close(int fd) {
 }
 
 }       // extern "C"
-#endif  // !defined(COMPONENT_BUILD)
+#endif  // !defined(COMPONENT_BUILD) && !BUILDFLAG(IS_QTWEBENGINE)
