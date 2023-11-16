@@ -211,7 +211,6 @@ component("fido") {
     ]
 
     deps += [
-      "//components/sync/protocol:protocol",
       "//services/device/public/cpp/hid",
       "//services/device/public/cpp/usb",
       "//services/device/public/mojom",
@@ -292,7 +291,7 @@ component("fido") {
     ]
   }
 
-  if (!is_chromeos && !is_android) {
+  if (!is_chromeos && !is_android && !is_qtwebengine) {
     sources += [
       "enclave/enclave_authenticator.cc",
       "enclave/enclave_authenticator.h",
@@ -302,6 +301,9 @@ component("fido") {
       "enclave/enclave_http_client.h",
       "enclave/enclave_protocol_utils.cc",
       "enclave/enclave_protocol_utils.h",
+    ]
+    deps += [
+      "//components/sync/protocol:protocol",
     ]
   }
 }

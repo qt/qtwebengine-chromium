@@ -522,7 +522,7 @@ if (is_android) {
   }
 }
 
-if (is_win || is_linux || is_mac) {
+if ((is_win || is_linux || is_mac) && !is_qtwebengine) {
   test("passkey_enclave") {
     testonly = true
     sources = [ "fido/enclave/test/passkey_enclave.cc" ]
