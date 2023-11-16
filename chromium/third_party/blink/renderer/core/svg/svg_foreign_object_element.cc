@@ -170,8 +170,8 @@ void SVGForeignObjectElement::SynchronizeAllSVGAttributes() const {
 
 void SVGForeignObjectElement::CollectExtraStyleForPresentationAttribute(
     MutableCSSPropertyValueSet* style) {
-  for (auto* property : (SVGAnimatedPropertyBase*[]){
-           x_.Get(), y_.Get(), width_.Get(), height_.Get()}) {
+  for (SVGAnimatedPropertyBase* property : {x_.Get(), y_.Get(),
+                                            width_.Get(), height_.Get()}) {
     DCHECK(property->HasPresentationAttributeMapping());
     if (property->IsAnimating()) {
       CollectStyleForPresentationAttribute(property->AttributeName(),
