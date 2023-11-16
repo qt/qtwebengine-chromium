@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <utility>
+#include <unordered_map>
 
 #define ZSTD_STATIC_LINKING_ONLY
 
