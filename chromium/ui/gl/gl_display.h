@@ -207,7 +207,7 @@ class GL_EXPORT GLDisplayX11 : public GLDisplay {
   void* GetDisplay() const override;
   void Shutdown() override;
   bool IsInitialized() const override;
-  bool InitializeFromDisplay(gl::GLDisplay*) override;
+  bool Initialize(gl::GLDisplay*) override;
 
   GLDisplayX11(uint64_t system_device_id, DisplayKey display_key);
  private:
