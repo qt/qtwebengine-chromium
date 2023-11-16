@@ -469,12 +469,6 @@ jumbo_component("gl") {
         "//third_party/angle:libGLESv2",
       ]
     }
-    if (is_linux && ozone_platform_x11) {
-      sources += [
-        "gl_image_egl_pixmap.cc",
-        "gl_image_egl_pixmap.h",
-      ]
-    }
   }
 }
 
