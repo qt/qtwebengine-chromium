@@ -140,6 +140,12 @@ bool IsNetworkSandboxSupported() {
   if (!supported) {
     return false;
   }
+#if defined(TOOLKIT_QT)
+  // Not supported in QWE
+  if (!sandbox::features::IsAppContainerSandboxSupported()) {
+    return false;
+  }
+#endif
 
   // App container must be already supported on 20H1, but double check it here.
   CHECK(sandbox::features::IsAppContainerSandboxSupported());
