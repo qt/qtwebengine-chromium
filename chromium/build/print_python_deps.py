@@ -1,4 +1,4 @@
-#!/usr/bin/python2.7
+#!/usr/bin/python3
 # Copyright 2016 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -152,7 +152,7 @@ def main():
 
   # Trybots run with vpython as default Python, but with a different config
   # from //.vpython. To make the is_vpython test work, and to match the behavior
-  # of dev machines, the shebang line must be run with python2.7.
+  # of dev machines, the shebang line must be run with python3.
   #
   # E.g. $HOME/.vpython-root/dd50d3/bin/python
   # E.g. /b/s/w/ir/cache/vpython/ab5c79/bin/python

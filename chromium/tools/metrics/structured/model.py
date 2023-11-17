@@ -26,7 +26,7 @@ _METRIC_TYPE =  models.ObjectNodeType(
     'metric',
     attributes=[
       ('name', unicode, r'^[A-Za-z0-9_.]+$'),
-      ('kind', unicode, r'^(?i)(|hashed-string|int)$'),
+      ('kind', unicode, r'(?i)^(|hashed-string|int)$'),
     ],
     alphabetization=[
         (_OBSOLETE_TYPE.tag, lambda _: 1),

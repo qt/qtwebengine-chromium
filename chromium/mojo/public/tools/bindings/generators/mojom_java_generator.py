@@ -25,6 +25,10 @@ sys.path.append(os.path.join(os.path.dirname(__file__), os.pardir,
                              'build', 'android', 'gyp'))
 from util import build_utils
 
+# TODO(crbug.com/1174969): Remove this once Python2 is obsoleted.
+if sys.version_info.major != 2:
+  basestring = str
+  long = int
 
 GENERATOR_PREFIX = 'java'
 

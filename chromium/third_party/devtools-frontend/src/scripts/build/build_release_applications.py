@@ -10,14 +10,17 @@ Builds applications in release mode:
 and the application loader into a single script.
 """
 
-from cStringIO import StringIO
+import sys
+if sys.version_info.major == 3:
+    from io import StringIO  # for Python 3
+else:
+    from cStringIO import StringIO  # for Python 2
 from os import path
 from os.path import join
 import copy
 import os
 import re
 import shutil
-import sys
 import subprocess
 
 from modular_build import read_file, write_file, bail_error
@@ -36,6 +39,9 @@ try:
     import devtools_paths
 finally:
     sys.path = original_sys_path
+
+if sys.version_info.major == 3:
+    unicode = str
 
 FRONT_END_DIRECTORY = path.join(os.path.dirname(path.abspath(__file__)), '..', '..', 'front_end')
 
@@ -145,8 +151,11 @@ class ReleaseBuilder(object):
             resource_content = read_file(path.join(self.application_dir, resource_name))
             if not (resource_name.endswith('.html')
                     or resource_name.endswith('md')):
-                resource_content += resource_source_url(resource_name).encode(
-                    'utf-8')
+                if sys.version_info[0] < 3:
+                    resource_content += resource_source_url(resource_name).encode(
+                        'utf-8')
+                else:
+                    resource_content += resource_source_url(resource_name)
             resource_content = resource_content.replace('\\', '\\\\')
             resource_content = resource_content.replace('\n', '\\n')
             resource_content = resource_content.replace('"', '\\"')
@@ -173,7 +182,9 @@ class ReleaseBuilder(object):
     def _concatenate_application_script(self, output):
         output.write('Root.allDescriptors.push(...%s);' % self._release_module_descriptors())
         if self.descriptors.extends:
-            output.write('Root.applicationDescriptor.modules.push(...%s);' % json.dumps(self.descriptors.application.values()))
+            output.write(
+                'Root.applicationDescriptor.modules.push(...%s);' %
+                json.dumps(list(self.descriptors.application.values())))
         else:
             output.write('Root.applicationDescriptor = %s;' % self.descriptors.application_json())
 

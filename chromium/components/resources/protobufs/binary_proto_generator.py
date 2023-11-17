@@ -7,9 +7,8 @@
  Converts a given ASCII proto into a binary resource.
 
 """
-
+from __future__ import print_function
 import abc
-import imp
 import optparse
 import os
 import re
@@ -17,6 +16,12 @@ import subprocess
 import sys
 import traceback
 
+PY34 = sys.version_info[0:2] >= (3, 4)
+
+if PY34:
+  from importlib import util as imp_util
+else:
+  import imp
 
 class GoogleProtobufModuleImporter:
   """A custom module importer for importing google.protobuf.
@@ -67,8 +72,16 @@ class GoogleProtobufModuleImporter:
       # but is included for completeness.
       raise ImportError(fullname)
 
-    filepath = self._fullname_to_filepath(fullname)
-    return imp.load_source(fullname, filepath)
+    if PY34:
+      filepath = self._fullname_to_filepath(fullname)
+      spec = imp_util.spec_from_file_location(fullname, filepath)
+      loaded = imp_util.module_from_spec(spec)
+      spec.loader.exec_module(loaded)
+
+    else:
+      return imp.load_source(fullname, filepath)
+
+    return loaded
 
 class BinaryProtoGenerator:
 
@@ -196,12 +209,12 @@ class BinaryProtoGenerator:
     self._ImportProtoModules(opts.path)
 
     if not self.VerifyArgs(opts):
-      print "Wrong arguments"
+      print("Wrong arguments")
       return 1
 
     try:
       self._GenerateBinaryProtos(opts)
     except Exception as e:
-      print "ERROR: Failed to render binary version of %s:\n  %s\n%s" % (
-          opts.infile, str(e), traceback.format_exc())
+      print("ERROR: Failed to render binary version of %s:\n  %s\n%s" %
+            (opts.infile, str(e), traceback.format_exc()))
       return 1

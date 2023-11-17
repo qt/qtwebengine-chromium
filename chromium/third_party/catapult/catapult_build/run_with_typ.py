@@ -24,12 +24,13 @@ def Run(top_level_dir, path=None, suffixes=None, **kwargs):
   typ_path = os.path.abspath(os.path.join(
       os.path.dirname(__file__), os.path.pardir, 'third_party', 'typ'))
   _AddToPathIfNeeded(typ_path)
-  import typ
+  import typ # pylint: disable=import-outside-toplevel
   return typ.main(
       top_level_dir=top_level_dir,
       path=(path or []),
       coverage_source=[top_level_dir],
       suffixes=suffixes,
+      coverage=True,
       **kwargs)
 
 

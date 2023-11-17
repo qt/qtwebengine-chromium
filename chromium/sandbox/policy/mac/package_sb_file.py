@@ -3,6 +3,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+from __future__ import print_function
 import os
 import sys
 
@@ -28,7 +29,7 @@ def escape_for_c(line):
 
 def pack_file(argv):
   if len(argv) != 2:
-    print >> sys.stderr, 'usage: package_sb_file.py input_filename output_dir'
+    print('usage: package_sb_file.py input_filename output_dir', file=sys.stderr)
     return 1
   input_filename = argv[0]
   output_directory = argv[1]
@@ -37,14 +38,14 @@ def pack_file(argv):
   output_h_file = output_directory + '/' + input_basename + '.h'
   output_cc_file = output_directory + '/' + input_basename + '.cc'
   try:
-    with open(input_filename, 'rb') as infile:
-      with open(output_h_file, 'wb') as outfile:
+    with open(input_filename, 'r') as infile:
+      with open(output_h_file, 'w') as outfile:
         outfile.write(header)
         outfile.write(h_include)
         outfile.write(namespace)
         outfile.write(h_definition % module_name)
         outfile.write(namespace_end)
-      with open(output_cc_file, 'wb') as outfile:
+      with open(output_cc_file, 'w') as outfile:
         outfile.write(header)
         outfile.write(cc_include % module_name)
         outfile.write(namespace)
@@ -56,7 +57,7 @@ def pack_file(argv):
         outfile.write(cc_definition_end)
         outfile.write(namespace_end)
   except IOError:
-    print >> sys.stderr, 'Failed to process %s' % input_filename
+    print('Failed to process %s' % input_filename, file = sys.stderr)
     return 1
   return 0
 

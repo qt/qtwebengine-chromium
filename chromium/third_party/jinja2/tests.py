@@ -10,7 +10,11 @@
 """
 import operator
 import re
-from collections import Mapping
+import sys
+if sys.version_info[0] > 2:
+    from collections.abc import Mapping
+else:
+    from collections import Mapping
 from jinja2.runtime import Undefined
 from jinja2._compat import text_type, string_types, integer_types
 import decimal
