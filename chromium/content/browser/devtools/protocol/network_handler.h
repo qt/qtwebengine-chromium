@@ -72,7 +72,8 @@ class NetworkHandler : public DevToolsDomainHandler,
                  const base::UnguessableToken& devtools_token,
                  DevToolsIOContext* io_context,
                  base::RepeatingClosure update_loader_factories_callback,
-                 bool allow_file_access);
+                 bool allow_file_access,
+                 bool client_is_trusted);
 
   NetworkHandler(const NetworkHandler&) = delete;
   NetworkHandler& operator=(const NetworkHandler&) = delete;
@@ -335,6 +336,8 @@ class NetworkHandler : public DevToolsDomainHandler,
 
   const base::UnguessableToken devtools_token_;
   DevToolsIOContext* const io_context_;
+  const bool allow_file_access_;
+  const bool client_is_trusted_;
 
   std::unique_ptr<Network::Frontend> frontend_;
   BrowserContext* browser_context_;
@@ -356,7 +359,6 @@ class NetworkHandler : public DevToolsDomainHandler,
       loaders_;
   absl::optional<std::set<net::SourceStream::SourceType>>
       accepted_stream_types_;
-  const bool allow_file_access_;
   std::unordered_map<String, std::pair<String, bool>> received_body_data_;
   base::WeakPtrFactory<NetworkHandler> weak_factory_{this};
 };
