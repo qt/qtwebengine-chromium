@@ -13,6 +13,7 @@
 #include "base/memory/ptr_util.h"
 #include "base/memory/raw_ptr.h"
 #include "base/rand_util.h"
+#include "base/ranges/algorithm.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/bind.h"
@@ -875,12 +876,9 @@ TEST_F(PasswordsPrivateDelegateImplTest,
   const PasswordsPrivateDelegate::UiEntries& credentials =
       GetCredentials(*delegate);
   EXPECT_EQ(credentials.size(), 2u);
-  const auto account_credential_it =
-      std::ranges::find_if(credentials, [](const auto& credential) {
-        return credential.stored_in ==
-               api::passwords_private::PasswordStoreSet::
-                   PASSWORD_STORE_SET_ACCOUNT;
-      });
+  const auto account_credential_it = base::ranges::find(
+      credentials, api::passwords_private::PASSWORD_STORE_SET_ACCOUNT,
+      &api::passwords_private::PasswordUiEntry::stored_in);
   ASSERT_NE(account_credential_it, credentials.end());
 
   api::passwords_private::PasswordUiEntry updated_credential =
