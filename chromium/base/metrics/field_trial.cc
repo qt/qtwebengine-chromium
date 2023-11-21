@@ -704,6 +704,8 @@ void FieldTrialList::PopulateLaunchOptionsWithFieldTrialState(
   // Use shared memory to communicate field trial state to child processes.
   // The browser is the only process that has write access to the shared memory.
   InstantiateFieldTrialAllocatorIfNeeded();
+  if (!global_)
+    return;
   CHECK(global_);
   CHECK(global_->readonly_allocator_region_.IsValid());
 
