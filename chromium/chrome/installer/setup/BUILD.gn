@@ -7,7 +7,6 @@ import("//build/config/chrome_build.gni")
 import("//chrome/installer/setup/buildflags.gni")
 import("//chrome/process_version_rc_template.gni")
 import("//testing/test.gni")
-import("//ui/qt/qt.gni")
 
 buildflag_header("buildflags") {
   header = "buildflags.h"
@@ -130,13 +129,6 @@ if (is_win) {
       sources += [
         "channel_override_work_item.cc",
         "channel_override_work_item.h",
-      ]
-    }
-
-    if(is_qtwebengine) {
-      deps -= [
-        "//components/zucchini:zucchini_io",
-        "//components/zucchini:zucchini_lib",
       ]
     }
   }
