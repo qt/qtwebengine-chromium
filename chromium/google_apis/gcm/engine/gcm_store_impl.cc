@@ -189,7 +189,7 @@ std::string ParseInstanceIDKey(const std::string& key) {
 // outlive the slice.
 // For example: MakeSlice(MakeOutgoingKey(x)) is invalid.
 leveldb::Slice MakeSlice(const base::StringPiece& s) {
-  return leveldb::Slice(s.begin(), s.size());
+  return leveldb::Slice(s.data(), s.size());
 }
 
 }  // namespace

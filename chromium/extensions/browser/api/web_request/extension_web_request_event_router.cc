@@ -197,7 +197,7 @@ ExtensionWebRequestEventRouter::EventTypes GetEventTypeFromEventName(
     return ExtensionWebRequestEventRouter::kInvalidEvent;
   }
 
-  const auto* it = kRequestStageMap.find(event_name);
+  const auto it = kRequestStageMap.find(event_name);
   return it == kRequestStageMap.end()
              ? ExtensionWebRequestEventRouter::kInvalidEvent
              : it->second;

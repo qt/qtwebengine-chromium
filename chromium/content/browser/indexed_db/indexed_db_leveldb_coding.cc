@@ -403,7 +403,7 @@ bool DecodeString(StringPiece* slice, std::u16string* value) {
   size_t length = slice->size() / sizeof(char16_t);
   std::u16string decoded;
   decoded.reserve(length);
-  const char16_t* encoded = reinterpret_cast<const char16_t*>(slice->begin());
+  const char16_t* encoded = reinterpret_cast<const char16_t*>(slice->data());
   for (unsigned i = 0; i < length; ++i)
     decoded.push_back(base::NetToHost16(*encoded++));
 
@@ -423,7 +423,7 @@ bool DecodeStringWithLength(StringPiece* slice, std::u16string* value) {
   if (slice->size() < bytes)
     return false;
 
-  StringPiece subpiece(slice->begin(), bytes);
+  StringPiece subpiece(slice->data(), bytes);
   slice->remove_prefix(bytes);
   if (!DecodeString(&subpiece, value))
     return false;
@@ -442,7 +442,7 @@ bool DecodeBinary(StringPiece* slice, std::string* value) {
   if (slice->size() < size)
     return false;
 
-  value->assign(slice->begin(), size);
+  value->assign(slice->data(), size);
   slice->remove_prefix(size);
   return true;
 }
@@ -539,7 +539,7 @@ bool DecodeDouble(StringPiece* slice, double* value) {
   if (slice->size() < sizeof(*value))
     return false;
 
-  memcpy(value, slice->begin(), sizeof(*value));
+  memcpy(value, slice->data(), sizeof(*value));
   slice->remove_prefix(sizeof(*value));
   return true;
 }
@@ -665,12 +665,12 @@ bool ConsumeEncodedIDBKey(StringPiece* slice) {
 }
 
 bool ExtractEncodedIDBKey(StringPiece* slice, std::string* result) {
-  const char* start = slice->begin();
+  const char* start = slice->data();
   if (!ConsumeEncodedIDBKey(slice))
     return false;
 
   if (result)
-    result->assign(start, slice->begin());
+    result->assign(start, slice->data());
   return true;
 }
 
@@ -715,8 +715,8 @@ int CompareEncodedStringsWithLength(StringPiece* slice1,
   }
 
   // Extract the string data, and advance the passed slices.
-  StringPiece string1(slice1->begin(), len1 * sizeof(char16_t));
-  StringPiece string2(slice2->begin(), len2 * sizeof(char16_t));
+  StringPiece string1(slice1->data(), len1 * sizeof(char16_t));
+  StringPiece string2(slice2->data(), len2 * sizeof(char16_t));
   slice1->remove_prefix(len1 * sizeof(char16_t));
   slice2->remove_prefix(len2 * sizeof(char16_t));
 
@@ -744,8 +744,8 @@ int CompareEncodedBinary(StringPiece* slice1, StringPiece* slice2, bool* ok) {
   }
 
   // Extract the binary data, and advance the passed slices.
-  StringPiece binary1(slice1->begin(), size1);
-  StringPiece binary2(slice2->begin(), size2);
+  StringPiece binary1(slice1->data(), size1);
+  StringPiece binary2(slice2->data(), size2);
   slice1->remove_prefix(size1);
   slice2->remove_prefix(size2);
 
@@ -1405,19 +1405,19 @@ bool KeyPrefix::Decode(StringPiece* slice, KeyPrefix* result) {
     return false;
 
   {
-    StringPiece tmp(slice->begin(), database_id_bytes);
+    StringPiece tmp(slice->data(), database_id_bytes);
     if (!DecodeInt(&tmp, &result->database_id_))
       return false;
   }
   slice->remove_prefix(database_id_bytes);
   {
-    StringPiece tmp(slice->begin(), object_store_id_bytes);
+    StringPiece tmp(slice->data(), object_store_id_bytes);
     if (!DecodeInt(&tmp, &result->object_store_id_))
       return false;
   }
   slice->remove_prefix(object_store_id_bytes);
   {
-    StringPiece tmp(slice->begin(), index_id_bytes);
+    StringPiece tmp(slice->data(), index_id_bytes);
     if (!DecodeInt(&tmp, &result->index_id_))
       return false;
   }

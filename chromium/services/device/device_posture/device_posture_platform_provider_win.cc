@@ -74,7 +74,7 @@ DevicePosturePlatformProviderWin::ParsePosture(
            {"MODE_LAYFLAT_LANDSCAPE", mojom::DevicePostureType::kContinuous},
            {"MODE_LAYFLAT_PORTRAIT", mojom::DevicePostureType::kContinuous},
            {"MODE_TABLETOP", mojom::DevicePostureType::kContinuous}});
-  if (auto* iter = kPostureStateToPostureType.find(posture_state);
+  if (auto iter = kPostureStateToPostureType.find(posture_state);
       iter != kPostureStateToPostureType.end()) {
     return iter->second;
   }

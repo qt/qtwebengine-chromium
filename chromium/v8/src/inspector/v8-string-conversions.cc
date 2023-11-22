@@ -359,8 +359,8 @@ std::string UTF16ToUTF8(const UChar* stringStart, size_t length) {
   std::string output(length * 3, '\0');
   const UChar* characters = stringStart;
   const UChar* characters_end = characters + length;
-  char* buffer = &*output.begin();
-  char* buffer_end = &*output.end();
+  char* buffer = output.data();
+  char* buffer_end = output.data() + output.size();
   while (characters < characters_end) {
     // Use strict conversion to detect unpaired surrogates.
     ConversionResult result = convertUTF16ToUTF8(
