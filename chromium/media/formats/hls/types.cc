@@ -37,7 +37,7 @@ absl::optional<SourceString> ExtractAttributeName(SourceString* source_str) {
   };
 
   // Extract the substring where `is_char_valid` succeeds
-  const char* end = base::ranges::find_if_not(str.Str(), is_char_valid);
+  const auto end = base::ranges::find_if_not(str.Str(), is_char_valid);
   const auto name = str.Consume(end - str.Str().cbegin());
 
   // At least one character must have matched

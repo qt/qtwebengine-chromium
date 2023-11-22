@@ -499,7 +499,8 @@ bool IsBase64Char(char c) {
          c == '-' || c == '_' || c == '/';
 }
 
-int EatChar(const char** it, const char* end, bool (*predicate)(char)) {
+template<typename Iterator>
+int EatChar(Iterator* it, Iterator end, bool (*predicate)(char)) {
   int count = 0;
   while (*it != end) {
     if (!predicate(**it))
@@ -516,8 +517,8 @@ bool IsBase64(std::string_view expression) {
   if (expression.empty())
     return false;
 
-  auto* it = expression.begin();
-  auto* end = expression.end();
+  auto it = expression.begin();
+  auto end = expression.end();
 
   int count_1 = EatChar(&it, end, IsBase64Char);
   int count_2 = EatChar(&it, end, [](char c) -> bool { return c == '='; });

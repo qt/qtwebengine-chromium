@@ -151,7 +151,7 @@ mojom::PressureState CpuProbe::CalculateState(const PressureSample& sample) {
                                      ? kStateRandomizedThresholds
                                      : kStateBaseThresholds;
 
-  auto* it =
+  auto it =
       base::ranges::lower_bound(kStateThresholds, sample.cpu_utilization);
   if (it == kStateThresholds.end()) {
     NOTREACHED_NORETURN() << "unexpected value: " << sample.cpu_utilization;
