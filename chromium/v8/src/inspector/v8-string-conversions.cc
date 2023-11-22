@@ -358,7 +358,7 @@ std::string UTF16ToUTF8(const UChar* stringStart, size_t length) {
   std::string output(length * 3, '\0');
   const UChar* characters = stringStart;
   const UChar* characters_end = characters + length;
-  char* buffer = &*output.begin();
+  char* buffer = output.data();
   // Dereferencing output.end() is not allowed in some STL libraries, like
   // Microsoft STL. Compute the end pointer without dereferencing.
   char* buffer_end = buffer + output.size();
