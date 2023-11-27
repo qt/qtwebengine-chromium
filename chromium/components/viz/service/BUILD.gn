@@ -233,6 +233,7 @@ viz_component("service") {
   # Keep sources with "ui/gl" includes separate to avoid mixing OpenGL sources
   jumbo_excluded_sources = [
     "display/display.cc",
+    "display/output_surface.cc",
     "display/overlay_processor_on_gpu.cc",
     "display_embedder/compositor_gpu_thread.cc",
     "display_embedder/image_context_impl.cc",
