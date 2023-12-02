@@ -89,7 +89,7 @@ group("gn_all") {
     } else {
       deps = []
     }
-  } else {
+  } else if(!is_qtwebengine) {
     deps = [
       "//base:base_perftests",
       "//base:base_unittests",
@@ -134,7 +134,7 @@ group("gn_all") {
       ]
     }
 
-    if (!is_ios && !is_android && !is_castos && !is_qtwebengine) {
+    if (!is_ios && !is_android && !is_castos) {
       if (!is_fuchsia) {
         deps += [
           "//chrome",
@@ -458,7 +458,7 @@ group("gn_all") {
       deps += [ "//chromeos:chromeos_unittests" ]
     }
 
-    if ((is_chromeos_ash || is_mac || is_win) && !is_qtwebengine) {
+    if (is_chromeos_ash || is_mac || is_win) {
       deps += [
         "//rlz:rlz_id",
         "//rlz:rlz_lib",
@@ -626,7 +626,7 @@ group("gn_all") {
       }
     }
 
-    if (is_mac && !is_qtwebengine) {
+    if (is_mac) {
       deps += [
         "//third_party/breakpad:dump_syms",
 
@@ -641,7 +641,7 @@ group("gn_all") {
       ]
     }
 
-    if (is_win && !is_qtwebengine) {
+    if (is_win) {
       deps += [
         "//base:pe_image_test",
         "//chrome/chrome_elf:chrome_elf_unittests",
@@ -672,7 +672,7 @@ group("gn_all") {
           host_os == "win") {
         deps += [ "//chrome/test/mini_installer:mini_installer_tests" ]
       }
-    } else if (!is_android && !is_ios && !is_fuchsia && !is_qtwebengine) {
+    } else if (!is_android && !is_ios && !is_fuchsia) {
       deps += [ "//third_party/breakpad:symupload($host_toolchain)" ]
     }
 
@@ -687,7 +687,7 @@ group("gn_all") {
       ]
     }
 
-    if ((is_mac || is_win || is_android || is_linux || is_chromeos) && !is_qtwebengine) {
+    if (is_mac || is_win || is_android || is_linux || is_chromeos) {
       deps += [
         "//third_party/crashpad/crashpad:crashpad_tests",
         "//third_party/crashpad/crashpad/handler:crashpad_handler",
@@ -1660,7 +1660,7 @@ group("chromium_builder_perf") {
     data_deps += [ "//tools/perf/clear_system_cache" ]
   }
 
-  if (is_win && !is_qtwebengine) {
+  if (is_win) {
     data_deps += [
       "//chrome/installer/mini_installer:mini_installer",
       "//components:components_perftests",
