@@ -14,6 +14,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <limits>
 
 #if BUILDFLAG(PA_DCHECK_IS_ON)
 #include "base/allocator/partition_allocator/partition_alloc_base/check.h"
