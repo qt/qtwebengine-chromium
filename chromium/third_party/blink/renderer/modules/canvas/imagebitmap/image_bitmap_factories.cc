@@ -152,7 +152,9 @@ ScriptPromise ImageBitmapFactories::CreateImageBitmapFromBlob(
     ImageBitmapSource* bitmap_source,
     absl::optional<gfx::Rect> crop_rect,
     const ImageBitmapOptions* options) {
-  DCHECK(script_state->ContextIsValid());
+  if (!script_state->ContextIsValid()) {
+    return ScriptPromise();
+  }
   ImageBitmapFactories& factory = From(*ExecutionContext::From(script_state));
   ImageBitmapLoader* loader = ImageBitmapFactories::ImageBitmapLoader::Create(
       factory, crop_rect, options, script_state);
