@@ -2984,11 +2984,24 @@ static aom_codec_err_t encoder_encode(aom_codec_alg_priv_t *ctx,
       av1_compute_num_workers_for_mt(cpi);
       num_workers = av1_get_max_num_workers(cpi);
     }
-    if ((num_workers > 1) && (ppi->p_mt_info.num_workers == 0)) {
+    if (num_workers > 1 && ppi->p_mt_info.num_workers < num_workers) {
       // Obtain the maximum no. of frames that can be supported in a parallel
       // encode set.
       if (is_stat_consumption_stage(cpi)) {
         ppi->num_fp_contexts = av1_compute_num_fp_contexts(ppi, &cpi->oxcf);
+      }
+      if (ppi->p_mt_info.num_workers > 0) {
+        av1_terminate_workers(ppi);
+        free_thread_data(ppi);
+        aom_free(ppi->p_mt_info.tile_thr_data);
+        ppi->p_mt_info.tile_thr_data = NULL;
+        aom_free(ppi->p_mt_info.workers);
+        ppi->p_mt_info.workers = NULL;
+        ppi->p_mt_info.num_workers = 0;
+        for (int j = 0; j < ppi->num_fp_contexts; j++) {
+          aom_free(ppi->parallel_cpi[j]->td.tctx);
+          ppi->parallel_cpi[j]->td.tctx = NULL;
+        }
       }
       av1_create_workers(ppi, num_workers);
       av1_init_tile_thread_data(ppi, cpi->oxcf.pass == AOM_RC_FIRST_PASS);
