@@ -1558,17 +1558,6 @@ AV1_COMP *av1_create_compressor(AV1_PRIMARY *ppi, const AV1EncoderConfig *oxcf,
   snprintf((H) + strlen(H), sizeof(H) - strlen(H), (T), (V))
 #endif  // CONFIG_INTERNAL_STATS
 
-// This function will change the state and free the mutex of corresponding
-// workers and terminate the object. The object can not be re-used unless a call
-// to reset() is made.
-static AOM_INLINE void terminate_worker_data(AV1_PRIMARY *ppi) {
-  PrimaryMultiThreadInfo *const p_mt_info = &ppi->p_mt_info;
-  for (int t = p_mt_info->num_workers - 1; t >= 0; --t) {
-    AVxWorker *const worker = &p_mt_info->workers[t];
-    aom_get_worker_interface()->end(worker);
-  }
-}
-
 void av1_remove_primary_compressor(AV1_PRIMARY *ppi) {
   if (!ppi) return;
 #if !CONFIG_REALTIME_ONLY
@@ -1596,11 +1585,14 @@ void av1_remove_primary_compressor(AV1_PRIMARY *ppi) {
   av1_tpl_dealloc(&tpl_data->tpl_mt_sync);
 #endif
 
-  terminate_worker_data(ppi);
+  av1_terminate_workers(ppi);
   free_thread_data(ppi);
 
   aom_free(ppi->p_mt_info.tile_thr_data);
+  ppi->p_mt_info.tile_thr_data = NULL;
   aom_free(ppi->p_mt_info.workers);
+  ppi->p_mt_info.workers = NULL;
+  ppi->p_mt_info.num_workers = 0;
 
   aom_free(ppi);
 }
