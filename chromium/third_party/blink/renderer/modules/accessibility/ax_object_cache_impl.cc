@@ -2811,7 +2811,9 @@ bool AXObjectCacheImpl::IsPopup(Document& document) const {
         << "The popup document's owner should be in the main document.";
     Page* main_page = GetDocument().GetPage();
     DCHECK(main_page);
+#if !BUILDFLAG(IS_QTWEBENGINE)
     DCHECK_EQ(&document, popup_document_);
+#endif
   }
 #endif
   return is_popup;
