@@ -1096,6 +1096,10 @@ void InjectedScript::Scope::allowCodeGenerationFromStrings() {
   m_context->AllowCodeGenerationFromStrings(true);
 }
 
+void InjectedScript::Scope::setTryCatchVerbose() {
+  m_tryCatch.SetVerbose(true);
+}
+
 void InjectedScript::Scope::cleanup() {
   m_commandLineAPIScope.reset();
   if (!m_context.IsEmpty()) {
