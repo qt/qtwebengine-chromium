@@ -57,7 +57,7 @@ class LeafPayloadReader {
   // payload_size().
   int inline_payload_size() const {
     DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-    DCHECK(page_id_ != DatabasePageReader::kInvalidPageId)
+    DCHECK(DatabasePageReader::IsValidPageId(page_id_))
         << "Initialize() not called, or last call did not succeed";
     DCHECK_LE(inline_payload_size_, payload_size_);
     return inline_payload_size_;
@@ -71,7 +71,7 @@ class LeafPayloadReader {
   // The return value is guaranteed to be at least inline_payload_size().
   int payload_size() const {
     DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-    DCHECK(page_id_ != DatabasePageReader::kInvalidPageId)
+    DCHECK(DatabasePageReader::IsValidPageId(page_id_))
         << "Initialize() not called, or last call did not succeed";
     DCHECK_LE(inline_payload_size_, payload_size_);
     return payload_size_;
@@ -113,8 +113,8 @@ class LeafPayloadReader {
 
   // The ID of the B-tree page containing the current payload's inline bytes.
   //
-  // Set to kInvalidPageId if the reader wasn't successfully initialized.
-  int page_id_;
+  // Set to kHighestInvalidPageId if the reader wasn't successfully initialized.
+  int page_id_ = DatabasePageReader::kHighestInvalidPageId;
 
   // The start of the current payload's inline bytes on the B-tree page.
   //
