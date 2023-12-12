@@ -58,10 +58,10 @@ std::tuple<unsigned, int> AudioDelayDSPKernel::ProcessARateVector(
 
   const float sample_rate = SampleRate();
   const float* delay_times = delay_times_.Data();
-
   int w_index = write_index_;
 
   const __m128 v_sample_rate = _mm_set1_ps(sample_rate);
+  const __m128 v_all_zeros = _mm_setzero_ps();
 
   // The buffer length as a float and as an int so we don't need to constant
   // convert from one to the other.
@@ -84,7 +84,10 @@ std::tuple<unsigned, int> AudioDelayDSPKernel::ProcessARateVector(
   int k = 0;
 
   for (int n = 0; n < number_of_loops; ++n, k += 4) {
-    const __m128 v_delay_time = _mm_loadu_ps(delay_times + k);
+    // It's possible that `delay_time` contains negative values. Make sure
+    // they are greater than zero.
+    const __m128 v_delay_time = _mm_max_ps(_mm_loadu_ps(delay_times + k),
+                                           v_all_zeros);
     const __m128 v_desired_delay_frames =
         _mm_mul_ps(v_delay_time, v_sample_rate);
 
@@ -97,7 +100,8 @@ std::tuple<unsigned, int> AudioDelayDSPKernel::ProcessARateVector(
         WrapPositionVector(v_read_position, v_buffer_length_float);
 
     // Get indices into the buffer for the samples we need for interpolation.
-    const __m128i v_read_index1 = _mm_cvttps_epi32(v_read_position);
+    const __m128i v_read_index1 = WrapIndexVector(
+        _mm_cvttps_epi32(v_read_position), v_buffer_length_int);
     const __m128i v_read_index2 = WrapIndexVector(
         _mm_add_epi32(v_read_index1, _mm_set1_epi32(1)), v_buffer_length_int);
 
