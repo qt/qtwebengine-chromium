@@ -944,7 +944,13 @@ void CaptureAsyncStackTrace(Isolate* isolate, Handle<JSPromise> promise,
       builder->AppendPromiseCombinatorFrame(function, combinator,
                                             FrameArray::kIsPromiseAll, context);
 
-      // Now peak into the Promise.all() resolve element context to
+      if (context->IsNativeContext()) {
+        // NativeContext is used as a marker that the closure was already
+        // called. We can't access the reject element context any more.
+        return;
+      }
+
+      // Now peek into the Promise.all() resolve element context to
       // find the promise capability that's being resolved when all
       // the concurrent promises resolve.
       int const index =
@@ -963,7 +969,13 @@ void CaptureAsyncStackTrace(Isolate* isolate, Handle<JSPromise> promise,
       builder->AppendPromiseCombinatorFrame(function, combinator,
                                             FrameArray::kIsPromiseAny, context);
 
-      // Now peak into the Promise.any() reject element context to
+      if (context->IsNativeContext()) {
+        // NativeContext is used as a marker that the closure was already
+        // called. We can't access the reject element context any more.
+        return;
+      }
+
+      // Now peek into the Promise.any() reject element context to
       // find the promise capability that's being resolved when any of
       // the concurrent promises resolve.
       int const index = PromiseBuiltins::kPromiseAnyRejectElementCapabilitySlot;
