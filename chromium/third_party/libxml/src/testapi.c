@@ -40,7 +40,7 @@ static xmlNsPtr api_ns = NULL;
 
 static void
 structured_errors(void *userData ATTRIBUTE_UNUSED,
-                  xmlErrorPtr error ATTRIBUTE_UNUSED) {
+                  const xmlError *error ATTRIBUTE_UNUSED) {
     generic_errors++;
 }
 
