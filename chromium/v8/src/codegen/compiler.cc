@@ -543,11 +543,11 @@ void InstallUnoptimizedCode(UnoptimizedCompilationInfo* compilation_info,
       shared_info->set_is_asm_wasm_broken(true);
     }
 
-    shared_info->set_bytecode_array(*compilation_info->bytecode_array());
-
     Handle<FeedbackMetadata> feedback_metadata = FeedbackMetadata::New(
         isolate, compilation_info->feedback_vector_spec());
     shared_info->set_feedback_metadata(*feedback_metadata);
+
+    shared_info->set_bytecode_array(*compilation_info->bytecode_array());
   } else {
     DCHECK(compilation_info->has_asm_wasm_data());
     // We should only have asm/wasm data when finalizing on the main thread.
