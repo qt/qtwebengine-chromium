@@ -757,7 +757,11 @@ GrOp::CombineResult DrawVerticesOp::onCombineIfPossible(GrOp* t, GrRecordingCont
         return CombineResult::kCannotCombine;
     }
 
-    if (fVertexCount + that->fVertexCount > SkTo<int>(UINT16_MAX)) {
+    if (fVertexCount > INT32_MAX - that->fVertexCount) {
+        return CombineResult::kCannotCombine;
+    }
+
+    if (fVertexCount > SkTo<int>(UINT16_MAX) - that->fVertexCount) {
         return CombineResult::kCannotCombine;
     }
 
