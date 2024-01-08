@@ -192,7 +192,7 @@ class ContextProviderCommandBuffer
   //////////////////////////////////////////////////////////////////////////////
 
   // Owned by either gles2_impl_ or raster_interface_, not both.
-  gpu::ImplementationBase* impl_;
+  gpu::ImplementationBase* impl_ = nullptr;
 
   std::unique_ptr<skia_bindings::GrContextForGLES2Interface> gr_context_;
 #if BUILDFLAG(SKIA_USE_DAWN)
