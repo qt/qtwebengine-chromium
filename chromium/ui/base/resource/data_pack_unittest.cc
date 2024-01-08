@@ -364,4 +364,11 @@ TEST(DataPackTest, ModifiedWhileUsed) {
 }
 #endif
 
+TEST(DataPackTest, Misordered) {
+  DataPack pack(k100Percent);
+
+  ASSERT_FALSE(pack.LoadFromBuffer(
+      {kSampleMisorderedPakContents, kSampleMisorderedPakSize}));
+}
+
 }  // namespace ui
