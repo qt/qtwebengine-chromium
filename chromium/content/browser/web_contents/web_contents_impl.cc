@@ -4541,6 +4541,17 @@ void WebContentsImpl::ShowCreatedWindow(
   if (!owned_created || !owned_created->contents)
     return;
 
+  if (base::FeatureList::IsEnabled(kWindowOpenFileSelectFix) &&
+      active_file_chooser_) {
+    // Do not allow opening a new window or tab while a file select is active
+    // file chooser to avoid user confusion over which tab triggered the file
+    // chooser.
+    opener->AddMessageToConsole(
+        blink::mojom::ConsoleMessageLevel::kWarning,
+        "window.open blocked due to active file chooser.");
+    return;
+  }
+
   WebContentsImpl* created = owned_created->contents.get();
 
   // This uses the delegate for the WebContents where the window was created
