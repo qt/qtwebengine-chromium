@@ -3840,7 +3840,7 @@ void RenderFrameHostImpl::DidNavigate(
   if (!navigation_request->IsSameDocument() &&
       (!navigation_request->is_synchronous_renderer_commit() ||
        !navigation_request->GetURL().IsAboutBlank())) {
-    SetNotInitialEmptyDocument();
+    navigation_request->frame_tree_node()->set_not_on_initial_empty_document();
   }
 
   // For uuid-in-package: resources served from WebBundles, use the Bundle's
@@ -4733,7 +4733,11 @@ void RenderFrameHostImpl::DidOpenDocumentInputStream(const GURL& url) {
   GURL filtered_url(url);
   GetProcess()->FilterURL(/*empty_allowed=*/false, &filtered_url);
   renderer_url_info_.last_document_url = filtered_url;
-  DidOpenDocumentInputStream();
+  // `owner_` could be null if we get this message asynchronously from the
+  // renderer in pending deletion state.
+  if (owner_) {
+    owner_->DidOpenDocumentInputStream();
+  }
 }
 
 RenderWidgetHostImpl* RenderFrameHostImpl::GetRenderWidgetHost() {
@@ -9291,6 +9295,10 @@ void RenderFrameHostImpl::SendAllPendingBeaconsOnNavigation() {
   for (auto& child : children_) {
     child->current_frame_host()->SendAllPendingBeaconsOnNavigation();
   }
+}
+
+bool RenderFrameHostImpl::is_initial_empty_document() const {
+  return frame_tree_node_->is_on_initial_empty_document();
 }
 
 void RenderFrameHostImpl::CommitNavigation(
