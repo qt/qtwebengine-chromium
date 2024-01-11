@@ -216,7 +216,7 @@ ANGLE_INLINE void SharedContextMutex<Mutex>::doUnlock()
 }
 #else
 template <class Mutex>
-ANGLE_INLINE SharedContextMutex<Mutex> *SharedContextMutex<Mutex>::doTryLock()
+inline SharedContextMutex<Mutex> *SharedContextMutex<Mutex>::doTryLock()
 {
     angle::ThreadId currentThreadId;
     ASSERT(!CheckThreadIdCurrent(mOwnerThreadId, &currentThreadId));
@@ -238,7 +238,7 @@ ANGLE_INLINE SharedContextMutex<Mutex> *SharedContextMutex<Mutex>::doTryLock()
 }
 
 template <class Mutex>
-ANGLE_INLINE SharedContextMutex<Mutex> *SharedContextMutex<Mutex>::doLock()
+inline SharedContextMutex<Mutex> *SharedContextMutex<Mutex>::doLock()
 {
     angle::ThreadId currentThreadId;
     ASSERT(!CheckThreadIdCurrent(mOwnerThreadId, &currentThreadId));
