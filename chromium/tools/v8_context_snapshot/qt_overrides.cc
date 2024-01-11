@@ -12,7 +12,7 @@
 #include "ui/gl/gl_surface.h"
 #endif
 
-#if BUILDFLAG(IS_OZONE)
+#if BUILDFLAG(IS_LINUX) && BUILDFLAG(IS_OZONE)
 #include "ui/ozone/buildflags.h"
 #if BUILDFLAG(OZONE_PLATFORM_X11)
 #include "ui/gl/gl_surface_glx.h"
@@ -27,7 +27,7 @@
 #include "gpu/vulkan/init/vulkan_factory.h"
 #endif
 
-#if BUILDFLAG(IS_OZONE) && BUILDFLAG(OZONE_PLATFORM_X11)
+#if BUILDFLAG(IS_LINUX) && BUILDFLAG(IS_OZONE) && BUILDFLAG(OZONE_PLATFORM_X11)
 void* GetQtXDisplay() {
   return nullptr;
 }
