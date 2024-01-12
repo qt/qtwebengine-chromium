@@ -10,12 +10,14 @@
 #include "ui/gl/gl_display.h"
 #include "ui/gl/gl_surface.h"
 
+#if BUILDFLAG(IS_LINUX)
 #if BUILDFLAG(IS_OZONE)
 #include "ui/ozone/buildflags.h"
 #if BUILDFLAG(OZONE_PLATFORM_X11)
 #include "ui/gl/gl_surface_glx.h"
-#endif
-#endif
+#endif // BUILDFLAG(OZONE_PLATFORM_X11
+#endif // BUILDFLAG(IS_OZONE)
+#endif // BUILDFLAG(IS_LINUX)
 
 #include "ui/base/dragdrop/os_exchange_data_provider_factory.h"
 #include "ui/base/pointer/pointer_device.h"
@@ -25,7 +27,9 @@
 #include "gpu/vulkan/init/vulkan_factory.h"
 #endif
 
-#if BUILDFLAG(IS_OZONE) && BUILDFLAG(OZONE_PLATFORM_X11)
+#if BUILDFLAG(IS_LINUX)
+#if BUILDFLAG(IS_OZONE)
+#if BUILDFLAG(OZONE_PLATFORM_X11)
 void* GetQtXDisplay() {
   return nullptr;
 }
@@ -50,7 +54,9 @@ bool GLSurfaceGLX::InitializeExtensionSettingsOneOff() {
   return false;
 }
 } // namespace gl
-#endif
+#endif // BUILDFLAG(OZONE_PLATFORM_X11)
+#endif // BUILDFLAG(IS_OZONE)
+#endif // BUILDFLAG(IS_LINUX)
 
 #if BUILDFLAG(IS_WIN)
 namespace gl {
