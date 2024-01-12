@@ -51,9 +51,11 @@ AnalyserHandler::~AnalyserHandler() {
 }
 
 void AnalyserHandler::Process(uint32_t frames_to_process) {
-  AudioBus* output_bus = Output(0).Bus();
+  DCHECK(Context()->IsAudioThread());
 
-  if (!IsInitialized()) {
+  AudioBus* output_bus = Output(0).RenderingFanOutCount() > 0 ? Output(0).Bus() : nullptr;
+
+  if (!IsInitialized() && output_bus) {
     output_bus->Zero();
     return;
   }
@@ -64,6 +66,11 @@ void AnalyserHandler::Process(uint32_t frames_to_process) {
   // AudioNode.  This must always be done so that the state of the
   // Analyser reflects the current input.
   analyser_.WriteInput(input_bus.get(), frames_to_process);
+
+  // Subsequent steps require `output_bus` to be valid.
+  if (!output_bus) {
+    return;
+  }
 
   if (!Input(0).IsConnected()) {
     // No inputs, so clear the output, and propagate the silence hint.
