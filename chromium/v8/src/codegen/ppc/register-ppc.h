@@ -209,6 +209,12 @@ constexpr Register kConstantPoolRegister = r28;  // Constant pool.
 constexpr Register kRootRegister = r29;          // Roots array pointer.
 constexpr Register cp = r30;                     // JavaScript context pointer.
 
+// PPC64 calling convention
+constexpr Register arg_reg_1 = r3;
+constexpr Register arg_reg_2 = r4;
+constexpr Register arg_reg_3 = r5;
+constexpr Register arg_reg_4 = r6;
+
 constexpr bool kPadArguments = false;
 constexpr bool kSimpleFPAliasing = true;
 constexpr bool kSimdMaskRegisters = false;

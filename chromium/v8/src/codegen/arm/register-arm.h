@@ -119,6 +119,12 @@ GENERAL_REGISTERS(DECLARE_REGISTER)
 #undef DECLARE_REGISTER
 constexpr Register no_reg = Register::no_reg();
 
+// ARM calling convention
+constexpr Register arg_reg_1 = r0;
+constexpr Register arg_reg_2 = r1;
+constexpr Register arg_reg_3 = r2;
+constexpr Register arg_reg_4 = r3;
+
 constexpr bool kPadArguments = false;
 constexpr bool kSimpleFPAliasing = false;
 constexpr bool kSimdMaskRegisters = false;
