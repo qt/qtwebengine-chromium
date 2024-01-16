@@ -116,7 +116,7 @@ void PepperMediaDeviceManager::EnumerateDevices(PP_DeviceType_Dev type,
       base::BindOnce(&PepperMediaDeviceManager::DevicesEnumerated, AsWeakPtr(),
                      std::move(callback), ToMediaDeviceType(type)));
 #else
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(&PepperMediaDeviceManager::DevicesEnumerated,
                                 AsWeakPtr(), std::move(callback), ToMediaDeviceType(type),
                                 std::vector<blink::WebMediaDeviceInfoArray>(),
@@ -195,7 +195,7 @@ int PepperMediaDeviceManager::OpenDevice(PP_DeviceType_Dev type,
       base::BindOnce(&PepperMediaDeviceManager::OnDeviceOpened, AsWeakPtr(),
                      request_id));
 #else
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
       base::BindOnce(&PepperMediaDeviceManager::OnDeviceOpened, AsWeakPtr(),
                      request_id, false, std::string(), blink::MediaStreamDevice()));
