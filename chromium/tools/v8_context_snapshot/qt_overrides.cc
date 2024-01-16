@@ -52,9 +52,6 @@ bool GLSurfaceGLX::IsCreateContextES2ProfileSupported() {
 bool GLSurfaceGLX::IsCreateContextSupported() {
   return false;
 }
-bool GLSurfaceGLX::InitializeExtensionSettingsOneOff() {
-  return false;
-}
 } // namespace gl
 #endif // BUILDFLAG(OZONE_PLATFORM_X11)
 #endif // BUILDFLAG(IS_OZONE)

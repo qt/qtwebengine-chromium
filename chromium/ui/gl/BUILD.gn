@@ -46,7 +46,6 @@ config("gl_config") {
   defines = []
   if (use_glx) {
     defines += [
-      "GL_GLEXT_PROTOTYPES",
       "USE_GLX",
     ]
   }
@@ -303,16 +302,8 @@ jumbo_component("gl") {
       "gl_context_glx.h",
       "gl_glx_api_implementation.cc",
       "gl_glx_api_implementation.h",
-      "glx_util.cc",
-      "glx_util.h",
+      "gl_surface_glx.h",
     ]
-
-    if (!is_qtwebengine) {
-      sources += [
-        "gl_surface_glx.cc",
-        "gl_surface_glx.h",
-      ]
-   }
 
     deps += [
       "//ui/base/x",

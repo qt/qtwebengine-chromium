@@ -28,10 +28,6 @@
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_surface.h"
 
-#if defined(USE_GLX)
-#include "ui/gl/glx_util.h"
-#endif  // defined(USE_GLX)
-
 #if BUILDFLAG(IS_OZONE)
 #include "ui/ozone/buildflags.h"
 #endif  // BUILDFLAG(IS_OZONE)
@@ -958,7 +954,6 @@ bool GLDisplayX11::IsInitialized() const {
 bool GLDisplayX11::Initialize(gl::GLDisplay*) {
     // FIXME?
 }
-
 #endif  // defined(USE_GLX)
 
 #if BUILDFLAG(IS_WIN)

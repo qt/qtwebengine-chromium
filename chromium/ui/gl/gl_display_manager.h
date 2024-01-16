@@ -125,7 +125,6 @@ class GLDisplayManager {
 #if defined(USE_EGL)
   friend class GLDisplayManagerEGLTest;
 #endif
-  friend class GLSurfaceGLXQt;
 
   // Don't delete these functions for testing purpose.
   // Each test constructs a scoped GLDisplayManager directly.

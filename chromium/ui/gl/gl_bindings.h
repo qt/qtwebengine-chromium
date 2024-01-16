@@ -588,9 +588,7 @@ struct GL_EXPORT DriverGLX {
   ProcsGLX fn;
   ExtensionsGLX ext;
 
-#ifndef TOOLKIT_QT
  private:
-#endif
   static std::string GetPlatformExtensions();
 };
 #endif
