@@ -269,13 +269,11 @@ class OzonePlatformX11 : public OzonePlatform,
 
   void InitializeGPU(const InitParams& params) override {
     InitializeCommon(params);
-#if BUILDFLAG(USE_VAAPI)
     if (params.enable_native_gpu_memory_buffers) {
       base::ThreadPool::PostTask(FROM_HERE, base::BindOnce([]() {
                                    ui::GpuMemoryBufferSupportX11::GetInstance();
                                  }));
     }
-#endif
     // In single process mode either the UI thread will create an event source
     // or it's a test and an event source isn't desired.
     if (!params.single_process)
