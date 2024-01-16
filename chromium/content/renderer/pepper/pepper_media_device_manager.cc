@@ -117,7 +117,7 @@ void PepperMediaDeviceManager::EnumerateDevices(PP_DeviceType_Dev type,
                      weak_ptr_factory_.GetWeakPtr(), std::move(callback),
                      ToMediaDeviceType(type)));
 #else
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::Get()->PostTask(
       FROM_HERE,
       base::BindOnce(&PepperMediaDeviceManager::DevicesEnumerated,
                      weak_ptr_factory_.GetWeakPtr(), std::move(callback), ToMediaDeviceType(type),
@@ -198,7 +198,7 @@ int PepperMediaDeviceManager::OpenDevice(PP_DeviceType_Dev type,
       base::BindOnce(&PepperMediaDeviceManager::OnDeviceOpened,
                      weak_ptr_factory_.GetWeakPtr(), request_id));
 #else
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
       base::BindOnce(&PepperMediaDeviceManager::OnDeviceOpened, weak_ptr_factory_.GetWeakPtr(),
                      request_id, false, std::string(), blink::MediaStreamDevice()));
