@@ -246,8 +246,6 @@ class MODULES_EXPORT CanvasRenderingContext2D final
   void TryRestoreContextEvent(TimerBase*) override;
 
  private:
-  friend class CanvasRenderingContext2DAutoRestoreSkCanvas;
-
   void PruneLocalFontCache(size_t target_size);
 
   void ScrollPathIntoViewInternal(const Path&);
