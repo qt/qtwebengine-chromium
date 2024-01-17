@@ -236,8 +236,6 @@ class MODULES_EXPORT CanvasRenderingContext2D final
   void WillOverwriteCanvas() override;
 
  private:
-  friend class CanvasRenderingContext2DAutoRestoreSkCanvas;
-
   void DispatchContextLostEvent(TimerBase*);
   void DispatchContextRestoredEvent(TimerBase*);
   void TryRestoreContextEvent(TimerBase*);

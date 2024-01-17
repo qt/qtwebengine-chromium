@@ -86,35 +86,6 @@ static bool ContextLostRestoredEventsEnabled() {
   return RuntimeEnabledFeatures::Canvas2dContextLostRestoredEnabled();
 }
 
-// Drawing methods need to use this instead of SkAutoCanvasRestore in case
-// overdraw detection substitutes the recording canvas (to discard overdrawn
-// draw calls).
-class CanvasRenderingContext2DAutoRestoreSkCanvas {
-  STACK_ALLOCATED();
-
- public:
-  explicit CanvasRenderingContext2DAutoRestoreSkCanvas(
-      CanvasRenderingContext2D* context)
-      : context_(context), save_count_(0) {
-    DCHECK(context_);
-    cc::PaintCanvas* c = context_->GetOrCreatePaintCanvas();
-    if (c) {
-      save_count_ = c->getSaveCount();
-    }
-  }
-
-  ~CanvasRenderingContext2DAutoRestoreSkCanvas() {
-    cc::PaintCanvas* c = context_->GetOrCreatePaintCanvas();
-    if (c)
-      c->restoreToCount(save_count_);
-    context_->ValidateStateStack();
-  }
-
- private:
-  CanvasRenderingContext2D* context_;
-  int save_count_;
-};
-
 CanvasRenderingContext2D::CanvasRenderingContext2D(
     HTMLCanvasElement* canvas,
     const CanvasContextCreationAttributesCore& attrs)
@@ -850,9 +821,11 @@ void CanvasRenderingContext2D::DrawTextInternal(
   // to 0, for example), so update style before grabbing the PaintCanvas.
   canvas()->GetDocument().UpdateStyleAndLayoutTreeForNode(canvas());
 
-  cc::PaintCanvas* c = GetOrCreatePaintCanvas();
-  if (!c)
+  // Abort if we don't have a paint canvas (e.g. the context was lost).
+  cc::PaintCanvas* paint_canvas = GetOrCreatePaintCanvas();
+  if (!paint_canvas) {
     return;
+  }
 
   if (!std::isfinite(x) || !std::isfinite(y))
     return;
@@ -920,14 +893,13 @@ void CanvasRenderingContext2D::DrawTextInternal(
   if (paint_type == CanvasRenderingContext2DState::kStrokePaintType)
     InflateStrokeRect(bounds);
 
-  CanvasRenderingContext2DAutoRestoreSkCanvas state_restorer(this);
   if (use_max_width) {
-    c->save();
+    paint_canvas->save();
     // We draw when fontWidth is 0 so compositing operations (eg, a "copy" op)
     // still work. As the width of canvas is scaled, so text can be scaled to
     // match the given maxwidth, update text location so it appears on desired
     // place.
-    c->scale(clampTo<float>(width / font_width), 1);
+    paint_canvas->scale(clampTo<float>(width / font_width), 1);
     location.SetX(location.X() / clampTo<float>(width / font_width));
   }
 
@@ -942,6 +914,16 @@ void CanvasRenderingContext2D::DrawTextInternal(
       [](const SkIRect& rect)  // overdraw test lambda
       { return false; },
       bounds, paint_type, CanvasRenderingContext2DState::kNoImage);
+
+  if (use_max_width) {
+    // Cannot use `paint_canvas` in case recording canvas was substituted or
+    // destroyed during draw call.
+    cc::PaintCanvas* c = GetPaintCanvas();
+    if (c) {
+      c->restore();
+    }
+  }
+  ValidateStateStack();
 }
 
 const Font& CanvasRenderingContext2D::AccessFont() {
