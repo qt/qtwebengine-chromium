@@ -1110,14 +1110,18 @@ bool RTCPeerConnectionHandler::Initialize(
     const MediaConstraints& options,
     WebLocalFrame* frame) {
   DCHECK(task_runner_->RunsTasksInCurrentSequence());
-  DCHECK(frame);
-  frame_ = frame;
 
   CHECK(!initialize_called_);
   initialize_called_ = true;
 
   // Prevent garbage collection of client_ during processing.
   auto* client_on_stack = client_;
+  if (!client_on_stack) {
+    return false;
+  }
+
+  DCHECK(frame);
+  frame_ = frame;
   // TODO(crbug.com/787254): Evaluate the need for passing weak ptr since
   // PeerConnectionTracker is now leaky with base::LazyInstance.
   peer_connection_tracker_ = PeerConnectionTracker::GetInstance()->AsWeakPtr();
@@ -2523,10 +2527,13 @@ void RTCPeerConnectionHandler::OnIceCandidate(const String& sdp,
                                               int sdp_mline_index,
                                               int component,
                                               int address_family) {
+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
   // In order to ensure that the RTCPeerConnection is not garbage collected
   // from under the function, we keep a pointer to it on the stack.
   auto* client_on_stack = client_;
-  DCHECK(task_runner_->RunsTasksInCurrentSequence());
+  if (!client_on_stack) {
+    return;
+  }
   TRACE_EVENT0("webrtc", "RTCPeerConnectionHandler::OnIceCandidateImpl");
   // This line can cause garbage collection.
   auto* platform_candidate = MakeGarbageCollected<RTCIceCandidatePlatform>(
@@ -2547,7 +2554,9 @@ void RTCPeerConnectionHandler::OnIceCandidate(const String& sdp,
       NOTREACHED();
     }
   }
-  if (!is_closed_)
+
+  client_on_stack = client_;
+  if (!is_closed_ && client_on_stack)
     client_on_stack->DidGenerateICECandidate(platform_candidate);
 }
 
