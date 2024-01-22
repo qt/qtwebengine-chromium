@@ -111,6 +111,7 @@ SpirvShader::ImageSampler *SpirvShader::getImageSampler(const vk::Device *device
 			// Otherwise make sure LOD is clamped for robustness
 			else
 			{
+				samplerState.minLod = imageViewState.minLod;
 				samplerState.maxLod = imageViewState.maxLod;
 			}
 		}
