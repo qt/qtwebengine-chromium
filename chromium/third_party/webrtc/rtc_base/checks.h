@@ -229,19 +229,17 @@ template <>
 class LogStreamer<> final {
  public:
   template <typename U,
-            typename V = decltype(MakeVal(std::declval<U>())),
             absl::enable_if_t<std::is_arithmetic<U>::value ||
                               std::is_enum<U>::value>* = nullptr>
-  RTC_FORCE_INLINE LogStreamer<V> operator<<(U arg) const {
-    return LogStreamer<V>(MakeVal(arg), this);
+  RTC_FORCE_INLINE auto operator<<(U arg) const {
+    return LogStreamer<decltype(MakeVal(std::declval<U>()))>(MakeVal(arg), this);
   }
 
   template <typename U,
-            typename V = decltype(MakeVal(std::declval<U>())),
             absl::enable_if_t<!std::is_arithmetic<U>::value &&
                               !std::is_enum<U>::value>* = nullptr>
-  RTC_FORCE_INLINE LogStreamer<V> operator<<(const U& arg) const {
-    return LogStreamer<V>(MakeVal(arg), this);
+  RTC_FORCE_INLINE auto operator<<(const U& arg) const {
+    return LogStreamer<decltype(MakeVal(std::declval<U>()))>(MakeVal(arg), this);
   }
 
 #if RTC_CHECK_MSG_ENABLED
