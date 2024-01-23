@@ -242,18 +242,23 @@ class ChannelPosix : public Channel,
   void ShutDownOnIOThread() {
     base::CurrentThread::Get()->RemoveDestructionObserver(this);
 
-    read_watcher_.reset();
-    write_watcher_.reset();
-    if (leak_handle_) {
-      ignore_result(socket_.release());
-      server_.TakePlatformHandle().release();
-    } else {
-      socket_.reset();
-      ignore_result(server_.TakePlatformHandle());
+    {
+      base::AutoLock lock(write_lock_);
+      reject_writes_ = true;
+      read_watcher_.reset();
+      write_watcher_.reset();
+      if (leak_handle_) {
+        std::ignore = socket_.release();
+        server_.TakePlatformHandle().release();
+      } else {
+        socket_.reset();
+        std::ignore = server_.TakePlatformHandle();
+      }
+ #if BUILDFLAG(IS_IOS)
+      base::AutoLock fd_lock(fds_to_close_lock_);
+      fds_to_close_.clear();
+ #endif
     }
-#if defined(OS_IOS)
-    fds_to_close_.clear();
-#endif
 
     // May destroy the |this| if it was the last reference.
     self_ = nullptr;
