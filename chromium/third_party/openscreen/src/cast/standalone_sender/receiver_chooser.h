@@ -20,8 +20,7 @@
 #include "util/alarm.h"
 #include "util/chrono_helpers.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // Discovers Cast Receivers on the LAN for a given network interface, and
 // provides a console menu interface for the user to choose one.
@@ -61,7 +60,6 @@ class ReceiverChooser final : public discovery::ReportingClient {
   static constexpr auto kWaitForStragglersDelay = seconds(5);
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STANDALONE_SENDER_RECEIVER_CHOOSER_H_

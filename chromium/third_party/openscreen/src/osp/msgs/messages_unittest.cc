@@ -11,8 +11,7 @@ using openscreen::msgs::PresentationConnectionMessage;
 using openscreen::msgs::PresentationStartRequest;
 using openscreen::msgs::PresentationUrlAvailabilityRequest;
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 // TODO(btolsch): This is in the current (draft) spec, but should we actually
 // allow this?
@@ -227,5 +226,4 @@ TEST(PresentationMessagesTest, CborEncodeBufferTooLarge) {
   ASSERT_FALSE(EncodePresentationUrlAvailabilityRequest(request, &buffer));
 }
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp

@@ -14,8 +14,7 @@
 #include "cast/streaming/frame_id.h"
 #include "platform/base/span.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // Wraps libavcodec to decode audio or video.
 class Decoder {
@@ -93,7 +92,6 @@ class Decoder {
   std::vector<FrameId> frames_decoding_;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STANDALONE_RECEIVER_DECODER_H_

@@ -4,6 +4,7 @@
 
 #include "cast/streaming/answer_messages.h"
 
+#include <string_view>
 #include <utility>
 
 #include "absl/strings/str_cat.h"
@@ -13,8 +14,7 @@
 #include "util/enum_name_table.h"
 #include "util/json/json_helpers.h"
 #include "util/osp_logging.h"
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 namespace {
 
@@ -97,7 +97,7 @@ static constexpr char kSsrcs[] = "ssrcs";
 static constexpr char kConstraints[] = "constraints";
 // Provides details about the display on the receiver.
 static constexpr char kDisplay[] = "display";
-// absl::optional array of numbers specifying the indexes of streams that will
+// std::optional array of numbers specifying the indexes of streams that will
 // send event logs through RTCP.
 static constexpr char kReceiverRtcpEventLog[] = "receiverRtcpEventLog";
 // OPtional array of numbers specifying the indexes of streams that will use
@@ -133,7 +133,7 @@ bool TryParseAspectRatioConstraint(const Json::Value& value,
 }
 
 template <typename T>
-bool ParseOptional(const Json::Value& value, absl::optional<T>* out) {
+bool ParseOptional(const Json::Value& value, std::optional<T>* out) {
   // It's fine if the value is empty.
   if (!value) {
     return true;
@@ -155,7 +155,7 @@ bool AspectRatio::TryParse(const Json::Value& value, AspectRatio* out) {
     return false;
   }
 
-  std::vector<absl::string_view> fields =
+  std::vector<std::string_view> fields =
       absl::StrSplit(parsed_value, kAspectRatioDelimiter);
   if (fields.size() != 2) {
     return false;
@@ -297,9 +297,9 @@ bool DisplayDescription::TryParse(const Json::Value& root,
   AspectRatioConstraint constraint;
   if (TryParseAspectRatioConstraint(root[kScaling], &constraint)) {
     out->aspect_ratio_constraint =
-        absl::optional<AspectRatioConstraint>(std::move(constraint));
+        std::optional<AspectRatioConstraint>(std::move(constraint));
   } else {
-    out->aspect_ratio_constraint = absl::nullopt;
+    out->aspect_ratio_constraint = std::nullopt;
   }
 
   return out->IsValid();
@@ -411,5 +411,4 @@ Json::Value Answer::ToJson() const {
   return root;
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

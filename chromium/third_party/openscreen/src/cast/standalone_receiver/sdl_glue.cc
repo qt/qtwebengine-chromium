@@ -10,8 +10,7 @@
 #include "platform/api/time.h"
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 SDLEventLoopProcessor::SDLEventLoopProcessor(
     TaskRunner& task_runner,
@@ -49,5 +48,4 @@ void SDLEventLoopProcessor::ProcessPendingEvents() {
   alarm_.ScheduleFromNow([this] { ProcessPendingEvents(); }, kEventPollPeriod);
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

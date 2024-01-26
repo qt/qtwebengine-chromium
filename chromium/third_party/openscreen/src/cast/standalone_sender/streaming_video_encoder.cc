@@ -8,8 +8,7 @@
 
 #include "util/chrono_helpers.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 StreamingVideoEncoder::StreamingVideoEncoder(const Parameters& params,
                                              TaskRunner& task_runner,
@@ -56,5 +55,4 @@ void StreamingVideoEncoder::UpdateSpeedSettingForNextFrame(const Stats& stats) {
   OSP_DCHECK(std::isfinite(ideal_speed_setting_));
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

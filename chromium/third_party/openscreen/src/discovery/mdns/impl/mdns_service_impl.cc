@@ -12,8 +12,7 @@
 #include "discovery/mdns/public/mdns_constants.h"
 #include "discovery/mdns/public/mdns_records.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 // static
 std::unique_ptr<MdnsService> MdnsService::Create(
@@ -169,5 +168,4 @@ void MdnsServiceImpl::OnBound(UdpSocket* socket) {
   }
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

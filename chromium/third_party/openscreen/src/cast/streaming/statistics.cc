@@ -13,8 +13,7 @@
 #include "util/json/json_serialization.h"
 #include "util/stringprintf.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 namespace {
 
@@ -46,38 +45,38 @@ Json::Value ArrayToJson(
 const EnumNameTable<StatisticType,
                     static_cast<size_t>(StatisticType::kNumTypes)>
     kStatisticTypeNames = {
-        {{"kEnqueueFps", StatisticType::kEnqueueFps},
-         {"kAvgCaptureLatencyMs", StatisticType::kAvgCaptureLatencyMs},
-         {"kAvgEncodeTimeMs", StatisticType::kAvgEncodeTimeMs},
-         {"kAvgQueueingLatencyMs", StatisticType::kAvgQueueingLatencyMs},
-         {"kAvgNetworkLatencyMs", StatisticType::kAvgNetworkLatencyMs},
-         {"kAvgPacketLatencyMs", StatisticType::kAvgPacketLatencyMs},
-         {"kAvgFrameLatencyMs", StatisticType::kAvgFrameLatencyMs},
-         {"kAvgEndToEndLatencyMs", StatisticType::kAvgEndToEndLatencyMs},
-         {"kEncodeRateKbps", StatisticType::kEncodeRateKbps},
-         {"kPacketTransmissionRateKbps",
+        {{"EnqueueFps", StatisticType::kEnqueueFps},
+         {"AvgCaptureLatencyMs", StatisticType::kAvgCaptureLatencyMs},
+         {"AvgEncodeTimeMs", StatisticType::kAvgEncodeTimeMs},
+         {"AvgQueueingLatencyMs", StatisticType::kAvgQueueingLatencyMs},
+         {"AvgNetworkLatencyMs", StatisticType::kAvgNetworkLatencyMs},
+         {"AvgPacketLatencyMs", StatisticType::kAvgPacketLatencyMs},
+         {"AvgFrameLatencyMs", StatisticType::kAvgFrameLatencyMs},
+         {"AvgEndToEndLatencyMs", StatisticType::kAvgEndToEndLatencyMs},
+         {"EncodeRateKbps", StatisticType::kEncodeRateKbps},
+         {"PacketTransmissionRateKbps",
           StatisticType::kPacketTransmissionRateKbps},
-         {"kTimeSinceLastReceiverResponseMs",
+         {"TimeSinceLastReceiverResponseMs",
           StatisticType::kTimeSinceLastReceiverResponseMs},
-         {"kNumFramesCaptured", StatisticType::kNumFramesCaptured},
-         {"kNumFramesDroppedByEncoder",
+         {"NumFramesCaptured", StatisticType::kNumFramesCaptured},
+         {"NumFramesDroppedByEncoder",
           StatisticType::kNumFramesDroppedByEncoder},
-         {"kNumLateFrames", StatisticType::kNumLateFrames},
-         {"kNumPacketsSent", StatisticType::kNumPacketsSent},
-         {"kNumPacketsReceived", StatisticType::kNumPacketsReceived},
-         {"kFirstEventTimeMs", StatisticType::kFirstEventTimeMs},
-         {"kLastEventTimeMs", StatisticType::kLastEventTimeMs}}};
+         {"NumLateFrames", StatisticType::kNumLateFrames},
+         {"NumPacketsSent", StatisticType::kNumPacketsSent},
+         {"NumPacketsReceived", StatisticType::kNumPacketsReceived},
+         {"FirstEventTimeMs", StatisticType::kFirstEventTimeMs},
+         {"LastEventTimeMs", StatisticType::kLastEventTimeMs}}};
 
 const EnumNameTable<HistogramType,
                     static_cast<size_t>(HistogramType::kNumTypes)>
     kHistogramTypeNames = {
-        {{"kCaptureLatencyMs", HistogramType::kCaptureLatencyMs},
-         {"kEncodeTimeMs", HistogramType::kEncodeTimeMs},
-         {"kQueueingLatencyMs", HistogramType::kQueueingLatencyMs},
-         {"kNetworkLatencyMs", HistogramType::kNetworkLatencyMs},
-         {"kPacketLatencyMs", HistogramType::kPacketLatencyMs},
-         {"kEndToEndLatencyMs", HistogramType::kEndToEndLatencyMs},
-         {"kFrameLatenessMs", HistogramType::kFrameLatenessMs}}};
+        {{"CaptureLatencyMs", HistogramType::kCaptureLatencyMs},
+         {"EncodeTimeMs", HistogramType::kEncodeTimeMs},
+         {"QueueingLatencyMs", HistogramType::kQueueingLatencyMs},
+         {"NetworkLatencyMs", HistogramType::kNetworkLatencyMs},
+         {"PacketLatencyMs", HistogramType::kPacketLatencyMs},
+         {"EndToEndLatencyMs", HistogramType::kEndToEndLatencyMs},
+         {"FrameLatenessMs", HistogramType::kFrameLatenessMs}}};
 
 SimpleHistogram::SimpleHistogram() = default;
 SimpleHistogram::SimpleHistogram(int64_t min, int64_t max, int64_t width)
@@ -87,17 +86,16 @@ SimpleHistogram::SimpleHistogram(int64_t min, int64_t max, int64_t width)
   OSP_CHECK_EQ(0, (max - min) % width);
 }
 
-SimpleHistogram::SimpleHistogram(int64_t min,
-                                 int64_t max,
-                                 int64_t width,
-                                 std::vector<int> buckets)
-    : min(min), max(max), width(width), buckets(buckets) {}
-
 SimpleHistogram::SimpleHistogram(const SimpleHistogram&) = default;
 SimpleHistogram::SimpleHistogram(SimpleHistogram&&) noexcept = default;
 SimpleHistogram& SimpleHistogram::operator=(const SimpleHistogram&) = default;
 SimpleHistogram& SimpleHistogram::operator=(SimpleHistogram&&) = default;
 SimpleHistogram::~SimpleHistogram() = default;
+
+bool SimpleHistogram::operator==(const SimpleHistogram& other) const {
+  return min == other.min && max == other.max && width == other.width &&
+         buckets == other.buckets;
+}
 
 void SimpleHistogram::Add(int64_t sample) {
   if (sample < min) {
@@ -115,21 +113,46 @@ void SimpleHistogram::Reset() {
   buckets.assign(buckets.size(), 0);
 }
 
-SimpleHistogram SimpleHistogram::Copy() {
-  return SimpleHistogram(min, max, width, buckets);
-}
-
 Json::Value SimpleHistogram::ToJson() const {
-  Json::Value out;
-  out["min"] = min;
-  out["max"] = max;
-  out["width"] = width;
-  out["buckets"] = json::PrimitiveVectorToJson(buckets);
+  // Nest the bucket values in an array instead of a dictionary, so we sort
+  // numerically instead of alphabetically.
+  Json::Value out(Json::ValueType::arrayValue);
+  for (size_t i = 0; i < buckets.size(); ++i) {
+    if (buckets[i] != 0) {
+      Json::Value entry;
+      entry[GetBucketName(i)] = buckets[i];
+      out.append(entry);
+    }
+  }
   return out;
 }
 
 std::string SimpleHistogram::ToString() const {
   return json::Stringify(ToJson()).value();
+}
+
+SimpleHistogram::SimpleHistogram(int64_t min,
+                                 int64_t max,
+                                 int64_t width,
+                                 std::vector<int> buckets)
+    : SimpleHistogram(min, max, width) {
+  this->buckets = std::move(buckets);
+}
+
+std::string SimpleHistogram::GetBucketName(size_t index) const {
+  if (index == 0) {
+    return "<" + std::to_string(min);
+  }
+
+  if (index == buckets.size() - 1) {
+    return ">=" + std::to_string(max);
+  }
+
+  // See the constructor comment for an example of how these bucket bounds
+  // are calculated.
+  const int bucket_min = min + width * (index - 1);
+  const int bucket_max = min + index * width - 1;
+  return StringPrintf("%d-%d", bucket_min, bucket_max);
 }
 
 Json::Value SenderStats::ToJson() const {
@@ -147,5 +170,4 @@ std::string SenderStats::ToString() const {
 
 SenderStatsClient::~SenderStatsClient() {}
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

@@ -17,8 +17,7 @@
 #include "platform/base/ip_address.h"
 #include "util/serial_delete_ptr.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 class AuthContext;
 class TrustStore;
@@ -117,7 +116,6 @@ class SenderSocketFactory final : public TlsConnectionFactory::Client,
   std::unique_ptr<TrustStore> crl_trust_store_;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_SENDER_PUBLIC_SENDER_SOCKET_FACTORY_H_

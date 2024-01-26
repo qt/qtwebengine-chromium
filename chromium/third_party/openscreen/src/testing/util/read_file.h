@@ -6,12 +6,11 @@
 #define TESTING_UTIL_READ_FILE_H_
 
 #include <string>
-
-#include "absl/strings/string_view.h"
+#include <string_view>
 
 namespace openscreen {
 
-std::string ReadEntireFileToString(absl::string_view filename);
+std::string ReadEntireFileToString(std::string_view filename);
 
 }  // namespace openscreen
 

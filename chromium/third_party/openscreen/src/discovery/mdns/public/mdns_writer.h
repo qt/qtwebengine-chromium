@@ -13,8 +13,7 @@
 #include "platform/base/span.h"
 #include "util/big_endian.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 class MdnsWriter : public BigEndianWriter {
  public:
@@ -73,7 +72,6 @@ class MdnsWriter : public BigEndianWriter {
   std::unordered_map<uint64_t, uint16_t> dictionary_;
 };
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery
 
 #endif  // DISCOVERY_MDNS_PUBLIC_MDNS_WRITER_H_

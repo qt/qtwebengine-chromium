@@ -21,8 +21,7 @@ using testing::Mock;
 using testing::SaveArg;
 using testing::StrictMock;
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 namespace {
 
 constexpr Ssrc kSenderSsrc{1};
@@ -565,5 +564,4 @@ TEST_F(CompoundRtcpParserTest, ParsesFeedbackWithAcks) {
   Mock::VerifyAndClearExpectations(client());
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

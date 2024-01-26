@@ -26,8 +26,7 @@ using ::testing::NiceMock;
 using ::testing::Return;
 using ::testing::StrictMock;
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 namespace {
 constexpr char kMalformedAnswerMessage[] = R"({
@@ -640,5 +639,4 @@ TEST_F(SenderSessionTest, SuccessfulGetCapabilitiesRequest) {
   EXPECT_THAT(capabilities.video, testing::ElementsAre(VideoCapability::kVp8));
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

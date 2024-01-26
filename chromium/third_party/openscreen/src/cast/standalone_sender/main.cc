@@ -30,8 +30,7 @@
 #include "util/chrono_helpers.h"
 #include "util/stringprintf.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 namespace {
 
 void LogUsage(const char* argv0) {
@@ -279,8 +278,7 @@ int StandaloneSenderMain(int argc, char* argv[]) {
 }
 
 }  // namespace
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 #endif
 
 int main(int argc, char* argv[]) {

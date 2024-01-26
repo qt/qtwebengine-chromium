@@ -25,8 +25,7 @@
 #include "testing/util/read_file.h"
 #include "util/json/json_serialization.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 namespace {
 
 using ::cast::channel::CastMessage;
@@ -656,5 +655,4 @@ TEST_F(ApplicationAgentTest, AllowsVirtualConnectionsToApp) {
 }
 
 }  // namespace
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

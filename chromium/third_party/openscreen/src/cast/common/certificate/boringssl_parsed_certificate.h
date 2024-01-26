@@ -14,8 +14,7 @@
 #include "platform/base/error.h"
 #include "platform/base/span.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 class BoringSSLParsedCertificate final : public ParsedCertificate {
  public:
@@ -53,7 +52,6 @@ class BoringSSLParsedCertificate final : public ParsedCertificate {
   bssl::UniquePtr<X509> cert_;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_COMMON_CERTIFICATE_BORINGSSL_PARSED_CERTIFICATE_H_

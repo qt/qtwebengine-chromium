@@ -5,11 +5,11 @@
 #include "discovery/dnssd/impl/publisher_impl.h"
 
 #include <map>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "absl/types/optional.h"
 #include "discovery/common/reporting_client.h"
 #include "discovery/dnssd/impl/conversion_layer.h"
 #include "discovery/dnssd/impl/instance_key.h"
@@ -19,8 +19,7 @@
 #include "platform/base/error.h"
 #include "util/trace_logging.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 namespace {
 
 DnsSdInstanceEndpoint CreateEndpoint(
@@ -164,7 +163,7 @@ Error PublisherImpl::UpdatePublishedRegistration(
   // instance of each DnsType, so use that here to simplify this step. First in
   // each pair is the old instances, second is the new instance.
   std::map<DnsType,
-           std::pair<absl::optional<MdnsRecord>, absl::optional<MdnsRecord>>>
+           std::pair<std::optional<MdnsRecord>, std::optional<MdnsRecord>>>
       changed_records;
   const std::vector<MdnsRecord> old_records =
       GetDnsRecords(published_instance_it->second);
@@ -174,7 +173,7 @@ Error PublisherImpl::UpdatePublishedRegistration(
   for (size_t i = 0; i < old_records.size(); i++) {
     const auto key = old_records[i].dns_type();
     OSP_DCHECK(changed_records.find(key) == changed_records.end());
-    auto value = std::make_pair(std::move(old_records[i]), absl::nullopt);
+    auto value = std::make_pair(std::move(old_records[i]), std::nullopt);
     changed_records.emplace(key, std::move(value));
   }
 
@@ -183,8 +182,8 @@ Error PublisherImpl::UpdatePublishedRegistration(
     const auto key = new_records[i].dns_type();
     auto find_it = changed_records.find(key);
     if (find_it == changed_records.end()) {
-      std::pair<absl::optional<MdnsRecord>, absl::optional<MdnsRecord>> value(
-          absl::nullopt, std::move(new_records[i]));
+      std::pair<std::optional<MdnsRecord>, std::optional<MdnsRecord>> value(
+          std::nullopt, std::move(new_records[i]));
       changed_records.emplace(key, std::move(value));
     } else {
       find_it->second.second = std::move(new_records[i]);
@@ -194,16 +193,16 @@ Error PublisherImpl::UpdatePublishedRegistration(
   // Apply changes called out in |changed_records|.
   Error total_result = Error::None();
   for (const auto& pair : changed_records) {
-    OSP_DCHECK(pair.second.first != absl::nullopt ||
-               pair.second.second != absl::nullopt);
-    if (pair.second.first == absl::nullopt) {
+    OSP_DCHECK(pair.second.first != std::nullopt ||
+               pair.second.second != std::nullopt);
+    if (pair.second.first == std::nullopt) {
       TRACE_SCOPED(TraceCategory::kDiscovery, "mdns.RegisterRecord");
       auto error = mdns_publisher_->RegisterRecord(pair.second.second.value());
       TRACE_SET_RESULT(error);
       if (!error.ok()) {
         total_result = error;
       }
-    } else if (pair.second.second == absl::nullopt) {
+    } else if (pair.second.second == std::nullopt) {
       TRACE_SCOPED(TraceCategory::kDiscovery, "mdns.UnregisterRecord");
       auto error = mdns_publisher_->UnregisterRecord(pair.second.first.value());
       TRACE_SET_RESULT(error);
@@ -306,5 +305,4 @@ void PublisherImpl::OnDomainFound(const DomainName& requested_name,
   client->OnEndpointClaimed(pair.first->first, pair.first->second);
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

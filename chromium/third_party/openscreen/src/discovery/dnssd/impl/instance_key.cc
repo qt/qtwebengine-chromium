@@ -14,8 +14,7 @@
 #include "discovery/mdns/public/mdns_constants.h"
 #include "discovery/mdns/public/mdns_records.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 InstanceKey::InstanceKey(const MdnsRecord& record)
     : InstanceKey(GetDomainName(record)) {}
@@ -30,9 +29,9 @@ InstanceKey::InstanceKey(const DnsSdInstance& instance)
                   instance.service_id(),
                   instance.domain_id()) {}
 
-InstanceKey::InstanceKey(absl::string_view instance,
-                         absl::string_view service,
-                         absl::string_view domain)
+InstanceKey::InstanceKey(std::string_view instance,
+                         std::string_view service,
+                         std::string_view domain)
     : ServiceKey(service, domain), instance_id_(instance) {
   OSP_DCHECK(IsInstanceValid(instance_id_))
       << "invalid instance id" << instance;
@@ -50,5 +49,4 @@ DomainName InstanceKey::GetName() const {
   return DomainName(std::move(labels));
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

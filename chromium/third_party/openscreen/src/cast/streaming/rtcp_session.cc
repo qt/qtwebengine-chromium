@@ -6,8 +6,7 @@
 
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 RtcpSession::RtcpSession(Ssrc sender_ssrc,
                          Ssrc receiver_ssrc,
@@ -23,5 +22,4 @@ RtcpSession::RtcpSession(Ssrc sender_ssrc,
 
 RtcpSession::~RtcpSession() = default;
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

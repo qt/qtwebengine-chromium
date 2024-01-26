@@ -7,8 +7,7 @@
 
 #include <stdint.h>
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // This must be a UTC time.
 struct DateTime {
@@ -20,7 +19,6 @@ struct DateTime {
   uint8_t second;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_COMMON_PUBLIC_CERTIFICATE_TYPES_H_

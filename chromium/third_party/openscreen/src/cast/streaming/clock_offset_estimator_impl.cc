@@ -10,8 +10,7 @@
 
 #include "platform/base/trivial_clock_traits.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 namespace {
 
 // The lower this is, the faster we adjust to clock drift (but with more
@@ -55,13 +54,13 @@ ClockOffsetEstimatorImpl::~ClockOffsetEstimatorImpl() = default;
 void ClockOffsetEstimatorImpl::OnFrameEvent(const FrameEvent& frame_event) {
   switch (frame_event.type) {
     case StatisticsEventType::kFrameAckSent:
-      lower_bound_.SetSent(
+      frame_bound_.SetSent(
           frame_event.rtp_timestamp, 0,
           frame_event.media_type == StatisticsEventMediaType::kAudio,
           frame_event.timestamp);
       break;
     case StatisticsEventType::kFrameAckReceived:
-      lower_bound_.SetReceived(
+      frame_bound_.SetReceived(
           frame_event.rtp_timestamp, 0,
           frame_event.media_type == StatisticsEventMediaType::kAudio,
           frame_event.timestamp);
@@ -75,13 +74,13 @@ void ClockOffsetEstimatorImpl::OnFrameEvent(const FrameEvent& frame_event) {
 void ClockOffsetEstimatorImpl::OnPacketEvent(const PacketEvent& packet_event) {
   switch (packet_event.type) {
     case StatisticsEventType::kPacketSentToNetwork:
-      upper_bound_.SetSent(
+      packet_bound_.SetSent(
           packet_event.rtp_timestamp, packet_event.packet_id,
           packet_event.media_type == StatisticsEventMediaType::kAudio,
           packet_event.timestamp);
       break;
     case StatisticsEventType::kPacketReceived:
-      upper_bound_.SetReceived(
+      packet_bound_.SetReceived(
           packet_event.rtp_timestamp, packet_event.packet_id,
           packet_event.media_type == StatisticsEventMediaType::kAudio,
           packet_event.timestamp);
@@ -93,32 +92,26 @@ void ClockOffsetEstimatorImpl::OnPacketEvent(const PacketEvent& packet_event) {
 }
 
 bool ClockOffsetEstimatorImpl::GetReceiverOffsetBounds(
-    Clock::duration& lower_bound,
-    Clock::duration& upper_bound) const {
-  if (!lower_bound_.has_bound() || !upper_bound_.has_bound()) {
+    Clock::duration& frame_bound,
+    Clock::duration& packet_bound) const {
+  if (!frame_bound_.has_bound() || !packet_bound_.has_bound()) {
     return false;
   }
 
-  lower_bound = -lower_bound_.bound();
-  upper_bound = upper_bound_.bound();
+  frame_bound = -frame_bound_.bound();
+  packet_bound = packet_bound_.bound();
 
-  // Sanitize the output, we don't want the upper bound to be
-  // lower than the lower bound, make them the same.
-  if (upper_bound < lower_bound) {
-    lower_bound += (lower_bound - upper_bound) / 2;
-    upper_bound = lower_bound;
-  }
   return true;
 }
 
-absl::optional<Clock::duration> ClockOffsetEstimatorImpl::GetEstimatedOffset()
+std::optional<Clock::duration> ClockOffsetEstimatorImpl::GetEstimatedOffset()
     const {
-  Clock::duration lower_bound;
-  Clock::duration upper_bound;
-  if (!GetReceiverOffsetBounds(lower_bound, upper_bound)) {
+  Clock::duration frame_bound;
+  Clock::duration packet_bound;
+  if (!GetReceiverOffsetBounds(frame_bound, packet_bound)) {
     return {};
   }
-  return (upper_bound + lower_bound) / 2;
+  return (packet_bound + frame_bound) / 2;
 }
 
 ClockOffsetEstimatorImpl::BoundCalculator::BoundCalculator() = default;
@@ -179,5 +172,4 @@ void ClockOffsetEstimatorImpl::BoundCalculator::CheckUpdate(uint64_t key) {
   }
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

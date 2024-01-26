@@ -11,8 +11,7 @@
 #include "platform/api/time.h"
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 QuicServer::QuicServer(
     const ServerConfig& config,
@@ -188,5 +187,4 @@ void QuicServer::OnIncomingConnection(
                                       std::move(pending_connection_delegate_)));
 }
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp

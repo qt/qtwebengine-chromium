@@ -6,14 +6,14 @@
 
 #include <memory>
 #include <sstream>
+#include <string_view>
 
 #include "discovery/common/config.h"
 #include "discovery/mdns/testing/mdns_test_util.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 namespace {
 
@@ -380,7 +380,7 @@ TEST(MdnsReaderTest, ReadTxtRecordRdata_WithNullInTheMiddle) {
   // clang-format on
   TestReadEntrySucceeds(
       kTxtRecordRdata, sizeof(kTxtRecordRdata),
-      MakeTxtRecord({absl::string_view("with\0NULL", 9), "other"}));
+      MakeTxtRecord({std::string_view("with\0NULL", 9), "other"}));
 }
 
 TEST(MdnsReaderTest, ReadTxtRecordRdata_EmptyEntries) {
@@ -733,5 +733,4 @@ TEST(MdnsReaderTest, ReadMdnsMessage_MissingAdditionalRecord) {
   TestReadEntryFails<MdnsMessage>(kInvalidMessage, sizeof(kInvalidMessage));
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

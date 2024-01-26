@@ -7,10 +7,10 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
-#include "absl/types/optional.h"
 #include "cast/common/channel/cast_message_handler.h"
 #include "cast/common/channel/cast_socket_message_port.h"
 #include "cast/common/channel/connection_namespace_handler.h"
@@ -34,8 +34,7 @@ namespace Json {
 class Value;
 }
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // A single-use sender-side Cast Agent that manages the workflow for a mirroring
 // session, casting the content from a local file indefinitely. After being
@@ -169,7 +168,7 @@ class LoopingFileCastAgent final
   int next_request_id_ = 1;
 
   // Initialized by Connect().
-  absl::optional<ConnectionSettings> connection_settings_;
+  std::optional<ConnectionSettings> connection_settings_;
   SerialDeletePtr<ScopedWakeLock> wake_lock_;
 
   // If non-empty, this is the sessionId associated with the Cast Receiver
@@ -178,8 +177,8 @@ class LoopingFileCastAgent final
 
   // This is set once LoopingFileCastAgent has requested to start messaging to
   // the mirroring app on a Cast Receiver.
-  absl::optional<VirtualConnection> remote_connection_;
-  absl::optional<VirtualConnection> platform_remote_connection_;
+  std::optional<VirtualConnection> remote_connection_;
+  std::optional<VirtualConnection> platform_remote_connection_;
 
   CastMode cast_mode_ = CastMode::kMirroring;
 
@@ -208,10 +207,9 @@ class LoopingFileCastAgent final
   int num_times_on_statistics_updated_called_ = 0;
 
   // Last reported statistics, logged as part of shutdown.
-  absl::optional<SenderStats> last_reported_statistics_;
+  std::optional<SenderStats> last_reported_statistics_;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STANDALONE_SENDER_LOOPING_FILE_CAST_AGENT_H_

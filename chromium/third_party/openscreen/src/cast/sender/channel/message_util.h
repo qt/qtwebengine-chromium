@@ -11,8 +11,7 @@
 #include "cast/common/channel/proto/cast_channel.pb.h"
 #include "platform/base/error.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 class AuthContext;
 
@@ -25,7 +24,6 @@ ErrorOr<::cast::channel::CastMessage> CreateAppAvailabilityRequest(
     int request_id,
     const std::string& app_id);
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_SENDER_CHANNEL_MESSAGE_UTIL_H_

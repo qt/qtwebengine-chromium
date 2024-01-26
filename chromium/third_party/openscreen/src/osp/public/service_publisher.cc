@@ -4,8 +4,7 @@
 
 #include "osp/public/service_publisher.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 ServicePublisher::Metrics::Metrics() = default;
 ServicePublisher::Metrics::~Metrics() = default;
@@ -27,5 +26,4 @@ void ServicePublisher::SetConfig(const Config& config) {
 ServicePublisher::ServicePublisher(Observer* observer)
     : state_(State::kStopped), observer_(observer) {}
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp

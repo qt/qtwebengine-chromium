@@ -12,8 +12,7 @@
 #include "platform/api/time.h"
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 QuicClient::QuicClient(
     MessageDemuxer* demuxer,
@@ -249,5 +248,4 @@ void QuicClient::CancelConnectRequest(uint64_t request_id) {
   request_map_.erase(request_entry);
 }
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp

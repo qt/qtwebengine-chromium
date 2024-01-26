@@ -16,8 +16,7 @@
 #include "platform/base/error.h"
 #include "platform/base/span.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 class DnsSdTxtRecord {
  public:
@@ -116,7 +115,6 @@ inline bool operator!=(const DnsSdTxtRecord& lhs, const DnsSdTxtRecord& rhs) {
   return !(lhs == rhs);
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery
 
 #endif  // DISCOVERY_DNSSD_PUBLIC_DNS_SD_TXT_RECORD_H_

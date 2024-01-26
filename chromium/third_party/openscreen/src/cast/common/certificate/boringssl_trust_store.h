@@ -13,8 +13,7 @@
 
 #include "cast/common/public/trust_store.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 class BoringSSLTrustStore final : public TrustStore {
  public:
@@ -31,7 +30,6 @@ class BoringSSLTrustStore final : public TrustStore {
   std::vector<bssl::UniquePtr<X509>> certs_;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_COMMON_CERTIFICATE_BORINGSSL_TRUST_STORE_H_

@@ -14,8 +14,7 @@
 #include "platform/test/fake_clock.h"
 #include "platform/test/fake_task_runner.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 namespace {
 
 using testing::_;
@@ -221,5 +220,4 @@ TEST_F(PublisherImplTest, TestUpdate) {
 }
 
 }  // namespace
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

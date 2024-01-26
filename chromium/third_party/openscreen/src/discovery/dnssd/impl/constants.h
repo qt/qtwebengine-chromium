@@ -11,8 +11,7 @@
 #include "discovery/mdns/public/mdns_constants.h"
 #include "discovery/mdns/public/mdns_records.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 // This is the DNS Information required to start a new query.
 struct DnsQueryInfo {
@@ -21,7 +20,6 @@ struct DnsQueryInfo {
   DnsClass dns_class;
 };
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery
 
 #endif  // DISCOVERY_DNSSD_IMPL_CONSTANTS_H_

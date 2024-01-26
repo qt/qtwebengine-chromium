@@ -14,8 +14,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 class FakeDnsRecordFactory {
  public:
@@ -31,7 +30,6 @@ class FakeDnsRecordFactory {
   static MdnsRecord CreateFullyPopulatedSrvRecord(uint16_t port = kPortNum);
 };
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery
 
 #endif  // DISCOVERY_DNSSD_TESTING_FAKE_DNS_RECORD_FACTORY_H_

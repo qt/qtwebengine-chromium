@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "platform/api/network_interface.h"
@@ -55,10 +56,10 @@ class StreamSocket {
   virtual const SocketHandle& socket_handle() const = 0;
 
   // Returns the connected remote address, if socket is connected.
-  virtual absl::optional<IPEndpoint> remote_address() const = 0;
+  virtual std::optional<IPEndpoint> remote_address() const = 0;
 
   // Returns the local address, if one is assigned.
-  virtual absl::optional<IPEndpoint> local_address() const = 0;
+  virtual std::optional<IPEndpoint> local_address() const = 0;
 
   // Returns the state of the socket.
   virtual TcpSocketState state() const = 0;

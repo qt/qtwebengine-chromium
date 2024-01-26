@@ -19,8 +19,7 @@
 #include "platform/base/span.h"
 #include "util/alarm.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // Manages network packet transmission for one or more Senders, directing each
 // inbound packet to a specific Sender instance, pacing the transmission of
@@ -197,7 +196,6 @@ class SenderPacketRouter : public BandwidthEstimator,
   Clock::time_point last_burst_time_ = Clock::time_point::min();
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STREAMING_SENDER_PACKET_ROUTER_H_

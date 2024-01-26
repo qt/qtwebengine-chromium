@@ -11,8 +11,7 @@
 #include "discovery/mdns/public/mdns_writer.h"
 #include "platform/api/udp_socket.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 MdnsSender::MdnsSender(UdpSocket* socket) : socket_(socket) {
   OSP_DCHECK(socket_ != nullptr);
@@ -46,5 +45,4 @@ void MdnsSender::OnSendError(UdpSocket* socket, Error error) {
   OSP_LOG_ERROR << "Error sending packet " << error;
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

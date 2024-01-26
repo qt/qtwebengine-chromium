@@ -13,8 +13,7 @@
 #include "discovery/dnssd/public/dns_sd_instance_endpoint.h"
 #include "platform/base/ip_address.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // Constants to identify a CastV2 instance with DNS-SD.
 constexpr char kCastV2ServiceId[] = "_googlecast._tcp";
@@ -118,7 +117,6 @@ discovery::DnsSdInstance ReceiverInfoToDnsSdInstance(
 ErrorOr<ReceiverInfo> DnsSdInstanceEndpointToReceiverInfo(
     const discovery::DnsSdInstanceEndpoint& endpoint);
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_COMMON_PUBLIC_RECEIVER_INFO_H_

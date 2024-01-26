@@ -13,8 +13,7 @@
 #include "platform/api/time.h"
 #include "platform/base/span.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // The Cast Streaming Receiver, a peer corresponding to some Cast Streaming
 // Sender at the other end of a network link.
@@ -107,7 +106,6 @@ class ReceiverBase {
   static constexpr int kNoFramesReady = -1;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STREAMING_RECEIVER_BASE_H_

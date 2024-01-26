@@ -5,13 +5,11 @@
 #ifndef OSP_PUBLIC_TIMESTAMP_H_
 #define OSP_PUBLIC_TIMESTAMP_H_
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 // Microseconds after the epoch.
 typedef uint64_t timestamp_t;
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp
 
 #endif  // OSP_PUBLIC_TIMESTAMP_H_

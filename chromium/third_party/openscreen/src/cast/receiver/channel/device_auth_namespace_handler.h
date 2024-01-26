@@ -13,8 +13,7 @@
 #include "cast/common/channel/cast_message_handler.h"
 #include "platform/base/span.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 struct DeviceCredentials {
   // The device's certificate chain in DER form, where |certs[0]| is the
@@ -54,7 +53,6 @@ class DeviceAuthNamespaceHandler final : public CastMessageHandler {
   CredentialsProvider* const creds_provider_;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_RECEIVER_CHANNEL_DEVICE_AUTH_NAMESPACE_HANDLER_H_

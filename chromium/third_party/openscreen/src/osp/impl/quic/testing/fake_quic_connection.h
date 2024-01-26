@@ -11,8 +11,7 @@
 
 #include "osp/impl/quic/quic_connection.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 class FakeQuicConnectionFactoryBridge;
 
@@ -75,7 +74,6 @@ class FakeQuicConnection final : public QuicConnection {
   std::map<uint64_t, FakeQuicStream*> streams_;
 };
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp
 
 #endif  // OSP_IMPL_QUIC_TESTING_FAKE_QUIC_CONNECTION_H_

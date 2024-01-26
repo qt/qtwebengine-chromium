@@ -6,18 +6,17 @@
 #define CAST_STREAMING_COMPOUND_RTCP_BUILDER_H_
 
 #include <chrono>
+#include <optional>
 #include <utility>
 #include <vector>
 
-#include "absl/types/optional.h"
 #include "cast/streaming/constants.h"
 #include "cast/streaming/frame_id.h"
 #include "cast/streaming/rtcp_common.h"
 #include "cast/streaming/rtp_defines.h"
 #include "platform/base/span.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 class RtcpSession;
 
@@ -121,7 +120,7 @@ class CompoundRtcpBuilder {
   // Data to include in the next built RTCP packet.
   FrameId checkpoint_frame_id_ = FrameId::leader();
   std::chrono::milliseconds playout_delay_ = kDefaultTargetPlayoutDelay;
-  absl::optional<RtcpReportBlock> receiver_report_for_next_packet_;
+  std::optional<RtcpReportBlock> receiver_report_for_next_packet_;
   std::vector<PacketNack> nacks_for_next_packet_;
   std::vector<FrameId> acks_for_next_packet_;
   bool picture_loss_indicator_ = false;
@@ -131,7 +130,6 @@ class CompoundRtcpBuilder {
   uint8_t feedback_count_ = 0;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STREAMING_COMPOUND_RTCP_BUILDER_H_

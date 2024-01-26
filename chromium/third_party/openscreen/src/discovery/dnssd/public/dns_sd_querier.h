@@ -9,8 +9,7 @@
 
 #include "discovery/dnssd/public/dns_sd_instance_endpoint.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 class DnsSdQuerier {
  public:
@@ -61,7 +60,6 @@ class DnsSdQuerier {
   virtual void ReinitializeQueries(const std::string& service) = 0;
 };
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery
 
 #endif  // DISCOVERY_DNSSD_PUBLIC_DNS_SD_QUERIER_H_

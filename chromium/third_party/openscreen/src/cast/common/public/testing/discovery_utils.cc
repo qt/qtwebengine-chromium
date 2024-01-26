@@ -10,8 +10,7 @@
 
 #include "util/stringprintf.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 const IPAddress kAddressV4 = {192, 168, 0, 0};
 const IPAddress kAddressV6 = {1, 2, 3, 4, 5, 6, 7, 8};
@@ -50,5 +49,4 @@ void CompareTxtInt(const discovery::DnsSdTxtRecord& txt,
       << "for key: '" << key << "'";
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

@@ -10,8 +10,7 @@
 
 #include "platform/base/error.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 class CastMediaSource {
  public:
@@ -36,7 +35,6 @@ class CastMediaSource {
   std::vector<std::string> app_ids_;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_SENDER_PUBLIC_CAST_MEDIA_SOURCE_H_

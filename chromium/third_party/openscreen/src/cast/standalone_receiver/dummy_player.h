@@ -13,8 +13,7 @@
 #include "platform/api/task_runner.h"
 #include "platform/api/time.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // Consumes frames from a Receiver, but does nothing other than OSP_LOG_INFO
 // each one's FrameId, timestamp and size. This is only useful for confirming a
@@ -34,7 +33,6 @@ class DummyPlayer final : public Receiver::Consumer {
   std::vector<uint8_t> buffer_;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STANDALONE_RECEIVER_DUMMY_PLAYER_H_

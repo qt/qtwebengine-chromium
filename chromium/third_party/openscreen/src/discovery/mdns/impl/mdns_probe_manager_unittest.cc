@@ -23,8 +23,7 @@ using testing::Invoke;
 using testing::Return;
 using testing::StrictMock;
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 class MockDomainConfirmedProvider : public MdnsDomainConfirmedProvider {
  public:
@@ -349,5 +348,4 @@ TEST_F(MdnsProbeManagerTests, ProbeFailureCreatesNewProbeIfNameUnclaimed) {
   ExpectProbeStopped(name_);
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

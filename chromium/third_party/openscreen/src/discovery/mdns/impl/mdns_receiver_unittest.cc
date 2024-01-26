@@ -15,8 +15,7 @@
 #include "platform/api/time.h"
 #include "platform/test/fake_udp_socket.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 using testing::_;
 using testing::Return;
@@ -129,5 +128,4 @@ TEST(MdnsReceiverTest, ReceiveResponse) {
   receiver.RemoveResponseCallback(&delegate);
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

@@ -267,6 +267,7 @@ source_set("unittests") {
     "ssrc_unittest.cc",
     "statistics_analyzer_unittest.cc",
     "statistics_collector_unittest.cc",
+    "statistics_unittest.cc",
   ]
 
   deps = [

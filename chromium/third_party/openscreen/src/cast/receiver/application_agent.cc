@@ -15,8 +15,7 @@
 #include "util/json/json_serialization.h"
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 namespace {
 
 // Returns the first app ID for the given |app|, or the empty string if there is
@@ -394,5 +393,4 @@ void ApplicationAgent::BroadcastReceiverStatus() {
 
 ApplicationAgent::Application::~Application() = default;
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

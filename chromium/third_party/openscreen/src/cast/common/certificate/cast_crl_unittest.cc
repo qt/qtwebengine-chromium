@@ -14,8 +14,7 @@
 #include "testing/util/read_file.h"
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // TODO(crbug.com/openscreen/90): Remove these after Chromium is migrated to
 // openscreen::cast
@@ -200,5 +199,4 @@ TEST(CastCertificateTest, TestSuite1) {
 }
 
 }  // namespace
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

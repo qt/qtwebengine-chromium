@@ -10,8 +10,7 @@
 
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 namespace {
 
@@ -102,5 +101,4 @@ WeakPtr<RpcMessenger> RpcMessenger::GetWeakPtr() {
   return weak_factory_.GetWeakPtr();
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

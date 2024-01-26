@@ -24,8 +24,7 @@ using testing::Invoke;
 using testing::Mock;
 using testing::Return;
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 namespace {
 
 const IPEndpoint kRemoteEndpoint{
@@ -592,5 +591,4 @@ TEST_F(SenderPacketRouterTest, SchedulesAndTransmitsAccountingForPriority) {
 }
 
 }  // namespace
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

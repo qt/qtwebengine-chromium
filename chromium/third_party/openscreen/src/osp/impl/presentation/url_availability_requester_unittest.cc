@@ -20,8 +20,7 @@
 #include "platform/test/fake_task_runner.h"
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 using ::testing::_;
 using ::testing::Invoke;
@@ -672,5 +671,4 @@ TEST_F(UrlAvailabilityRequesterTest, RemoveObserverInSteps) {
   quic_bridge_.RunTasksUntilIdle();
 }
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp

@@ -12,8 +12,7 @@
 #include "util/json/json_serialization.h"
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 namespace {
 
@@ -298,5 +297,4 @@ void ReceiverSessionMessenger::OnError(Error error) {
   ReportError(error);
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

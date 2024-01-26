@@ -19,8 +19,7 @@
 #include "platform/api/time.h"
 #include "platform/base/error.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // Common base class that consumes frames from a Receiver, decodes them, and
 // plays them out via the appropriate SDL subsystem. Subclasses implement the
@@ -175,7 +174,6 @@ class SDLPlayerBase : public Receiver::Consumer, public Decoder::Client {
   static constexpr int kMaxFramesInPipeline = 8;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STANDALONE_RECEIVER_SDL_PLAYER_BASE_H_

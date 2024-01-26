@@ -8,8 +8,7 @@
 #include "platform/base/interface_info.h"
 #include "platform/base/ip_address.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 class NetworkInterfaceConfig {
  public:
@@ -39,7 +38,6 @@ class NetworkInterfaceConfig {
   IPAddress address_v6_;
 };
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery
 
 #endif  // DISCOVERY_DNSSD_IMPL_NETWORK_INTERFACE_CONFIG_H_

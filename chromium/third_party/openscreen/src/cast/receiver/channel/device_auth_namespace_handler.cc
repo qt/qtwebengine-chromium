@@ -25,8 +25,7 @@ using ::cast::channel::DeviceAuthMessage;
 using ::cast::channel::HashAlgorithm;
 using ::cast::channel::SignatureAlgorithm;
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 namespace {
 
@@ -156,5 +155,4 @@ void DeviceAuthNamespaceHandler::OnMessage(VirtualConnectionRouter* router,
   router->Send(virtual_conn, std::move(response));
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

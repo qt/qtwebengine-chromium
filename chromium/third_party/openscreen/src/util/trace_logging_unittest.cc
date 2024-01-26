@@ -7,7 +7,6 @@
 #include <chrono>
 #include <thread>
 
-#include "absl/types/optional.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "platform/test/trace_logging_helpers.h"

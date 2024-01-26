@@ -18,8 +18,7 @@ class CastMessage;
 }  // namespace channel
 }  // namespace cast
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // Represents a simple message-oriented socket for communicating with the Cast
 // V2 protocol.  It isn't thread-safe, so it should only be used on the same
@@ -91,7 +90,6 @@ constexpr int ToCastSocketId(CastSocket* socket) {
   return socket ? socket->socket_id() : 0;
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_COMMON_PUBLIC_CAST_SOCKET_H_

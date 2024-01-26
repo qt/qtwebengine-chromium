@@ -18,8 +18,7 @@
 #include "platform/test/fake_clock.h"
 #include "platform/test/fake_task_runner.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 using ::testing::_;
 using ::testing::Invoke;
@@ -532,5 +531,4 @@ TEST_F(ControllerTest, Reconnect) {
   EXPECT_EQ(connection->state(), Connection::State::kConnected);
 }
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp

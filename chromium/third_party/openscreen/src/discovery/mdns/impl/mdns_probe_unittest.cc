@@ -23,8 +23,7 @@ using testing::Invoke;
 using testing::Return;
 using testing::StrictMock;
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 class MockMdnsSender : public MdnsSender {
  public:
@@ -128,5 +127,4 @@ TEST_F(MdnsProbeTests, DISABLED_TestNoCancelationOnUnrelatedMessages) {
   testing::Mock::VerifyAndClearExpectations(&sender_);
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

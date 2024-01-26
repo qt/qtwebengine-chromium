@@ -13,8 +13,7 @@
 #include "osp/impl/quic/quic_connection.h"
 #include "osp/public/protocol_connection.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 class ServiceConnectionDelegate;
 
@@ -136,7 +135,6 @@ struct ServiceConnectionData {
   std::unique_ptr<ServiceConnectionDelegate> delegate;
 };
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp
 
 #endif  // OSP_IMPL_QUIC_QUIC_SERVICE_COMMON_H_

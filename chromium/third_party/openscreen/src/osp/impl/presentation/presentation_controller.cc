@@ -8,7 +8,6 @@
 #include <sstream>
 #include <type_traits>
 
-#include "absl/types/optional.h"
 #include "osp/impl/presentation/url_availability_requester.h"
 #include "osp/msgs/osp_messages.h"
 #include "osp/public/message_demuxer.h"
@@ -18,8 +17,7 @@
 #include "util/osp_logging.h"
 #include "util/std_util.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 #define DECLARE_MSG_REQUEST_RESPONSE(base_name)                        \
   using RequestMsgType = msgs::Presentation##base_name##Request;       \
@@ -388,7 +386,7 @@ Controller::ConnectRequest::ConnectRequest() = default;
 Controller::ConnectRequest::ConnectRequest(Controller* controller,
                                            const std::string& service_id,
                                            bool is_reconnect,
-                                           absl::optional<uint64_t> request_id)
+                                           std::optional<uint64_t> request_id)
     : service_id_(service_id),
       is_reconnect_(is_reconnect),
       request_id_(request_id),
@@ -783,5 +781,4 @@ void Controller::OnAllReceiversRemoved() {
   availability_requester_->RemoveAllReceivers();
 }
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp

@@ -13,8 +13,7 @@
 #include "util/json/json_helpers.h"
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 namespace {
 
@@ -118,5 +117,4 @@ bool Dimensions::IsSupersetOf(const Dimensions& other) const {
   return ToResolution().IsSupersetOf(other.ToResolution());
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

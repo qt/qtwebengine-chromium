@@ -16,10 +16,10 @@
 
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
-#include "absl/types/optional.h"
 #include "platform/api/task_runner.h"
 #include "platform/base/error.h"
 #include "platform/base/span.h"
@@ -99,7 +99,7 @@ bool TlsConnectionPosix::Send(const void* data, size_t len) {
 IPEndpoint TlsConnectionPosix::GetRemoteEndpoint() const {
   OSP_DCHECK(task_runner_.IsRunningOnTaskRunner());
 
-  absl::optional<IPEndpoint> endpoint = socket_->remote_address();
+  std::optional<IPEndpoint> endpoint = socket_->remote_address();
   OSP_DCHECK(endpoint.has_value());
   return endpoint.value();
 }

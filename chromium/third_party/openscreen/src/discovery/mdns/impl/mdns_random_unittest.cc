@@ -7,8 +7,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 namespace {
 constexpr int kIterationCount = 100;
@@ -58,5 +57,4 @@ TEST(MdnsRandomTest, TruncatedQueryResponseDelay) {
   }
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

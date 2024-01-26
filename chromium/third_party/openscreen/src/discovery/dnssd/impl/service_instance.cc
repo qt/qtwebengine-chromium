@@ -10,8 +10,7 @@
 #include "discovery/mdns/public/mdns_service.h"
 #include "platform/api/task_runner.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 ServiceInstance::ServiceInstance(TaskRunner& task_runner,
                                  ReportingClient* reporting_client,
@@ -39,5 +38,4 @@ ServiceInstance::~ServiceInstance() {
   OSP_DCHECK(task_runner_.IsRunningOnTaskRunner());
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

@@ -13,8 +13,7 @@
 #include "cast/sender/public/cast_media_source.h"
 #include "platform/api/time.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // Tracks receiver queries and their extracted Cast app IDs and their
 // availabilities on discovered receivers.
@@ -119,7 +118,6 @@ class CastAppAvailabilityTracker {
   std::map<std::string, AppAvailabilityMap> app_availabilities_;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_SENDER_CAST_APP_AVAILABILITY_TRACKER_H_

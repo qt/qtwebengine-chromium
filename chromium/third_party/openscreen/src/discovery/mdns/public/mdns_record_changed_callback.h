@@ -10,8 +10,7 @@
 #include "discovery/mdns/public/mdns_records.h"
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 enum class RecordChangedEvent {
   kCreated,
@@ -56,7 +55,6 @@ inline std::ostream& operator<<(std::ostream& output,
   OSP_NOTREACHED();
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery
 
 #endif  // DISCOVERY_MDNS_PUBLIC_MDNS_RECORD_CHANGED_CALLBACK_H_

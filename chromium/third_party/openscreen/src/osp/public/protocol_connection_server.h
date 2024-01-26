@@ -18,8 +18,7 @@
 #include "platform/base/ip_address.h"
 #include "platform/base/macros.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 class ProtocolConnectionServer {
  public:
@@ -98,7 +97,6 @@ class ProtocolConnectionServer {
 std::ostream& operator<<(std::ostream& os,
                          ProtocolConnectionServer::State state);
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp
 
 #endif  // OSP_PUBLIC_PROTOCOL_CONNECTION_SERVER_H_

@@ -7,8 +7,7 @@
 #include <algorithm>
 #include <utility>
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 namespace {
 
@@ -50,5 +49,4 @@ bool SessionConfig::IsValid() const {
          std::any_of(aes_secret_key.begin(), aes_secret_key.end(), IsNonZero) &&
          std::any_of(aes_iv_mask.begin(), aes_iv_mask.end(), IsNonZero);
 }
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

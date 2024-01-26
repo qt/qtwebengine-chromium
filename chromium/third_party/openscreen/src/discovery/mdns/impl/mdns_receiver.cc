@@ -10,8 +10,7 @@
 #include "util/std_util.h"
 #include "util/trace_logging.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 MdnsReceiver::ResponseClient::~ResponseClient() = default;
 
@@ -92,5 +91,4 @@ void MdnsReceiver::OnRead(UdpSocket* socket,
   }
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

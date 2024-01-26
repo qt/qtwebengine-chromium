@@ -9,8 +9,7 @@
 #include "cast/streaming/constants.h"
 #include "gtest/gtest.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 TEST(ReceiverConstraintsTest, VideoLimitsIsSupersetOf) {
   VideoLimits first{};
@@ -253,5 +252,4 @@ TEST(ReceiverConstraintsTest, ReceiverConstraintsIsSupersetOf) {
   EXPECT_FALSE(second.IsSupersetOf(first));
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

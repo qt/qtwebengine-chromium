@@ -9,15 +9,13 @@
 #include <utility>
 #include <vector>
 
-#include "absl/types/optional.h"
 #include "osp/impl/quic/quic_connection_factory_impl.h"
 #include "platform/base/error.h"
 #include "third_party/chromium_quic/src/net/third_party/quic/platform/impl/quic_chromium_clock.h"
 #include "util/osp_logging.h"
 #include "util/trace_logging.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 UdpTransport::UdpTransport(UdpSocket* socket, const IPEndpoint& destination)
     : socket_(socket), destination_(destination) {
@@ -153,5 +151,4 @@ void QuicConnectionImpl::OnConnectionClosed(
   delegate_->OnConnectionClosed(session_->connection_id());
 }
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp

@@ -15,8 +15,7 @@
 #include "platform/base/error.h"
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 struct SenderMessage {
  public:
@@ -48,7 +47,6 @@ struct SenderMessage {
       body;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STREAMING_SENDER_MESSAGE_H_

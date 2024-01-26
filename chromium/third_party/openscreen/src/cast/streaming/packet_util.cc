@@ -7,8 +7,7 @@
 #include "cast/streaming/rtcp_common.h"
 #include "cast/streaming/rtp_defines.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 std::pair<ApparentPacketType, Ssrc> InspectPacketForRouting(ByteView packet) {
   // Check for RTP packets first, since they are more frequent.
@@ -37,5 +36,4 @@ std::pair<ApparentPacketType, Ssrc> InspectPacketForRouting(ByteView packet) {
   return std::make_pair(ApparentPacketType::UNKNOWN, Ssrc{0});
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

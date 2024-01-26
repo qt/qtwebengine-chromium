@@ -8,8 +8,7 @@
 #include "gtest/gtest.h"
 #include "util/json/json_serialization.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 TEST(ReceiverMessageTest, ReceiverErrorConstructors) {
   const ReceiverError kOpenscreenError(Error::Code::kNoStreamSelected,
@@ -47,5 +46,4 @@ TEST(ReceiverMessageTest, ReceiverErrorToError) {
             ReceiverError(1234, "message two").ToError());
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

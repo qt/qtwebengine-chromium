@@ -6,8 +6,7 @@
 
 #include <utility>
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 ProtocolConnectionClient::ConnectRequest::ConnectRequest() = default;
 
@@ -61,5 +60,4 @@ std::ostream& operator<<(std::ostream& os,
   }
 }
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp

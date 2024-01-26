@@ -25,8 +25,7 @@
 #include "util/osp_logging.h"
 #include "util/span_util.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // TODO(crbug.com/openscreen/90): Remove these after Chromium is migrated to
 // openscreen::cast
@@ -486,5 +485,4 @@ TEST_F(CastAuthUtilTest, CRLTestSuite) {
 }
 
 }  // namespace
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

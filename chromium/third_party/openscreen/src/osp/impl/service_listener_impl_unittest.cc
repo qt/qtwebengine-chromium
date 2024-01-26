@@ -10,8 +10,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 namespace {
 
 using ::testing::_;
@@ -412,5 +411,4 @@ TEST_F(ServiceListenerImplTest, MultipleObservers) {
   mock_delegate_->SetState(State::kRunning);
 }
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp

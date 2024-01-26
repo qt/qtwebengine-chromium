@@ -5,14 +5,12 @@
 #include "discovery/common/config.h"
 #include "discovery/mdns/public/mdns_reader.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 void Fuzz(const uint8_t* data, size_t size) {
   MdnsReader reader(Config{}, data, size);
   reader.Read();
 }
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   openscreen::discovery::Fuzz(data, size);
   return 0;

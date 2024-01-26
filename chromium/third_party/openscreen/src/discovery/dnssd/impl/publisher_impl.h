@@ -8,15 +8,13 @@
 #include <map>
 #include <string>
 
-#include "absl/strings/string_view.h"
 #include "discovery/dnssd/impl/conversion_layer.h"
 #include "discovery/dnssd/public/dns_sd_instance.h"
 #include "discovery/dnssd/public/dns_sd_publisher.h"
 #include "discovery/mdns/public/mdns_domain_confirmed_provider.h"
 #include "discovery/mdns/public/mdns_service.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 class NetworkInterfaceConfig;
 class ReportingClient;
@@ -59,7 +57,6 @@ class PublisherImpl : public DnsSdPublisher,
   friend class PublisherTesting;
 };
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery
 
 #endif  // DISCOVERY_DNSSD_IMPL_PUBLISHER_IMPL_H_

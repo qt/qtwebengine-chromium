@@ -5,9 +5,9 @@
 #ifndef PLATFORM_IMPL_NETWORK_INTERFACE_H_
 #define PLATFORM_IMPL_NETWORK_INTERFACE_H_
 
+#include <optional>
 #include <vector>
 
-#include "absl/types/optional.h"
 #include "platform/base/interface_info.h"
 
 namespace openscreen {
@@ -16,7 +16,7 @@ namespace openscreen {
 std::vector<InterfaceInfo> GetNetworkInterfaces();
 
 // Returns the system's loopback interface.  Used for unit tests.
-absl::optional<InterfaceInfo> GetLoopbackInterfaceForTesting();
+std::optional<InterfaceInfo> GetLoopbackInterfaceForTesting();
 
 }  // namespace openscreen
 

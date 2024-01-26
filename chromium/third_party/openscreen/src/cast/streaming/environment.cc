@@ -11,8 +11,7 @@
 #include "platform/api/task_runner.h"
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 Environment::PacketConsumer::~PacketConsumer() = default;
 
@@ -162,5 +161,4 @@ void Environment::OnRead(UdpSocket* socket,
       std::move(static_cast<std::vector<uint8_t>&>(packet)));
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

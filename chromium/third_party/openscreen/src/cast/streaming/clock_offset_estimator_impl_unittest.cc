@@ -14,8 +14,7 @@
 #include "platform/test/fake_clock.h"
 #include "util/chrono_helpers.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 class ClockOffsetEstimatorImplTest : public ::testing::Test {
  public:
@@ -44,10 +43,10 @@ TEST_F(ClockOffsetEstimatorImplTest, EstimateOffset) {
   const milliseconds kTrueOffset(100);
   receiver_clock_.Advance(kTrueOffset);
 
-  Clock::duration lower_bound;
-  Clock::duration upper_bound;
+  Clock::duration frame_bound;
+  Clock::duration packet_bound;
 
-  EXPECT_FALSE(estimator_.GetReceiverOffsetBounds(lower_bound, upper_bound));
+  EXPECT_FALSE(estimator_.GetReceiverOffsetBounds(frame_bound, packet_bound));
 
   const RtpTimeTicks rtp_timestamp;
   FrameId frame_id = FrameId::first();
@@ -76,7 +75,7 @@ TEST_F(ClockOffsetEstimatorImplTest, EstimateOffset) {
   send_event.size = 1500;
   estimator_.OnPacketEvent(send_event);
 
-  EXPECT_FALSE(estimator_.GetReceiverOffsetBounds(lower_bound, upper_bound));
+  EXPECT_FALSE(estimator_.GetReceiverOffsetBounds(frame_bound, packet_bound));
 
   AdvanceClocks(milliseconds(10));
   FrameEvent ack_sent_event;
@@ -98,7 +97,7 @@ TEST_F(ClockOffsetEstimatorImplTest, EstimateOffset) {
   receive_event.size = 1500;
   estimator_.OnPacketEvent(receive_event);
 
-  EXPECT_FALSE(estimator_.GetReceiverOffsetBounds(lower_bound, upper_bound));
+  EXPECT_FALSE(estimator_.GetReceiverOffsetBounds(frame_bound, packet_bound));
 
   AdvanceClocks(milliseconds(30));
   FrameEvent ack_event;
@@ -109,12 +108,12 @@ TEST_F(ClockOffsetEstimatorImplTest, EstimateOffset) {
   ack_event.frame_id = frame_id;
   estimator_.OnFrameEvent(ack_event);
 
-  EXPECT_TRUE(estimator_.GetReceiverOffsetBounds(lower_bound, upper_bound));
+  EXPECT_TRUE(estimator_.GetReceiverOffsetBounds(frame_bound, packet_bound));
 
-  EXPECT_EQ(milliseconds(70), to_milliseconds(lower_bound));
-  EXPECT_EQ(milliseconds(110), to_milliseconds(upper_bound));
-  EXPECT_GE(kTrueOffset, lower_bound);
-  EXPECT_LE(kTrueOffset, upper_bound);
+  EXPECT_EQ(milliseconds(70), to_milliseconds(frame_bound));
+  EXPECT_EQ(milliseconds(110), to_milliseconds(packet_bound));
+  EXPECT_GE(kTrueOffset, frame_bound);
+  EXPECT_LE(kTrueOffset, packet_bound);
 }
 
 // Same scenario as above, but event C arrives before event B. It doesn't mean
@@ -123,10 +122,10 @@ TEST_F(ClockOffsetEstimatorImplTest, EventCArrivesBeforeEventB) {
   constexpr milliseconds kTrueOffset(100);
   receiver_clock_.Advance(kTrueOffset);
 
-  Clock::duration lower_bound;
-  Clock::duration upper_bound;
+  Clock::duration frame_bound;
+  Clock::duration packet_bound;
 
-  EXPECT_FALSE(estimator_.GetReceiverOffsetBounds(lower_bound, upper_bound));
+  EXPECT_FALSE(estimator_.GetReceiverOffsetBounds(frame_bound, packet_bound));
 
   const RtpTimeTicks rtp_timestamp;
   FrameId frame_id = FrameId::first();
@@ -155,7 +154,7 @@ TEST_F(ClockOffsetEstimatorImplTest, EventCArrivesBeforeEventB) {
   send_event.size = 1500;
   estimator_.OnPacketEvent(send_event);
 
-  EXPECT_FALSE(estimator_.GetReceiverOffsetBounds(lower_bound, upper_bound));
+  EXPECT_FALSE(estimator_.GetReceiverOffsetBounds(frame_bound, packet_bound));
 
   AdvanceClocks(milliseconds(10));
   Clock::time_point event_b_time = receiver_clock_.now();
@@ -170,7 +169,7 @@ TEST_F(ClockOffsetEstimatorImplTest, EventCArrivesBeforeEventB) {
   ack_event.frame_id = frame_id;
   estimator_.OnFrameEvent(ack_event);
 
-  EXPECT_FALSE(estimator_.GetReceiverOffsetBounds(lower_bound, upper_bound));
+  EXPECT_FALSE(estimator_.GetReceiverOffsetBounds(frame_bound, packet_bound));
 
   PacketEvent receive_event;
   receive_event.timestamp = event_b_time;
@@ -191,23 +190,23 @@ TEST_F(ClockOffsetEstimatorImplTest, EventCArrivesBeforeEventB) {
   ack_sent_event.frame_id = frame_id;
   estimator_.OnFrameEvent(ack_sent_event);
 
-  EXPECT_TRUE(estimator_.GetReceiverOffsetBounds(lower_bound, upper_bound));
+  EXPECT_TRUE(estimator_.GetReceiverOffsetBounds(frame_bound, packet_bound));
 
   // Note: although the bounds are measured in microseconds, we round here to
   // the nearest millisecond to avoid comparison inaccuracies due to floating
   // point representation.
-  EXPECT_EQ(milliseconds(70), to_milliseconds(lower_bound));
-  EXPECT_EQ(milliseconds(110), to_milliseconds(upper_bound));
-  EXPECT_GE(kTrueOffset, lower_bound);
-  EXPECT_LE(kTrueOffset, upper_bound);
+  EXPECT_EQ(milliseconds(70), to_milliseconds(frame_bound));
+  EXPECT_EQ(milliseconds(110), to_milliseconds(packet_bound));
+  EXPECT_GE(kTrueOffset, frame_bound);
+  EXPECT_LE(kTrueOffset, packet_bound);
 }
 
 TEST_F(ClockOffsetEstimatorImplTest, MultipleIterations) {
   constexpr milliseconds kTrueOffset(100);
   receiver_clock_.Advance(milliseconds(kTrueOffset));
 
-  Clock::duration lower_bound;
-  Clock::duration upper_bound;
+  Clock::duration frame_bound;
+  Clock::duration packet_bound;
 
   const RtpTimeTicks rtp_timestamp_a;
   FrameId frame_id_a = FrameId::first();
@@ -368,12 +367,11 @@ TEST_F(ClockOffsetEstimatorImplTest, MultipleIterations) {
   third_ack_event.frame_id = frame_id_c;
   estimator_.OnFrameEvent(third_ack_event);
 
-  EXPECT_TRUE(estimator_.GetReceiverOffsetBounds(lower_bound, upper_bound));
-  EXPECT_GT(lower_bound, milliseconds(90));
-  EXPECT_LE(lower_bound, kTrueOffset);
-  EXPECT_LT(upper_bound, milliseconds(150));
-  EXPECT_GT(upper_bound, kTrueOffset);
+  EXPECT_TRUE(estimator_.GetReceiverOffsetBounds(frame_bound, packet_bound));
+  EXPECT_GT(frame_bound, milliseconds(90));
+  EXPECT_LE(frame_bound, kTrueOffset);
+  EXPECT_LT(packet_bound, milliseconds(150));
+  EXPECT_GT(packet_bound, kTrueOffset);
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

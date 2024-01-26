@@ -6,13 +6,12 @@
 #define DISCOVERY_DNSSD_IMPL_INSTANCE_KEY_H_
 
 #include <string>
+#include <string_view>
 #include <utility>
 
-#include "absl/strings/string_view.h"
 #include "discovery/dnssd/impl/service_key.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 class DnsSdInstance;
 class DomainName;
@@ -31,9 +30,9 @@ class InstanceKey : public ServiceKey {
 
   // NOTE: The provided parameters must be valid instance,  service and domain
   // ids.
-  InstanceKey(absl::string_view instance,
-              absl::string_view service,
-              absl::string_view domain);
+  InstanceKey(std::string_view instance,
+              std::string_view service,
+              std::string_view domain);
 
   InstanceKey(const InstanceKey& other);
   InstanceKey(InstanceKey&& other) noexcept;
@@ -94,7 +93,6 @@ inline bool operator!=(const InstanceKey& lhs, const InstanceKey& rhs) {
   return !(lhs == rhs);
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery
 
 #endif  // DISCOVERY_DNSSD_IMPL_INSTANCE_KEY_H_

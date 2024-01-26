@@ -18,8 +18,7 @@
 #include "gtest/gtest.h"
 #include "platform/api/network_interface.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 using testing::ElementsAreArray;
 
@@ -58,7 +57,7 @@ TEST(MdnsDomainNameTest, Construct) {
   name2_stream << name2;
   EXPECT_EQ(name2_stream.str(), "MyDevice._mYSERvice.local");
 
-  std::vector<absl::string_view> labels{"OtherDevice", "_MYservice", "LOcal"};
+  std::vector<std::string_view> labels{"OtherDevice", "_MYservice", "LOcal"};
   DomainName name3(labels);
   EXPECT_FALSE(name3.empty());
   EXPECT_EQ(name3.MaxWireSize(), size_t{30});
@@ -798,5 +797,4 @@ TEST(MdnsRecordOperations, CanBeProcessed) {
   EXPECT_FALSE(CanBeProcessed(static_cast<DnsType>(8973)));
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

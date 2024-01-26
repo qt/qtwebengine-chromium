@@ -13,8 +13,7 @@
 #include "platform/api/time.h"
 #include "util/chrono_helpers.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 namespace {
 
 using clock_operators::operator<<;
@@ -228,5 +227,4 @@ TEST_F(BandwidthEstimatorTest, ClampsEstimateToMaxInt) {
 }
 
 }  // namespace
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

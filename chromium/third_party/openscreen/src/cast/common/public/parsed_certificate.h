@@ -14,8 +14,7 @@
 #include "platform/base/error.h"
 #include "platform/base/span.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 enum class DigestAlgorithm {
   kSha1,
@@ -75,7 +74,6 @@ class ParsedCertificate {
   virtual void SetNotAfterTimeForTesting(time_t not_after) = 0;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_COMMON_PUBLIC_PARSED_CERTIFICATE_H_

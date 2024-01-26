@@ -13,8 +13,7 @@
 #include "cast/streaming/rtp_packet_parser.h"
 #include "platform/base/span.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // Used by a Receiver to collect the parts of a frame, track what is
 // missing/complete, and assemble a complete frame.
@@ -84,7 +83,6 @@ class FrameCollector {
   std::vector<PayloadChunk> chunks_;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STREAMING_FRAME_COLLECTOR_H_

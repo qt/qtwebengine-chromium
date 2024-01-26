@@ -22,8 +22,7 @@
 #include "cast/streaming/session_config.h"
 #include "cast/streaming/session_messenger.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 class Environment;
 class Receiver;
@@ -246,7 +245,6 @@ class ReceiverSession final : public Environment::SocketSubscriber {
   std::unique_ptr<RpcMessenger> rpc_messenger_;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STREAMING_RECEIVER_SESSION_H_

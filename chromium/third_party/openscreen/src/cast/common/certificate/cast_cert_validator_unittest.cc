@@ -16,8 +16,7 @@
 #include "platform/test/paths.h"
 #include "util/crypto/pem_helpers.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 namespace {
 
 enum TrustStoreDependency {
@@ -614,5 +613,4 @@ TEST(VerifyCastDeviceCertTest, TimeDateConversionValidate) {
 }
 
 }  // namespace
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

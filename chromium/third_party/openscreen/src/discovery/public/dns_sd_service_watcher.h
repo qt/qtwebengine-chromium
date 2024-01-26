@@ -19,8 +19,7 @@
 #include "util/hashing.h"
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 // This class represents a top-level discovery API which sits on top of DNS-SD.
 // T is the service-specific type which stores information regarding a specific
@@ -215,7 +214,6 @@ class DnsSdServiceWatcher : public DnsSdQuerier::Callback {
   DnsSdQuerier* const querier_;
 };
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery
 
 #endif  // DISCOVERY_PUBLIC_DNS_SD_SERVICE_WATCHER_H_

@@ -16,8 +16,7 @@
 #include <TargetConditionals.h>
 #endif
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 namespace {
 
 using ::cast::channel::CastMessage;
@@ -190,5 +189,4 @@ const std::string& GetPayload(const CastMessage& message) {
                                          : message.payload_binary();
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

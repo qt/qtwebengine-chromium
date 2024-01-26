@@ -12,8 +12,7 @@
 #include "cast/streaming/environment.h"
 #include "util/big_endian.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 StatisticsCollector::StatisticsCollector(ClockNowFunctionPtr now) : now_(now) {}
 StatisticsCollector::~StatisticsCollector() = default;
@@ -72,5 +71,4 @@ std::vector<FrameEvent> StatisticsCollector::TakeRecentFrameEvents() {
   return out;
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

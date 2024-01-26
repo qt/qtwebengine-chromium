@@ -11,8 +11,7 @@
 #include "gtest/gtest.h"
 #include "util/chrono_helpers.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 namespace {
 
 // Returns a RtcpReportBlock with all fields set to known values to see how the
@@ -199,5 +198,4 @@ TEST(PacketReceiveStatsTrackerTest, ComputesJitterCorrectly) {
 }
 
 }  // namespace
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

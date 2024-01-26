@@ -14,7 +14,6 @@
 #include <vector>
 
 #include "absl/base/thread_annotations.h"
-#include "absl/types/optional.h"
 #include "platform/api/task_runner.h"
 #include "platform/api/time.h"
 #include "platform/base/error.h"

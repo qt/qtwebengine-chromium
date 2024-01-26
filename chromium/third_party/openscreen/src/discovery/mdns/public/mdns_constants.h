@@ -23,8 +23,7 @@
 #include "platform/base/ip_address.h"
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 // ============================================================================
 // Networking
@@ -462,7 +461,6 @@ constexpr int kVersionShift = 16;
 constexpr uint32_t kDnssecOkBitMask = 0x00008000;
 constexpr uint8_t kVersionBadvers = 0x10;
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery
 
 #endif  // DISCOVERY_MDNS_PUBLIC_MDNS_CONSTANTS_H_

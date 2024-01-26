@@ -7,8 +7,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 namespace dnssd {
 
 TEST(TxtRecordTest, TestCaseInsensitivity) {
@@ -147,5 +146,4 @@ TEST(TxtRecordTest, TestGetDataWorks) {
 }
 
 }  // namespace dnssd
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

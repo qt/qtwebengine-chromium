@@ -17,8 +17,7 @@
 #include "util/osp_logging.h"
 #include "util/stringprintf.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 namespace {
 
@@ -108,5 +107,4 @@ void CastService::OnRecoverableError(Error error) {
   OSP_LOG_ERROR << "Encountered recoverable discovery error: " << error;
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

@@ -17,8 +17,7 @@
 #include "platform/test/fake_task_runner.h"
 #include "platform/test/fake_udp_socket.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 namespace {
 
 constexpr Clock::duration kOneSecond =
@@ -509,5 +508,4 @@ TEST_F(MdnsTrackerTest, QuestionTrackerSendsMultipleMessages) {
   clock_.Advance(std::chrono::milliseconds(120));
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

@@ -4,6 +4,7 @@
 
 #include "cast/standalone_sender/looping_file_cast_agent.h"
 
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -20,8 +21,7 @@
 #include "util/stringprintf.h"
 #include "util/trace_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 namespace {
 
 using DeviceMediaPolicy = SenderSocketFactory::DeviceMediaPolicy;
@@ -352,7 +352,7 @@ void LoopingFileCastAgent::OnStatisticsUpdated(
   if ((num_times_on_statistics_updated_called_++ % kLoggingInterval) == 0) {
     OSP_VLOG << __func__ << ": updated_stats=" << updated_stats.ToString();
   }
-  last_reported_statistics_ = absl::make_optional<SenderStats>(updated_stats);
+  last_reported_statistics_ = std::make_optional<SenderStats>(updated_stats);
 }
 
 void LoopingFileCastAgent::OnReady() {
@@ -383,14 +383,14 @@ void LoopingFileCastAgent::Shutdown() {
   if (current_session_) {
     OSP_LOG_INFO << "Stopping mirroring session...";
     current_session_.reset();
+
+    if (last_reported_statistics_) {
+      OSP_LOG_INFO << "Last reported statistics="
+                   << last_reported_statistics_->ToString();
+    }
   }
   OSP_DCHECK(message_port_.source_id().empty());
   environment_.reset();
-
-  if (last_reported_statistics_) {
-    OSP_LOG_INFO << "Last reported statistics="
-                 << last_reported_statistics_->ToString();
-  }
 
   if (platform_remote_connection_) {
     const VirtualConnection connection = *platform_remote_connection_;
@@ -434,5 +434,4 @@ void LoopingFileCastAgent::Shutdown() {
   }
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

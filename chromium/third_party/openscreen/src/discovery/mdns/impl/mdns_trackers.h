@@ -16,8 +16,7 @@
 #include "platform/base/trivial_clock_traits.h"
 #include "util/alarm.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 struct Config;
 class MdnsRandom;
@@ -254,7 +253,6 @@ class MdnsQuestionTracker : public MdnsTracker {
   int announcements_so_far_ = 0;
 };
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery
 
 #endif  // DISCOVERY_MDNS_IMPL_MDNS_TRACKERS_H_

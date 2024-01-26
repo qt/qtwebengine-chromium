@@ -14,8 +14,7 @@
 #include "discovery/mdns/public/mdns_record_changed_callback.h"
 #include "util/std_util.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 namespace {
 
@@ -423,5 +422,4 @@ void MdnsQuestionTracker::ScheduleFollowUpQuery() {
   }
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

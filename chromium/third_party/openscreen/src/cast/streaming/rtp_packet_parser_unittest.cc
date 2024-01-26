@@ -11,8 +11,7 @@
 
 using testing::ElementsAreArray;
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 namespace {
 
 // Tests that a simple packet for a key frame can be parsed.
@@ -299,5 +298,4 @@ TEST(RtpPacketParserTest, RejectsPacketWithBadFramePacketIds) {
 }
 
 }  // namespace
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

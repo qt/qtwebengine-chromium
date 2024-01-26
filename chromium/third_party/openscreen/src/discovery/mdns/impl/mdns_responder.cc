@@ -17,8 +17,7 @@
 #include "discovery/mdns/impl/mdns_sender.h"
 #include "platform/api/task_runner.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 namespace {
 
 constexpr std::array<const char*, 3> kServiceEnumerationDomainLabels{
@@ -618,5 +617,4 @@ void MdnsResponder::SendResponse(
   }
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

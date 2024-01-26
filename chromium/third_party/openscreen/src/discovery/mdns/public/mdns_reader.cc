@@ -5,6 +5,7 @@
 #include "discovery/mdns/public/mdns_reader.h"
 
 #include <algorithm>
+#include <string_view>
 #include <utility>
 
 #include "discovery/common/config.h"
@@ -12,8 +13,7 @@
 #include "util/osp_logging.h"
 #include "util/std_util.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 namespace {
 
 bool TryParseDnsType(uint16_t to_parse, DnsType* type) {
@@ -73,7 +73,7 @@ bool MdnsReader::Read(DomainName* out) {
   // greater than the length of the buffer.
   size_t bytes_processed = 0;
   size_t domain_name_length = 0;
-  std::vector<absl::string_view> labels;
+  std::vector<std::string_view> labels;
   // If we are pointing before the beginning or past the end of the buffer, we
   // hit a malformed pointer. If we have processed more bytes than there are in
   // the buffer, we are in a circular compression loop.
@@ -110,8 +110,8 @@ bool MdnsReader::Read(DomainName* out) {
       if (position + label_length >= end()) {
         return false;
       }
-      const absl::string_view label(reinterpret_cast<const char*>(position),
-                                    label_length);
+      const std::string_view label(reinterpret_cast<const char*>(position),
+                                   label_length);
       domain_name_length += label_length + 1;  // including the length byte
       if (!IsValidDomainLabel(label) ||
           domain_name_length > kMaxDomainNameLength) {
@@ -467,5 +467,4 @@ bool MdnsReader::Read(NsecBitMapField* out) {
   return false;
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

@@ -12,8 +12,7 @@
 #include "cast/streaming/constants.h"
 #include "cast/streaming/ssrc.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // Common streaming configuration, established from the OFFER/ANSWER exchange,
 // that the Sender and Receiver are both assuming.
@@ -62,7 +61,6 @@ struct SessionConfig final {
   StreamType stream_type = StreamType::kUnknown;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STREAMING_SESSION_CONFIG_H_

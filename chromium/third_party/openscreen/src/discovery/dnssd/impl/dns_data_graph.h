@@ -10,14 +10,12 @@
 #include <memory>
 #include <vector>
 
-#include "absl/types/optional.h"
 #include "discovery/dnssd/impl/constants.h"
 #include "discovery/dnssd/public/dns_sd_instance_endpoint.h"
 #include "discovery/mdns/public/mdns_record_changed_callback.h"
 #include "discovery/mdns/public/mdns_records.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 /*
  Per RFC 6763, the following mappings exist between the domains of the called
@@ -128,7 +126,6 @@ class DnsDataGraph {
   virtual bool IsTracked(const DomainName& name) const = 0;
 };
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery
 
 #endif  // DISCOVERY_DNSSD_IMPL_DNS_DATA_GRAPH_H_

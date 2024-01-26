@@ -17,8 +17,7 @@
 #include "util/span_util.h"
 #include "util/std_util.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 // TXT Conversions.
 TEST(DnsSdConversionLayerTest, TestCreateTxtEmpty) {
@@ -285,5 +284,4 @@ TEST(DnsSdConversionLayerTest, GetDnsRecordsTxt) {
       rdata.texts(), std::vector<uint8_t>{'b', 'o', 'o', 'l', 'e', 'a', 'n'}));
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

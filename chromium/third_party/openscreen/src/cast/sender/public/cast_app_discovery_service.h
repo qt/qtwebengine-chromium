@@ -9,8 +9,7 @@
 
 #include "cast/common/public/receiver_info.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 class CastMediaSource;
 
@@ -62,7 +61,6 @@ class CastAppDiscoveryService {
   virtual void RemoveAvailabilityCallback(uint32_t id) = 0;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_SENDER_PUBLIC_CAST_APP_DISCOVERY_SERVICE_H_

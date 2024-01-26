@@ -20,8 +20,7 @@
 #include "util/std_util.h"
 #include "util/stringprintf.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 namespace {
 
@@ -80,5 +79,4 @@ std::vector<Error> ValidateReceiverMessage(const Json::Value& message) {
   return Validate(message, schema);
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

@@ -21,8 +21,7 @@ extern "C" {
 #include <string>
 #include <utility>
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 namespace internal {
 
@@ -78,7 +77,6 @@ std::string AvErrorToString(int error_num);
 // them).
 #define _LIBAVUTIL_OLD_CHANNEL_LAYOUT (LIBAVUTIL_VERSION_MAJOR < 57)
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STANDALONE_SENDER_FFMPEG_GLUE_H_

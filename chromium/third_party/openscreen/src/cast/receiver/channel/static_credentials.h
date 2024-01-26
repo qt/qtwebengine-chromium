@@ -9,13 +9,11 @@
 #include <string>
 #include <vector>
 
-#include "absl/strings/string_view.h"
 #include "cast/receiver/channel/device_auth_namespace_handler.h"
 #include "platform/base/error.h"
 #include "platform/base/tls_credentials.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 class StaticCredentialsProvider final
     : public DeviceAuthNamespaceHandler::CredentialsProvider {
@@ -63,7 +61,6 @@ ErrorOr<GeneratedCredentials> GenerateCredentials(
 ErrorOr<GeneratedCredentials> GenerateCredentialsForTesting(
     const std::string& device_certificate_id);
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_RECEIVER_CHANNEL_STATIC_CREDENTIALS_H_

@@ -8,8 +8,7 @@
 #include <string>
 #include <vector>
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // Audio capabilities are how receivers indicate support for remoting codecs--
 // as remoting does not include the actual codec in the OFFER message.
@@ -55,7 +54,6 @@ struct RemotingCapabilities {
   std::vector<VideoCapability> video;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STREAMING_REMOTING_CAPABILITIES_H_

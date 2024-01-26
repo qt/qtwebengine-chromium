@@ -16,8 +16,7 @@
 #include "platform/base/interface_info.h"
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 using State = ServiceListener::State;
 
@@ -153,5 +152,4 @@ void DnsSdWatcherClient::OnDnsWatcherUpdated(
   listener_->OnReceiverUpdated(discovered_services);
 }
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp

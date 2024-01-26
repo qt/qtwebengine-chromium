@@ -16,8 +16,7 @@
 #include "platform/base/macros.h"
 #include "platform/base/span.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // A combination of metadata and data for one encoded frame.  This can contain
 // audio data or video data or other.
@@ -117,7 +116,6 @@ struct EncodedFrame {
   OSP_DISALLOW_COPY_AND_ASSIGN(EncodedFrame);
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STREAMING_ENCODED_FRAME_H_

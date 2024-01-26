@@ -12,8 +12,7 @@
 
 #if defined(ENABLE_TRACE_LOGGING)
 
-namespace openscreen {
-namespace internal {
+namespace openscreen::internal {
 namespace {
 
 MATCHER_P(HasSameNameAndLocation, expected, "") {
@@ -118,7 +117,6 @@ TEST(TraceLoggingInternalTest, ValidateSetResultDoesNotSegfaultOnEmptyStack) {
   ScopedTraceOperation::set_result(Error::Code::kNone);
 }
 
-}  // namespace internal
-}  // namespace openscreen
+}  // namespace openscreen::internal
 
 #endif  // defined(ENABLE_TRACE_LOGGING)

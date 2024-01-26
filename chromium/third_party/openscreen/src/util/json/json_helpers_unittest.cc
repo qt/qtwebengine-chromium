@@ -8,8 +8,7 @@
 #include "gtest/gtest.h"
 #include "util/chrono_helpers.h"
 
-namespace openscreen {
-namespace json {
+namespace openscreen::json {
 namespace {
 
 using ::testing::ElementsAre;
@@ -209,5 +208,4 @@ TEST(ParsingHelpersTest, TryParseStringArray) {
   EXPECT_FALSE(TryParseStringArray(kEmptyArray, &out));
 }
 
-}  // namespace json
-}  // namespace openscreen
+}  // namespace openscreen::json

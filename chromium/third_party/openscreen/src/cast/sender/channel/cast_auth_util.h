@@ -19,8 +19,7 @@ class CastMessage;
 }  // namespace channel
 }  // namespace cast
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 enum class CRLPolicy;
 struct DateTime;
@@ -103,7 +102,6 @@ ErrorOr<CastDeviceCertPolicy> VerifyCredentialsForTest(
     const DateTime& verification_time,
     bool enforce_sha256_checking = false);
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_SENDER_CHANNEL_CAST_AUTH_UTIL_H_

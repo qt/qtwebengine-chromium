@@ -38,16 +38,14 @@
 #define TRACE_INTERNAL_IGNORE_UNUSED_VAR [[maybe_unused]]
 #endif  // defined(__clang__)
 
-namespace openscreen {
-namespace internal {
+namespace openscreen::internal {
 
 inline bool IsTraceLoggingEnabled(TraceCategory category) {
   const CurrentTracingDestination destination;
   return destination && destination->IsTraceLoggingEnabled(category);
 }
 
-}  // namespace internal
-}  // namespace openscreen
+}  // namespace openscreen::internal
 
 #define TRACE_IS_ENABLED(category) \
   openscreen::internal::IsTraceLoggingEnabled(category)

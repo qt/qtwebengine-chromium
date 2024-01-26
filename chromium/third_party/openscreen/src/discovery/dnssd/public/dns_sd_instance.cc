@@ -11,8 +11,7 @@
 
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 namespace {
 
 // Maximum number of octets allowed in a single domain name label.
@@ -218,5 +217,4 @@ bool operator<(const DnsSdInstance& lhs, const DnsSdInstance& rhs) {
   return lhs.txt_ < rhs.txt_;
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

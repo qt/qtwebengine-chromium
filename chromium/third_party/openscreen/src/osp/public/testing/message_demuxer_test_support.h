@@ -9,8 +9,7 @@
 #include "osp/public/message_demuxer.h"
 #include "platform/api/time.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 class MockMessageCallback final : public MessageDemuxer::MessageCallback {
  public:
@@ -25,7 +24,6 @@ class MockMessageCallback final : public MessageDemuxer::MessageCallback {
                                Clock::time_point now));
 };
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp
 
 #endif  // OSP_PUBLIC_TESTING_MESSAGE_DEMUXER_TEST_SUPPORT_H_

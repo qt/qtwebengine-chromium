@@ -4,8 +4,7 @@
 
 #include "cast/streaming/encoded_frame.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 EncodedFrame::EncodedFrame(Dependency dependency,
                            FrameId frame_id,
@@ -58,5 +57,4 @@ void EncodedFrame::CopyMetadataTo(EncodedFrame* dest) const {
   dest->capture_end_time = this->capture_end_time;
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

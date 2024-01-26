@@ -11,8 +11,7 @@
 #include "platform/api/network_interface.h"
 #include "platform/base/ip_address.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 struct ServerConfig {
   ServerConfig();
@@ -29,7 +28,6 @@ struct ServerConfig {
   std::vector<IPEndpoint> connection_endpoints;
 };
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp
 
 #endif  // OSP_PUBLIC_SERVER_CONFIG_H_

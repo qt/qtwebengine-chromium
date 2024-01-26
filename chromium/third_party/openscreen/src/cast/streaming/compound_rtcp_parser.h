@@ -6,16 +6,15 @@
 #define CAST_STREAMING_COMPOUND_RTCP_PARSER_H_
 
 #include <chrono>
+#include <optional>
 #include <vector>
 
-#include "absl/types/optional.h"
 #include "cast/streaming/frame_id.h"
 #include "cast/streaming/rtcp_common.h"
 #include "cast/streaming/rtp_defines.h"
 #include "platform/base/span.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 class RtcpSession;
 
@@ -100,7 +99,7 @@ class CompoundRtcpParser {
   // input contained the relevant field(s).
   bool ParseReceiverReport(ByteView in,
                            int num_report_blocks,
-                           absl::optional<RtcpReportBlock>& receiver_report);
+                           std::optional<RtcpReportBlock>& receiver_report);
   bool ParseApplicationDefined(
       RtcpSubtype subtype,
       ByteView in,
@@ -130,7 +129,6 @@ class CompoundRtcpParser {
   RtpTimeTicks latest_frame_log_rtp_timestamp_;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STREAMING_COMPOUND_RTCP_PARSER_H_

@@ -27,8 +27,7 @@
 #include "util/osp_logging.h"
 #include "util/stringprintf.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 namespace {
 // Default error message for a bad CAPABILITIES_RESPONSE message.
@@ -547,5 +546,4 @@ void SenderSession::SendRpcMessage(std::vector<uint8_t> message_body) {
   }
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

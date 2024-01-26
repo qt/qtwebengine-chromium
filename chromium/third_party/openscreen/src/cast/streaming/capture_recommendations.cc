@@ -10,8 +10,7 @@
 #include "cast/streaming/answer_messages.h"
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 namespace capture_recommendations {
 namespace {
 
@@ -139,5 +138,4 @@ Recommendations GetRecommendations(const Answer& answer) {
 }
 
 }  // namespace capture_recommendations
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

@@ -13,8 +13,7 @@
 #include "platform/test/fake_udp_socket.h"
 #include "platform/test/mock_udp_socket.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 using testing::_;
 using testing::Args;
@@ -163,5 +162,4 @@ TEST_F(MdnsSenderTest, ReturnsErrorOnSocketFailure) {
   EXPECT_EQ(socket.send_queue_size(), size_t{0});
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

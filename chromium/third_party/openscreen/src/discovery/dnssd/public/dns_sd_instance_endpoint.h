@@ -14,8 +14,7 @@
 #include "platform/base/interface_info.h"
 #include "platform/base/ip_address.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 // Represents the data stored in DNS records of types SRV, TXT, A, and AAAA
 class DnsSdInstanceEndpoint : public DnsSdInstance {
@@ -177,7 +176,6 @@ inline bool operator!=(const DnsSdInstanceEndpoint& lhs,
   return !(lhs == rhs);
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery
 
 #endif  // DISCOVERY_DNSSD_PUBLIC_DNS_SD_INSTANCE_ENDPOINT_H_

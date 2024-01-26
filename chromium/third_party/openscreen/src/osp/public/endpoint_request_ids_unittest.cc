@@ -6,8 +6,7 @@
 
 #include "gtest/gtest.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 // These tests validate RequestId generation for two endpoints with IDs 3 and 7.
 
@@ -84,5 +83,4 @@ TEST(EndpointRequestIdsTest, ResetAll) {
   EXPECT_EQ(1u, request_ids_server.GetNextRequestId(3));
 }
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp

@@ -9,16 +9,15 @@
 #include <stdint.h>
 
 #include <map>
+#include <optional>
 #include <utility>
 
-#include "absl/types/optional.h"
 #include "cast/streaming/clock_offset_estimator.h"
 #include "cast/streaming/rtp_time.h"
 #include "cast/streaming/statistics_defines.h"
 #include "platform/base/trivial_clock_traits.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // This implementation listens to two pairs of events:
 //     1. FrameAckSent / FrameAckReceived (receiver->sender)
@@ -39,11 +38,12 @@ class ClockOffsetEstimatorImpl final : public ClockOffsetEstimator {
   void OnFrameEvent(const FrameEvent& frame_event) final;
   void OnPacketEvent(const PacketEvent& packet_event) final;
 
-  bool GetReceiverOffsetBounds(Clock::duration& lower_bound,
-                               Clock::duration& upper_bound) const;
+  bool GetReceiverOffsetBounds(Clock::duration& frame_bound,
+                               Clock::duration& packet_bound) const;
 
+  // Returns the average of the offset bounds for frame and packet events.
   // Returns nullopt if not enough data is in yet to produce an estimate.
-  absl::optional<Clock::duration> GetEstimatedOffset() const final;
+  std::optional<Clock::duration> GetEstimatedOffset() const final;
 
  private:
   // This helper uses the difference between sent and received event
@@ -56,8 +56,8 @@ class ClockOffsetEstimatorImpl final : public ClockOffsetEstimator {
   // relationship.
   class BoundCalculator {
    public:
-    typedef std::pair<absl::optional<Clock::time_point>,
-                      absl::optional<Clock::time_point>>
+    typedef std::pair<std::optional<Clock::time_point>,
+                      std::optional<Clock::time_point>>
         TimeTickPair;
     typedef std::map<uint64_t, TimeTickPair> EventMap;
 
@@ -90,12 +90,11 @@ class ClockOffsetEstimatorImpl final : public ClockOffsetEstimator {
     Clock::duration bound_{};
   };
 
-  // Fixed size storage to store event times for recent frames.
-  BoundCalculator upper_bound_;
-  BoundCalculator lower_bound_;
+  // Fixed size storage to store event times for recent frames and packets.
+  BoundCalculator packet_bound_;
+  BoundCalculator frame_bound_;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STREAMING_CLOCK_OFFSET_ESTIMATOR_IMPL_H_

@@ -12,8 +12,7 @@
 #include "platform/base/span.h"
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 using ::cast::channel::CastMessage;
 using message_serialization::DeserializeResult;
@@ -101,5 +100,4 @@ void CastSocket::OnRead(TlsConnection* connection, std::vector<uint8_t> block) {
 
 int CastSocket::g_next_socket_id_ = 1;
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

@@ -10,19 +10,18 @@
 #include "cast/streaming/packet_util.h"
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 RtpPacketParser::RtpPacketParser(Ssrc sender_ssrc)
     : sender_ssrc_(sender_ssrc), highest_rtp_frame_id_(FrameId::first()) {}
 
 RtpPacketParser::~RtpPacketParser() = default;
 
-absl::optional<RtpPacketParser::ParseResult> RtpPacketParser::Parse(
+std::optional<RtpPacketParser::ParseResult> RtpPacketParser::Parse(
     ByteView buffer) {
   if (buffer.size() < kRtpPacketMinValidSize ||
       ConsumeField<uint8_t>(buffer) != kRtpRequiredFirstByte) {
-    return absl::nullopt;
+    return std::nullopt;
   }
 
   // RTP header elements.
@@ -34,7 +33,7 @@ absl::optional<RtpPacketParser::ParseResult> RtpPacketParser::Parse(
   const uint8_t payload_type =
       ConsumeField<uint8_t>(buffer) & kRtpPayloadTypeMask;
   if (!IsRtpPayloadType(payload_type)) {
-    return absl::nullopt;
+    return std::nullopt;
   }
   ParseResult result;
   result.payload_type = static_cast<RtpPayloadType>(payload_type);
@@ -42,7 +41,7 @@ absl::optional<RtpPacketParser::ParseResult> RtpPacketParser::Parse(
   result.rtp_timestamp =
       last_parsed_rtp_timestamp_.Expand(ConsumeField<uint32_t>(buffer));
   if (ConsumeField<uint32_t>(buffer) != sender_ssrc_) {
-    return absl::nullopt;
+    return std::nullopt;
   }
 
   // Cast-specific header elements.
@@ -55,14 +54,14 @@ absl::optional<RtpPacketParser::ParseResult> RtpPacketParser::Parse(
   result.packet_id = ConsumeField<uint16_t>(buffer);
   result.max_packet_id = ConsumeField<uint16_t>(buffer);
   if (result.max_packet_id == kAllPacketsLost) {
-    return absl::nullopt;  // Packet ID cannot be the special value.
+    return std::nullopt;  // Packet ID cannot be the special value.
   }
   if (result.packet_id > result.max_packet_id) {
-    return absl::nullopt;
+    return std::nullopt;
   }
   if (has_referenced_frame_id) {
     if (buffer.empty()) {
-      return absl::nullopt;
+      return std::nullopt;
     }
     result.referenced_frame_id =
         result.frame_id.Expand(ConsumeField<uint8_t>(buffer));
@@ -77,18 +76,18 @@ absl::optional<RtpPacketParser::ParseResult> RtpPacketParser::Parse(
   // Zero or more Cast extensions.
   for (size_t i = 0; i < num_cast_extensions; ++i) {
     if (buffer.size() < sizeof(uint16_t)) {
-      return absl::nullopt;
+      return std::nullopt;
     }
     const uint16_t type_and_size = ConsumeField<uint16_t>(buffer);
     const uint8_t type = type_and_size >> kNumExtensionDataSizeFieldBits;
     const size_t size =
         type_and_size & FieldBitmask<uint16_t>(kNumExtensionDataSizeFieldBits);
     if (buffer.size() < size) {
-      return absl::nullopt;
+      return std::nullopt;
     }
     if (type == kAdaptiveLatencyRtpExtensionType) {
       if (size != sizeof(uint16_t)) {
-        return absl::nullopt;
+        return std::nullopt;
       }
       result.new_playout_delay =
           std::chrono::milliseconds(ReadBigEndian<uint16_t>(buffer.data()));
@@ -111,5 +110,4 @@ absl::optional<RtpPacketParser::ParseResult> RtpPacketParser::Parse(
 RtpPacketParser::ParseResult::ParseResult() = default;
 RtpPacketParser::ParseResult::~ParseResult() = default;
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

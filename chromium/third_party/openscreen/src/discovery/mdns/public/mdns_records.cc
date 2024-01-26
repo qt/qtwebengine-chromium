@@ -16,8 +16,7 @@
 #include "absl/strings/str_join.h"
 #include "discovery/mdns/public/mdns_writer.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 namespace {
 
@@ -53,10 +52,10 @@ bool IsGreaterThan(const Rdata& lhs, const Rdata& rhs) {
   const size_t lhs_size = lhs_cast.MaxWireSize() + 2;
   const size_t rhs_size = rhs_cast.MaxWireSize() + 2;
 
-  uint8_t lhs_bytes[lhs_size];  // NOLINT(runtime/arrays)
-  uint8_t rhs_bytes[rhs_size];  // NOLINT(runtime/arrays)
-  MdnsWriter lhs_writer(lhs_bytes, lhs_size);
-  MdnsWriter rhs_writer(rhs_bytes, rhs_size);
+  std::vector<uint8_t> lhs_bytes(lhs_size);
+  std::vector<uint8_t> rhs_bytes(rhs_size);
+  MdnsWriter lhs_writer(lhs_bytes.data(), lhs_size);
+  MdnsWriter rhs_writer(rhs_bytes.data(), rhs_size);
 
   const bool lhs_write = lhs_writer.Write(lhs_cast);
   const bool rhs_write = rhs_writer.Write(rhs_cast);
@@ -95,7 +94,7 @@ bool IsGreaterThan(DnsType type, const Rdata& lhs, const Rdata& rhs) {
 
 }  // namespace
 
-bool IsValidDomainLabel(absl::string_view label) {
+bool IsValidDomainLabel(std::string_view label) {
   const size_t label_size = label.size();
   return label_size > 0 && label_size <= kMaxLabelLength;
 }
@@ -105,10 +104,10 @@ DomainName::DomainName() = default;
 DomainName::DomainName(std::vector<std::string> labels)
     : DomainName(labels.begin(), labels.end()) {}
 
-DomainName::DomainName(const std::vector<absl::string_view>& labels)
+DomainName::DomainName(const std::vector<std::string_view>& labels)
     : DomainName(labels.begin(), labels.end()) {}
 
-DomainName::DomainName(std::initializer_list<absl::string_view> labels)
+DomainName::DomainName(std::initializer_list<std::string_view> labels)
     : DomainName(labels.begin(), labels.end()) {}
 
 DomainName::DomainName(std::vector<std::string> labels, size_t max_wire_size)
@@ -934,5 +933,4 @@ bool CanBeProcessed(DnsType type) {
   return false;
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

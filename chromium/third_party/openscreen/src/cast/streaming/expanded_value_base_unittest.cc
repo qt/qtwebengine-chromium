@@ -6,8 +6,7 @@
 
 #include "gtest/gtest.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 namespace {
 
@@ -104,5 +103,4 @@ TEST(ExpandedValueBaseTest, TruncationAndExpansion) {
   }
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

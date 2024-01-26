@@ -13,8 +13,7 @@
 #include "platform/base/span.h"
 #include "util/chrono_helpers.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 using clock_operators::operator<<;
 
@@ -225,5 +224,4 @@ constexpr int StreamingOpusEncoder::kDefaultCastAudioFramesPerSecond;
 // static
 constexpr int StreamingOpusEncoder::kOpusMaxPayloadSize;
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

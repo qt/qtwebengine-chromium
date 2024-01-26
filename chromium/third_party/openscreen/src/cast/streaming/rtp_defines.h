@@ -9,8 +9,7 @@
 
 #include "cast/streaming/constants.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // Note: Cast Streaming uses a subset of the messages in the RTP/RTCP
 // specification, but also adds some of its own extensions. See:
@@ -378,7 +377,6 @@ constexpr int kRtcpReceiverFrameLogMessageHeaderSize = 8;
 // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 constexpr int kRtcpReceiverFrameLogMessageBlockSize = 4;
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STREAMING_RTP_DEFINES_H_

@@ -9,8 +9,7 @@
 #include "gtest/gtest.h"
 #include "platform/test/fake_clock.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 namespace {
 
 using ::testing::UnorderedElementsAreArray;
@@ -159,5 +158,4 @@ TEST_F(CastAppAvailabilityTrackerTest, RemoveResultsForReceiver) {
             tracker_.GetAvailableReceivers(source1));
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

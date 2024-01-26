@@ -15,8 +15,7 @@
 #include "platform/api/time.h"
 #include "platform/base/span.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // Builds RTCP packets containing one Sender Report.
 class SenderReportBuilder {
@@ -45,7 +44,6 @@ class SenderReportBuilder {
   RtcpSession* const session_;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STREAMING_SENDER_REPORT_BUILDER_H_

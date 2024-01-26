@@ -5,11 +5,11 @@
 #ifndef CAST_COMMON_CERTIFICATE_TESTING_TEST_HELPERS_H_
 #define CAST_COMMON_CERTIFICATE_TESTING_TEST_HELPERS_H_
 
-#include "absl/strings/string_view.h"
+#include <string_view>
+
 #include "platform/base/span.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 namespace testing {
 
 class SignatureTestData {
@@ -22,10 +22,9 @@ class SignatureTestData {
   ByteBuffer sha256;
 };
 
-SignatureTestData ReadSignatureTestData(absl::string_view filename);
+SignatureTestData ReadSignatureTestData(std::string_view filename);
 
 }  // namespace testing
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_COMMON_CERTIFICATE_TESTING_TEST_HELPERS_H_

@@ -9,8 +9,7 @@
 #include "cast/streaming/message_fields.h"
 #include "cast/streaming/remoting.pb.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 namespace {
 
@@ -114,5 +113,4 @@ void SimpleRemotingReceiver::OnInitializeCallbackMessage(
   initialize_cb_ = nullptr;
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

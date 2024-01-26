@@ -10,8 +10,7 @@
 
 #include "cast/standalone_receiver/sdl_player_base.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // Consumes frames from a Receiver, decodes them, and renders them to an
 // internally-owned SDL audio device.
@@ -58,7 +57,6 @@ class SDLAudioPlayer final : public SDLPlayerBase {
   SDL_AudioSpec device_spec_{};
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STANDALONE_RECEIVER_SDL_AUDIO_PLAYER_H_

@@ -16,8 +16,7 @@
 #include "platform/api/task_runner.h"
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 const char kMirroringDisplayName[] = "Chrome Mirroring";
 const char kRemotingRpcNamespace[] = "urn:x-cast:com.google.cast.remoting";
@@ -96,5 +95,4 @@ void MirroringApplication::OnPlaybackError(StreamingPlaybackController*,
   agent_->StopApplicationIfRunning(this);  // ApplicationAgent calls Stop().
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

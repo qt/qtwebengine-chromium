@@ -9,6 +9,7 @@
 
 #include <array>
 #include <chrono>
+#include <optional>
 #include <vector>
 
 #include "cast/streaming/compound_rtcp_parser.h"
@@ -26,8 +27,7 @@
 #include "platform/base/span.h"
 #include "util/yet_another_bit_vector.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 class Environment;
 
@@ -185,7 +185,7 @@ class Sender final : public SenderPacketRouter::Sender,
   // fully received at the other end.
   struct PendingFrameSlot {
     // The frame to send, or nullopt if this slot is not in use.
-    absl::optional<EncryptedFrame> frame;
+    std::optional<EncryptedFrame> frame;
 
     // Represents which packets need to be sent. Elements are indexed by
     // FramePacketId. A set bit means a packet needs to be sent (or re-sent).
@@ -342,7 +342,6 @@ class Sender final : public SenderPacketRouter::Sender,
   std::vector<FrameId> pending_cancellations_;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STREAMING_SENDER_H_

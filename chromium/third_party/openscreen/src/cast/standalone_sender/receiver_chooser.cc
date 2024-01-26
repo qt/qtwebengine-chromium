@@ -13,8 +13,7 @@
 #include "platform/api/time.h"
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // NOTE: the compile requires a definition as well as the declaration
 // in the header.
@@ -123,5 +122,4 @@ void ReceiverChooser::PrintMenuAndHandleChoice() {
   std::getline(std::cin, garbage);
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

@@ -11,9 +11,9 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
-#include "absl/strings/string_view.h"
 #include "osp/msgs/osp_messages.h"
 #include "osp/public/message_demuxer.h"
 #include "osp/public/network_service_manager.h"
@@ -75,8 +75,7 @@ void SignalThings() {
 
 }  // namespace
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 class DemoListenerObserver final : public ServiceListener::Observer {
  public:
@@ -100,7 +99,7 @@ class DemoListenerObserver final : public ServiceListener::Observer {
   void OnMetrics(ServiceListener::Metrics) override {}
 };
 
-std::string SanitizeServiceId(absl::string_view service_id) {
+std::string SanitizeServiceId(std::string_view service_id) {
   std::string safe_service_id(service_id);
   for (auto& c : safe_service_id) {
     if (c < ' ' || c > '~') {
@@ -246,10 +245,10 @@ class DemoConnectionDelegate final : public Connection::Delegate {
     OSP_LOG_INFO << "presentation connection closed by remote";
   }
   void OnDiscarded() override {}
-  void OnError(const absl::string_view message) override {}
+  void OnError(const std::string_view message) override {}
   void OnTerminated() override { OSP_LOG_INFO << "presentation terminated"; }
 
-  void OnStringMessage(absl::string_view message) override {
+  void OnStringMessage(std::string_view message) override {
     OSP_LOG_INFO << "got message: " << message;
   }
   void OnBinaryMessage(const std::vector<uint8_t>& data) override {}
@@ -267,10 +266,10 @@ class DemoReceiverConnectionDelegate final : public Connection::Delegate {
     OSP_LOG_INFO << "presentation connection closed by remote";
   }
   void OnDiscarded() override {}
-  void OnError(const absl::string_view message) override {}
+  void OnError(const std::string_view message) override {}
   void OnTerminated() override { OSP_LOG_INFO << "presentation terminated"; }
 
-  void OnStringMessage(const absl::string_view message) override {
+  void OnStringMessage(const std::string_view message) override {
     OSP_LOG_INFO << "got message: " << message;
     connection_->SendString("--echo-- " + std::string(message));
   }
@@ -398,7 +397,7 @@ void RunControllerPollLoop(Controller* controller) {
           {std::string(command_result.command_line.argument_tail)},
           &receiver_observer);
     } else if (command_result.command_line.command == "start") {
-      const absl::string_view& argument_tail =
+      const std::string_view& argument_tail =
           command_result.command_line.argument_tail;
       size_t next_split = argument_tail.find_first_of(' ');
       const std::string& service_id = receiver_observer.GetServiceId(
@@ -466,8 +465,8 @@ void ListenerDemo() {
   NetworkServiceManager::Dispose();
 }
 
-void HandleReceiverCommand(absl::string_view command,
-                           absl::string_view argument_tail,
+void HandleReceiverCommand(std::string_view command,
+                           std::string_view argument_tail,
                            DemoReceiverDelegate& delegate,
                            NetworkServiceManager* manager) {
   if (command == "avail") {
@@ -518,7 +517,7 @@ void CleanupPublisherDemo(NetworkServiceManager* manager) {
   NetworkServiceManager::Dispose();
 }
 
-void PublisherDemo(absl::string_view friendly_name) {
+void PublisherDemo(std::string_view friendly_name) {
   SignalThings();
 
   constexpr uint16_t server_port = 6667;
@@ -574,11 +573,10 @@ void PublisherDemo(absl::string_view friendly_name) {
   CleanupPublisherDemo(network_service);
 }
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp
 
 struct InputArgs {
-  absl::string_view friendly_server_name;
+  std::string_view friendly_server_name;
   bool is_verbose;
   bool is_help;
   bool tracing_enabled;

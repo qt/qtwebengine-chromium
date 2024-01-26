@@ -8,8 +8,7 @@
 
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 namespace {
 
 bool IsTransitionValid(ServicePublisher::State from,
@@ -124,5 +123,4 @@ void ServicePublisherImpl::MaybeNotifyObserver() {
   }
 }
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp

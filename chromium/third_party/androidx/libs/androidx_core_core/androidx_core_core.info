@@ -148,7 +148,6 @@ resources = [
   "res/layout/notification_action.xml",
   "res/layout/ime_secondary_split_test_activity.xml",
   "res/layout/notification_template_icon_group.xml",
-  "res/layout/notification_template_custom_big.xml",
   "res/layout/notification_template_part_chronometer.xml",
   "res/layout/custom_dialog.xml",
   "res/values-da/values-da.xml",

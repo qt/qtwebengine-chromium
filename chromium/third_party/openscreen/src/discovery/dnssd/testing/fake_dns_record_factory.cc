@@ -6,8 +6,7 @@
 
 #include <utility>
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 // static
 MdnsRecord FakeDnsRecordFactory::CreateFullyPopulatedSrvRecord(uint16_t port) {
@@ -45,5 +44,4 @@ const char FakeDnsRecordFactory::kServiceNameServicePart[] = "_srv-name";
 // static
 const char FakeDnsRecordFactory::kDomainName[] = "local";
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

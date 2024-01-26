@@ -15,8 +15,7 @@
 #include "util/saturate_cast.h"
 #include "util/stringprintf.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 using clock_operators::operator<<;
 
@@ -272,5 +271,4 @@ constexpr milliseconds SenderPacketRouter::kDefaultBurstInterval;
 // static
 constexpr Clock::time_point SenderPacketRouter::kNever;
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

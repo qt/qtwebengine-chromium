@@ -7,8 +7,7 @@
 #include "gtest/gtest.h"
 #include "platform/base/span.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 namespace {
 
 // Tests that a simple RTCP packet containing only a Sender Report can be
@@ -178,5 +177,4 @@ TEST(PacketUtilTest, InspectsGarbagePacket) {
 }
 
 }  // namespace
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

@@ -14,8 +14,7 @@
 #include "util/hashing.h"
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 namespace {
 
@@ -281,5 +280,4 @@ bool MdnsWriter::Write(const Header& header) {
   return false;
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

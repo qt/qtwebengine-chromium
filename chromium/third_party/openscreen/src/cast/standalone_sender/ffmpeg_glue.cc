@@ -9,8 +9,7 @@
 #include "util/osp_logging.h"
 #include "util/std_util.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 namespace internal {
 
 AVFormatContext* CreateAVFormatContextForFile(const char* path) {
@@ -45,5 +44,4 @@ std::string AvErrorToString(int error_num) {
   return out;
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

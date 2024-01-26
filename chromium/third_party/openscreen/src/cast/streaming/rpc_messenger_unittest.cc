@@ -17,8 +17,7 @@ using testing::_;
 using testing::Invoke;
 using testing::Return;
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 namespace {
 
 class FakeMessenger {
@@ -158,5 +157,4 @@ TEST_F(RpcMessengerTest, Registration) {
   ASSERT_FALSE(rpc_messenger_->IsRegisteredForTesting(handle));
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

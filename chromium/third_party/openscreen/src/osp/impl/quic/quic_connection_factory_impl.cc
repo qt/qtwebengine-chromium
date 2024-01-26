@@ -21,8 +21,7 @@
 #include "util/std_util.h"
 #include "util/trace_logging.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 class QuicTaskRunner final : public ::base::TaskRunner {
  public:
@@ -217,5 +216,4 @@ void QuicConnectionFactoryImpl::OnSendError(UdpSocket* socket, Error error) {
   OSP_UNIMPLEMENTED();
 }
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp

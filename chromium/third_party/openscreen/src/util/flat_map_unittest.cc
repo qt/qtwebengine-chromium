@@ -5,18 +5,18 @@
 #include "util/flat_map.h"
 
 #include <chrono>
+#include <string_view>
 
-#include "absl/strings/string_view.h"
 #include "gtest/gtest.h"
 
 namespace openscreen {
 
 namespace {
 
-const FlatMap<int, absl::string_view> kSimpleFlatMap{{-1, "bar"},
-                                                     {123, "foo"},
-                                                     {10000, "baz"},
-                                                     {0, ""}};
+const FlatMap<int, std::string_view> kSimpleFlatMap{{-1, "bar"},
+                                                    {123, "foo"},
+                                                    {10000, "baz"},
+                                                    {0, ""}};
 
 }  // namespace
 

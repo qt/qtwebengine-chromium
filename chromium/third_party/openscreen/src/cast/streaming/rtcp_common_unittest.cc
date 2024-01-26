@@ -12,8 +12,7 @@
 #include "platform/base/span.h"
 #include "util/chrono_helpers.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 namespace {
 
 template <typename T>
@@ -298,5 +297,4 @@ TEST(RtcpCommonTest, ComputesDelayForReportBlocks) {
 }
 
 }  // namespace
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
