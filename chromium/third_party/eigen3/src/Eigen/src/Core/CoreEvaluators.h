@@ -13,6 +13,7 @@
 #ifndef EIGEN_COREEVALUATORS_H
 #define EIGEN_COREEVALUATORS_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

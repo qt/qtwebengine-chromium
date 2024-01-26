@@ -1022,7 +1022,7 @@ void ResetBlackboxedStateCache(Isolate* v8_isolate, Local<Script> script) {
   for (i::Tagged<i::SharedFunctionInfo> info = iter.Next(); !info.is_null();
        info = iter.Next()) {
     if (auto debug_info = isolate->debug()->TryGetDebugInfo(info)) {
-      debug_info->set_computed_debug_is_blackboxed(false);
+      debug_info.value()->set_computed_debug_is_blackboxed(false);
     }
   }
 }
@@ -1226,9 +1226,8 @@ void GlobalLexicalScopeNames(v8::Local<v8::Context> v8_context,
   i::Isolate* isolate = context->GetIsolate();
   i::Handle<i::ScriptContextTable> table(
       context->native_context()->script_context_table(), isolate);
-  for (int i = 0; i < table->used(kAcquireLoad); i++) {
-    i::Handle<i::Context> script_context =
-        i::ScriptContextTable::GetContext(isolate, table, i);
+  for (int i = 0; i < table->length(kAcquireLoad); i++) {
+    i::Handle<i::Context> script_context(table->get(i), isolate);
     DCHECK(script_context->IsScriptContext());
     i::Handle<i::ScopeInfo> scope_info(script_context->scope_info(), isolate);
     for (auto it : i::ScopeInfo::IterateLocalNames(scope_info)) {

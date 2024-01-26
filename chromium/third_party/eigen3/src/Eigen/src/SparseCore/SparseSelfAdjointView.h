@@ -10,6 +10,7 @@
 #ifndef EIGEN_SPARSE_SELFADJOINTVIEW_H
 #define EIGEN_SPARSE_SELFADJOINTVIEW_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen { 

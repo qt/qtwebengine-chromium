@@ -1,16 +1,29 @@
-// Copyright 2017 The Dawn Authors
+// Copyright 2017 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/CommandBufferStateTracker.h"
 
@@ -45,7 +58,7 @@ namespace {
 std::optional<uint32_t> FindFirstUndersizedBuffer(
     const ityp::span<uint32_t, uint64_t> unverifiedBufferSizes,
     const std::vector<uint64_t>& pipelineMinBufferSizes) {
-    ASSERT(unverifiedBufferSizes.size() == pipelineMinBufferSizes.size());
+    DAWN_ASSERT(unverifiedBufferSizes.size() == pipelineMinBufferSizes.size());
 
     for (uint32_t i = 0; i < unverifiedBufferSizes.size(); ++i) {
         if (unverifiedBufferSizes[i] < pipelineMinBufferSizes[i]) {
@@ -112,7 +125,7 @@ Return FindStorageBufferBindingAliasing(
         for (BindingIndex bindingIndex{0}; bindingIndex < bgl->GetBufferCount(); ++bindingIndex) {
             const BindingInfo& bindingInfo = bgl->GetBindingInfo(bindingIndex);
             // Buffer bindings are sorted to have smallest of bindingIndex.
-            ASSERT(bindingInfo.bindingType == BindingInfoType::Buffer);
+            DAWN_ASSERT(bindingInfo.bindingType == BindingInfoType::Buffer);
 
             // BindGroup validation already guarantees the buffer usage includes
             // wgpu::BufferUsage::Storage
@@ -162,7 +175,7 @@ Return FindStorageBufferBindingAliasing(
                     continue;
                 case wgpu::StorageTextureAccess::Undefined:
                 default:
-                    UNREACHABLE();
+                    DAWN_UNREACHABLE();
             }
 
             const TextureViewBase* textureView =
@@ -214,7 +227,7 @@ Return FindStorageBufferBindingAliasing(
     for (size_t i = 0; i < storageTextureViewsToCheck->size(); i++) {
         const TextureViewBase* textureView0 = storageTextureViewsToCheck[i];
 
-        ASSERT(textureView0->GetAspects() == Aspect::Color);
+        DAWN_ASSERT(textureView0->GetAspects() == Aspect::Color);
 
         uint32_t baseMipLevel0 = textureView0->GetBaseMipLevel();
         uint32_t mipLevelCount0 = textureView0->GetLevelCount();
@@ -228,7 +241,7 @@ Return FindStorageBufferBindingAliasing(
                 continue;
             }
 
-            ASSERT(textureView1->GetAspects() == Aspect::Color);
+            DAWN_ASSERT(textureView1->GetAspects() == Aspect::Color);
 
             uint32_t baseMipLevel1 = textureView1->GetBaseMipLevel();
             uint32_t mipLevelCount1 = textureView1->GetLevelCount();
@@ -261,7 +274,7 @@ Return FindStorageBufferBindingAliasing(
 }
 
 bool TextureViewsMatch(const TextureViewBase* a, const TextureViewBase* b) {
-    ASSERT(a->GetTexture() == b->GetTexture());
+    DAWN_ASSERT(a->GetTexture() == b->GetTexture());
     return a->GetFormat().GetIndex() == b->GetFormat().GetIndex() &&
            a->GetDimension() == b->GetDimension() && a->GetBaseMipLevel() == b->GetBaseMipLevel() &&
            a->GetLevelCount() == b->GetLevelCount() &&
@@ -272,7 +285,7 @@ bool TextureViewsMatch(const TextureViewBase* a, const TextureViewBase* b) {
 using VectorOfTextureViews = StackVector<const TextureViewBase*, 8>;
 
 bool TextureViewsAllMatch(const VectorOfTextureViews& views) {
-    ASSERT(!views->empty());
+    DAWN_ASSERT(!views->empty());
 
     const TextureViewBase* first = views[0];
     for (size_t i = 1; i < views->size(); ++i) {
@@ -505,8 +518,8 @@ MaybeError CommandBufferStateTracker::ValidateOperation(ValidationAspects requir
 }
 
 void CommandBufferStateTracker::RecomputeLazyAspects(ValidationAspects aspects) {
-    ASSERT(mAspects[VALIDATION_ASPECT_PIPELINE]);
-    ASSERT((aspects & ~kLazyAspects).none());
+    DAWN_ASSERT(mAspects[VALIDATION_ASPECT_PIPELINE]);
+    DAWN_ASSERT((aspects & ~kLazyAspects).none());
 
     if (aspects[VALIDATION_ASPECT_BIND_GROUPS]) {
         bool matches = true;
@@ -585,7 +598,7 @@ MaybeError CommandBufferStateTracker::CheckMissingAspects(ValidationAspects aspe
         // It returns the first invalid state found. We shouldn't be able to reach this line
         // because to have invalid aspects one of the above conditions must have failed earlier.
         // If this is reached, make sure lazy aspects and the error checks above are consistent.
-        UNREACHABLE();
+        DAWN_UNREACHABLE();
         return DAWN_VALIDATION_ERROR("Index buffer is invalid.");
     }
 
@@ -593,7 +606,7 @@ MaybeError CommandBufferStateTracker::CheckMissingAspects(ValidationAspects aspe
         // Try to be helpful by finding one missing vertex buffer to surface in the error message.
         const ityp::bitset<VertexBufferSlot, kMaxVertexBuffers> missingVertexBuffers =
             GetRenderPipeline()->GetVertexBufferSlotsUsed() & ~mVertexBufferSlotsUsed;
-        ASSERT(missingVertexBuffers.any());
+        DAWN_ASSERT(missingVertexBuffers.any());
 
         VertexBufferSlot firstMissing = ityp::Sub(GetHighestBitIndexPlusOne(missingVertexBuffers),
                                                   VertexBufferSlot(uint8_t(1)));
@@ -603,7 +616,7 @@ MaybeError CommandBufferStateTracker::CheckMissingAspects(ValidationAspects aspe
 
     if (aspects[VALIDATION_ASPECT_BIND_GROUPS]) {
         for (BindGroupIndex i : IterateBitSet(mLastPipelineLayout->GetBindGroupLayoutsMask())) {
-            ASSERT(HasPipeline());
+            DAWN_ASSERT(HasPipeline());
 
             DAWN_INVALID_IF(mBindgroups[i] == nullptr, "No bind group set at group index %u.",
                             static_cast<uint32_t>(i));
@@ -653,7 +666,8 @@ MaybeError CommandBufferStateTracker::CheckMissingAspects(ValidationAspects aspe
                             bindingIndex = candidateBindingIndex;
                         }
                     });
-                ASSERT(static_cast<uint32_t>(bindingIndex) != std::numeric_limits<uint32_t>::max());
+                DAWN_ASSERT(static_cast<uint32_t>(bindingIndex) !=
+                            std::numeric_limits<uint32_t>::max());
 
                 const auto& bindingInfo = mBindgroups[i]->GetLayout()->GetBindingInfo(bindingIndex);
                 const BufferBinding& bufferBinding =
@@ -697,7 +711,7 @@ MaybeError CommandBufferStateTracker::CheckMissingAspects(ValidationAspects aspe
                     ->GetBindingAsBufferBinding(a.e0.bindingIndex)
                     .buffer);
         } else {
-            ASSERT(std::holds_alternative<TextureAliasing>(result));
+            DAWN_ASSERT(std::holds_alternative<TextureAliasing>(result));
             const auto& a = std::get<TextureAliasing>(result);
             return DAWN_VALIDATION_ERROR(
                 "Writable storage texture binding aliasing found between %s set at bind group "
@@ -720,11 +734,11 @@ MaybeError CommandBufferStateTracker::CheckMissingAspects(ValidationAspects aspe
         // It returns the first invalid state found. We shouldn't be able to reach this line
         // because to have invalid aspects one of the above conditions must have failed earlier.
         // If this is reached, make sure lazy aspects and the error checks above are consistent.
-        UNREACHABLE();
+        DAWN_UNREACHABLE();
         return DAWN_VALIDATION_ERROR("Bind groups are invalid.");
     }
 
-    UNREACHABLE();
+    DAWN_UNREACHABLE();
 }
 
 void CommandBufferStateTracker::SetComputePipeline(ComputePipelineBase* pipeline) {
@@ -790,12 +804,12 @@ bool CommandBufferStateTracker::HasPipeline() const {
 }
 
 RenderPipelineBase* CommandBufferStateTracker::GetRenderPipeline() const {
-    ASSERT(HasPipeline() && mLastPipeline->GetType() == ObjectType::RenderPipeline);
+    DAWN_ASSERT(HasPipeline() && mLastPipeline->GetType() == ObjectType::RenderPipeline);
     return static_cast<RenderPipelineBase*>(mLastPipeline);
 }
 
 ComputePipelineBase* CommandBufferStateTracker::GetComputePipeline() const {
-    ASSERT(HasPipeline() && mLastPipeline->GetType() == ObjectType::ComputePipeline);
+    DAWN_ASSERT(HasPipeline() && mLastPipeline->GetType() == ObjectType::ComputePipeline);
     return static_cast<ComputePipelineBase*>(mLastPipeline);
 }
 

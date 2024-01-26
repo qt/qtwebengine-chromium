@@ -10,6 +10,7 @@
 #ifndef EIGEN_PACKET_MATH_ALTIVEC_H
 #define EIGEN_PACKET_MATH_ALTIVEC_H
 
+// IWYU pragma: private
 #include "../../InternalHeaderCheck.h"
 
 namespace Eigen {

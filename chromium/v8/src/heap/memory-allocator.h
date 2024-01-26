@@ -56,7 +56,8 @@ class MemoryAllocator {
     }
 
     void AddMemoryChunkSafe(MemoryChunk* chunk) {
-      if (!chunk->IsLargePage() && chunk->executable() != EXECUTABLE) {
+      if (!chunk->IsLargePage() && chunk->executable() != EXECUTABLE &&
+          !chunk->IsTrusted()) {
         AddMemoryChunkSafe(ChunkQueueType::kRegular, chunk);
       } else {
         AddMemoryChunkSafe(ChunkQueueType::kNonRegular, chunk);
@@ -97,8 +98,8 @@ class MemoryAllocator {
     static const int kMaxUnmapperTasks = 4;
 
     enum ChunkQueueType {
-      kRegular,     // Pages of kPageSize that do not live in a CodeRange and
-                    // can thus be used for stealing.
+      kRegular,     // Pages of kPageSize that do not live in a CodeRange or
+                    // TrustedRange and can thus be used for stealing.
       kNonRegular,  // Large chunks and executable chunks.
       kPooled,      // Pooled chunks, already freed and ready for reuse.
       kNumberOfChunkQueues,
@@ -184,6 +185,7 @@ class MemoryAllocator {
 
   V8_EXPORT_PRIVATE MemoryAllocator(Isolate* isolate,
                                     v8::PageAllocator* code_page_allocator,
+                                    v8::PageAllocator* trusted_page_allocator,
                                     size_t max_capacity);
 
   V8_EXPORT_PRIVATE void TearDown();
@@ -266,11 +268,26 @@ class MemoryAllocator {
   // Guaranteed to be a valid pointer.
   v8::PageAllocator* code_page_allocator() { return code_page_allocator_; }
 
-  // Returns page allocator suitable for allocating pages with requested
-  // executability.
-  v8::PageAllocator* page_allocator(Executability executable) {
-    return executable == EXECUTABLE ? code_page_allocator_
-                                    : data_page_allocator_;
+  // Page allocator instance for allocating "trusted" pages. When the sandbox
+  // is enabled, these pages are guaranteed to be allocated outside of the
+  // sandbox, so their content cannot be corrupted by an attacker.
+  // Guaranteed to be a valid pointer.
+  v8::PageAllocator* trusted_page_allocator() {
+    return trusted_page_allocator_;
+  }
+
+  // Returns page allocator suitable for allocating pages for the given space.
+  v8::PageAllocator* page_allocator(AllocationSpace space) {
+    switch (space) {
+      case CODE_SPACE:
+      case CODE_LO_SPACE:
+        return code_page_allocator_;
+      case TRUSTED_SPACE:
+      case TRUSTED_LO_SPACE:
+        return trusted_page_allocator_;
+      default:
+        return data_page_allocator_;
+    }
   }
 
   Unmapper* unmapper() { return &unmapper_; }
@@ -445,6 +462,12 @@ class MemoryAllocator {
   // is enabled or on those 64-bit architectures where pc-relative 32-bit
   // displacement can be used for call and jump instructions).
   v8::PageAllocator* code_page_allocator_;
+
+  // Page allocator used for allocating trusted pages. When the sandbox is
+  // enabled, trusted pages are allocated outside of the sandbox so that their
+  // content cannot be corrupted by an attacker. When the sandbox is disabled,
+  // this is the same as data_page_allocator_.
+  v8::PageAllocator* trusted_page_allocator_;
 
   // Maximum space size in bytes.
   size_t capacity_;

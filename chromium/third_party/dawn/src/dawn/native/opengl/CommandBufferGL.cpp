@@ -1,16 +1,29 @@
-// Copyright 2017 The Dawn Authors
+// Copyright 2017 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/opengl/CommandBufferGL.h"
 
@@ -25,7 +38,6 @@
 #include "dawn/native/Commands.h"
 #include "dawn/native/ExternalTexture.h"
 #include "dawn/native/RenderBundle.h"
-#include "dawn/native/VertexFormat.h"
 #include "dawn/native/opengl/BufferGL.h"
 #include "dawn/native/opengl/ComputePipelineGL.h"
 #include "dawn/native/opengl/DeviceGL.h"
@@ -50,7 +62,7 @@ GLenum IndexFormatType(wgpu::IndexFormat format) {
         case wgpu::IndexFormat::Undefined:
             break;
     }
-    UNREACHABLE();
+    DAWN_UNREACHABLE();
 }
 
 bool Is1DOr2D(wgpu::TextureDimension dimension) {
@@ -97,8 +109,10 @@ GLenum VertexFormatType(wgpu::VertexFormat format) {
         case wgpu::VertexFormat::Sint32x3:
         case wgpu::VertexFormat::Sint32x4:
             return GL_INT;
+        case wgpu::VertexFormat::Unorm10_10_10_2:
+            return GL_UNSIGNED_INT_2_10_10_10_REV;
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -112,6 +126,7 @@ GLboolean VertexFormatIsNormalized(wgpu::VertexFormat format) {
         case wgpu::VertexFormat::Unorm16x4:
         case wgpu::VertexFormat::Snorm16x2:
         case wgpu::VertexFormat::Snorm16x4:
+        case wgpu::VertexFormat::Unorm10_10_10_2:
             return GL_TRUE;
         default:
             return GL_FALSE;
@@ -284,7 +299,7 @@ class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
                             target = GL_SHADER_STORAGE_BUFFER;
                             break;
                         case wgpu::BufferBindingType::Undefined:
-                            UNREACHABLE();
+                            DAWN_UNREACHABLE();
                     }
 
                     gl.BindBufferRange(target, index, buffer, offset, binding.size);
@@ -320,14 +335,14 @@ class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
                         if (ToBackend(view->GetTexture())->GetGLFormat().format ==
                             GL_DEPTH_STENCIL) {
                             Aspect aspect = view->GetAspects();
-                            ASSERT(HasOneBit(aspect));
+                            DAWN_ASSERT(HasOneBit(aspect));
                             switch (aspect) {
                                 case Aspect::None:
                                 case Aspect::Color:
                                 case Aspect::CombinedDepthStencil:
                                 case Aspect::Plane0:
                                 case Aspect::Plane1:
-                                    UNREACHABLE();
+                                    DAWN_UNREACHABLE();
                                 case Aspect::Depth:
                                     gl.TexParameteri(target, GL_DEPTH_STENCIL_TEXTURE_MODE,
                                                      GL_DEPTH_COMPONENT);
@@ -365,7 +380,7 @@ class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
                             access = GL_READ_ONLY;
                             break;
                         case wgpu::StorageTextureAccess::Undefined:
-                            UNREACHABLE();
+                            DAWN_UNREACHABLE();
                     }
 
                     // OpenGL ES only supports either binding a layer or the entire
@@ -376,7 +391,7 @@ class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
                     } else if (texture->GetArrayLayers() == view->GetLayerCount()) {
                         isLayered = GL_TRUE;
                     } else {
-                        UNREACHABLE();
+                        DAWN_UNREACHABLE();
                     }
 
                     gl.BindImageTexture(imageIndex, handle, view->GetBaseMipLevel(), isLayered,
@@ -387,7 +402,7 @@ class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
                 }
 
                 case BindingInfoType::ExternalTexture:
-                    UNREACHABLE();
+                    DAWN_UNREACHABLE();
                     break;
             }
         }
@@ -470,7 +485,7 @@ class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
 
 void ResolveMultisampledRenderTargets(const OpenGLFunctions& gl,
                                       const BeginRenderPassCmd* renderPass) {
-    ASSERT(renderPass != nullptr);
+    DAWN_ASSERT(renderPass != nullptr);
 
     GLuint readFbo = 0;
     GLuint writeFbo = 0;
@@ -479,7 +494,7 @@ void ResolveMultisampledRenderTargets(const OpenGLFunctions& gl,
          IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
         if (renderPass->colorAttachments[i].resolveTarget != nullptr) {
             if (readFbo == 0) {
-                ASSERT(writeFbo == 0);
+                DAWN_ASSERT(writeFbo == 0);
                 gl.GenFramebuffers(1, &readFbo);
                 gl.GenFramebuffers(1, &writeFbo);
             }
@@ -511,15 +526,15 @@ Extent3D ComputeTextureCopyExtent(const TextureCopy& textureCopy, const Extent3D
     Extent3D validTextureCopyExtent = copySize;
     const TextureBase* texture = textureCopy.texture.Get();
     Extent3D virtualSizeAtLevel =
-        texture->GetMipLevelSingleSubresourceVirtualSize(textureCopy.mipLevel);
-    ASSERT(textureCopy.origin.x <= virtualSizeAtLevel.width);
-    ASSERT(textureCopy.origin.y <= virtualSizeAtLevel.height);
+        texture->GetMipLevelSingleSubresourceVirtualSize(textureCopy.mipLevel, textureCopy.aspect);
+    DAWN_ASSERT(textureCopy.origin.x <= virtualSizeAtLevel.width);
+    DAWN_ASSERT(textureCopy.origin.y <= virtualSizeAtLevel.height);
     if (copySize.width > virtualSizeAtLevel.width - textureCopy.origin.x) {
-        ASSERT(texture->GetFormat().isCompressed);
+        DAWN_ASSERT(texture->GetFormat().isCompressed);
         validTextureCopyExtent.width = virtualSizeAtLevel.width - textureCopy.origin.x;
     }
     if (copySize.height > virtualSizeAtLevel.height - textureCopy.origin.y) {
-        ASSERT(texture->GetFormat().isCompressed);
+        DAWN_ASSERT(texture->GetFormat().isCompressed);
         validTextureCopyExtent.height = virtualSizeAtLevel.height - textureCopy.origin.y;
     }
 
@@ -626,8 +641,8 @@ MaybeError CommandBuffer::Execute() {
 
                 buffer->EnsureDataInitialized();
                 SubresourceRange range = GetSubresourcesAffectedByCopy(dst, copy->copySize);
-                if (IsCompleteSubresourceCopiedTo(dst.texture.Get(), copy->copySize,
-                                                  dst.mipLevel)) {
+                if (IsCompleteSubresourceCopiedTo(dst.texture.Get(), copy->copySize, dst.mipLevel,
+                                                  dst.aspect)) {
                     dst.texture->SetIsSubresourceContentInitialized(true, range);
                 } else {
                     DAWN_TRY(ToBackend(dst.texture)->EnsureSubresourceContentInitialized(range));
@@ -666,7 +681,7 @@ MaybeError CommandBuffer::Execute() {
                 GLenum target = texture->GetGLTarget();
 
                 if (formatInfo.isCompressed) {
-                    UNREACHABLE();
+                    DAWN_UNREACHABLE();
                 }
 
                 buffer->EnsureDataInitializedAsDestination(copy);
@@ -710,7 +725,7 @@ MaybeError CommandBuffer::Execute() {
                     case Aspect::None:
                     case Aspect::Plane0:
                     case Aspect::Plane1:
-                        UNREACHABLE();
+                        DAWN_UNREACHABLE();
                 }
 
                 uint8_t* offset = reinterpret_cast<uint8_t*>(static_cast<uintptr_t>(dst.offset));
@@ -774,7 +789,7 @@ MaybeError CommandBuffer::Execute() {
                 SubresourceRange dstRange = GetSubresourcesAffectedByCopy(dst, copy->copySize);
 
                 DAWN_TRY(srcTexture->EnsureSubresourceContentInitialized(srcRange));
-                if (IsCompleteSubresourceCopiedTo(dstTexture, copySize, dst.mipLevel)) {
+                if (IsCompleteSubresourceCopiedTo(dstTexture, copySize, dst.mipLevel, dst.aspect)) {
                     dstTexture->SetIsSubresourceContentInitialized(true, dstRange);
                 } else {
                     DAWN_TRY(dstTexture->EnsureSubresourceContentInitialized(dstRange));
@@ -846,7 +861,7 @@ MaybeError CommandBuffer::Execute() {
             }
 
             default:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
         }
     }
 
@@ -924,12 +939,12 @@ MaybeError CommandBuffer::ExecuteComputePass() {
             }
 
             default:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
         }
     }
 
     // EndComputePass should have been called
-    UNREACHABLE();
+    DAWN_UNREACHABLE();
 }
 
 MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass) {
@@ -982,14 +997,14 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass) {
             } else if (format.aspects == Aspect::Stencil) {
                 glAttachment = GL_STENCIL_ATTACHMENT;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
 
             textureView->BindToFramebuffer(GL_DRAW_FRAMEBUFFER, glAttachment);
         }
     }
 
-    ASSERT(gl.CheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+    DAWN_ASSERT(gl.CheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
 
     // Set defaults for dynamic state before executing clears and commands.
     PersistentPipelineState persistentPipelineState;
@@ -1162,7 +1177,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass) {
                 bindGroupTracker.Apply(gl);
 
                 Buffer* indirectBuffer = ToBackend(draw->indirectBuffer.Get());
-                ASSERT(indirectBuffer != nullptr);
+                DAWN_ASSERT(indirectBuffer != nullptr);
 
                 gl.BindBuffer(GL_DRAW_INDIRECT_BUFFER, indirectBuffer->GetHandle());
                 gl.DrawElementsIndirect(
@@ -1222,7 +1237,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass) {
             }
 
             default:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
                 break;
         }
     };
@@ -1318,7 +1333,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass) {
     }
 
     // EndRenderPass should have been called
-    UNREACHABLE();
+    DAWN_UNREACHABLE();
 }
 
 void DoTexSubImage(const OpenGLFunctions& gl,
@@ -1340,7 +1355,8 @@ void DoTexSubImage(const OpenGLFunctions& gl,
     uint32_t z = destination.origin.z;
     if (texture->GetFormat().isCompressed) {
         size_t rowSize = copySize.width / blockInfo.width * blockInfo.byteSize;
-        Extent3D virtSize = texture->GetMipLevelSingleSubresourceVirtualSize(destination.mipLevel);
+        Extent3D virtSize = texture->GetMipLevelSingleSubresourceVirtualSize(destination.mipLevel,
+                                                                             destination.aspect);
         uint32_t width = std::min(copySize.width, virtSize.width - x);
 
         // In GLES glPixelStorei() doesn't affect CompressedTexSubImage*D() and

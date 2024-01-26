@@ -21,6 +21,7 @@
 #ifndef EIGEN_INTEROP_HEADERS_SYCL_H
 #define EIGEN_INTEROP_HEADERS_SYCL_H
 
+// IWYU pragma: private
 #include "../../InternalHeaderCheck.h"
 
 namespace Eigen {
@@ -85,6 +86,8 @@ struct sycl_packet_traits : default_packet_traits {
     typedef packet_type half;                                              \
   };
 
+SYCL_PACKET_TRAITS(cl::sycl::cl_half8, 1, Eigen::half, 8)
+SYCL_PACKET_TRAITS(cl::sycl::cl_half8, 1, const Eigen::half, 8)
 SYCL_PACKET_TRAITS(cl::sycl::cl_float4, 1, float, 4)
 SYCL_PACKET_TRAITS(cl::sycl::cl_float4, 1, const float, 4)
 SYCL_PACKET_TRAITS(cl::sycl::cl_double2, 0, double, 2)
@@ -99,6 +102,7 @@ SYCL_PACKET_TRAITS(cl::sycl::cl_double2, 0, const double, 2)
   struct is_arithmetic<packet_type> { \
     enum { value = true };            \
   };
+SYCL_ARITHMETIC(cl::sycl::cl_half8)
 SYCL_ARITHMETIC(cl::sycl::cl_float4)
 SYCL_ARITHMETIC(cl::sycl::cl_double2)
 #undef SYCL_ARITHMETIC
@@ -110,6 +114,7 @@ SYCL_ARITHMETIC(cl::sycl::cl_double2)
     enum { size = lengths, vectorizable = true, alignment = Aligned16 }; \
     typedef packet_type half;                                            \
   };
+SYCL_UNPACKET_TRAITS(cl::sycl::cl_half8, Eigen::half, 8)
 SYCL_UNPACKET_TRAITS(cl::sycl::cl_float4, float, 4)
 SYCL_UNPACKET_TRAITS(cl::sycl::cl_double2, double, 2)
 

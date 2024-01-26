@@ -27,7 +27,7 @@ parser.set_defaults(defines=list())
 
 
 def split_ukernel_name(name):
-  match = re.fullmatch(r"xnn_(s8|u8|f16|f32|u32|u64)(_(s8|u8|f16|f32|u32|u64))*_v(abs|clamp|elu|hswish|lrelu|neg|relu|rndd|rndne|rndu|rndz|sigmoid|sqr|sqrt|sqrtshift|tanh)_(fact_)?ukernel__(.+)_x(\d+)(v)?", name)
+  match = re.fullmatch(r"(?:xnn_|xnn_generate_)(s8|u8|f16|f32|u32|u64)(_(s8|u8|f16|f32|u32|u64))*_v(abs|clamp|elu|hswish|lrelu|neg|relu|rndd|rndne|rndu|rndz|sigmoid|sqr|sqrt|sqrtshift|tanh)_(fact_)?ukernel__(.+)_u(\d+)(v)?", name)
   if match is None:
     raise ValueError("Unexpected microkernel name: " + name)
   op_type = {
@@ -263,12 +263,14 @@ def main(args):
 //   Generator: {generator}
 
 
+#include <vector>
+
 #include <gtest/gtest.h>
 
 #include <xnnpack/common.h>
 #include <xnnpack/isa-checks.h>
-
 #include <xnnpack/vunary.h>
+
 #include "vunary-microkernel-tester.h"
 """.format(specification=options.spec, generator=sys.argv[0])
 

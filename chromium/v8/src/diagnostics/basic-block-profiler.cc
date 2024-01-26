@@ -86,13 +86,14 @@ void BasicBlockProfilerData::CopyFromJSHeap(
   function_name_ = js_heap_data->name()->ToCString().get();
   schedule_ = js_heap_data->schedule()->ToCString().get();
   code_ = js_heap_data->code()->ToCString().get();
-  FixedUInt32Array counts = FixedUInt32Array::cast(js_heap_data->counts());
-  for (int i = 0; i < counts.length() / kBlockCountSlotSize; ++i) {
-    counts_.push_back(counts.get(i));
+  Tagged<FixedUInt32Array> counts =
+      FixedUInt32Array::cast(js_heap_data->counts());
+  for (int i = 0; i < counts->length() / kBlockCountSlotSize; ++i) {
+    counts_.push_back(counts->get(i));
   }
-  FixedInt32Array block_ids(js_heap_data->block_ids());
-  for (int i = 0; i < block_ids.length() / kBlockIdSlotSize; ++i) {
-    block_ids_.push_back(block_ids.get(i));
+  Tagged<FixedInt32Array> block_ids(js_heap_data->block_ids());
+  for (int i = 0; i < block_ids->length() / kBlockIdSlotSize; ++i) {
+    block_ids_.push_back(block_ids->get(i));
   }
   Tagged<PodArray<std::pair<int32_t, int32_t>>> branches =
       js_heap_data->branches();
@@ -148,9 +149,9 @@ void BasicBlockProfiler::ResetCounts(Isolate* isolate) {
   HandleScope scope(isolate);
   Handle<ArrayList> list(isolate->heap()->basic_block_profiling_data(),
                          isolate);
-  for (int i = 0; i < list->Length(); ++i) {
+  for (int i = 0; i < list->length(); ++i) {
     Handle<FixedUInt32Array> counts(
-        OnHeapBasicBlockProfilerData::cast(list->Get(i))->counts(), isolate);
+        OnHeapBasicBlockProfilerData::cast(list->get(i))->counts(), isolate);
     for (int j = 0; j < counts->length() / kBlockCountSlotSize; ++j) {
       counts->set(j, 0);
     }
@@ -159,7 +160,7 @@ void BasicBlockProfiler::ResetCounts(Isolate* isolate) {
 
 bool BasicBlockProfiler::HasData(Isolate* isolate) {
   return data_list_.size() > 0 ||
-         isolate->heap()->basic_block_profiling_data()->Length() > 0;
+         isolate->heap()->basic_block_profiling_data()->length() > 0;
 }
 
 void BasicBlockProfiler::Print(Isolate* isolate, std::ostream& os) {
@@ -171,9 +172,9 @@ void BasicBlockProfiler::Print(Isolate* isolate, std::ostream& os) {
   Handle<ArrayList> list(isolate->heap()->basic_block_profiling_data(),
                          isolate);
   std::unordered_set<std::string> builtin_names;
-  for (int i = 0; i < list->Length(); ++i) {
+  for (int i = 0; i < list->length(); ++i) {
     BasicBlockProfilerData data(
-        handle(OnHeapBasicBlockProfilerData::cast(list->Get(i)), isolate),
+        handle(OnHeapBasicBlockProfilerData::cast(list->get(i)), isolate),
         isolate);
     os << data;
     // Ensure that all builtin names are unique; otherwise profile-guided
@@ -188,9 +189,9 @@ void BasicBlockProfiler::Log(Isolate* isolate, std::ostream& os) {
   Handle<ArrayList> list(isolate->heap()->basic_block_profiling_data(),
                          isolate);
   std::unordered_set<std::string> builtin_names;
-  for (int i = 0; i < list->Length(); ++i) {
+  for (int i = 0; i < list->length(); ++i) {
     BasicBlockProfilerData data(
-        handle(OnHeapBasicBlockProfilerData::cast(list->Get(i)), isolate),
+        handle(OnHeapBasicBlockProfilerData::cast(list->get(i)), isolate),
         isolate);
     data.Log(isolate, os);
     // Ensure that all builtin names are unique; otherwise profile-guided
@@ -203,10 +204,10 @@ std::vector<bool> BasicBlockProfiler::GetCoverageBitmap(Isolate* isolate) {
   DisallowGarbageCollection no_gc;
   Tagged<ArrayList> list(isolate->heap()->basic_block_profiling_data());
   std::vector<bool> out;
-  int list_length = list->Length();
+  int list_length = list->length();
   for (int i = 0; i < list_length; ++i) {
     BasicBlockProfilerData data(
-        OnHeapBasicBlockProfilerData::cast(list->Get(i)));
+        OnHeapBasicBlockProfilerData::cast(list->get(i)));
     for (size_t j = 0; j < data.n_blocks(); ++j) {
       out.push_back(data.counts_[j] > 0);
     }

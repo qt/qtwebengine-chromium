@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/platform/graphics/web_graphics_context_3d_provider_util.h"
 
+#include "base/memory/raw_ptr.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/task/single_thread_task_runner.h"
 #include "third_party/blink/public/platform/web_url.h"
@@ -28,7 +29,7 @@ namespace {
 struct ContextProviderCreationInfo {
   // Inputs.
   Platform::ContextAttributes context_attributes;
-  Platform::GraphicsInfo* gl_info;
+  raw_ptr<Platform::GraphicsInfo, ExperimentalRenderer> gl_info;
   KURL url;
   // Outputs.
   std::unique_ptr<WebGraphicsContext3DProvider> created_context_provider;
@@ -121,8 +122,8 @@ CreateWebGPUGraphicsContext3DProvider(const KURL& url) {
 void CreateWebGPUGraphicsContext3DProviderAsync(
     const KURL& url,
     scoped_refptr<base::SingleThreadTaskRunner> current_thread_task_runner,
-    base::OnceCallback<void(std::unique_ptr<WebGraphicsContext3DProvider>)>
-        callback) {
+    WTF::CrossThreadOnceFunction<
+        void(std::unique_ptr<WebGraphicsContext3DProvider>)> callback) {
   if (IsMainThread()) {
     std::move(callback).Run(
         Platform::Current()->CreateWebGPUGraphicsContext3DProvider(url));
@@ -140,8 +141,7 @@ void CreateWebGPUGraphicsContext3DProviderAsync(
             AccessMainThreadForWebGraphicsContext3DProvider()),
         FROM_HERE,
         CrossThreadBindOnce(&CreateWebGPUGraphicsContextOnMainThreadAsync, url,
-                            current_thread_task_runner,
-                            CrossThreadBindOnce(std::move(callback))));
+                            current_thread_task_runner, std::move(callback)));
   }
 }
 

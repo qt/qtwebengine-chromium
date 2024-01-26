@@ -42,13 +42,13 @@ class ValidationStateTracker;
 #ifdef VK_USE_PLATFORM_METAL_EXT
 static bool GetMetalExport(const VkEventCreateInfo *info) {
     bool retval = false;
-    auto export_metal_object_info = LvlFindInChain<VkExportMetalObjectCreateInfoEXT>(info->pNext);
+    auto export_metal_object_info = vku::FindStructInPNextChain<VkExportMetalObjectCreateInfoEXT>(info->pNext);
     while (export_metal_object_info) {
         if (export_metal_object_info->exportObjectType == VK_EXPORT_METAL_OBJECT_TYPE_METAL_SHARED_EVENT_BIT_EXT) {
             retval = true;
             break;
         }
-        export_metal_object_info = LvlFindInChain<VkExportMetalObjectCreateInfoEXT>(export_metal_object_info->pNext);
+        export_metal_object_info = vku::FindStructInPNextChain<VkExportMetalObjectCreateInfoEXT>(export_metal_object_info->pNext);
     }
     return retval;
 }
@@ -213,6 +213,8 @@ class CMD_BUFFER_STATE : public REFCOUNTED_NODE {
         VkCullModeFlags cull_mode;
         // VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY
         VkPrimitiveTopology primitive_topology;
+        // VK_DYNAMIC_STATE_SAMPLE_LOCATIONS_EXT
+        VkSampleLocationsInfoEXT sample_locations_info;
         // VK_DYNAMIC_STATE_DISCARD_RECTANGLE_ENABLE_EXT
         bool discard_rectangle_enable;
         // VK_DYNAMIC_STATE_DISCARD_RECTANGLE_EXT
@@ -242,6 +244,8 @@ class CMD_BUFFER_STATE : public REFCOUNTED_NODE {
         bool alpha_to_coverage_enable;
         // VK_DYNAMIC_STATE_LOGIC_OP_ENABLE_EXT
         bool logic_op_enable;
+        // VK_DYNAMIC_STATE_FRAGMENT_SHADING_RATE_KHR
+        VkExtent2D fragment_size;
 
         uint32_t color_write_enable_attachment_count;
 
@@ -251,6 +255,7 @@ class CMD_BUFFER_STATE : public REFCOUNTED_NODE {
         std::bitset<32> color_blend_equation_attachments;            // VK_DYNAMIC_STATE_COLOR_BLEND_EQUATION_EXT
         std::bitset<32> color_write_mask_attachments;                // VK_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT
         std::bitset<32> color_blend_advanced_attachments;            // VK_DYNAMIC_STATE_COLOR_BLEND_ADVANCED_EXT
+        std::bitset<32> color_write_enabled;                         // VK_DYNAMIC_STATE_COLOR_WRITE_ENABLE_EXT
         std::vector<VkColorBlendEquationEXT> color_blend_equations;  // VK_DYNAMIC_STATE_COLOR_BLEND_EQUATION_EXT
         std::vector<VkColorComponentFlags> color_write_masks;        // VK_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT
 
@@ -469,13 +474,6 @@ class CMD_BUFFER_STATE : public REFCOUNTED_NODE {
         AddChild(base);
     }
 
-    void AddChildren(vvl::span<BUFFER_STATE *> &child_nodes) {
-        for (auto &child_node : child_nodes) {
-            auto child_node_shared_ptr = child_node->shared_from_this();
-            AddChild(child_node_shared_ptr);
-        }
-    }
-
     void RemoveChild(std::shared_ptr<BASE_NODE> &base_node);
     template <typename StateObject>
     void RemoveChild(std::shared_ptr<StateObject> &child_node) {
@@ -630,6 +628,14 @@ class CMD_BUFFER_STATE : public REFCOUNTED_NODE {
         }
         return false;
     }
+    bool HasExternalFormatResolveAttachment() const {
+        if (activeRenderPass && activeRenderPass->use_dynamic_rendering &&
+            activeRenderPass->dynamic_rendering_begin_rendering_info.colorAttachmentCount > 0) {
+            return activeRenderPass->dynamic_rendering_begin_rendering_info.pColorAttachments->resolveMode ==
+                   VK_RESOLVE_MODE_EXTERNAL_FORMAT_DOWNSAMPLE_ANDROID;
+        }
+        return false;
+    }
     bool HasDynamicDualSourceBlend(uint32_t attachmentCount) const {
         if (dynamic_state_value.color_blend_enabled.any()) {
             if (dynamic_state_status.cb[CB_DYNAMIC_STATE_COLOR_BLEND_EQUATION_EXT]) {
@@ -681,6 +687,10 @@ class CMD_BUFFER_STATE : public REFCOUNTED_NODE {
 
 // specializations for barriers that cannot do queue family ownership transfers
 template <>
+inline bool CMD_BUFFER_STATE::IsReleaseOp(const sync_utils::MemoryBarrier &barrier) const {
+    return false;
+}
+template <>
 inline bool CMD_BUFFER_STATE::IsReleaseOp(const VkMemoryBarrier &barrier) const {
     return false;
 }
@@ -689,7 +699,7 @@ inline bool CMD_BUFFER_STATE::IsReleaseOp(const VkMemoryBarrier2KHR &barrier) co
     return false;
 }
 template <>
-inline bool CMD_BUFFER_STATE::IsReleaseOp(const VkSubpassDependency2 &barrier) const {
+inline bool CMD_BUFFER_STATE::IsAcquireOp(const sync_utils::MemoryBarrier &barrier) const {
     return false;
 }
 template <>
@@ -698,9 +708,5 @@ inline bool CMD_BUFFER_STATE::IsAcquireOp(const VkMemoryBarrier &barrier) const 
 }
 template <>
 inline bool CMD_BUFFER_STATE::IsAcquireOp(const VkMemoryBarrier2KHR &barrier) const {
-    return false;
-}
-template <>
-inline bool CMD_BUFFER_STATE::IsAcquireOp(const VkSubpassDependency2 &barrier) const {
     return false;
 }

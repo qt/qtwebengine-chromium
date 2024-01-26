@@ -15,6 +15,8 @@
 import {Draft} from 'immer';
 
 import {assertExists, assertTrue, assertUnreachable} from '../base/logging';
+import {duration, time} from '../base/time';
+import {exists} from '../base/utils';
 import {RecordConfig} from '../controller/record_config_types';
 import {
   GenericSliceDetailsTabConfig,
@@ -28,8 +30,7 @@ import {
   tableColumnEquals,
   toggleEnabled,
 } from '../frontend/pivot_table_types';
-import {TrackTags} from '../public/index';
-import {DebugTrackV2Config} from '../tracks/debug/slice_track';
+import {PrimaryTrackSortKey} from '../public/index';
 
 import {randomColor} from './colorizer';
 import {
@@ -46,6 +47,7 @@ import {
   traceEventEnd,
   TraceEventScope,
 } from './metatracing';
+import {pluginManager} from './plugins';
 import {
   AdbRecordingTarget,
   Area,
@@ -60,7 +62,6 @@ import {
   Pagination,
   PendingDeeplinkState,
   PivotTableResult,
-  PrimaryTrackSortKey,
   ProfileType,
   RecordingTarget,
   SCROLLING_TRACK_GROUP,
@@ -74,22 +75,17 @@ import {
   UtidToTrackSortKey,
   VisibleState,
 } from './state';
-import {duration, time} from './time';
-
-export const DEBUG_SLICE_TRACK_KIND = 'DebugSliceTrack';
 
 type StateDraft = Draft<State>;
 
 export interface AddTrackArgs {
-  id?: string;
-  engineId: string;
-  kind: string;
+  key?: string;
+  uri: string;
   name: string;
   labels?: string[];
   trackSortKey: TrackSortKey;
   trackGroup?: string;
-  config: {};
-  tags?: TrackTags;
+  params?: unknown;
 }
 
 export interface PostedTrace {
@@ -138,15 +134,15 @@ function generateNextId(draft: StateDraft): string {
 // A helper to clean the state for a given removeable track.
 // This is not exported as action to make it clear that not all
 // tracks are removeable.
-function removeTrack(state: StateDraft, trackId: string) {
-  const track = state.tracks[trackId];
+function removeTrack(state: StateDraft, trackKey: string) {
+  const track = state.tracks[trackKey];
   if (track === undefined) {
     return;
   }
-  delete state.tracks[trackId];
+  delete state.tracks[trackKey];
 
   const removeTrackId = (arr: string[]) => {
-    const index = arr.indexOf(trackId);
+    const index = arr.indexOf(trackKey);
     if (index !== -1) arr.splice(index, 1);
   };
 
@@ -158,7 +154,7 @@ function removeTrack(state: StateDraft, trackId: string) {
       removeTrackId(trackGroup.tracks);
     }
   }
-  state.pinnedTracks = state.pinnedTracks.filter((id) => id !== trackId);
+  state.pinnedTracks = state.pinnedTracks.filter((key) => key !== trackKey);
 }
 
 let statusTraceEvent: TraceEventScope|undefined;
@@ -210,60 +206,66 @@ export const StateActions = {
   },
 
   fillUiTrackIdByTraceTrackId(
-      state: StateDraft, trackState: TrackState, uiTrackId: string) {
-    const namespace = (trackState.config as {namespace?: string}).namespace;
-    if (namespace !== undefined) return;
-
-    const setUiTrackId = (trackId: number, uiTrackId: string) => {
-      if (state.uiTrackIdByTraceTrackId[trackId] !== undefined &&
-          state.uiTrackIdByTraceTrackId[trackId] !== uiTrackId) {
+      state: StateDraft, trackState: TrackState, trackKey: string) {
+    const setTrackKey = (trackId: number, trackKey: string) => {
+      if (state.trackKeyByTrackId[trackId] !== undefined &&
+          state.trackKeyByTrackId[trackId] !== trackKey) {
         throw new Error(`Trying to map track id ${trackId} to UI track ${
-            uiTrackId}, already mapped to ${
-            state.uiTrackIdByTraceTrackId[trackId]}`);
+            trackKey}, already mapped to ${state.trackKeyByTrackId[trackId]}`);
       }
-      state.uiTrackIdByTraceTrackId[trackId] = uiTrackId;
+      state.trackKeyByTrackId[trackId] = trackKey;
     };
 
-    const config = trackState.config as {trackId: number};
-    if (config.trackId !== undefined) {
-      setUiTrackId(config.trackId, uiTrackId);
-      return;
-    }
-
-    const multiple = trackState.config as {trackIds: number[]};
-    if (multiple.trackIds !== undefined) {
-      for (const trackId of multiple.trackIds) {
-        setUiTrackId(trackId, uiTrackId);
+    const {uri} = trackState;
+    if (exists(uri)) {
+      // If track is a new "plugin" type track (i.e. it has a uri), resolve the
+      // track ids from through the pluginManager.
+      const trackInfo = pluginManager.resolveTrackInfo(uri);
+      if (trackInfo?.trackIds) {
+        for (const trackId of trackInfo.trackIds) {
+          setTrackKey(trackId, trackKey);
+        }
       }
     }
   },
 
   addTracks(state: StateDraft, args: {tracks: AddTrackArgs[]}) {
     args.tracks.forEach((track) => {
-      const id = track.id === undefined ? generateNextId(state) : track.id;
+      const trackKey =
+          track.key === undefined ? generateNextId(state) : track.key;
       const name = track.name;
-      const tags = track.tags ?? {name};
-      state.tracks[id] = {
-        id,
-        engineId: track.engineId,
-        kind: track.kind,
+      state.tracks[trackKey] = {
+        key: trackKey,
         name,
         trackSortKey: track.trackSortKey,
         trackGroup: track.trackGroup,
-        tags,
-        config: track.config,
         labels: track.labels,
+        uri: track.uri,
+        params: track.params,
       };
-      this.fillUiTrackIdByTraceTrackId(state, track as TrackState, id);
+      this.fillUiTrackIdByTraceTrackId(state, track as TrackState, trackKey);
       if (track.trackGroup === SCROLLING_TRACK_GROUP) {
-        state.scrollingTracks.push(id);
+        state.scrollingTracks.push(trackKey);
       } else if (track.trackGroup !== undefined) {
         const group = state.trackGroups[track.trackGroup];
         if (group !== undefined) {
-          group.tracks.push(id);
+          group.tracks.push(trackKey);
         }
       }
     });
+  },
+
+  // Note: While this action has traditionally been omitted, with more and more
+  // dynamic tracks being added and existing ones being moved to plugins, it
+  // makes sense to have a generic "removeTracks" action which is un-opinionated
+  // about what type of tracks we are removing.
+  // E.g. Once debug tracks have been moved to a plugin, it makes no sense to
+  // keep the "removeDebugTrack()" action, as the core should have no concept of
+  // what debug tracks are.
+  removeTracks(state: StateDraft, args: {trackKeys: string[]}) {
+    for (const trackKey of args.trackKeys) {
+      removeTrack(state, trackKey);
+    }
   },
 
   setUtidToTrackSortKey(
@@ -280,56 +282,16 @@ export const StateActions = {
       // Define ID in action so a track group can be referred to without running
       // the reducer.
       args: {
-        engineId: string; name: string; id: string; summaryTrackId: string;
-        collapsed: boolean;
+        name: string; id: string; summaryTrackKey: string; collapsed: boolean;
+        fixedOrdering?: boolean;
       }): void {
     state.trackGroups[args.id] = {
-      engineId: args.engineId,
       name: args.name,
       id: args.id,
       collapsed: args.collapsed,
-      tracks: [args.summaryTrackId],
+      tracks: [args.summaryTrackKey],
+      fixedOrdering: args.fixedOrdering,
     };
-  },
-
-  addDebugTrack(
-      state: StateDraft,
-      args: {engineId: string, name: string, config: DebugTrackV2Config}):
-      void {
-        if (state.debugTrackId !== undefined) return;
-        const trackId = generateNextId(state);
-        this.addTrack(state, {
-          id: trackId,
-          engineId: args.engineId,
-          kind: DEBUG_SLICE_TRACK_KIND,
-          name: args.name,
-          trackSortKey: PrimaryTrackSortKey.DEBUG_SLICE_TRACK,
-          trackGroup: SCROLLING_TRACK_GROUP,
-          config: args.config,
-        });
-        this.toggleTrackPinned(state, {trackId});
-      },
-
-  removeDebugTrack(state: StateDraft, args: {trackId: string}): void {
-    const track = state.tracks[args.trackId];
-    if (track !== undefined) {
-      assertTrue(track.kind === DEBUG_SLICE_TRACK_KIND);
-      removeTrack(state, args.trackId);
-    }
-  },
-
-  removeVisualisedArgTracks(state: StateDraft, args: {trackIds: string[]}) {
-    for (const trackId of args.trackIds) {
-      const track = state.tracks[trackId];
-
-      const namespace = (track.config as {namespace?: string}).namespace;
-      if (namespace === undefined) {
-        throw new Error(
-            'All visualised arg tracks should have non-empty namespace');
-      }
-
-      removeTrack(state, trackId);
-    }
   },
 
   maybeExpandOnlyTrackGroup(state: StateDraft, _: {}): void {
@@ -367,6 +329,8 @@ export const StateActions = {
     // rather than T1, T10, T11, ..., T2, T20, T21 .
     const coll = new Intl.Collator([], {sensitivity: 'base', numeric: true});
     for (const group of Object.values(state.trackGroups)) {
+      if (group.fixedOrdering) continue;
+
       group.tracks.sort((a: string, b: string) => {
         const aRank = getFullKey(a);
         const bRank = getFullKey(b);
@@ -411,11 +375,6 @@ export const StateActions = {
     state.visibleTracks = args.tracks;
   },
 
-  updateTrackConfig(state: StateDraft, args: {id: string, config: {}}) {
-    if (state.tracks[args.id] === undefined) return;
-    state.tracks[args.id].config = args.config;
-  },
-
   moveTrack(
       state: StateDraft,
       args: {srcId: string; op: 'before' | 'after', dstId: string}): void {
@@ -443,21 +402,21 @@ export const StateActions = {
     moveWithinTrackList(state.scrollingTracks);
   },
 
-  toggleTrackPinned(state: StateDraft, args: {trackId: string}): void {
-    const id = args.trackId;
-    const isPinned = state.pinnedTracks.includes(id);
-    const trackGroup = assertExists(state.tracks[id]).trackGroup;
+  toggleTrackPinned(state: StateDraft, args: {trackKey: string}): void {
+    const key = args.trackKey;
+    const isPinned = state.pinnedTracks.includes(key);
+    const trackGroup = assertExists(state.tracks[key]).trackGroup;
 
     if (isPinned) {
-      state.pinnedTracks.splice(state.pinnedTracks.indexOf(id), 1);
+      state.pinnedTracks.splice(state.pinnedTracks.indexOf(key), 1);
       if (trackGroup === SCROLLING_TRACK_GROUP) {
-        state.scrollingTracks.unshift(id);
+        state.scrollingTracks.unshift(key);
       }
     } else {
       if (trackGroup === SCROLLING_TRACK_GROUP) {
-        state.scrollingTracks.splice(state.scrollingTracks.indexOf(id), 1);
+        state.scrollingTracks.splice(state.scrollingTracks.indexOf(key), 1);
       }
-      state.pinnedTracks.push(id);
+      state.pinnedTracks.push(key);
     }
   },
 
@@ -679,27 +638,26 @@ export const StateActions = {
 
   selectSlice(
       state: StateDraft,
-      args: {id: number, trackId: string, scroll?: boolean}): void {
+      args: {id: number, trackKey: string, scroll?: boolean}): void {
     state.currentSelection = {
       kind: 'SLICE',
       id: args.id,
-      trackId: args.trackId,
+      trackKey: args.trackKey,
     };
     state.pendingScrollId = args.scroll ? args.id : undefined;
   },
 
   selectCounter(
       state: StateDraft,
-      args: {leftTs: time, rightTs: time, id: number, trackId: string}):
-      void {
-        state.currentSelection = {
-          kind: 'COUNTER',
-          leftTs: args.leftTs,
-          rightTs: args.rightTs,
-          id: args.id,
-          trackId: args.trackId,
-        };
-      },
+      args: {leftTs: time, rightTs: time, id: number, trackKey: string}): void {
+    state.currentSelection = {
+      kind: 'COUNTER',
+      leftTs: args.leftTs,
+      rightTs: args.rightTs,
+      id: args.id,
+      trackKey: args.trackKey,
+    };
+  },
 
   selectHeapProfile(
       state: StateDraft,
@@ -794,12 +752,12 @@ export const StateActions = {
 
   selectChromeSlice(
       state: StateDraft,
-      args: {id: number, trackId: string, table: string, scroll?: boolean}):
+      args: {id: number, trackKey: string, table?: string, scroll?: boolean}):
       void {
         state.currentSelection = {
           kind: 'CHROME_SLICE',
           id: args.id,
-          trackId: args.trackId,
+          trackKey: args.trackKey,
           table: args.table,
         };
         state.pendingScrollId = args.scroll ? args.id : undefined;
@@ -810,7 +768,7 @@ export const StateActions = {
     sqlTableName: string,
     start: time,
     duration: duration,
-    trackId: string,
+    trackKey: string,
     detailsPanelConfig:
         {kind: string, config: GenericSliceDetailsTabConfigBase},
   }): void {
@@ -825,7 +783,7 @@ export const StateActions = {
       sqlTableName: args.sqlTableName,
       start: args.start,
       duration: args.duration,
-      trackId: args.trackId,
+      trackKey: args.trackKey,
       detailsPanelConfig:
           {kind: args.detailsPanelConfig.kind, config: detailsPanelConfig},
     };
@@ -835,25 +793,25 @@ export const StateActions = {
     state.pendingScrollId = undefined;
   },
 
-  selectThreadState(state: StateDraft, args: {id: number, trackId: string}):
+  selectThreadState(state: StateDraft, args: {id: number, trackKey: string}):
       void {
         state.currentSelection = {
           kind: 'THREAD_STATE',
           id: args.id,
-          trackId: args.trackId,
+          trackKey: args.trackKey,
         };
       },
 
   selectLog(
-      state: StateDraft, args: {id: number, trackId: string, scroll?: boolean}):
-      void {
-        state.currentSelection = {
-          kind: 'LOG',
-          id: args.id,
-          trackId: args.trackId,
-        };
-        state.pendingScrollId = args.scroll ? args.id : undefined;
-      },
+      state: StateDraft,
+      args: {id: number, trackKey: string, scroll?: boolean}): void {
+    state.currentSelection = {
+      kind: 'LOG',
+      id: args.id,
+      trackKey: args.trackKey,
+    };
+    state.pendingScrollId = args.scroll ? args.id : undefined;
+  },
 
   deselect(state: StateDraft, _: {}): void {
     state.currentSelection = null;
@@ -1057,9 +1015,10 @@ export const StateActions = {
   },
 
   clearAllPinnedTracks(state: StateDraft, _: {}) {
-    if (state.pinnedTracks.length > 0) {
-      // Clear pinnedTracks array
-      state.pinnedTracks.length = 0;
+    const pinnedTracks = state.pinnedTracks.slice();
+    for (let index = pinnedTracks.length-1; index >= 0; index--) {
+      const trackKey = pinnedTracks[index];
+      this.toggleTrackPinned(state, {trackKey});
     }
   },
 
@@ -1128,17 +1087,6 @@ export const StateActions = {
               sortDirection: (index === args.aggregationIndex) ? args.order :
                                                                  undefined,
             }));
-  },
-
-  addVisualisedArg(state: StateDraft, args: {argName: string}) {
-    if (!state.visualisedArgs.includes(args.argName)) {
-      state.visualisedArgs.push(args.argName);
-    }
-  },
-
-  removeVisualisedArg(state: StateDraft, args: {argName: string}) {
-    state.visualisedArgs =
-        state.visualisedArgs.filter((val) => val !== args.argName);
   },
 
   setPivotTableArgumentNames(

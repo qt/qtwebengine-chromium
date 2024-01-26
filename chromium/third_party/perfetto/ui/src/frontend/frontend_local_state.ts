@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import {assertTrue} from '../base/logging';
+import {duration, Span, Time, time, TimeSpan} from '../base/time';
 import {Actions} from '../common/actions';
 import {
   HighPrecisionTime,
@@ -25,7 +26,6 @@ import {
   Timestamped,
   VisibleState,
 } from '../common/state';
-import {duration, Span, Time, time, TimeSpan} from '../common/time';
 import {raf} from '../core/raf_scheduler';
 
 import {globals} from './globals';
@@ -159,7 +159,7 @@ export class FrontendLocalState {
   showCookieConsent = false;
   visibleTracks = new Set<string>();
   prevVisibleTracks = new Set<string>();
-  scrollToTrackId?: string|number;
+  scrollToTrackKey?: string|number;
   httpRpcState: HttpRpcState = {connected: false};
   newVersionAvailable = false;
 
@@ -193,8 +193,8 @@ export class FrontendLocalState {
     raf.scheduleFullRedraw();
   }
 
-  addVisibleTrack(trackId: string) {
-    this.visibleTracks.add(trackId);
+  addVisibleTrack(trackKey: string) {
+    this.visibleTracks.add(trackKey);
   }
 
   // Called when beginning a canvas redraw.

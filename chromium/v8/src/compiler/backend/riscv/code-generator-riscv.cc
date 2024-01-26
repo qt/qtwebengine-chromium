@@ -13,7 +13,6 @@
 #include "src/compiler/node-matchers.h"
 #include "src/compiler/osr.h"
 #include "src/heap/memory-chunk.h"
-#include "src/wasm/wasm-code-manager.h"
 
 namespace v8 {
 namespace internal {
@@ -4124,18 +4123,18 @@ void CodeGenerator::AssembleConstructFrame() {
       // exception unconditionally. Thereby we can avoid the integer overflow
       // check in the condition code.
       if ((required_slots * kSystemPointerSize) <
-          (v8_flags.stack_size * 1024)) {
-        __ LoadWord(
-            kScratchReg,
-            FieldMemOperand(kWasmInstanceRegister,
-                            WasmInstanceObject::kRealStackLimitAddressOffset));
-        __ LoadWord(kScratchReg, MemOperand(kScratchReg));
-        __ AddWord(kScratchReg, kScratchReg,
-                   Operand(required_slots * kSystemPointerSize));
-        __ BranchShort(&done, uge, sp, Operand(kScratchReg));
+          (v8_flags.stack_size * KB)) {
+        UseScratchRegisterScope temps(masm());
+        Register stack_limit = temps.Acquire();
+        __ LoadStackLimit(stack_limit,
+                          MacroAssembler::StackLimitKind::kRealStackLimit);
+        __ AddWord(stack_limit, stack_limit,
+                 Operand(required_slots * kSystemPointerSize));
+        __ Branch(&done, uge, sp, Operand(stack_limit));
       }
 
-      __ Call(wasm::WasmCode::kWasmStackOverflow, RelocInfo::WASM_STUB_CALL);
+      __ Call(static_cast<intptr_t>(Builtin::kWasmStackOverflow),
+              RelocInfo::WASM_STUB_CALL);
       // We come from WebAssembly, there are no references for the GC.
       ReferenceMap* reference_map = zone()->New<ReferenceMap>(zone());
       RecordSafepoint(reference_map);

@@ -14,13 +14,13 @@
 
 import m from 'mithril';
 
+import {duration, Span, Time, time} from '../base/time';
+import {raf} from '../core/raf_scheduler';
 import {globals} from '../frontend/globals';
 import {PxSpan, TimeScale} from '../frontend/time_scale';
 import {SliceRect} from '../frontend/track';
-import {TrackButtonAttrs} from '../frontend/track_panel';
-import {TrackLike} from '../public';
+import {Track, TrackContext} from '../public';
 
-import {duration, Span, Time, time} from './time';
 import {TrackData} from './track_data';
 
 export {Store} from '../frontend/store';
@@ -39,11 +39,13 @@ export {
 // This provides the logic to perform data reloads at appropriate times as the
 // window is panned and zoomed about.
 // The extending class need only define renderCanvas() and onBoundsChange().
-export abstract class BasicAsyncTrack<Data> implements TrackLike {
+export abstract class BasicAsyncTrack<Data> implements Track {
   private requestingData = false;
   private queuedRequest = false;
   private currentState?: TrackData;
   protected data?: Data;
+
+  onCreate(_ctx: TrackContext): void {}
 
   onDestroy(): void {
     this.queuedRequest = false;
@@ -64,12 +66,8 @@ export abstract class BasicAsyncTrack<Data> implements TrackLike {
 
   abstract getHeight(): number;
 
-  getTrackShellButtons(): m.Vnode<TrackButtonAttrs, {}>[] {
+  getTrackShellButtons(): m.Children {
     return [];
-  }
-
-  getContextMenu(): m.Vnode<any, {}>|null {
-    return null;
   }
 
   onMouseMove(_position: {x: number; y: number;}): void {}
@@ -89,13 +87,13 @@ export abstract class BasicAsyncTrack<Data> implements TrackLike {
 
   render(ctx: CanvasRenderingContext2D): void {
     if (this.shouldLoadNewData()) {
-      this.loadData(ctx);
+      this.loadData();
     }
 
     this.renderCanvas(ctx);
   }
 
-  private loadData(ctx: CanvasRenderingContext2D): void {
+  private loadData(): void {
     if (this.requestingData) {
       this.queuedRequest = true;
       return;
@@ -120,9 +118,9 @@ export abstract class BasicAsyncTrack<Data> implements TrackLike {
 
       if (this.queuedRequest) {
         this.queuedRequest = false;
-        this.loadData(ctx);
+        this.loadData();
       } else {
-        this.renderCanvas(ctx);
+        raf.scheduleRedraw();
       }
     });
 

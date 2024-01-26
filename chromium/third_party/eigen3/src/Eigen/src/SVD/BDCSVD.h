@@ -27,6 +27,7 @@
 #define eigen_internal_assert(X) assert(X);
 #endif
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 #ifdef EIGEN_BDCSVD_DEBUG_VERBOSE

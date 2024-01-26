@@ -77,7 +77,7 @@ std::array<FX_ARGB, kShadingSteps> GetShadingSteps(
       if (!func)
         continue;
       absl::optional<uint32_t> nresults =
-          func->Call(pdfium::make_span(&input, 1), result_span);
+          func->Call(pdfium::make_span(&input, 1u), result_span);
       if (nresults.has_value())
         result_span = result_span.subspan(nresults.value());
     }
@@ -710,11 +710,11 @@ struct PatchDrawer {
       D2.GetPoints(points.subspan(3, 4));
       C2.GetPointsReverse(points.subspan(6, 4));
       D1.GetPointsReverse(points.subspan(9, 4));
-      CFX_FillRenderOptions fill_options(
-          CFX_FillRenderOptions::WindingOptions());
-      fill_options.full_cover = true;
-      if (bNoPathSmooth)
-        fill_options.aliased_path = true;
+      const CFX_FillRenderOptions fill_options = {
+          .fill_type = CFX_FillRenderOptions::FillType::kWinding,
+          .aliased_path = bNoPathSmooth,
+          .full_cover = true,
+      };
       pDevice->DrawPath(
           path, nullptr, nullptr,
           ArgbEncode(alpha, div_colors[0].comp[0], div_colors[0].comp[1],
@@ -768,7 +768,7 @@ struct PatchDrawer {
   int max_delta;
   CFX_Path path;
   UnownedPtr<CFX_RenderDevice> pDevice;
-  int bNoPathSmooth;
+  bool bNoPathSmooth;
   int alpha;
   CoonColor patch_colors[4];
 };
@@ -914,12 +914,10 @@ void CPDF_RenderShading::Draw(CFX_RenderDevice* pDevice,
     return;
   }
   CPDF_DeviceBuffer buffer(pContext, pDevice, clip_rect_bbox, pCurObj, 150);
-  if (!buffer.Initialize())
+  RetainPtr<CFX_DIBitmap> pBitmap = buffer.Initialize();
+  if (!pBitmap) {
     return;
-
-  RetainPtr<CFX_DIBitmap> pBitmap = buffer.GetBitmap();
-  if (pBitmap->GetBuffer().empty())
-    return;
+  }
 
   if (background != 0) {
     pBitmap->Clear(background);

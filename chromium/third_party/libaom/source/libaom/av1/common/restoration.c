@@ -20,6 +20,7 @@
 #include "av1/common/av1_common_int.h"
 #include "av1/common/resize.h"
 #include "av1/common/restoration.h"
+#include "av1/common/thread_common.h"
 #include "aom_dsp/aom_dsp_common.h"
 #include "aom_mem/aom_mem.h"
 
@@ -1070,6 +1071,7 @@ void av1_loop_restoration_filter_frame_init(AV1LrStruct *lr_ctxt,
     RestorationInfo *rsi = &cm->rst_info[plane];
     RestorationType rtype = rsi->frame_restoration_type;
     rsi->optimized_lr = optimized_lr;
+    lr_ctxt->ctxt[plane].rsi = rsi;
 
     if (rtype == RESTORE_NONE) {
       continue;
@@ -1086,7 +1088,6 @@ void av1_loop_restoration_filter_frame_init(AV1LrStruct *lr_ctxt,
                      RESTORATION_BORDER, highbd);
 
     FilterFrameCtxt *lr_plane_ctxt = &lr_ctxt->ctxt[plane];
-    lr_plane_ctxt->rsi = rsi;
     lr_plane_ctxt->ss_x = is_uv && seq_params->subsampling_x;
     lr_plane_ctxt->ss_y = is_uv && seq_params->subsampling_y;
     lr_plane_ctxt->plane_w = plane_w;
@@ -1152,7 +1153,11 @@ void av1_foreach_rest_unit_in_row(
     rest_unit_visitor_t on_rest_unit, int row_number, int unit_size,
     int hnum_rest_units, int vnum_rest_units, int plane, void *priv,
     int32_t *tmpbuf, RestorationLineBuffers *rlbs, sync_read_fn_t on_sync_read,
-    sync_write_fn_t on_sync_write, struct AV1LrSyncData *const lr_sync) {
+    sync_write_fn_t on_sync_write, struct AV1LrSyncData *const lr_sync,
+    struct aom_internal_error_info *error_info) {
+  // TODO(aomedia:3276): Pass error_info to the low-level functions as required
+  // in future to handle error propagation.
+  (void)error_info;
   const int ext_size = unit_size * 3 / 2;
   int x0 = 0, j = 0;
   while (x0 < plane_w) {
@@ -1174,6 +1179,16 @@ void av1_foreach_rest_unit_in_row(
     if ((row_number + 1) < vnum_rest_units)
       // bottom-right sync
       on_sync_read(lr_sync, row_number + 2, j, plane);
+
+#if CONFIG_MULTITHREAD
+    if (lr_sync && lr_sync->num_workers > 1) {
+      pthread_mutex_lock(lr_sync->job_mutex);
+      const bool lr_mt_exit = lr_sync->lr_mt_exit;
+      pthread_mutex_unlock(lr_sync->job_mutex);
+      // Exit in case any worker has encountered an error.
+      if (lr_mt_exit) return;
+    }
+#endif
 
     on_rest_unit(limits, unit_idx, priv, tmpbuf, rlbs);
 
@@ -1232,7 +1247,7 @@ void av1_foreach_rest_unit_in_plane(const struct AV1Common *cm, int plane,
     av1_foreach_rest_unit_in_row(&limits, plane_w, on_rest_unit, i, unit_size,
                                  hnum_rest_units, vnum_rest_units, plane, priv,
                                  tmpbuf, rlbs, av1_lr_sync_read_dummy,
-                                 av1_lr_sync_write_dummy, NULL);
+                                 av1_lr_sync_write_dummy, NULL, cm->error);
 
     y0 += h;
     ++i;

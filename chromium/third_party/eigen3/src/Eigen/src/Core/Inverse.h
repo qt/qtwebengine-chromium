@@ -10,6 +10,7 @@
 #ifndef EIGEN_INVERSE_H
 #define EIGEN_INVERSE_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

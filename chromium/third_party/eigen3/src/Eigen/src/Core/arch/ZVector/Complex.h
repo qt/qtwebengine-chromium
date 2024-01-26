@@ -11,6 +11,7 @@
 #ifndef EIGEN_COMPLEX32_ZVECTOR_H
 #define EIGEN_COMPLEX32_ZVECTOR_H
 
+// IWYU pragma: private
 #include "../../InternalHeaderCheck.h"
 
 namespace Eigen {

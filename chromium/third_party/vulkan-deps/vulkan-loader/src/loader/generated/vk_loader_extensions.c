@@ -316,7 +316,7 @@ VKAPI_ATTR bool VKAPI_CALL loader_icd_init_entries(struct loader_icd_term *icd_t
 VKAPI_ATTR void VKAPI_CALL loader_init_device_dispatch_table(struct loader_dev_dispatch_table *dev_table, PFN_vkGetDeviceProcAddr gpa,
                                                              VkDevice dev) {
     VkLayerDispatchTable *table = &dev_table->core_dispatch;
-    assert(table->magic == DEVICE_DISP_TABLE_MAGIC_NUMBER);
+    if (table->magic != DEVICE_DISP_TABLE_MAGIC_NUMBER) { abort(); }
     for (uint32_t i = 0; i < MAX_NUM_UNKNOWN_EXTS; i++) dev_table->ext_dispatch[i] = (PFN_vkDevExt)vkDevExtError;
 
     // ---- Core 1_0 commands
@@ -1126,6 +1126,13 @@ VKAPI_ATTR void VKAPI_CALL loader_init_device_extension_dispatch_table(struct lo
     table->GetFramebufferTilePropertiesQCOM = (PFN_vkGetFramebufferTilePropertiesQCOM)gdpa(dev, "vkGetFramebufferTilePropertiesQCOM");
     table->GetDynamicRenderingTilePropertiesQCOM = (PFN_vkGetDynamicRenderingTilePropertiesQCOM)gdpa(dev, "vkGetDynamicRenderingTilePropertiesQCOM");
 
+    // ---- VK_NV_low_latency2 extension commands
+    table->SetLatencySleepModeNV = (PFN_vkSetLatencySleepModeNV)gdpa(dev, "vkSetLatencySleepModeNV");
+    table->LatencySleepNV = (PFN_vkLatencySleepNV)gdpa(dev, "vkLatencySleepNV");
+    table->SetLatencyMarkerNV = (PFN_vkSetLatencyMarkerNV)gdpa(dev, "vkSetLatencyMarkerNV");
+    table->GetLatencyTimingsNV = (PFN_vkGetLatencyTimingsNV)gdpa(dev, "vkGetLatencyTimingsNV");
+    table->QueueNotifyOutOfBandNV = (PFN_vkQueueNotifyOutOfBandNV)gdpa(dev, "vkQueueNotifyOutOfBandNV");
+
     // ---- VK_EXT_attachment_feedback_loop_dynamic_state extension commands
     table->CmdSetAttachmentFeedbackLoopEnableEXT = (PFN_vkCmdSetAttachmentFeedbackLoopEnableEXT)gdpa(dev, "vkCmdSetAttachmentFeedbackLoopEnableEXT");
 
@@ -1429,38 +1436,38 @@ void init_extension_device_proc_terminator_dispatch(struct loader_device *dev) {
     struct loader_device_terminator_dispatch* dispatch = &dev->loader_dispatch.extension_terminator_dispatch;
     PFN_vkGetDeviceProcAddr gpda = (PFN_vkGetDeviceProcAddr)dev->phys_dev_term->this_icd_term->dispatch.GetDeviceProcAddr;
     // ---- VK_KHR_swapchain extension commands
-    if (dev->extensions.khr_swapchain_enabled)
+    if (dev->driver_extensions.khr_swapchain_enabled)
        dispatch->CreateSwapchainKHR = (PFN_vkCreateSwapchainKHR)gpda(dev->icd_device, "vkCreateSwapchainKHR");
-    if (dev->extensions.khr_swapchain_enabled)
+    if (dev->driver_extensions.khr_swapchain_enabled)
        dispatch->GetDeviceGroupSurfacePresentModesKHR = (PFN_vkGetDeviceGroupSurfacePresentModesKHR)gpda(dev->icd_device, "vkGetDeviceGroupSurfacePresentModesKHR");
     // ---- VK_KHR_display_swapchain extension commands
-    if (dev->extensions.khr_display_swapchain_enabled)
+    if (dev->driver_extensions.khr_display_swapchain_enabled)
        dispatch->CreateSharedSwapchainsKHR = (PFN_vkCreateSharedSwapchainsKHR)gpda(dev->icd_device, "vkCreateSharedSwapchainsKHR");
     // ---- VK_EXT_debug_marker extension commands
-    if (dev->extensions.ext_debug_marker_enabled)
+    if (dev->driver_extensions.ext_debug_marker_enabled)
        dispatch->DebugMarkerSetObjectTagEXT = (PFN_vkDebugMarkerSetObjectTagEXT)gpda(dev->icd_device, "vkDebugMarkerSetObjectTagEXT");
-    if (dev->extensions.ext_debug_marker_enabled)
+    if (dev->driver_extensions.ext_debug_marker_enabled)
        dispatch->DebugMarkerSetObjectNameEXT = (PFN_vkDebugMarkerSetObjectNameEXT)gpda(dev->icd_device, "vkDebugMarkerSetObjectNameEXT");
     // ---- VK_EXT_debug_utils extension commands
-    if (dev->extensions.ext_debug_utils_enabled)
+    if (dev->driver_extensions.ext_debug_utils_enabled)
        dispatch->SetDebugUtilsObjectNameEXT = (PFN_vkSetDebugUtilsObjectNameEXT)gpda(dev->icd_device, "vkSetDebugUtilsObjectNameEXT");
-    if (dev->extensions.ext_debug_utils_enabled)
+    if (dev->driver_extensions.ext_debug_utils_enabled)
        dispatch->SetDebugUtilsObjectTagEXT = (PFN_vkSetDebugUtilsObjectTagEXT)gpda(dev->icd_device, "vkSetDebugUtilsObjectTagEXT");
-    if (dev->extensions.ext_debug_utils_enabled)
+    if (dev->driver_extensions.ext_debug_utils_enabled)
        dispatch->QueueBeginDebugUtilsLabelEXT = (PFN_vkQueueBeginDebugUtilsLabelEXT)gpda(dev->icd_device, "vkQueueBeginDebugUtilsLabelEXT");
-    if (dev->extensions.ext_debug_utils_enabled)
+    if (dev->driver_extensions.ext_debug_utils_enabled)
        dispatch->QueueEndDebugUtilsLabelEXT = (PFN_vkQueueEndDebugUtilsLabelEXT)gpda(dev->icd_device, "vkQueueEndDebugUtilsLabelEXT");
-    if (dev->extensions.ext_debug_utils_enabled)
+    if (dev->driver_extensions.ext_debug_utils_enabled)
        dispatch->QueueInsertDebugUtilsLabelEXT = (PFN_vkQueueInsertDebugUtilsLabelEXT)gpda(dev->icd_device, "vkQueueInsertDebugUtilsLabelEXT");
-    if (dev->extensions.ext_debug_utils_enabled)
+    if (dev->driver_extensions.ext_debug_utils_enabled)
        dispatch->CmdBeginDebugUtilsLabelEXT = (PFN_vkCmdBeginDebugUtilsLabelEXT)gpda(dev->icd_device, "vkCmdBeginDebugUtilsLabelEXT");
-    if (dev->extensions.ext_debug_utils_enabled)
+    if (dev->driver_extensions.ext_debug_utils_enabled)
        dispatch->CmdEndDebugUtilsLabelEXT = (PFN_vkCmdEndDebugUtilsLabelEXT)gpda(dev->icd_device, "vkCmdEndDebugUtilsLabelEXT");
-    if (dev->extensions.ext_debug_utils_enabled)
+    if (dev->driver_extensions.ext_debug_utils_enabled)
        dispatch->CmdInsertDebugUtilsLabelEXT = (PFN_vkCmdInsertDebugUtilsLabelEXT)gpda(dev->icd_device, "vkCmdInsertDebugUtilsLabelEXT");
 #if defined(VK_USE_PLATFORM_WIN32_KHR)
     // ---- VK_EXT_full_screen_exclusive extension commands
-    if (dev->extensions.ext_full_screen_exclusive_enabled && dev->extensions.khr_device_group_enabled)
+    if (dev->driver_extensions.ext_full_screen_exclusive_enabled && dev->driver_extensions.khr_device_group_enabled)
        dispatch->GetDeviceGroupSurfacePresentModes2EXT = (PFN_vkGetDeviceGroupSurfacePresentModes2EXT)gpda(dev->icd_device, "vkGetDeviceGroupSurfacePresentModes2EXT");
 #endif // VK_USE_PLATFORM_WIN32_KHR
 }
@@ -2439,8 +2446,8 @@ VKAPI_ATTR void* VKAPI_CALL loader_lookup_device_dispatch_table(const VkLayerDis
     if (!strcmp(name, "GetImageSubresourceLayout2KHR")) return (void *)table->GetImageSubresourceLayout2KHR;
 
     // ---- VK_EXT_debug_marker extension commands
-    if (!strcmp(name, "DebugMarkerSetObjectTagEXT")) return dev->extensions.ext_debug_marker_enabled ? (void *)DebugMarkerSetObjectTagEXT : NULL;
-    if (!strcmp(name, "DebugMarkerSetObjectNameEXT")) return dev->extensions.ext_debug_marker_enabled ? (void *)DebugMarkerSetObjectNameEXT : NULL;
+    if (!strcmp(name, "DebugMarkerSetObjectTagEXT")) return dev->layer_extensions.ext_debug_marker_enabled ? (void *)DebugMarkerSetObjectTagEXT : NULL;
+    if (!strcmp(name, "DebugMarkerSetObjectNameEXT")) return dev->layer_extensions.ext_debug_marker_enabled ? (void *)DebugMarkerSetObjectNameEXT : NULL;
     if (!strcmp(name, "CmdDebugMarkerBeginEXT")) return (void *)table->CmdDebugMarkerBeginEXT;
     if (!strcmp(name, "CmdDebugMarkerEndEXT")) return (void *)table->CmdDebugMarkerEndEXT;
     if (!strcmp(name, "CmdDebugMarkerInsertEXT")) return (void *)table->CmdDebugMarkerInsertEXT;
@@ -2502,8 +2509,8 @@ VKAPI_ATTR void* VKAPI_CALL loader_lookup_device_dispatch_table(const VkLayerDis
     if (!strcmp(name, "SetHdrMetadataEXT")) return (void *)table->SetHdrMetadataEXT;
 
     // ---- VK_EXT_debug_utils extension commands
-    if (!strcmp(name, "SetDebugUtilsObjectNameEXT")) return dev->extensions.ext_debug_utils_enabled ? (void *)SetDebugUtilsObjectNameEXT : NULL;
-    if (!strcmp(name, "SetDebugUtilsObjectTagEXT")) return dev->extensions.ext_debug_utils_enabled ? (void *)SetDebugUtilsObjectTagEXT : NULL;
+    if (!strcmp(name, "SetDebugUtilsObjectNameEXT")) return dev->layer_extensions.ext_debug_utils_enabled ? (void *)SetDebugUtilsObjectNameEXT : NULL;
+    if (!strcmp(name, "SetDebugUtilsObjectTagEXT")) return dev->layer_extensions.ext_debug_utils_enabled ? (void *)SetDebugUtilsObjectTagEXT : NULL;
     if (!strcmp(name, "QueueBeginDebugUtilsLabelEXT")) return (void *)table->QueueBeginDebugUtilsLabelEXT;
     if (!strcmp(name, "QueueEndDebugUtilsLabelEXT")) return (void *)table->QueueEndDebugUtilsLabelEXT;
     if (!strcmp(name, "QueueInsertDebugUtilsLabelEXT")) return (void *)table->QueueInsertDebugUtilsLabelEXT;
@@ -2850,6 +2857,13 @@ VKAPI_ATTR void* VKAPI_CALL loader_lookup_device_dispatch_table(const VkLayerDis
     // ---- VK_QCOM_tile_properties extension commands
     if (!strcmp(name, "GetFramebufferTilePropertiesQCOM")) return (void *)table->GetFramebufferTilePropertiesQCOM;
     if (!strcmp(name, "GetDynamicRenderingTilePropertiesQCOM")) return (void *)table->GetDynamicRenderingTilePropertiesQCOM;
+
+    // ---- VK_NV_low_latency2 extension commands
+    if (!strcmp(name, "SetLatencySleepModeNV")) return (void *)table->SetLatencySleepModeNV;
+    if (!strcmp(name, "LatencySleepNV")) return (void *)table->LatencySleepNV;
+    if (!strcmp(name, "SetLatencyMarkerNV")) return (void *)table->SetLatencyMarkerNV;
+    if (!strcmp(name, "GetLatencyTimingsNV")) return (void *)table->GetLatencyTimingsNV;
+    if (!strcmp(name, "QueueNotifyOutOfBandNV")) return (void *)table->QueueNotifyOutOfBandNV;
 
     // ---- VK_EXT_attachment_feedback_loop_dynamic_state extension commands
     if (!strcmp(name, "CmdSetAttachmentFeedbackLoopEnableEXT")) return (void *)table->CmdSetAttachmentFeedbackLoopEnableEXT;
@@ -8962,6 +8976,79 @@ VKAPI_ATTR VkResult VKAPI_CALL GetDynamicRenderingTilePropertiesQCOM(
 }
 
 
+// ---- VK_NV_low_latency2 extension trampoline/terminators
+
+VKAPI_ATTR VkResult VKAPI_CALL SetLatencySleepModeNV(
+    VkDevice                                    device,
+    VkSwapchainKHR                              swapchain,
+    const VkLatencySleepModeInfoNV*             pSleepModeInfo) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkSetLatencySleepModeNV: Invalid device "
+                   "[VUID-vkSetLatencySleepModeNV-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return disp->SetLatencySleepModeNV(device, swapchain, pSleepModeInfo);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL LatencySleepNV(
+    VkDevice                                    device,
+    VkSwapchainKHR                              swapchain,
+    const VkLatencySleepInfoNV*                 pSleepInfo) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkLatencySleepNV: Invalid device "
+                   "[VUID-vkLatencySleepNV-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return disp->LatencySleepNV(device, swapchain, pSleepInfo);
+}
+
+VKAPI_ATTR void VKAPI_CALL SetLatencyMarkerNV(
+    VkDevice                                    device,
+    VkSwapchainKHR                              swapchain,
+    const VkSetLatencyMarkerInfoNV*             pLatencyMarkerInfo) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkSetLatencyMarkerNV: Invalid device "
+                   "[VUID-vkSetLatencyMarkerNV-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp->SetLatencyMarkerNV(device, swapchain, pLatencyMarkerInfo);
+}
+
+VKAPI_ATTR void VKAPI_CALL GetLatencyTimingsNV(
+    VkDevice                                    device,
+    VkSwapchainKHR                              swapchain,
+    uint32_t*                                   pTimingCount,
+    VkGetLatencyMarkerInfoNV*                   pLatencyMarkerInfo) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkGetLatencyTimingsNV: Invalid device "
+                   "[VUID-vkGetLatencyTimingsNV-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp->GetLatencyTimingsNV(device, swapchain, pTimingCount, pLatencyMarkerInfo);
+}
+
+VKAPI_ATTR void VKAPI_CALL QueueNotifyOutOfBandNV(
+    VkQueue                                     queue,
+    const VkOutOfBandQueueTypeInfoNV*           pQueueTypeInfo) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(queue);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkQueueNotifyOutOfBandNV: Invalid queue "
+                   "[VUID-vkQueueNotifyOutOfBandNV-queue-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp->QueueNotifyOutOfBandNV(queue, pQueueTypeInfo);
+}
+
+
 // ---- VK_EXT_attachment_feedback_loop_dynamic_state extension trampoline/terminators
 
 VKAPI_ATTR void VKAPI_CALL CmdSetAttachmentFeedbackLoopEnableEXT(
@@ -11198,6 +11285,28 @@ bool extension_instance_gpa(struct loader_instance *ptr_instance, const char *na
         return true;
     }
 
+    // ---- VK_NV_low_latency2 extension commands
+    if (!strcmp("vkSetLatencySleepModeNV", name)) {
+        *addr = (void *)SetLatencySleepModeNV;
+        return true;
+    }
+    if (!strcmp("vkLatencySleepNV", name)) {
+        *addr = (void *)LatencySleepNV;
+        return true;
+    }
+    if (!strcmp("vkSetLatencyMarkerNV", name)) {
+        *addr = (void *)SetLatencyMarkerNV;
+        return true;
+    }
+    if (!strcmp("vkGetLatencyTimingsNV", name)) {
+        *addr = (void *)GetLatencyTimingsNV;
+        return true;
+    }
+    if (!strcmp("vkQueueNotifyOutOfBandNV", name)) {
+        *addr = (void *)QueueNotifyOutOfBandNV;
+        return true;
+    }
+
     // ---- VK_EXT_attachment_feedback_loop_dynamic_state extension commands
     if (!strcmp("vkCmdSetAttachmentFeedbackLoopEnableEXT", name)) {
         *addr = (void *)CmdSetAttachmentFeedbackLoopEnableEXT;
@@ -11385,77 +11494,77 @@ PFN_vkVoidFunction get_extension_device_proc_terminator(struct loader_device *de
     // ---- VK_KHR_swapchain extension commands
     if (!strcmp(name, "CreateSwapchainKHR")) {
         *found_name = true;
-        return dev->extensions.khr_swapchain_enabled ?
+        return dev->driver_extensions.khr_swapchain_enabled ?
             (PFN_vkVoidFunction)terminator_CreateSwapchainKHR : NULL;
     }
     if (!strcmp(name, "GetDeviceGroupSurfacePresentModesKHR")) {
         *found_name = true;
-        return dev->extensions.khr_swapchain_enabled ?
+        return dev->driver_extensions.khr_swapchain_enabled ?
             (PFN_vkVoidFunction)terminator_GetDeviceGroupSurfacePresentModesKHR : NULL;
     }
     // ---- VK_KHR_display_swapchain extension commands
     if (!strcmp(name, "CreateSharedSwapchainsKHR")) {
         *found_name = true;
-        return dev->extensions.khr_display_swapchain_enabled ?
+        return dev->driver_extensions.khr_display_swapchain_enabled ?
             (PFN_vkVoidFunction)terminator_CreateSharedSwapchainsKHR : NULL;
     }
     // ---- VK_EXT_debug_marker extension commands
     if (!strcmp(name, "DebugMarkerSetObjectTagEXT")) {
         *found_name = true;
-        return dev->extensions.ext_debug_marker_enabled ?
+        return dev->driver_extensions.ext_debug_marker_enabled ?
             (PFN_vkVoidFunction)terminator_DebugMarkerSetObjectTagEXT : NULL;
     }
     if (!strcmp(name, "DebugMarkerSetObjectNameEXT")) {
         *found_name = true;
-        return dev->extensions.ext_debug_marker_enabled ?
+        return dev->driver_extensions.ext_debug_marker_enabled ?
             (PFN_vkVoidFunction)terminator_DebugMarkerSetObjectNameEXT : NULL;
     }
     // ---- VK_EXT_debug_utils extension commands
     if (!strcmp(name, "SetDebugUtilsObjectNameEXT")) {
         *found_name = true;
-        return dev->extensions.ext_debug_utils_enabled ?
+        return dev->driver_extensions.ext_debug_utils_enabled ?
             (PFN_vkVoidFunction)terminator_SetDebugUtilsObjectNameEXT : NULL;
     }
     if (!strcmp(name, "SetDebugUtilsObjectTagEXT")) {
         *found_name = true;
-        return dev->extensions.ext_debug_utils_enabled ?
+        return dev->driver_extensions.ext_debug_utils_enabled ?
             (PFN_vkVoidFunction)terminator_SetDebugUtilsObjectTagEXT : NULL;
     }
     if (!strcmp(name, "QueueBeginDebugUtilsLabelEXT")) {
         *found_name = true;
-        return dev->extensions.ext_debug_utils_enabled ?
+        return dev->driver_extensions.ext_debug_utils_enabled ?
             (PFN_vkVoidFunction)terminator_QueueBeginDebugUtilsLabelEXT : NULL;
     }
     if (!strcmp(name, "QueueEndDebugUtilsLabelEXT")) {
         *found_name = true;
-        return dev->extensions.ext_debug_utils_enabled ?
+        return dev->driver_extensions.ext_debug_utils_enabled ?
             (PFN_vkVoidFunction)terminator_QueueEndDebugUtilsLabelEXT : NULL;
     }
     if (!strcmp(name, "QueueInsertDebugUtilsLabelEXT")) {
         *found_name = true;
-        return dev->extensions.ext_debug_utils_enabled ?
+        return dev->driver_extensions.ext_debug_utils_enabled ?
             (PFN_vkVoidFunction)terminator_QueueInsertDebugUtilsLabelEXT : NULL;
     }
     if (!strcmp(name, "CmdBeginDebugUtilsLabelEXT")) {
         *found_name = true;
-        return dev->extensions.ext_debug_utils_enabled ?
+        return dev->driver_extensions.ext_debug_utils_enabled ?
             (PFN_vkVoidFunction)terminator_CmdBeginDebugUtilsLabelEXT : NULL;
     }
     if (!strcmp(name, "CmdEndDebugUtilsLabelEXT")) {
         *found_name = true;
-        return dev->extensions.ext_debug_utils_enabled ?
+        return dev->driver_extensions.ext_debug_utils_enabled ?
             (PFN_vkVoidFunction)terminator_CmdEndDebugUtilsLabelEXT : NULL;
     }
     if (!strcmp(name, "CmdInsertDebugUtilsLabelEXT")) {
         *found_name = true;
-        return dev->extensions.ext_debug_utils_enabled ?
+        return dev->driver_extensions.ext_debug_utils_enabled ?
             (PFN_vkVoidFunction)terminator_CmdInsertDebugUtilsLabelEXT : NULL;
     }
 #if defined(VK_USE_PLATFORM_WIN32_KHR)
     // ---- VK_EXT_full_screen_exclusive extension commands
     if (!strcmp(name, "GetDeviceGroupSurfacePresentModes2EXT")) {
         *found_name = true;
-        return dev->extensions.ext_full_screen_exclusive_enabled && dev->extensions.khr_device_group_enabled ?
+        return dev->driver_extensions.ext_full_screen_exclusive_enabled && dev->driver_extensions.khr_device_group_enabled ?
             (PFN_vkVoidFunction)terminator_GetDeviceGroupSurfacePresentModes2EXT : NULL;
     }
 #endif // VK_USE_PLATFORM_WIN32_KHR

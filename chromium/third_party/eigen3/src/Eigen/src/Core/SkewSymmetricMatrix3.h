@@ -11,6 +11,7 @@
 #ifndef EIGEN_SKEWSYMMETRICMATRIX3_H
 #define EIGEN_SKEWSYMMETRICMATRIX3_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

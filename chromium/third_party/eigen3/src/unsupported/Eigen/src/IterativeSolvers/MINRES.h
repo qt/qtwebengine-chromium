@@ -14,6 +14,7 @@
 #define EIGEN_MINRES_H
 
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

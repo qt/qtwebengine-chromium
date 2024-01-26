@@ -18,6 +18,7 @@
 #include "base/functional/callback_helpers.h"
 #include "base/location.h"
 #include "base/memory/ptr_util.h"
+#include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/task/single_thread_task_runner.h"
@@ -601,7 +602,7 @@ class RTCPeerConnectionHandlerTest : public SimTest {
     waitable_event->Signal();
   }
 
- public:
+ protected:
   ScopedTestingPlatformSupport<AudioCapturerSourceTestingPlatformSupport>
       webrtc_audio_device_platform_support_;
   Persistent<MockRTCPeerConnectionHandlerClient> mock_client_;
@@ -610,7 +611,8 @@ class RTCPeerConnectionHandlerTest : public SimTest {
   std::unique_ptr<RTCPeerConnectionHandlerUnderTest> pc_handler_;
 
   // Weak reference to the mocked native peer connection implementation.
-  blink::MockPeerConnectionImpl* mock_peer_connection_;
+  raw_ptr<blink::MockPeerConnectionImpl, DanglingUntriaged>
+      mock_peer_connection_;
 
   std::vector<std::unique_ptr<blink::RTCRtpSenderImpl>> senders_;
   std::map<webrtc::MediaStreamTrackInterface*,
@@ -1166,6 +1168,34 @@ TEST_F(RTCPeerConnectionHandlerTest,
   EXPECT_CALL(*mock_client_, DidChangeSessionDescriptions(_, _, _, _))
       .WillOnce(testing::Invoke([&] { pc_handler_.reset(); }));
   observer->OnIceCandidate(native_candidate.get());
+}
+
+TEST_F(RTCPeerConnectionHandlerTest,
+       OnIceCandidateAfterClientGarbageCollectionDoesNothing) {
+  testing::InSequence sequence;
+  EXPECT_CALL(*mock_tracker_.Get(),
+              TrackAddIceCandidate(pc_handler_.get(), _,
+                                   PeerConnectionTracker::kSourceLocal, true))
+      .Times(0);
+
+  std::unique_ptr<webrtc::IceCandidateInterface> native_candidate(
+      mock_dependency_factory_->CreateIceCandidate("sdpMid", 1, kDummySdp));
+  mock_client_ = nullptr;
+  WebHeap::CollectAllGarbageForTesting();
+  pc_handler_->observer()->OnIceCandidate(native_candidate.get());
+  RunMessageLoopsUntilIdle();
+}
+
+TEST_F(RTCPeerConnectionHandlerTest,
+       OnIceCandidateAfterClientGarbageCollectionFails) {
+  DummyExceptionStateForTesting exception_state;
+  auto pc_handler = CreateRTCPeerConnectionHandlerUnderTest();
+  mock_client_ = nullptr;
+  WebHeap::CollectAllGarbageForTesting();
+  EXPECT_FALSE(pc_handler->Initialize(
+      /*context=*/nullptr, webrtc::PeerConnectionInterface::RTCConfiguration(),
+      /*media_constraints=*/nullptr,
+      /*frame=*/nullptr, exception_state));
 }
 
 }  // namespace blink

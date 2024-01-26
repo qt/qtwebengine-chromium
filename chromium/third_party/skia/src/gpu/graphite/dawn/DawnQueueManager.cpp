@@ -18,10 +18,9 @@ class DawnWorkSubmission final : public GpuWorkSubmission {
 public:
     DawnWorkSubmission(std::unique_ptr<CommandBuffer> cmdBuffer,
                        DawnQueueManager* queueManager,
-                       wgpu::Device device)
+                       const wgpu::Device& device)
             : GpuWorkSubmission(std::move(cmdBuffer), queueManager), fAsyncWait(std::move(device)) {
         queueManager->dawnQueue().OnSubmittedWorkDone(
-                0,
                 [](WGPUQueueWorkDoneStatus, void* userData) {
                     auto asyncWaitPtr = static_cast<DawnAsyncWait*>(userData);
                     asyncWaitPtr->signal();
@@ -65,7 +64,7 @@ QueueManager::OutstandingSubmission DawnQueueManager::onSubmitToGpu() {
     std::unique_ptr<DawnWorkSubmission> submission(new DawnWorkSubmission(
             std::move(fCurrentCommandBuffer), this, dawnSharedContext()->device()));
 
-    return std::move(submission);
+    return submission;
 }
 
 #if defined(GRAPHITE_TEST_UTILS)

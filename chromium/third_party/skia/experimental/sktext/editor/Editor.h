@@ -12,7 +12,7 @@
 #include "experimental/sktext/src/Paint.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkSurface.h"
-#include "include/core/SkTime.h"
+#include "src/base/SkTime.h"
 #include "tools/sk_app/Application.h"
 #include "tools/sk_app/Window.h"
 #include "tools/skui/ModifierKey.h"
@@ -24,10 +24,10 @@ using namespace skia::text;
 
 class Editor : public sk_app::Window::Layer {
 public:
-    static std::unique_ptr<Editor> Make(std::u16string text, SkSize size);
+    static std::unique_ptr<Editor> Make(const std::u16string& text, SkSize size);
     static std::unique_ptr<Editor> MakeDemo(SkScalar width, SkScalar height);
 
-    Editor(std::u16string text, SkSize size);
+    Editor(const std::u16string& text, SkSize size);
     ~Editor() override = default;
 
     void paint(SkCanvas* canvas);

@@ -16,6 +16,15 @@
 #include <xnnpack/log.h>
 
 
+static bool is_continugous(xnn_operator_t lut_elementwise_op)
+{
+  const size_t channels = lut_elementwise_op->channels;
+  const size_t input_stride = lut_elementwise_op->input_pixel_stride;
+  const size_t output_stride = lut_elementwise_op->output_pixel_stride;
+  const size_t batch_size = lut_elementwise_op->batch_size;
+  return (((input_stride ^ channels) | (output_stride ^ channels)) == 0) || batch_size == 1;
+}
+
 typedef float (*xnn_lut_init_fn)(float, const void*);
 
 static enum xnn_status create_lut_elementwise_nc(
@@ -332,13 +341,11 @@ enum xnn_status xnn_create_tanh_nc_qu8(
     xnn_operator_type_tanh_nc_qu8, tanh_op_out);
 }
 
-static enum xnn_status setup_lut_elementwise_nc(
+static enum xnn_status reshape_lut_elementwise_nc(
     xnn_operator_t lut_elementwise_op,
     enum xnn_operator_type expected_operator_type,
     size_t batch_size,
-    const void* input,
-    void* output,
-    size_t num_threads)
+    pthreadpool_t threadpool)
 {
   if (lut_elementwise_op->type != expected_operator_type) {
     xnn_log_error("failed to setup operator: operator type mismatch (expected %s, got %s)",
@@ -360,40 +367,142 @@ static enum xnn_status setup_lut_elementwise_nc(
     return xnn_status_success;
   }
 
+  lut_elementwise_op->batch_size = batch_size;
+
   const struct xnn_x8_lut_config* lut_config = lut_elementwise_op->lut_config;
 
   const size_t channels = lut_elementwise_op->channels;
   const size_t input_stride = lut_elementwise_op->input_pixel_stride;
   const size_t output_stride = lut_elementwise_op->output_pixel_stride;
-  if ((((input_stride ^ channels) | (output_stride ^ channels)) == 0) || batch_size == 1) {
-    const size_t block_size = 1024;
+  if (is_continugous(lut_elementwise_op)) {
     lut_elementwise_op->context.lut_contiguous = (struct lut_contiguous_context) {
-      .x = input,
       .x_stride = input_stride * sizeof(uint8_t),
       .t = lut_elementwise_op->lookup_table,
-      .y = output,
       .y_stride = output_stride * sizeof(uint8_t),
       .ukernel = lut_config->microkernel,
     };
 
     const size_t range = batch_size * channels * sizeof(uint8_t);
+    #if XNN_TEST_MODE
+      const size_t tile = lut_config->tile_size;
+    #else
+      size_t tile = range;
+      if (pthreadpool_get_threads_count(threadpool) > 1) {
+        const size_t block_size = 1024;
+        tile = block_size * sizeof(uint8_t);
+      }
+    #endif
+
     lut_elementwise_op->compute[0].type = xnn_parallelization_type_1d_tile_1d;
     lut_elementwise_op->compute[0].task_1d_tile_1d = (pthreadpool_task_1d_tile_1d_t) xnn_compute_lut_contiguous;
     lut_elementwise_op->compute[0].range[0] = range;
-    lut_elementwise_op->compute[0].tile[0] = (num_threads == 1) ? range : block_size * sizeof(uint8_t);
+    lut_elementwise_op->compute[0].tile[0] = tile;
   } else {
     lut_elementwise_op->context.lut_strided = (struct lut_strided_context) {
       .n = channels * sizeof(uint8_t),
-      .x = input,
       .x_stride = input_stride * sizeof(uint8_t),
       .t = lut_elementwise_op->lookup_table,
-      .y = output,
       .y_stride = output_stride * sizeof(uint8_t),
       .ukernel = lut_config->microkernel,
     };
     lut_elementwise_op->compute[0].type = xnn_parallelization_type_1d;
     lut_elementwise_op->compute[0].task_1d = (pthreadpool_task_1d_t) xnn_compute_lut_strided;
     lut_elementwise_op->compute[0].range[0] = batch_size;
+  }
+  lut_elementwise_op->state = xnn_run_state_needs_setup;
+
+  return xnn_status_success;
+}
+
+enum xnn_status xnn_reshape_elu_nc_qs8(
+    xnn_operator_t elu_op,
+    size_t batch_size,
+    pthreadpool_t threadpool)
+{
+  return reshape_lut_elementwise_nc(
+    elu_op, xnn_operator_type_elu_nc_qs8,
+    batch_size,
+    threadpool);
+}
+
+enum xnn_status xnn_reshape_sigmoid_nc_qs8(
+    xnn_operator_t sigmoid_op,
+    size_t batch_size,
+    pthreadpool_t threadpool)
+{
+  return reshape_lut_elementwise_nc(
+    sigmoid_op, xnn_operator_type_sigmoid_nc_qs8,
+    batch_size,
+    threadpool);
+}
+
+enum xnn_status xnn_reshape_sigmoid_nc_qu8(
+    xnn_operator_t sigmoid_op,
+    size_t batch_size,
+    pthreadpool_t threadpool)
+{
+  return reshape_lut_elementwise_nc(
+    sigmoid_op, xnn_operator_type_sigmoid_nc_qu8,
+    batch_size,
+    threadpool);
+}
+
+enum xnn_status xnn_reshape_tanh_nc_qs8(
+    xnn_operator_t tanh_op,
+    size_t batch_size,
+    pthreadpool_t threadpool)
+{
+  return reshape_lut_elementwise_nc(
+    tanh_op, xnn_operator_type_tanh_nc_qs8,
+    batch_size,
+    threadpool);
+}
+
+enum xnn_status xnn_reshape_tanh_nc_qu8(
+    xnn_operator_t tanh_op,
+    size_t batch_size,
+    pthreadpool_t threadpool)
+{
+  return reshape_lut_elementwise_nc(
+    tanh_op, xnn_operator_type_tanh_nc_qu8,
+    batch_size,
+    threadpool);
+}
+
+static enum xnn_status setup_lut_elementwise_nc(
+    xnn_operator_t lut_elementwise_op,
+    enum xnn_operator_type expected_operator_type,
+    const void* input,
+    void* output)
+{
+  if (lut_elementwise_op->type != expected_operator_type) {
+    xnn_log_error("failed to setup operator: operator type mismatch (expected %s, got %s)",
+      xnn_operator_type_to_string(expected_operator_type),
+      xnn_operator_type_to_string(lut_elementwise_op->type));
+    return xnn_status_invalid_parameter;
+  }
+
+  switch (lut_elementwise_op->state) {
+    case xnn_run_state_skip:
+      return xnn_status_success;
+    case xnn_run_state_invalid:
+      xnn_log_error(
+        "failed to setup %s operator: operator has not been reshaped yet",
+        xnn_operator_type_to_string(lut_elementwise_op->type));
+      return xnn_status_invalid_state;
+    case xnn_run_state_needs_setup:
+      // Operator has been reshaped, but not setup, continue with setup.
+    case xnn_run_state_ready:
+      // Operator has been reshaped, and we are setting up with different pointers.
+      break;
+  }
+
+  if (is_continugous(lut_elementwise_op)) {
+    lut_elementwise_op->context.lut_contiguous.x = input;
+    lut_elementwise_op->context.lut_contiguous.y = output;
+  } else {
+    lut_elementwise_op->context.lut_strided.x = input;
+    lut_elementwise_op->context.lut_strided.y = output;
   }
   lut_elementwise_op->state = xnn_run_state_ready;
 
@@ -402,65 +511,50 @@ static enum xnn_status setup_lut_elementwise_nc(
 
 enum xnn_status xnn_setup_elu_nc_qs8(
     xnn_operator_t elu_op,
-    size_t batch_size,
     const int8_t* input,
-    int8_t* output,
-    pthreadpool_t threadpool)
+    int8_t* output)
 {
   return setup_lut_elementwise_nc(
     elu_op, xnn_operator_type_elu_nc_qs8,
-    batch_size, input, output,
-    pthreadpool_get_threads_count(threadpool));
+    input, output);
 }
 
 enum xnn_status xnn_setup_sigmoid_nc_qs8(
     xnn_operator_t sigmoid_op,
-    size_t batch_size,
     const int8_t* input,
-    int8_t* output,
-    pthreadpool_t threadpool)
+    int8_t* output)
 {
   return setup_lut_elementwise_nc(
     sigmoid_op, xnn_operator_type_sigmoid_nc_qs8,
-    batch_size, input, output,
-    pthreadpool_get_threads_count(threadpool));
+    input, output);
 }
 
 enum xnn_status xnn_setup_sigmoid_nc_qu8(
     xnn_operator_t sigmoid_op,
-    size_t batch_size,
     const uint8_t* input,
-    uint8_t* output,
-    pthreadpool_t threadpool)
+    uint8_t* output)
 {
   return setup_lut_elementwise_nc(
     sigmoid_op, xnn_operator_type_sigmoid_nc_qu8,
-    batch_size, input, output,
-    pthreadpool_get_threads_count(threadpool));
+    input, output);
 }
 
 enum xnn_status xnn_setup_tanh_nc_qs8(
     xnn_operator_t tanh_op,
-    size_t batch_size,
     const int8_t* input,
-    int8_t* output,
-    pthreadpool_t threadpool)
+    int8_t* output)
 {
   return setup_lut_elementwise_nc(
     tanh_op, xnn_operator_type_tanh_nc_qs8,
-    batch_size, input, output,
-    pthreadpool_get_threads_count(threadpool));
+    input, output);
 }
 
 enum xnn_status xnn_setup_tanh_nc_qu8(
     xnn_operator_t tanh_op,
-    size_t batch_size,
     const uint8_t* input,
-    uint8_t* output,
-    pthreadpool_t threadpool)
+    uint8_t* output)
 {
   return setup_lut_elementwise_nc(
     tanh_op, xnn_operator_type_tanh_nc_qu8,
-    batch_size, input, output,
-    pthreadpool_get_threads_count(threadpool));
+    input, output);
 }

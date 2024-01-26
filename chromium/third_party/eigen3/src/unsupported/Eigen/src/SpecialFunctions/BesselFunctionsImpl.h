@@ -10,6 +10,7 @@
 #ifndef EIGEN_BESSEL_FUNCTIONS_H
 #define EIGEN_BESSEL_FUNCTIONS_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

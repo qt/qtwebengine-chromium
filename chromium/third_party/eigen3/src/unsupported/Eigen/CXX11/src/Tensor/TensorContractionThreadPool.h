@@ -13,6 +13,7 @@
 // evaluator for thread pool device
 #ifdef EIGEN_USE_THREADS
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {
@@ -205,9 +206,9 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
     }
 
     // Number of kernels for each dimension.
-    Index nm0 = divup(m, bm);
-    Index nn0 = divup(n, bn);
-    Index nk = divup(k, bk);
+    Index nm0 = numext::div_ceil(m, bm);
+    Index nn0 = numext::div_ceil(n, bn);
+    Index nk = numext::div_ceil(k, bk);
 
     // Calculate task grain size (number of kernels executed per task).
     // This task size coarsening serves two purposes:
@@ -225,8 +226,8 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
       gm = coarsenM(m, n, bm, bn, bk, gn, num_threads, shard_by_col);
     }
     // Number of tasks in each dimension.
-    Index nm = divup(nm0, gm);
-    Index nn = divup(nn0, gn);
+    Index nm = numext::div_ceil(nm0, gm);
+    Index nn = numext::div_ceil(nn0, gn);
 
     // If there is enough concurrency in the sharding dimension, we choose not
     // to paralellize by the other dimension, and execute all kernels in sync
@@ -1129,9 +1130,9 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
           done(std::move(done_callback)),
           buffer_size_bytes(m * n * sizeof(Scalar)),
           block_size(blockSize(k, num_threads)),
-          num_blocks(divup<Index>(k, block_size)),
+          num_blocks(numext::div_ceil<Index>(k, block_size)),
           num_pending_blocks(internal::convert_index<int>(num_blocks)),
-          l0_ranges(divup<Index>(num_blocks, l0_size)),
+          l0_ranges(numext::div_ceil<Index>(num_blocks, l0_size)),
           l0_state(l0_ranges),
           block_buffers(num_blocks) {
       // Keep count of pending gemm tasks for each l0 range.
@@ -1433,10 +1434,10 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
     static Index blockSize(Index k, int num_threads) {
       const auto round_up = [=](Index index) -> Index {
         const Index kmultiple = packet_size <= 8 ? 8 : packet_size;
-        return divup<Index>(index, kmultiple) * kmultiple;
+        return numext::div_ceil<Index>(index, kmultiple) * kmultiple;
       };
 
-      const Index target_block_size = round_up(divup<Index>(k, num_threads));
+      const Index target_block_size = round_up(numext::div_ceil<Index>(k, num_threads));
       const Index desired_min_block_size = 12 * packet_size;
 
       return numext::mini<Index>(
@@ -1484,19 +1485,19 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
                  int num_threads, bool shard_by_col) const {
     Index gm = 1;
     Index gm1 = 1;
-    Index nm0 = divup(m, bm);
+    Index nm0 = numext::div_ceil(m, bm);
     Index nm1 = nm0;
     for (;;) {
       // Find the next candidate for m grain size. It needs to result in
       // different number of blocks. E.g. if we have 10 kernels, we want to try
       // 5 and 10, but not 6, 7, 8 and 9.
-      while (gm1 <= nm0 && nm1 == divup(nm0, gm1)) gm1++;
+      while (gm1 <= nm0 && nm1 == numext::div_ceil(nm0, gm1)) gm1++;
       if (gm1 > nm0) break;
       // Check the candidate.
       int res = checkGrain(m, n, bm, bn, bk, gm1, gn, gm, gn, num_threads,
                            shard_by_col);
       if (res < 0) break;
-      nm1 = divup(nm0, gm1);
+      nm1 = numext::div_ceil(nm0, gm1);
       if (res == 0) continue;
       // Commit new grain size.
       gm = gm1;
@@ -1508,15 +1509,15 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
                  int num_threads, bool shard_by_col) const {
     Index gn = 1;
     Index gn1 = 1;
-    Index nn0 = divup(n, bn);
+    Index nn0 = numext::div_ceil(n, bn);
     Index nn1 = nn0;
     for (;;) {
-      while (gn1 <= nn0 && nn1 == divup(nn0, gn1)) gn1++;
+      while (gn1 <= nn0 && nn1 == numext::div_ceil(nn0, gn1)) gn1++;
       if (gn1 > nn0) break;
       int res = checkGrain(m, n, bm, bn, bk, gm, gn1, gm, gn, num_threads,
                            shard_by_col);
       if (res < 0) break;
-      nn1 = divup(nn0, gn1);
+      nn1 = numext::div_ceil(nn0, gn1);
       if (res == 0) continue;
       gn = gn1;
     }
@@ -1543,14 +1544,14 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
     // But 2/4 yield 6/3 tasks, which gives us parallelism of 0.75 (at most 3/4
     // of cores will be busy). While grain size 3 gives us 4 tasks, which gives
     // us parallelism of 1 (we can load all cores).
-    Index nm0 = divup(m, bm);
-    Index nn0 = divup(n, bn);
-    Index new_tasks = divup(nm0, gm) * divup(nn0, gn);
+    Index nm0 = numext::div_ceil(m, bm);
+    Index nn0 = numext::div_ceil(n, bn);
+    Index new_tasks = numext::div_ceil(nm0, gm) * numext::div_ceil(nn0, gn);
     double new_parallelism = static_cast<double>(new_tasks) /
-                             (divup<int>(new_tasks, num_threads) * num_threads);
-    Index old_tasks = divup(nm0, oldgm) * divup(nn0, oldgn);
+                             (numext::div_ceil<int>(new_tasks, num_threads) * num_threads);
+    Index old_tasks = numext::div_ceil(nm0, oldgm) * numext::div_ceil(nn0, oldgn);
     double old_parallelism = static_cast<double>(old_tasks) /
-                             (divup<int>(old_tasks, num_threads) * num_threads);
+                             (numext::div_ceil<int>(old_tasks, num_threads) * num_threads);
     if (new_parallelism > old_parallelism || new_parallelism == 1) return 1;
     return 0;
   }

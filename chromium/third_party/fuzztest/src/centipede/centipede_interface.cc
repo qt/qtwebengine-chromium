@@ -16,15 +16,23 @@
 
 #include <unistd.h>
 
+#include <algorithm>
+#include <atomic>
 #include <csignal>
 #include <cstdint>
 #include <cstdlib>
-#include <filesystem>
+#include <filesystem>  // NOLINT
+#include <functional>
+#include <iostream>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <thread>  // NOLINT(build/c++11)
 #include <vector>
 
+#include "absl/base/optimization.h"
+#include "absl/log/check.h"
+#include "absl/log/log.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_join.h"
 #include "absl/strings/str_replace.h"
@@ -37,16 +45,20 @@
 #include "./centipede/centipede.h"
 #include "./centipede/centipede_callbacks.h"
 #include "./centipede/command.h"
+#include "./centipede/corpus.h"
 #include "./centipede/coverage.h"
 #include "./centipede/defs.h"
 #include "./centipede/distill.h"
 #include "./centipede/environment.h"
-#include "./centipede/logging.h"
+#include "./centipede/feature.h"
+#include "./centipede/logging.h"  // IWYU pragma: keep
 #include "./centipede/minimize_crash.h"
+#include "./centipede/pc_info.h"
 #include "./centipede/remote_file.h"
 #include "./centipede/shard_reader.h"
 #include "./centipede/stats.h"
 #include "./centipede/util.h"
+#include "./centipede/workdir.h"
 
 namespace centipede {
 
@@ -74,14 +86,15 @@ void SetSignalHandlers(absl::Time stop_at) {
 
   if (stop_at != absl::InfiniteFuture()) {
     const absl::Duration stop_in = stop_at - absl::Now();
+    // Setting an alarm works only if the delay is longer than 1 second.
     if (stop_in >= absl::Seconds(1)) {
       LOG(INFO) << "Setting alarm for --stop_at time " << stop_at << " (in "
                 << stop_in << ")";
       PCHECK(alarm(absl::ToInt64Seconds(stop_in)) == 0) << "Alarm already set";
     } else {
       LOG(WARNING) << "Already reached --stop_at time " << stop_at
-                   << ": triggering alarm now";
-      PCHECK(kill(0, SIGALRM) == 0) << "Alarm triggering failed";
+                   << " upon starting: winding down immediately";
+      RequestEarlyExit(EXIT_SUCCESS);  // => expected outcome
     }
   }
 }
@@ -152,33 +165,13 @@ void ReportStatsThread(const std::atomic<bool> &continue_running,
 
 // Loads corpora from work dirs provided in `env.args`, analyzes differences.
 // Returns EXIT_SUCCESS on success, EXIT_FAILURE otherwise.
-int Analyze(const Environment &env, const BinaryInfo &binary_info) {
+int Analyze(const Environment &env) {
   LOG(INFO) << "Analyze " << absl::StrJoin(env.args, ",");
   CHECK_EQ(env.args.size(), 2) << "for now, Analyze supports only 2 work dirs";
   CHECK(!env.binary.empty()) << "--binary must be used";
   std::vector<std::vector<CorpusRecord>> corpora;
-  for (const auto &workdir : env.args) {
-    LOG(INFO) << "Reading " << workdir;
-    Environment workdir_env = env;
-    workdir_env.workdir = workdir;
-    corpora.emplace_back();
-    auto &corpus = corpora.back();
-    for (size_t shard_index = 0; shard_index < env.total_shards;
-         ++shard_index) {
-      auto corpus_path = workdir_env.MakeCorpusPath(shard_index);
-      auto features_path = workdir_env.MakeFeaturesPath(shard_index);
-      LOG(INFO) << "Loading corpus shard: " << corpus_path << " "
-                << features_path;
-      ReadShard(corpus_path, features_path,
-                [&corpus](const ByteArray &input, FeatureVec &features) {
-                  corpus.push_back({input, features});
-                });
-    }
-    CHECK(!corpus.empty()) << "the corpus is empty, nothing to analyze";
-    LOG(INFO) << "corpus size " << corpus.size();
-  }
-  CHECK_EQ(corpora.size(), 2);
-  AnalyzeCorpora(binary_info, corpora[0], corpora[1]);
+  AnalyzeCorporaToLog(env.binary_name, env.binary_hash, env.args[0],
+                      env.args[1]);
   return EXIT_SUCCESS;
 }
 
@@ -224,17 +217,26 @@ int CentipedeMain(const Environment &env,
 
   // Create the local temporary dir and remote coverage dirs once, before
   // creating any threads.
-  const auto coverage_dir = env.MakeCoverageDirPath();
-  RemoteMkdir(env.MakeCoverageDirPath());
+  const auto coverage_dir = WorkDir{env}.CoverageDirPath();
+  RemoteMkdir(coverage_dir);
   const auto tmpdir = TemporaryLocalDirPath();
   CreateLocalDirRemovedAtExit(tmpdir);
   LOG(INFO) << "Coverage dir: " << coverage_dir
             << "; temporary dir: " << tmpdir;
 
   BinaryInfo binary_info;
-  {
+  // Some fuzz targets have coverage not based on instrumenting binaries.
+  // For those target, we should not populate binary info.
+  if (env.populate_binary_info) {
     ScopedCentipedeCallbacks scoped_callbacks(callbacks_factory, env);
     scoped_callbacks.callbacks()->PopulateBinaryInfo(binary_info);
+  }
+
+  if (env.save_binary_info) {
+    const std::string binary_info_dir = WorkDir{env}.BinaryInfoDirPath();
+    RemoteMkdir(binary_info_dir);
+    LOG(INFO) << "Serializing binary info to: " << binary_info_dir;
+    binary_info.Write(binary_info_dir);
   }
 
   std::string pcs_file_path;
@@ -243,7 +245,7 @@ int CentipedeMain(const Environment &env,
     SavePCTableToFile(binary_info.pc_table, pcs_file_path);
   }
 
-  if (env.analyze) return Analyze(env, binary_info);
+  if (env.analyze) return Analyze(env);
 
   if (env.use_pcpair_features) {
     CHECK(!binary_info.pc_table.empty())

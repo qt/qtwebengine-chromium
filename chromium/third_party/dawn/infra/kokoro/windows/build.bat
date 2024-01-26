@@ -1,16 +1,29 @@
-@rem Copyright 2021 The Tint and Dawn Authors.
+@rem Copyright 2021 The Dawn & Tint Authors
 @rem
-@rem Licensed under the Apache License, Version 2.0 (the "License");
-@rem you may not use this file except in compliance with the License.
-@rem You may obtain a copy of the License at
+@rem Redistribution and use in source and binary forms, with or without
+@rem modification, are permitted provided that the following conditions are met:
 @rem
-@rem     http://www.apache.org/licenses/LICENSE-2.0
+@rem 1. Redistributions of source code must retain the above copyright notice, this
+@rem    list of conditions and the following disclaimer.
 @rem
-@rem Unless required by applicable law or agreed to in writing, software
-@rem distributed under the License is distributed on an "AS IS" BASIS,
-@rem WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-@rem See the License for the specific language governing permissions and
-@rem limitations under the License.
+@rem 2. Redistributions in binary form must reproduce the above copyright notice,
+@rem    this list of conditions and the following disclaimer in the documentation
+@rem    and/or other materials provided with the distribution.
+@rem
+@rem 3. Neither the name of the copyright holder nor the names of its
+@rem    contributors may be used to endorse or promote products derived from
+@rem    this software without specific prior written permission.
+@rem
+@rem THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+@rem AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+@rem IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+@rem DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+@rem FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+@rem DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+@rem SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+@rem CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+@rem OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+@rem OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 @echo off
 SETLOCAL ENABLEDELAYEDEXPANSION
@@ -156,7 +169,13 @@ cd /d %SRC_DIR% || goto :error
 rem Run tests with DXC, FXC and Metal validation
 set OLD_PATH=%PATH%
 set PATH=C:\Program Files\Metal Developer Tools\macos\bin;%PATH%
-call git bash -- ./test/tint/test-all.sh %BUILD_DIR%/tint.exe --verbose || goto :error
+if "%BUILD_TYPE%" == "Debug" (
+    rem TODO(crbug.com/2034): Add back glsl once we fix the ~7x slowdown in Windows Debug builds
+    set TEST_ALL_FORMATS=wgsl,spvasm,msl,hlsl
+) else (
+    set TEST_ALL_FORMATS=wgsl,spvasm,msl,hlsl,glsl
+)
+call git bash -- ./test/tint/test-all.sh %BUILD_DIR%/tint.exe --verbose --format %TEST_ALL_FORMATS% || goto :error
 set PATH=%OLD_PATH%
 @echo off
 

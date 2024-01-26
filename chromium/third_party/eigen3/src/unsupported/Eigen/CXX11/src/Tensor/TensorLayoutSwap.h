@@ -10,6 +10,7 @@
 #ifndef EIGEN_CXX11_TENSOR_TENSOR_LAYOUT_SWAP_H
 #define EIGEN_CXX11_TENSOR_TENSOR_LAYOUT_SWAP_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

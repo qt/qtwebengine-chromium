@@ -10,6 +10,7 @@
 #ifndef EIGEN_ARRAY_H
 #define EIGEN_ARRAY_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

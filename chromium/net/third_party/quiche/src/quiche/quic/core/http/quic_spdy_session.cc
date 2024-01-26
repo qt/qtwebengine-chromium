@@ -51,7 +51,6 @@ using spdy::SpdyHeadersIR;
 using spdy::SpdyPingId;
 using spdy::SpdyPriority;
 using spdy::SpdyPriorityIR;
-using spdy::SpdyPushPromiseIR;
 using spdy::SpdySerializedFrame;
 using spdy::SpdySettingsId;
 using spdy::SpdyStreamId;
@@ -197,9 +196,11 @@ class QuicSpdySession::SpdyFramerVisitor
         /* is_sent = */ false, header_list_.compressed_header_bytes(),
         header_list_.uncompressed_header_bytes());
 
-    if (session_->IsConnected()) {
+    // Ignore pushed request headers.
+    if (session_->IsConnected() && !expecting_pushed_headers_) {
       session_->OnHeaderList(header_list_);
     }
+    expecting_pushed_headers_ = false;
     header_list_.Clear();
   }
 
@@ -355,18 +356,24 @@ class QuicSpdySession::SpdyFramerVisitor
                     QUIC_INVALID_HEADERS_STREAM_DATA);
   }
 
-  void OnPushPromise(SpdyStreamId stream_id, SpdyStreamId promised_stream_id,
-                     bool /*end*/) override {
+  void OnPushPromise(SpdyStreamId /*stream_id*/,
+                     SpdyStreamId promised_stream_id, bool /*end*/) override {
     QUICHE_DCHECK(!VersionUsesHttp3(session_->transport_version()));
     if (session_->perspective() != Perspective::IS_CLIENT) {
+      // PUSH_PROMISE sent by a client is a protocol violation.
       CloseConnection("PUSH_PROMISE not supported.",
                       QUIC_INVALID_HEADERS_STREAM_DATA);
       return;
     }
-    if (!session_->IsConnected()) {
-      return;
-    }
-    session_->OnPushPromise(stream_id, promised_stream_id);
+
+    // Push streams are ignored anyway, reset the stream to save bandwidth.
+    session_->MaybeSendRstStreamFrame(
+        promised_stream_id,
+        QuicResetStreamError::FromInternal(QUIC_REFUSED_STREAM),
+        /* bytes_written = */ 0);
+
+    QUICHE_DCHECK(!expecting_pushed_headers_);
+    expecting_pushed_headers_ = true;
   }
 
   void OnContinuation(SpdyStreamId /*stream_id*/, size_t /*payload_size*/,
@@ -430,6 +437,10 @@ class QuicSpdySession::SpdyFramerVisitor
 
   QuicSpdySession* session_;
   QuicHeaderList header_list_;
+
+  // True if the next OnHeaderFrameEnd() call signals the end of pushed request
+  // headers.
+  bool expecting_pushed_headers_ = false;
 };
 
 Http3DebugVisitor::Http3DebugVisitor() {}
@@ -461,8 +472,6 @@ QuicSpdySession::QuicSpdySession(
       max_outbound_header_list_size_(std::numeric_limits<size_t>::max()),
       stream_id_(
           QuicUtils::GetInvalidStreamId(connection->transport_version())),
-      promised_stream_id_(
-          QuicUtils::GetInvalidStreamId(connection->transport_version())),
       frame_len_(0),
       fin_(false),
       spdy_framer_(SpdyFramer::ENABLE_COMPRESSION),
@@ -471,7 +480,11 @@ QuicSpdySession::QuicSpdySession(
       destruction_indicator_(123456789),
       allow_extended_connect_(perspective() == Perspective::IS_SERVER &&
                               VersionUsesHttp3(transport_version())),
-      force_buffer_requests_until_settings_(false) {
+      force_buffer_requests_until_settings_(false),
+      quic_enable_h3_datagrams_flag_(
+          GetQuicReloadableFlag(quic_enable_h3_datagrams)),
+      do_not_increase_max_streams_after_h3_goaway_flag_(GetQuicReloadableFlag(
+          quic_do_not_increase_max_streams_after_h3_goaway)) {
   h2_deframer_.set_visitor(spdy_framer_visitor_.get());
   h2_deframer_.set_debug_visitor(spdy_framer_visitor_.get());
   spdy_framer_.set_debug_visitor(spdy_framer_visitor_.get());
@@ -533,6 +546,7 @@ void QuicSpdySession::FillSettingsFrame() {
         settings_.values[SETTINGS_H3_DATAGRAM_DRAFT04] = 1;
         break;
       case HttpDatagramSupport::kRfc:
+        QUIC_RELOADABLE_FLAG_COUNT(quic_enable_h3_datagrams);
         settings_.values[SETTINGS_H3_DATAGRAM] = 1;
         break;
       case HttpDatagramSupport::kRfcAndDraft04:
@@ -733,12 +747,12 @@ void QuicSpdySession::OnHttp3GoAway(uint64_t id) {
       << "HTTP/3 GOAWAY received on version " << version();
 
   if (last_received_http3_goaway_id_.has_value() &&
-      id > last_received_http3_goaway_id_.value()) {
+      id > *last_received_http3_goaway_id_) {
     CloseConnectionWithDetails(
         QUIC_HTTP_GOAWAY_ID_LARGER_THAN_PREVIOUS,
         absl::StrCat("GOAWAY received with ID ", id,
                      " greater than previously received ID ",
-                     last_received_http3_goaway_id_.value()));
+                     *last_received_http3_goaway_id_));
     return;
   }
   last_received_http3_goaway_id_ = id;
@@ -809,12 +823,16 @@ void QuicSpdySession::SendHttp3GoAway(QuicErrorCode error_code,
         ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET);
     return;
   }
-  QuicStreamId stream_id;
-
-  stream_id = QuicUtils::GetMaxClientInitiatedBidirectionalStreamId(
-      transport_version());
+  if (do_not_increase_max_streams_after_h3_goaway_flag_) {
+    QUICHE_RELOADABLE_FLAG_COUNT(
+        quic_do_not_increase_max_streams_after_h3_goaway);
+    ietf_streamid_manager().StopIncreasingIncomingMaxStreams();
+  }
+  QuicStreamId stream_id =
+      QuicUtils::GetMaxClientInitiatedBidirectionalStreamId(
+          transport_version());
   if (last_sent_http3_goaway_id_.has_value() &&
-      last_sent_http3_goaway_id_.value() <= stream_id) {
+      *last_sent_http3_goaway_id_ <= stream_id) {
     // Do not send GOAWAY frame with a higher id, because it is forbidden.
     // Do not send one with same stream id as before, since frames on the
     // control stream are guaranteed to be processed in order.
@@ -823,31 +841,6 @@ void QuicSpdySession::SendHttp3GoAway(QuicErrorCode error_code,
 
   send_control_stream_->SendGoAway(stream_id);
   last_sent_http3_goaway_id_ = stream_id;
-}
-
-void QuicSpdySession::WritePushPromise(QuicStreamId original_stream_id,
-                                       QuicStreamId promised_stream_id,
-                                       Http2HeaderBlock headers) {
-  if (perspective() == Perspective::IS_CLIENT) {
-    QUIC_BUG(quic_bug_10360_4) << "Client shouldn't send PUSH_PROMISE";
-    return;
-  }
-
-  if (VersionUsesHttp3(transport_version())) {
-    QUIC_BUG(quic_bug_12477_6)
-        << "Support for server push over HTTP/3 has been removed.";
-    return;
-  }
-
-  SpdyPushPromiseIR push_promise(original_stream_id, promised_stream_id,
-                                 std::move(headers));
-  // PUSH_PROMISE must not be the last frame sent out, at least followed by
-  // response headers.
-  push_promise.set_fin(false);
-
-  SpdySerializedFrame frame(spdy_framer_.SerializeFrame(push_promise));
-  headers_stream()->WriteOrBufferData(
-      absl::string_view(frame.data(), frame.size()), false, nullptr);
 }
 
 void QuicSpdySession::SendInitialData() {
@@ -982,16 +975,6 @@ size_t QuicSpdySession::WriteHeadersOnHeadersStreamImpl(
       /* is_sent = */ true, compressed_size, uncompressed_size);
 
   return frame.size();
-}
-
-void QuicSpdySession::OnPromiseHeaderList(
-    QuicStreamId /*stream_id*/, QuicStreamId /*promised_stream_id*/,
-    size_t /*frame_len*/, const QuicHeaderList& /*header_list*/) {
-  std::string error =
-      "OnPromiseHeaderList should be overridden in client code.";
-  QUIC_BUG(quic_bug_10360_6) << error;
-  connection()->CloseConnection(QUIC_INTERNAL_ERROR, error,
-                                ConnectionCloseBehavior::SILENT_CLOSE);
 }
 
 bool QuicSpdySession::ResumeApplicationState(ApplicationState* cached_state) {
@@ -1406,20 +1389,8 @@ void QuicSpdySession::OnHeaders(SpdyStreamId stream_id, bool has_priority,
   }
   QUICHE_DCHECK_EQ(QuicUtils::GetInvalidStreamId(transport_version()),
                    stream_id_);
-  QUICHE_DCHECK_EQ(QuicUtils::GetInvalidStreamId(transport_version()),
-                   promised_stream_id_);
   stream_id_ = stream_id;
   fin_ = fin;
-}
-
-void QuicSpdySession::OnPushPromise(SpdyStreamId stream_id,
-                                    SpdyStreamId promised_stream_id) {
-  QUICHE_DCHECK_EQ(QuicUtils::GetInvalidStreamId(transport_version()),
-                   stream_id_);
-  QUICHE_DCHECK_EQ(QuicUtils::GetInvalidStreamId(transport_version()),
-                   promised_stream_id_);
-  stream_id_ = stream_id;
-  promised_stream_id_ = promised_stream_id;
 }
 
 // TODO (wangyix): Why is SpdyStreamId used instead of QuicStreamId?
@@ -1437,20 +1408,11 @@ void QuicSpdySession::OnPriority(SpdyStreamId stream_id,
 void QuicSpdySession::OnHeaderList(const QuicHeaderList& header_list) {
   QUIC_DVLOG(1) << ENDPOINT << "Received header list for stream " << stream_id_
                 << ": " << header_list.DebugString();
-  // This code path is only executed for push promise in IETF QUIC.
-  if (VersionUsesHttp3(transport_version())) {
-    QUICHE_DCHECK(promised_stream_id_ !=
-                  QuicUtils::GetInvalidStreamId(transport_version()));
-  }
-  if (promised_stream_id_ ==
-      QuicUtils::GetInvalidStreamId(transport_version())) {
-    OnStreamHeaderList(stream_id_, fin_, frame_len_, header_list);
-  } else {
-    OnPromiseHeaderList(stream_id_, promised_stream_id_, frame_len_,
-                        header_list);
-  }
+  QUICHE_DCHECK(!VersionUsesHttp3(transport_version()));
+
+  OnStreamHeaderList(stream_id_, fin_, frame_len_, header_list);
+
   // Reset state for the next frame.
-  promised_stream_id_ = QuicUtils::GetInvalidStreamId(transport_version());
   stream_id_ = QuicUtils::GetInvalidStreamId(transport_version());
   fin_ = false;
   frame_len_ = 0;
@@ -1470,9 +1432,8 @@ bool QuicSpdySession::HasActiveRequestStreams() const {
   return GetNumActiveStreams() + num_draining_streams() > 0;
 }
 
-QuicStream* QuicSpdySession::ProcessPendingStream(PendingStream* pending) {
-  QUICHE_DCHECK(VersionUsesHttp3(transport_version()));
-  QUICHE_DCHECK(connection()->connected());
+QuicStream* QuicSpdySession::ProcessReadUnidirectionalPendingStream(
+    PendingStream* pending) {
   struct iovec iov;
   if (!pending->sequencer()->GetReadableRegion(&iov)) {
     // The first byte hasn't been received yet.
@@ -1637,7 +1598,7 @@ void QuicSpdySession::BeforeConnectionCloseSent() {
     stream_id += QuicUtils::StreamIdDelta(transport_version());
   }
   if (last_sent_http3_goaway_id_.has_value() &&
-      last_sent_http3_goaway_id_.value() <= stream_id) {
+      *last_sent_http3_goaway_id_ <= stream_id) {
     // Do not send GOAWAY frame with a higher id, because it is forbidden.
     // Do not send one with same stream id as before, since frames on the
     // control stream are guaranteed to be processed in order.
@@ -1941,6 +1902,9 @@ void QuicSpdySession::DatagramObserver::OnDatagramProcessed(
 }
 
 HttpDatagramSupport QuicSpdySession::LocalHttpDatagramSupport() {
+  if (quic_enable_h3_datagrams_flag_) {
+    return HttpDatagramSupport::kRfc;
+  }
   return HttpDatagramSupport::kNone;
 }
 

@@ -155,7 +155,9 @@ ScriptPromise ImageBitmapFactories::CreateImageBitmapFromBlob(
     ImageBitmapSource* bitmap_source,
     absl::optional<gfx::Rect> crop_rect,
     const ImageBitmapOptions* options) {
-  DCHECK(script_state->ContextIsValid());
+  if (!script_state->ContextIsValid()) {
+    return ScriptPromise();
+  }
 
   // imageOrientation: 'from-image' will be used to replace imageOrientation:
   // 'none'. Adding a deprecation warning when 'none' is called in
@@ -368,7 +370,7 @@ void DecodeImageOnDecoderThread(
       SegmentReader::CreateFromSkData(
           SkData::MakeWithoutCopy(contents.Data(), contents.DataLength())),
       data_complete, alpha_option, ImageDecoder::kDefaultBitDepth,
-      color_behavior);
+      color_behavior, Platform::GetMaxDecodedImageBytes());
   sk_sp<SkImage> frame;
   ImageOrientationEnum orientation = ImageOrientationEnum::kDefault;
   if (decoder) {

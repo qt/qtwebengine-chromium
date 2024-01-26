@@ -7,7 +7,7 @@
 .message {
   line-height: 20px;
   font-size: 14px;
-  color: var(--color-text-secondary);
+  color: var(--override-markdown-view-message-color, --sys-color-token-subtle);
   margin-bottom: 4px;
   user-select: text;
 }
@@ -37,9 +37,57 @@
 }
 
 .message code {
-  color: var(--color-text-primary);
+  color: var(--sys-color-on-surface);
   font-size: 12px;
   user-select: text;
   cursor: text;
-  background: var(--color-background-elevation-1);
+  background: var(--sys-color-surface1);
+}
+
+.codeblock {
+  margin-bottom: 8px;
+  box-sizing: border-box;
+  border-radius: 4px;
+  background-color: var(--sys-color-surface5);
+  color: var(--sys-color-on-surface);
+}
+
+.codeblock .toolbar {
+  box-sizing: border-box;
+  display: flex;
+  height: 28px;
+  flex-direction: row;
+  padding: 0 11px;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 400;
+  line-height: 16px;
+}
+
+.codeblock code {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 10px;
+  display: block;
+  overflow: auto;
+  white-space: pre;
+}
+
+.codeblock .lang {
+  padding: 6px 0;
+  flex: 1;
+}
+
+.codeblock .copy {
+  padding: 4px 0;
+}
+
+.devtools-link {
+  color: var(--sys-color-primary);
+  outline-offset: 2px;
+  text-decoration: none;
+}
+
+.devtools-link:hover {
+  text-decoration: underline;
 }

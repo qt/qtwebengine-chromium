@@ -30,6 +30,7 @@ devtools_module("sources") {
     "BreakpointEditDialog.ts",
     "CSSPlugin.ts",
     "CallStackSidebarPane.ts",
+    "CategorizedBreakpointL10n.ts",
     "CoveragePlugin.ts",
     "DebuggerPausedMessage.ts",
     "DebuggerPlugin.ts",
@@ -115,17 +116,6 @@ devtools_entrypoint("bundle") {
   ]
 
   visibility += devtools_panels_visibility
-}
-
-devtools_entrypoint("legacy") {
-  entrypoint = "sources-legacy.ts"
-
-  deps = [ ":bundle" ]
-
-  visibility = [
-    "../..:legacy_entrypoints",
-    "../../legacy_test_runner/*",
-  ]
 }
 
 devtools_entrypoint("meta") {

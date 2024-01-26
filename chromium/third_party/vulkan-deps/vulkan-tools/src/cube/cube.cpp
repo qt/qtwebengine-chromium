@@ -664,7 +664,8 @@ void Demo::destroy_texture(texture_object &tex_objs) {
 
 void Demo::draw() {
     // Ensure no more than FRAME_LAG renderings are outstanding
-    device.waitForFences(fences[frame_index], VK_TRUE, UINT64_MAX);
+    const vk::Result wait_result = device.waitForFences(fences[frame_index], VK_TRUE, UINT64_MAX);
+    VERIFY(wait_result == vk::Result::eSuccess || wait_result == vk::Result::eTimeout);
     device.resetFences({fences[frame_index]});
 
     vk::Result acquire_result;
@@ -2071,7 +2072,7 @@ void Demo::prepare_pipeline() {
                                                                             .setPDynamicState(&dynamicStateInfo)
                                                                             .setLayout(pipeline_layout)
                                                                             .setRenderPass(render_pass));
-    VERIFY(result == vk::Result::eSuccess);
+    VERIFY(pipline_return.result == vk::Result::eSuccess);
     pipeline = pipline_return.value.at(0);
 
     device.destroyShaderModule(frag_shader_module);

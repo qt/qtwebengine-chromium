@@ -26,10 +26,10 @@ concurrency:
   cancel-in-progress: true
 
 on:
-    push:
-    pull_request:
-        branches:
-            - main
+  push:
+  pull_request:
+    branches:
+    - main
 
 permissions: read-all
 
@@ -50,8 +50,8 @@ jobs:
                       cxx: g++
 
         steps:
-            - uses: actions/checkout@v3
-            - uses: actions/setup-python@v3
+            - uses: actions/checkout@v4
+            - uses: actions/setup-python@v4
               with:
                 python-version: '3.7'
             - uses: lukka/get-cmake@latest
@@ -73,6 +73,9 @@ jobs:
             - name: Install the loader
               run: cmake --install build --prefix build/install
 
+            - name: cat vulkan.pc
+              run: cat ./build/install/lib/pkgconfig/vulkan.pc
+
             - name: Validate pkg-config
               run: pkg-config --validate ./build/install/lib/pkgconfig/vulkan.pc
 
@@ -93,8 +96,8 @@ jobs:
         runs-on: ubuntu-22.04
 
         steps:
-            - uses: actions/checkout@v3
-            - uses: actions/setup-python@v3
+            - uses: actions/checkout@v4
+            - uses: actions/setup-python@v4
               with:
                 python-version: '3.7'
             - uses: lukka/get-cmake@latest
@@ -133,8 +136,8 @@ jobs:
                       cxx: g++
 
         steps:
-            - uses: actions/checkout@v3
-            - uses: actions/setup-python@v3
+            - uses: actions/checkout@v4
+            - uses: actions/setup-python@v4
               with:
                 python-version: '3.7'
             - uses: lukka/get-cmake@latest
@@ -175,8 +178,8 @@ jobs:
     linux-32-no-asm:
         runs-on: ubuntu-20.04
         steps:
-            - uses: actions/checkout@v3
-            - uses: actions/setup-python@v3
+            - uses: actions/checkout@v4
+            - uses: actions/setup-python@v4
               with:
                 python-version: '3.7'
             - uses: lukka/get-cmake@latest
@@ -216,8 +219,8 @@ jobs:
                 config: [ Debug, Release ]
 
         steps:
-            - uses: actions/checkout@v3
-            - uses: actions/setup-python@v3
+            - uses: actions/checkout@v4
+            - uses: actions/setup-python@v4
               with:
                 python-version: '3.7'
 
@@ -241,8 +244,8 @@ jobs:
                 arch: [ Win32, x64 ]
 
         steps:
-            - uses: actions/checkout@v3
-            - uses: actions/setup-python@v3
+            - uses: actions/checkout@v4
+            - uses: actions/setup-python@v4
               with:
                 python-version: '3.7'
 
@@ -273,8 +276,8 @@ jobs:
                 config: debug
 
       steps:
-          - uses: actions/checkout@v3
-          - uses: actions/setup-python@v3
+          - uses: actions/checkout@v4
+          - uses: actions/setup-python@v4
             with:
               python-version: '3.7'
           - uses: ilammy/msvc-dev-cmd@v1
@@ -299,8 +302,8 @@ jobs:
             config: [ Release ]
 
       steps:
-          - uses: actions/checkout@v3
-          - uses: actions/setup-python@v3
+          - uses: actions/checkout@v4
+          - uses: actions/setup-python@v4
             with:
               python-version: '3.7'
           - uses: ilammy/msvc-dev-cmd@v1
@@ -336,8 +339,8 @@ jobs:
                     static_build: BUILD_STATIC_LOADER=ON
 
         steps:
-            - uses: actions/checkout@v3
-            - uses: actions/setup-python@v3
+            - uses: actions/checkout@v4
+            - uses: actions/setup-python@v4
               with:
                 python-version: '3.7'
             - uses: lukka/get-cmake@latest
@@ -347,6 +350,7 @@ jobs:
                 # Specify the minimum version of macOS on which the target binaries are to be deployed.
                 # https://cmake.org/cmake/help/latest/envvar/MACOSX_DEPLOYMENT_TARGET.html
                 MACOSX_DEPLOYMENT_TARGET: 10.12
+                LDFLAGS: -Wl,-fatal_warnings
 
             - name: Build the loader
               run: cmake --build build
@@ -366,8 +370,8 @@ jobs:
                 static_build: [ BUILD_STATIC_LOADER=ON, BUILD_STATIC_LOADER=OFF ]
 
         steps:
-            - uses: actions/checkout@v3
-            - uses: actions/setup-python@v3
+            - uses: actions/checkout@v4
+            - uses: actions/setup-python@v4
               with:
                 python-version: '3.7'
             - uses: lukka/get-cmake@latest
@@ -386,66 +390,48 @@ jobs:
               run: ctest --output-on-failure -E UnknownFunction
 
 
-    gn:
-        runs-on: ubuntu-20.04
+    chromium:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v4
+        - run: scripts/gn/gn.py
 
-        strategy:
-            matrix:
-                config: [ Debug, Release ]
-
-        steps:
-            - uses: actions/checkout@v3
-            - name: Get depot tools
-              run: |
-                git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git depot_tools
-                echo "$GITHUB_WORKSPACE/depot_tools" >> $GITHUB_PATH
-
-            - name: Fetch and install headers
-              run: ./build-gn/update_deps.sh
-
-            - name: Generate build files
-              run: gn gen out/${{matrix.config}} --args="is_debug=true"
-              if: matrix.config != 'Release'
-
-            - name: Generate build files
-              run: gn gen out/${{matrix.config}} --args="is_debug=false"
-              if: matrix.config == 'Release'
-
-            - name: Build the loader
-              run: ninja -C out/${{matrix.config}}
-
-    # MinGW uses JWASM to compile the assembly code - since that isn't available on github actions, this run is disabled
-
-    # mingw:
-    #   runs-on: windows-2022
-    #   defaults:
-    #     run:
-    #       shell: bash
-    #   steps:
-    #     - uses: actions/checkout@v3
-    #     - name: Setup ccache
-    #       uses: hendrikmuhs/ccache-action@v1.2
-    #       with:
-    #         key: mingw-ccache
-    #     - uses: actions/setup-python@v4
-    #       with:
-    #         python-version: '3.8'
-    #     - uses: lukka/get-cmake@latest
-    #     - name: GCC Version
-    #       run: gcc --version # If this fails MINGW is not setup correctly
-    #     - name: Configure
-    #       run: cmake -S. -B build -D UPDATE_DEPS=ON -D CMAKE_BUILD_TYPE=Release
-    #       env:
-    #         LDFLAGS: -fuse-ld=lld # MINGW linking is very slow. Use llvm linker instead.
-    #         CMAKE_C_COMPILER_LAUNCHER: ccache
-    #         CMAKE_CXX_COMPILER_LAUNCHER: ccache
-    #         CMAKE_GENERATOR: Ninja
-    #     - name: Build
-    #       run: cmake --build build -- --quiet
-    #     - name: Install
-    #       run: cmake --install build --prefix build/install
-    #     - name: MinGW ccache stats # The Post Setup ccache doesn't work right on MinGW
-    #       run: ccache --show-stats
+    mingw:
+      runs-on: windows-2022
+      defaults:
+        run:
+          shell: bash
+      steps:
+        - uses: actions/checkout@v4
+        - name: Setup ccache
+          uses: hendrikmuhs/ccache-action@v1.2
+          with:
+            key: mingw-ccache
+        - uses: actions/setup-python@v4
+          with:
+            python-version: '3.8'
+        - uses: lukka/get-cmake@latest
+        - name: GCC Version
+          run: gcc --version # If this fails MINGW is not setup correctly
+        - name: Setup uasm
+          run: |
+            C:/msys64/usr/bin/pacman -Sy --noconfirm --needed mingw-w64-x86_64-uasm
+            printf '%s\n' 'C:/msys64/mingw64/bin' >> $GITHUB_PATH
+        - name: UASM Check
+          run: uasm -?
+        - name: Configure
+          run: cmake -S. -B build -D UPDATE_DEPS=ON -D CMAKE_BUILD_TYPE=Release
+          env:
+            LDFLAGS: -fuse-ld=lld # MINGW linking is very slow. Use llvm linker instead.
+            CMAKE_C_COMPILER_LAUNCHER: ccache
+            CMAKE_CXX_COMPILER_LAUNCHER: ccache
+            CMAKE_GENERATOR: Ninja
+        - name: Build
+          run: cmake --build build -- --quiet
+        - name: Install
+          run: cmake --install build --prefix build/install
+        - name: MinGW ccache stats # The Post Setup ccache doesn't work right on MinGW
+          run: ccache --show-stats
 
     mingw-no-asm:
       runs-on: windows-2022
@@ -453,7 +439,7 @@ jobs:
         run:
           shell: bash
       steps:
-        - uses: actions/checkout@v3
+        - uses: actions/checkout@v4
         - name: Setup ccache
           uses: hendrikmuhs/ccache-action@v1.2
           with:
@@ -465,7 +451,39 @@ jobs:
         - name: GCC Version
           run: gcc --version # If this fails MINGW is not setup correctly
         - name: Configure
-          run: cmake -S. -B build -D UPDATE_DEPS=ON -D CMAKE_BUILD_TYPE=Release -D USE_MASM=OFF -D ENABLE_WERROR=ON
+          # Make sure this doesn't fail even without -D USE_MASM=OFF and without uasm
+          run: cmake -S. -B build -D UPDATE_DEPS=ON -D CMAKE_BUILD_TYPE=Release
+          env:
+            LDFLAGS: -fuse-ld=lld # MINGW linking is very slow. Use llvm linker instead.
+            CMAKE_C_COMPILER_LAUNCHER: ccache
+            CMAKE_CXX_COMPILER_LAUNCHER: ccache
+            CMAKE_GENERATOR: Ninja
+        - name: Build
+          run: cmake --build build -- --quiet
+        - name: Install
+          run: cmake --install build --prefix build/install
+        - name: MinGW ccache stats # The Post Setup ccache doesn't work right on MinGW
+          run: ccache --show-stats
+
+    mingw-no-asm-explicit:
+      runs-on: windows-2022
+      defaults:
+        run:
+          shell: bash
+      steps:
+        - uses: actions/checkout@v4
+        - name: Setup ccache
+          uses: hendrikmuhs/ccache-action@v1.2
+          with:
+            key: mingw-ccache
+        - uses: actions/setup-python@v4
+          with:
+            python-version: '3.8'
+        - uses: lukka/get-cmake@latest
+        - name: GCC Version
+          run: gcc --version # If this fails MINGW is not setup correctly
+        - name: Configure
+          run: cmake -S. -B build -D UPDATE_DEPS=ON -D CMAKE_BUILD_TYPE=Release -D ENABLE_WERROR=ON -D USE_MASM=OFF
           env:
             LDFLAGS: -fuse-ld=lld # MINGW linking is very slow. Use llvm linker instead.
             CMAKE_C_COMPILER_LAUNCHER: ccache

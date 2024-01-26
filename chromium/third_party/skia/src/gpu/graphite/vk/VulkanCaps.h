@@ -49,10 +49,7 @@ public:
     uint32_t channelMask(const TextureInfo&) const override;
 
     bool isRenderable(const TextureInfo&) const override;
-    bool isStorage(const TextureInfo&) const override {
-        // TODO: support storage textures
-        return false;
-    }
+    bool isStorage(const TextureInfo&) const override;
 
     void buildKeyForTexture(SkISize dimensions,
                             const TextureInfo&,
@@ -76,8 +73,6 @@ public:
     bool shouldPersistentlyMapCpuToGpuBuffers() const {
         return fShouldPersistentlyMapCpuToGpuBuffers;
     }
-
-    bool supportsInlineUniformBlocks() const { return fSupportsInlineUniformBlocks; }
 
     uint32_t maxVertexAttributes() const {
         return fMaxVertexAttributes;
@@ -155,7 +150,6 @@ private:
                   const VkPhysicalDeviceProperties&,
                   VkFormat);
 
-
         bool isTexturable(VkImageTiling) const;
         bool isRenderable(VkImageTiling, uint32_t sampleCount) const;
         bool isStorage(VkImageTiling) const;
@@ -167,7 +161,7 @@ private:
         SupportedSampleCounts fSupportedSampleCounts;
 
         // Indicates that a format is only supported if we are wrapping a texture with it.
-        SkDEBUGCODE(bool fIsWrappedOnly;)
+        SkDEBUGCODE(bool fIsWrappedOnly = false;)
 
     private:
         bool isTexturable(VkFormatFeatureFlags) const;
@@ -220,7 +214,6 @@ private:
     bool fShouldAlwaysUseDedicatedImageMemory = false;
     bool fGpuOnlyBuffersMorePerformant = false;
     bool fShouldPersistentlyMapCpuToGpuBuffers = true;
-    bool fSupportsInlineUniformBlocks = false;
 };
 
 } // namespace skgpu::graphite

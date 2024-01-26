@@ -43,9 +43,9 @@ class QuicSpdySessionPeer;
 
 class WebTransportHttp3UnidirectionalStream;
 
-QUIC_EXPORT_PRIVATE extern const size_t kMaxUnassociatedWebTransportStreams;
+QUICHE_EXPORT extern const size_t kMaxUnassociatedWebTransportStreams;
 
-class QUIC_EXPORT_PRIVATE Http3DebugVisitor {
+class QUICHE_EXPORT Http3DebugVisitor {
  public:
   Http3DebugVisitor();
   Http3DebugVisitor(const Http3DebugVisitor&) = delete;
@@ -145,13 +145,13 @@ inline constexpr WebTransportHttp3VersionSet
         WebTransportHttp3VersionSet({WebTransportHttp3Version::kDraft02,
                                      WebTransportHttp3Version::kDraft07});
 
-QUIC_EXPORT_PRIVATE std::string HttpDatagramSupportToString(
+QUICHE_EXPORT std::string HttpDatagramSupportToString(
     HttpDatagramSupport http_datagram_support);
-QUIC_EXPORT_PRIVATE std::ostream& operator<<(
+QUICHE_EXPORT std::ostream& operator<<(
     std::ostream& os, const HttpDatagramSupport& http_datagram_support);
 
 // A QUIC session for HTTP.
-class QUIC_EXPORT_PRIVATE QuicSpdySession
+class QUICHE_EXPORT QuicSpdySession
     : public QuicSession,
       public QpackEncoder::DecoderStreamErrorDelegate,
       public QpackDecoder::EncoderStreamErrorDelegate {
@@ -186,14 +186,6 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
   virtual void OnStreamHeaderList(QuicStreamId stream_id, bool fin,
                                   size_t frame_len,
                                   const QuicHeaderList& header_list);
-
-  // Called by |headers_stream_| when push promise headers have been
-  // completely received.  |fin| will be true if the fin flag was set
-  // in the headers.
-  virtual void OnPromiseHeaderList(QuicStreamId stream_id,
-                                   QuicStreamId promised_stream_id,
-                                   size_t frame_len,
-                                   const QuicHeaderList& header_list);
 
   // Called by |headers_stream_| when a PRIORITY frame has been received for a
   // stream. This method will only be called for server streams.
@@ -252,12 +244,6 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
   // has already been sent. Send connection close with |error_code| and |reason|
   // before encryption gets established.
   void SendHttp3GoAway(QuicErrorCode error_code, const std::string& reason);
-
-  // Write |headers| for |promised_stream_id| on |original_stream_id| in a
-  // PUSH_PROMISE frame to peer.
-  virtual void WritePushPromise(QuicStreamId original_stream_id,
-                                QuicStreamId promised_stream_id,
-                                spdy::Http2HeaderBlock headers);
 
   QpackEncoder* qpack_encoder();
   QpackDecoder* qpack_decoder();
@@ -332,15 +318,8 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
   // Called when the size of the compressed frame payload is available.
   void OnCompressedFrameSize(size_t frame_len);
 
-  // Called when a PUSH_PROMISE frame has been received.
-  // TODO(b/171463363): Remove.
-  void OnPushPromise(spdy::SpdyStreamId stream_id,
-                     spdy::SpdyStreamId promised_stream_id);
-
   // Called when the complete list of headers is available.
   void OnHeaderList(const QuicHeaderList& header_list);
-
-  QuicStreamId promised_stream_id() const { return promised_stream_id_; }
 
   // Initialze HTTP/3 unidirectional streams if |unidirectional| is true and
   // those streams are not initialized yet.
@@ -360,6 +339,9 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
   // received or sent.
   bool goaway_received() const;
   bool goaway_sent() const;
+  absl::optional<uint64_t> last_received_http3_goaway_id() {
+    return last_received_http3_goaway_id_;
+  }
 
   // Log header compression ratio histogram.
   // |using_qpack| is true for QPACK, false for HPACK.
@@ -480,6 +462,12 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
 
   QuicSpdyStream* GetOrCreateSpdyDataStream(const QuicStreamId stream_id);
 
+  // Returns a pointer to the incoming QPACK encoder stream (the one that
+  // belongs to the local decoding context). Might return nullptr.
+  QpackReceiveStream* GetQpackEncoderReceiveStream() const {
+    return qpack_encoder_receive_stream_;
+  }
+
   void OnConfigNegotiated() override;
 
  protected:
@@ -512,10 +500,13 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
   bool UsesPendingStreamForFrame(QuicFrameType type,
                                  QuicStreamId stream_id) const override;
 
-  // Processes incoming unidirectional streams; parses the stream type, and
-  // creates a new stream of the corresponding type.  Returns the pointer to the
-  // newly created stream, or nullptr if the stream type is not yet available.
-  QuicStream* ProcessPendingStream(PendingStream* pending) override;
+  // Called when a STREAM_FRAME is received on |pending| stream or
+  // ProcessAllPendingStreams() gets called. Processes incoming unidirectional
+  // streams; parses the stream type, and creates a new stream of the
+  // corresponding type. Returns the pointer to the newly created stream, or
+  // nullptr if the stream type is not yet available.
+  QuicStream* ProcessReadUnidirectionalPendingStream(
+      PendingStream* pending) override;
 
   size_t WriteHeadersOnHeadersStreamImpl(
       QuicStreamId id, spdy::Http2HeaderBlock headers, bool fin,
@@ -568,8 +559,7 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
   class SpdyFramerVisitor;
 
   // Proxies OnDatagramProcessed() calls to the session.
-  class QUIC_EXPORT_PRIVATE DatagramObserver
-      : public QuicDatagramQueue::Observer {
+  class QUICHE_EXPORT DatagramObserver : public QuicDatagramQueue::Observer {
    public:
     explicit DatagramObserver(QuicSpdySession* session) : session_(session) {}
     void OnDatagramProcessed(absl::optional<MessageStatus> status) override;
@@ -578,7 +568,7 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
     QuicSpdySession* session_;  // not owned
   };
 
-  struct QUIC_EXPORT_PRIVATE BufferedWebTransportStream {
+  struct QUICHE_EXPORT BufferedWebTransportStream {
     WebTransportSessionId session_id;
     QuicStreamId stream_id;
   };
@@ -656,7 +646,6 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
 
   // Data about the stream whose headers are being processed.
   QuicStreamId stream_id_;
-  QuicStreamId promised_stream_id_;
   size_t frame_len_;
   bool fin_;
 
@@ -717,6 +706,13 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
   // Allows forcing ShouldBufferRequestsUntilSettings() to true via
   // a connection option.
   bool force_buffer_requests_until_settings_;
+
+  // Latched value of quic_enable_h3_datagrams reloadable flag.
+  bool quic_enable_h3_datagrams_flag_;
+
+  // Latched value of quic_do_not_increase_max_streams_after_h3_goaway
+  // reloadable flag.
+  bool do_not_increase_max_streams_after_h3_goaway_flag_;
 };
 
 }  // namespace quic

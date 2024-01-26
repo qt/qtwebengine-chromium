@@ -1,16 +1,29 @@
-// Copyright 2017 The Dawn Authors
+// Copyright 2017 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/Device.h"
 
@@ -101,7 +114,7 @@ auto GetOrCreate(ContentLessObjectCache<RefCountedT>& cache,
         }
         result = resultOrError.AcquireSuccess();
     }
-    ASSERT(result.Get() != nullptr);
+    DAWN_ASSERT(result.Get() != nullptr);
 
     bool inserted = false;
     std::tie(result, inserted) = cache.Insert(result.Get());
@@ -196,7 +209,7 @@ DeviceBase::DeviceBase(AdapterBase* adapter,
                        const DeviceDescriptor* descriptor,
                        const TogglesState& deviceToggles)
     : mAdapter(adapter), mToggles(deviceToggles), mNextPipelineCompatibilityToken(1) {
-    ASSERT(descriptor != nullptr);
+    DAWN_ASSERT(descriptor != nullptr);
 
     mDeviceLostCallback = descriptor->deviceLostCallback;
     mDeviceLostUserdata = descriptor->deviceLostUserdata;
@@ -214,10 +227,14 @@ DeviceBase::DeviceBase(AdapterBase* adapter,
     }
 
     if (descriptor->requiredLimits != nullptr) {
-        mLimits.v1 = ReifyDefaultLimits(descriptor->requiredLimits->limits);
+        mLimits.v1 =
+            ReifyDefaultLimits(descriptor->requiredLimits->limits, adapter->GetFeatureLevel());
     } else {
-        GetDefaultLimits(&mLimits.v1);
+        GetDefaultLimits(&mLimits.v1, adapter->GetFeatureLevel());
     }
+    // Get experimentalSubgroupLimits from physical device
+    mLimits.experimentalSubgroupLimits =
+        GetPhysicalDevice()->GetLimits().experimentalSubgroupLimits;
 
     mFormatTable = BuildFormatTable(this);
 
@@ -233,7 +250,7 @@ DeviceBase::DeviceBase(AdapterBase* adapter,
 }
 
 DeviceBase::DeviceBase() : mState(State::Alive), mToggles(ToggleStage::Device) {
-    GetDefaultLimits(&mLimits.v1);
+    GetDefaultLimits(&mLimits.v1, FeatureLevel::Core);
     mFormatTable = BuildFormatTable(this);
 }
 
@@ -244,9 +261,9 @@ DeviceBase::~DeviceBase() {
 }
 
 MaybeError DeviceBase::Initialize(Ref<QueueBase> defaultQueue) {
-    SetWGSLExtensionAllowList();
-
     mQueue = std::move(defaultQueue);
+
+    SetWGSLExtensionAllowList();
 
 #if defined(DAWN_ENABLE_ASSERTS)
     mUncapturedErrorCallback = [](WGPUErrorType, char const*, void*) {
@@ -279,7 +296,7 @@ MaybeError DeviceBase::Initialize(Ref<QueueBase> defaultQueue) {
     mDeprecationWarnings = std::make_unique<DeprecationWarnings>();
     mInternalPipelineStore = std::make_unique<InternalPipelineStore>(this);
 
-    ASSERT(GetPlatform() != nullptr);
+    DAWN_ASSERT(GetPlatform() != nullptr);
     mWorkerTaskPool = GetPlatform()->CreateWorkerTaskPool();
     mAsyncTaskManager = std::make_unique<AsyncTaskManager>(mWorkerTaskPool.get());
 
@@ -353,7 +370,7 @@ void DeviceBase::WillDropLastExternalRef() {
     } while (!mCallbackTaskManager->IsEmpty());
 
     auto deviceLock(GetScopedLock());
-    // Drop te device's reference to the queue. Because the application dropped the last external
+    // Drop the device's reference to the queue. Because the application dropped the last external
     // references, they can no longer get the queue from APIGetQueue().
     mQueue = nullptr;
 
@@ -472,7 +489,7 @@ void DeviceBase::Destroy() {
             // Getting disconnected is a transient state happening in a single API call so there
             // is always an external reference keeping the Device alive, which means the
             // destructor cannot run while BeingDisconnected.
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
             break;
 
         case State::Disconnected:
@@ -480,13 +497,13 @@ void DeviceBase::Destroy() {
 
         case State::Destroyed:
             // If we are already destroyed we should've skipped this work entirely.
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
             break;
     }
 
     if (mState != State::BeingCreated) {
         // The GPU timeline is finished.
-        ASSERT(mQueue->GetCompletedCommandSerial() == GetLastSubmittedCommandSerial());
+        DAWN_ASSERT(mQueue->GetCompletedCommandSerial() == GetLastSubmittedCommandSerial());
 
         // Finish destroying all objects owned by the device and tick the queue-related tasks
         // since they should be complete. This must be done before DestroyImpl() it may
@@ -511,7 +528,9 @@ void DeviceBase::Destroy() {
     mInternalPipelineStore = nullptr;
     mExternalTexturePlaceholderView = nullptr;
 
-    mQueue->AssumeCommandsComplete();
+    if (mQueue != nullptr) {
+        mQueue->AssumeCommandsComplete();
+    }
 
     // Now that the GPU timeline is empty, destroy the backend device.
     DestroyImpl();
@@ -528,9 +547,18 @@ void DeviceBase::HandleError(std::unique_ptr<ErrorData> error,
                              InternalErrorType additionalAllowedErrors,
                              WGPUDeviceLostReason lost_reason) {
     AppendDebugLayerMessages(error.get());
+
+    InternalErrorType type = error->GetType();
+    if (type != InternalErrorType::Validation) {
+        // D3D device can provide additional device removed reason. We would
+        // like to query and log the the device removed reason if the error is
+        // not validation error.
+        AppendDeviceLostMessage(error.get());
+    }
+
     InternalErrorType allowedErrors =
         InternalErrorType::Validation | InternalErrorType::DeviceLost | additionalAllowedErrors;
-    InternalErrorType type = error->GetType();
+
     if (type == InternalErrorType::DeviceLost) {
         mState = State::Disconnected;
 
@@ -608,7 +636,7 @@ void DeviceBase::HandleError(std::unique_ptr<ErrorData> error,
 
 void DeviceBase::ConsumeError(std::unique_ptr<ErrorData> error,
                               InternalErrorType additionalAllowedErrors) {
-    ASSERT(error != nullptr);
+    DAWN_ASSERT(error != nullptr);
     HandleError(std::move(error), additionalAllowedErrors);
 }
 
@@ -711,7 +739,7 @@ void DeviceBase::StoreCachedBlob(const CacheKey& key, const Blob& blob) {
 }
 
 MaybeError DeviceBase::ValidateObject(const ApiObjectBase* object) const {
-    ASSERT(object != nullptr);
+    DAWN_ASSERT(object != nullptr);
     DAWN_INVALID_IF(object->GetDevice() != this,
                     "%s is associated with %s, and cannot be used with %s.", object,
                     object->GetDevice(), this);
@@ -742,12 +770,16 @@ DeviceBase::State DeviceBase::GetState() const {
 }
 
 bool DeviceBase::IsLost() const {
-    ASSERT(mState != State::BeingCreated);
+    DAWN_ASSERT(mState != State::BeingCreated);
     return mState != State::Alive;
 }
 
 ApiObjectList* DeviceBase::GetObjectTrackingList(ObjectType type) {
     return &mObjectLists[type];
+}
+
+InstanceBase* DeviceBase::GetInstance() const {
+    return mAdapter->GetPhysicalDevice()->GetInstance();
 }
 
 AdapterBase* DeviceBase::GetAdapter() const {
@@ -790,14 +822,14 @@ ResultOrError<const Format*> DeviceBase::GetInternalFormat(wgpu::TextureFormat f
 
 const Format& DeviceBase::GetValidInternalFormat(wgpu::TextureFormat format) const {
     FormatIndex index = ComputeFormatIndex(format);
-    ASSERT(index < mFormatTable.size());
-    ASSERT(mFormatTable[index].IsSupported());
+    DAWN_ASSERT(index < mFormatTable.size());
+    DAWN_ASSERT(mFormatTable[index].IsSupported());
     return mFormatTable[index];
 }
 
 const Format& DeviceBase::GetValidInternalFormat(FormatIndex index) const {
-    ASSERT(index < mFormatTable.size());
-    ASSERT(mFormatTable[index].IsSupported());
+    DAWN_ASSERT(index < mFormatTable.size());
+    DAWN_ASSERT(mFormatTable[index].IsSupported());
     return mFormatTable[index];
 }
 
@@ -840,12 +872,12 @@ ResultOrError<Ref<PipelineLayoutBase>> DeviceBase::CreateEmptyPipelineLayout() {
 }
 
 BindGroupLayoutBase* DeviceBase::GetEmptyBindGroupLayout() {
-    ASSERT(mEmptyBindGroupLayout != nullptr);
+    DAWN_ASSERT(mEmptyBindGroupLayout != nullptr);
     return mEmptyBindGroupLayout.Get();
 }
 
 PipelineLayoutBase* DeviceBase::GetEmptyPipelineLayout() {
-    ASSERT(mEmptyPipelineLayout != nullptr);
+    DAWN_ASSERT(mEmptyPipelineLayout != nullptr);
     return mEmptyPipelineLayout.Get();
 }
 
@@ -861,27 +893,28 @@ Ref<RenderPipelineBase> DeviceBase::GetCachedRenderPipeline(
 
 Ref<ComputePipelineBase> DeviceBase::AddOrGetCachedComputePipeline(
     Ref<ComputePipelineBase> computePipeline) {
-    ASSERT(IsLockedByCurrentThreadIfNeeded());
+    DAWN_ASSERT(IsLockedByCurrentThreadIfNeeded());
     auto [pipeline, _] = mCaches->computePipelines.Insert(computePipeline.Get());
     return std::move(pipeline);
 }
 
 Ref<RenderPipelineBase> DeviceBase::AddOrGetCachedRenderPipeline(
     Ref<RenderPipelineBase> renderPipeline) {
-    ASSERT(IsLockedByCurrentThreadIfNeeded());
+    DAWN_ASSERT(IsLockedByCurrentThreadIfNeeded());
     auto [pipeline, _] = mCaches->renderPipelines.Insert(renderPipeline.Get());
     return std::move(pipeline);
 }
 
 ResultOrError<Ref<TextureViewBase>> DeviceBase::CreateImplicitMSAARenderTextureViewFor(
-    const TextureBase* singleSampledTexture,
+    const TextureViewBase* singleSampledTextureView,
     uint32_t sampleCount) {
-    ASSERT(IsLockedByCurrentThreadIfNeeded());
+    DAWN_ASSERT(IsLockedByCurrentThreadIfNeeded());
 
     TextureDescriptor desc = {};
     desc.dimension = wgpu::TextureDimension::e2D;
-    desc.format = singleSampledTexture->GetFormat().format;
-    desc.size = {singleSampledTexture->GetWidth(), singleSampledTexture->GetHeight(), 1};
+    desc.format = singleSampledTextureView->GetFormat().format;
+    desc.size = {singleSampledTextureView->GetSingleSubresourceVirtualSize().width,
+                 singleSampledTextureView->GetSingleSubresourceVirtualSize().height, 1};
     desc.sampleCount = sampleCount;
     desc.usage = wgpu::TextureUsage::RenderAttachment;
     if (HasFeature(Feature::TransientAttachments)) {
@@ -962,7 +995,7 @@ ResultOrError<Ref<ShaderModuleBase>> DeviceBase::GetOrCreateShaderModule(
     const ShaderModuleDescriptor* descriptor,
     ShaderModuleParseResult* parseResult,
     OwnedCompilationMessages* compilationMessages) {
-    ASSERT(parseResult != nullptr);
+    DAWN_ASSERT(parseResult != nullptr);
 
     ShaderModuleBase blueprint(this, descriptor, ApiObjectBase::kUntrackedByDevice);
 
@@ -975,7 +1008,7 @@ ResultOrError<Ref<ShaderModuleBase>> DeviceBase::GetOrCreateShaderModule(
                 // We skip the parse on creation if validation isn't enabled which let's us quickly
                 // lookup in the cache without validating and parsing. We need the parsed module
                 // now.
-                ASSERT(!IsValidationEnabled());
+                DAWN_ASSERT(!IsValidationEnabled());
                 DAWN_TRY(ValidateAndParseShaderModule(this, descriptor, parseResult,
                                                       compilationMessages));
             }
@@ -1007,8 +1040,9 @@ Ref<AttachmentState> DeviceBase::GetOrCreateAttachmentState(
 }
 
 Ref<AttachmentState> DeviceBase::GetOrCreateAttachmentState(
-    const RenderPipelineDescriptor* descriptor) {
-    AttachmentState blueprint(this, descriptor);
+    const RenderPipelineDescriptor* descriptor,
+    const PipelineLayoutBase* layout) {
+    AttachmentState blueprint(this, descriptor, layout);
     return GetOrCreateAttachmentState(&blueprint);
 }
 
@@ -1045,7 +1079,7 @@ BufferBase* DeviceBase::APICreateBuffer(const BufferDescriptor* descriptor) {
     Ref<BufferBase> result = nullptr;
     if (ConsumedError(CreateBuffer(descriptor), &result, InternalErrorType::OutOfMemory,
                       "calling %s.CreateBuffer(%s).", this, descriptor)) {
-        ASSERT(result == nullptr);
+        DAWN_ASSERT(result == nullptr);
         return BufferBase::MakeError(this, descriptor);
     }
     return result.Detach();
@@ -1344,7 +1378,7 @@ AdapterBase* DeviceBase::APIGetAdapter() {
 
 QueueBase* DeviceBase::APIGetQueue() {
     // Backends gave the primary queue during initialization.
-    ASSERT(mQueue != nullptr);
+    DAWN_ASSERT(mQueue != nullptr);
 
     // Returns a new reference to the queue.
     mQueue->Reference();
@@ -1400,9 +1434,9 @@ ResultOrError<Ref<SharedFenceBase>> DeviceBase::ImportSharedFenceImpl(
 }
 
 void DeviceBase::ApplyFeatures(const DeviceDescriptor* deviceDescriptor) {
-    ASSERT(deviceDescriptor);
+    DAWN_ASSERT(deviceDescriptor);
     // Validate all required features with device toggles.
-    ASSERT(GetPhysicalDevice()->SupportsAllRequiredFeatures(
+    DAWN_ASSERT(GetPhysicalDevice()->SupportsAllRequiredFeatures(
         {deviceDescriptor->requiredFeatures, deviceDescriptor->requiredFeatureCount}, mToggles));
 
     for (uint32_t i = 0; i < deviceDescriptor->requiredFeatureCount; ++i) {
@@ -1434,6 +1468,10 @@ void DeviceBase::SetWGSLExtensionAllowList() {
     }
     if (mEnabledFeatures.IsEnabled(Feature::DualSourceBlending)) {
         mWGSLExtensionAllowList.insert("chromium_internal_dual_source_blending");
+    }
+    if (mEnabledFeatures.IsEnabled(Feature::PixelLocalStorageNonCoherent) ||
+        mEnabledFeatures.IsEnabled(Feature::PixelLocalStorageCoherent)) {
+        mWGSLExtensionAllowList.insert("chromium_experimental_pixel_local");
     }
 }
 
@@ -1492,11 +1530,38 @@ void DeviceBase::EmitLog(WGPULoggingType loggingType, const char* message) {
 }
 
 bool DeviceBase::APIGetLimits(SupportedLimits* limits) const {
-    ASSERT(limits != nullptr);
-    if (limits->nextInChain != nullptr) {
+    DAWN_ASSERT(limits != nullptr);
+    // TODO(dawn:1955): Revisit after deciding how to improve the validation for ChainedStructOut.
+    MaybeError result =
+        ValidateSTypes(limits->nextInChain, {{wgpu::SType::DawnExperimentalSubgroupLimits}});
+    if (GetPhysicalDevice()->GetInstance()->ConsumedError(std::move(result))) {
         return false;
     }
+
     limits->limits = mLimits.v1;
+
+    for (auto* chain = limits->nextInChain; chain; chain = chain->nextInChain) {
+        wgpu::ChainedStructOut originalChain = *chain;
+        switch (chain->sType) {
+            case (wgpu::SType::DawnExperimentalSubgroupLimits): {
+                DawnExperimentalSubgroupLimits* subgroupLimits =
+                    reinterpret_cast<DawnExperimentalSubgroupLimits*>(chain);
+                if (!mToggles.IsEnabled(Toggle::AllowUnsafeAPIs)) {
+                    // If AllowUnsafeAPIs is not enabled, return the default-initialized
+                    // DawnExperimentalSubgroupLimits object, where minSubgroupSize and
+                    // maxSubgroupSize are WGPU_LIMIT_U32_UNDEFINED.
+                    *subgroupLimits = DawnExperimentalSubgroupLimits{};
+                } else {
+                    *subgroupLimits = mLimits.experimentalSubgroupLimits;
+                }
+                break;
+            }
+            default:
+                DAWN_UNREACHABLE();
+        }
+        // Recover the original chain
+        *chain = originalChain;
+    }
     return true;
 }
 
@@ -1535,7 +1600,7 @@ void DeviceBase::APIValidateTextureDescriptor(const TextureDescriptor* desc) {
 }
 
 QueueBase* DeviceBase::GetQueue() const {
-    ASSERT(mQueue != nullptr);
+    DAWN_ASSERT(mQueue != nullptr);
     return mQueue.Get();
 }
 
@@ -1616,7 +1681,7 @@ ResultOrError<Ref<CommandEncoder>> DeviceBase::CreateCommandEncoder(
 
 // Overwritten on the backends to return pipeline caches if supported.
 Ref<PipelineCacheBase> DeviceBase::GetOrCreatePipelineCacheImpl(const CacheKey& key) {
-    UNREACHABLE();
+    DAWN_UNREACHABLE();
 }
 
 ResultOrError<Ref<ComputePipelineBase>> DeviceBase::CreateUninitializedComputePipeline(
@@ -1875,7 +1940,7 @@ void DeviceBase::ForceSetToggleForTesting(Toggle toggle, bool isEnabled) {
 void DeviceBase::FlushCallbackTaskQueue() {
     // Callbacks might cause re-entrances. Mutex shouldn't be locked. So we expect there is no
     // locked mutex before entering this method.
-    ASSERT(mMutex == nullptr || !mMutex->IsLockedByCurrentThread());
+    DAWN_ASSERT(mMutex == nullptr || !mMutex->IsLockedByCurrentThread());
 
     Ref<CallbackTaskManager> callbackTaskManager;
 
@@ -1938,7 +2003,7 @@ void DeviceBase::AddComputePipelineAsyncCallbackTask(
             // TODO(dawn:529): call AddOrGetCachedComputePipeline() asynchronously in
             // CreateComputePipelineAsyncTaskImpl::Run() when the front-end pipeline cache is
             // thread-safe.
-            ASSERT(pipeline != nullptr);
+            DAWN_ASSERT(pipeline != nullptr);
             {
                 // This is called inside a callback, and no lock will be held by default so we
                 // have to lock now to protect the cache. Note: we don't lock inside
@@ -1983,7 +2048,7 @@ void DeviceBase::AddRenderPipelineAsyncCallbackTask(Ref<RenderPipelineBase> pipe
         // TODO(dawn:529): call AddOrGetCachedRenderPipeline() asynchronously in
         // CreateRenderPipelineAsyncTaskImpl::Run() when the front-end pipeline cache is
         // thread-safe.
-        ASSERT(pipeline != nullptr);
+        DAWN_ASSERT(pipeline != nullptr);
         {
             // This is called inside a callback, and no lock will be held by default so we have
             // to lock now to protect the cache.
@@ -2048,6 +2113,13 @@ uint64_t DeviceBase::GetBufferCopyOffsetAlignmentForDepthStencil() const {
     // For depth-stencil texture, buffer offset must be a multiple of 4, which is required
     // by WebGPU and Vulkan SPEC.
     return 4u;
+}
+
+bool DeviceBase::WaitAnyImpl(size_t futureCount,
+                             TrackedFutureWaitInfo* futures,
+                             Nanoseconds timeout) {
+    // Default for backends which don't actually need to do anything special in this case.
+    return WaitAnySystemEvent(futureCount, futures, timeout);
 }
 
 MaybeError DeviceBase::CopyFromStagingToBuffer(BufferBase* source,

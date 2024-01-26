@@ -156,14 +156,11 @@ void DebugShowSkiaDrawRect(CFX_SkiaDeviceDriver* driver,
 #endif  // SHOW_SKIA_PATH
 }
 
-static void DebugValidate(const RetainPtr<CFX_DIBitmap>& bitmap,
-                          const RetainPtr<CFX_DIBitmap>& device) {
-  if (bitmap) {
-    DCHECK(bitmap->GetBPP() == 8 || bitmap->GetBPP() == 32);
-  }
-  if (device) {
-    DCHECK(device->GetBPP() == 8 || device->GetBPP() == 32);
-  }
+void DebugValidate(const RetainPtr<CFX_DIBitmap>& bitmap) {
+#if DCHECK_IS_ON()
+  DCHECK(bitmap);
+  DCHECK(bitmap->GetBPP() == 8 || bitmap->GetBPP() == 32);
+#endif
 }
 
 SkColorType Get32BitSkColorType(bool is_rgb_byte_order) {
@@ -669,6 +666,21 @@ std::unique_ptr<CFX_SkiaDeviceDriver> CFX_SkiaDeviceDriver::Create(
   return driver;
 }
 
+// static
+std::unique_ptr<CFX_SkiaDeviceDriver> CFX_SkiaDeviceDriver::Create(
+    SkCanvas* canvas) {
+  if (!canvas) {
+    return nullptr;
+  }
+
+  auto driver = pdfium::WrapUnique(new CFX_SkiaDeviceDriver(canvas));
+  if (!driver->m_pBitmap || !driver->m_pBackdropBitmap) {
+    return nullptr;
+  }
+
+  return driver;
+}
+
 CFX_SkiaDeviceDriver::CFX_SkiaDeviceDriver(
     RetainPtr<CFX_DIBitmap> pBitmap,
     bool bRgbByteOrder,
@@ -693,8 +705,12 @@ CFX_SkiaDeviceDriver::CFX_SkiaDeviceDriver(
     m_pBitmap = pdfium::MakeRetain<CFX_DIBitmap>();
     if (!m_pBitmap->Copy(m_pOriginalBitmap) ||
         !m_pBitmap->ConvertFormat(FXDIB_Format::kArgb)) {
-      // Skip creating SkCanvas if we fail to create the 32 bpp bitmap to back
-      // it.
+      // Skip creating SkCanvas if the 32-bpp bitmap creation fails.
+      // CFX_SkiaDeviceDriver::Create() will check for the missing `m_pCanvas`
+      // and not use `this`.
+      // Also reset `m_pOriginalBitmap` so the dtor does not try to transfer
+      // `m_pBitmap` back to `m_pOriginalBitmap`.
+      m_pOriginalBitmap.Reset();
       return;
     }
 
@@ -728,14 +744,7 @@ CFX_SkiaDeviceDriver::~CFX_SkiaDeviceDriver() {
   // Convert and transfer the internal processed result to the original 24 bpp
   // bitmap provided by the render device.
   if (m_pOriginalBitmap && m_pBitmap->ConvertFormat(FXDIB_Format::kRgb)) {
-    int width = m_pOriginalBitmap->GetWidth();
-    int height = m_pOriginalBitmap->GetHeight();
-    DCHECK_EQ(width, m_pBitmap->GetWidth());
-    DCHECK_EQ(height, m_pBitmap->GetHeight());
-    DCHECK_EQ(FXDIB_Format::kRgb, m_pOriginalBitmap->GetFormat());
-    m_pOriginalBitmap->TransferBitmap(/*dest_left=*/0, /*dest_top=*/0, width,
-                                      height, m_pBitmap, /*src_left=*/0,
-                                      /*src_top=*/0);
+    CHECK(SyncInternalBitmaps());
   }
 }
 
@@ -772,16 +781,17 @@ bool CFX_SkiaDeviceDriver::DrawDeviceText(
   font.setEdging(GetFontEdgingType(options));
 
   SkAutoCanvasRestore scoped_save_restore(m_pCanvas, /*doSave=*/true);
-  const SkScalar flip = font_size < 0 ? -1 : 1;
-  const SkScalar vFlip = pFont->IsVertical() ? -1 : 1;
-  SkMatrix skMatrix = ToFlippedSkMatrix(mtObject2Device, flip);
+  const SkScalar horizontal_flip = font_size < 0 ? -1 : 1;
+  const SkScalar vertical_flip = pFont->IsVertical() ? -1 : 1;
+  SkMatrix skMatrix = ToFlippedSkMatrix(mtObject2Device, horizontal_flip);
   m_pCanvas->concat(skMatrix);
   DataVector<SkPoint> positions(pCharPos.size());
   DataVector<uint16_t> glyphs(pCharPos.size());
 
   for (size_t index = 0; index < pCharPos.size(); ++index) {
     const TextCharPos& cp = pCharPos[index];
-    positions[index] = {cp.m_Origin.x * flip, cp.m_Origin.y * vFlip};
+    positions[index] = {cp.m_Origin.x * horizontal_flip,
+                        cp.m_Origin.y * vertical_flip};
     glyphs[index] = static_cast<uint16_t>(cp.m_GlyphIndex);
 #if BUILDFLAG(IS_APPLE)
     if (cp.m_ExtGID)
@@ -855,13 +865,13 @@ bool CFX_SkiaDeviceDriver::TryDrawText(pdfium::span<const TextCharPos> char_pos,
     m_rsxform.resize(total_count);
   }
 
-  const SkScalar flip = font_size < 0 ? -1 : 1;
-  const SkScalar vFlip = pFont->IsVertical() ? -1 : 1;
+  const SkScalar horizontal_flip = font_size < 0 ? -1 : 1;
+  const SkScalar vertical_flip = pFont->IsVertical() ? -1 : 1;
   for (size_t index = 0; index < char_pos.size(); ++index) {
     const TextCharPos& cp = char_pos[index];
     size_t cur_index = index + original_count;
-    m_charDetails.SetPositionAt(cur_index,
-                                {cp.m_Origin.x * flip, cp.m_Origin.y * vFlip});
+    m_charDetails.SetPositionAt(cur_index, {cp.m_Origin.x * horizontal_flip,
+                                            cp.m_Origin.y * vertical_flip});
     m_charDetails.SetGlyphAt(cur_index, static_cast<uint16_t>(cp.m_GlyphIndex));
     m_charDetails.SetFontCharWidthAt(cur_index, cp.m_FontCharWidth);
 #if BUILDFLAG(IS_APPLE)
@@ -906,7 +916,7 @@ bool CFX_SkiaDeviceDriver::TryDrawText(pdfium::span<const TextCharPos> char_pos,
   font.setEdging(GetFontEdgingType(options));
 
   SkAutoCanvasRestore scoped_save_restore(m_pCanvas, /*doSave=*/true);
-  m_pCanvas->concat(ToFlippedSkMatrix(matrix, flip));
+  m_pCanvas->concat(ToFlippedSkMatrix(matrix, horizontal_flip));
 
   const DataVector<uint16_t>& glyphs = m_charDetails.GetGlyphs();
   if (!m_rsxform.empty()) {
@@ -919,8 +929,7 @@ bool CFX_SkiaDeviceDriver::TryDrawText(pdfium::span<const TextCharPos> char_pos,
   const DataVector<SkPoint>& positions = m_charDetails.GetPositions();
   const DataVector<uint32_t>& widths = m_charDetails.GetFontCharWidths();
   for (size_t i = 0; i < m_charDetails.Count(); ++i) {
-    const uint32_t font_glyph_width =
-        pFont ? pFont->GetGlyphWidth(glyphs[i]) : 0;
+    const uint32_t font_glyph_width = pFont->GetGlyphWidth(glyphs[i]);
     const uint32_t pdf_glyph_width = widths[i];
     if (pdf_glyph_width > 0 && font_glyph_width > 0) {
       // Scale the glyph from its default width `pdf_glyph_width` to the
@@ -1345,9 +1354,6 @@ bool CFX_SkiaDeviceDriver::GetClipBox(FX_RECT* pRect) {
 bool CFX_SkiaDeviceDriver::GetDIBits(const RetainPtr<CFX_DIBitmap>& pBitmap,
                                      int left,
                                      int top) {
-  if (!m_pBitmap)
-    return true;
-
   const uint8_t* input_buffer = m_pBitmap->GetBuffer().data();
   if (!input_buffer) {
     return true;
@@ -1383,8 +1389,9 @@ bool CFX_SkiaDeviceDriver::SetDIBits(const RetainPtr<CFX_DIBBase>& pBitmap,
                                      int left,
                                      int top,
                                      BlendMode blend_type) {
-  if (!m_pBitmap || m_pBitmap->GetBuffer().empty())
+  if (m_pBitmap->GetBuffer().empty()) {
     return true;
+  }
 
   CFX_Matrix m = CFX_RenderDevice::GetFlipMatrix(
       pBitmap->GetWidth(), pBitmap->GetHeight(), left, top);
@@ -1444,18 +1451,16 @@ bool CFX_SkiaDeviceDriver::ContinueDIBits(CFX_ImageRenderer* handle,
 }
 
 void CFX_DIBitmap::UnPreMultiply() {
-  if (GetBPP() != 32)
+  if (m_nFormat == Format::kUnPreMultiplied || GetBPP() != 32) {
     return;
+  }
 
   void* buffer = GetWritableBuffer().data();
-  if (!buffer)
+  if (!buffer) {
     return;
+  }
 
-  Format prior_format = m_nFormat;
   m_nFormat = Format::kUnPreMultiplied;
-  if (prior_format == Format::kUnPreMultiplied)
-    return;
-
   int height = GetHeight();
   int width = GetWidth();
   int row_bytes = GetPitch();
@@ -1482,7 +1487,7 @@ bool CFX_SkiaDeviceDriver::DrawBitsWithMask(
     int bitmap_alpha,
     const CFX_Matrix& matrix,
     BlendMode blend_type) {
-  DebugValidate(m_pBitmap, m_pBackdropBitmap);
+  DebugValidate(m_pBitmap);
 
   sk_sp<SkImage> skia_source = pSource->RealizeSkImage();
   if (!skia_source) {
@@ -1518,7 +1523,7 @@ bool CFX_SkiaDeviceDriver::DrawBitsWithMask(
         paint);
   }
 
-  DebugValidate(m_pBitmap, m_pBackdropBitmap);
+  DebugValidate(m_pBitmap);
   return true;
 }
 
@@ -1529,8 +1534,9 @@ bool CFX_SkiaDeviceDriver::SetBitsWithMask(
     int dest_top,
     int bitmap_alpha,
     BlendMode blend_type) {
-  if (!m_pBitmap || m_pBitmap->GetBuffer().empty())
+  if (m_pBitmap->GetBuffer().empty()) {
     return true;
+  }
 
   CFX_Matrix m = CFX_RenderDevice::GetFlipMatrix(
       pBitmap->GetWidth(), pBitmap->GetHeight(), dest_left, dest_top);
@@ -1569,7 +1575,7 @@ bool CFX_SkiaDeviceDriver::StartDIBitsSkia(
     const CFX_Matrix& matrix,
     const FXDIB_ResampleOptions& options,
     BlendMode blend_type) {
-  DebugValidate(m_pBitmap, m_pBackdropBitmap);
+  DebugValidate(m_pBitmap);
 
   sk_sp<SkImage> skia_source = pSource->RealizeSkImage();
   if (!skia_source) {
@@ -1613,7 +1619,7 @@ bool CFX_SkiaDeviceDriver::StartDIBitsSkia(
         &paint, SkCanvas::kFast_SrcRectConstraint);
   }
 
-  DebugValidate(m_pBitmap, m_pBackdropBitmap);
+  DebugValidate(m_pBitmap);
   return true;
 }
 
@@ -1643,10 +1649,11 @@ bool CFX_DefaultRenderDevice::AttachSkiaImpl(
 }
 
 bool CFX_DefaultRenderDevice::AttachCanvas(SkCanvas* canvas) {
-  if (!canvas) {
+  auto driver = CFX_SkiaDeviceDriver::Create(canvas);
+  if (!driver) {
     return false;
   }
-  SetDeviceDriver(std::make_unique<CFX_SkiaDeviceDriver>(canvas));
+  SetDeviceDriver(std::move(driver));
   return true;
 }
 

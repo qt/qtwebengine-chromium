@@ -31,7 +31,7 @@
 #include "third_party/skia/include/core/SkStream.h"  // nogncheck
 #include "third_party/skia/include/core/SkTypeface.h"  // nogncheck
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_APPLE)
 #include "third_party/skia/include/core/SkFontMgr.h"  // nogncheck
 #include "third_party/skia/include/ports/SkFontMgr_empty.h"  // nogncheck
 #endif
@@ -269,8 +269,8 @@ const CFX_GlyphBitmap* CFX_GlyphCache::LoadGlyphBitmap(
   ByteString FaceGlyphsKey(keygen.key_, keygen.key_len_);
 
 #if BUILDFLAG(IS_APPLE)
-  const bool bDoLookUp = !text_options->native_text ||
-                         CFX_DefaultRenderDevice::SkiaIsDefaultRenderer();
+  const bool bDoLookUp =
+      !text_options->native_text || CFX_DefaultRenderDevice::UseSkiaRenderer();
 #else
   const bool bDoLookUp = true;
 #endif
@@ -280,7 +280,7 @@ const CFX_GlyphBitmap* CFX_GlyphCache::LoadGlyphBitmap(
   }
 
 #if BUILDFLAG(IS_APPLE)
-  DCHECK(!CFX_DefaultRenderDevice::SkiaIsDefaultRenderer());
+  DCHECK(!CFX_DefaultRenderDevice::UseSkiaRenderer());
 
   std::unique_ptr<CFX_GlyphBitmap> pGlyphBitmap;
   auto it = m_SizeMap.find(FaceGlyphsKey);
@@ -339,14 +339,14 @@ CFX_TypeFace* CFX_GlyphCache::GetDeviceCache(const CFX_Font* pFont) {
     m_pTypeface = SkTypeface::MakeFromStream(
         std::make_unique<SkMemoryStream>(span.data(), span.size()));
   }
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_APPLE)
   if (!m_pTypeface) {
     sk_sp<SkFontMgr> customMgr(SkFontMgr_New_Custom_Empty());
     pdfium::span<const uint8_t> span = pFont->GetFontSpan();
     m_pTypeface = customMgr->makeFromStream(
         std::make_unique<SkMemoryStream>(span.data(), span.size()));
   }
-#endif  // BUILDFLAG(IS_WIN)
+#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_APPLE)
   return m_pTypeface.get();
 }
 #endif  // defined(_SKIA_SUPPORT_)

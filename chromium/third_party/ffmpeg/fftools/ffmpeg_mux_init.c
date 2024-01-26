@@ -361,7 +361,7 @@ static int enc_stats_init(OutputStream *ost, EncStats *es, int pre,
 
         ret = GROW_ARRAY(es->components, es->nb_components);
         if (ret < 0)
-            return ret;
+            goto fail;
 
         c = &es->components[es->nb_components - 1];
 
@@ -779,8 +779,12 @@ static int new_stream_video(Muxer *mux, const OptionsContext *o,
 
         MATCH_PER_STREAM_OPT(force_fps, i, ost->force_fps, oc, st);
 
+#if FFMPEG_OPT_TOP
         ost->top_field_first = -1;
         MATCH_PER_STREAM_OPT(top_field_first, i, ost->top_field_first, oc, st);
+        if (ost->top_field_first >= 0)
+            av_log(ost, AV_LOG_WARNING, "-top is deprecated, use the setfield filter instead\n");
+#endif
 
         ost->vsync_method = video_sync_method;
         MATCH_PER_STREAM_OPT(fps_mode, str, fps_mode, oc, st);
@@ -1089,8 +1093,6 @@ static int streamcopy_init(const Muxer *mux, OutputStream *ost)
         break;
         }
     }
-
-    ost->mux_timebase = ist->st->time_base;
 
 fail:
     avcodec_free_context(&codec_ctx);

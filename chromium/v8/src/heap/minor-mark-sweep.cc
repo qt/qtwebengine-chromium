@@ -128,6 +128,9 @@ class YoungGenerationMarkingVerifier : public MarkingVerifierBase {
         GetPtrComprCageBaseFromOnHeapAddress(start.address());
     for (TSlot slot = start; slot < end; ++slot) {
       typename TSlot::TObject object = slot.load(cage_base);
+#ifdef V8_ENABLE_DIRECT_LOCAL
+      if (object.ptr() == kTaggedNullAddress) continue;
+#endif
       Tagged<HeapObject> heap_object;
       // Minor MS treats weak references as strong.
       if (object.GetHeapObject(&heap_object)) {
@@ -303,11 +306,11 @@ void MinorMarkSweepCollector::StartMarking() {
 #endif  // VERIFY_HEAP
 
   auto* cpp_heap = CppHeap::From(heap_->cpp_heap_);
+  // CppHeap's marker must be initialized before the V8 marker to allow
+  // exchanging of worklists.
   if (cpp_heap && cpp_heap->generational_gc_supported()) {
     TRACE_GC(heap_->tracer(), GCTracer::Scope::MINOR_MS_MARK_EMBEDDER_PROLOGUE);
-    // InitializeTracing should be called before visitor initialization in
-    // StartMarking.
-    cpp_heap->InitializeTracing(CppHeap::CollectionType::kMinor);
+    cpp_heap->InitializeMarking(CppHeap::CollectionType::kMinor);
   }
   DCHECK_NULL(ephemeron_table_list_);
   ephemeron_table_list_ = std::make_unique<EphemeronRememberedSet::TableList>();
@@ -327,7 +330,7 @@ void MinorMarkSweepCollector::StartMarking() {
     TRACE_GC(heap_->tracer(), GCTracer::Scope::MINOR_MS_MARK_EMBEDDER_PROLOGUE);
     // StartTracing immediately starts marking which requires V8 worklists to
     // be set up.
-    cpp_heap->StartTracing();
+    cpp_heap->StartMarking();
   }
 }
 
@@ -363,7 +366,6 @@ void MinorMarkSweepCollector::CollectGarbage() {
   DCHECK(!sweeper()->AreMinorSweeperTasksRunning());
   DCHECK(sweeper()->IsSweepingDoneForSpace(NEW_SPACE));
 
-  heap_->new_space()->FreeLinearAllocationArea();
   heap_->new_lo_space()->ResetPendingObject();
 
   is_in_atomic_pause_.store(true, std::memory_order_relaxed);
@@ -385,6 +387,8 @@ void MinorMarkSweepCollector::CollectGarbage() {
   isolate->global_handles()->UpdateListOfYoungNodes();
   isolate->traced_handles()->UpdateListOfYoungNodes();
 
+  isolate->stack_guard()->ClearGC();
+  gc_finalization_requested_.store(false, std::memory_order_relaxed);
   is_in_atomic_pause_.store(false, std::memory_order_relaxed);
 }
 
@@ -710,8 +714,7 @@ void MinorMarkSweepCollector::TraceFragmentation() {
   size_t free_bytes_of_class[free_size_class_limits.size()] = {0};
   size_t live_bytes = 0;
   size_t allocatable_bytes = 0;
-  for (Page* p :
-       PageRange(new_space->first_allocatable_address(), new_space->top())) {
+  for (Page* p : *new_space) {
     Address free_start = p->area_start();
     for (auto [object, size] : LiveObjectRange(p)) {
       Address free_end = object.address();
@@ -728,8 +731,8 @@ void MinorMarkSweepCollector::TraceFragmentation() {
       live_bytes += size;
       free_start = free_end + size;
     }
-    size_t area_end =
-        p->Contains(new_space->top()) ? new_space->top() : p->area_end();
+    const Address top = heap_->NewSpaceTop();
+    size_t area_end = p->Contains(top) ? top : p->area_end();
     if (free_start != area_end) {
       size_t free_bytes = area_end - free_start;
       int free_bytes_index = 0;
@@ -918,5 +921,12 @@ void MinorMarkSweepCollector::Sweep() {
           : ArrayBufferSweeper::TreatAllYoungAsPromoted::kNo);
 }
 
+void MinorMarkSweepCollector::RequestGC() {
+  if (is_in_atomic_pause()) return;
+  DCHECK(v8_flags.concurrent_minor_ms_marking);
+  if (gc_finalization_requested_.exchange(true, std::memory_order_relaxed))
+    return;
+  heap_->isolate()->stack_guard()->RequestGC();
+}
 }  // namespace internal
 }  // namespace v8

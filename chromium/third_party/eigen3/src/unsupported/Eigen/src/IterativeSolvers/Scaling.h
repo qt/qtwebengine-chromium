@@ -10,6 +10,7 @@
 #ifndef EIGEN_ITERSCALING_H
 #define EIGEN_ITERSCALING_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

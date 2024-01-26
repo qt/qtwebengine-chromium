@@ -1,16 +1,29 @@
-// Copyright 2018 The Dawn Authors
+// Copyright 2018 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/vulkan/RenderPassCache.h"
 
@@ -30,10 +43,10 @@ VkAttachmentLoadOp VulkanAttachmentLoadOp(wgpu::LoadOp op) {
         case wgpu::LoadOp::Clear:
             return VK_ATTACHMENT_LOAD_OP_CLEAR;
         case wgpu::LoadOp::Undefined:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
             break;
     }
-    UNREACHABLE();
+    DAWN_UNREACHABLE();
 }
 
 VkAttachmentStoreOp VulkanAttachmentStoreOp(wgpu::StoreOp op) {
@@ -45,10 +58,10 @@ VkAttachmentStoreOp VulkanAttachmentStoreOp(wgpu::StoreOp op) {
         case wgpu::StoreOp::Discard:
             return VK_ATTACHMENT_STORE_OP_DONT_CARE;
         case wgpu::StoreOp::Undefined:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
             break;
     }
-    UNREACHABLE();
+    DAWN_UNREACHABLE();
 }
 }  // anonymous namespace
 
@@ -69,16 +82,18 @@ void RenderPassCacheQuery::SetColor(ColorAttachmentIndex index,
 void RenderPassCacheQuery::SetDepthStencil(wgpu::TextureFormat format,
                                            wgpu::LoadOp depthLoadOpIn,
                                            wgpu::StoreOp depthStoreOpIn,
+                                           bool depthReadOnlyIn,
                                            wgpu::LoadOp stencilLoadOpIn,
                                            wgpu::StoreOp stencilStoreOpIn,
-                                           bool readOnly) {
+                                           bool stencilReadOnlyIn) {
     hasDepthStencil = true;
     depthStencilFormat = format;
     depthLoadOp = depthLoadOpIn;
     depthStoreOp = depthStoreOpIn;
+    depthReadOnly = depthReadOnlyIn;
     stencilLoadOp = stencilLoadOpIn;
     stencilStoreOp = stencilStoreOpIn;
-    readOnlyDepthStencil = readOnly;
+    stencilReadOnly = stencilReadOnlyIn;
 }
 
 void RenderPassCacheQuery::SetSampleCount(uint32_t sampleCountIn) {
@@ -162,17 +177,17 @@ ResultOrError<VkRenderPass> RenderPassCache::CreateRenderPassForQuery(
 
     VkAttachmentReference* depthStencilAttachment = nullptr;
     if (query.hasDepthStencil) {
-        auto& attachmentDesc = attachmentDescs[attachmentCount];
+        const Format& dsFormat = mDevice->GetValidInternalFormat(query.depthStencilFormat);
 
         depthStencilAttachment = &depthStencilAttachmentRef;
-
         depthStencilAttachmentRef.attachment = attachmentCount;
-        depthStencilAttachmentRef.layout = query.readOnlyDepthStencil
-                                               ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL
-                                               : VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        depthStencilAttachmentRef.layout = VulkanImageLayoutForDepthStencilAttachment(
+            dsFormat, query.depthReadOnly, query.stencilReadOnly);
 
+        // Build the attachment descriptor.
+        auto& attachmentDesc = attachmentDescs[attachmentCount];
         attachmentDesc.flags = 0;
-        attachmentDesc.format = VulkanImageFormat(mDevice, query.depthStencilFormat);
+        attachmentDesc.format = VulkanImageFormat(mDevice, dsFormat.format);
         attachmentDesc.samples = vkSampleCount;
 
         attachmentDesc.loadOp = VulkanAttachmentLoadOp(query.depthLoadOp);
@@ -251,6 +266,8 @@ ResultOrError<VkRenderPass> RenderPassCache::CreateRenderPassForQuery(
 
 // RenderPassCache
 
+// If you change these, remember to also update StreamImplVk.cpp
+
 size_t RenderPassCache::CacheFuncs::operator()(const RenderPassCacheQuery& query) const {
     size_t hash = Hash(query.colorMask);
 
@@ -263,7 +280,8 @@ size_t RenderPassCache::CacheFuncs::operator()(const RenderPassCacheQuery& query
     HashCombine(&hash, query.hasDepthStencil);
     if (query.hasDepthStencil) {
         HashCombine(&hash, query.depthStencilFormat, query.depthLoadOp, query.depthStoreOp,
-                    query.stencilLoadOp, query.stencilStoreOp, query.readOnlyDepthStencil);
+                    query.depthReadOnly, query.stencilLoadOp, query.stencilStoreOp,
+                    query.stencilReadOnly);
     }
 
     HashCombine(&hash, query.sampleCount);
@@ -299,8 +317,8 @@ bool RenderPassCache::CacheFuncs::operator()(const RenderPassCacheQuery& a,
     if (a.hasDepthStencil) {
         if ((a.depthStencilFormat != b.depthStencilFormat) || (a.depthLoadOp != b.depthLoadOp) ||
             (a.stencilLoadOp != b.stencilLoadOp) || (a.depthStoreOp != b.depthStoreOp) ||
-            (a.stencilStoreOp != b.stencilStoreOp) ||
-            (a.readOnlyDepthStencil != b.readOnlyDepthStencil)) {
+            (a.depthReadOnly != b.depthReadOnly) || (a.stencilStoreOp != b.stencilStoreOp) ||
+            (a.stencilReadOnly != b.stencilReadOnly)) {
             return false;
         }
     }

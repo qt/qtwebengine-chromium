@@ -24,7 +24,7 @@ const renderTrack = (MdSlider.prototype as any).renderTrack;
  * track that is currently active/inactive depending on value) minus the handle
  * gap (half of the handle width + width of transparent gap on one side).
  *
- * TODO(b/285172083): do not use md-slider's `--_private` custom properties
+ * TODO: b/285172083 - do not use md-slider's `--_private` custom properties
  */
 const DISABLED_STATE_OVERRIDES = css`
   md-slider[disabled] > [slot="track"] {
@@ -57,7 +57,8 @@ const DISABLED_STATE_OVERRIDES = css`
  * https://www.figma.com/file/1XsFoZH868xLcLPfPZRxLh/CrOS-Next---Component-Library-%26-Spec?node-id=2978%3A19626
  */
 export class Slider extends LitElement {
-  // TODO(b/279854770): check disabled styling.
+  // TODO: b/285172083 - check disabled styling.
+  /** @nocollapse */
   static override styles: CSSResultGroup = [
     css`
     :host {
@@ -68,6 +69,7 @@ export class Slider extends LitElement {
       --active-disabled: var(--cros-ref-neutral10);
       --inactive-disabled: var(--cros-ref-neutral10);
       --disabled-color: var(--inactive-disabled);
+      --md-focus-ring-duration: 0s;
       --md-slider-active-track-color: var(--cros-sys-primary);
       --md-slider-disabled-active-track-color: var(--disabled-color);
       --md-slider-disabled-active-track-opacity: var(--cros-sys-opacity-disabled);
@@ -80,10 +82,14 @@ export class Slider extends LitElement {
       --md-slider-handle-width: 12px;
       --md-slider-hover-handle-color: var(--cros-sys-primary);
       --md-slider-hover-state-layer-opacity: 0;
-      --md-slider-inactive-track-color: var(--cros-sys-primary_container);
+      --md-slider-inactive-track-color: var(--cros-sys-highlight_shape);
       --md-slider-label-container-color: var(--cros-sys-primary);
       --md-slider-label-container-height: 18px;
-      --md-slider-label-label-text-type: var(--cros-label-1-font);
+      --md-slider-label-text-color: var(--cros-sys-on_primary);
+      --md-slider-label-text-font: var(--cros-label-1-font-family);
+      --md-slider-label-text-size: var(--cros-label-1-font-size);
+      --md-slider-label-text-line-height: var(--cros-label-1-line-height);
+      --md-slider-label-text-weight: var(--cros-label-1-font-weight);
       --md-slider-pressed-handle-color: var(--cros-sys-primary);
       --md-slider-pressed-state-layer-color: var(--cros-sys-ripple_primary);
       --md-slider-pressed-state-layer-opacity: 1;
@@ -92,8 +98,14 @@ export class Slider extends LitElement {
       --md-slider-with-tick-marks-disabled-container-color: var(--disabled-color);
       --md-slider-with-tick-marks-inactive-container-color: var(--cros-sys-primary);
     }
+
     md-slider::part(focus-ring) {
+      height: 28px;
+      inset: unset;
+      width: 28px;
+      --md-focus-ring-active-width: 2px;
       --md-focus-ring-color: var(--cros-sys-primary);
+      --md-focus-ring-width: 2px;
     }
   `,
     DISABLED_STATE_OVERRIDES

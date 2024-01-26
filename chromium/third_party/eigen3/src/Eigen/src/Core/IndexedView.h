@@ -10,6 +10,7 @@
 #ifndef EIGEN_INDEXED_VIEW_H
 #define EIGEN_INDEXED_VIEW_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

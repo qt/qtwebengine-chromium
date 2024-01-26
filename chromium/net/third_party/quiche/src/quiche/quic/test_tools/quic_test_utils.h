@@ -21,14 +21,15 @@
 #include "quiche/quic/core/congestion_control/send_algorithm_interface.h"
 #include "quiche/quic/core/crypto/transport_parameters.h"
 #include "quiche/quic/core/http/http_decoder.h"
-#include "quiche/quic/core/http/quic_client_push_promise_index.h"
 #include "quiche/quic/core/http/quic_server_session_base.h"
+#include "quiche/quic/core/http/quic_spdy_client_session_base.h"
 #include "quiche/quic/core/http/quic_spdy_session.h"
 #include "quiche/quic/core/quic_connection.h"
 #include "quiche/quic/core/quic_connection_id.h"
 #include "quiche/quic/core/quic_error_codes.h"
 #include "quiche/quic/core/quic_framer.h"
 #include "quiche/quic/core/quic_packet_writer.h"
+#include "quiche/quic/core/quic_packets.h"
 #include "quiche/quic/core/quic_path_validator.h"
 #include "quiche/quic/core/quic_sent_packet_manager.h"
 #include "quiche/quic/core/quic_server_id.h"
@@ -508,7 +509,6 @@ class MockQuicConnectionVisitor : public QuicConnectionVisitorInterface {
   MOCK_METHOD(void, OnServerPreferredAddressAvailable,
               (const QuicSocketAddress&), (override));
   MOCK_METHOD(void, MaybeBundleOpportunistically, (), (override));
-  void OnBandwidthUpdateTimeout() override {}
 };
 
 class MockQuicConnectionHelper : public QuicConnectionHelperInterface {
@@ -736,7 +736,17 @@ class MockQuicConnection : public QuicConnection {
   MockConnectionIdGenerator connection_id_generator_;
 };
 
-class PacketSavingConnection : public MockQuicConnection {
+// Helper that allows retrieving and clearing queued packets.
+class PacketProvider {
+ public:
+  virtual ~PacketProvider() = default;
+
+  virtual std::vector<const QuicEncryptedPacket*> GetPackets() const = 0;
+  virtual void ClearPackets() = 0;
+};
+
+class PacketSavingConnection : public MockQuicConnection,
+                               public PacketProvider {
  public:
   PacketSavingConnection(MockQuicConnectionHelper* helper,
                          QuicAlarmFactory* alarm_factory,
@@ -758,10 +768,14 @@ class PacketSavingConnection : public MockQuicConnection {
 
   MOCK_METHOD(void, OnPacketSent, (EncryptionLevel, TransmissionType));
 
+  // PacketProvider:
+  std::vector<const QuicEncryptedPacket*> GetPackets() const override;
+  void ClearPackets() override;
+
   std::vector<std::unique_ptr<QuicEncryptedPacket>> encrypted_packets_;
-  // Number of packets in encrypted_packets that has been delivered to the peer
-  // connection.
-  size_t number_of_packets_delivered_ = 0;
+
+ private:
+  size_t num_cleared_packets_ = 0;
   MockQuicConnectionHelper* mock_helper_ = nullptr;
 };
 
@@ -835,8 +849,9 @@ class MockQuicCryptoStream : public QuicCryptoStream {
 
   ~MockQuicCryptoStream() override;
 
+  MOCK_METHOD(bool, encryption_established, (), (const));
+
   ssl_early_data_reason_t EarlyDataReason() const override;
-  bool encryption_established() const override;
   bool one_rtt_keys_available() const override;
   const QuicCryptoNegotiatedParameters& crypto_negotiated_params()
       const override;
@@ -960,10 +975,6 @@ class MockQuicSpdySession : public QuicSpdySession {
   MOCK_METHOD(void, OnStreamHeaderList,
               (QuicStreamId stream_id, bool fin, size_t frame_len,
                const QuicHeaderList& header_list),
-              (override));
-  MOCK_METHOD(void, OnPromiseHeaderList,
-              (QuicStreamId stream_id, QuicStreamId promised_stream_id,
-               size_t frame_len, const QuicHeaderList& header_list),
               (override));
   MOCK_METHOD(void, OnPriorityFrame,
               (QuicStreamId id, const spdy::SpdyStreamPrecedence& precedence),
@@ -1089,28 +1100,6 @@ class TestQuicSpdyServerSession : public QuicServerSessionBase {
   absl::optional<ClientCertMode> client_cert_mode_;
 };
 
-// A test implementation of QuicClientPushPromiseIndex::Delegate.
-class TestPushPromiseDelegate : public QuicClientPushPromiseIndex::Delegate {
- public:
-  // |match| sets the validation result for checking whether designated header
-  // fields match for promise request and client request.
-  explicit TestPushPromiseDelegate(bool match);
-
-  bool CheckVary(const spdy::Http2HeaderBlock& client_request,
-                 const spdy::Http2HeaderBlock& promise_request,
-                 const spdy::Http2HeaderBlock& promise_response) override;
-
-  void OnRendezvousResult(QuicSpdyStream* stream) override;
-
-  QuicSpdyStream* rendezvous_stream() { return rendezvous_stream_; }
-  bool rendezvous_fired() { return rendezvous_fired_; }
-
- private:
-  bool match_;
-  bool rendezvous_fired_;
-  QuicSpdyStream* rendezvous_stream_;
-};
-
 class TestQuicSpdyClientSession : public QuicSpdyClientSessionBase {
  public:
   TestQuicSpdyClientSession(
@@ -1122,8 +1111,6 @@ class TestQuicSpdyClientSession : public QuicSpdyClientSessionBase {
   TestQuicSpdyClientSession& operator=(const TestQuicSpdyClientSession&) =
       delete;
   ~TestQuicSpdyClientSession() override;
-
-  bool IsAuthorized(const std::string& authority) override;
 
   // QuicSpdyClientSessionBase
   MOCK_METHOD(void, OnProofValid,
@@ -1172,7 +1159,6 @@ class TestQuicSpdyClientSession : public QuicSpdyClientSessionBase {
   void RealOnConfigNegotiated();
 
   std::unique_ptr<QuicCryptoClientStream> crypto_stream_;
-  QuicClientPushPromiseIndex push_promise_index_;
   std::vector<CryptoHandshakeMessage> sent_crypto_handshake_messages_;
   absl::optional<QuicSSLConfig> ssl_config_;
 };

@@ -14,6 +14,7 @@
 #include "src/objects/free-space-inl.h"
 #include "src/objects/js-array-buffer-inl.h"
 #include "src/objects/js-weak-refs-inl.h"
+#include "src/objects/literal-objects-inl.h"
 #include "src/objects/module-inl.h"
 #include "src/objects/objects-body-descriptors-inl.h"
 #include "src/objects/objects-inl.h"
@@ -173,7 +174,7 @@ void HeapVisitor<ResultType, ConcreteVisitor>::VisitMapPointerIfNeeded(
 #define VISIT(TypeName)                                                      \
   template <typename ResultType, typename ConcreteVisitor>                   \
   ResultType HeapVisitor<ResultType, ConcreteVisitor>::Visit##TypeName(      \
-      Map map, TypeName object) {                                            \
+      Tagged<Map> map, Tagged<TypeName> object) {                            \
     ConcreteVisitor* visitor = static_cast<ConcreteVisitor*>(this);          \
     /* If you see the following DCHECK fail, then the size computation of    \
      * BodyDescriptor doesn't match the size return via obj.Size(). This is  \
@@ -343,7 +344,6 @@ ConcurrentHeapVisitor<ResultType, ConcreteVisitor>::VisitStringLocked(
       UNREACHABLE();
   }
   return static_cast<ResultType>(size);
-  ;
 }
 
 template <typename ConcreteVisitor>

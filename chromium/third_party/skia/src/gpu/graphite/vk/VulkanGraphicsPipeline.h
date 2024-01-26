@@ -27,6 +27,7 @@ class GraphicsPipelineDesc;
 class RuntimeEffectDictionary;
 class VulkanSharedContext;
 struct RenderPassDesc;
+class VulkanRenderPass;
 
 class VulkanGraphicsPipeline final : public GraphicsPipeline {
 public:
@@ -35,20 +36,18 @@ public:
     inline static constexpr unsigned int kPaintUniformBufferIndex = 2;
     inline static constexpr unsigned int kNumUniformBuffers = 3;
 
-    inline static const DescriptorData kIntrinsicUniformDescriptor  =
-            {DescriptorType::kInlineUniform,
-             // For inline uniform descriptors, the descriptor count field is actually the number of
-             // bytes to allocate for descriptors given this type.
-             /*count=*/sizeof(float) * 4,
-             VulkanGraphicsPipeline::kIntrinsicUniformBufferIndex};
-    inline static const DescriptorData kRenderStepUniformDescriptor =
-            {DescriptorType::kUniformBuffer,
-             /*count=*/1,
-             VulkanGraphicsPipeline::kRenderStepUniformBufferIndex};
-    inline static const DescriptorData kPaintUniformDescriptor      =
-            {DescriptorType::kUniformBuffer,
-             /*count=*/1,
-             VulkanGraphicsPipeline::kPaintUniformBufferIndex};
+    inline static const DescriptorData kIntrinsicUniformBufferDescriptor = {
+            DescriptorType::kUniformBuffer,
+            /*descCount=*/1,
+            VulkanGraphicsPipeline::kIntrinsicUniformBufferIndex};
+    inline static const DescriptorData kRenderStepUniformDescriptor = {
+            DescriptorType::kUniformBuffer,
+            /*descCount=*/1,
+            VulkanGraphicsPipeline::kRenderStepUniformBufferIndex};
+    inline static const DescriptorData kPaintUniformDescriptor = {
+            DescriptorType::kUniformBuffer,
+            /*descCount=*/1,
+            VulkanGraphicsPipeline::kPaintUniformBufferIndex};
 
     // For now, rigidly assign all uniform buffer descriptors to be in one descriptor set in binding
     // 0 and all texture/samplers to be in binding 1.
@@ -65,6 +64,7 @@ public:
                                               const RuntimeEffectDictionary*,
                                               const GraphicsPipelineDesc&,
                                               const RenderPassDesc&,
+                                              const sk_sp<VulkanRenderPass>& compatibleRenderPass,
                                               VkPipelineCache);
 
     ~VulkanGraphicsPipeline() override {}
@@ -79,7 +79,7 @@ public:
         return fPipeline;
     }
 
-    bool hasFragment() const { return fHasFragment; }
+    bool hasFragmentUniforms() const { return fHasFragmentUniforms; }
     bool hasStepUniforms() const { return fHasStepUniforms; }
     int numTextureSamplers() const { return fNumTextureSamplers; }
 
@@ -88,7 +88,7 @@ private:
                            PipelineInfo* pipelineInfo,
                            VkPipelineLayout,
                            VkPipeline,
-                           bool hasFragment,
+                           bool hasFragmentUniforms,
                            bool hasStepUniforms,
                            int numTextureSamplers);
 
@@ -96,7 +96,7 @@ private:
 
     VkPipelineLayout fPipelineLayout = VK_NULL_HANDLE;
     VkPipeline fPipeline = VK_NULL_HANDLE;
-    bool fHasFragment = false;
+    bool fHasFragmentUniforms = false;
     bool fHasStepUniforms = false;
     int fNumTextureSamplers = 0;
 };

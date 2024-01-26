@@ -15,9 +15,9 @@
 import m from 'mithril';
 
 import {clamp} from '../base/math_utils';
+import {Time} from '../base/time';
 import {Actions} from '../common/actions';
 import {featureFlags} from '../common/feature_flags';
-import {Time} from '../common/time';
 import {raf} from '../core/raf_scheduler';
 
 import {TRACK_SHELL_WIDTH} from './css_constants';
@@ -34,8 +34,6 @@ import {TimeSelectionPanel} from './time_selection_panel';
 import {DISMISSED_PANNING_HINT_KEY} from './topbar';
 import {TrackGroupPanel} from './track_group_panel';
 import {TrackPanel} from './track_panel';
-
-const SIDEBAR_WIDTH = 256;
 
 const OVERVIEW_PANEL_FLAG = featureFlags.register({
   id: 'overviewVisible',
@@ -119,7 +117,6 @@ class TraceViewer implements m.ClassComponent {
 
     this.zoomContent = new PanAndZoomHandler({
       element: panZoomEl,
-      contentOffsetX: SIDEBAR_WIDTH,
       onPanned: (pannedPx: number) => {
         const {
           visibleTimeScale,
@@ -231,7 +228,7 @@ class TraceViewer implements m.ClassComponent {
 
   view() {
     const scrollingPanels: AnyAttrsVnode[] = globals.state.scrollingTracks.map(
-        (id) => m(TrackPanel, {key: id, id, selectable: true}));
+        (key) => m(TrackPanel, {key, trackKey: key, selectable: true}));
 
     for (const group of Object.values(globals.state.trackGroups)) {
       const headerPanel = m(TrackGroupPanel, {
@@ -248,7 +245,7 @@ class TraceViewer implements m.ClassComponent {
           const id = group.tracks[i];
           childTracks.push(m(TrackPanel, {
             key: `track-${group.id}-${id}`,
-            id,
+            trackKey: id,
             selectable: true,
           }));
         }
@@ -288,7 +285,9 @@ class TraceViewer implements m.ClassComponent {
                   m(NotesPanel, {key: 'notes'}),
                   m(TickmarkPanel, {key: 'searchTickmarks'}),
                   ...globals.state.pinnedTracks.map(
-                      (id) => m(TrackPanel, {key: id, id, selectable: true})),
+                      (id) =>
+                          m(TrackPanel,
+                            {key: id, trackKey: id, selectable: true})),
                 ],
                 kind: 'OVERVIEW',
               })),

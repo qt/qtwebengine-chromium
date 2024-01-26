@@ -13,6 +13,7 @@
 
 // This file contains some helper function to deal with block householder reflectors
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen { 

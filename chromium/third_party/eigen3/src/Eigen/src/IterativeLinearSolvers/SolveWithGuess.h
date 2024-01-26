@@ -10,6 +10,7 @@
 #ifndef EIGEN_SOLVEWITHGUESS_H
 #define EIGEN_SOLVEWITHGUESS_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

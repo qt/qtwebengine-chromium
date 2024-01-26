@@ -346,7 +346,9 @@ OgHttp2Session::OgHttp2Session(Http2VisitorInterface& visitor, Options options)
             SendWindowUpdate(kConnectionStreamId, window_update_delta);
           },
           options.should_window_update_fn,
-          /*update_window_on_notify=*/false) {
+          /*update_window_on_notify=*/false),
+      max_outbound_concurrent_streams_(
+          options.remote_max_concurrent_streams.value_or(100u)) {
   decoder_.set_visitor(&receive_logger_);
   if (options_.max_header_list_bytes) {
     // Limit buffering of encoded HPACK data to 2x the decoded limit.
@@ -361,7 +363,7 @@ OgHttp2Session::OgHttp2Session(Http2VisitorInterface& visitor, Options options)
                           spdy::kHttp2ConnectionHeaderPrefixSize};
   }
   if (options_.max_header_field_size.has_value()) {
-    headers_handler_.SetMaxFieldSize(options_.max_header_field_size.value());
+    headers_handler_.SetMaxFieldSize(*options_.max_header_field_size);
   }
   headers_handler_.SetAllowObsText(options_.allow_obs_text);
 }
@@ -736,7 +738,7 @@ bool OgHttp2Session::AfterFrameSent(uint8_t frame_type_int, uint32_t stream_id,
       const bool is_settings_ack = (flags & ACK_FLAG);
       if (is_settings_ack && encoder_header_table_capacity_when_acking_) {
         framer_.UpdateHeaderEncoderTableSize(
-            encoder_header_table_capacity_when_acking_.value());
+            *encoder_header_table_capacity_when_acking_);
         encoder_header_table_capacity_when_acking_ = absl::nullopt;
       } else if (!is_settings_ack) {
         sent_non_ack_settings_ = true;
@@ -798,6 +800,10 @@ OgHttp2Session::SendResult OgHttp2Session::WriteForStream(
       auto block_ptr = std::move(state.trailers);
       if (state.half_closed_local) {
         QUICHE_LOG(ERROR) << "Sent fin; can't send trailers.";
+
+        // TODO(birenroy,diannahu): Consider queuing a RST_STREAM INTERNAL_ERROR
+        // instead.
+        CloseStream(stream_id, Http2ErrorCode::INTERNAL_ERROR);
       } else {
         SendTrailers(stream_id, std::move(*block_ptr));
       }
@@ -822,7 +828,8 @@ OgHttp2Session::SendResult OgHttp2Session::WriteForStream(
       state.data_deferred = true;
       break;
     } else if (length == DataFrameSource::kError) {
-      // TODO(birenroy): Consider queuing a RST_STREAM INTERNAL_ERROR instead.
+      // TODO(birenroy,diannahu): Consider queuing a RST_STREAM INTERNAL_ERROR
+      // instead.
       CloseStream(stream_id, Http2ErrorCode::INTERNAL_ERROR);
       // No more work on the stream; it has been closed.
       break;
@@ -836,6 +843,7 @@ OgHttp2Session::SendResult OgHttp2Session::WriteForStream(
           spdy::SpdyFramer::SerializeDataFrameHeaderWithPaddingLengthField(
               data);
       QUICHE_DCHECK(buffered_data_.empty() && frames_.empty());
+      data.Visit(&send_logger_);
       const bool success =
           state.outbound_body->Send(absl::string_view(header), length);
       if (!success) {
@@ -871,6 +879,12 @@ OgHttp2Session::SendResult OgHttp2Session::WriteForStream(
         auto block_ptr = std::move(state.trailers);
         if (fin) {
           QUICHE_LOG(ERROR) << "Sent fin; can't send trailers.";
+
+          // TODO(birenroy,diannahu): Consider queuing a RST_STREAM
+          // INTERNAL_ERROR instead.
+          CloseStream(stream_id, Http2ErrorCode::INTERNAL_ERROR);
+          // No more work on this stream; it has been closed.
+          break;
         } else {
           SendTrailers(stream_id, std::move(*block_ptr));
         }
@@ -1848,8 +1862,7 @@ HeaderType OgHttp2Session::NextHeaderType(
     } else {
       return HeaderType::REQUEST_TRAILER;
     }
-  } else if (!current_type ||
-             current_type.value() == HeaderType::RESPONSE_100) {
+  } else if (!current_type || *current_type == HeaderType::RESPONSE_100) {
     return HeaderType::RESPONSE;
   } else {
     return HeaderType::RESPONSE_TRAILER;

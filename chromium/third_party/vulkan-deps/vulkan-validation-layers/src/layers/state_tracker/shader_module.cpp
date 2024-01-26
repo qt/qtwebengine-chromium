@@ -43,7 +43,7 @@ void DecorationBase::Add(uint32_t decoration, uint32_t value) {
             flags |= nonwritable_bit;
             break;
         case spv::DecorationBuiltIn:
-            assert(builtin == kInvalidValue);  // being over written - not valid
+            assert(builtin == kInvalidSpirvValue);  // being over written - not valid
             builtin = value;
             break;
         case spv::DecorationNonReadable:
@@ -91,11 +91,11 @@ void DecorationSet::Add(uint32_t decoration, uint32_t value) {
 }
 
 bool DecorationSet::HasBuiltIn() const {
-    if (kInvalidValue != builtin) {
+    if (kInvalidSpirvValue != builtin) {
         return true;
     } else if (!member_decorations.empty()) {
         for (const auto& member : member_decorations) {
-            if (kInvalidValue != member.second.builtin) {
+            if (kInvalidSpirvValue != member.second.builtin) {
                 return true;
             }
         }
@@ -137,6 +137,7 @@ void ExecutionModeSet::Add(const Instruction& insn) {
             break;
         case spv::ExecutionModeIsolines:  // Tessellation
             flags |= iso_lines_bit;
+            tessellation_subdivision = spv::ExecutionModeIsolines;
             primitive_topology = VK_PRIMITIVE_TOPOLOGY_LINE_STRIP;
             break;
         case spv::ExecutionModeOutputLineStrip:
@@ -144,10 +145,32 @@ void ExecutionModeSet::Add(const Instruction& insn) {
             primitive_topology = VK_PRIMITIVE_TOPOLOGY_LINE_STRIP;
             break;
         case spv::ExecutionModeTriangles:
+            // ExecutionModeTriangles is input if shader is geometry and output if shader is tessellation evaluation
+            // Because we don't know which shader stage is used here we set both, but only set input for geometry shader if it
+            // hasn't been set yet
+            if (input_primitive_topology == VK_PRIMITIVE_TOPOLOGY_MAX_ENUM) {
+                input_primitive_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+            }
+            primitive_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+            tessellation_subdivision = spv::ExecutionModeTriangles;
+            break;
         case spv::ExecutionModeQuads:
+            primitive_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+            tessellation_subdivision = spv::ExecutionModeQuads;
+            break;
         case spv::ExecutionModeOutputTriangleStrip:
         case spv::ExecutionModeOutputTrianglesNV:
             primitive_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+            break;
+        case spv::ExecutionModeInputPoints:
+            input_primitive_topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
+            break;
+        case spv::ExecutionModeInputLines:
+        case spv::ExecutionModeInputLinesAdjacency:
+            input_primitive_topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+            break;
+        case spv::ExecutionModeInputTrianglesAdjacency:
+            input_primitive_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
             break;
         case spv::ExecutionModeLocalSizeId:
             flags |= local_size_id_bit;
@@ -224,6 +247,27 @@ void ExecutionModeSet::Add(const Instruction& insn) {
             break;
         case spv::ExecutionModeSubgroupUniformControlFlowKHR:  // VK_KHR_shader_subgroup_uniform_control_flow
             flags |= subgroup_uniform_control_flow_bit;
+            break;
+        case spv::ExecutionModeSpacingEqual:
+            tessellation_spacing = spv::ExecutionModeSpacingEqual;
+            break;
+        case spv::ExecutionModeSpacingFractionalEven:
+            tessellation_spacing = spv::ExecutionModeSpacingFractionalEven;
+            break;
+        case spv::ExecutionModeSpacingFractionalOdd:
+            tessellation_spacing = spv::ExecutionModeSpacingFractionalOdd;
+            break;
+        case spv::ExecutionModeVertexOrderCw:
+            tessellation_orientation = spv::ExecutionModeVertexOrderCw;
+            break;
+        case spv::ExecutionModeVertexOrderCcw:
+            tessellation_orientation = spv::ExecutionModeVertexOrderCcw;
+            break;
+        case spv::ExecutionModeDepthReplacing:
+            flags |= depth_replacing_bit;
+            break;
+        case spv::ExecutionModeStencilRefReplacingEXT:
+            flags |= stencil_ref_replacing_bit;
             break;
         default:
             break;
@@ -780,6 +824,7 @@ SPIRV_MODULE_STATE::StaticData::StaticData(const SPIRV_MODULE_STATE& module_stat
                     builtin_decoration_inst.push_back(&insn);
                 } else if (insn.Word(2) == spv::DecorationSpecId) {
                     spec_const_map[insn.Word(3)] = target_id;
+                    id_to_spec_id[target_id] = insn.Word(3);
                 }
             } break;
             case spv::OpMemberDecorate: {
@@ -794,6 +839,10 @@ SPIRV_MODULE_STATE::StaticData::StaticData(const SPIRV_MODULE_STATE& module_stat
 
             case spv::OpCapability:
                 capability_list.push_back(static_cast<spv::Capability>(insn.Word(1)));
+                // Cache frequently checked capabilities
+                if (capability_list.back() == spv::CapabilityRuntimeDescriptorArray) {
+                    has_capability_runtime_descriptor_array = true;
+                }
                 break;
 
             case spv::OpVariable:
@@ -909,6 +958,13 @@ SPIRV_MODULE_STATE::StaticData::StaticData(const SPIRV_MODULE_STATE& module_stat
             }
             case spv::OpReadClockKHR: {
                 read_clock_inst.push_back(&insn);
+                break;
+            }
+            case spv::OpTypeCooperativeMatrixNV:
+            case spv::OpCooperativeMatrixMulAddNV:
+            case spv::OpTypeCooperativeMatrixKHR:
+            case spv::OpCooperativeMatrixMulAddKHR: {
+                cooperative_matrix_inst.push_back(&insn);
                 break;
             }
 
@@ -1114,7 +1170,7 @@ uint32_t SPIRV_MODULE_STATE::CalculateWorkgroupSharedMemory() const {
     return total_size;
 }
 
-// If the instruction at |id| is a constant or copy of a constant, returns the instruction
+// If the instruction at |id| is a OpConstant or copy of a constant, returns the instruction
 // Cases such as runtime arrays, will not find a constant and return NULL
 const Instruction* SPIRV_MODULE_STATE::GetConstantDef(uint32_t id) const {
     const Instruction* value = FindDef(id);
@@ -1418,10 +1474,10 @@ std::string InterfaceSlot::Describe() const {
 }
 
 uint32_t GetFormatType(VkFormat format) {
-    if (FormatIsSINT(format)) return NumericTypeSint;
-    if (FormatIsUINT(format)) return NumericTypeUint;
+    if (vkuFormatIsSINT(format)) return NumericTypeSint;
+    if (vkuFormatIsUINT(format)) return NumericTypeUint;
     // Formats such as VK_FORMAT_D16_UNORM_S8_UINT are both
-    if (FormatIsDepthAndStencil(format)) return NumericTypeFloat | NumericTypeUint;
+    if (vkuFormatIsDepthAndStencil(format)) return NumericTypeFloat | NumericTypeUint;
     if (format == VK_FORMAT_UNDEFINED) return NumericTypeUnknown;
     // everything else -- UNORM/SNORM/FLOAT/USCALED/SSCALED is all float in the shader.
     return NumericTypeFloat;
@@ -1549,7 +1605,7 @@ std::vector<InterfaceSlot> StageInteraceVariable::GetInterfaceSlots(StageInterac
         // Structs has two options being labeled
         // 1. The block is given a Location, need to walk though and add up starting for that value
         // 2. The block is NOT given a Location, each member has dedicated decoration
-        const bool block_decorated_with_location = variable.decorations.location != DecorationSet::kInvalidValue;
+        const bool block_decorated_with_location = variable.decorations.location != kInvalidSpirvValue;
         if (block_decorated_with_location) {
             // In case of option 1, need to keep track as we go
             uint32_t base_location = variable.decorations.location;
@@ -1776,7 +1832,7 @@ ResourceInterfaceVariable::ResourceInterfaceVariable(const SPIRV_MODULE_STATE& m
                 if (image_access.is_written_to) {
                     if (is_image_without_format) {
                         is_write_without_format |= true;
-                        if (image_access.texel_component_count != ImageAccess::kInvalidValue) {
+                        if (image_access.texel_component_count != kInvalidSpirvValue) {
                             write_without_formats_component_count_list.push_back(image_access.texel_component_count);
                         }
                     }
@@ -1789,7 +1845,7 @@ ResourceInterfaceVariable::ResourceInterfaceVariable(const SPIRV_MODULE_STATE& m
 
                     // If accessed in an array, track which indexes were read, if not runtime array
                     if (is_input_attachment && !runtime_array) {
-                        if (image_access.image_access_chain_index != ImageAccess::kInvalidValue) {
+                        if (image_access.image_access_chain_index != kInvalidSpirvValue) {
                             input_attachment_index_read[image_access.image_access_chain_index] = true;
                         } else {
                             // if InputAttachment is accessed from load, just a single, non-array, index
@@ -1802,12 +1858,10 @@ ResourceInterfaceVariable::ResourceInterfaceVariable(const SPIRV_MODULE_STATE& m
                 // if not CombinedImageSampler, need to find all Samplers that were accessed with the image
                 if (image_access.variable_sampler_insn && !is_sampled_image) {
                     // if no AccessChain, it is same conceptually as being zero
-                    const uint32_t image_index = image_access.image_access_chain_index != ImageAccess::kInvalidValue
-                                                     ? image_access.image_access_chain_index
-                                                     : 0;
-                    const uint32_t sampler_index = image_access.sampler_access_chain_index != ImageAccess::kInvalidValue
-                                                       ? image_access.sampler_access_chain_index
-                                                       : 0;
+                    const uint32_t image_index =
+                        image_access.image_access_chain_index != kInvalidSpirvValue ? image_access.image_access_chain_index : 0;
+                    const uint32_t sampler_index =
+                        image_access.sampler_access_chain_index != kInvalidSpirvValue ? image_access.sampler_access_chain_index : 0;
 
                     if (image_index >= samplers_used_by_image.size()) {
                         samplers_used_by_image.resize(image_index + 1);

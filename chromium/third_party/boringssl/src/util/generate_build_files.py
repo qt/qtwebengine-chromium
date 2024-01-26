@@ -48,6 +48,8 @@ NON_PERL_FILES = {
     ('apple', 'x86_64'): [
         'src/third_party/fiat/asm/fiat_curve25519_adx_mul.S',
         'src/third_party/fiat/asm/fiat_curve25519_adx_square.S',
+        'src/third_party/fiat/asm/fiat_p256_adx_mul.S',
+        'src/third_party/fiat/asm/fiat_p256_adx_sqr.S',
     ],
     ('linux', 'arm'): [
         'src/crypto/curve25519/asm/x25519-asm-arm.S',
@@ -57,6 +59,8 @@ NON_PERL_FILES = {
         'src/crypto/hrss/asm/poly_rq_mul.S',
         'src/third_party/fiat/asm/fiat_curve25519_adx_mul.S',
         'src/third_party/fiat/asm/fiat_curve25519_adx_square.S',
+        'src/third_party/fiat/asm/fiat_p256_adx_mul.S',
+        'src/third_party/fiat/asm/fiat_p256_adx_sqr.S',
     ],
 }
 
@@ -355,7 +359,9 @@ class GN(object):
                                 files['ssl'] + files['ssl_internal_headers'])
       self.PrintVariableSection(out, 'ssl_headers', files['ssl_headers'])
       self.PrintVariableSection(out, 'pki_sources',
-                                files['pki'] + files['pki_internal_headers'])
+                                files['pki'])
+      self.PrintVariableSection(out, 'pki_internal_headers',
+                                files['pki_internal_headers'])
       self.PrintVariableSection(out, 'tool_sources',
                                 files['tool'] + files['tool_headers'])
 
@@ -417,7 +423,7 @@ class CMake(object):
     self.header = LicenseHeader("#") + R'''
 # This file is created by generate_build_files.py. Do not edit manually.
 
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.12)
 
 project(BoringSSL LANGUAGES C CXX)
 

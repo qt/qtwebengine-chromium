@@ -1,5 +1,5 @@
-load("//bazel:skia_rules.bzl", "exports_files_legacy", "select_multi", "skia_cc_deps", "skia_filegroup", "split_srcs_and_hdrs")
 load("//bazel:flags.bzl", "bool_flag", "selects", "string_flag_with_values")
+load("//bazel:skia_rules.bzl", "exports_files_legacy", "select_multi", "skia_cc_deps", "skia_filegroup", "split_srcs_and_hdrs")
 
 licenses(["notice"])
 
@@ -106,9 +106,9 @@ selects.config_setting_group(
 )
 
 bool_flag(
+    # Users should use :vulkan_with_vma directly
     name = "use_vulkan_memory_allocator",
     default = True,
-    public = False,  # Users should use :vulkan_with_vma
 )
 
 bool_flag(

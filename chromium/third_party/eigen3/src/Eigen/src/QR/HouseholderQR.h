@@ -12,6 +12,7 @@
 #ifndef EIGEN_QR_H
 #define EIGEN_QR_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen { 

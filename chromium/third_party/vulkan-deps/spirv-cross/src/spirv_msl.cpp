@@ -1898,9 +1898,18 @@ void CompilerMSL::extract_global_variables_from_function(uint32_t func_id, std::
 			case OpAtomicOr:
 			case OpAtomicXor:
 			case OpImageWrite:
+			{
 				if (needs_frag_discard_checks())
 					added_arg_ids.insert(builtin_helper_invocation_id);
+				uint32_t ptr = 0;
+				if (op == OpAtomicStore || op == OpImageWrite)
+					ptr = ops[0];
+				else
+					ptr = ops[2];
+				if (global_var_ids.find(ptr) != global_var_ids.end())
+					added_arg_ids.insert(ptr);
 				break;
+			}
 
 			// Emulate texture2D atomic operations
 			case OpImageTexelPointer:
@@ -7290,7 +7299,8 @@ void CompilerMSL::emit_custom_functions()
 			end_scope_decl();
 			statement("");
 
-			if (msl_options.runtime_array_rich_descriptor)
+			if (msl_options.runtime_array_rich_descriptor &&
+			    spv_function_implementations.count(SPVFuncImplVariableSizedDescriptor) != 0)
 			{
 				statement("template<typename T>");
 				statement("struct spvDescriptorArray<device T*>");
@@ -9365,6 +9375,7 @@ void CompilerMSL::emit_instruction(const Instruction &instruction)
 	case OpRayQueryInitializeKHR:
 	{
 		flush_variable_declaration(ops[0]);
+		register_write(ops[0]);
 		add_spv_func_and_recompile(SPVFuncImplRayQueryIntersectionParams);
 
 		statement(to_expression(ops[0]), ".reset(", "ray(", to_expression(ops[4]), ", ", to_expression(ops[6]), ", ",
@@ -9375,6 +9386,7 @@ void CompilerMSL::emit_instruction(const Instruction &instruction)
 	case OpRayQueryProceedKHR:
 	{
 		flush_variable_declaration(ops[0]);
+		register_write(ops[2]);
 		emit_op(ops[0], ops[1], join(to_expression(ops[2]), ".next()"), false);
 		break;
 	}
@@ -9435,14 +9447,17 @@ void CompilerMSL::emit_instruction(const Instruction &instruction)
 	}
 	case OpRayQueryConfirmIntersectionKHR:
 		flush_variable_declaration(ops[0]);
+		register_write(ops[0]);
 		statement(to_expression(ops[0]), ".commit_triangle_intersection();");
 		break;
 	case OpRayQueryGenerateIntersectionKHR:
 		flush_variable_declaration(ops[0]);
+		register_write(ops[0]);
 		statement(to_expression(ops[0]), ".commit_bounding_box_intersection(", to_expression(ops[1]), ");");
 		break;
 	case OpRayQueryTerminateKHR:
 		flush_variable_declaration(ops[0]);
+		register_write(ops[0]);
 		statement(to_expression(ops[0]), ".abort();");
 		break;
 #undef MSL_RAY_QUERY_GET_OP
@@ -13247,8 +13262,13 @@ void CompilerMSL::entry_point_args_discrete_descriptors(string &ep_args)
 			{
 				if (!ep_args.empty())
 					ep_args += ", ";
-				ep_args +=
-				    get_argument_address_space(var) + " " + type_to_glsl(type) + "& " + to_restrict(var_id, true) + r.name;
+				ep_args += get_argument_address_space(var) + " ";
+
+				if (recursive_inputs.count(type.self))
+					ep_args += string("void* ") + to_restrict(var_id, true) + r.name + "_vp";
+				else
+					ep_args += type_to_glsl(type) + "& " + to_restrict(var_id, true) + r.name;
+
 				ep_args += " [[buffer(" + convert_to_string(r.index) + ")";
 				if (interlocked_resources.count(var_id))
 					ep_args += ", raster_order_group(0)";
@@ -13430,6 +13450,19 @@ void CompilerMSL::fix_up_shader_inputs_outputs()
 					    }
 				    });
 			}
+		}
+
+		if (msl_options.replace_recursive_inputs && type_contains_recursion(type) &&
+		    (var.storage == StorageClassUniform || var.storage == StorageClassUniformConstant ||
+		     var.storage == StorageClassPushConstant || var.storage == StorageClassStorageBuffer))
+		{
+			recursive_inputs.insert(type.self);
+			entry_func.fixup_hooks_in.push_back([this, &type, &var, var_id]() {
+				auto addr_space = get_argument_address_space(var);
+				auto var_name = to_name(var_id);
+				statement(addr_space, " auto& ", to_restrict(var_id, true), var_name,
+				          " = *(", addr_space, " ", type_to_glsl(type), "*)", var_name, "_vp;");
+			});
 		}
 	});
 

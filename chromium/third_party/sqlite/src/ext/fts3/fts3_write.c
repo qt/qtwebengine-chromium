@@ -4347,6 +4347,7 @@ static int fts3IncrmergeLoad(
 
       for(i=nHeight; i>=0 && rc==SQLITE_OK; i--){
         NodeReader reader;
+        memset(&reader, 0, sizeof(reader));
         pNode = &pWriter->aNodeWriter[i];
 
         if( pNode->block.a){
@@ -5217,7 +5218,7 @@ static u64 fts3ChecksumIndex(
   int rc;
   u64 cksum = 0;
 
-  assert( *pRc==SQLITE_OK );
+  if( *pRc ) return 0;
 
   memset(&filter, 0, sizeof(filter));
   memset(&csr, 0, sizeof(csr));

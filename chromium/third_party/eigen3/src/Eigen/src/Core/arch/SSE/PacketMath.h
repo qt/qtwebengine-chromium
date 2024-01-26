@@ -11,6 +11,7 @@
 #define EIGEN_PACKET_MATH_SSE_H
 
 #include <cstdint>
+// IWYU pragma: private
 #include "../../InternalHeaderCheck.h"
 
 namespace Eigen {

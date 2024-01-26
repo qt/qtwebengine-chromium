@@ -14,7 +14,6 @@
 #include "src/heap/memory-chunk.h"
 
 #if V8_ENABLE_WEBASSEMBLY
-#include "src/wasm/wasm-code-manager.h"
 #include "src/wasm/wasm-objects.h"
 #endif  // V8_ENABLE_WEBASSEMBLY
 
@@ -1386,6 +1385,9 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
         __ mov(i.OutputRegister(), fp);
       }
       break;
+    case kArchStackPointer:
+    case kArchSetStackPointer:
+      UNREACHABLE();
     case kArchStackPointerGreaterThan: {
       // Potentially apply an offset to the current stack pointer before the
       // comparison to consider the size difference of an optimized frame versus
@@ -2101,19 +2103,33 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     case kS390_DoubleToInt32: {
       Label done;
+      if (i.OutputCount() > 1) {
+        __ mov(i.OutputRegister(1), Operand(1));
+      }
       __ ConvertDoubleToInt32(i.OutputRegister(0), i.InputDoubleRegister(0),
                               kRoundToNearest);
       __ b(Condition(0xE), &done, Label::kNear);  // normal case
-      __ mov(i.OutputRegister(0), Operand::Zero());
+      if (i.OutputCount() > 1) {
+        __ mov(i.OutputRegister(1), Operand::Zero());
+      } else {
+        __ mov(i.OutputRegister(0), Operand::Zero());
+      }
       __ bind(&done);
       break;
     }
     case kS390_DoubleToUint32: {
       Label done;
+      if (i.OutputCount() > 1) {
+        __ mov(i.OutputRegister(1), Operand(1));
+      }
       __ ConvertDoubleToUnsignedInt32(i.OutputRegister(0),
                                       i.InputDoubleRegister(0));
       __ b(Condition(0xE), &done, Label::kNear);  // normal case
-      __ mov(i.OutputRegister(0), Operand::Zero());
+      if (i.OutputCount() > 1) {
+        __ mov(i.OutputRegister(1), Operand::Zero());
+      } else {
+        __ mov(i.OutputRegister(0), Operand::Zero());
+      }
       __ bind(&done);
       break;
     }
@@ -3449,19 +3465,16 @@ void CodeGenerator::AssembleConstructFrame() {
       // exception unconditionally. Thereby we can avoid the integer overflow
       // check in the condition code.
       if (required_slots * kSystemPointerSize < v8_flags.stack_size * KB) {
-        Register scratch = r1;
-        __ LoadU64(
-            scratch,
-            FieldMemOperand(kWasmInstanceRegister,
-                            WasmInstanceObject::kRealStackLimitAddressOffset));
-        __ LoadU64(scratch, MemOperand(scratch));
-        __ AddS64(scratch, scratch,
+        Register stack_limit = r1;
+        __ LoadStackLimit(stack_limit, StackLimitKind::kRealStackLimit);
+        __ AddS64(stack_limit, stack_limit,
                   Operand(required_slots * kSystemPointerSize));
-        __ CmpU64(sp, scratch);
+        __ CmpU64(sp, stack_limit);
         __ bge(&done);
       }
 
-      __ Call(wasm::WasmCode::kWasmStackOverflow, RelocInfo::WASM_STUB_CALL);
+      __ Call(static_cast<intptr_t>(Builtin::kWasmStackOverflow),
+              RelocInfo::WASM_STUB_CALL);
       // The call does not return, hence we can ignore any references and just
       // define an empty safepoint.
       ReferenceMap* reference_map = zone()->New<ReferenceMap>(zone());

@@ -1,4 +1,4 @@
-// Copyright 2021 Google LLC
+// Copyright 2021-2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,14 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <windows.h>
+
+#include <chrono>  // NOLINT(build/c++11)
+#include <cstdint>
 #include <cstring>
 #include <exception>
 
+#include "internal/platform/byte_array.h"
+#include "internal/platform/exception.h"
+#include "internal/platform/implementation/windows/generated/winrt/Windows.Foundation.h"
 #include "internal/platform/implementation/windows/wifi_lan.h"
+#include "internal/platform/input_stream.h"
 #include "internal/platform/logging.h"
+#include "internal/platform/output_stream.h"
 
 namespace nearby {
 namespace windows {
+namespace {
+using ::winrt::Windows::Foundation::TimeSpan;
+
+constexpr int kWriteTimeoutInSeconds = 10;
+}  // namespace
 
 WifiLanSocket::WifiLanSocket(StreamSocket socket) {
   stream_soket_ = socket;
@@ -79,7 +93,8 @@ ExceptionOr<ByteArray> WifiLanSocket::SocketInputStream::Read(
         input_stream_.ReadAsync(buffer, size, InputStreamOptions::None).get();
 
     if (ibuffer.Length() != size) {
-      NEARBY_LOGS(WARNING) << "Only got part of data of needed.";
+      NEARBY_LOGS(WARNING) << "Only read partial of data: [" << ibuffer.Length()
+                           << "/" << size << "].";
     }
 
     ByteArray data((char*)ibuffer.data(), ibuffer.Length());
@@ -146,7 +161,31 @@ Exception WifiLanSocket::SocketOutputStream::Write(const ByteArray& data) {
     Buffer buffer = Buffer(data.size());
     std::memcpy(buffer.data(), data.data(), data.size());
     buffer.Length(data.size());
-    output_stream_.WriteAsync(buffer).get();
+    uint32_t wrote_bytes = 0;
+    auto write_async = output_stream_.WriteAsync(buffer);
+
+    switch (write_async.wait_for(
+        TimeSpan(std::chrono::seconds(kWriteTimeoutInSeconds)))) {
+      case winrt::Windows::Foundation::AsyncStatus::Completed:
+        wrote_bytes = write_async.GetResults();
+        break;
+      case winrt::Windows::Foundation::AsyncStatus::Started:
+        NEARBY_LOGS(ERROR) << __func__
+                           << ": Failed to write socket data due to timeout.";
+        write_async.Cancel();
+        return {Exception::kIo};
+      default:
+        NEARBY_LOGS(ERROR)
+            << __func__
+            << ": Failed to write socket data due to unknown reasons.";
+        return {Exception::kIo};
+    }
+
+    if (wrote_bytes != data.size()) {
+      NEARBY_LOGS(WARNING) << "Only wrote partial of data:[" << wrote_bytes
+                           << "/" << data.size() << "].";
+    }
+
     return {Exception::kSuccess};
   } catch (std::exception exception) {
     NEARBY_LOGS(ERROR) << __func__ << ": Exception: " << exception.what();

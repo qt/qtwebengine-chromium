@@ -10,6 +10,7 @@
 #ifndef EIGEN_DETERMINANT_H
 #define EIGEN_DETERMINANT_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen { 

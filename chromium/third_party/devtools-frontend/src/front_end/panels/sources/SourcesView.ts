@@ -7,6 +7,8 @@ import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
+import * as SDK from '../../core/sdk/sdk.js';
+import * as Bindings from '../../models/bindings/bindings.js';
 import * as Persistence from '../../models/persistence/persistence.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import * as QuickOpen from '../../ui/legacy/components/quick_open/quick_open.js';
@@ -52,10 +54,6 @@ const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
 export class SourcesView extends Common.ObjectWrapper.eventMixin<EventTypes, typeof UI.Widget.VBox>(UI.Widget.VBox)
     implements TabbedEditorContainerDelegate, UI.SearchableView.Searchable, UI.SearchableView.Replaceable {
-  private placeholderOptionArray: {
-    element: HTMLElement,
-    handler: Function,
-  }[];
   private selectedIndex: number;
   private readonly searchableViewInternal: UI.SearchableView.SearchableView;
   private readonly sourceViewByUISourceCode: Map<Workspace.UISourceCode.UISourceCode, UI.Widget.Widget>;
@@ -76,7 +74,6 @@ export class SourcesView extends Common.ObjectWrapper.eventMixin<EventTypes, typ
     this.element.id = 'sources-panel-sources-view';
     this.setMinimumAndPreferredSizes(88, 52, 150, 100);
 
-    this.placeholderOptionArray = [];
     this.selectedIndex = 0;
 
     const workspace = Workspace.Workspace.WorkspaceImpl.instance();
@@ -110,6 +107,7 @@ export class SourcesView extends Common.ObjectWrapper.eventMixin<EventTypes, typ
     workspace.addEventListener(Workspace.Workspace.Events.UISourceCodeAdded, this.uiSourceCodeAdded, this);
     workspace.addEventListener(Workspace.Workspace.Events.UISourceCodeRemoved, this.uiSourceCodeRemoved, this);
     workspace.addEventListener(Workspace.Workspace.Events.ProjectRemoved, this.projectRemoved.bind(this), this);
+    SDK.TargetManager.TargetManager.instance().addScopeChangeListener(this.#onScopeChange.bind(this));
 
     function handleBeforeUnload(event: Event): void {
       if (event.returnValue) {
@@ -147,8 +145,6 @@ export class SourcesView extends Common.ObjectWrapper.eventMixin<EventTypes, typ
   }
 
   private placeholderElement(): Element {
-    this.placeholderOptionArray = [];
-
     const shortcuts = [
       {actionId: 'quickOpen.show', description: i18nString(UIStrings.openFile)},
       {actionId: 'commandMenu.show', description: i18nString(UIStrings.runCommand)},
@@ -160,7 +156,6 @@ export class SourcesView extends Common.ObjectWrapper.eventMixin<EventTypes, typ
     ];
 
     const list = document.createElement('div');
-    list.addEventListener('keydown', this.placeholderOnKeyDown.bind(this), false);
     UI.ARIAUtils.markAsList(list);
     UI.ARIAUtils.setLabel(list, i18nString(UIStrings.sourceViewActions));
 
@@ -169,8 +164,13 @@ export class SourcesView extends Common.ObjectWrapper.eventMixin<EventTypes, typ
       const listItemElement = list.createChild('div', 'tabbed-pane-placeholder-row');
       UI.ARIAUtils.markAsListitem(listItemElement);
       if (shortcutKeyText) {
-        listItemElement.createChild('span').textContent = shortcutKeyText;
-        listItemElement.createChild('span').textContent = shortcut.description;
+        const title = listItemElement.createChild('span');
+        title.textContent = shortcutKeyText;
+
+        const button = listItemElement.createChild('button');
+        button.textContent = shortcut.description;
+        const action = UI.ActionRegistry.ActionRegistry.instance().action(shortcut.actionId);
+        button.addEventListener('click', () => action?.execute());
       }
 
       if (shortcut.isWorkspace) {
@@ -180,16 +180,6 @@ export class SourcesView extends Common.ObjectWrapper.eventMixin<EventTypes, typ
         const browseButton = workspace.createChild('button');
         browseButton.textContent = i18nString(UIStrings.selectFolder);
         browseButton.addEventListener('click', this.addFileSystemClicked.bind(this));
-      }
-
-      const action = UI.ActionRegistry.ActionRegistry.instance().action(shortcut.actionId);
-      if (action) {
-        this.placeholderOptionArray.push({
-          element: listItemElement,
-          handler(): void {
-            void action.execute();
-          },
-        });
       }
     }
 
@@ -203,33 +193,6 @@ export class SourcesView extends Common.ObjectWrapper.eventMixin<EventTypes, typ
     }
     Host.userMetrics.actionTaken(Host.UserMetrics.Action.WorkspaceDropFolder);
     void UI.ViewManager.ViewManager.instance().showView('navigator-files');
-  }
-
-  private placeholderOnKeyDown(event: Event): void {
-    const keyboardEvent = (event as KeyboardEvent);
-    if (Platform.KeyboardUtilities.isEnterOrSpaceKey(keyboardEvent)) {
-      this.placeholderOptionArray[this.selectedIndex].handler();
-      return;
-    }
-
-    let offset = 0;
-    if (keyboardEvent.key === 'ArrowDown') {
-      offset = 1;
-    } else if (keyboardEvent.key === 'ArrowUp') {
-      offset = -1;
-    }
-
-    const newIndex = Math.max(Math.min(this.placeholderOptionArray.length - 1, this.selectedIndex + offset), 0);
-    const newElement = this.placeholderOptionArray[newIndex].element;
-    const oldElement = this.placeholderOptionArray[this.selectedIndex].element;
-    if (newElement !== oldElement) {
-      oldElement.tabIndex = -1;
-      newElement.tabIndex = 0;
-      UI.ARIAUtils.setSelected(oldElement, false);
-      UI.ARIAUtils.setSelected(newElement, true);
-      this.selectedIndex = newIndex;
-      newElement.focus();
-    }
   }
 
   static defaultUISourceCodeScores(): Map<Workspace.UISourceCode.UISourceCode, number> {
@@ -324,6 +287,18 @@ export class SourcesView extends Common.ObjectWrapper.eventMixin<EventTypes, typ
     this.historyManager.rollover();
   }
 
+  #onScopeChange(): void {
+    const workspace = Workspace.Workspace.WorkspaceImpl.instance();
+    for (const uiSourceCode of workspace.uiSourceCodes()) {
+      const target = Bindings.NetworkProject.NetworkProject.targetForUISourceCode(uiSourceCode);
+      if (SDK.TargetManager.TargetManager.instance().isInScope(target)) {
+        this.addUISourceCode(uiSourceCode);
+      } else {
+        this.removeUISourceCodes([uiSourceCode]);
+      }
+    }
+  }
+
   private uiSourceCodeAdded(event: Common.EventTarget.EventTargetEvent<Workspace.UISourceCode.UISourceCode>): void {
     const uiSourceCode = event.data;
     this.addUISourceCode(uiSourceCode);
@@ -336,6 +311,10 @@ export class SourcesView extends Common.ObjectWrapper.eventMixin<EventTypes, typ
     if (uiSourceCode.project().type() === Workspace.Workspace.projectTypes.FileSystem &&
         Persistence.FileSystemWorkspaceBinding.FileSystemWorkspaceBinding.fileSystemType(uiSourceCode.project()) ===
             'overrides') {
+      return;
+    }
+    const target = Bindings.NetworkProject.NetworkProject.targetForUISourceCode(uiSourceCode);
+    if (!SDK.TargetManager.TargetManager.instance().isInScope(target)) {
       return;
     }
     this.editorContainer.addUISourceCode(uiSourceCode);

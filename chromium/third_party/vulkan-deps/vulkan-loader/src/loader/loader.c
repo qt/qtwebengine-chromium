@@ -1495,7 +1495,8 @@ VkResult loader_add_direct_driver(const struct loader_instance *inst, uint32_t i
         void *new_ptr = loader_instance_heap_realloc(inst, icd_tramp_list->scanned_list, icd_tramp_list->capacity,
                                                      icd_tramp_list->capacity * 2, VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE);
         if (NULL == new_ptr) {
-            loader_log(inst, VULKAN_LOADER_ERROR_BIT, 0, "loader_add_direct_driver: Realloc failed on icd library list for ICD %s");
+            loader_log(inst, VULKAN_LOADER_ERROR_BIT, 0,
+                       "loader_add_direct_driver: Realloc failed on icd library list for ICD index %u", index);
             return VK_ERROR_OUT_OF_HOST_MEMORY;
         }
         icd_tramp_list->scanned_list = new_ptr;
@@ -2353,10 +2354,10 @@ VkResult loader_read_layer_json(const struct loader_instance *inst, struct loade
     // Parse library_path
 
     // Library path no longer required unless component_layers is also not defined
-    cJSON *library_path = cJSON_GetObjectItem(layer_node, "library_path");
+    cJSON *library_path = loader_cJSON_GetObjectItem(layer_node, "library_path");
 
     if (NULL != library_path) {
-        if (NULL != cJSON_GetObjectItem(layer_node, "component_layers")) {
+        if (NULL != loader_cJSON_GetObjectItem(layer_node, "component_layers")) {
             loader_log(inst, VULKAN_LOADER_WARN_BIT, 0,
                        "Indicating meta-layer-specific component_layers, but also defining layer library path.  Both are not "
                        "compatible, so skipping this layer");
@@ -2367,7 +2368,7 @@ VkResult loader_read_layer_json(const struct loader_instance *inst, struct loade
         result = loader_copy_to_new_str(inst, filename, &props.manifest_file_name);
         if (result == VK_ERROR_OUT_OF_HOST_MEMORY) goto out;
 
-        char *library_path_str = cJSON_Print(library_path);
+        char *library_path_str = loader_cJSON_Print(library_path);
         if (NULL == library_path_str) {
             loader_log(inst, VULKAN_LOADER_WARN_BIT, 0,
                        "Skipping layer due to problem accessing the library_path value in manifest JSON file %s", filename);
@@ -2427,7 +2428,7 @@ VkResult loader_read_layer_json(const struct loader_instance *inst, struct loade
     // Parse disable_environment
 
     if (is_implicit) {
-        cJSON *disable_environment = cJSON_GetObjectItem(layer_node, "disable_environment");
+        cJSON *disable_environment = loader_cJSON_GetObjectItem(layer_node, "disable_environment");
         if (disable_environment == NULL) {
             loader_log(inst, VULKAN_LOADER_WARN_BIT, 0,
                        "Didn't find required layer object disable_environment in manifest JSON file, skipping this layer");
@@ -2459,7 +2460,7 @@ VkResult loader_read_layer_json(const struct loader_instance *inst, struct loade
     //    vkGetInstanceProcAddr
     //    vkGetDeviceProcAddr
     //    vkNegotiateLoaderLayerInterfaceVersion (starting with JSON file 1.1.0)
-    cJSON *functions = cJSON_GetObjectItem(layer_node, "functions");
+    cJSON *functions = loader_cJSON_GetObjectItem(layer_node, "functions");
     if (functions != NULL) {
         if (loader_check_version_meets_required(loader_combine_version(1, 1, 0), version)) {
             result = loader_parse_json_string(functions, "vkNegotiateLoaderLayerInterfaceVersion",
@@ -2495,12 +2496,12 @@ VkResult loader_read_layer_json(const struct loader_instance *inst, struct loade
     //     spec_version
     //   }
 
-    cJSON *instance_extensions = cJSON_GetObjectItem(layer_node, "instance_extensions");
+    cJSON *instance_extensions = loader_cJSON_GetObjectItem(layer_node, "instance_extensions");
     if (instance_extensions != NULL) {
-        int count = cJSON_GetArraySize(instance_extensions);
+        int count = loader_cJSON_GetArraySize(instance_extensions);
         for (int i = 0; i < count; i++) {
             VkExtensionProperties ext_prop = {0};
-            cJSON *ext_item = cJSON_GetArrayItem(instance_extensions, i);
+            cJSON *ext_item = loader_cJSON_GetArrayItem(instance_extensions, i);
             result = loader_parse_json_string_to_existing_str(inst, ext_item, "name", VK_MAX_EXTENSION_NAME_SIZE,
                                                               ext_prop.extensionName);
             if (result == VK_ERROR_OUT_OF_HOST_MEMORY) goto out;
@@ -2525,13 +2526,13 @@ VkResult loader_read_layer_json(const struct loader_instance *inst, struct loade
     //     spec_version
     //     entrypoints
     //   }
-    cJSON *device_extensions = cJSON_GetObjectItem(layer_node, "device_extensions");
+    cJSON *device_extensions = loader_cJSON_GetObjectItem(layer_node, "device_extensions");
     if (device_extensions != NULL) {
-        int count = cJSON_GetArraySize(device_extensions);
+        int count = loader_cJSON_GetArraySize(device_extensions);
         for (int i = 0; i < count; i++) {
             VkExtensionProperties ext_prop = {0};
 
-            cJSON *ext_item = cJSON_GetArrayItem(device_extensions, i);
+            cJSON *ext_item = loader_cJSON_GetArrayItem(device_extensions, i);
 
             result = loader_parse_json_string_to_existing_str(inst, ext_item, "name", VK_MAX_EXTENSION_NAME_SIZE,
                                                               ext_prop.extensionName);
@@ -2545,7 +2546,7 @@ VkResult loader_read_layer_json(const struct loader_instance *inst, struct loade
             }
             loader_instance_heap_free(inst, spec_version);
 
-            cJSON *entrypoints = cJSON_GetObjectItem(ext_item, "entrypoints");
+            cJSON *entrypoints = loader_cJSON_GetObjectItem(ext_item, "entrypoints");
             if (entrypoints == NULL) {
                 result = loader_add_to_dev_ext_list(inst, &props.device_extension_list, &ext_prop, NULL);
                 if (result == VK_ERROR_OUT_OF_HOST_MEMORY) goto out;
@@ -2560,7 +2561,7 @@ VkResult loader_read_layer_json(const struct loader_instance *inst, struct loade
         }
     }
     if (is_implicit) {
-        cJSON *enable_environment = cJSON_GetObjectItem(layer_node, "enable_environment");
+        cJSON *enable_environment = loader_cJSON_GetObjectItem(layer_node, "enable_environment");
 
         // enable_environment is optional
         if (enable_environment && enable_environment->child && enable_environment->child->type == cJSON_String) {
@@ -2572,7 +2573,7 @@ VkResult loader_read_layer_json(const struct loader_instance *inst, struct loade
     }
 
     // Read in the pre-instance stuff
-    cJSON *pre_instance = cJSON_GetObjectItem(layer_node, "pre_instance_functions");
+    cJSON *pre_instance = loader_cJSON_GetObjectItem(layer_node, "pre_instance_functions");
     if (NULL != pre_instance) {
         // Supported versions started in 1.1.2, so anything newer
         if (!loader_check_version_meets_required(loader_combine_version(1, 1, 2), version)) {
@@ -2600,7 +2601,7 @@ VkResult loader_read_layer_json(const struct loader_instance *inst, struct loade
         }
     }
 
-    if (cJSON_GetObjectItem(layer_node, "app_keys")) {
+    if (loader_cJSON_GetObjectItem(layer_node, "app_keys")) {
         if (!props.is_override) {
             loader_log(inst, VULKAN_LOADER_WARN_BIT | VULKAN_LOADER_LAYER_BIT, 0,
                        "Layer %s contains app_keys, but any app_keys can only be provided by the override metalayer. "
@@ -2677,11 +2678,11 @@ VkResult loader_add_layer_properties(const struct loader_instance *inst, struct 
     if (!json || json->type != 6) {
         goto out;
     }
-    item = cJSON_GetObjectItem(json, "file_format_version");
+    item = loader_cJSON_GetObjectItem(json, "file_format_version");
     if (item == NULL) {
         goto out;
     }
-    file_vers = cJSON_PrintUnformatted(item);
+    file_vers = loader_cJSON_PrintUnformatted(item);
     if (NULL == file_vers) {
         result = VK_ERROR_OUT_OF_HOST_MEMORY;
         goto out;
@@ -2697,9 +2698,9 @@ VkResult loader_add_layer_properties(const struct loader_instance *inst, struct 
     }
 
     // If "layers" is present, read in the array of layer objects
-    layers_node = cJSON_GetObjectItem(json, "layers");
+    layers_node = loader_cJSON_GetObjectItem(json, "layers");
     if (layers_node != NULL) {
-        int numItems = cJSON_GetArraySize(layers_node);
+        int numItems = loader_cJSON_GetArraySize(layers_node);
         // Supported versions started in 1.0.1, so anything newer
         if (!loader_check_version_meets_required(loader_combine_version(1, 0, 1), json_version)) {
             loader_log(inst, VULKAN_LOADER_WARN_BIT | VULKAN_LOADER_LAYER_BIT, 0,
@@ -2708,7 +2709,7 @@ VkResult loader_add_layer_properties(const struct loader_instance *inst, struct 
                        filename, file_vers);
         }
         for (int curLayer = 0; curLayer < numItems; curLayer++) {
-            layer_node = cJSON_GetArrayItem(layers_node, curLayer);
+            layer_node = loader_cJSON_GetArrayItem(layers_node, curLayer);
             if (layer_node == NULL) {
                 loader_log(inst, VULKAN_LOADER_WARN_BIT | VULKAN_LOADER_LAYER_BIT, 0,
                            "loader_add_layer_properties: Can not find 'layers' array element %d object in manifest JSON file %s.  "
@@ -2720,7 +2721,7 @@ VkResult loader_add_layer_properties(const struct loader_instance *inst, struct 
         }
     } else {
         // Otherwise, try to read in individual layers
-        layer_node = cJSON_GetObjectItem(json, "layer");
+        layer_node = loader_cJSON_GetObjectItem(json, "layer");
         if (layer_node == NULL) {
             loader_log(inst, VULKAN_LOADER_WARN_BIT | VULKAN_LOADER_LAYER_BIT, 0,
                        "loader_add_layer_properties: Can not find 'layer' object in manifest JSON file %s.  Skipping this file.",
@@ -3152,6 +3153,8 @@ VkResult read_data_files_in_search_paths(const struct loader_instance *inst, enu
 #if defined(__APPLE__)
             // Add the bundle's Resources dir to the beginning of the search path.
             // Looks for manifests in the bundle first, before any system directories.
+            // This also appears to work unmodified for iOS, it finds the app bundle on the devices
+            // file system. (RSW)
             CFBundleRef main_bundle = CFBundleGetMainBundle();
             if (NULL != main_bundle) {
                 CFURLRef ref = CFBundleCopyResourcesDirectoryURL(main_bundle);
@@ -3403,7 +3406,7 @@ VkResult loader_parse_icd_manifest(const struct loader_instance *inst, char *fil
         goto out;
     }
 
-    cJSON *item = cJSON_GetObjectItem(json, "file_format_version");
+    cJSON *item = loader_cJSON_GetObjectItem(json, "file_format_version");
     if (item == NULL) {
         loader_log(inst, VULKAN_LOADER_WARN_BIT | VULKAN_LOADER_DRIVER_BIT, 0,
                    "loader_parse_icd_manifest: ICD JSON %s does not have a \'file_format_version\' field. Skipping ICD JSON.",
@@ -3412,7 +3415,7 @@ VkResult loader_parse_icd_manifest(const struct loader_instance *inst, char *fil
         goto out;
     }
 
-    file_vers_str = cJSON_Print(item);
+    file_vers_str = loader_cJSON_Print(item);
     if (NULL == file_vers_str) {
         // Only reason the print can fail is if there was an allocation issue
         loader_log(inst, VULKAN_LOADER_WARN_BIT | VULKAN_LOADER_DRIVER_BIT, 0,
@@ -3433,7 +3436,7 @@ VkResult loader_parse_icd_manifest(const struct loader_instance *inst, char *fil
                    json_file_version.major, json_file_version.minor, json_file_version.patch);
     }
 
-    cJSON *itemICD = cJSON_GetObjectItem(json, "ICD");
+    cJSON *itemICD = loader_cJSON_GetObjectItem(json, "ICD");
     if (itemICD == NULL) {
         loader_log(inst, VULKAN_LOADER_WARN_BIT | VULKAN_LOADER_DRIVER_BIT, 0,
                    "loader_parse_icd_manifest: Can not find \'ICD\' object in ICD JSON file %s. Skipping ICD JSON", file_str);
@@ -3441,7 +3444,7 @@ VkResult loader_parse_icd_manifest(const struct loader_instance *inst, char *fil
         goto out;
     }
 
-    item = cJSON_GetObjectItem(itemICD, "library_path");
+    item = loader_cJSON_GetObjectItem(itemICD, "library_path");
     if (item == NULL) {
         loader_log(inst, VULKAN_LOADER_WARN_BIT | VULKAN_LOADER_DRIVER_BIT, 0,
                    "loader_parse_icd_manifest: Failed to find \'library_path\' object in ICD JSON file %s. Skipping ICD JSON.",
@@ -3449,7 +3452,7 @@ VkResult loader_parse_icd_manifest(const struct loader_instance *inst, char *fil
         res = VK_ERROR_INCOMPATIBLE_DRIVER;
         goto out;
     }
-    char *library_path = cJSON_Print(item);
+    char *library_path = loader_cJSON_Print(item);
     if (!library_path) {
         loader_log(inst, VULKAN_LOADER_WARN_BIT | VULKAN_LOADER_DRIVER_BIT, 0,
                    "loader_parse_icd_manifest: Failed retrieving ICD JSON %s \'library_path\' field. Skipping ICD JSON.", file_str);
@@ -3472,14 +3475,14 @@ VkResult loader_parse_icd_manifest(const struct loader_instance *inst, char *fil
         goto out;
     }
 
-    item = cJSON_GetObjectItem(itemICD, "api_version");
+    item = loader_cJSON_GetObjectItem(itemICD, "api_version");
     if (item == NULL) {
         loader_log(inst, VULKAN_LOADER_WARN_BIT | VULKAN_LOADER_DRIVER_BIT, 0,
                    "loader_parse_icd_manifest: ICD JSON %s does not have an \'api_version\' field. Skipping ICD JSON.", file_str);
         res = VK_ERROR_INCOMPATIBLE_DRIVER;
         goto out;
     }
-    version_str = cJSON_Print(item);
+    version_str = loader_cJSON_Print(item);
     if (NULL == version_str) {
         // Only reason the print can fail is if there was an allocation issue
         loader_log(inst, VULKAN_LOADER_WARN_BIT | VULKAN_LOADER_DRIVER_BIT, 0,
@@ -3501,7 +3504,7 @@ VkResult loader_parse_icd_manifest(const struct loader_instance *inst, char *fil
 
     // Skip over ICD's which contain a true "is_portability_driver" value whenever the application doesn't enable
     // portability enumeration.
-    item = cJSON_GetObjectItem(itemICD, "is_portability_driver");
+    item = loader_cJSON_GetObjectItem(itemICD, "is_portability_driver");
     if (item != NULL && item->type == cJSON_True && inst && !inst->portability_enumeration_enabled) {
         if (skipped_portability_drivers) {
             *skipped_portability_drivers = true;
@@ -3510,9 +3513,9 @@ VkResult loader_parse_icd_manifest(const struct loader_instance *inst, char *fil
         goto out;
     }
 
-    item = cJSON_GetObjectItem(itemICD, "library_arch");
+    item = loader_cJSON_GetObjectItem(itemICD, "library_arch");
     if (item != NULL) {
-        library_arch_str = cJSON_Print(item);
+        library_arch_str = loader_cJSON_Print(item);
         if (NULL != library_arch_str) {
             // cJSON includes the quotes by default, so we need to look for those here
             if ((strncmp(library_arch_str, "32", 4) == 0 && sizeof(void *) != 4) ||
@@ -3529,7 +3532,7 @@ VkResult loader_parse_icd_manifest(const struct loader_instance *inst, char *fil
         }
     }
 out:
-    cJSON_Delete(json);
+    loader_cJSON_Delete(json);
     loader_instance_heap_free(inst, file_vers_str);
     loader_instance_heap_free(inst, version_str);
     loader_instance_heap_free(inst, library_arch_str);
@@ -3654,7 +3657,7 @@ VkResult loader_icd_scan(const struct loader_instance *inst, struct loader_icd_t
                                icd_details[i].full_library_path);
                     break;
                 case LOADER_LAYER_LIB_ERROR_WRONG_BIT_TYPE: {
-                    loader_log(inst, VULKAN_LOADER_DRIVER_BIT, 0, "Requested layer %s was wrong bit-type. Ignoring this JSON",
+                    loader_log(inst, VULKAN_LOADER_DRIVER_BIT, 0, "Requested ICD %s was wrong bit-type. Ignoring this JSON",
                                icd_details[i].full_library_path);
                     break;
                 }
@@ -3713,7 +3716,7 @@ VkResult loader_parse_instance_layers(struct loader_instance *inst, enum loader_
 
         local_res = loader_add_layer_properties(inst, instance_layers, json,
                                                 manifest_type == LOADER_DATA_FILE_MANIFEST_IMPLICIT_LAYER, file_str);
-        cJSON_Delete(json);
+        loader_cJSON_Delete(json);
 
         // If the error is anything other than out of memory we still want to try to load the other layers
         if (VK_ERROR_OUT_OF_HOST_MEMORY == local_res) {
@@ -4235,6 +4238,33 @@ bool loader_get_layer_interface_version(PFN_vkNegotiateLoaderLayerInterfaceVersi
     return true;
 }
 
+// Every extension that has a loader-defined trampoline needs to be marked as enabled or disabled so that we know whether or
+// not to return that trampoline when vkGetDeviceProcAddr is called
+void setup_logical_device_enabled_layer_extensions(const struct loader_instance *inst, struct loader_device *dev,
+                                                   const struct loader_extension_list *icd_exts,
+                                                   const VkDeviceCreateInfo *pCreateInfo) {
+    // Can only setup debug marker as debug utils is an instance extensions.
+    for (uint32_t i = 0; i < pCreateInfo->enabledExtensionCount; ++i) {
+        if (!strcmp(pCreateInfo->ppEnabledExtensionNames[i], VK_EXT_DEBUG_MARKER_EXTENSION_NAME)) {
+            // Check if its supported by the driver
+            for (uint32_t j = 0; j < icd_exts->count; ++j) {
+                if (!strcmp(icd_exts->list[j].extensionName, VK_EXT_DEBUG_MARKER_EXTENSION_NAME)) {
+                    dev->layer_extensions.ext_debug_marker_enabled = true;
+                }
+            }
+            // also check if any layers support it.
+            for (uint32_t j = 0; j < inst->app_activated_layer_list.count; j++) {
+                struct loader_layer_properties *layer = inst->app_activated_layer_list.list[j];
+                for (uint32_t k = 0; k < layer->device_extension_list.count; k++) {
+                    if (!strcmp(layer->device_extension_list.list[k].props.extensionName, VK_EXT_DEBUG_MARKER_EXTENSION_NAME)) {
+                        dev->layer_extensions.ext_debug_marker_enabled = true;
+                    }
+                }
+            }
+        }
+    }
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL loader_layer_create_device(VkInstance instance, VkPhysicalDevice physicalDevice,
                                                           const VkDeviceCreateInfo *pCreateInfo,
                                                           const VkAllocationCallbacks *pAllocator, VkDevice *pDevice,
@@ -4287,6 +4317,8 @@ VKAPI_ATTR VkResult VKAPI_CALL loader_layer_create_device(VkInstance instance, V
         res = VK_ERROR_OUT_OF_HOST_MEMORY;
         goto out;
     }
+
+    setup_logical_device_enabled_layer_extensions(inst, dev, &icd_exts, pCreateInfo);
 
     res = loader_create_device_chain(internal_device, pCreateInfo, pAllocator, inst, dev, layerGIPA, nextGDPA);
     if (res != VK_SUCCESS) {
@@ -5179,9 +5211,9 @@ VKAPI_ATTR VkResult VKAPI_CALL terminator_CreateInstance(const VkInstanceCreateI
                    "#LLP_LAYER_21)");
     } else if (LOADER_MAGIC_NUMBER != ptr_instance->magic) {
         loader_log(ptr_instance, VULKAN_LOADER_WARN_BIT, 0,
-                   "terminator_CreateInstance: Instance pointer (%p) has invalid MAGIC value 0x%08x. Instance value possibly "
+                   "terminator_CreateInstance: Instance pointer (%p) has invalid MAGIC value 0x%08lx. Instance value possibly "
                    "corrupted by active layer (Policy #LLP_LAYER_21).  ",
-                   ptr_instance->magic);
+                   ptr_instance, ptr_instance->magic);
     }
 
     // Save the application version if it has been modified - layers sometimes needs features in newer API versions than
@@ -5564,6 +5596,18 @@ VKAPI_ATTR VkResult VKAPI_CALL terminator_CreateDevice(VkPhysicalDevice physical
     VkBaseOutStructure *caller_dgci_container = NULL;
     VkDeviceGroupDeviceCreateInfoKHR *caller_dgci = NULL;
 
+    if (NULL == dev) {
+        loader_log(icd_term->this_instance, VULKAN_LOADER_WARN_BIT, 0,
+                   "terminator_CreateDevice: Loader device pointer null encountered.  Possibly set by active layer. (Policy "
+                   "#LLP_LAYER_22)");
+    } else if (DEVICE_DISP_TABLE_MAGIC_NUMBER != dev->loader_dispatch.core_dispatch.magic) {
+        loader_log(icd_term->this_instance, VULKAN_LOADER_WARN_BIT, 0,
+                   "terminator_CreateDevice: Device pointer (%p) has invalid MAGIC value 0x%08lx. The expected value is "
+                   "0x10ADED040410ADED. Device value possibly "
+                   "corrupted by active layer (Policy #LLP_LAYER_22).  ",
+                   dev, dev->loader_dispatch.core_dispatch.magic);
+    }
+
     dev->phys_dev_term = phys_dev_term;
 
     icd_exts.list = NULL;
@@ -5766,27 +5810,28 @@ VKAPI_ATTR VkResult VKAPI_CALL terminator_CreateDevice(VkPhysicalDevice physical
     // not to return that terminator when vkGetDeviceProcAddr is called
     for (uint32_t i = 0; i < localCreateInfo.enabledExtensionCount; ++i) {
         if (!strcmp(localCreateInfo.ppEnabledExtensionNames[i], VK_KHR_SWAPCHAIN_EXTENSION_NAME)) {
-            dev->extensions.khr_swapchain_enabled = true;
+            dev->driver_extensions.khr_swapchain_enabled = true;
         } else if (!strcmp(localCreateInfo.ppEnabledExtensionNames[i], VK_KHR_DISPLAY_SWAPCHAIN_EXTENSION_NAME)) {
-            dev->extensions.khr_display_swapchain_enabled = true;
+            dev->driver_extensions.khr_display_swapchain_enabled = true;
         } else if (!strcmp(localCreateInfo.ppEnabledExtensionNames[i], VK_KHR_DEVICE_GROUP_EXTENSION_NAME)) {
-            dev->extensions.khr_device_group_enabled = true;
+            dev->driver_extensions.khr_device_group_enabled = true;
         } else if (!strcmp(localCreateInfo.ppEnabledExtensionNames[i], VK_EXT_DEBUG_MARKER_EXTENSION_NAME)) {
-            dev->extensions.ext_debug_marker_enabled = true;
+            dev->driver_extensions.ext_debug_marker_enabled = true;
         } else if (!strcmp(localCreateInfo.ppEnabledExtensionNames[i], "VK_EXT_full_screen_exclusive")) {
-            dev->extensions.ext_full_screen_exclusive_enabled = true;
+            dev->driver_extensions.ext_full_screen_exclusive_enabled = true;
         } else if (!strcmp(localCreateInfo.ppEnabledExtensionNames[i], VK_KHR_MAINTENANCE_5_EXTENSION_NAME) &&
                    maintenance5_feature_enabled) {
             dev->should_ignore_device_commands_from_newer_version = true;
         }
     }
-    dev->extensions.ext_debug_utils_enabled = icd_term->this_instance->enabled_known_extensions.ext_debug_utils;
+    dev->layer_extensions.ext_debug_utils_enabled = icd_term->this_instance->enabled_known_extensions.ext_debug_utils;
+    dev->driver_extensions.ext_debug_utils_enabled = icd_term->this_instance->enabled_known_extensions.ext_debug_utils;
 
     VkPhysicalDeviceProperties properties;
     icd_term->dispatch.GetPhysicalDeviceProperties(phys_dev_term->phys_dev, &properties);
-    if (!dev->extensions.khr_device_group_enabled) {
+    if (!dev->driver_extensions.khr_device_group_enabled) {
         if (properties.apiVersion >= VK_API_VERSION_1_1) {
-            dev->extensions.khr_device_group_enabled = true;
+            dev->driver_extensions.khr_device_group_enabled = true;
         }
     }
 

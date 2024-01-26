@@ -62,7 +62,6 @@
 #include "vm_applications/dbus-constants.h"
 #include "vm_cicerone/dbus-constants.h"
 #include "vm_concierge/dbus-constants.h"
-#include "vm_disk_management/dbus-constants.h"
 #include "vm_plugin_dispatcher/dbus-constants.h"
 #include "vm_sk_forwarding/dbus-constants.h"
 #include "wilco_dtc_supportd/dbus-constants.h"

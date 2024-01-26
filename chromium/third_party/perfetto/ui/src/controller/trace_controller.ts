@@ -15,6 +15,14 @@
 import {BigintMath} from '../base/bigint_math';
 import {assertExists, assertTrue} from '../base/logging';
 import {
+  Duration,
+  duration,
+  Span,
+  time,
+  Time,
+  TimeSpan,
+} from '../base/time';
+import {
   Actions,
   DeferredAction,
 } from '../common/actions';
@@ -47,14 +55,6 @@ import {
   PendingDeeplinkState,
   ProfileType,
 } from '../common/state';
-import {
-  Duration,
-  duration,
-  Span,
-  time,
-  Time,
-  TimeSpan,
-} from '../common/time';
 import {resetEngineWorker, WasmEngineProxy} from '../common/wasm_engine_proxy';
 import {BottomTabList} from '../frontend/bottom_tab';
 import {
@@ -69,6 +69,7 @@ import {
   publishFtraceCounters,
   publishMetricError,
   publishOverviewData,
+  publishRealtimeOffset,
   publishThreads,
 } from '../frontend/publish';
 import {runQueryInNewTab} from '../frontend/query_result_tab';
@@ -127,9 +128,7 @@ import {
   TraceHttpStream,
   TraceStream,
 } from './trace_stream';
-import {TrackControllerArgs, trackControllerRegistry} from './track_controller';
 import {decideTracks} from './track_decider';
-import {VisualisedArgController} from './visualised_args_controller';
 
 type States = 'init' | 'loading_trace' | 'ready';
 
@@ -216,6 +215,31 @@ function showJsonWarning() {
   });
 }
 
+// TODO(stevegolton): Move this into some global "SQL extensions" file and
+// ensure it's only run once.
+async function defineMaxLayoutDepthSqlFunction(engine: Engine): Promise<void> {
+  await engine.query(`
+    select create_function(
+      'max_layout_depth(track_count INT, track_ids STRING)',
+      'INT',
+      '
+        select iif(
+          $track_count = 1,
+          (
+            select max(depth)
+            from slice
+            where track_id = cast($track_ids AS int)
+          ),
+          (
+            select max(layout_depth)
+            from experimental_slice_layout($track_ids)
+          )
+        );
+      '
+    );
+  `);
+}
+
 // TraceController handles handshakes with the frontend for everything that
 // concerns a single trace. It owns the WASM trace processor engine, handles
 // tracks data and SQL queries. There is one TraceController instance for each
@@ -260,21 +284,6 @@ export class TraceController extends Controller<States> {
         // At this point we are ready to serve queries and handle tracks.
         const engine = assertExists(this.engine);
         const childControllers: Children = [];
-
-        // Create a TrackController for each track.
-        for (const trackId of Object.keys(globals.state.tracks)) {
-          const trackCfg = globals.state.tracks[trackId];
-          if (trackCfg.engineId !== this.engineId) continue;
-          if (!trackControllerRegistry.has(trackCfg.kind)) continue;
-          const trackCtlFactory = trackControllerRegistry.get(trackCfg.kind);
-          const trackArgs: TrackControllerArgs = {trackId, engine};
-          childControllers.push(Child(trackId, trackCtlFactory, trackArgs));
-        }
-
-        for (const argName of globals.state.visualisedArgs) {
-          childControllers.push(
-            Child(argName, VisualisedArgController, {argName, engine}));
-        }
 
         const selectionArgs: SelectionControllerArgs = {engine};
         childControllers.push(
@@ -469,8 +478,6 @@ export class TraceController extends Controller<States> {
       }
     }
 
-    pluginManager.onTraceLoad(engine);
-
     const emptyOmniboxState = {
       omnibox: '',
       mode: globals.state.omniboxState.mode || 'SEARCH',
@@ -500,6 +507,10 @@ export class TraceController extends Controller<States> {
     // Make sure the helper views are available before we start adding tracks.
     await this.initialiseHelperViews();
 
+    await defineMaxLayoutDepthSqlFunction(engine);
+
+    pluginManager.onTraceLoad(engine);
+
     {
       // When we reload from a permalink don't create extra tracks:
       const {pinnedTracks, tracks} = globals.state;
@@ -526,6 +537,65 @@ export class TraceController extends Controller<States> {
         counters.push({name: it.name, count: it.cnt});
       }
       publishFtraceCounters(counters);
+    }
+
+    {
+      // Find the first REALTIME or REALTIME_COARSE clock snapshot.
+      // Prioritize REALTIME over REALTIME_COARSE.
+      const query = `select
+            ts,
+            clock_value as clockValue,
+            clock_name as clockName
+          from clock_snapshot
+          where
+            snapshot_id = 0 AND
+            clock_name in ('REALTIME', 'REALTIME_COARSE')
+          `;
+      const result = await assertExists(this.engine).query(query);
+      const it = result.iter({
+        ts: LONG,
+        clockValue: LONG,
+        clockName: STR,
+      });
+
+      let snapshot = {
+        clockName: '',
+        ts: Time.ZERO,
+        clockValue: Time.ZERO,
+      };
+
+      // Find the most suitable snapshot
+      for (let row = 0; it.valid(); it.next(), row++) {
+        if (it.clockName === 'REALTIME') {
+          snapshot = {
+            clockName: it.clockName,
+            ts: Time.fromRaw(it.ts),
+            clockValue: Time.fromRaw(it.clockValue),
+          };
+          break;
+        } else if (it.clockName === 'REALTIME_COARSE') {
+          if (snapshot.clockName !== 'REALTIME') {
+            snapshot = {
+              clockName: it.clockName,
+              ts: Time.fromRaw(it.ts),
+              clockValue: Time.fromRaw(it.clockValue),
+            };
+          }
+        }
+      }
+
+      // This is the offset between the unix epoch and ts in the ts domain.
+      // I.e. the value of ts at the time of the unix epoch - usually some large
+      // negative value.
+      const realtimeOffset = Time.sub(snapshot.ts, snapshot.clockValue);
+
+      // Find the previous closest midnight from the trace start time.
+      const utcOffset = Time.quantWholeDaysUTC(
+          globals.state.traceTime.start,
+          realtimeOffset,
+      );
+
+      publishRealtimeOffset(realtimeOffset, utcOffset);
     }
 
     globals.dispatch(Actions.sortThreadTracks({}));
@@ -646,13 +716,13 @@ export class TraceController extends Controller<States> {
       });
 
       const id = row.traceProcessorTrackId;
-      const trackId = globals.state.uiTrackIdByTraceTrackId[id];
-      if (trackId === undefined) {
+      const trackKey = globals.state.trackKeyByTrackId[id];
+      if (trackKey === undefined) {
         return;
       }
       globals.makeSelection(Actions.selectChromeSlice({
         id: row.id,
-        trackId,
+        trackKey,
         table: '',
         scroll: true,
       }));
@@ -662,7 +732,7 @@ export class TraceController extends Controller<States> {
   private async listTracks() {
     this.updateStatus('Loading tracks');
     const engine = assertExists<Engine>(this.engine);
-    const actions = await decideTracks(this.engineId, engine);
+    const actions = await decideTracks(engine);
     globals.dispatchMultiple(actions);
   }
 

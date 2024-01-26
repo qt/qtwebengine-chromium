@@ -10,6 +10,7 @@
 #ifndef EIGEN_MATRIX_VECTOR_PRODUCT_ALTIVEC_H
 #define EIGEN_MATRIX_VECTOR_PRODUCT_ALTIVEC_H
 
+// IWYU pragma: private
 #include "../../InternalHeaderCheck.h"
 
 #if defined(__MMA__) && !EIGEN_ALTIVEC_DISABLE_MMA

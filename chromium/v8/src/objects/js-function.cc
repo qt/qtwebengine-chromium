@@ -9,6 +9,7 @@
 #include "src/codegen/compiler.h"
 #include "src/common/globals.h"
 #include "src/diagnostics/code-tracer.h"
+#include "src/execution/frames-inl.h"
 #include "src/execution/isolate.h"
 #include "src/execution/tiering-manager.h"
 #include "src/heap/heap-inl.h"
@@ -600,6 +601,17 @@ void JSFunction::CreateAndAttachFeedbackVector(
 
   DCHECK_EQ(v8_flags.log_function_events,
             feedback_vector->log_next_execution());
+
+  // Additionally, detect activations of this function on the stack, and update
+  // the feedback vector.
+  JavaScriptStackFrameIterator it(isolate);
+  while (!it.done()) {
+    if (it.frame()->is_interpreted() && it.frame()->function() == *function) {
+      static_cast<UnoptimizedFrame*>(it.frame())
+          ->SetFeedbackVector(*feedback_vector);
+    }
+    it.Advance();
+  }
 }
 
 // static
@@ -642,6 +654,7 @@ void JSFunction::InitializeFeedbackCell(
     EnsureClosureFeedbackCellArray(function,
                                    reset_budget_for_feedback_allocation);
   }
+#ifdef V8_ENABLE_SPARKPLUG
   // TODO(jgruber): Unduplicate these conditions from tiering-manager.cc.
   if (function->shared()->sparkplug_compiled() &&
       CanCompileWithBaseline(isolate, function->shared()) &&
@@ -655,6 +668,7 @@ void JSFunction::InitializeFeedbackCell(
                                 &is_compiled_scope);
     }
   }
+#endif  // V8_ENABLE_SPARKPLUG
 }
 
 namespace {
@@ -1192,7 +1206,7 @@ void JSFunction::PrintName(FILE* out) {
 
 namespace {
 
-bool UseFastFunctionNameLookup(Isolate* isolate, Map map) {
+bool UseFastFunctionNameLookup(Isolate* isolate, Tagged<Map> map) {
   DCHECK(IsJSFunctionMap(map));
   if (map->NumberOfOwnDescriptors() <
       JSFunction::kMinDescriptorsForFastBindAndWrap) {
@@ -1288,7 +1302,7 @@ Handle<String> JSFunction::ToString(Handle<JSFunction> function) {
     Handle<Object> maybe_class_positions = JSReceiver::GetDataProperty(
         isolate, function, isolate->factory()->class_positions_symbol());
     if (IsClassPositions(*maybe_class_positions)) {
-      ClassPositions class_positions =
+      Tagged<ClassPositions> class_positions =
           ClassPositions::cast(*maybe_class_positions);
       int start_position = class_positions->start();
       int end_position = class_positions->end();
@@ -1411,7 +1425,7 @@ void JSFunction::CalculateInstanceSizeHelper(InstanceType instance_type,
 void JSFunction::ClearAllTypeFeedbackInfoForTesting() {
   ResetIfCodeFlushed();
   if (has_feedback_vector()) {
-    FeedbackVector vector = feedback_vector();
+    Tagged<FeedbackVector> vector = feedback_vector();
     Isolate* isolate = GetIsolate();
     if (vector->ClearAllSlotsForTesting(isolate)) {
       IC::OnFeedbackChanged(isolate, vector, FeedbackSlot::Invalid(),

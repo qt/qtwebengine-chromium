@@ -11,6 +11,7 @@
 #ifndef EIGEN_META_H
 #define EIGEN_META_H
 
+// IWYU pragma: private
 #include "../InternalHeaderCheck.h"
 
 #if defined(EIGEN_GPU_COMPILE_PHASE)
@@ -420,15 +421,6 @@ template<typename T> EIGEN_STRONG_INLINE void swap(T &a, T &b) { std::swap(a,b);
 #endif
 
 using std::numeric_limits;
-
-// Integer division with rounding up.
-// T is assumed to be an integer type with a>=0, and b>0
-template<typename T>
-EIGEN_DEVICE_FUNC
-T div_ceil(const T &a, const T &b)
-{
-  return (a+b-1) / b;
-}
 
 // Handle integer comparisons of different signedness.
 template <typename X, typename Y, bool XIsInteger = NumTraits<X>::IsInteger, bool XIsSigned = NumTraits<X>::IsSigned,

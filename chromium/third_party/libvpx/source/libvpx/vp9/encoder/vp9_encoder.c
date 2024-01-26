@@ -81,6 +81,8 @@
 #include "vp9/encoder/vp9_tpl_model.h"
 #include "vp9/vp9_cx_iface.h"
 
+#include "vpx/vpx_ext_ratectrl.h"
+
 #define AM_SEGMENT_ID_INACTIVE 7
 #define AM_SEGMENT_ID_ACTIVE 0
 
@@ -879,10 +881,11 @@ static int vp9_enc_alloc_mi(VP9_COMMON *cm, int mi_size) {
   if (!cm->prev_mip) return 1;
   cm->mi_alloc_size = mi_size;
 
-  cm->mi_grid_base = (MODE_INFO **)vpx_calloc(mi_size, sizeof(MODE_INFO *));
+  cm->mi_grid_base =
+      (MODE_INFO **)vpx_calloc(mi_size, sizeof(*cm->mi_grid_base));
   if (!cm->mi_grid_base) return 1;
   cm->prev_mi_grid_base =
-      (MODE_INFO **)vpx_calloc(mi_size, sizeof(MODE_INFO *));
+      (MODE_INFO **)vpx_calloc(mi_size, sizeof(*cm->prev_mi_grid_base));
   if (!cm->prev_mi_grid_base) return 1;
 
   return 0;
@@ -2045,6 +2048,17 @@ static void alloc_copy_partition_data(VP9_COMP *cpi) {
   }
 }
 
+static void free_copy_partition_data(VP9_COMP *cpi) {
+  vpx_free(cpi->prev_partition);
+  cpi->prev_partition = NULL;
+  vpx_free(cpi->prev_segment_id);
+  cpi->prev_segment_id = NULL;
+  vpx_free(cpi->prev_variance_low);
+  cpi->prev_variance_low = NULL;
+  vpx_free(cpi->copied_frame_cnt);
+  cpi->copied_frame_cnt = NULL;
+}
+
 void vp9_change_config(struct VP9_COMP *cpi, const VP9EncoderConfig *oxcf) {
   VP9_COMMON *const cm = &cpi->common;
   RATE_CONTROL *const rc = &cpi->rc;
@@ -2124,6 +2138,8 @@ void vp9_change_config(struct VP9_COMP *cpi, const VP9EncoderConfig *oxcf) {
     new_mi_size = cm->mi_stride * calc_mi_size(cm->mi_rows);
     if (cm->mi_alloc_size < new_mi_size) {
       vp9_free_context_buffers(cm);
+      vp9_free_pc_tree(&cpi->td);
+      vpx_free(cpi->mbmi_ext_base);
       alloc_compressor_data(cpi);
       realloc_segmentation_maps(cpi);
       cpi->initial_width = cpi->initial_height = 0;
@@ -2142,8 +2158,18 @@ void vp9_change_config(struct VP9_COMP *cpi, const VP9EncoderConfig *oxcf) {
     update_frame_size(cpi);
 
   if (last_w != cpi->oxcf.width || last_h != cpi->oxcf.height) {
-    memset(cpi->consec_zero_mv, 0,
-           cm->mi_rows * cm->mi_cols * sizeof(*cpi->consec_zero_mv));
+    vpx_free(cpi->consec_zero_mv);
+    CHECK_MEM_ERROR(
+        &cm->error, cpi->consec_zero_mv,
+        vpx_calloc(cm->mi_rows * cm->mi_cols, sizeof(*cpi->consec_zero_mv)));
+
+    vpx_free(cpi->skin_map);
+    CHECK_MEM_ERROR(
+        &cm->error, cpi->skin_map,
+        vpx_calloc(cm->mi_rows * cm->mi_cols, sizeof(*cpi->skin_map)));
+
+    free_copy_partition_data(cpi);
+    alloc_copy_partition_data(cpi);
     if (cpi->oxcf.aq_mode == CYCLIC_REFRESH_AQ)
       vp9_cyclic_refresh_reset_resize(cpi);
     rc->rc_1_frame = 0;
@@ -2354,7 +2380,7 @@ void vp9_update_compressor_with_img_fmt(VP9_COMP *cpi, vpx_img_fmt_t img_fmt) {
 VP9_COMP *vp9_create_compressor(const VP9EncoderConfig *oxcf,
                                 BufferPool *const pool) {
   unsigned int i;
-  VP9_COMP *volatile const cpi = vpx_memalign(32, sizeof(VP9_COMP));
+  VP9_COMP *volatile const cpi = vpx_memalign(32, sizeof(*cpi));
   VP9_COMMON *volatile const cm = cpi != NULL ? &cpi->common : NULL;
 
   if (!cm) return NULL;
@@ -2403,7 +2429,7 @@ VP9_COMP *vp9_create_compressor(const VP9EncoderConfig *oxcf,
 
   CHECK_MEM_ERROR(
       &cm->error, cpi->skin_map,
-      vpx_calloc(cm->mi_rows * cm->mi_cols, sizeof(cpi->skin_map[0])));
+      vpx_calloc(cm->mi_rows * cm->mi_cols, sizeof(*cpi->skin_map)));
 
 #if !CONFIG_REALTIME_ONLY
   CHECK_MEM_ERROR(&cm->error, cpi->alt_ref_aq, vp9_alt_ref_aq_create());

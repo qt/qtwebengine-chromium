@@ -1,12 +1,11 @@
+load("//bazel:flags.bzl", "selects")
 load(
     "//bazel:skia_rules.bzl",
     "exports_files_legacy",
     "select_multi",
     "skia_cc_deps",
-    "skia_cc_library",
     "skia_filegroup",
 )
-load("//bazel:flags.bzl", "selects")
 
 licenses(["notice"])
 
@@ -216,11 +215,6 @@ skia_filegroup(
     srcs = ["SkGlobalInitialization_default.cpp"],
 )
 
-skia_filegroup(
-    name = "image_generator",
-    srcs = ["SkImageGenerator_skia.cpp"],  # TODO(kjlubick) add select() if necessary
-)
-
 # In own group to prevent exporting to *.gni files.
 skia_filegroup(
     name = "osfile_platform",
@@ -269,7 +263,6 @@ skia_filegroup(
         ":fontmgr",
         ":fontmgr_factory",
         ":global_init",
-        ":image_generator",
         ":load_dynamic_library",
         ":malloc",
         ":osfile",
@@ -355,18 +348,23 @@ skia_cc_deps(
     }),
 )
 
-skia_cc_library(
-    name = "default_malloc",
-    srcs = [":malloc"],
-    features = ["layering_check"],
-    visibility = ["//:__pkg__"],
-    deps = ["//src:base"],
+skia_filegroup(
+    name = "base_srcs",
+    srcs = [
+        ":skdebug",
+        # TODO(kjlubick) Chromium will need a way to overwrite the malloc impls. Having malloc
+        # be a module doesn't quite work because ld complains "backward reference detected"
+        # when something in a module like pathops uses malloc without depending on it.
+        ":malloc",
+    ],
+    visibility = ["//src/base:__pkg__"],
 )
 
 skia_filegroup(
-    name = "buffet_base_srcs",
+    name = "core_srcs",
     srcs = [
-        ":skdebug",
+        ":global_init",
+        ":osfile",
     ],
-    visibility = ["//src:__pkg__"],
+    visibility = ["//src/core:__pkg__"],
 )

@@ -35,6 +35,7 @@ devtools_module("timeline") {
     "NetworkTrackAppender.ts",
     "PerformanceModel.ts",
     "SaveFileFormatter.ts",
+    "SourceMapsResolver.ts",
     "ThreadAppender.ts",
     "TimelineController.ts",
     "TimelineDetailsView.ts",
@@ -70,6 +71,7 @@ devtools_module("timeline") {
     "../../panels/layer_viewer:bundle",
     "../../panels/mobile_throttling:bundle",
     "../../panels/profiler:bundle",
+    "../../services/trace_bounds:bundle",
     "../../ui/components/panel_feedback:bundle",
     "../../ui/legacy/components/data_grid:bundle",
     "../../ui/legacy/components/perf_ui:bundle",
@@ -92,6 +94,7 @@ devtools_entrypoint("bundle") {
 
   visibility = [
     ":*",
+    "../../../test/interactions/panels/performance/timeline/*",
     "../../../test/unittests/front_end/entrypoints/missing_entrypoints/*",
     "../../../test/unittests/front_end/helpers",
     "../../../test/unittests/front_end/models/trace/*",
@@ -107,14 +110,6 @@ devtools_entrypoint("bundle") {
   ]
 
   visibility += devtools_panels_visibility
-}
-
-devtools_entrypoint("legacy") {
-  entrypoint = "timeline-legacy.ts"
-
-  deps = [ ":bundle" ]
-
-  visibility = [ "../..:legacy_entrypoints" ]
 }
 
 devtools_entrypoint("meta") {

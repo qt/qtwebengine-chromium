@@ -15,6 +15,7 @@
 // A separate header (included at the end of this file) will undefine all 
 #include "TensorGpuHipCudaDefines.h"
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

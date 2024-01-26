@@ -32,6 +32,7 @@
 #ifndef EIGEN_PARDISOSUPPORT_H
 #define EIGEN_PARDISOSUPPORT_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen { 
@@ -273,8 +274,8 @@ Derived& PardisoImpl<Derived>::compute(const MatrixType& a)
                                                             m_matrix.valuePtr(), m_matrix.outerIndexPtr(), m_matrix.innerIndexPtr(),
                                                             m_perm.data(), 0, m_iparm.data(), m_msglvl, NULL, NULL);
   manageErrorCode(error);
-  m_analysisIsOk = true;
-  m_factorizationIsOk = true;
+  m_analysisIsOk = m_info == Eigen::Success;
+  m_factorizationIsOk = m_info == Eigen::Success;
   m_isInitialized = true;
   return derived();
 }
@@ -295,7 +296,7 @@ Derived& PardisoImpl<Derived>::analyzePattern(const MatrixType& a)
                                                             m_perm.data(), 0, m_iparm.data(), m_msglvl, NULL, NULL);
   
   manageErrorCode(error);
-  m_analysisIsOk = true;
+  m_analysisIsOk = m_info == Eigen::Success;
   m_factorizationIsOk = false;
   m_isInitialized = true;
   return derived();
@@ -315,7 +316,7 @@ Derived& PardisoImpl<Derived>::factorize(const MatrixType& a)
                                                             m_perm.data(), 0, m_iparm.data(), m_msglvl, NULL, NULL);
   
   manageErrorCode(error);
-  m_factorizationIsOk = true;
+  m_factorizationIsOk = m_info == Eigen::Success;
   return derived();
 }
 

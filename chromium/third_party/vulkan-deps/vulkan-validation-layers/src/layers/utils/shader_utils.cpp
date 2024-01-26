@@ -20,6 +20,7 @@
 #include "shader_utils.h"
 
 #include "state_tracker/device_state.h"
+#include "generated/state_tracker_helper.h"
 #include "generated/vk_extension_helper.h"
 #include "state_tracker/shader_module.h"
 
@@ -51,19 +52,19 @@ void AdjustValidatorOptions(const DeviceExtensions &device_extensions, const Dev
     // The rest of the settings are controlled from a feature bit, which are set correctly in the state tracking. Regardless of
     // Vulkan version used, the feature bit is needed (also described in the spec).
 
-    if (enabled_features.core12.uniformBufferStandardLayout == VK_TRUE) {
+    if (enabled_features.uniformBufferStandardLayout == VK_TRUE) {
         // --uniform-buffer-standard-layout
         options.SetUniformBufferStandardLayout(true);
     }
-    if (enabled_features.core12.scalarBlockLayout == VK_TRUE) {
+    if (enabled_features.scalarBlockLayout == VK_TRUE) {
         // --scalar-block-layout
         options.SetScalarBlockLayout(true);
     }
-    if (enabled_features.workgroup_memory_explicit_layout_features.workgroupMemoryExplicitLayoutScalarBlockLayout) {
+    if (enabled_features.workgroupMemoryExplicitLayoutScalarBlockLayout) {
         // --workgroup-scalar-block-layout
         options.SetWorkgroupScalarBlockLayout(true);
     }
-    if (enabled_features.core13.maintenance4) {
+    if (enabled_features.maintenance4) {
         // --allow-localsizeid
         options.SetAllowLocalSizeId(true);
     }
@@ -138,32 +139,20 @@ uint32_t GetMaxActiveSlot(const ActiveSlotMap &active_slots) {
     return max_active_slot;
 }
 
-const char *PipelineStageState::getPName() const {
-    if (pipeline_create_info) {
-        return pipeline_create_info->pName;
-    }
-    return shader_object_create_info->pName;
+const char *PipelineStageState::GetPName() const {
+    return (pipeline_create_info) ? pipeline_create_info->pName : shader_object_create_info->pName;
 }
 
-VkShaderStageFlagBits PipelineStageState::getStage() const {
-    if (pipeline_create_info) {
-        return pipeline_create_info->stage;
-    }
-    return shader_object_create_info->stage;
+VkShaderStageFlagBits PipelineStageState::GetStage() const {
+    return (pipeline_create_info) ? pipeline_create_info->stage : shader_object_create_info->stage;
 }
 
-safe_VkSpecializationInfo *PipelineStageState::getSpecializationInfo() const {
-    if (pipeline_create_info) {
-        return pipeline_create_info->pSpecializationInfo;
-    }
-    return shader_object_create_info->pSpecializationInfo;
+safe_VkSpecializationInfo *PipelineStageState::GetSpecializationInfo() const {
+    return (pipeline_create_info) ? pipeline_create_info->pSpecializationInfo : shader_object_create_info->pSpecializationInfo;
 }
 
-const void *PipelineStageState::getPNext() const {
-    if (pipeline_create_info) {
-        return pipeline_create_info->pNext;
-    }
-    return shader_object_create_info->pNext;
+const void *PipelineStageState::GetPNext() const {
+    return (pipeline_create_info) ? pipeline_create_info->pNext : shader_object_create_info->pNext;
 }
 
 PipelineStageState::PipelineStageState(const safe_VkPipelineShaderStageCreateInfo *pipeline_create_info,
@@ -174,4 +163,4 @@ PipelineStageState::PipelineStageState(const safe_VkPipelineShaderStageCreateInf
       spirv_state(spirv_state),
       pipeline_create_info(pipeline_create_info),
       shader_object_create_info(shader_object_create_info),
-      entrypoint(spirv_state ? spirv_state->FindEntrypoint(getPName(), getStage()) : nullptr) {}
+      entrypoint(spirv_state ? spirv_state->FindEntrypoint(GetPName(), GetStage()) : nullptr) {}

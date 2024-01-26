@@ -177,6 +177,10 @@ export class Button extends HTMLElement {
     void ComponentHelpers.ScheduledRender.scheduleRender(this, this.#boundRender);
   }
 
+  get active(): boolean {
+    return this.#props.active;
+  }
+
   set spinner(spinner: boolean) {
     this.#props.spinner = spinner;
     void ComponentHelpers.ScheduledRender.scheduleRender(this, this.#boundRender);
@@ -276,7 +280,7 @@ export class Button extends HTMLElement {
             .data=${{
               iconPath: this.#props.iconUrl,
               iconName: this.#props.iconName,
-              color: 'var(--color-background)',
+              color: 'var(--sys-color-cdt-base-container)',
               width: this.#props.iconWidth || undefined,
               height: this.#props.iconHeight || undefined,
             } as IconButton.Icon.IconData}

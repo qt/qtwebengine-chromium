@@ -13,6 +13,7 @@
 // limitations under the License.
 
 
+import {isString} from '../../base/object_utils';
 import {base64Encode} from '../../base/string_utils';
 import {RecordConfig} from '../../controller/record_config_types';
 import {
@@ -30,19 +31,20 @@ import {
   NativeContinuousDumpConfig,
   NetworkPacketTraceConfig,
   PerfEventConfig,
+  PerfEvents,
   ProcessStatsConfig,
   SysStatsConfig,
   TraceConfig,
   TrackEventConfig,
   VmstatCounters,
-} from '../../core/protos';
-import {perfetto} from '../../gen/protos';
+} from '../../protos';
 
 import {TargetInfo} from './recording_interfaces_v2';
 
-import Timebase = perfetto.protos.PerfEvents.Timebase;
-import CallstackSampling = perfetto.protos.PerfEventConfig.CallstackSampling;
-import Scope = perfetto.protos.PerfEventConfig.Scope;
+import PerfClock = PerfEvents.PerfClock;
+import Timebase = PerfEvents.Timebase;
+import CallstackSampling = PerfEventConfig.CallstackSampling;
+import Scope = PerfEventConfig.Scope;
 
 export interface ConfigProtoEncoded {
   configProtoText?: string;
@@ -477,8 +479,7 @@ export function genTraceConfig(
     // TODO: The timestampClock needs to be changed to MONOTONIC once we start
     // offering a choice of counter to record on through the recording UI, as
     // not all clocks are compatible with hardware counters).
-    perfEventConfig.timebase.timestampClock =
-        perfetto.protos.PerfEvents.PerfClock.PERF_CLOCK_BOOTTIME;
+    perfEventConfig.timebase.timestampClock = PerfClock.PERF_CLOCK_BOOTTIME;
 
     const callstackSampling = new CallstackSampling();
     if (uiCfg.targetCmdLine.length > 0) {
@@ -721,7 +722,7 @@ function toPbtxt(configBuffer: Uint8Array): string {
       const isNested = typeof value === 'object' && !isRepeated;
       for (const entry of (isRepeated ? value as Array<{}>: [value])) {
         yield ' '.repeat(indent) + `${snakeCase(key)}${isNested ? '' : ':'} `;
-        if (typeof entry === 'string') {
+        if (isString(entry)) {
           if (isEnum(entry) || is64BitNumber(key)) {
             yield entry;
           } else {

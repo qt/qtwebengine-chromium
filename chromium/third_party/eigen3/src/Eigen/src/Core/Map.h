@@ -11,6 +11,7 @@
 #ifndef EIGEN_MAP_H
 #define EIGEN_MAP_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

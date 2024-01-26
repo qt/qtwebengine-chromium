@@ -141,8 +141,6 @@ to the "top" directory.
 
 The commit used to checkout the repository.  This can be a SHA-1
 object name or a refname used with the remote name "origin".
-For example, this field can be set to "origin/sdk-1.1.77" to
-select the end of the sdk-1.1.77 branch.
 
 - deps (optional)
 
@@ -236,6 +234,7 @@ option can be a relative or absolute path.
 
 import argparse
 import json
+import os
 import os.path
 import subprocess
 import sys
@@ -469,6 +468,25 @@ class GoodRepo(object):
         # Set build config for single-configuration generators (this is a no-op on multi-config generators)
         cmake_cmd.append(f'-D CMAKE_BUILD_TYPE={CONFIG_MAP[self._args.config]}')
 
+        # Optionally build dependencies with ASAN enabled
+        if self._args.asan:
+            cmake_cxx_flags = os.getenv('CMAKE_CXX_FLAGS')
+            cmake_c_flags = os.getenv('CMAKE_C_FLAGS')
+            if cmake_cxx_flags is None:
+                cmake_cxx_flags = ''
+            if cmake_c_flags is None:
+                cmake_c_flags = ''
+            if platform.system() == 'Windows':
+                cmake_cxx_flags = cmake_cxx_flags + ' /fsanitize=address'
+                cmake_c_flags = cmake_c_flags + ' /fsanitize=address'
+            else:
+                cmake_cxx_flags = cmake_cxx_flags + ' -fsanitize=address -fno-omit-frame-pointer'
+                cmake_c_flags = cmake_c_flags + ' -fsanitize=address -fno-omit-frame-pointer'
+            cmake_cxx_flags = cmake_cxx_flags.strip()
+            cmake_c_flags = cmake_c_flags.strip()
+            cmake_cmd.append(f'-DCMAKE_CXX_FLAGS="{cmake_cxx_flags}" -DCMAKE_C_FLAGS="{cmake_c_flags}"')
+
+
         # Use the CMake -A option to select the platform architecture
         # without needing a Visual Studio generator.
         if platform.system() == 'Windows' and self._args.generator != "Ninja":
@@ -530,8 +548,7 @@ class GoodRepo(object):
         self.CMakeBuild()
 
     def IsOptional(self, opts):
-        if len(self.optional.intersection(opts)) > 0: return True
-        else: return False
+        return len(self.optional.intersection(opts)) > 0
 
 def GetGoodRepos(args):
     """Returns the latest list of GoodRepo objects.
@@ -691,6 +708,12 @@ def main():
         metavar='VAR[=VALUE]',
         help="Add CMake command line option -D'VAR'='VALUE' to the CMake generation command line; may be used multiple times",
         default=[])
+    parser.add_argument(
+        '--asan',
+        dest='asan',
+        action='store_true',
+        help="Build dependencies with ASAN enabled",
+        default=False)
 
     args = parser.parse_args()
     save_cwd = os.getcwd()

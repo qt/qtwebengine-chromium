@@ -12,6 +12,7 @@
 #include "src/objects/deoptimization-data-inl.h"
 #include "src/objects/instance-type-inl.h"
 #include "src/objects/instruction-stream-inl.h"
+#include "src/objects/trusted-object-inl.h"
 #include "src/snapshot/embedded/embedded-data-inl.h"
 
 // Has to be the last include (doesn't have include guards):
@@ -20,7 +21,7 @@
 namespace v8 {
 namespace internal {
 
-OBJECT_CONSTRUCTORS_IMPL(Code, HeapObject)
+OBJECT_CONSTRUCTORS_IMPL(Code, ExposedTrustedObject)
 OBJECT_CONSTRUCTORS_IMPL(GcSafeCode, HeapObject)
 
 CAST_ACCESSOR(GcSafeCode)
@@ -498,7 +499,7 @@ void Code::IterateDeoptimizationLiterals(RootVisitor* v) {
   Tagged<DeoptimizationLiteralArray> literals = deopt_data->LiteralArray();
   const int literals_length = literals->length();
   for (int i = 0; i < literals_length; ++i) {
-    MaybeObject maybe_literal = literals->Get(i);
+    MaybeObject maybe_literal = literals->get_raw(i);
     Tagged<HeapObject> heap_literal;
     if (maybe_literal.GetHeapObject(&heap_literal)) {
       v->VisitRootPointer(Root::kStackRoots, "deoptimization literal",
@@ -592,22 +593,29 @@ Tagged<Object> Code::raw_instruction_stream(PtrComprCageBase cage_base,
 }
 
 DEF_GETTER(Code, instruction_start, Address) {
-  return ReadCodeEntrypointField(kInstructionStartOffset);
+#ifdef V8_ENABLE_SANDBOX
+  return ReadCodeEntrypointViaCodePointerField(kSelfIndirectPointerOffset);
+#else
+  return ReadField<Address>(kInstructionStartOffset);
+#endif
 }
 
 void Code::init_instruction_start(Isolate* isolate, Address value) {
-#ifdef V8_CODE_POINTER_SANDBOXING
+#ifdef V8_ENABLE_SANDBOX
   // In this case, the instruction_start is stored in this Code's code pointer
   // table entry, so initialize that instead.
-  InitCodePointerTableEntryField(kCodePointerTableEntryOffset, isolate, *this,
-                                 value);
+  InitSelfCodePointerField(kSelfIndirectPointerOffset, isolate, *this, value);
 #else
-  WriteCodeEntrypointField(kInstructionStartOffset, value);
+  set_instruction_start(isolate, value);
 #endif
 }
 
 void Code::set_instruction_start(Isolate* isolate, Address value) {
-  WriteCodeEntrypointField(kInstructionStartOffset, value);
+#ifdef V8_ENABLE_SANDBOX
+  WriteCodeEntrypointViaCodePointerField(kSelfIndirectPointerOffset, value);
+#else
+  WriteField<Address>(kInstructionStartOffset, value);
+#endif
 }
 
 void Code::SetInstructionStreamAndInstructionStart(
@@ -624,12 +632,13 @@ void Code::SetInstructionStartForOffHeapBuiltin(Isolate* isolate_for_sandbox,
 }
 
 void Code::ClearInstructionStartForSerialization(Isolate* isolate) {
-#ifdef V8_CODE_POINTER_SANDBOXING
-  WriteField<CodePointerHandle>(kInstructionStartOffset,
+#ifdef V8_ENABLE_SANDBOX
+  // The instruction start is stored in this object's code pointer table.
+  WriteField<CodePointerHandle>(kSelfIndirectPointerOffset,
                                 kNullCodePointerHandle);
 #else
   set_instruction_start(isolate, kNullAddress);
-#endif  // V8_CODE_POINTER_SANDBOXING
+#endif  // V8_ENABLE_SANDBOX
 }
 
 void Code::UpdateInstructionStart(Isolate* isolate_for_sandbox,

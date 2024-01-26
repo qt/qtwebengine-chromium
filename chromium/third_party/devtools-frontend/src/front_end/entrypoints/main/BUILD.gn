@@ -33,6 +33,7 @@ devtools_module("main") {
     "../../ui/legacy:bundle",
     "../../ui/legacy/components/utils:bundle",
     "../../ui/legacy/theme_support:bundle",
+    "../../ui/visual_logging:bundle",
   ]
 }
 
@@ -53,14 +54,6 @@ devtools_entrypoint("bundle") {
   ]
 
   visibility += devtools_entrypoints_visibility
-}
-
-devtools_entrypoint("legacy") {
-  entrypoint = "main-legacy.ts"
-
-  deps = [ ":bundle" ]
-
-  visibility = [ "../..:legacy_entrypoints" ]
 }
 
 devtools_entrypoint("meta") {

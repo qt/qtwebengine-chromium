@@ -5241,6 +5241,7 @@ void av1_decode_tg_tiles_and_wrapup(AV1Decoder *pbi, const uint8_t *data,
   MACROBLOCKD *const xd = &pbi->dcb.xd;
   const int tile_count_tg = end_tile - start_tile + 1;
 
+  xd->error_info = cm->error;
   if (initialize_flag) setup_frame_info(pbi);
   const int num_planes = av1_num_planes(cm);
 

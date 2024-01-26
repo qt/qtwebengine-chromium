@@ -26,11 +26,12 @@
 #include <vector>
 #include <unordered_set>
 
+#include <vulkan/utility/vk_struct_helper.hpp>
+
 #include "vk_layer_config.h"
 #include "containers/custom_containers.h"
 #include "generated/vk_layer_dispatch_table.h"
 #include "generated/vk_object_types.h"
-#include "generated/vk_typemap_helper.h"
 
 #if defined __ANDROID__
 #include <android/log.h>
@@ -38,7 +39,7 @@
 [[maybe_unused]] static const char *kForceDefaultCallbackKey = "debug.vvl.forcelayerlog";
 #endif
 
-[[maybe_unused]] static const char *kVUIDUndefined = "VUID_Undefined";
+extern const char *kVUIDUndefined;
 
 typedef enum DebugCallbackStatusBits {
     DEBUG_CALLBACK_UTILS = 0x00000001,     // This struct describes a VK_EXT_debug_utils callback
@@ -113,7 +114,7 @@ struct LoggingLabel {
     bool Empty() const { return name.empty(); }
 
     VkDebugUtilsLabelEXT Export() const {
-        auto out = LvlInitStruct<VkDebugUtilsLabelEXT>();
+        VkDebugUtilsLabelEXT out = vku::InitStructHelper();
         out.pLabelName = name.c_str();
         std::copy(color.cbegin(), color.cend(), out.color);
         return out;
@@ -280,25 +281,6 @@ static inline void DebugReportFlagsToAnnotFlags(VkDebugReportFlagsEXT dr_flags, 
         *da_type |= VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT;
         *da_severity |= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
     }
-}
-
-static inline LogMessageTypeFlags DebugAnnotFlagsToMsgTypeFlags(VkDebugUtilsMessageSeverityFlagBitsEXT da_severity,
-                                                                VkDebugUtilsMessageTypeFlagsEXT da_type) {
-    LogMessageTypeFlags msg_type_flags = 0;
-    if ((da_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) != 0) {
-        msg_type_flags |= kErrorBit;
-    } else if ((da_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) != 0) {
-        if ((da_type & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT) != 0) {
-            msg_type_flags |= kPerformanceWarningBit;
-        } else {
-            msg_type_flags |= kWarningBit;
-        }
-    } else if ((da_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT) != 0) {
-        msg_type_flags |= kInformationBit;
-    } else if ((da_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT) != 0) {
-        msg_type_flags |= kVerboseBit;
-    }
-    return msg_type_flags;
 }
 
 struct Location;

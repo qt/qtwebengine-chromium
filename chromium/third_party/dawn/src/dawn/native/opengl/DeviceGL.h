@@ -1,23 +1,34 @@
-// Copyright 2018 The Dawn Authors
+// Copyright 2018 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef SRC_DAWN_NATIVE_OPENGL_DEVICEGL_H_
 #define SRC_DAWN_NATIVE_OPENGL_DEVICEGL_H_
 
 #include <memory>
-#include <queue>
-#include <utility>
 
 #include "dawn/native/dawn_platform.h"
 
@@ -55,8 +66,6 @@ class Device final : public DeviceBase {
 
     const GLFormat& GetGLFormat(const Format& format);
 
-    void SubmitFenceSync();
-
     MaybeError ValidateTextureCanBeWrapped(const TextureDescriptor* descriptor);
     TextureBase* CreateTextureWrappingEGLImage(const ExternalImageDescriptor* descriptor,
                                                ::EGLImage image);
@@ -90,12 +99,6 @@ class Device final : public DeviceBase {
         virtual ~Context() {}
         virtual void MakeCurrent() = 0;
     };
-
-    // TODO(dawn:1413) move these methods to the opengl::Queue.
-    void ForceEventualFlushOfCommands();
-    bool HasPendingCommands() const;
-    ResultOrError<ExecutionSerial> CheckAndUpdateCompletedSerials();
-    MaybeError WaitForIdleForDestruction();
 
   private:
     Device(AdapterBase* adapter,
@@ -134,17 +137,13 @@ class Device final : public DeviceBase {
     ResultOrError<wgpu::TextureUsage> GetSupportedSurfaceUsageImpl(
         const Surface* surface) const override;
 
-    GLenum GetBGRAInternalFormat() const;
+    GLenum GetBGRAInternalFormat(const OpenGLFunctions& gl) const;
     void DestroyImpl() override;
 
     const OpenGLFunctions mGL;
 
-    std::queue<std::pair<GLsync, ExecutionSerial>> mFencesInFlight;
-
     GLFormatTable mFormatTable;
     std::unique_ptr<Context> mContext = nullptr;
-    // Has pending GL commands which are not associated with a fence.
-    mutable bool mHasPendingCommands = false;
 };
 
 }  // namespace dawn::native::opengl

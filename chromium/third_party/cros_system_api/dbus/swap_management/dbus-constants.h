@@ -23,6 +23,8 @@ constexpr char kSwapZramSetWritebackLimit[] = "SwapZramSetWritebackLimit";
 constexpr char kSwapZramMarkIdle[] = "SwapZramMarkIdle";
 constexpr char kSwapZramWriteback[] = "InitiateSwapZramWriteback";
 constexpr char kMGLRUSetEnable[] = "MGLRUSetEnable";
+constexpr char kSwapZramRecompression[] = "InitiateSwapZramRecompression";
+constexpr char kSwapZramSetRecompAlgorithms[] = "SwapZramSetRecompAlgorithms";
 
 // ZramWritebackMode contains the allowed modes of operation
 // for zram writeback. The definition is in:
@@ -31,6 +33,12 @@ enum ZramWritebackMode {
   WRITEBACK_IDLE = 0x001,
   WRITEBACK_HUGE = 0x002,
   WRITEBACK_HUGE_IDLE = 0x004,
+};
+
+enum ZramRecompressionMode {
+  RECOMPRESSION_IDLE = 0x001,
+  RECOMPRESSION_HUGE = 0x002,
+  RECOMPRESSION_HUGE_IDLE = 0x004,
 };
 
 }  // namespace swap_management

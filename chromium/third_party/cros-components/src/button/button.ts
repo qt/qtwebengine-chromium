@@ -28,7 +28,6 @@ export class Button extends LitElement {
   static override shadowRootOptions:
       ShadowRootInit = {mode: 'open', delegatesFocus: true};
 
-  // TODO(b/258982831): Centre icon. See spec.
   // Note that theme colours have opacity defined in the colour, but default
   // colours have opacities set separately. As a consequence, styles are broken
   // unless a cros theme is present.
@@ -37,6 +36,7 @@ export class Button extends LitElement {
     :host {
       display: inline-block;
       --cros-button-max-width_ : var(--cros-button-max-width,200px);
+      width: fit-content;
     }
 
     ::slotted(*) {
@@ -78,11 +78,17 @@ export class Button extends LitElement {
       --md-filled-button-focus-state-layer-opacity: 100%;
       --md-filled-button-hover-container-elevation: 0;
       --md-filled-button-hover-state-layer-opacity: 100%;
-      --md-filled-button-label-text-type: var(--cros-button-2-font);
+      --md-filled-button-label-text-font: var(--cros-button-2-font-family);
+      --md-filled-button-label-text-size: var(--cros-button-2-font-size);
+      --md-filled-button-label-text-line-height: var(--cros-button-2-line-height);
+      --md-filled-button-label-text-weight: var(--cros-button-2-font-weight);
       --md-filled-button-leading-space: ${LABEL_PADDING_START_END};
       --md-filled-button-pressed-state-layer-opacity: 100%;
       --md-filled-button-trailing-space: ${LABEL_PADDING_START_END};
+      --md-focus-ring-duration: 0s;
+      --md-focus-ring-width: 2px;
       --md-sys-color-secondary: var(--cros-sys-focus_ring);
+      width: 100%;
     }
 
     :host([button-style="primary"]) md-filled-button {
@@ -99,22 +105,37 @@ export class Button extends LitElement {
       --md-sys-color-on-primary: var(--cros-sys-on_primary_container);
     }
 
+    :host([inverted]) md-text-button {
+      --md-text-button-label-text-color: var(--cros-sys-inverse_primary);
+    }
+
     md-text-button {
       max-width: var(--cros-button-max-width_);
       min-width: ${MIN_WIDTH};
       --md-sys-color-primary: var(--cros-sys-primary);
       --md-sys-color-secondary: var(--cros-sys-focus_ring);
+      --md-focus-ring-duration: 0s;
+      --md-focus-ring-width: 2px;
       --md-text-button-container-height: ${CONTAINER_HEIGHT};
       --md-text-button-disabled-label-text-color: var(--cros-sys-disabled);
       --md-text-button-disabled-label-text-opacity: 100%;
       --md-text-button-focus-state-layer-opacity: 100%;
       --md-text-button-hover-state-layer-color: var(--cros-sys-hover_on_subtle);
       --md-text-button-hover-state-layer-opacity: 100%;
-      --md-text-button-label-text-type: var(--cros-button-2-font);
+      --md-text-button-label-text-color: var(--cros-sys-primary);
+      --md-text-button-label-text-font: var(--cros-button-2-font-family);
+      --md-text-button-label-text-size: var(--cros-button-2-font-size);
+      --md-text-button-label-text-line-height: var(--cros-button-2-line-height);
+      --md-text-button-label-text-weight: var(--cros-button-2-font-weight);
       --md-text-button-leading-space: ${LABEL_PADDING_START_END};
       --md-text-button-pressed-state-layer-color: var(--cros-sys-ripple_neutral_on_subtle);
       --md-text-button-pressed-state-layer-opacity: 100%;
       --md-text-button-trailing-space: ${LABEL_PADDING_START_END};
+      width: 100%;
+    }
+
+    ::slotted(ea-icon) {
+      --ea-icon-size: 20px;
     }
   `;
 
@@ -128,12 +149,16 @@ export class Button extends LitElement {
    */
   buttonStyle: 'primary'|'secondary'|'floating' = 'primary';
 
+  /** @export */
+  inverted = false;
+
   /** @nocollapse */
   static override properties = {
     ariaLabel: {type: String, reflect: true, attribute: 'aria-label'},
     label: {type: String, reflect: true},
     disabled: {type: Boolean, reflect: true},
     buttonStyle: {type: String, reflect: true, attribute: 'button-style'},
+    inverted: {type: Boolean, reflect: true},
   };
 
   constructor() {

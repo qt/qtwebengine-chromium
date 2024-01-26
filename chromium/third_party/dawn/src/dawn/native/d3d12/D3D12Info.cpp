@@ -1,16 +1,29 @@
-// Copyright 2019 The Dawn Authors
+// Copyright 2019 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/d3d12/D3D12Info.h"
 
@@ -98,6 +111,15 @@ ResultOrError<D3D12DeviceInfo> GatherDeviceInfo(const PhysicalDevice& physicalDe
         info.supportsHeapFlagCreateNotZeroed = true;
     }
 
+#if D3D12_SDK_VERSION >= 602
+    D3D12_FEATURE_DATA_D3D12_OPTIONS13 featureOptions13 = {};
+    if (SUCCEEDED(physicalDevice.GetDevice()->CheckFeatureSupport(
+            D3D12_FEATURE_D3D12_OPTIONS13, &featureOptions13, sizeof(featureOptions13)))) {
+        info.supportsTextureCopyBetweenDimensions =
+            featureOptions13.TextureCopyBetweenDimensionsSupported;
+    }
+#endif
+
     info.supportsRootSignatureVersion1_1 = false;
     D3D12_FEATURE_DATA_ROOT_SIGNATURE featureDataRootSignature = {};
     featureDataRootSignature.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1;
@@ -125,12 +147,12 @@ ResultOrError<D3D12DeviceInfo> GatherDeviceInfo(const PhysicalDevice& physicalDe
     }
 
     // D3D_SHADER_MODEL is encoded as 0xMm with M the major version and m the minor version
-    ASSERT(driverShaderModel <= 0xFF);
+    DAWN_ASSERT(driverShaderModel <= 0xFF);
     uint32_t shaderModelMajor = (driverShaderModel & 0xF0) >> 4;
     uint32_t shaderModelMinor = (driverShaderModel & 0xF);
 
-    ASSERT(shaderModelMajor < 10);
-    ASSERT(shaderModelMinor < 10);
+    DAWN_ASSERT(shaderModelMajor < 10);
+    DAWN_ASSERT(shaderModelMinor < 10);
     info.shaderModel = 10 * shaderModelMajor + shaderModelMinor;
 
     // Profiles are always <stage>s_<minor>_<major> so we build the s_<minor>_major and add

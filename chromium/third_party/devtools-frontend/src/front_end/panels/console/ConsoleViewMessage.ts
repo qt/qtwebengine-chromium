@@ -32,7 +32,9 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+import {type Chrome} from '../../../extension-api/ExtensionAPI.js';  // eslint-disable-line rulesdir/es_modules_import
 import * as Common from '../../core/common/common.js';
+import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
@@ -40,7 +42,6 @@ import * as Protocol from '../../generated/protocol.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import type * as IssuesManager from '../../models/issues_manager/issues_manager.js';
 import * as Logs from '../../models/logs/logs.js';
-import * as Host from '../../core/host/host.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import * as CodeHighlighter from '../../ui/components/code_highlighter/code_highlighter.js';
@@ -49,15 +50,14 @@ import * as IssueCounter from '../../ui/components/issue_counter/issue_counter.j
 import * as RequestLinkIcon from '../../ui/components/request_link_icon/request_link_icon.js';
 import * as DataGrid from '../../ui/legacy/components/data_grid/data_grid.js';
 import * as ObjectUI from '../../ui/legacy/components/object_ui/object_ui.js';
-import * as Components from '../../ui/legacy/components/utils/utils.js';
-import * as UI from '../../ui/legacy/legacy.js';
 // eslint-disable-next-line rulesdir/es_modules_import
 import objectValueStyles from '../../ui/legacy/components/object_ui/objectValue.css.js';
-import {type Chrome} from '../../../extension-api/ExtensionAPI.js';  // eslint-disable-line rulesdir/es_modules_import
+import * as Components from '../../ui/legacy/components/utils/utils.js';
+import * as UI from '../../ui/legacy/legacy.js';
 
 import {format, updateStyle} from './ConsoleFormat.js';
-import {type ConsoleViewportElement} from './ConsoleViewport.js';
 import consoleViewStyles from './consoleView.css.js';
+import {type ConsoleViewportElement} from './ConsoleViewport.js';
 import {augmentErrorStackWithScriptIds, parseSourcePositionsFromErrorStack} from './ErrorStackParser.js';
 
 const UIStrings = {
@@ -289,6 +289,14 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
     this.consoleGroupInternal = null;
   }
 
+  setInsight(insight: HTMLElement): void {
+    this.elementInternal?.querySelector('devtools-console-insight')?.remove();
+    this.elementInternal?.append(insight);
+    insight.addEventListener('close', () => {
+      this.elementInternal?.removeChild(insight);
+    }, {once: true});
+  }
+
   element(): HTMLElement {
     return this.toMessageElement();
   }
@@ -424,8 +432,9 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
       if (request.statusCode !== 0) {
         UI.UIUtils.createTextChildren(messageElement, ' ', String(request.statusCode));
       }
-      if (request.statusText) {
-        UI.UIUtils.createTextChildren(messageElement, ' (', request.statusText, ')');
+      const statusText = request.getInferredStatusText();
+      if (statusText) {
+        UI.UIUtils.createTextChildren(messageElement, ' (', statusText, ')');
       }
     } else {
       const messageText = this.message.messageText;
@@ -553,7 +562,18 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
     UI.ARIAUtils.setLabel(
         contentElement, `${messageElement.textContent} ${i18nString(UIStrings.stackMessageCollapsed)}`);
     UI.ARIAUtils.markAsGroup(stackTraceElement);
+
+    // We debounce the trace expansion metric in case this was accidental.
+    const DEBOUNCE_MS = 300;
+    let debounce: number|undefined;
     this.expandTrace = (expand: boolean): void => {
+      if (expand) {
+        debounce = window.setTimeout(() => {
+          Host.userMetrics.actionTaken(Host.UserMetrics.Action.TraceExpanded);
+        }, DEBOUNCE_MS);
+      } else {
+        clearTimeout(debounce);
+      }
       icon.setIconType(expand ? 'triangle-down' : 'triangle-right');
       stackTraceElement.classList.toggle('hidden', !expand);
       const stackTableState =
@@ -1233,9 +1253,11 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
         break;
       case Protocol.Log.LogEntryLevel.Warning:
         this.elementInternal.classList.add('console-warning-level');
+        this.elementInternal.role = 'log';
         break;
       case Protocol.Log.LogEntryLevel.Error:
         this.elementInternal.classList.add('console-error-level');
+        this.elementInternal.role = 'log';
         break;
     }
     this.updateMessageIcon();

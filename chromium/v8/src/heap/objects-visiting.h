@@ -24,7 +24,6 @@ namespace internal {
   V(AccessorInfo)                       \
   V(AllocationSite)                     \
   V(BigInt)                             \
-  V(ByteArray)                          \
   V(BytecodeArray)                      \
   V(ExternalPointerArray)               \
   V(CallHandlerInfo)                    \
@@ -33,12 +32,12 @@ namespace internal {
   V(Code)                               \
   V(CoverageInfo)                       \
   V(DataHandler)                        \
+  V(DebugInfo)                          \
   V(EmbedderDataArray)                  \
   V(EphemeronHashTable)                 \
   V(ExternalString)                     \
   V(FeedbackCell)                       \
   V(FeedbackMetadata)                   \
-  V(FixedDoubleArray)                   \
   V(JSArrayBuffer)                      \
   V(JSDataViewOrRabGsabDataView)        \
   V(JSExternalObject)                   \
@@ -60,6 +59,7 @@ namespace internal {
   V(PropertyCell)                       \
   V(PrototypeInfo)                      \
   V(SharedFunctionInfo)                 \
+  V(SloppyArgumentsElements)            \
   V(SmallOrderedHashMap)                \
   V(SmallOrderedHashSet)                \
   V(SmallOrderedNameDictionary)         \
@@ -82,7 +82,8 @@ namespace internal {
   IF_WASM(V, WasmResumeData)            \
   IF_WASM(V, WasmTypeInfo)              \
   IF_WASM(V, WasmContinuationObject)    \
-  IF_WASM(V, WasmNull)
+  IF_WASM(V, WasmNull)                  \
+  SIMPLE_HEAP_OBJECT_LIST1(V)
 
 #define FORWARD_DECLARE(TypeName) class TypeName;
 TYPED_VISITOR_ID_LIST(FORWARD_DECLARE)
@@ -133,8 +134,9 @@ class HeapVisitor : public ObjectVisitorWithCageBases {
     return static_cast<const ConcreteVisitor*>(this);
   }
 
-#define VISIT(TypeName) \
-  V8_INLINE ResultType Visit##TypeName(Map map, TypeName object);
+#define VISIT(TypeName)                                 \
+  V8_INLINE ResultType Visit##TypeName(Tagged<Map> map, \
+                                       Tagged<TypeName> object);
   TYPED_VISITOR_ID_LIST(VISIT)
   TORQUE_VISITOR_ID_LIST(VISIT)
 #undef VISIT

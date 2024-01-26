@@ -19,8 +19,9 @@
  *
  */
 #include <cassert>
+#include <vulkan/utility/vk_format_utils.h>
+
 #include "subresource_adapter.h"
-#include "generated/vk_format_utils.h"
 #include <cmath>
 #include "state_tracker/image_state.h"
 #include "generated/layer_chassis_dispatch.h"
@@ -292,15 +293,15 @@ ImageRangeEncoder::ImageRangeEncoder(const IMAGE_STATE& image, const AspectParam
         }
     }
 
-    is_compressed_ = FormatIsCompressed(image.createInfo.format);
-    texel_extent_ = FormatTexelBlockExtent(image.createInfo.format);
+    is_compressed_ = vkuFormatIsCompressed(image.createInfo.format);
+    texel_extent_ = vkuFormatTexelBlockExtent(image.createInfo.format);
 
     is_3_d_ = image.createInfo.imageType == VK_IMAGE_TYPE_3D;
     y_interleave_ = false;
     for (uint32_t aspect_index = 0; aspect_index < limits_.aspect_index; ++aspect_index) {
         subres.aspectMask = static_cast<VkImageAspectFlags>(AspectBit(aspect_index));
         subres_layers.aspectMask = subres.aspectMask;
-        texel_sizes_.push_back(FormatTexelSize(image.createInfo.format, subres.aspectMask));
+        texel_sizes_.push_back(vkuFormatTexelSizeWithAspect(image.createInfo.format, static_cast<VkImageAspectFlagBits>(subres.aspectMask)));
         IndexType aspect_size = 0;
         for (uint32_t mip_index = 0; mip_index < limits_.mipLevel; ++mip_index) {
             subres_layers.mipLevel = mip_index;
@@ -834,6 +835,13 @@ inline ImageRangeEncoder::SubresInfo::SubresInfo(const VkSubresourceLayout& layo
       y_step_pitch(layout.rowPitch * texel_extent.height),
       z_step_pitch(layout.depthPitch * texel_extent.depth),
       layer_span(layout.rowPitch * extent_.height) {}
+
+ImageRangeEncoder::SubresInfo::SubresInfo(const SubresInfo&rhs)
+    : layout(rhs.layout),
+      extent(rhs.extent),
+      y_step_pitch(rhs.y_step_pitch),
+      z_step_pitch(rhs.z_step_pitch),
+      layer_span(rhs.layer_span) {}
 
 void ImageRangeGenerator::IncrementerState::Set(uint32_t y_count_, uint32_t layer_z_count_, IndexType base, IndexType span,
                                                 IndexType y_step, IndexType z_step) {

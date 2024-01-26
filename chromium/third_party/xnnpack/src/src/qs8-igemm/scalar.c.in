@@ -16,19 +16,20 @@ $if NR % 4 != 0:
   #include <xnnpack/unaligned.h>
 
 
+$DATATYPE_SPEC = {"QC8": "qs8_qc8w", "QS8": "qs8", "QU8": "qu8"}[DATATYPE]
 $PARAMS_STRUCT = REQUANTIZATION.lower() + "_scalar" + ("_" + VARIANT.lower() if VARIANT else "")
-$PARAMS_UNION = "xnn_%s_conv_minmax_params" % DATATYPE.lower()
+$PARAMS_UNION = "xnn_qs8_qc8w_conv_minmax_params" if DATATYPE == "QC8" else "xnn_%s_conv_minmax_params" % DATATYPE.lower()
 $XINT8_T = "uint8_t" if DATATYPE == "QU8" else "int8_t"
 $MIN_F32 = "__builtin_wasm_min_f32" if WASM else "math_min_f32"
 $MAX_F32 = "__builtin_wasm_max_f32" if WASM else "math_max_f32"
-void xnn_${DATATYPE.lower()}_igemm_minmax_${REQUANTIZATION.lower()}_ukernel_${MR}x${NR}__${"wasm" if WASM else "scalar"}${"_" + VARIANT.lower() if VARIANT else ""}(
+void xnn_${DATATYPE_SPEC}_igemm_minmax_${REQUANTIZATION.lower()}_ukernel_${MR}x${NR}__${"wasm" if WASM else "scalar"}${"_" + VARIANT.lower() if VARIANT else ""}(
     size_t mr,
     size_t nc,
     size_t kc,
     size_t ks,
-    const ${XINT8_T}**restrict a,
-    const void*restrict w,
-    ${XINT8_T}*restrict c,
+    const ${XINT8_T}** restrict a,
+    const void* restrict w,
+    ${XINT8_T}* restrict c,
     size_t cm_stride,
     size_t cn_stride,
     size_t a_offset,
@@ -239,7 +240,7 @@ void xnn_${DATATYPE.lower()}_igemm_minmax_${REQUANTIZATION.lower()}_ukernel_${MR
             $for N in range(1 << LOG2N):
               c${M}[${N}] = (${XINT8_T}) vout${M}x${N};
             $if LOG2N != 0:
-              $for N in range(1 << (LOG2N - 1)):
+              $for N in range(NR - (1 << LOG2N) - 1):
                 vout${M}x${N} = vout${M}x${N + (1 << LOG2N)};
               c${M} += ${1 << LOG2N};
         }

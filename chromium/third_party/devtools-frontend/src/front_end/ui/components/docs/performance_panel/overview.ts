@@ -17,23 +17,29 @@ if (!container) {
 
 const params = new URLSearchParams(window.location.search);
 const fileName = (params.get('trace') || 'web-dev') + '.json.gz';
+const customStartWindowTime = params.get('windowStart');
+const customEndWindowTime = params.get('windowEnd');
 
-async function renderMiniMap(containerSelector: string, options: {showMemory: boolean}) {
+async function renderMiniMap(
+    containerSelector: string, options: {showMemory: boolean, source: Timeline.TimelinePanel.ThreadTracksSource}) {
   const container = document.querySelector<HTMLElement>(containerSelector);
   if (!container) {
     throw new Error('could not find container');
   }
-  const minimap = new Timeline.TimelineMiniMap.TimelineMiniMap();
+  const models = await TraceLoader.TraceLoader.allModels(null, fileName);
+  const {left, right} = models.performanceModel.calculateWindowForMainThreadActivity();
+  models.performanceModel.setWindow({left, right});
+
+  const minimap = new Timeline.TimelineMiniMap.TimelineMiniMap(options.source);
   minimap.activateBreadcrumbs();
   minimap.markAsRoot();
   minimap.show(container);
-
-  const models = await TraceLoader.TraceLoader.allModels(null, fileName);
 
   minimap.setBounds(
       TraceEngine.Types.Timing.MilliSeconds(models.timelineModel.minimumRecordTime()),
       TraceEngine.Types.Timing.MilliSeconds(models.timelineModel.maximumRecordTime()),
   );
+
   minimap.setData({
     traceParsedData: models.traceParsedData,
     performanceModel: models.performanceModel,
@@ -42,8 +48,15 @@ async function renderMiniMap(containerSelector: string, options: {showMemory: bo
       showScreenshots: true,
     },
   });
-  minimap.setWindowTimes(models.performanceModel.window().left, models.performanceModel.window().right);
+  if (customStartWindowTime && customEndWindowTime) {
+    minimap.setWindowTimes(Number(customStartWindowTime), Number(customEndWindowTime));
+  } else {
+    minimap.setWindowTimes(models.performanceModel.window().left, models.performanceModel.window().right);
+  }
 }
 
-await renderMiniMap('.container', {showMemory: false});
-await renderMiniMap('.container-with-memory', {showMemory: true});
+await renderMiniMap('.container', {showMemory: false, source: Timeline.TimelinePanel.ThreadTracksSource.OLD_ENGINE});
+await renderMiniMap(
+    '.container-with-memory', {showMemory: true, source: Timeline.TimelinePanel.ThreadTracksSource.OLD_ENGINE});
+await renderMiniMap(
+    '.container-new-engine', {showMemory: false, source: Timeline.TimelinePanel.ThreadTracksSource.NEW_ENGINE});

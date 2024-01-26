@@ -43,6 +43,7 @@
 #include "internal.h"
 #include "avio_internal.h"
 #include "id3v2.h"
+#include "url.h"
 
 #include "hls_sample_encryption.h"
 
@@ -1265,7 +1266,7 @@ static void intercept_id3(struct playlist *pls, uint8_t *buf,
     if (pls->id3_buf) {
         /* Now parse all the ID3 tags */
         FFIOContext id3ioctx;
-        ffio_init_context(&id3ioctx, pls->id3_buf, id3_buf_pos, 0, NULL, NULL, NULL, NULL);
+        ffio_init_read_context(&id3ioctx, pls->id3_buf, id3_buf_pos);
         handle_id3(&id3ioctx.pub, pls);
     }
 
@@ -2506,6 +2507,9 @@ static int hls_read_seek(AVFormatContext *s, int stream_index,
         /* Flush the packet queue of the subdemuxer. */
         ff_read_frame_flush(pls->ctx);
 
+        /* Reset the init segment so it's re-fetched and served appropiately */
+        pls->cur_init_section = NULL;
+
         pls->seek_timestamp = seek_timestamp;
         pls->seek_flags = flags;
 
@@ -2573,7 +2577,7 @@ static const AVOption hls_options[] = {
         {.str = "3gp,aac,avi,ac3,eac3,flac,mkv,m3u8,m4a,m4s,m4v,mpg,mov,mp2,mp3,mp4,mpeg,mpegts,ogg,ogv,oga,ts,vob,wav"},
         INT_MIN, INT_MAX, FLAGS},
     {"max_reload", "Maximum number of times a insufficient list is attempted to be reloaded",
-        OFFSET(max_reload), AV_OPT_TYPE_INT, {.i64 = 1000}, 0, INT_MAX, FLAGS},
+        OFFSET(max_reload), AV_OPT_TYPE_INT, {.i64 = 3}, 0, INT_MAX, FLAGS},
     {"m3u8_hold_counters", "The maximum number of times to load m3u8 when it refreshes without new segments",
         OFFSET(m3u8_hold_counters), AV_OPT_TYPE_INT, {.i64 = 1000}, 0, INT_MAX, FLAGS},
     {"http_persistent", "Use persistent HTTP connections",

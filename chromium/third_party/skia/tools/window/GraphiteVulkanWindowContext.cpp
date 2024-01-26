@@ -20,10 +20,13 @@
 #include "include/gpu/graphite/vk/VulkanGraphiteTypes.h"
 #include "include/gpu/graphite/vk/VulkanGraphiteUtils.h"
 #include "include/gpu/vk/VulkanExtensions.h"
+#include "include/gpu/vk/VulkanTypes.h"
+#include "include/private/gpu/graphite/ContextOptionsPriv.h"
 #include "src/base/SkAutoMalloc.h"
 #include "src/gpu/graphite/vk/VulkanGraphiteUtilsPriv.h"
 #include "src/gpu/vk/VulkanInterface.h"
 #include "tools/ToolUtils.h"
+#include "tools/GpuToolUtils.h"
 
 #ifdef VK_USE_PLATFORM_WIN32_KHR
 // windows wants to define this as CreateSemaphoreA or CreateSemaphoreW
@@ -42,8 +45,8 @@ GraphiteVulkanWindowContext::GraphiteVulkanWindowContext(const DisplayParams& pa
                                                          CanPresentFn canPresent,
                                                          PFN_vkGetInstanceProcAddr instProc)
     : WindowContext(params)
-    , fCreateVkSurfaceFn(createVkSurface)
-    , fCanPresentFn(canPresent)
+    , fCreateVkSurfaceFn(std::move(createVkSurface))
+    , fCanPresentFn(std::move(canPresent))
     , fSurface(VK_NULL_HANDLE)
     , fSwapchain(VK_NULL_HANDLE)
     , fImages(nullptr)
@@ -118,7 +121,10 @@ void GraphiteVulkanWindowContext::initializeContext() {
     GET_DEV_PROC(GetDeviceQueue);
 
     skgpu::graphite::ContextOptions contextOptions;
-    contextOptions.fStoreContextRefInRecorder = true;
+    skgpu::graphite::ContextOptionsPriv contextOptionsPriv;
+    // Needed to make synchronous readPixels work
+    contextOptionsPriv.fStoreContextRefInRecorder = true;
+    contextOptions.fOptionsPriv = &contextOptionsPriv;
     fGraphiteContext = skgpu::graphite::ContextFactory::MakeVulkan(backendContext, contextOptions);
     fGraphiteRecorder = fGraphiteContext->makeRecorder(ToolUtils::CreateTestingRecorderOptions());
 
@@ -364,7 +370,8 @@ bool GraphiteVulkanWindowContext::createBuffers(VkFormat format, VkImageUsageFla
                                                    info,
                                                    VK_IMAGE_LAYOUT_UNDEFINED,
                                                    fPresentQueueIndex,
-                                                   fImages[i]);
+                                                   fImages[i],
+                                                   skgpu::VulkanAlloc());
         fSurfaces[i] = SkSurfaces::WrapBackendTexture(this->graphiteRecorder(),
                                                       backendTex,
                                                       colorType,

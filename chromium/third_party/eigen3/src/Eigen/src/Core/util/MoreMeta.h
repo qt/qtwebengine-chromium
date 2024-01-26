@@ -11,6 +11,7 @@
 #ifndef EIGEN_MOREMETA_H
 #define EIGEN_MOREMETA_H
 
+// IWYU pragma: private
 #include "../InternalHeaderCheck.h"
 
 namespace Eigen {

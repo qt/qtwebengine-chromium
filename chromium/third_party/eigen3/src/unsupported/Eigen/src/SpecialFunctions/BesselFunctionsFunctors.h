@@ -11,6 +11,7 @@
 #ifndef EIGEN_BESSELFUNCTIONS_FUNCTORS_H
 #define EIGEN_BESSELFUNCTIONS_FUNCTORS_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

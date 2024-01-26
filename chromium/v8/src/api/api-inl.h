@@ -117,7 +117,7 @@ TYPED_ARRAYS(MAKE_TO_LOCAL_TYPED_ARRAY)
       const v8::From* that, bool allow_empty_handle) {                       \
     DCHECK(allow_empty_handle || !v8::internal::ValueHelper::IsEmpty(that)); \
     DCHECK(v8::internal::ValueHelper::IsEmpty(that) ||                       \
-           Is##To(v8::internal::Object(                                      \
+           Is##To(v8::internal::Tagged<v8::internal::Object>(                \
                v8::internal::ValueHelper::ValueAsAddress(that))));           \
     if (v8::internal::ValueHelper::IsEmpty(that)) {                          \
       return v8::internal::Handle<v8::internal::To>::null();                 \
@@ -131,7 +131,7 @@ TYPED_ARRAYS(MAKE_TO_LOCAL_TYPED_ARRAY)
       const v8::From* that, bool allow_empty_handle) {                       \
     DCHECK(allow_empty_handle || !v8::internal::ValueHelper::IsEmpty(that)); \
     DCHECK(v8::internal::ValueHelper::IsEmpty(that) ||                       \
-           Is##To(v8::internal::Object(                                      \
+           Is##To(v8::internal::Tagged<v8::internal::Object>(                \
                v8::internal::ValueHelper::ValueAsAddress(that))));           \
     return v8::internal::DirectHandle<v8::internal::To>(                     \
         v8::internal::ValueHelper::ValueAsAddress(that));                    \
@@ -149,7 +149,7 @@ TYPED_ARRAYS(MAKE_TO_LOCAL_TYPED_ARRAY)
       const v8::From* that, bool allow_empty_handle) {                       \
     DCHECK(allow_empty_handle || !v8::internal::ValueHelper::IsEmpty(that)); \
     DCHECK(v8::internal::ValueHelper::IsEmpty(that) ||                       \
-           Is##To(v8::internal::Object(                                      \
+           Is##To(v8::internal::Tagged<v8::internal::Object>(                \
                v8::internal::ValueHelper::ValueAsAddress(that))));           \
     return v8::internal::Handle<v8::internal::To>(                           \
         reinterpret_cast<v8::internal::Address*>(                            \
@@ -312,7 +312,7 @@ bool CopyAndConvertArrayToCppBuffer(Local<Array> src, T* dst,
   }
 
   i::DisallowGarbageCollection no_gc;
-  i::Tagged<i::JSArray> obj = *reinterpret_cast<i::JSArray*>(*src);
+  i::Tagged<i::JSArray> obj = *Utils::OpenHandle(*src);
   if (i::Object::IterationHasObservableEffects(obj)) {
     // The array has a custom iterator.
     return false;
@@ -351,35 +351,10 @@ inline bool V8_EXPORT TryToCopyAndConvertArrayToCppBuffer(Local<Array> src,
 namespace internal {
 
 void HandleScopeImplementer::EnterContext(Tagged<NativeContext> context) {
-  DCHECK_EQ(entered_contexts_.capacity(), is_microtask_context_.capacity());
-  DCHECK_EQ(entered_contexts_.size(), is_microtask_context_.size());
   entered_contexts_.push_back(context);
-  is_microtask_context_.push_back(0);
-}
-
-void HandleScopeImplementer::EnterMicrotaskContext(
-    Tagged<NativeContext> context) {
-  DCHECK_EQ(entered_contexts_.capacity(), is_microtask_context_.capacity());
-  DCHECK_EQ(entered_contexts_.size(), is_microtask_context_.size());
-  entered_contexts_.push_back(context);
-  is_microtask_context_.push_back(1);
 }
 
 Handle<NativeContext> HandleScopeImplementer::LastEnteredContext() {
-  DCHECK_EQ(entered_contexts_.capacity(), is_microtask_context_.capacity());
-  DCHECK_EQ(entered_contexts_.size(), is_microtask_context_.size());
-
-  for (size_t i = 0; i < entered_contexts_.size(); ++i) {
-    size_t j = entered_contexts_.size() - i - 1;
-    if (!is_microtask_context_.at(j)) {
-      return handle(entered_contexts_.at(j), isolate_);
-    }
-  }
-
-  return {};
-}
-
-Handle<NativeContext> HandleScopeImplementer::LastEnteredOrMicrotaskContext() {
   if (entered_contexts_.empty()) return {};
   return handle(entered_contexts_.back(), isolate_);
 }

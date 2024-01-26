@@ -76,7 +76,15 @@ jobs:
               with:
                 key: ${{ runner.os }}-${{ matrix.config }}-${{ matrix.cc }}-${{matrix.cube_wsi}}
             - name: Configure
-              run: cmake -S. -B build -G "Ninja" -DCMAKE_BUILD_TYPE=${{matrix.config}} -DCUBE_WSI_SELECTION=${{matrix.cube_wsi}} -D UPDATE_DEPS=ON -D INSTALL_ICD=ON -D BUILD_TESTS=ON -D ENABLE_ADDRESS_SANITIZER=ON
+              run: |
+                cmake -S. -B build -G "Ninja" \
+                -D CMAKE_BUILD_TYPE=${{matrix.config}} \
+                -D CUBE_WSI_SELECTION=${{matrix.cube_wsi}} \
+                -D UPDATE_DEPS=ON \
+                -D BUILD_WERROR=ON \
+                -D INSTALL_ICD=ON \
+                -D BUILD_TESTS=ON \
+                -D ENABLE_ADDRESS_SANITIZER=ON
               env:
                 CC: ${{matrix.cc}}
                 CXX: ${{matrix.cxx}}
@@ -116,13 +124,17 @@ jobs:
                 arch: ${{ matrix.arch }}
 
             - name: Configure
-              run: cmake -S. -B build  -G "Ninja" -DCMAKE_BUILD_TYPE=${{matrix.config}} -D UPDATE_DEPS=ON -D INSTALL_ICD=ON
+              run: cmake -S. -B build -G "Ninja" -DCMAKE_BUILD_TYPE=${{matrix.config}} -D UPDATE_DEPS=ON -D INSTALL_ICD=ON -D BUILD_TESTS=ON -D BUILD_WERROR=ON
 
             - name: Build
               run: cmake --build ./build
 
             - name: Install
               run: cmake --install build/ --prefix build/install
+
+            - name: Test
+              working-directory: ./build
+              run: ctest --output-on-failure
 
             - name: Verify generated source files
               run: python scripts/generate_source.py --verify external/${{matrix.config}}/Vulkan-Headers/build/install/share/vulkan/registry
@@ -146,7 +158,7 @@ jobs:
               run: echo "/usr/lib/ccache:/usr/local/opt/ccache/libexec" >> $GITHUB_PATH
 
             - name: Configure
-              run: cmake -S. -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release -D UPDATE_DEPS=ON -D INSTALL_ICD=ON -D BUILD_TESTS=ON -D ENABLE_ADDRESS_SANITIZER=ON
+              run: cmake -S. -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release -D UPDATE_DEPS=ON -D INSTALL_ICD=ON -D BUILD_TESTS=ON -D ENABLE_ADDRESS_SANITIZER=ON -D BUILD_WERROR=ON
               env:
                 MACOSX_DEPLOYMENT_TARGET: 10.15
 
@@ -160,47 +172,51 @@ jobs:
             - name: Verify generated source files
               run: python scripts/generate_source.py --verify external/Release/Vulkan-Headers/build/install/share/vulkan/registry
 
-    gn:
-        runs-on: ubuntu-20.04
-
-        strategy:
-            matrix:
-                config: [ Debug, Release ]
-
-        steps:
-            - uses: actions/checkout@v3
-
-            - name: Get depot tools
-              run: |
-                git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git depot_tools
-                echo "$GITHUB_WORKSPACE/depot_tools" >> $GITHUB_PATH
-            - name: Fetch and install headers
-              run: ./build-gn/update_deps.sh
-
-            - name: Generate build files
-              run: gn gen out/${{matrix.config}} --args="is_debug=true"
-              if: matrix.config != 'Release'
-
-            - name: Generate build files
-              run: gn gen out/${{matrix.config}} --args="is_debug=false"
-              if: matrix.config == 'Release'
-
-            - name: Build the tools
-              run: ninja -C out/${{matrix.config}}
-
     android:
-        runs-on: ubuntu-20.04
-        steps:
-            - uses: actions/checkout@v3
-            - name: Setup Environment
-              run: |
-                  echo "ANDROID_SDK_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
-                  echo "ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> $GITHUB_ENV
-                  echo "$ANDROID_SDK_ROOT/build-tools/31.0.0" >> $GITHUB_PATH
-                  echo "$ANDROID_NDK_LATEST_HOME" >> $GITHUB_PATH
-                  $ANDROID_SDK_ROOT/tools/bin/sdkmanager "platforms;android-23"
-                  keytool -genkey -v -keystore $HOME/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "C=US, O=Android, CN=Android Debug"
-            - name: Build vkcube
-              run: |
-                  cd build-android
-                  ./build_all.sh
+      runs-on: ubuntu-22.04
+      strategy:
+        matrix:
+          abi: [ armeabi-v7a, arm64-v8a ]
+      steps:
+        - uses: actions/checkout@v3
+        - uses: actions/setup-python@v4
+          with:
+            python-version: '3.8'
+        - uses: lukka/get-cmake@latest
+        - name: Configure
+          run: |
+            cmake -S . -B build/ --toolchain $ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
+            -D ANDROID_PLATFORM=23 \
+            -D CMAKE_ANDROID_ARCH_ABI=${{matrix.abi}} \
+            -D CMAKE_ANDROID_STL_TYPE=c++_static \
+            -D ANDROID_USE_LEGACY_TOOLCHAIN_FILE=NO \
+            -D CMAKE_BUILD_TYPE=Release \
+            -D UPDATE_DEPS=ON \
+            -D BUILD_TESTS=ON \
+            -D BUILD_WERROR=ON \
+            -G "Ninja"
+        - name: Build
+          run: cmake --build build
+        - name: Test
+          working-directory: ./build
+          run: ctest --output-on-failure -C Release
+        - name: Install
+          run: cmake --install build --prefix /tmp
+
+    tools_codegen:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v3
+        - uses: actions/setup-python@v4
+          with:
+            python-version: '3.10'
+        - run: sudo apt-get -qq update && sudo apt install libwayland-dev xorg-dev wayland-protocols
+        - run: cmake -S . -B build/ -D UPDATE_DEPS=ON -D UPDATE_DEPS_DIR=external -D TOOLS_CODEGEN=ON
+        - run: cmake --build build --target tools_codegen
+        - run: git diff --exit-code
+
+    chromium:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v3
+        - run: scripts/gn/gn.py

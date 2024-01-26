@@ -12,6 +12,7 @@
 
 // This file implements sparse * permutation products
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen { 

@@ -12,6 +12,7 @@
 
 #include <initializer_list>
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

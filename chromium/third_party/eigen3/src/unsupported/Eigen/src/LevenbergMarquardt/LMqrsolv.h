@@ -15,6 +15,7 @@
 #ifndef EIGEN_LMQRSOLV_H
 #define EIGEN_LMQRSOLV_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen { 

@@ -445,6 +445,8 @@ message UpdateDeviceInfoState {
   repeated string whitelabel_list = 104;
   // List of all valid custom-label-tags for this device.
   repeated string custom_label_list = 106;
+  // List of sku descriptions.
+  repeated string sku_description_list = 107;
 
   // Serial number of device at beginning of RMA finalization.
   string original_serial_number = 201;

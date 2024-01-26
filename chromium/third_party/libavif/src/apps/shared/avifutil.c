@@ -42,7 +42,12 @@ static void printClapFraction(const char * name, int32_t n, int32_t d)
     }
 }
 
-static void avifImageDumpInternal(const avifImage * avif, uint32_t gridCols, uint32_t gridRows, avifBool alphaPresent, avifProgressiveState progressiveState)
+static void avifImageDumpInternal(const avifImage * avif,
+                                  uint32_t gridCols,
+                                  uint32_t gridRows,
+                                  avifBool alphaPresent,
+                                  avifBool gainMapPresent,
+                                  avifProgressiveState progressiveState)
 {
     uint32_t width = avif->width;
     uint32_t height = avif->height;
@@ -124,17 +129,41 @@ static void avifImageDumpInternal(const avifImage * avif, uint32_t gridCols, uin
     if (avif->clli.maxCLL > 0 || avif->clli.maxPALL > 0) {
         printf(" * CLLI           : %hu, %hu\n", avif->clli.maxCLL, avif->clli.maxPALL);
     }
+
+#if defined(AVIF_ENABLE_EXPERIMENTAL_GAIN_MAP)
+    printf(" * Gain map       : ");
+    avifImage * gainMap = avif->gainMap.image;
+    if (gainMap != NULL) {
+        printf("%ux%u pixels, %u bit, %s, %s Range, Matrix Coeffs. %u \n",
+               gainMap->width,
+               gainMap->height,
+               gainMap->depth,
+               avifPixelFormatToString(gainMap->yuvFormat),
+               (gainMap->yuvRange == AVIF_RANGE_FULL) ? "Full" : "Limited",
+               gainMap->matrixCoefficients);
+    } else if (gainMapPresent) {
+        printf("Present (but ignored)\n");
+    } else {
+        printf("Absent\n");
+    }
+#else
+    (void)gainMapPresent;
+#endif // AVIF_ENABLE_EXPERIMENTAL_GAIN_MAP
 }
 
-void avifImageDump(const avifImage * avif, uint32_t gridCols, uint32_t gridRows, avifProgressiveState progressiveState)
+void avifImageDump(const avifImage * avif, uint32_t gridCols, uint32_t gridRows, avifBool gainMapPresent, avifProgressiveState progressiveState)
 {
     const avifBool alphaPresent = avif->alphaPlane && (avif->alphaRowBytes > 0);
-    avifImageDumpInternal(avif, gridCols, gridRows, alphaPresent, progressiveState);
+    avifImageDumpInternal(avif, gridCols, gridRows, alphaPresent, gainMapPresent, progressiveState);
 }
 
 void avifContainerDump(const avifDecoder * decoder)
 {
-    avifImageDumpInternal(decoder->image, 0, 0, decoder->alphaPresent, decoder->progressiveState);
+    avifBool gainMapPresent = AVIF_FALSE;
+#if defined(AVIF_ENABLE_EXPERIMENTAL_GAIN_MAP)
+    gainMapPresent = decoder->gainMapPresent;
+#endif
+    avifImageDumpInternal(decoder->image, 0, 0, decoder->alphaPresent, gainMapPresent, decoder->progressiveState);
     if ((decoder->progressiveState == AVIF_PROGRESSIVE_STATE_UNAVAILABLE) && (decoder->imageCount > 1)) {
         if (decoder->repetitionCount == AVIF_REPETITION_COUNT_INFINITE) {
             printf(" * Repeat Count   : Infinite\n");
@@ -172,39 +201,8 @@ avifAppFileFormat avifGuessFileFormat(const char * filename)
         fclose(f);
 
         if (bytesRead > 0) {
-            avifROData header;
-            header.data = headerBuffer;
-            header.size = bytesRead;
-
-            if (avifPeekCompatibleFileType(&header)) {
-                return AVIF_APP_FILE_FORMAT_AVIF;
-            }
-
-            static const uint8_t signatureJPEG[2] = { 0xFF, 0xD8 };
-            static const uint8_t signaturePNG[8] = { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
-            static const uint8_t signatureY4M[9] = { 0x59, 0x55, 0x56, 0x34, 0x4D, 0x50, 0x45, 0x47, 0x32 }; // "YUV4MPEG2"
-            struct avifHeaderSignature
-            {
-                avifAppFileFormat format;
-                const uint8_t * magic;
-                size_t magicSize;
-            } signatures[] = { { AVIF_APP_FILE_FORMAT_JPEG, signatureJPEG, sizeof(signatureJPEG) },
-                               { AVIF_APP_FILE_FORMAT_PNG, signaturePNG, sizeof(signaturePNG) },
-                               { AVIF_APP_FILE_FORMAT_Y4M, signatureY4M, sizeof(signatureY4M) } };
-            const size_t signaturesCount = sizeof(signatures) / sizeof(signatures[0]);
-
-            for (size_t signatureIndex = 0; signatureIndex < signaturesCount; ++signatureIndex) {
-                struct avifHeaderSignature * signature = &signatures[signatureIndex];
-                if (header.size < signature->magicSize) {
-                    continue;
-                }
-                if (!memcmp(header.data, signature->magic, signature->magicSize)) {
-                    return signature->format;
-                }
-            }
-
-            // If none of these signatures match, bail out here. Guessing by extension won't help.
-            return AVIF_APP_FILE_FORMAT_UNKNOWN;
+            // If the file could be read, use the first bytes to guess the file format.
+            return avifGuessBufferFileFormat(headerBuffer, bytesRead);
         }
     }
 
@@ -239,6 +237,46 @@ avifAppFileFormat avifGuessFileFormat(const char * filename)
     return AVIF_APP_FILE_FORMAT_UNKNOWN;
 }
 
+avifAppFileFormat avifGuessBufferFileFormat(const uint8_t * data, size_t size)
+{
+    if (size == 0) {
+        return AVIF_APP_FILE_FORMAT_UNKNOWN;
+    }
+
+    avifROData header;
+    header.data = data;
+    header.size = size;
+
+    if (avifPeekCompatibleFileType(&header)) {
+        return AVIF_APP_FILE_FORMAT_AVIF;
+    }
+
+    static const uint8_t signatureJPEG[2] = { 0xFF, 0xD8 };
+    static const uint8_t signaturePNG[8] = { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
+    static const uint8_t signatureY4M[9] = { 0x59, 0x55, 0x56, 0x34, 0x4D, 0x50, 0x45, 0x47, 0x32 }; // "YUV4MPEG2"
+    struct avifHeaderSignature
+    {
+        avifAppFileFormat format;
+        const uint8_t * magic;
+        size_t magicSize;
+    } signatures[] = { { AVIF_APP_FILE_FORMAT_JPEG, signatureJPEG, sizeof(signatureJPEG) },
+                       { AVIF_APP_FILE_FORMAT_PNG, signaturePNG, sizeof(signaturePNG) },
+                       { AVIF_APP_FILE_FORMAT_Y4M, signatureY4M, sizeof(signatureY4M) } };
+    const size_t signaturesCount = sizeof(signatures) / sizeof(signatures[0]);
+
+    for (size_t signatureIndex = 0; signatureIndex < signaturesCount; ++signatureIndex) {
+        const struct avifHeaderSignature * const signature = &signatures[signatureIndex];
+        if (header.size < signature->magicSize) {
+            continue;
+        }
+        if (!memcmp(header.data, signature->magic, signature->magicSize)) {
+            return signature->format;
+        }
+    }
+
+    return AVIF_APP_FILE_FORMAT_UNKNOWN;
+}
+
 avifAppFileFormat avifReadImage(const char * filename,
                                 avifPixelFormat requestedFormat,
                                 int requestedDepth,
@@ -247,6 +285,7 @@ avifAppFileFormat avifReadImage(const char * filename,
                                 avifBool ignoreExif,
                                 avifBool ignoreXMP,
                                 avifBool allowChangingCicp,
+                                avifBool ignoreGainMap,
                                 avifImage * image,
                                 uint32_t * outDepth,
                                 avifAppSourceTiming * sourceTiming,
@@ -261,7 +300,7 @@ avifAppFileFormat avifReadImage(const char * filename,
             *outDepth = image->depth;
         }
     } else if (format == AVIF_APP_FILE_FORMAT_JPEG) {
-        if (!avifJPEGRead(filename, image, requestedFormat, requestedDepth, chromaDownsampling, ignoreColorProfile, ignoreExif, ignoreXMP)) {
+        if (!avifJPEGRead(filename, image, requestedFormat, requestedDepth, chromaDownsampling, ignoreColorProfile, ignoreExif, ignoreXMP, ignoreGainMap)) {
             return AVIF_APP_FILE_FORMAT_UNKNOWN;
         }
         if (outDepth) {

@@ -9,6 +9,7 @@
 #define USE_PARTIAL_PACKETS
 #endif
 
+// IWYU pragma: private
 #include "../../InternalHeaderCheck.h"
 
 namespace Eigen {

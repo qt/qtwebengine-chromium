@@ -352,7 +352,7 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   }
   void Push(Register src) { push(src); }
   void Push(Handle<HeapObject> handle);
-  void Push(Smi smi);
+  void Push(Tagged<Smi> smi);
 
   // Push two registers. Pushes leftmost register first (to highest address).
   void Push(Register src1, Register src2) {
@@ -844,7 +844,7 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   bool IsDoubleZeroRegSet() { return has_double_zero_reg_set_; }
   bool IsSingleZeroRegSet() { return has_single_zero_reg_set_; }
 
-  inline void Move(Register dst, Smi smi) { li(dst, Operand(smi)); }
+  inline void Move(Register dst, Tagged<Smi> smi) { li(dst, Operand(smi)); }
 
   inline void Move(Register dst, Register src) {
     if (dst != src) {
@@ -956,6 +956,9 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   void LoadTaggedRoot(Register destination, RootIndex index);
 
   void LoadMap(Register destination, Register object);
+
+  void LoadFeedbackVector(Register dst, Register closure, Register scratch,
+                          Label* fbv_undef);
   void LoadCompressedMap(Register dst, Register object);
 
   // If the value is a NaN, canonicalize the value else, do nothing.
@@ -1079,11 +1082,20 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   void JumpIfSmi(Register value, Label* smi_label,
                  Label::Distance distance = Label::kFar);
 
+  // AssembleArchBinarySearchSwitchRange Use JumpIfEqual and JumpIfLessThan.
+  // In V8_COMPRESS_POINTERS, the compare is done with the lower 32 bits of the
+  // input.
   void JumpIfEqual(Register a, int32_t b, Label* dest) {
+#ifdef V8_COMPRESS_POINTERS
+    Sll32(a, a, 0);
+#endif
     Branch(dest, eq, a, Operand(b));
   }
 
   void JumpIfLessThan(Register a, int32_t b, Label* dest) {
+#ifdef V8_COMPRESS_POINTERS
+    Sll32(a, a, 0);
+#endif
     Branch(dest, lt, a, Operand(b));
   }
 
@@ -1353,6 +1365,8 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   void PopStackHandler();
 
   // Tiering support.
+  void AssertFeedbackCell(Register object,
+                          Register scratch) NOOP_UNLESS_DEBUG_CODE;
   void AssertFeedbackVector(Register object,
                             Register scratch) NOOP_UNLESS_DEBUG_CODE;
   void ReplaceClosureCodeWithOptimizedCode(Register optimized_code,

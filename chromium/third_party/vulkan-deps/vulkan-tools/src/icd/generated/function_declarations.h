@@ -23,6 +23,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <cstring>
 #include <string>
 #include <unordered_map>
 #include <vulkan/vulkan.h>
@@ -93,8 +94,8 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_AMD_negative_viewport_height", 1},
     {"VK_AMD_gpu_shader_half_float", 2},
     {"VK_AMD_shader_ballot", 1},
-    {"VK_EXT_video_encode_h264", 11},
-    {"VK_EXT_video_encode_h265", 11},
+    {"VK_EXT_video_encode_h264", 12},
+    {"VK_EXT_video_encode_h265", 12},
     {"VK_KHR_video_decode_h264", 8},
     {"VK_AMD_texture_gather_bias_lod", 1},
     {"VK_AMD_shader_info", 1},
@@ -273,7 +274,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_KHR_present_id", 1},
     {"VK_EXT_private_data", 1},
     {"VK_EXT_pipeline_creation_cache_control", 3},
-    {"VK_KHR_video_encode_queue", 9},
+    {"VK_KHR_video_encode_queue", 10},
     {"VK_NV_device_diagnostics_config", 2},
     {"VK_QCOM_render_pass_store_ops", 2},
     {"VK_NV_low_latency", 1},
@@ -315,6 +316,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_HUAWEI_invocation_mask", 1},
     {"VK_NV_external_memory_rdma", 1},
     {"VK_EXT_pipeline_properties", 1},
+    {"VK_EXT_frame_boundary", 1},
     {"VK_EXT_multisampled_render_to_single_sampled", 1},
     {"VK_EXT_extended_dynamic_state2", 1},
     {"VK_EXT_color_write_enable", 1},
@@ -344,6 +346,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_NV_linear_color_attachment", 1},
     {"VK_EXT_image_compression_control_swapchain", 1},
     {"VK_QCOM_image_processing", 1},
+    {"VK_EXT_nested_command_buffer", 1},
     {"VK_EXT_external_memory_acquire_unmodified", 1},
     {"VK_EXT_extended_dynamic_state3", 2},
     {"VK_EXT_subpass_merge_feedback", 2},
@@ -352,6 +355,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_NV_optical_flow", 1},
     {"VK_EXT_legacy_dithering", 1},
     {"VK_EXT_pipeline_protected_access", 1},
+    {"VK_ANDROID_external_format_resolve", 1},
     {"VK_KHR_maintenance5", 1},
     {"VK_KHR_ray_tracing_position_fetch", 1},
     {"VK_EXT_shader_object", 1},
@@ -359,10 +363,12 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_SEC_amigo_profiling", 1},
     {"VK_QCOM_multiview_per_view_viewports", 1},
     {"VK_NV_ray_tracing_invocation_reorder", 1},
+    {"VK_NV_extended_sparse_address_space", 1},
     {"VK_EXT_mutable_descriptor_type", 1},
     {"VK_ARM_shader_core_builtins", 2},
     {"VK_EXT_pipeline_library_group_handles", 1},
     {"VK_EXT_dynamic_rendering_unused_attachments", 1},
+    {"VK_NV_low_latency2", 1},
     {"VK_KHR_cooperative_matrix", 2},
     {"VK_QCOM_multiview_per_view_render_areas", 1},
     {"VK_QCOM_image_processing2", 1},
@@ -371,6 +377,8 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_QCOM_filter_cubic_clamp", 1},
     {"VK_EXT_attachment_feedback_loop_dynamic_state", 1},
     {"VK_QNX_external_memory_screen_buffer", 1},
+    {"VK_MSFT_layered_driver", 1},
+    {"VK_NV_descriptor_pool_overallocation", 1},
 };
 
 
@@ -3716,6 +3724,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL GetPipelinePropertiesEXT(
 
 
 
+
 static VKAPI_ATTR void VKAPI_CALL CmdSetPatchControlPointsEXT(
     VkCommandBuffer                             commandBuffer,
     uint32_t                                    patchControlPoints);
@@ -3945,6 +3954,7 @@ static VKAPI_ATTR VkDeviceAddress VKAPI_CALL GetPipelineIndirectDeviceAddressNV(
 
 
 
+
 static VKAPI_ATTR void VKAPI_CALL CmdSetTessellationDomainOriginEXT(
     VkCommandBuffer                             commandBuffer,
     VkTessellationDomainOrigin                  domainOrigin);
@@ -4127,6 +4137,9 @@ static VKAPI_ATTR void VKAPI_CALL CmdOpticalFlowExecuteNV(
 
 
 
+#ifdef VK_USE_PLATFORM_ANDROID_KHR
+#endif /* VK_USE_PLATFORM_ANDROID_KHR */
+
 
 static VKAPI_ATTR VkResult VKAPI_CALL CreateShadersEXT(
     VkDevice                                    device,
@@ -4173,6 +4186,33 @@ static VKAPI_ATTR VkResult VKAPI_CALL GetDynamicRenderingTilePropertiesQCOM(
 
 
 
+static VKAPI_ATTR VkResult VKAPI_CALL SetLatencySleepModeNV(
+    VkDevice                                    device,
+    VkSwapchainKHR                              swapchain,
+    const VkLatencySleepModeInfoNV*             pSleepModeInfo);
+
+static VKAPI_ATTR VkResult VKAPI_CALL LatencySleepNV(
+    VkDevice                                    device,
+    VkSwapchainKHR                              swapchain,
+    const VkLatencySleepInfoNV*                 pSleepInfo);
+
+static VKAPI_ATTR void VKAPI_CALL SetLatencyMarkerNV(
+    VkDevice                                    device,
+    VkSwapchainKHR                              swapchain,
+    const VkSetLatencyMarkerInfoNV*             pLatencyMarkerInfo);
+
+static VKAPI_ATTR void VKAPI_CALL GetLatencyTimingsNV(
+    VkDevice                                    device,
+    VkSwapchainKHR                              swapchain,
+    uint32_t*                                   pTimingCount,
+    VkGetLatencyMarkerInfoNV*                   pLatencyMarkerInfo);
+
+static VKAPI_ATTR void VKAPI_CALL QueueNotifyOutOfBandNV(
+    VkQueue                                     queue,
+    const VkOutOfBandQueueTypeInfoNV*           pQueueTypeInfo);
+
+
+
 
 
 
@@ -4188,6 +4228,8 @@ static VKAPI_ATTR VkResult VKAPI_CALL GetScreenBufferPropertiesQNX(
     const struct _screen_buffer*                buffer,
     VkScreenBufferPropertiesQNX*                pProperties);
 #endif /* VK_USE_PLATFORM_SCREEN_QNX */
+
+
 
 
 static VKAPI_ATTR VkResult VKAPI_CALL CreateAccelerationStructureKHR(
@@ -5097,6 +5139,11 @@ static const std::unordered_map<std::string, void*> name_to_funcptr_map = {
     {"vkCmdBindShadersEXT", (void*)CmdBindShadersEXT},
     {"vkGetFramebufferTilePropertiesQCOM", (void*)GetFramebufferTilePropertiesQCOM},
     {"vkGetDynamicRenderingTilePropertiesQCOM", (void*)GetDynamicRenderingTilePropertiesQCOM},
+    {"vkSetLatencySleepModeNV", (void*)SetLatencySleepModeNV},
+    {"vkLatencySleepNV", (void*)LatencySleepNV},
+    {"vkSetLatencyMarkerNV", (void*)SetLatencyMarkerNV},
+    {"vkGetLatencyTimingsNV", (void*)GetLatencyTimingsNV},
+    {"vkQueueNotifyOutOfBandNV", (void*)QueueNotifyOutOfBandNV},
     {"vkCmdSetAttachmentFeedbackLoopEnableEXT", (void*)CmdSetAttachmentFeedbackLoopEnableEXT},
 #ifdef VK_USE_PLATFORM_SCREEN_QNX
     {"vkGetScreenBufferPropertiesQNX", (void*)GetScreenBufferPropertiesQNX},

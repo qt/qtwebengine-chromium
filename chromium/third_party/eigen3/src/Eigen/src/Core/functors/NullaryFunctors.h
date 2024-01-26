@@ -10,6 +10,7 @@
 #ifndef EIGEN_NULLARY_FUNCTORS_H
 #define EIGEN_NULLARY_FUNCTORS_H
 
+// IWYU pragma: private
 #include "../InternalHeaderCheck.h"
 
 namespace Eigen {

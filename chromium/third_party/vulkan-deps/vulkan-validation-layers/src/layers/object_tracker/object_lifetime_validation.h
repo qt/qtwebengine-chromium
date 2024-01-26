@@ -111,80 +111,89 @@ class ObjectLifetimes : public ValidationObject {
     void CreateSwapchainImageObject(VkImage swapchain_image, VkSwapchainKHR swapchain);
     void DestroyLeakedInstanceObjects();
     void DestroyLeakedDeviceObjects();
-    bool ValidateDeviceObject(const VulkanTypedHandle &device_typed, const char *invalid_handle_code, const Location &loc) const;
     void DestroyQueueDataStructures();
     bool ValidateCommandBuffer(VkCommandPool command_pool, VkCommandBuffer command_buffer, const Location &loc) const;
     bool ValidateDescriptorSet(VkDescriptorPool descriptor_pool, VkDescriptorSet descriptor_set, const Location &loc) const;
     bool ValidateSamplerObjects(const VkDescriptorSetLayoutCreateInfo *pCreateInfo, const Location &loc) const;
     bool ValidateDescriptorWrite(VkWriteDescriptorSet const *desc, bool isPush, const Location &loc) const;
-    bool ValidateAnonymousObject(uint64_t object, VkObjectType core_object_type, bool null_allowed, const char *invalid_handle_code,
-                                 const char *wrong_device_code, const Location &loc) const;
+    bool ValidateAnonymousObject(uint64_t object, VkObjectType core_object_type, const char *invalid_handle_vuid,
+                                 const Location &loc) const;
     bool ValidateAccelerationStructures(const char *dst_handle_vuid, uint32_t count,
                                         const VkAccelerationStructureBuildGeometryInfoKHR *infos, const Location &loc) const;
 
-    ObjectLifetimes *GetObjectLifetimeData(std::vector<ValidationObject *> &object_dispatch) const {
-        for (auto *layer_object : object_dispatch) {
-            if (layer_object->container_type == LayerObjectTypeObjectTracker) {
-                return (reinterpret_cast<ObjectLifetimes *>(layer_object));
-            }
-        }
-        return nullptr;
-    };
-
-    bool CheckObjectValidity(uint64_t object_handle, VulkanObjectType object_type, const char *invalid_handle_code,
-                             const char *wrong_device_code, const Location &loc) const {
+    bool TracksObject(uint64_t object_handle, VulkanObjectType object_type) const {
         // Look for object in object map
-        if (!object_map[object_type].contains(object_handle)) {
-            // If object is an image, also look for it in the swapchain image map
-            if ((object_type != kVulkanObjectTypeImage) || (swapchainImageMap.find(object_handle) == swapchainImageMap.end())) {
-                // Object not found, look for it in other device object maps
-                for (const auto &other_device_data : layer_data_map) {
-                    for (auto *layer_object_data : other_device_data.second->object_dispatch) {
-                        if (layer_object_data->container_type == LayerObjectTypeObjectTracker) {
-                            auto object_lifetime_data = reinterpret_cast<ObjectLifetimes *>(layer_object_data);
-                            if (object_lifetime_data && (object_lifetime_data != this)) {
-                                if (object_lifetime_data->object_map[object_type].find(object_handle) !=
-                                        object_lifetime_data->object_map[object_type].end() ||
-                                    (object_type == kVulkanObjectTypeImage &&
-                                     object_lifetime_data->swapchainImageMap.find(object_handle) !=
-                                         object_lifetime_data->swapchainImageMap.end())) {
-                                    // Object found on other device, report an error if object has a device parent error code
-                                    if ((wrong_device_code != kVUIDUndefined) && (object_type != kVulkanObjectTypeSurfaceKHR)) {
-                                        const LogObjectList objlist(instance, device, layer_object_data->device);
-                                        return LogError(wrong_device_code, objlist, loc,
-                                                        "Expected all Dispatchable Handles to use %s, but the %s (0x%" PRIxLEAST64
-                                                        ") was created, allocated or retrieved from %s.",
-                                                        FormatHandle(device).c_str(), object_string[object_type], object_handle,
-                                                        FormatHandle(layer_object_data->device).c_str());
-
-                                    } else {
-                                        return false;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                // Report an error if object was not found anywhere
-                return LogError(invalid_handle_code, instance, loc, "Invalid %s Object 0x%" PRIxLEAST64 ".",
-                                object_string[object_type], object_handle);
-            }
+        if (object_map[object_type].contains(object_handle)) {
+            return true;
+        }
+        // If object is an image, also look for it in the swapchain image map
+        if (object_type == kVulkanObjectTypeImage && swapchainImageMap.find(object_handle) != swapchainImageMap.end()) {
+            return true;
         }
         return false;
     }
 
+    bool CheckObjectValidity(uint64_t object_handle, VulkanObjectType object_type, const char *invalid_handle_vuid,
+                             const char *wrong_parent_vuid, const Location &loc, VulkanObjectType parent_type) const {
+        constexpr bool skip = false;
+
+        // If this instance of lifetime validation tracks the object, report success
+        if (TracksObject(object_handle, object_type)) {
+            return skip;
+        }
+        // Object not found, look for it in other device object maps
+        const ObjectLifetimes *other_lifetimes = nullptr;
+        for (const auto &other_device_data : layer_data_map) {
+            const auto lifetimes = other_device_data.second->GetValidationObject<ObjectLifetimes>();
+            if (lifetimes && lifetimes != this && lifetimes->TracksObject(object_handle, object_type)) {
+                other_lifetimes = lifetimes;
+                break;
+            }
+        }
+        // Object was not found anywhere
+        if (!other_lifetimes) {
+            return LogError(invalid_handle_vuid, instance, loc, "Invalid %s Object 0x%" PRIxLEAST64 ".", object_string[object_type],
+                            object_handle);
+        }
+        // Anonymous object validation does not check parent, only that the object exists
+        if (wrong_parent_vuid == kVUIDUndefined) {
+            return skip;
+        }
+        // Object found on another device
+        LogObjectList objlist;
+        std::string handle_str;
+        std::string other_handle_str;
+        if (parent_type == kVulkanObjectTypeDevice) {
+            objlist = LogObjectList(instance, device, other_lifetimes->device);
+            handle_str = FormatHandle(device);
+            other_handle_str = FormatHandle(other_lifetimes->device);
+        } else if (parent_type == kVulkanObjectTypeInstance) {
+            objlist = LogObjectList(instance, other_lifetimes->instance);
+            handle_str = FormatHandle(instance);
+            other_handle_str = FormatHandle(other_lifetimes->instance);
+        } else if (parent_type == kVulkanObjectTypePhysicalDevice) {
+            objlist = LogObjectList(instance, physical_device, other_lifetimes->physical_device);
+            handle_str = FormatHandle(physical_device);
+            other_handle_str = FormatHandle(other_lifetimes->physical_device);
+        } else {
+            assert(false);
+            return skip;
+        }
+        return LogError(wrong_parent_vuid, objlist, loc,
+                        "(%s 0x%" PRIxLEAST64
+                        ") was created, allocated or retrieved from %s, but command is using (or its dispatchable parameter is "
+                        "associated with) %s",
+                        object_string[object_type], object_handle, other_handle_str.c_str(), handle_str.c_str());
+    }
+
     template <typename T1>
-    bool ValidateObject(T1 object, VulkanObjectType object_type, bool null_allowed, const char *invalid_handle_code,
-                        const char *wrong_device_code, const Location &loc) const {
+    bool ValidateObject(T1 object, VulkanObjectType object_type, bool null_allowed, const char *invalid_handle_vuid,
+                        const char *wrong_parent_vuid, const Location &loc,
+                        VulkanObjectType parent_type = kVulkanObjectTypeDevice) const {
         if (null_allowed && (object == VK_NULL_HANDLE)) {
             return false;
         }
-
-        if (object_type == kVulkanObjectTypeDevice) {
-            return ValidateDeviceObject(VulkanTypedHandle(object, object_type), invalid_handle_code, loc);
-        }
-
-        return CheckObjectValidity(HandleToUint64(object), object_type, invalid_handle_code, wrong_device_code, loc);
+        return CheckObjectValidity(HandleToUint64(object), object_type, invalid_handle_vuid, wrong_parent_vuid, loc, parent_type);
     }
 
     template <typename T1>

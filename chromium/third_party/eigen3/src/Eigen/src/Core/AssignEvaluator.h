@@ -12,6 +12,7 @@
 #ifndef EIGEN_ASSIGN_EVALUATOR_H
 #define EIGEN_ASSIGN_EVALUATOR_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

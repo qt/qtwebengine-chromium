@@ -1,4 +1,5 @@
 import { globalTestConfig } from '../../../../common/framework/test_config.js';
+import { ROArrayArray } from '../../../../common/util/types.js';
 import { assert, objectEquals, unreachable } from '../../../../common/util/util.js';
 import { GPUTest } from '../../../gpu_test.js';
 import { compare, Comparator, ComparatorImpl } from '../../../util/compare.js';
@@ -27,7 +28,12 @@ import {
   quantizeToU32,
 } from '../../../util/math.js';
 
-export type Expectation = Value | FPInterval | FPInterval[] | FPInterval[][] | Comparator;
+export type Expectation =
+  | Value
+  | FPInterval
+  | readonly FPInterval[]
+  | ROArrayArray<FPInterval>
+  | Comparator;
 
 /** @returns if this Expectation actually a Comparator */
 export function isComparator(e: Expectation): e is Comparator {
@@ -52,7 +58,7 @@ export function toComparator(input: Expectation): Comparator {
 /** Case is a single expression test case. */
 export type Case = {
   // The input value(s)
-  input: Value | Array<Value>;
+  input: Value | ReadonlyArray<Value>;
   // The expected result, or function to check the result
   expected: Expectation;
 };
@@ -70,6 +76,9 @@ export type InputSource =
 /** All possible input sources */
 export const allInputSources: InputSource[] = ['const', 'uniform', 'storage_r', 'storage_rw'];
 
+/** Just constant input source */
+export const onlyConstInputSource: InputSource[] = ['const'];
+
 /** Configuration for running a expression test */
 export type Config = {
   // Where the input values are read from
@@ -85,6 +94,56 @@ export type Config = {
 
 // Helper for returning the stride for a given Type
 function valueStride(ty: Type): number {
+  // AbstractFloats are passed out of the shader via a struct of 2x u32s and
+  // unpacking containers as arrays
+  if (scalarTypeOf(ty).kind === 'abstract-float') {
+    if (ty instanceof ScalarType) {
+      return 16;
+    }
+    if (ty instanceof VectorType) {
+      if (ty.width === 2) {
+        return 16;
+      }
+      // vec3s have padding to make them the same size as vec4s
+      return 32;
+    }
+    if (ty instanceof MatrixType) {
+      switch (ty.cols) {
+        case 2:
+          switch (ty.rows) {
+            case 2:
+              return 32;
+            case 3:
+              return 64;
+            case 4:
+              return 64;
+          }
+          break;
+        case 3:
+          switch (ty.rows) {
+            case 2:
+              return 48;
+            case 3:
+              return 96;
+            case 4:
+              return 96;
+          }
+          break;
+        case 4:
+          switch (ty.rows) {
+            case 2:
+              return 64;
+            case 3:
+              return 128;
+            case 4:
+              return 128;
+          }
+          break;
+      }
+    }
+    unreachable(`AbstractFloats have not yet been implemented for ${ty.toString()}`);
+  }
+
   if (ty instanceof MatrixType) {
     switch (ty.cols) {
       case 2:
@@ -135,10 +194,11 @@ function valueStrides(tys: Type[]): number {
 // Helper for returning the WGSL storage type for the given Type.
 function storageType(ty: Type): Type {
   if (ty instanceof ScalarType) {
-    assert(ty.kind !== 'f64', `'No storage type defined for 'f64' values`);
-    if (ty.kind === 'abstract-float') {
-      return TypeVec(2, TypeU32);
-    }
+    assert(ty.kind !== 'f64', `No storage type defined for 'f64' values`);
+    assert(
+      ty.kind !== 'abstract-float',
+      `Custom handling is implemented for 'abstract-float' values`
+    );
     if (ty.kind === 'bool') {
       return TypeU32;
     }
@@ -161,7 +221,7 @@ function fromStorage(ty: Type, expr: string): string {
   if (ty instanceof VectorType) {
     assert(
       ty.elementType.kind !== 'abstract-float',
-      `AbstractFloat values should not be in input storage`
+      `AbstractFloat values cannot appear in input storage`
     );
     assert(ty.elementType.kind !== 'f64', `'No storage type defined for 'f64' values`);
     if (ty.elementType.kind === 'bool') {
@@ -176,7 +236,7 @@ function toStorage(ty: Type, expr: string): string {
   if (ty instanceof ScalarType) {
     assert(
       ty.kind !== 'abstract-float',
-      `AbstractFloat values have custom code writing to input storage`
+      `AbstractFloat values have custom code for writing to storage`
     );
     assert(ty.kind !== 'f64', `No storage type defined for 'f64' values`);
     if (ty.kind === 'bool') {
@@ -186,7 +246,7 @@ function toStorage(ty: Type, expr: string): string {
   if (ty instanceof VectorType) {
     assert(
       ty.elementType.kind !== 'abstract-float',
-      `AbstractFloat values have custom code writing to input storage`
+      `AbstractFloat values have custom code for writing to storage`
     );
     assert(ty.elementType.kind !== 'f64', `'No storage type defined for 'f64' values`);
     if (ty.elementType.kind === 'bool') {
@@ -201,7 +261,7 @@ type PipelineCache = Map<String, GPUComputePipeline>;
 
 /**
  * Searches for an entry with the given key, adding and returning the result of calling
- * @p create if the entry was not found.
+ * `create` if the entry was not found.
  * @param map the cache map
  * @param key the entry's key
  * @param create the function used to construct a value, if not found in the cache
@@ -408,11 +468,11 @@ function submitBatch(
 }
 
 /**
- * map is a helper for returning a new array with each element of @p v
- * transformed with @p fn.
- * If @p v is not an array, then @p fn is called with (v, 0).
+ * map is a helper for returning a new array with each element of `v`
+ * transformed with `fn`.
+ * If `v` is not an array, then `fn` is called with (v, 0).
  */
-function map<T, U>(v: T | T[], fn: (value: T, index?: number) => U): U[] {
+function map<T, U>(v: T | readonly T[], fn: (value: T, index?: number) => U): U[] {
   if (v instanceof Array) {
     return v.map(fn);
   }
@@ -438,11 +498,54 @@ export type ShaderBuilder = (
  * Helper that returns the WGSL to declare the output storage buffer for a shader
  */
 function wgslOutputs(resultType: Type, count: number): string {
-  return `
+  let output_struct = undefined;
+  if (scalarTypeOf(resultType).kind !== 'abstract-float') {
+    output_struct = `
 struct Output {
   @size(${valueStride(resultType)}) value : ${storageType(resultType)}
+};`;
+  } else {
+    if (resultType instanceof ScalarType) {
+      output_struct = `struct AF {
+  low: u32,
+  high: u32,
 };
-@group(0) @binding(0) var<storage, read_write> outputs : array<Output, ${count}>;`;
+
+struct Output {
+  @size(${valueStride(resultType)}) value: AF,
+};`;
+    }
+    if (resultType instanceof VectorType) {
+      const dim = resultType.width;
+      output_struct = `struct AF {
+  low: u32,
+  high: u32,
+};
+
+struct Output {
+  @size(${valueStride(resultType)}) value: array<AF, ${dim}>,
+};`;
+    }
+
+    if (resultType instanceof MatrixType) {
+      const cols = resultType.cols;
+      const rows = resultType.rows === 2 ? 2 : 4; // 3 element rows have a padding element
+      output_struct = `struct AF {
+  low: u32,
+  high: u32,
+};
+
+struct Output {
+   @size(${valueStride(resultType)}) value: array<array<AF, ${rows}>, ${cols}>,
+};`;
+    }
+
+    assert(output_struct !== undefined, `No implementation for result type '${resultType}'`);
+  }
+
+  return `${output_struct}
+@group(0) @binding(0) var<storage, read_write> outputs : array<Output, ${count}>;
+`;
 }
 
 /**
@@ -454,10 +557,6 @@ function wgslValuesArray(
   cases: CaseList,
   expressionBuilder: ExpressionBuilder
 ): string {
-  // AbstractFloat values cannot be stored in an array
-  if (parameterTypes.some(ty => scalarTypeOf(ty).kind === 'abstract-float')) {
-    return '';
-  }
   return `
 const values = array(
   ${cases.map(c => expressionBuilder(map(c.input, v => v.wgsl()))).join(',\n  ')}
@@ -495,7 +594,7 @@ function wgslHeader(parameterTypes: Array<Type>, resultType: Type) {
  * ExpressionBuilder returns the WGSL used to evaluate an expression with the
  * given input values.
  */
-export type ExpressionBuilder = (values: Array<string>) => string;
+export type ExpressionBuilder = (values: ReadonlyArray<string>) => string;
 
 /**
  * Returns a ShaderBuilder that builds a basic expression test shader.
@@ -508,15 +607,16 @@ function basicExpressionShaderBody(
   cases: CaseList,
   inputSource: InputSource
 ): string {
+  assert(
+    scalarTypeOf(resultType).kind !== 'abstract-float',
+    `abstractFloatShaderBuilder should be used when result type is 'abstract-float`
+  );
   if (inputSource === 'const') {
     //////////////////////////////////////////////////////////////////////////
     // Constant eval
     //////////////////////////////////////////////////////////////////////////
     let body = '';
-    if (
-      scalarTypeOf(resultType).kind !== 'abstract-float' &&
-      parameterTypes.some(ty => scalarTypeOf(ty).kind === 'abstract-float')
-    ) {
+    if (parameterTypes.some(ty => scalarTypeOf(ty).kind === 'abstract-float')) {
       // Directly assign the expression to the output, to avoid an
       // intermediate store, which will concretize the value early
       body = cases
@@ -527,96 +627,6 @@ function basicExpressionShaderBody(
               expressionBuilder(map(c.input, v => v.wgsl()))
             )};`
         )
-        .join('\n  ');
-    } else if (scalarTypeOf(resultType).kind === 'abstract-float') {
-      // AbstractFloats are f64s under the hood. WebGPU does not support
-      // putting f64s in buffers, so the result needs to be split up into u32s
-      // and rebuilt in the test framework.
-      //
-      // This is complicated by the fact that user defined functions cannot
-      // take/return AbstractFloats, and AbstractFloats cannot be stored in
-      // variables, so the code cannot just inject a simple utility function
-      // at the top of the shader, instead this snippet needs to be inlined
-      // everywhere the test needs to return an AbstractFloat.
-      //
-      // select is used below, since ifs are not available during constant
-      // eval. This has the side effect of short-circuiting doesn't occur, so
-      // both sides of the select have to evaluate and be valid.
-      //
-      // This snippet implements FTZ for subnormals to bypass the need for
-      // complex subnormal specific logic.
-      //
-      // Expressions resulting in subnormals can still be reasonably tested,
-      // since this snippet will return 0 with the correct sign, which is
-      // always in the acceptance interval for a subnormal result, since an
-      // implementation may FTZ.
-      //
-      // Document for the snippet is included here in this code block, since
-      // shader length affects compilation time  significantly on some
-      // backends.
-      //
-      // Snippet with documentation:
-      //   const kExponentBias = 1022;
-      //
-      //   // Detect if the value is zero or subnormal, so that FTZ behaviour
-      //   // can occur
-      //   const subnormal_or_zero : bool = (${expr} <= ${kValue.f64.subnormal.positive.max}) && (${expr} >= ${kValue.f64.subnormal.negative.min});
-      //
-      //   // MSB of the upper u32 is 1 if the value is negative, otherwise 0
-      //   // Extract the sign bit early, so that abs() can be used with
-      //   // frexp() so negative cases do not need to be handled
-      //   const sign_bit : u32 = select(0, 0x80000000, ${expr} < 0);
-      //
-      //   // Use frexp() to obtain the exponent and fractional parts, and
-      //   // then perform FTZ if needed
-      //   const f = frexp(abs(${expr}));
-      //   const f_fract = select(f.fract, 0, subnormal_or_zero);
-      //   const f_exp = select(f.exp, -kExponentBias, subnormal_or_zero);
-      //
-      //   // Adjust for the exponent bias and shift for storing in bits
-      //   // [20..31] of the upper u32
-      //   const exponent_bits : u32 = (f_exp + kExponentBias) << 20;
-      //
-      //   // Extract the portion of the mantissa that appears in upper u32 as
-      //   // a float for later use
-      //   const high_mantissa = ldexp(f_fract, 21);
-      //
-      //   // Extract the portion of the mantissa that appears in upper u32 as
-      //   // as bits. This value is masked, because normals will explicitly
-      //   // have the implicit leading 1 that should not be in the final
-      //   // result.
-      //   const high_mantissa_bits : u32 = u32(ldexp(f_fract, 21)) & 0x000fffff;
-      //
-      //   // Calculate the mantissa stored in the lower u32 as a float
-      //   const low_mantissa = f_fract - ldexp(floor(high_mantissa), -21);
-      //
-      //   // Convert the lower u32 mantissa to bits
-      //   const low_mantissa_bits = u32(ldexp(low_mantissa, 53));
-      //
-      //   // Pack the result into 2x u32s for writing out to the testing
-      //   // framework
-      //   outputs[${i}].value.x = low_mantissa_bits;
-      //   outputs[${i}].value.y = sign_bit | exponent_bits | high_mantissa_bits;
-      body = cases
-        .map((c, i) => {
-          const expr = `${expressionBuilder(map(c.input, v => v.wgsl()))}`;
-          // prettier-ignore
-          return `  {
-    const kExponentBias = 1022;
-    const subnormal_or_zero : bool = (${expr} <= ${kValue.f64.subnormal.positive.max}) && (${expr} >= ${kValue.f64.subnormal.negative.min});
-    const sign_bit : u32 = select(0, 0x80000000, ${expr} < 0);
-    const f = frexp(abs(${expr}));
-    const f_fract = select(f.fract, 0, subnormal_or_zero);
-    const f_exp = select(f.exp, -kExponentBias, subnormal_or_zero);
-    const exponent_bits : u32 = (f_exp + kExponentBias) << 20;
-    const high_mantissa = ldexp(f_fract, 21);
-    const high_mantissa_bits : u32 = u32(ldexp(f_fract, 21)) & 0x000fffff;
-    const low_mantissa = f_fract - ldexp(floor(high_mantissa), -21);
-    const low_mantissa_bits = u32(ldexp(low_mantissa, 53));
-    outputs[${i}].value.x = low_mantissa_bits;
-    outputs[${i}].value.y = sign_bit | exponent_bits | high_mantissa_bits;
-  }`;
-        })
         .join('\n  ');
     } else if (globalTestConfig.unrollConstEvalLoops) {
       body = cases
@@ -809,9 +819,180 @@ fn main() {
 }
 
 /**
+ * @returns a string that extracts the value of an AbstractFloat into an output
+ *          destination
+ * @param expr expression for an AbstractFloat value, if working with vectors or
+ *             matrices, this string needs to include indexing into the
+ *             container.
+ * @param case_idx index in the case output array to assign the result
+ * @param accessor string representing how access to the AF that needs to be
+ *                 operated on.
+ *                 For scalars this should be left as ''.
+ *                 For vectors this will be an indexing operation,
+ *                 i.e. '[i]'
+ *                 For matrices this will double indexing operation,
+ *                 i.e. '[c][r]'
+ */
+function abstractFloatSnippet(expr: string, case_idx: number, accessor: string = ''): string {
+  // AbstractFloats are f64s under the hood. WebGPU does not support
+  // putting f64s in buffers, so the result needs to be split up into u32s
+  // and rebuilt in the test framework.
+  //
+  // Since there is no 64-bit data type that can be used as an element for a
+  // vector or a matrix in WGSL, the testing framework needs to pass the u32s
+  // via a struct with two u32s, and deconstruct vectors and matrices into
+  // arrays.
+  //
+  // This is complicated by the fact that user defined functions cannot
+  // take/return AbstractFloats, and AbstractFloats cannot be stored in
+  // variables, so the code cannot just inject a simple utility function
+  // at the top of the shader, instead this snippet needs to be inlined
+  // everywhere the test needs to return an AbstractFloat.
+  //
+  // select is used below, since ifs are not available during constant
+  // eval. This has the side effect of short-circuiting doesn't occur, so
+  // both sides of the select have to evaluate and be valid.
+  //
+  // This snippet implements FTZ for subnormals to bypass the need for
+  // complex subnormal specific logic.
+  //
+  // Expressions resulting in subnormals can still be reasonably tested,
+  // since this snippet will return 0 with the correct sign, which is
+  // always in the acceptance interval for a subnormal result, since an
+  // implementation may FTZ.
+  //
+  // Documentation for the snippet working with scalar results is included here
+  // in this code block, since shader length affects compilation time
+  // significantly on some backends. The code for vectors and matrices basically
+  // the same thing, with extra indexing operations.
+  //
+  // Snippet with documentation:
+  //   const kExponentBias = 1022;
+  //
+  //   // Detect if the value is zero or subnormal, so that FTZ behaviour
+  //   // can occur
+  //   const subnormal_or_zero : bool = (${expr} <= ${kValue.f64.positive.subnormal.max}) && (${expr} >= ${kValue.f64.negative.subnormal.min});
+  //
+  //   // MSB of the upper u32 is 1 if the value is negative, otherwise 0
+  //   // Extract the sign bit early, so that abs() can be used with
+  //   // frexp() so negative cases do not need to be handled
+  //   const sign_bit : u32 = select(0, 0x80000000, ${expr} < 0);
+  //
+  //   // Use frexp() to obtain the exponent and fractional parts, and
+  //   // then perform FTZ if needed
+  //   const f = frexp(abs(${expr}));
+  //   const f_fract = select(f.fract, 0, subnormal_or_zero);
+  //   const f_exp = select(f.exp, -kExponentBias, subnormal_or_zero);
+  //
+  //   // Adjust for the exponent bias and shift for storing in bits
+  //   // [20..31] of the upper u32
+  //   const exponent_bits : u32 = (f_exp + kExponentBias) << 20;
+  //
+  //   // Extract the portion of the mantissa that appears in upper u32 as
+  //   // a float for later use
+  //   const high_mantissa = ldexp(f_fract, 21);
+  //
+  //   // Extract the portion of the mantissa that appears in upper u32 as
+  //   // as bits. This value is masked, because normals will explicitly
+  //   // have the implicit leading 1 that should not be in the final
+  //   // result.
+  //   const high_mantissa_bits : u32 = u32(ldexp(f_fract, 21)) & 0x000fffff;
+  //
+  //   // Calculate the mantissa stored in the lower u32 as a float
+  //   const low_mantissa = f_fract - ldexp(floor(high_mantissa), -21);
+  //
+  //   // Convert the lower u32 mantissa to bits
+  //   const low_mantissa_bits = u32(ldexp(low_mantissa, 53));
+  //
+  //   outputs[${i}].value.high = sign_bit | exponent_bits | high_mantissa_bits;
+  //   outputs[${i}].value.low = low_mantissa_bits;
+  // prettier-ignore
+  return `  {
+    const kExponentBias = 1022;
+    const subnormal_or_zero : bool = (${expr}${accessor} <= ${kValue.f64.positive.subnormal.max}) && (${expr}${accessor} >= ${kValue.f64.negative.subnormal.min});
+    const sign_bit : u32 = select(0, 0x80000000, ${expr}${accessor} < 0);
+    const f = frexp(abs(${expr}${accessor}));
+    const f_fract = select(f.fract, 0, subnormal_or_zero);
+    const f_exp = select(f.exp, -kExponentBias, subnormal_or_zero);
+    const exponent_bits : u32 = (f_exp + kExponentBias) << 20;
+    const high_mantissa = ldexp(f_fract, 21);
+    const high_mantissa_bits : u32 = u32(ldexp(f_fract, 21)) & 0x000fffff;
+    const low_mantissa = f_fract - ldexp(floor(high_mantissa), -21);
+    const low_mantissa_bits = u32(ldexp(low_mantissa, 53));
+    outputs[${case_idx}].value${accessor}.high = sign_bit | exponent_bits | high_mantissa_bits;
+    outputs[${case_idx}].value${accessor}.low = low_mantissa_bits;
+  }`;
+}
+
+/** @returns a string for a specific case that has a AbstractFloat result */
+function abstractFloatCaseBody(expr: string, resultType: Type, i: number): string {
+  if (resultType instanceof ScalarType) {
+    return abstractFloatSnippet(expr, i);
+  }
+
+  if (resultType instanceof VectorType) {
+    return [...Array(resultType.width).keys()]
+      .map(idx => abstractFloatSnippet(expr, i, `[${idx}]`))
+      .join('  \n');
+  }
+
+  if (resultType instanceof MatrixType) {
+    const cols = resultType.cols;
+    const rows = resultType.rows;
+    const results: String[] = [...Array(cols * rows)];
+
+    for (let c = 0; c < cols; c++) {
+      for (let r = 0; r < rows; r++) {
+        results[c * rows + r] = abstractFloatSnippet(expr, i, `[${c}][${r}]`);
+      }
+    }
+
+    return results.join('  \n');
+  }
+
+  unreachable(`Results of type '${resultType}' not yet implemented`);
+}
+
+/**
+ * @returns a ShaderBuilder that builds a test shader hands AbstractFloat results.
+ * @param expressionBuilder an expression builder that will return AbstractFloats
+ */
+export function abstractFloatShaderBuilder(expressionBuilder: ExpressionBuilder): ShaderBuilder {
+  return (
+    parameterTypes: Array<Type>,
+    resultType: Type,
+    cases: CaseList,
+    inputSource: InputSource
+  ) => {
+    assert(inputSource === 'const', 'AbstractFloat results are only defined for const-eval');
+    assert(
+      scalarTypeOf(resultType).kind === 'abstract-float',
+      `Expected resultType of 'abstract-float', received '${scalarTypeOf(resultType).kind}' instead`
+    );
+
+    const body = cases
+      .map((c, i) => {
+        const expr = `${expressionBuilder(map(c.input, v => v.wgsl()))}`;
+        return abstractFloatCaseBody(expr, resultType, i);
+      })
+      .join('\n  ');
+
+    return `
+${wgslHeader(parameterTypes, resultType)}
+
+${wgslOutputs(resultType, cases.length)}
+
+@compute @workgroup_size(1)
+fn main() {
+${body}
+}`;
+  };
+}
+
+/**
  * Constructs and returns a GPUComputePipeline and GPUBindGroup for running a
  * batch of test cases. If a pre-created pipeline can be found in
- * @p pipelineCache, then this may be returned instead of creating a new
+ * `pipelineCache`, then this may be returned instead of creating a new
  * pipeline.
  * @param t the GPUTest
  * @param shaderBuilder the shader builder
@@ -1037,8 +1218,8 @@ export interface BinaryOp {
  * @param scalarize function to convert numbers to Scalars
  */
 function generateScalarBinaryToScalarCases(
-  param0s: number[],
-  param1s: number[],
+  param0s: readonly number[],
+  param1s: readonly number[],
   op: BinaryOp,
   quantize: QuantizeFunc,
   scalarize: ScalarBuilder
@@ -1060,7 +1241,11 @@ function generateScalarBinaryToScalarCases(
  * @param param1s array of inputs to try for the second param
  * @param op callback called on each pair of inputs to produce each case
  */
-export function generateBinaryToI32Cases(param0s: number[], param1s: number[], op: BinaryOp) {
+export function generateBinaryToI32Cases(
+  param0s: readonly number[],
+  param1s: readonly number[],
+  op: BinaryOp
+) {
   return generateScalarBinaryToScalarCases(param0s, param1s, op, quantizeToI32, i32);
 }
 
@@ -1070,7 +1255,11 @@ export function generateBinaryToI32Cases(param0s: number[], param1s: number[], o
  * @param param1s array of inputs to try for the second param
  * @param op callback called on each pair of inputs to produce each case
  */
-export function generateBinaryToU32Cases(param0s: number[], param1s: number[], op: BinaryOp) {
+export function generateBinaryToU32Cases(
+  param0s: readonly number[],
+  param1s: readonly number[],
+  op: BinaryOp
+) {
   return generateScalarBinaryToScalarCases(param0s, param1s, op, quantizeToU32, u32);
 }
 
@@ -1084,7 +1273,7 @@ export function generateBinaryToU32Cases(param0s: number[], param1s: number[], o
  */
 function makeScalarVectorBinaryToVectorCase(
   scalar: number,
-  vector: number[],
+  vector: readonly number[],
   op: BinaryOp,
   quantize: QuantizeFunc,
   scalarize: ScalarBuilder
@@ -1097,7 +1286,7 @@ function makeScalarVectorBinaryToVectorCase(
   }
   return {
     input: [scalarize(scalar), new Vector(vector.map(scalarize))],
-    expected: new Vector((result as number[]).map(scalarize)),
+    expected: new Vector((result as readonly number[]).map(scalarize)),
   };
 }
 
@@ -1110,8 +1299,8 @@ function makeScalarVectorBinaryToVectorCase(
  * @param scalarize function to convert numbers to Scalars
  */
 function generateScalarVectorBinaryToVectorCases(
-  scalars: number[],
-  vectors: number[][],
+  scalars: readonly number[],
+  vectors: ROArrayArray<number>,
   op: BinaryOp,
   quantize: QuantizeFunc,
   scalarize: ScalarBuilder
@@ -1137,7 +1326,7 @@ function generateScalarVectorBinaryToVectorCases(
  * @param scalarize function to convert numbers to Scalars
  */
 function makeVectorScalarBinaryToVectorCase(
-  vector: number[],
+  vector: readonly number[],
   scalar: number,
   op: BinaryOp,
   quantize: QuantizeFunc,
@@ -1151,7 +1340,7 @@ function makeVectorScalarBinaryToVectorCase(
   }
   return {
     input: [new Vector(vector.map(scalarize)), scalarize(scalar)],
-    expected: new Vector((result as number[]).map(scalarize)),
+    expected: new Vector((result as readonly number[]).map(scalarize)),
   };
 }
 
@@ -1164,8 +1353,8 @@ function makeVectorScalarBinaryToVectorCase(
  * @param scalarize function to convert numbers to Scalars
  */
 function generateVectorScalarBinaryToVectorCases(
-  vectors: number[][],
-  scalars: number[],
+  vectors: ROArrayArray<number>,
+  scalars: readonly number[],
   op: BinaryOp,
   quantize: QuantizeFunc,
   scalarize: ScalarBuilder
@@ -1189,8 +1378,8 @@ function generateVectorScalarBinaryToVectorCases(
  * @param op he op to apply to each pair of scalar and vector
  */
 export function generateU32VectorBinaryToVectorCases(
-  scalars: number[],
-  vectors: number[][],
+  scalars: readonly number[],
+  vectors: ROArrayArray<number>,
   op: BinaryOp
 ): Case[] {
   return generateScalarVectorBinaryToVectorCases(scalars, vectors, op, quantizeToU32, u32);
@@ -1203,8 +1392,8 @@ export function generateU32VectorBinaryToVectorCases(
  * @param op he op to apply to each pair of vector and scalar
  */
 export function generateVectorU32BinaryToVectorCases(
-  vectors: number[][],
-  scalars: number[],
+  vectors: ROArrayArray<number>,
+  scalars: readonly number[],
   op: BinaryOp
 ): Case[] {
   return generateVectorScalarBinaryToVectorCases(vectors, scalars, op, quantizeToU32, u32);
@@ -1217,8 +1406,8 @@ export function generateVectorU32BinaryToVectorCases(
  * @param op he op to apply to each pair of scalar and vector
  */
 export function generateI32VectorBinaryToVectorCases(
-  scalars: number[],
-  vectors: number[][],
+  scalars: readonly number[],
+  vectors: ROArrayArray<number>,
   op: BinaryOp
 ): Case[] {
   return generateScalarVectorBinaryToVectorCases(scalars, vectors, op, quantizeToI32, i32);
@@ -1231,8 +1420,8 @@ export function generateI32VectorBinaryToVectorCases(
  * @param op he op to apply to each pair of vector and scalar
  */
 export function generateVectorI32BinaryToVectorCases(
-  vectors: number[][],
-  scalars: number[],
+  vectors: ROArrayArray<number>,
+  scalars: readonly number[],
   op: BinaryOp
 ): Case[] {
   return generateVectorScalarBinaryToVectorCases(vectors, scalars, op, quantizeToI32, i32);

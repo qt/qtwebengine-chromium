@@ -14,6 +14,7 @@
 #include <iostream>
 #include <vector>
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen { 

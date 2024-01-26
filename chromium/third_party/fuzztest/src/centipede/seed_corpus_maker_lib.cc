@@ -12,6 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// The Centipede seed corpus maker. Following the input text proto config in the
+// ./seed_corpus_config.proto format, selects a sample of fuzzing inputs from N
+// Centipede workdirs and writes them out to a new set of Centipede corpus file
+// shards.
+
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -67,7 +72,6 @@ SeedCorpusConfig ResolveSeedCorpusConfig(  //
                  "textproto config from it: "
               << VV(config_spec);
     RemoteFileGetContents(config_spec, config_str);
-    CHECK(!config_str.empty()) << "File is empty: " << VV(config_spec);
     LOG(INFO) << "Raw config read from file:\n" << config_str;
     base_dir = std::filesystem::path{config_spec}.parent_path();
   } else {
@@ -81,9 +85,8 @@ SeedCorpusConfig ResolveSeedCorpusConfig(  //
   SeedCorpusConfig config;
   CHECK(google::protobuf::TextFormat::ParseFromString(config_str, &config))
       << "Couldn't parse config: " << VV(config_str);
-  CHECK(config.sources_size() > 0)
-      << VV(config_spec) << VV(config.DebugString());
-  CHECK(config.has_destination())
+  CHECK_EQ(config.sources_size() > 0, config.has_destination())
+      << "Non-empty config must have both source(s) and destination: "
       << VV(config_spec) << VV(config.DebugString());
 
   LOG(INFO) << "Parsed config:\n" << config.DebugString();
@@ -98,7 +101,7 @@ SeedCorpusConfig ResolveSeedCorpusConfig(  //
 
   // Set `destination.dir_path` to `override_out_dir`, if the latter is
   // non-empty, or resolve a relative `destination.dir_path` to an absolute one.
-  {
+  if (config.has_destination()) {
     auto* dir = config.mutable_destination()->mutable_dir_path();
     if (!override_out_dir.empty()) {
       *dir = override_out_dir;
@@ -119,17 +122,18 @@ void SampleSeedCorpusElementsFromSource(  //
             << source.DebugString();
 
   // Find `source.dir_blog()`-matching dirs and pick at most
-  // `source.num_recent_dirs()` of the most recent of them.
+  // `source.num_recent_dirs()` most recent ones.
 
   std::vector<std::string> corpus_dirs;
   RemoteGlobMatch(source.dir_glob(), corpus_dirs);
   LOG(INFO) << "Found " << corpus_dirs.size() << " corpus dirs matching "
             << source.dir_glob();
-  // Sort in the reverse lexicographical order. We expect that dir names contain
-  // timestamps and are therefore sorted from oldest to newest.
+  // Sort in the ascending lexicographical order. We expect that dir names
+  // contain timestamps and therefore will be sorted from oldest to newest.
   std::sort(corpus_dirs.begin(), corpus_dirs.end(), std::less<std::string>());
   if (source.num_recent_dirs() < corpus_dirs.size()) {
-    corpus_dirs.erase(corpus_dirs.begin() + source.num_recent_dirs());
+    corpus_dirs.erase(  //
+        corpus_dirs.begin(), corpus_dirs.end() - source.num_recent_dirs());
     LOG(INFO) << "Selected " << corpus_dirs.size() << " corpus dirs";
   }
 
@@ -164,14 +168,18 @@ void SampleSeedCorpusElementsFromSource(  //
 
     absl::Status read_status;
     size_t num_read_elts = 0;
-    do {
+    while (true) {
       absl::Span<uint8_t> elt;
       read_status = corpus_reader->Read(elt);
-      CHECK(read_status.ok() || absl::IsOutOfRange(read_status))
-          << VV(read_status);
+      // Reached EOF - done with this shard.
+      if (absl::IsOutOfRange(read_status)) break;
+      CHECK_OK(read_status)
+          << "Failure reading elements from shard " << shard_fname;
+      // TODO(b/302558385): Replace with a CHECK.
+      LOG_IF(ERROR, elt.empty()) << "Read empty element: " << VV(shard_fname);
       src_elts.emplace_back(elt.begin(), elt.end());
       ++num_read_elts;
-    } while (read_status.ok());
+    }
 
     corpus_reader->Close().IgnoreError();
 
@@ -209,7 +217,7 @@ void SampleSeedCorpusElementsFromSource(  //
   } else {
     LOG(INFO) << "Using all " << src_elts.size() << " elements";
     // TODO(ussuri): Should we still use std::sample() to randomize the order?
-    elements.insert(elements.end(), src_elts.cbegin(), src_elts.cbegin());
+    elements.insert(elements.end(), src_elts.cbegin(), src_elts.cend());
   }
 }
 
@@ -273,6 +281,11 @@ void GenerateSeedCorpusFromConfig(  //
     std::string_view override_out_dir) {
   const SeedCorpusConfig config =
       ResolveSeedCorpusConfig(config_spec, override_out_dir);
+
+  if (config.sources_size() == 0 || !config.has_destination()) {
+    LOG(WARNING) << "Config is empty: skipping seed corpus generation";
+    return;
+  }
 
   // Pre-create the destination dir early to catch possible misspellings etc.
   RemoteMkdir(config.destination().dir_path());

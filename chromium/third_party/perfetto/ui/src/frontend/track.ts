@@ -15,20 +15,16 @@
 import m from 'mithril';
 
 import {assertExists} from '../base/logging';
+import {duration, Span, time} from '../base/time';
 import {EngineProxy} from '../common/engine';
-import {TrackState} from '../common/state';
-import {duration, Span, time} from '../common/time';
-import {TrackData} from '../common/track_data';
-import {TrackLike} from '../public';
+import {Track, TrackContext} from '../public';
 
-import {checkerboard} from './checkerboard';
 import {globals} from './globals';
 import {PxSpan, TimeScale} from './time_scale';
-import {TrackButtonAttrs} from './track_panel';
 
 // Args passed to the track constructors when creating a new track.
 export interface NewTrackArgs {
-  trackId: string;
+  trackKey: string;
   engine: EngineProxy;
 }
 
@@ -42,7 +38,7 @@ export interface TrackCreator {
 
   // We need the |create| method because the stored value in the registry can be
   // an abstract class, and we cannot call 'new' on an abstract class.
-  create(args: NewTrackArgs): Track;
+  create(args: NewTrackArgs): TrackBase;
 }
 
 export interface SliceRect {
@@ -54,26 +50,25 @@ export interface SliceRect {
 }
 
 // The abstract class that needs to be implemented by all tracks.
-export abstract class Track<Config = {}, Data extends TrackData = TrackData>
-    implements TrackLike {
-  // The UI-generated track ID (not to be confused with the SQL track.id).
-  protected readonly trackId: string;
+export abstract class TrackBase<Config = {}> implements Track {
+  protected readonly trackKey: string;
   protected readonly engine: EngineProxy;
+  private _config?: Config;
 
-  // When true this is a new controller-less track type.
-  // TODO(hjd): eventually all tracks will be controller-less and this
-  // should be removed then.
-  protected frontendOnly = false;
+  get config(): Config {
+    return assertExists(this._config);
+  }
 
-  // Caches the last state.track[this.trackId]. This is to deal with track
-  // deletion, see comments in trackState() below.
-  private lastTrackState: TrackState;
+  set config(x: Config) {
+    this._config = x;
+  }
 
   constructor(args: NewTrackArgs) {
-    this.trackId = args.trackId;
+    this.trackKey = args.trackKey;
     this.engine = args.engine;
-    this.lastTrackState = assertExists(globals.state.tracks[this.trackId]);
   }
+
+  onCreate(_ctx: TrackContext) {}
 
   // Last call the track will receive. Called just before the last reference to
   // this object is removed.
@@ -81,42 +76,12 @@ export abstract class Track<Config = {}, Data extends TrackData = TrackData>
 
   protected abstract renderCanvas(ctx: CanvasRenderingContext2D): void;
 
-  protected get trackState(): TrackState {
-    // We can end up in a state where a Track is still in the mithril renderer
-    // tree but its corresponding state has been deleted. This can happen in the
-    // interval of time between a track being removed from the state and the
-    // next animation frame that would remove the Track object. If a mouse event
-    // is dispatched in the meanwhile (or a promise is resolved), we need to be
-    // able to access the state. Hence the caching logic here.
-    const trackState = globals.state.tracks[this.trackId];
-    if (trackState === undefined) {
-      return this.lastTrackState;
-    }
-    this.lastTrackState = trackState;
-    return trackState;
-  }
-
-  get config(): Config {
-    return this.trackState.config as Config;
-  }
-
-  data(): Data|undefined {
-    if (this.frontendOnly) {
-      return undefined;
-    }
-    return globals.trackDataStore.get(this.trackId) as Data;
-  }
-
   getHeight(): number {
     return 40;
   }
 
-  getTrackShellButtons(): Array<m.Vnode<TrackButtonAttrs>> {
+  getTrackShellButtons(): m.Children {
     return [];
-  }
-
-  getContextMenu(): m.Vnode<any>|null {
-    return null;
   }
 
   onMouseMove(_position: {x: number, y: number}) {}
@@ -132,79 +97,8 @@ export abstract class Track<Config = {}, Data extends TrackData = TrackData>
   onFullRedraw(): void {}
 
   render(ctx: CanvasRenderingContext2D) {
-    globals.frontendLocalState.addVisibleTrack(this.trackState.id);
-    if (this.data() === undefined && !this.frontendOnly) {
-      const {visibleWindowTime, visibleTimeScale} = globals.frontendLocalState;
-      const startPx =
-          Math.floor(visibleTimeScale.hpTimeToPx(visibleWindowTime.start));
-      const endPx =
-          Math.ceil(visibleTimeScale.hpTimeToPx(visibleWindowTime.end));
-      checkerboard(ctx, this.getHeight(), startPx, endPx);
-    } else {
-      this.renderCanvas(ctx);
-    }
-  }
-
-  drawTrackHoverTooltip(
-      ctx: CanvasRenderingContext2D, pos: {x: number, y: number}, text: string,
-      text2?: string) {
-    ctx.font = '10px Roboto Condensed';
-    ctx.textBaseline = 'middle';
-    ctx.textAlign = 'left';
-
-    // TODO(hjd): Avoid measuring text all the time (just use monospace?)
-    const textMetrics = ctx.measureText(text);
-    const text2Metrics = ctx.measureText(text2 || '');
-
-    // Padding on each side of the box containing the tooltip:
-    const paddingPx = 4;
-
-    // Figure out the width of the tool tip box:
-    let width = Math.max(textMetrics.width, text2Metrics.width);
-    width += paddingPx * 2;
-
-    // and the height:
-    let height = 0;
-    height += textMetrics.fontBoundingBoxAscent;
-    height += textMetrics.fontBoundingBoxDescent;
-    if (text2 !== undefined) {
-      height += text2Metrics.fontBoundingBoxAscent;
-      height += text2Metrics.fontBoundingBoxDescent;
-    }
-    height += paddingPx * 2;
-
-    let x = pos.x;
-    let y = pos.y;
-
-    // Move box to the top right of the mouse:
-    x += 10;
-    y -= 10;
-
-    // Ensure the box is on screen:
-    const endPx = globals.frontendLocalState.visibleTimeScale.pxSpan.end;
-    if (x + width > endPx) {
-      x -= x + width - endPx;
-    }
-    if (y < 0) {
-      y = 0;
-    }
-    if (y + height > this.getHeight()) {
-      y -= y + height - this.getHeight();
-    }
-
-    // Draw everything:
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-    ctx.fillRect(x, y, width, height);
-
-    ctx.fillStyle = 'hsl(200, 50%, 40%)';
-    ctx.fillText(
-        text, x + paddingPx, y + paddingPx + textMetrics.fontBoundingBoxAscent);
-    if (text2 !== undefined) {
-      const yOffsetPx = textMetrics.fontBoundingBoxAscent +
-          textMetrics.fontBoundingBoxDescent +
-          text2Metrics.fontBoundingBoxAscent;
-      ctx.fillText(text2, x + paddingPx, y + paddingPx + yOffsetPx);
-    }
+    globals.frontendLocalState.addVisibleTrack(this.trackKey);
+    this.renderCanvas(ctx);
   }
 
   // Returns a place where a given slice should be drawn. Should be implemented

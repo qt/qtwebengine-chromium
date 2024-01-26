@@ -6,6 +6,7 @@
  */
 
 #include "include/core/SkColor.h"
+#include "include/core/SkColorType.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPixmap.h"
 #include "include/core/SkShader.h"
@@ -34,11 +35,11 @@ public:
                              const SkRasterPipeline& shaderPipeline,
                              bool is_opaque,
                              bool is_constant,
-                             sk_sp<SkShader> clipShader);
+                             const SkShader* clipShader);
 
     SkRasterPipelineBlitter(SkPixmap dst,
                             SkArenaAlloc* alloc)
-        : fDst(dst)
+        : fDst(std::move(dst))
         , fAlloc(alloc)
         , fColorPipeline(alloc)
         , fBlendPipeline(alloc)
@@ -120,7 +121,7 @@ SkBlitter* SkCreateRasterPipelineBlitter(const SkPixmap& dst,
         bool is_opaque    = dstPaintColor.fA == 1.0f,
              is_constant  = true;
         return SkRasterPipelineBlitter::Create(dst, paint, dstPaintColor, alloc, shaderPipeline,
-                                               is_opaque, is_constant, std::move(clipShader));
+                                               is_opaque, is_constant, clipShader.get());
     }
 
     bool is_opaque    = shader->isOpaque() && dstPaintColor.fA == 1.0f;
@@ -133,7 +134,7 @@ SkBlitter* SkCreateRasterPipelineBlitter(const SkPixmap& dst,
                                   alloc->make<float>(dstPaintColor.fA));
         }
         return SkRasterPipelineBlitter::Create(dst, paint, dstPaintColor, alloc, shaderPipeline,
-                                               is_opaque, is_constant, std::move(clipShader));
+                                               is_opaque, is_constant, clipShader.get());
     }
 
     // The shader can't draw with SkRasterPipeline.
@@ -149,7 +150,7 @@ SkBlitter* SkCreateRasterPipelineBlitter(const SkPixmap& dst,
     bool is_constant = false;  // If this were the case, it'd be better to just set a paint color.
     return SkRasterPipelineBlitter::Create(dst, paint, paint_color_to_dst(paint, dst), alloc,
                                            shaderPipeline, is_opaque, is_constant,
-                                           std::move(clipShader));
+                                           clipShader.get());
 }
 
 SkBlitter* SkRasterPipelineBlitter::Create(const SkPixmap& dst,
@@ -159,7 +160,7 @@ SkBlitter* SkRasterPipelineBlitter::Create(const SkPixmap& dst,
                                            const SkRasterPipeline& shaderPipeline,
                                            bool is_opaque,
                                            bool is_constant,
-                                           sk_sp<SkShader> clipShader) {
+                                           const SkShader* clipShader) {
     auto blitter = alloc->make<SkRasterPipelineBlitter>(dst, alloc);
 
     // Our job in this factory is to fill out the blitter's color and blend pipelines.
@@ -229,6 +230,7 @@ SkBlitter* SkRasterPipelineBlitter::Create(const SkPixmap& dst,
             case kRGBA_1010102_SkColorType:
             case kBGR_101010x_SkColorType:
             case kBGRA_1010102_SkColorType:
+            case kRGBA_10x6_SkColorType:
                 blitter->fDitherRate = 1 / 1023.0f;
                 break;
 

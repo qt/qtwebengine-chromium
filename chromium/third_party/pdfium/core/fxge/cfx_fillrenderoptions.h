@@ -23,29 +23,6 @@ struct CFX_FillRenderOptions {
     kWinding = 2,
   };
 
-  static constexpr CFX_FillRenderOptions EvenOddOptions() {
-    return CFX_FillRenderOptions(FillType::kEvenOdd);
-  }
-  static constexpr CFX_FillRenderOptions WindingOptions() {
-    return CFX_FillRenderOptions(FillType::kWinding);
-  }
-
-  constexpr CFX_FillRenderOptions()
-      : CFX_FillRenderOptions(FillType::kNoFill) {}
-
-  // TODO(thestig): Switch to default member initializer for bit-fields when
-  // C++20 is available.
-  constexpr explicit CFX_FillRenderOptions(FillType fill_type)
-      : fill_type(fill_type),
-        adjust_stroke(false),
-        aliased_path(false),
-        full_cover(false),
-        rect_aa(false),
-        stroke(false),
-        stroke_text_mode(false),
-        text_mode(false),
-        zero_area(false) {}
-
   bool operator==(const CFX_FillRenderOptions& other) const {
     return fill_type == other.fill_type &&
            adjust_stroke == other.adjust_stroke &&
@@ -61,31 +38,31 @@ struct CFX_FillRenderOptions {
   }
 
   // Fill type.
-  FillType fill_type;
+  FillType fill_type = FillType::kNoFill;
 
   // Adjusted stroke rendering is enabled.
-  bool adjust_stroke : 1;
+  bool adjust_stroke : 1 = false;
 
   // Whether anti aliasing is enabled for path rendering.
-  bool aliased_path : 1;
+  bool aliased_path : 1 = false;
 
   // Fills with the sum of colors from both cover and source.
-  bool full_cover : 1;
+  bool full_cover : 1 = false;
 
   // Rect paths use anti-aliasing.
-  bool rect_aa : 1;
+  bool rect_aa : 1 = false;
 
   // Path is stroke.
-  bool stroke : 1;
+  bool stroke : 1 = false;
 
   // Renders text by filling strokes.
-  bool stroke_text_mode : 1;
+  bool stroke_text_mode : 1 = false;
 
   // Path is text.
-  bool text_mode : 1;
+  bool text_mode : 1 = false;
 
   // Path encloses zero area.
-  bool zero_area : 1;
+  bool zero_area : 1 = false;
 };
 
 #endif  // CORE_FXGE_CFX_FILLRENDEROPTIONS_H_

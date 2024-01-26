@@ -412,6 +412,22 @@
                 "MSL 2.1 is required to support all the features of OpenGL ES 2.0"
             ],
             "issue": "http://anglebug.com/8258"
+        },
+        {
+            "name": "rescope_global_variables",
+            "category": "Features",
+            "description": [
+                "Rescope global variables that are only used in one function to be function-local."
+            ],
+            "issue": "http://anglebug.com/8311"
+        },
+        {
+            "name": "always_resolve_multisample_render_buffers",
+            "category": "Features",
+            "description": [
+                "Always automatically resolve MSAA render buffers to single sampled texture."
+            ],
+            "issue": "http://crbug.com/1486094"
         }
     ]
 }

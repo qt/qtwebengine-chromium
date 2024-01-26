@@ -14,6 +14,7 @@ import * as IconButton from '../../ui/components/icon_button/icon_button.js';
 import * as ColorPicker from '../../ui/legacy/components/color_picker/color_picker.js';
 import * as InlineEditor from '../../ui/legacy/components/inline_editor/inline_editor.js';
 import * as UI from '../../ui/legacy/legacy.js';
+import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 
 import {
   BezierPopoverIcon,
@@ -176,7 +177,9 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
   }
 
   private editable(): boolean {
-    return Boolean(this.style.styleSheetId && this.style.range);
+    const isLonghandInsideShorthand = this.parent instanceof StylePropertyTreeElement && this.parent.isShorthand;
+    const hasSourceData = Boolean(this.style.styleSheetId && this.style.range);
+    return !isLonghandInsideShorthand && hasSourceData;
   }
 
   inherited(): boolean {
@@ -245,10 +248,10 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
   private renderColorSwatch(text: string, valueChild?: Node|null): Node {
     const useUserSettingFormat = this.editable();
     const shiftClickMessage = i18nString(UIStrings.shiftClickToChangeColorFormat);
-    const tooltip =
-        this.editable() ? i18nString(UIStrings.openColorPickerS, {PH1: shiftClickMessage}) : shiftClickMessage;
+    const tooltip = this.editable() ? i18nString(UIStrings.openColorPickerS, {PH1: shiftClickMessage}) : '';
 
     const swatch = new InlineEditor.ColorSwatch.ColorSwatch();
+    swatch.setReadonly(!this.editable());
     swatch.renderColor(text, useUserSettingFormat, tooltip);
 
     if (!valueChild) {
@@ -310,6 +313,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
           Host.userMetrics.swatchActivated(Host.UserMetrics.SwatchType.AnimationNameLink);
           this.parentPaneInternal.jumpToSectionBlock(`@keyframes ${animationName}`);
         },
+        jslogContext: 'cssAnimationName',
       };
       contentChild.appendChild(swatch);
 
@@ -370,6 +374,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
         Host.userMetrics.swatchActivated(Host.UserMetrics.SwatchType.PositionFallbackLink);
         this.parentPaneInternal.jumpToSectionBlock(`@position-fallback ${propertyText}`);
       },
+      jslogContext: 'cssPositionFallback',
     };
     contentChild.appendChild(swatch);
 
@@ -596,6 +601,8 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
       }  // Add back commas and spaces between each shadow.
       // TODO(flandy): editing the property value should use the original value with all spaces.
       const cssShadowSwatch = InlineEditor.Swatches.CSSShadowSwatch.create();
+      cssShadowSwatch.setAttribute(
+          'jslog', `${VisualLogging.showStyleEditor().context('cssShadow').track({click: true})}`);
       cssShadowSwatch.setCSSShadow(shadows[i]);
       cssShadowSwatch.iconElement().addEventListener('click', () => {
         Host.userMetrics.swatchActivated(Host.UserMetrics.SwatchType.Shadow);
@@ -642,6 +649,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
       return document.createTextNode(angleText);
     }
     const cssAngle = new InlineEditor.CSSAngle.CSSAngle();
+    cssAngle.setAttribute('jslog', `${VisualLogging.showStyleEditor().track({click: true}).context('cssAngle')}`);
     const valueElement = document.createElement('span');
     valueElement.textContent = angleText;
     const computedPropertyValue =
@@ -934,8 +942,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
     this.updateState();
     if (this.isExpandable()) {
       this.expandElement = UI.Icon.Icon.create('triangle-right', 'expand-icon');
-    } else {
-      this.expandElement = null;
+      this.expandElement.setAttribute('jslog', `${VisualLogging.treeItemExpand().track({click: true})}`);
     }
 
     const propertyRenderer =
@@ -1002,6 +1009,8 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
         const button = StyleEditorWidget.createTriggerButton(
             this.parentPaneInternal, section, isFlex ? FlexboxEditor : GridEditor,
             isFlex ? i18nString(UIStrings.flexboxEditorButton) : i18nString(UIStrings.gridEditorButton), key);
+        button.setAttribute(
+            'jslog', `${VisualLogging.showStyleEditor().track({click: true}).context(isFlex ? 'flex' : 'grid')}`);
         section.nextEditorTriggerButtonIdx++;
         button.addEventListener('click', () => {
           Host.userMetrics.swatchActivated(
@@ -1047,6 +1056,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
       enabledCheckboxElement.className = 'enabled-button';
       enabledCheckboxElement.type = 'checkbox';
       enabledCheckboxElement.checked = !this.property.disabled;
+      enabledCheckboxElement.setAttribute('jslog', `${VisualLogging.toggle().track({click: true})}`);
       enabledCheckboxElement.addEventListener('mousedown', event => event.consume(), false);
       enabledCheckboxElement.addEventListener('click', event => {
         void this.toggleDisabled(!this.property.disabled);
@@ -1825,6 +1835,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
     this.parentPaneInternal.setUserOperation(true);
 
     styleText += Platform.StringUtilities.findUnclosedCssQuote(styleText);
+    styleText += ')'.repeat(Platform.StringUtilities.countUnmatchedLeftParentheses(styleText));
 
     // Append a ";" if the new text does not end in ";".
     // FIXME: this does not handle trailing comments.

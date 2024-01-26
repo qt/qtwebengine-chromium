@@ -108,6 +108,29 @@ vk::PresentMode GetDesiredPresentMode(const std::vector<vk::PresentMode> &presen
     return vk::PresentMode::FifoKHR;
 }
 
+uint32_t GetMinImageCount(const VkSurfaceCapabilitiesKHR &surfaceCaps)
+{
+    // - On mailbox, we need at least three images; one is being displayed to the user until the
+    //   next v-sync, and the application alternatingly renders to the other two, one being
+    //   recorded, and the other queued for presentation if v-sync happens in the meantime.
+    // - On immediate, we need at least two images; the application alternates between the two
+    //   images.
+    // - On fifo, we use at least three images.  Triple-buffering allows us to present an image,
+    //   have one in the queue, and record in another.  Note: on certain configurations (windows +
+    //   nvidia + windowed mode), we could get away with a smaller number.
+    //
+    // For simplicity, we always allocate at least three images.
+    uint32_t minImageCount = std::max(3u, surfaceCaps.minImageCount);
+
+    // Make sure we don't exceed maxImageCount.
+    if (surfaceCaps.maxImageCount > 0 && minImageCount > surfaceCaps.maxImageCount)
+    {
+        minImageCount = surfaceCaps.maxImageCount;
+    }
+
+    return minImageCount;
+}
+
 constexpr VkImageUsageFlags kSurfaceVkImageUsageFlags =
     VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
 constexpr VkImageUsageFlags kSurfaceVkColorImageUsageFlags =
@@ -580,8 +603,9 @@ angle::Result OffscreenSurfaceVk::AttachmentImage::initialize(DisplayVk *display
     {
         flags |= VK_MEMORY_PROPERTY_PROTECTED_BIT;
     }
-    ANGLE_TRY(image.initMemory(displayVk, hasProtectedContent, renderer->getMemoryProperties(),
-                               flags, vk::MemoryAllocationType::OffscreenSurfaceAttachmentImage));
+    ANGLE_TRY(image.initMemoryAndNonZeroFillIfNeeded(
+        displayVk, hasProtectedContent, renderer->getMemoryProperties(), flags,
+        vk::MemoryAllocationType::OffscreenSurfaceAttachmentImage));
 
     imageViews.init(renderer);
 
@@ -1065,10 +1089,12 @@ void WindowSurfaceVk::destroy(const egl::Display *display)
     // has returned.
     if (mSurface)
     {
-        egl::Display::GetCurrentThreadUnlockedTailCall()->add([surface = mSurface, instance]() {
-            ANGLE_TRACE_EVENT0("gpu.angle", "WindowSurfaceVk::destroy:vkDestroySurfaceKHR");
-            vkDestroySurfaceKHR(instance, surface, nullptr);
-        });
+        egl::Display::GetCurrentThreadUnlockedTailCall()->add(
+            [surface = mSurface, instance](void *resultOut) {
+                ANGLE_TRACE_EVENT0("gpu.angle", "WindowSurfaceVk::destroy:vkDestroySurfaceKHR");
+                ANGLE_UNUSED_VARIABLE(resultOut);
+                vkDestroySurfaceKHR(instance, surface, nullptr);
+            });
         mSurface = VK_NULL_HANDLE;
     }
 }
@@ -1687,7 +1713,7 @@ angle::Result WindowSurfaceVk::createSwapChain(vk::Context *context,
         ANGLE_TRY(mColorImageMS.initMSAASwapchain(
             context, gl::TextureType::_2D, vkExtents, Is90DegreeRotation(getPreTransform()), format,
             samples, usage, gl::LevelIndex(0), 1, 1, robustInit, mState.hasProtectedContent()));
-        ANGLE_TRY(mColorImageMS.initMemory(
+        ANGLE_TRY(mColorImageMS.initMemoryAndNonZeroFillIfNeeded(
             context, mState.hasProtectedContent(), renderer->getMemoryProperties(),
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vk::MemoryAllocationType::SwapchainMSAAImage));
 
@@ -1721,7 +1747,7 @@ angle::Result WindowSurfaceVk::createSwapChain(vk::Context *context,
         ANGLE_TRY(mDepthStencilImage.init(context, gl::TextureType::_2D, vkExtents, dsFormat,
                                           samples, dsUsage, gl::LevelIndex(0), 1, 1, robustInit,
                                           mState.hasProtectedContent()));
-        ANGLE_TRY(mDepthStencilImage.initMemory(
+        ANGLE_TRY(mDepthStencilImage.initMemoryAndNonZeroFillIfNeeded(
             context, mState.hasProtectedContent(), renderer->getMemoryProperties(),
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
             vk::MemoryAllocationType::SwapchainDepthStencilImage));
@@ -1788,16 +1814,26 @@ angle::Result WindowSurfaceVk::checkForOutOfDateSwapchain(ContextVk *contextVk,
     // Get the latest surface capabilities.
     ANGLE_TRY(queryAndAdjustSurfaceCaps(contextVk, &mSurfaceCaps));
 
-    if (contextVk->getRenderer()->getFeatures().perFrameWindowSizeQuery.enabled &&
-        !presentOutOfDate)
+    if (contextVk->getRenderer()->getFeatures().perFrameWindowSizeQuery.enabled)
     {
-        // This device generates neither VK_ERROR_OUT_OF_DATE_KHR nor VK_SUBOPTIMAL_KHR.  Check for
-        // whether the size and/or rotation have changed since the swapchain was created.
-        uint32_t swapchainWidth  = getWidth();
-        uint32_t swapchainHeight = getHeight();
-        presentOutOfDate         = mSurfaceCaps.currentTransform != mPreTransform ||
-                           mSurfaceCaps.currentExtent.width != swapchainWidth ||
-                           mSurfaceCaps.currentExtent.height != swapchainHeight;
+        // On Android, rotation can cause the minImageCount to change
+        uint32_t minImageCount = GetMinImageCount(mSurfaceCaps);
+        if (mMinImageCount != minImageCount)
+        {
+            presentOutOfDate = true;
+            mMinImageCount   = minImageCount;
+        }
+
+        if (!presentOutOfDate)
+        {
+            // This device generates neither VK_ERROR_OUT_OF_DATE_KHR nor VK_SUBOPTIMAL_KHR.  Check
+            // for whether the size and/or rotation have changed since the swapchain was created.
+            uint32_t swapchainWidth  = getWidth();
+            uint32_t swapchainHeight = getHeight();
+            presentOutOfDate         = mSurfaceCaps.currentTransform != mPreTransform ||
+                               mSurfaceCaps.currentExtent.width != swapchainWidth ||
+                               mSurfaceCaps.currentExtent.height != swapchainHeight;
+        }
     }
 
     // If anything has changed, recreate the swapchain.
@@ -1967,8 +2003,10 @@ egl::Error WindowSurfaceVk::prepareSwap(const gl::Context *context)
     // calling it (likely the eglSwapBuffers call that follows)
 
     egl::Display::GetCurrentThreadUnlockedTailCall()->add(
-        [device = renderer->getDevice(), swapchain = mSwapchain, acquire = &mAcquireOperation]() {
+        [device = renderer->getDevice(), swapchain = mSwapchain,
+         acquire = &mAcquireOperation](void *resultOut) {
             ANGLE_TRACE_EVENT0("gpu.angle", "Acquire Swap Image Before Swap");
+            ANGLE_UNUSED_VARIABLE(resultOut);
             TryAcquireNextImageUnlocked(device, swapchain, acquire);
         });
 
@@ -2293,10 +2331,12 @@ angle::Result WindowSurfaceVk::throttleCPU(DisplayVk *displayVk,
         // As this is an unlocked tail call, it must not access anything else in RendererVk.  The
         // display passed to |finishQueueSerial| is a |vk::Context|, and the only possible
         // modification to it is through |handleError()|.
-        egl::Display::GetCurrentThreadUnlockedTailCall()->add([displayVk, swapSerial]() {
-            ANGLE_TRACE_EVENT0("gpu.angle", "WindowSurfaceVk::throttleCPU");
-            (void)displayVk->getRenderer()->finishQueueSerial(displayVk, swapSerial);
-        });
+        egl::Display::GetCurrentThreadUnlockedTailCall()->add(
+            [displayVk, swapSerial](void *resultOut) {
+                ANGLE_TRACE_EVENT0("gpu.angle", "WindowSurfaceVk::throttleCPU");
+                ANGLE_UNUSED_VARIABLE(resultOut);
+                (void)displayVk->getRenderer()->finishQueueSerial(displayVk, swapSerial);
+            });
     }
 
     return angle::Result::Continue;
@@ -2767,23 +2807,8 @@ void WindowSurfaceVk::setSwapInterval(EGLint interval)
 
     mDesiredSwapchainPresentMode = GetDesiredPresentMode(mPresentModes, interval);
 
-    // - On mailbox, we need at least three images; one is being displayed to the user until the
-    //   next v-sync, and the application alternatingly renders to the other two, one being
-    //   recorded, and the other queued for presentation if v-sync happens in the meantime.
-    // - On immediate, we need at least two images; the application alternates between the two
-    //   images.
-    // - On fifo, we use at least three images.  Triple-buffering allows us to present an image,
-    //   have one in the queue, and record in another.  Note: on certain configurations (windows +
-    //   nvidia + windowed mode), we could get away with a smaller number.
-    //
-    // For simplicity, we always allocate at least three images.
-    mMinImageCount = std::max(3u, mSurfaceCaps.minImageCount);
-
-    // Make sure we don't exceed maxImageCount.
-    if (mSurfaceCaps.maxImageCount > 0 && mMinImageCount > mSurfaceCaps.maxImageCount)
-    {
-        mMinImageCount = mSurfaceCaps.maxImageCount;
-    }
+    // minImageCount may vary based on the Present Mode
+    mMinImageCount = GetMinImageCount(mSurfaceCaps);
 
     // On the next swap, if the desired present mode is different from the current one, the
     // swapchain will be recreated.

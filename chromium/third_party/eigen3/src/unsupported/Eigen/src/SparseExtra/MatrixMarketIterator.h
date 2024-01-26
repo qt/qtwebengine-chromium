@@ -11,6 +11,7 @@
 #ifndef EIGEN_BROWSE_MATRICES_H
 #define EIGEN_BROWSE_MATRICES_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

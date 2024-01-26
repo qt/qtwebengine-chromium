@@ -200,20 +200,6 @@ bool QuicUdpSocketApi::SetupSocket(QuicUdpSocketFd fd, int address_family,
     return false;
   }
 
-  unsigned int set = 1;
-  if (address_family == AF_INET &&
-      setsockopt(fd, IPPROTO_IP, IP_RECVTOS, &set, sizeof(set)) != 0) {
-    QUIC_LOG_FIRST_N(ERROR, 100) << "Failed to request to receive ECN on "
-                                 << "socket";
-    return false;
-  }
-  if (address_family == AF_INET6 &&
-      setsockopt(fd, IPPROTO_IPV6, IPV6_RECVTCLASS, &set, sizeof(set)) != 0) {
-    QUIC_LOG_FIRST_N(ERROR, 100) << "Failed to request to receive ECN on "
-                                 << "socket";
-    return false;
-  }
-
   if (!(address_family == AF_INET6 && ipv6_only)) {
     if (!EnableReceiveSelfIpAddressForV4(fd)) {
       QUIC_LOG_FIRST_N(ERROR, 100)
@@ -221,8 +207,25 @@ bool QuicUdpSocketApi::SetupSocket(QuicUdpSocketFd fd, int address_family,
       return false;
     }
   }
-
+  unsigned int set = 1;
+  if (address_family == AF_INET &&
+      setsockopt(fd, IPPROTO_IP, IP_RECVTOS, &set, sizeof(set)) != 0) {
+    QUIC_LOG_FIRST_N(ERROR, 100) << "Failed to request to receive ECN on "
+                                 << "IPv4 socket";
+    return false;
+  }
   if (address_family == AF_INET6) {
+    if (setsockopt(fd, IPPROTO_IPV6, IPV6_RECVTCLASS, &set, sizeof(set)) != 0) {
+      QUIC_LOG_FIRST_N(ERROR, 100) << "Failed to request to receive ECN on "
+                                   << "IPv6 socket";
+      return false;
+    }
+    if (!ipv6_only &&
+        setsockopt(fd, IPPROTO_IP, IP_RECVTOS, &set, sizeof(set)) != 0) {
+      QUIC_LOG_FIRST_N(ERROR, 100) << "Could not receive IPv4 ECN on "
+                                   << "dual-stack socket";
+      return false;
+    }
     if (!EnableReceiveSelfIpAddressForV6(fd)) {
       QUIC_LOG_FIRST_N(ERROR, 100)
           << "Failed to enable receiving of self v6 ip";

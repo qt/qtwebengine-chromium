@@ -14,8 +14,9 @@ $assert MR <= 4
 #include <xnnpack/math.h>
 
 
-$PARAMS_UNION = "xnn_%s_conv_minmax_params" % DATATYPE.lower()
-void xnn_${DATATYPE.lower()}_igemm_minmax_fp32_ukernel_${MR}x4c16__wasmsdot(
+$DATATYPE_SPEC = {"QC8": "qs8_qc8w", "QS8": "qs8"}[DATATYPE]
+$PARAMS_UNION = {"QC8": "xnn_qs8_qc8w_conv_minmax_params", "QS8": "xnn_qs8_conv_minmax_params"}[DATATYPE]
+void xnn_${DATATYPE_SPEC}_igemm_minmax_fp32_ukernel_${MR}x4c16__wasmsdot(
     size_t mr,
     size_t nc,
     size_t kc,
@@ -64,7 +65,7 @@ void xnn_${DATATYPE.lower()}_igemm_minmax_fp32_ukernel_${MR}x4c16__wasmsdot(
     $for M in range(1, MR):
       $for N in range(4):
         v128_t vacc${M}x${N} = vacc0x${N};
-    w = (const void*) ((const int32_t*) w + 4);
+    w = (const int32_t*) w + 4;
 
     size_t p = ks;
     do {
@@ -88,9 +89,9 @@ void xnn_${DATATYPE.lower()}_igemm_minmax_fp32_ukernel_${MR}x4c16__wasmsdot(
             const v128_t vb${N} = wasm_v128_load((const int8_t*) w + ${N * 16});
 
           $for M in range(MR):
-            vacc${M}x${N} = __builtin_wasm_dot_i8x16_i7x16_add_s_i32x4(va${M}, vb${N}, vacc${M}x${N});
+            vacc${M}x${N} = wasm_i32x4_relaxed_dot_i8x16_i7x16_add(va${M}, vb${N}, vacc${M}x${N});
 
-        w = (const void*) ((const int8_t*) w + 64);
+        w = (const int8_t*) w + 64;
         k -= 16 * sizeof(int8_t);
       } while (k != 0);
       p -= ${MR} * sizeof(void*);
@@ -108,7 +109,7 @@ void xnn_${DATATYPE.lower()}_igemm_minmax_fp32_ukernel_${MR}x4c16__wasmsdot(
 
     $if DATATYPE == "QC8":
       const v128_t vscale0123 = wasm_v128_load(w);
-      w = (const void*) ((const float*) w + 4);
+      w = (const float*) w + 4;
       $for M in range(MR):
         vacc${M}x0123 = wasm_f32x4_mul(vacc${M}x0123, vscale0123);
     $else:

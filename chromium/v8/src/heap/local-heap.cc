@@ -48,6 +48,7 @@ void LocalHeap::VerifyCurrent() const {
 LocalHeap::LocalHeap(Heap* heap, ThreadKind kind,
                      std::unique_ptr<PersistentHandles> persistent_handles)
     : heap_(heap),
+      ptr_compr_cage_access_scope_(heap->isolate()),
       is_main_thread_(kind == ThreadKind::kMain),
       state_(ThreadState::Parked()),
       allocation_failed_(false),
@@ -85,8 +86,7 @@ LocalHeap::~LocalHeap() {
   EnsureParkedBeforeDestruction();
 
   heap_->safepoint()->RemoveLocalHeap(this, [this] {
-    FreeLinearAllocationArea();
-    FreeSharedLinearAllocationArea();
+    FreeLinearAllocationAreas();
 
     if (!is_main_thread()) {
       marking_barrier_->PublishIfNeeded();
@@ -133,6 +133,10 @@ void LocalHeap::SetUp() {
         this, heap_->shared_allocation_space(),
         ConcurrentAllocator::Context::kNotGC);
   }
+
+  DCHECK_NULL(trusted_space_allocator_);
+  trusted_space_allocator_ = std::make_unique<ConcurrentAllocator>(
+      this, heap_->trusted_space(), ConcurrentAllocator::Context::kNotGC);
 
   DCHECK_NULL(marking_barrier_);
   marking_barrier_ = std::make_unique<MarkingBarrier>(this);
@@ -380,45 +384,54 @@ bool LocalHeap::IsMainThreadOfClientIsolate() const {
   return is_main_thread() && heap()->isolate()->has_shared_space();
 }
 
-void LocalHeap::FreeLinearAllocationArea() {
+void LocalHeap::FreeLinearAllocationAreas() {
   old_space_allocator_->FreeLinearAllocationArea();
   code_space_allocator_->FreeLinearAllocationArea();
-}
-
-void LocalHeap::FreeSharedLinearAllocationArea() {
+  trusted_space_allocator_->FreeLinearAllocationArea();
   if (shared_old_space_allocator_) {
     shared_old_space_allocator_->FreeLinearAllocationArea();
   }
 }
 
-void LocalHeap::MakeLinearAllocationAreaIterable() {
+#if DEBUG
+void LocalHeap::VerifyLinearAllocationAreas() const {
+  old_space_allocator_->Verify();
+  code_space_allocator_->Verify();
+  trusted_space_allocator_->Verify();
+  if (shared_old_space_allocator_) {
+    shared_old_space_allocator_->Verify();
+  }
+}
+#endif  // DEBUG
+
+void LocalHeap::MakeLinearAllocationAreasIterable() {
   old_space_allocator_->MakeLinearAllocationAreaIterable();
   code_space_allocator_->MakeLinearAllocationAreaIterable();
-}
-
-void LocalHeap::MakeSharedLinearAllocationAreaIterable() {
+  trusted_space_allocator_->MakeLinearAllocationAreaIterable();
   if (shared_old_space_allocator_) {
     shared_old_space_allocator_->MakeLinearAllocationAreaIterable();
   }
 }
 
-void LocalHeap::MarkLinearAllocationAreaBlack() {
+void LocalHeap::MarkLinearAllocationAreasBlack() {
   old_space_allocator_->MarkLinearAllocationAreaBlack();
   code_space_allocator_->MarkLinearAllocationAreaBlack();
+  trusted_space_allocator_->MarkLinearAllocationAreaBlack();
 }
 
-void LocalHeap::UnmarkLinearAllocationArea() {
+void LocalHeap::UnmarkLinearAllocationsArea() {
   old_space_allocator_->UnmarkLinearAllocationArea();
   code_space_allocator_->UnmarkLinearAllocationArea();
+  trusted_space_allocator_->UnmarkLinearAllocationArea();
 }
 
-void LocalHeap::MarkSharedLinearAllocationAreaBlack() {
+void LocalHeap::MarkSharedLinearAllocationAreasBlack() {
   if (shared_old_space_allocator_) {
     shared_old_space_allocator_->MarkLinearAllocationAreaBlack();
   }
 }
 
-void LocalHeap::UnmarkSharedLinearAllocationArea() {
+void LocalHeap::UnmarkSharedLinearAllocationsArea() {
   if (shared_old_space_allocator_) {
     shared_old_space_allocator_->UnmarkLinearAllocationArea();
   }

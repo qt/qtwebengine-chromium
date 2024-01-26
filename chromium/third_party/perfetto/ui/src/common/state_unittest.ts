@@ -12,8 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import {PrimaryTrackSortKey} from '../public';
+
 import {createEmptyState} from './empty_state';
-import {getContainingTrackId, PrimaryTrackSortKey, State} from './state';
+import {getContainingTrackId, State} from './state';
 import {deserializeStateObject, serializeStateObject} from './upload_utils';
 
 test('createEmptyState', () => {
@@ -24,24 +26,18 @@ test('createEmptyState', () => {
 test('getContainingTrackId', () => {
   const state: State = createEmptyState();
   state.tracks['a'] = {
-    id: 'a',
-    engineId: 'engine',
-    kind: 'Foo',
+    key: 'a',
+    uri: 'Foo',
     name: 'a track',
     trackSortKey: PrimaryTrackSortKey.ORDINARY_TRACK,
-    config: {},
-    tags: {},
   };
 
   state.tracks['b'] = {
-    id: 'b',
-    engineId: 'engine',
-    kind: 'Foo',
+    key: 'b',
+    uri: 'Foo',
     name: 'b track',
     trackSortKey: PrimaryTrackSortKey.ORDINARY_TRACK,
-    config: {},
     trackGroup: 'containsB',
-    tags: {},
   };
 
   expect(getContainingTrackId(state, 'z')).toEqual(null);

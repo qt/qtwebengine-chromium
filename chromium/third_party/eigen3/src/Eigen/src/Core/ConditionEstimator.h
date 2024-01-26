@@ -10,6 +10,7 @@
 #ifndef EIGEN_CONDITIONESTIMATOR_H
 #define EIGEN_CONDITIONESTIMATOR_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

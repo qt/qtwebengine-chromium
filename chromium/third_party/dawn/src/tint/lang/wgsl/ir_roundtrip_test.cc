@@ -1,18 +1,31 @@
-// Copyright 2023 The Tint Authors.
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// GEN_BUILD:CONDITION(tint_build_wgsl_reader && tint_build_wgsl_writer && tint_build_ir)
+// GEN_BUILD:CONDITION(tint_build_wgsl_reader && tint_build_wgsl_writer)
 
 #include "src/tint/lang/wgsl/helpers/ir_program_test.h"
 #include "src/tint/lang/wgsl/reader/program_to_ir/program_to_ir.h"
@@ -31,28 +44,17 @@ class IRToProgramRoundtripTest : public helpers::IRProgramTest {
     void Test(std::string_view input_wgsl, std::string_view expected_wgsl) {
         auto input = tint::TrimSpace(input_wgsl);
         Source::File file("test.wgsl", std::string(input));
-        auto input_program = wgsl::reader::Parse(&file);
-        ASSERT_TRUE(input_program.IsValid()) << input_program.Diagnostics().str();
+        auto ir_module = wgsl::reader::WgslToIR(&file);
+        ASSERT_TRUE(ir_module) << ir_module;
 
-        auto ir_module = wgsl::reader::ProgramToIR(&input_program);
-        ASSERT_TRUE(ir_module) << (ir_module ? "" : ir_module.Failure());
+        auto disassembly = tint::core::ir::Disassemble(ir_module.Get());
 
-        tint::core::ir::Disassembler d{ir_module.Get()};
-        auto disassembly = d.Disassemble();
-
-        auto output_program = wgsl::writer::IRToProgram(ir_module.Get());
-        if (!output_program.IsValid()) {
-            FAIL() << output_program.Diagnostics().str() << std::endl  //
-                   << "IR:" << std::endl                               //
-                   << disassembly << std::endl                         //
-                   << "AST:" << std::endl                              //
-                   << Program::printer(&output_program) << std::endl;
+        auto output = wgsl::writer::WgslFromIR(ir_module.Get());
+        if (!output) {
+            FAIL() << output.Failure() << std::endl  //
+                   << "IR:" << std::endl             //
+                   << disassembly << std::endl;
         }
-
-        ASSERT_TRUE(output_program.IsValid()) << output_program.Diagnostics().str();
-
-        auto output = wgsl::writer::Generate(&output_program, {});
-        ASSERT_TRUE(output) << output.Failure();
 
         auto expected = expected_wgsl.empty() ? input : tint::TrimSpace(expected_wgsl);
         auto got = tint::TrimSpace(output->wgsl);
@@ -323,10 +325,10 @@ fn f(a : i32, b : i32) {
 
 TEST_F(IRToProgramRoundtripTest, CoreBuiltinCall_PtrArg) {
     Test(R"(
-var<workgroup> v : bool;
+@group(0) @binding(0) var<storage, read> v : array<u32>;
 
-fn foo() -> bool {
-  return workgroupUniformLoad(&(v));
+fn foo() -> u32 {
+  return arrayLength(&(v));
 }
 )");
 }

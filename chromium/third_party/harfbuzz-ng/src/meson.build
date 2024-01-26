@@ -1,9 +1,9 @@
 project('harfbuzz', 'c', 'cpp',
   meson_version: '>= 0.55.0',
-  version: '7.3.0',
+  version: '8.2.1',
   default_options: [
     'cpp_eh=none',          # Just to support msvc, we are passing -fno-exceptions also anyway
-    'cpp_rtti=false',       # Just to support msvc, we are passing -fno-rtti also anyway
+    # 'cpp_rtti=false',     # Do NOT enable, wraps inherit it and ICU needs RTTI
     'cpp_std=c++11',
     'wrap_mode=nofallback', # Use --wrap-mode=default to revert, https://github.com/harfbuzz/harfbuzz/pull/2548
   ],
@@ -21,6 +21,11 @@ hb_libtool_version_info = '@0@:0:@0@'.format(hb_version_int)
 pkgmod = import('pkgconfig')
 cpp = meson.get_compiler('cpp')
 null_dep = dependency('', required: false)
+
+# Enforce C++14 requirement for MSVC STL
+if ['clang', 'clang-cl'].contains(cpp.get_id()) and cpp.get_define('_MSC_FULL_VER') != ''
+  add_project_arguments('-std=c++14', language: 'cpp')
+endif
 
 if cpp.get_argument_syntax() == 'msvc'
   # Ignore several spurious warnings for things HarfBuzz does very commonly.
@@ -124,7 +129,6 @@ if meson.version().version_compare('>=0.60.0')
   icu_dep = dependency('icu-uc', 'ICU',
                             components: 'uc',
                             required: get_option('icu'),
-                            default_options: ['harfbuzz=disabled'],
                             allow_fallback: true)
 else
   # painful hack to handle multiple dependencies but also respect options
@@ -381,6 +385,26 @@ foreach check : check_funcs
   endif
 endforeach
 
+# CMake support (package install dir)
+
+# Equivalent to configure_package_config_file(INSTALL_DESTINATION ...), see
+# https://cmake.org/cmake/help/latest/module/CMakePackageConfigHelpers.html#command:configure_package_config_file.
+# In certain unusual packaging layouts such as Nixpkgs, the Harfbuzz package
+# is installed into two Nix store paths, "out" and "dev", where "out" contains
+# libraries only (i.e. lib/libharfbuzz.so) and "dev" contains development
+# files, i.e. include and lib/cmake. If CMake package files are installed to
+# "out", Nixpkgs will move them to "dev", which breaks assumptions about
+# our file paths. Since we need to figure out relative install paths here
+# to make a relocatable package, we do need to know the final path of our
+# CMake files to calculate the correct relative paths.
+# Of course, this still defaults to $libdir/cmake if unset, which works for
+# most packaging layouts.
+cmake_package_install_dir = get_option('cmakepackagedir')
+
+if cmake_package_install_dir == ''
+  cmake_package_install_dir = get_option('libdir') / 'cmake'
+endif
+
 subdir('src')
 
 if not get_option('utilities').disabled()
@@ -411,6 +435,7 @@ build_summary = {
      'libdir': get_option('libdir'),
      'includedir': get_option('includedir'),
      'datadir': get_option('datadir'),
+     'cmakepackagedir': cmake_package_install_dir
     },
   'Unicode callbacks (you want at least one)':
     {'Builtin': true,

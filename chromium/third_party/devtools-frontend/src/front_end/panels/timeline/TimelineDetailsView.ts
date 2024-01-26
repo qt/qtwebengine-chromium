@@ -69,6 +69,7 @@ export class TimelineDetailsView extends UI.Widget.VBox {
   private lazyLayersView?: TimelineLayersView|null;
   private preferredTabId?: string;
   private selection?: TimelineSelection|null;
+  private updateContentsScheduled: boolean;
   #traceEngineData: TraceEngine.Handlers.Migration.PartialTraceData|null = null;
   #filmStrip: TraceEngine.Extras.FilmStrip.Data|null = null;
 
@@ -89,6 +90,7 @@ export class TimelineDetailsView extends UI.Widget.VBox {
     this.setPreferredTab(Tab.Details);
 
     this.rangeDetailViews = new Map();
+    this.updateContentsScheduled = false;
 
     const bottomUpView = new BottomUpTimelineTreeView();
     this.appendTab(Tab.BottomUp, i18nString(UIStrings.bottomup), bottomUpView);
@@ -171,15 +173,40 @@ export class TimelineDetailsView extends UI.Widget.VBox {
 
   private onWindowChanged(): void {
     if (!this.selection) {
-      this.updateContentsFromWindow();
+      this.scheduleUpdateContentsFromWindow();
     }
   }
 
-  private updateContentsFromWindow(): void {
+  /**
+   * This forces a recalculation and rerendering of the timings
+   * breakdown of a track.
+   * User actions like zooming or scrolling can trigger many updates in
+   * short time windows, so we debounce the calls in those cases. Single
+   * sporadic calls (like selecting a new track) don't need to be
+   * debounced. The forceImmediateUpdate param configures the debouncing
+   * behaviour.
+   */
+  private scheduleUpdateContentsFromWindow(forceImmediateUpdate: boolean = false): void {
     if (!this.model) {
       this.setContent(UI.Fragment.html`<div/>`);
       return;
     }
+    if (forceImmediateUpdate) {
+      this.updateContentsFromWindow();
+      return;
+    }
+
+    // Debounce this update as it's not critical.
+    if (!this.updateContentsScheduled) {
+      this.updateContentsScheduled = true;
+      setTimeout(() => {
+        this.updateContentsScheduled = false;
+        this.updateContentsFromWindow();
+      }, 100);
+    }
+  }
+
+  private updateContentsFromWindow(): void {
     const window = this.model.window();
     this.updateSelectedRangeStats(window.left, window.right);
     this.updateContents();
@@ -206,7 +233,9 @@ export class TimelineDetailsView extends UI.Widget.VBox {
     this.detailsLinkifier.reset();
     this.selection = selection;
     if (!this.selection) {
-      this.updateContentsFromWindow();
+      // Update instantly using forceImmediateUpdate, since we are only
+      // making a single call and don't need to debounce.
+      this.scheduleUpdateContentsFromWindow(/* forceImmediateUpdate */ true);
       return;
     }
     const selectionObject = this.selection.object;

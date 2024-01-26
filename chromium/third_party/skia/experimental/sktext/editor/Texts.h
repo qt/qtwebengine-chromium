@@ -10,7 +10,7 @@
 #include "experimental/sktext/include/Types.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkSurface.h"
-#include "include/core/SkTime.h"
+#include "src/base/SkTime.h"
 #include "tools/sk_app/Application.h"
 #include "tools/sk_app/Window.h"
 #include "tools/skui/ModifierKey.h"
@@ -139,10 +139,12 @@ protected:
 // Text can change;  supports select/copy/paste
 class EditableText : public DynamicText {
 public:
-    EditableText(std::u16string text, SkPoint offset, SkSize size, SkSpan<FontBlock> fontBlocks, SkSpan<DecoratedBlock> decorations, TextDirection textDirection, TextAlign textAlign)
-        : DynamicText(text, offset, size, fontBlocks, decorations, textDirection, textAlign)
-        , fSelection(std::make_unique<Selection>(DEFAULT_SELECTION_COLOR)) {
-    }
+    EditableText(std::u16string text, SkPoint offset, SkSize size,
+                 SkSpan<FontBlock> fontBlocks, SkSpan<DecoratedBlock> decorations,
+                 TextDirection textDirection, TextAlign textAlign)
+            : DynamicText(std::move(text), offset, size, fontBlocks, decorations,
+                          textDirection, textAlign)
+            , fSelection(std::make_unique<Selection>(DEFAULT_SELECTION_COLOR)) {}
 
     bool isEmpty() { return fText.empty(); }
 

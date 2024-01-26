@@ -212,8 +212,8 @@ MaybeHandle<Context> NewScriptContext(Isolate* isolate,
     VariableLookupResult lookup;
     if (script_context->Lookup(name, &lookup)) {
       if (IsLexicalVariableMode(mode) || IsLexicalVariableMode(lookup.mode)) {
-        Handle<Context> context = ScriptContextTable::GetContext(
-            isolate, script_context, lookup.context_index);
+        Handle<Context> context(script_context->get(lookup.context_index),
+                                isolate);
         // If we are trying to re-declare a REPL-mode let as a let or REPL-mode
         // const as a const, allow it.
         if (!(((mode == VariableMode::kLet &&
@@ -265,9 +265,8 @@ MaybeHandle<Context> NewScriptContext(Isolate* isolate,
   // In REPL mode, we are allowed to add/modify let/const variables.
   // We use the previous defined script context for those.
   const bool ignore_duplicates = scope_info->IsReplModeScope();
-  Handle<ScriptContextTable> new_script_context_table =
-      ScriptContextTable::Extend(isolate, script_context, result,
-                                 ignore_duplicates);
+  Handle<ScriptContextTable> new_script_context_table = ScriptContextTable::Add(
+      isolate, script_context, result, ignore_duplicates);
   native_context->synchronized_set_script_context_table(
       *new_script_context_table);
   return result;
@@ -424,9 +423,9 @@ V8_WARN_UNUSED_RESULT MaybeHandle<Object> Invoke(Isolate* isolate,
       Address recv = (*params.receiver).ptr();
       Address** argv = reinterpret_cast<Address**>(params.argv);
       RCS_SCOPE(isolate, RuntimeCallCounterId::kJS_Execution);
-      value = Object(stub_entry.Call(isolate->isolate_data()->isolate_root(),
-                                     orig_func, func, recv,
-                                     JSParameterCount(params.argc), argv));
+      value = Tagged<Object>(
+          stub_entry.Call(isolate->isolate_data()->isolate_root(), orig_func,
+                          func, recv, JSParameterCount(params.argc), argv));
     } else {
       DCHECK_EQ(Execution::Target::kRunMicrotasks, params.execution_target);
 
@@ -440,8 +439,8 @@ V8_WARN_UNUSED_RESULT MaybeHandle<Object> Invoke(Isolate* isolate,
           JSEntryFunction::FromAddress(isolate, code->instruction_start());
 
       RCS_SCOPE(isolate, RuntimeCallCounterId::kJS_Execution);
-      value = Object(stub_entry.Call(isolate->isolate_data()->isolate_root(),
-                                     params.microtask_queue));
+      value = Tagged<Object>(stub_entry.Call(
+          isolate->isolate_data()->isolate_root(), params.microtask_queue));
     }
   }
 
@@ -651,7 +650,7 @@ void Execution::CallWasm(Isolate* isolate, Handle<Code> wrapper_code,
     Address result = stub_entry.Call(wasm_call_target, (*object_ref).ptr(),
                                      packed_args, saved_c_entry_fp);
     if (result != kNullAddress) {
-      isolate->set_pending_exception(Object(result));
+      isolate->set_pending_exception(Tagged<Object>(result));
     }
   }
 

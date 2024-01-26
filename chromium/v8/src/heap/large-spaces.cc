@@ -50,7 +50,7 @@ Tagged<HeapObject> LargeObjectSpaceObjectIterator::Next() {
 // OldLargeObjectSpace
 
 LargeObjectSpace::LargeObjectSpace(Heap* heap, AllocationSpace id)
-    : Space(heap, id, nullptr, allocation_counter_),
+    : Space(heap, id, nullptr),
       size_(0),
       page_count_(0),
       objects_size_(0),
@@ -79,12 +79,23 @@ void LargeObjectSpace::AdvanceAndInvokeAllocationObservers(Address soon_object,
   if (!heap()->IsAllocationObserverActive()) return;
 
   if (object_size >= allocation_counter_.NextBytes()) {
+    // Ensure that there is a valid object
+    heap_->CreateFillerObjectAt(soon_object, static_cast<int>(object_size));
+
     allocation_counter_.InvokeAllocationObservers(soon_object, object_size,
                                                   object_size);
   }
 
   // Large objects can be accounted immediately since no LAB is involved.
   allocation_counter_.AdvanceAllocationObservers(object_size);
+}
+
+void LargeObjectSpace::AddAllocationObserver(AllocationObserver* observer) {
+  allocation_counter_.AddAllocationObserver(observer);
+}
+
+void LargeObjectSpace::RemoveAllocationObserver(AllocationObserver* observer) {
+  allocation_counter_.RemoveAllocationObserver(observer);
 }
 
 AllocationResult OldLargeObjectSpace::AllocateRaw(int object_size) {
@@ -103,17 +114,18 @@ AllocationResult OldLargeObjectSpace::AllocateRaw(int object_size,
     return AllocationResult::Failure();
   }
 
+  heap()->StartIncrementalMarkingIfAllocationLimitIsReached(
+      heap()->GCFlagsForIncrementalMarking(),
+      kGCCallbackScheduleIdleGarbageCollection);
+
   LargePage* page = AllocateLargePage(object_size, executable);
   if (page == nullptr) return AllocationResult::Failure();
   page->SetOldGenerationPageFlags(
       heap()->incremental_marking()->marking_mode());
   Tagged<HeapObject> object = page->GetObject();
   UpdatePendingObject(object);
-  heap()->StartIncrementalMarkingIfAllocationLimitIsReached(
-      heap()->GCFlagsForIncrementalMarking(),
-      kGCCallbackScheduleIdleGarbageCollection);
   if (heap()->incremental_marking()->black_allocation()) {
-    heap()->marking_state()->TryMarkAndAccountLiveBytes(object);
+    heap()->marking_state()->TryMarkAndAccountLiveBytes(object, object_size);
   }
   DCHECK_IMPLIES(heap()->incremental_marking()->black_allocation(),
                  heap()->marking_state()->IsMarked(object));
@@ -141,14 +153,15 @@ AllocationResult OldLargeObjectSpace::AllocateRawBackground(
     return AllocationResult::Failure();
   }
 
+  heap()->StartIncrementalMarkingIfAllocationLimitIsReachedBackground();
+
   LargePage* page = AllocateLargePage(object_size, executable);
   if (page == nullptr) return AllocationResult::Failure();
   page->SetOldGenerationPageFlags(
       heap()->incremental_marking()->marking_mode());
   Tagged<HeapObject> object = page->GetObject();
-  heap()->StartIncrementalMarkingIfAllocationLimitIsReachedBackground();
   if (heap()->incremental_marking()->black_allocation()) {
-    heap()->marking_state()->TryMarkAndAccountLiveBytes(object);
+    heap()->marking_state()->TryMarkAndAccountLiveBytes(object, object_size);
   }
   DCHECK_IMPLIES(heap()->incremental_marking()->black_allocation(),
                  heap()->marking_state()->IsMarked(object));
@@ -176,9 +189,6 @@ LargePage* LargeObjectSpace::AllocateLargePage(int object_size,
     AddPage(page, object_size);
   }
 
-  Tagged<HeapObject> object = page->GetObject();
-
-  heap()->CreateFillerObjectAt(object.address(), object_size);
   return page;
 }
 
@@ -308,34 +318,11 @@ void LargeObjectSpace::Verify(Isolate* isolate,
     Page* page = Page::FromHeapObject(object);
     CHECK(object.address() == page->area_start());
 
-    // We have only the following types in the large object space:
-    const bool is_valid_lo_space_object =                          //
-        IsAbstractCode(object, cage_base) ||                       //
-        IsBigInt(object, cage_base) ||                             //
-        IsByteArray(object, cage_base) ||                          //
-        IsExternalPointerArray(object, cage_base) ||               //
-        IsContext(object, cage_base) ||                            //
-        IsExternalString(object, cage_base) ||                     //
-        IsFeedbackMetadata(object, cage_base) ||                   //
-        IsFeedbackVector(object, cage_base) ||                     //
-        IsFixedArray(object, cage_base) ||                         //
-        IsFixedDoubleArray(object, cage_base) ||                   //
-        IsFreeSpace(object, cage_base) ||                          //
-        IsInstructionStream(object, cage_base) ||                  //
-        IsPreparseData(object, cage_base) ||                       //
-        IsPropertyArray(object, cage_base) ||                      //
-        IsScopeInfo(object) ||                                     //
-        IsSeqString(object, cage_base) ||                          //
-        IsSloppyArgumentsElements(object, cage_base) ||            //
-        IsSwissNameDictionary(object) ||                           //
-        IsThinString(object, cage_base) ||                         //
-        IsUncompiledDataWithoutPreparseData(object, cage_base) ||  //
-#if V8_ENABLE_WEBASSEMBLY                                         //
-        IsWasmArray(object) ||                                    //
-        IsWasmStruct(object) ||                                   //
-#endif                                                            //
-        IsWeakArrayList(object, cage_base) ||                     //
-        IsWeakFixedArray(object, cage_base);
+    // Only certain types may be in the large object space:
+#define V(Name) Is##Name(object, cage_base) ||
+    const bool is_valid_lo_space_object =
+        DYNAMICALLY_SIZED_HEAP_OBJECT_LIST(V) false;
+#undef V
     if (!is_valid_lo_space_object) {
       i::Print(object);
       FATAL("Found invalid Object (instance_type=%i) in large object space.",
@@ -496,6 +483,16 @@ SharedLargeObjectSpace::SharedLargeObjectSpace(Heap* heap)
     : OldLargeObjectSpace(heap, SHARED_LO_SPACE) {}
 
 AllocationResult SharedLargeObjectSpace::AllocateRawBackground(
+    LocalHeap* local_heap, int object_size) {
+  DCHECK(!v8_flags.enable_third_party_heap);
+  return OldLargeObjectSpace::AllocateRawBackground(local_heap, object_size,
+                                                    NOT_EXECUTABLE);
+}
+
+TrustedLargeObjectSpace::TrustedLargeObjectSpace(Heap* heap)
+    : OldLargeObjectSpace(heap, TRUSTED_LO_SPACE) {}
+
+AllocationResult TrustedLargeObjectSpace::AllocateRawBackground(
     LocalHeap* local_heap, int object_size) {
   DCHECK(!v8_flags.enable_third_party_heap);
   return OldLargeObjectSpace::AllocateRawBackground(local_heap, object_size,

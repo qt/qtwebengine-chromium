@@ -1,16 +1,29 @@
-// Copyright 2020 The Dawn Authors
+// Copyright 2020 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/utils/TextureUtils.h"
 
@@ -282,6 +295,7 @@ uint32_t GetTexelBlockSizeInBytes(wgpu::TextureFormat textureFormat) {
         case wgpu::TextureFormat::RGBA8Sint:
         case wgpu::TextureFormat::BGRA8Unorm:
         case wgpu::TextureFormat::BGRA8UnormSrgb:
+        case wgpu::TextureFormat::RGB10A2Uint:
         case wgpu::TextureFormat::RGB10A2Unorm:
         case wgpu::TextureFormat::RG11B10Ufloat:
         case wgpu::TextureFormat::RGB9E5Ufloat:
@@ -381,7 +395,7 @@ uint32_t GetTexelBlockSizeInBytes(wgpu::TextureFormat textureFormat) {
         case wgpu::TextureFormat::Undefined:
             break;
     }
-    UNREACHABLE();
+    DAWN_UNREACHABLE();
 }
 
 uint32_t GetTextureFormatBlockWidth(wgpu::TextureFormat textureFormat) {
@@ -414,6 +428,7 @@ uint32_t GetTextureFormatBlockWidth(wgpu::TextureFormat textureFormat) {
         case wgpu::TextureFormat::RGBA8Sint:
         case wgpu::TextureFormat::BGRA8Unorm:
         case wgpu::TextureFormat::BGRA8UnormSrgb:
+        case wgpu::TextureFormat::RGB10A2Uint:
         case wgpu::TextureFormat::RGB10A2Unorm:
         case wgpu::TextureFormat::RG11B10Ufloat:
         case wgpu::TextureFormat::RGB9E5Ufloat:
@@ -504,7 +519,7 @@ uint32_t GetTextureFormatBlockWidth(wgpu::TextureFormat textureFormat) {
         case wgpu::TextureFormat::Undefined:
             break;
     }
-    UNREACHABLE();
+    DAWN_UNREACHABLE();
 }
 
 uint32_t GetTextureFormatBlockHeight(wgpu::TextureFormat textureFormat) {
@@ -537,6 +552,7 @@ uint32_t GetTextureFormatBlockHeight(wgpu::TextureFormat textureFormat) {
         case wgpu::TextureFormat::RGBA8Sint:
         case wgpu::TextureFormat::BGRA8Unorm:
         case wgpu::TextureFormat::BGRA8UnormSrgb:
+        case wgpu::TextureFormat::RGB10A2Uint:
         case wgpu::TextureFormat::RGB10A2Unorm:
         case wgpu::TextureFormat::RG11B10Ufloat:
         case wgpu::TextureFormat::RGB9E5Ufloat:
@@ -627,7 +643,7 @@ uint32_t GetTextureFormatBlockHeight(wgpu::TextureFormat textureFormat) {
         case wgpu::TextureFormat::Undefined:
             break;
     }
-    UNREACHABLE();
+    DAWN_UNREACHABLE();
 }
 
 const char* GetWGSLColorTextureComponentType(wgpu::TextureFormat textureFormat) {
@@ -665,6 +681,7 @@ const char* GetWGSLColorTextureComponentType(wgpu::TextureFormat textureFormat) 
         case wgpu::TextureFormat::RG16Uint:
         case wgpu::TextureFormat::RGBA8Uint:
         case wgpu::TextureFormat::RG32Uint:
+        case wgpu::TextureFormat::RGB10A2Uint:
         case wgpu::TextureFormat::RGBA16Uint:
         case wgpu::TextureFormat::RGBA32Uint:
             return "u32";
@@ -681,7 +698,7 @@ const char* GetWGSLColorTextureComponentType(wgpu::TextureFormat textureFormat) 
             return "i32";
 
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -717,6 +734,7 @@ uint32_t GetWGSLRenderableColorTextureComponentCount(wgpu::TextureFormat texture
         case wgpu::TextureFormat::RGBA8Sint:
         case wgpu::TextureFormat::BGRA8Unorm:
         case wgpu::TextureFormat::BGRA8UnormSrgb:
+        case wgpu::TextureFormat::RGB10A2Uint:
         case wgpu::TextureFormat::RGB10A2Unorm:
         case wgpu::TextureFormat::RGBA16Unorm:
         case wgpu::TextureFormat::RGBA16Snorm:
@@ -728,7 +746,7 @@ uint32_t GetWGSLRenderableColorTextureComponentCount(wgpu::TextureFormat texture
         case wgpu::TextureFormat::RGBA32Sint:
             return 4u;
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -811,13 +829,15 @@ const char* GetWGSLImageFormatQualifier(wgpu::TextureFormat textureFormat) {
             return "rg16sint";
         case wgpu::TextureFormat::RG16Float:
             return "rg16float";
+        case wgpu::TextureFormat::RGB10A2Uint:
+            return "rgb10a2uint";
         case wgpu::TextureFormat::RGB10A2Unorm:
             return "rgb10a2unorm";
         case wgpu::TextureFormat::RG11B10Ufloat:
             return "rg11b10ufloat";
 
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -833,7 +853,7 @@ wgpu::TextureDimension ViewDimensionToTextureDimension(const wgpu::TextureViewDi
         // TODO(crbug.com/dawn/814): Implement for 1D texture.
         case wgpu::TextureViewDimension::e1D:
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
             break;
     }
 }

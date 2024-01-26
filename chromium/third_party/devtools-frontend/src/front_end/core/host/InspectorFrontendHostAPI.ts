@@ -140,6 +140,45 @@ export interface DoAidaConversationResult {
   response: string;
 }
 
+export interface VisualElementImpression {
+  id: number;
+  type: number;
+  parent?: number;
+  context?: number;
+}
+
+export interface ImpressionEvent {
+  impressions: VisualElementImpression[];
+}
+
+export interface ClickEvent {
+  veid: number;
+  mouseButton: number;
+  context?: number;
+  doubleClick: boolean;
+}
+
+export interface HoverEvent {
+  veid: number;
+  time?: number;
+  context?: number;
+}
+
+export interface DragEvent {
+  veid: number;
+  context?: number;
+}
+
+export interface ChangeEvent {
+  veid: number;
+  context?: number;
+}
+
+export interface KeyDownEvent {
+  veid: number;
+  context?: number;
+}
+
 // While `EventDescriptors` are used to dynamically dispatch host binding events,
 // the `EventTypes` "type map" is used for type-checking said events by TypeScript.
 // `EventTypes` is not used at runtime.
@@ -306,6 +345,13 @@ export interface InspectorFrontendHostAPI {
   initialTargetId(): Promise<string|null>;
 
   doAidaConversation: (request: string, cb: (result: DoAidaConversationResult) => void) => void;
+
+  recordImpression(event: ImpressionEvent): void;
+  recordClick(event: ClickEvent): void;
+  recordHover(event: HoverEvent): void;
+  recordDrag(event: DragEvent): void;
+  recordChange(event: ChangeEvent): void;
+  recordKeyDown(event: KeyDownEvent): void;
 }
 
 export interface ContextMenuDescriptor {
@@ -404,6 +450,7 @@ export enum EnumeratedHistogram {
   ManifestSectionSelected = 'DevTools.ManifestSectionSelected',
   CSSHintShown = 'DevTools.CSSHintShown',
   LighthouseModeRun = 'DevTools.LighthouseModeRun',
+  LighthouseCategoryUsed = 'DevTools.LighthouseCategoryUsed',
   ColorConvertedFrom = 'DevTools.ColorConvertedFrom',
   ColorPickerOpenedFrom = 'DevTools.ColorPickerOpenedFrom',
   CSSPropertyDocumentation = 'DevTools.CSSPropertyDocumentation',
@@ -414,4 +461,6 @@ export enum EnumeratedHistogram {
   BadgeActivated = 'DevTools.BadgeActivated',
   AnimationPlaybackRateChanged = 'DevTools.AnimationPlaybackRateChanged',
   AnimationPointDragged = 'DevTools.AnimationPointDragged',
+  LegacyResourceTypeFilterNumberOfSelectedChanged = 'DevTools.LegacyResourceTypeFilterNumberOfSelectedChanged',
+  LegacyResourceTypeFilterItemSelected = 'DevTools.LegacyResourceTypeFilterItemSelected',
 }

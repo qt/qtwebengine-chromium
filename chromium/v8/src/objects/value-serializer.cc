@@ -731,8 +731,9 @@ Maybe<bool> ValueSerializer::WriteJSArray(Handle<JSArray> array) {
       case PACKED_SMI_ELEMENTS: {
         DisallowGarbageCollection no_gc;
         Tagged<FixedArray> elements = FixedArray::cast(array->elements());
-        for (i = 0; i < length; i++)
-          WriteSmi(Smi::cast(elements->get(cage_base, i)));
+        for (i = 0; i < length; i++) {
+          WriteSmi(Smi::cast(elements->get(i)));
+        }
         break;
       }
       case PACKED_DOUBLE_ELEMENTS: {
@@ -756,8 +757,8 @@ Maybe<bool> ValueSerializer::WriteJSArray(Handle<JSArray> array) {
             // Fall back to slow path.
             break;
           }
-          Handle<Object> element(
-              FixedArray::cast(array->elements())->get(cage_base, i), isolate_);
+          Handle<Object> element(FixedArray::cast(array->elements())->get(i),
+                                 isolate_);
           if (!WriteObject(element).FromMaybe(false)) return Nothing<bool>();
         }
         break;
@@ -867,11 +868,12 @@ Maybe<bool> ValueSerializer::WriteJSMap(Handle<JSMap> js_map) {
     DisallowGarbageCollection no_gc;
     Tagged<OrderedHashMap> raw_table = *table;
     Tagged<FixedArray> raw_entries = *entries;
-    Tagged<Hole> the_hole = ReadOnlyRoots(isolate_).the_hole_value();
+    Tagged<Hole> hash_table_hole =
+        ReadOnlyRoots(isolate_).hash_table_hole_value();
     int result_index = 0;
     for (InternalIndex entry : raw_table->IterateEntries()) {
       Tagged<Object> key = raw_table->KeyAt(entry);
-      if (key == the_hole) continue;
+      if (key == hash_table_hole) continue;
       raw_entries->set(result_index++, key);
       raw_entries->set(result_index++, raw_table->ValueAt(entry));
     }
@@ -899,11 +901,12 @@ Maybe<bool> ValueSerializer::WriteJSSet(Handle<JSSet> js_set) {
     DisallowGarbageCollection no_gc;
     Tagged<OrderedHashSet> raw_table = *table;
     Tagged<FixedArray> raw_entries = *entries;
-    Tagged<Hole> the_hole = ReadOnlyRoots(isolate_).the_hole_value();
+    Tagged<Hole> hash_table_hole =
+        ReadOnlyRoots(isolate_).hash_table_hole_value();
     int result_index = 0;
     for (InternalIndex entry : raw_table->IterateEntries()) {
       Tagged<Object> key = raw_table->KeyAt(entry);
-      if (key == the_hole) continue;
+      if (key == hash_table_hole) continue;
       raw_entries->set(result_index++, key);
     }
     DCHECK_EQ(result_index, length);
@@ -1235,7 +1238,8 @@ Maybe<bool> ValueSerializer::ThrowDataCloneError(
 
 Maybe<bool> ValueSerializer::ThrowDataCloneError(MessageTemplate index,
                                                  Handle<Object> arg0) {
-  Handle<String> message = MessageFormatter::Format(isolate_, index, arg0);
+  Handle<String> message =
+      MessageFormatter::Format(isolate_, index, base::VectorOf({arg0}));
   if (delegate_) {
     delegate_->ThrowDataCloneError(Utils::ToLocal(message));
   } else {
@@ -2514,18 +2518,20 @@ Maybe<uint32_t> ValueDeserializer::ReadJSObjectProperties(
           Representation expected_representation = details.representation();
           if (Object::FitsRepresentation(*value, expected_representation)) {
             if (expected_representation.IsHeapObject() &&
-                !target->instance_descriptors(isolate_)
-                     ->GetFieldType(descriptor)
-                     ->NowContains(value)) {
+                !FieldType::NowContains(
+                    target->instance_descriptors(isolate_)->GetFieldType(
+                        descriptor),
+                    value)) {
               Handle<FieldType> value_type = Object::OptimalType(
                   *value, isolate_, expected_representation);
               MapUpdater::GeneralizeField(isolate_, target, descriptor,
                                           details.constness(),
                                           expected_representation, value_type);
             }
-            DCHECK(target->instance_descriptors(isolate_)
-                       ->GetFieldType(descriptor)
-                       ->NowContains(value));
+            DCHECK(FieldType::NowContains(
+                target->instance_descriptors(isolate_)->GetFieldType(
+                    descriptor),
+                value));
             properties.push_back(value);
             map = target;
             continue;

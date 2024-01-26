@@ -30,6 +30,9 @@ _ARCH_TO_MACRO_MAP = {
   "wasm": "XNN_ARCH_WASM",
   "wasmsimd": "XNN_ARCH_WASMSIMD",
   "wasmrelaxedsimd": "XNN_ARCH_WASMRELAXEDSIMD",
+  "wasm32": "XNN_ARCH_WASM",
+  "wasmsimd32": "XNN_ARCH_WASMSIMD",
+  "wasmrelaxedsimd32": "XNN_ARCH_WASMRELAXEDSIMD",
 }
 
 # Mapping from ISA extension to macro guarding build-time enabled/disabled
@@ -39,6 +42,7 @@ _ISA_TO_MACRO_MAP = {
   "neonfp16arith": "XNN_ENABLE_ARM_FP16_VECTOR",
   "neonbf16": "XNN_ENABLE_ARM_BF16",
   "neondot": "XNN_ENABLE_ARM_DOTPROD",
+  "neoni8mm": "XNN_ENABLE_ARM_I8MM",
   "rvv": "XNN_ENABLE_RISCV_VECTOR",
 }
 
@@ -52,6 +56,7 @@ _ISA_TO_ARCH_MAP = {
   "neonfp16arith": ["aarch32", "aarch64"],
   "neonbf16": ["aarch32", "aarch64"],
   "neondot": ["aarch32", "aarch64"],
+  "neoni8mm": ["aarch32", "aarch64"],
   "sse": ["x86-32", "x86-64"],
   "sse2": ["x86-32", "x86-64"],
   "ssse3": ["x86-32", "x86-64"],
@@ -71,6 +76,34 @@ _ISA_TO_ARCH_MAP = {
   "wasmrelaxedsimd": ["wasmrelaxedsimd"],
   "wasmpshufb": ["wasmrelaxedsimd"],
   "wasmsdot": ["wasmrelaxedsimd"],
+  "wasmblendvps": ["wasmrelaxedsimd"],
+}
+
+_ISA_TO_UTILCHECK_MAP = {
+  "armsimd32": "CheckARMV6",
+  "fp16arith": "CheckFP16ARITH",
+  "neon": "CheckNEON",
+  "neonfp16": "CheckNEONFP16",
+  "neonfma": "CheckNEONFMA",
+  "neonv8": "CheckNEONV8",
+  "neonfp16arith": "CheckNEONFP16ARITH",
+  "neonbf16": "CheckNEONBF16",
+  "neondot": "CheckNEONDOT",
+  "neoni8mm": "CheckNEONI8MM",
+  "ssse3": "CheckSSSE3",
+  "sse41": "CheckSSE41",
+  "avx": "CheckAVX",
+  "f16c": "CheckF16C",
+  "xop": "CheckXOP",
+  "avx2": "CheckAVX2",
+  "fma3": "CheckFMA3",
+  "avx512f": "CheckAVX512F",
+  "avx512skx": "CheckAVX512SKX",
+  "avx512vbmi": "CheckAVX512VBMI",
+  "rvv": "CheckRVV",
+  "wasmpshufb": "CheckWAsmPSHUFB",
+  "wasmsdot": "CheckWAsmSDOT",
+  "wasmblendvps": "CheckWAsmBLENDVPS",
 }
 
 _ISA_TO_CHECK_MAP = {
@@ -83,6 +116,7 @@ _ISA_TO_CHECK_MAP = {
   "neonfp16arith": "TEST_REQUIRES_ARM_NEON_FP16_ARITH",
   "neonbf16": "TEST_REQUIRES_ARM_NEON_BF16",
   "neondot": "TEST_REQUIRES_ARM_NEON_DOT",
+  "neoni8mm": "TEST_REQUIRES_ARM_NEON_I8MM",
   "sse": "TEST_REQUIRES_X86_SSE",
   "sse2": "TEST_REQUIRES_X86_SSE2",
   "ssse3": "TEST_REQUIRES_X86_SSSE3",
@@ -98,6 +132,7 @@ _ISA_TO_CHECK_MAP = {
   "rvv": "TEST_REQUIRES_RISCV_VECTOR",
   "wasmpshufb": "TEST_REQUIRES_WASM_PSHUFB",
   "wasmsdot": "TEST_REQUIRES_WASM_SDOT",
+  "wasmblendvps": "TEST_REQUIRES_WASM_BLENDVPS",
 }
 
 
@@ -125,10 +160,11 @@ def parse_target_name(target_name):
 def generate_isa_check_macro(isa):
   return _ISA_TO_CHECK_MAP.get(isa, "")
 
+def generate_isa_utilcheck_macro(isa):
+  return _ISA_TO_UTILCHECK_MAP.get(isa, "")
 
 def arch_to_macro(arch, isa):
   return _ARCH_TO_MACRO_MAP[arch]
-
 
 def postprocess_test_case(test_case, arch, isa, assembly=False, jit=False):
   test_case = _remove_duplicate_newlines(test_case)
@@ -139,6 +175,8 @@ def postprocess_test_case(test_case, arch, isa, assembly=False, jit=False):
         guard = "%s && (%s)" % (_ISA_TO_MACRO_MAP[isa], guard)
       else:
         guard = "%s && %s" % (_ISA_TO_MACRO_MAP[isa], guard)
+    if (assembly or jit) and "||" in guard:
+      guard = '(' + guard + ')'
     if assembly:
       guard += " && XNN_ENABLE_ASSEMBLY"
     if jit:
@@ -147,3 +185,23 @@ def postprocess_test_case(test_case, arch, isa, assembly=False, jit=False):
       "#endif  // %s\n" % guard
   else:
     return test_case
+
+_ISA_HIERARCHY = [
+  "sse",
+  "sse2",
+  "ssse3",
+  "sse41",
+  "avx",
+  "avx2",
+  "xop",
+  "avx512f",
+  "avx512skx",
+  "avx512vbmi",
+  "armsimd32",
+  "neon",
+  "neonv8",
+  "neondot",
+  "neoni8mm",
+]
+
+_ISA_HIERARCHY_MAP = {isa: v for v, isa in enumerate(_ISA_HIERARCHY)}

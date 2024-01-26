@@ -907,18 +907,16 @@ void av1_change_config(struct AV1_COMP *cpi, const AV1EncoderConfig *oxcf,
   cm->width = frm_dim_cfg->width;
   cm->height = frm_dim_cfg->height;
 
-  if (initial_dimensions->width || is_sb_size_changed) {
-    if (cm->width > initial_dimensions->width ||
-        cm->height > initial_dimensions->height || is_sb_size_changed) {
-      av1_free_context_buffers(cm);
-      av1_free_shared_coeff_buffer(&cpi->td.shared_coeff_buf);
-      av1_free_sms_tree(&cpi->td);
-      av1_free_pmc(cpi->td.firstpass_ctx, av1_num_planes(cm));
-      cpi->td.firstpass_ctx = NULL;
-      alloc_compressor_data(cpi);
-      realloc_segmentation_maps(cpi);
-      initial_dimensions->width = initial_dimensions->height = 0;
-    }
+  if (cm->width > initial_dimensions->width ||
+      cm->height > initial_dimensions->height || is_sb_size_changed) {
+    av1_free_context_buffers(cm);
+    av1_free_shared_coeff_buffer(&cpi->td.shared_coeff_buf);
+    av1_free_sms_tree(&cpi->td);
+    av1_free_pmc(cpi->td.firstpass_ctx, av1_num_planes(cm));
+    cpi->td.firstpass_ctx = NULL;
+    alloc_compressor_data(cpi);
+    realloc_segmentation_maps(cpi);
+    initial_dimensions->width = initial_dimensions->height = 0;
   }
   av1_update_frame_size(cpi);
 
@@ -1280,7 +1278,7 @@ AV1_PRIMARY *av1_create_primary_compressor(
     enc_set_mb_mi(&mi_params, oxcf->frm_dim_cfg.width, oxcf->frm_dim_cfg.height,
                   BLOCK_4X4);
 
-    const int bsize = BLOCK_16X16;
+    const BLOCK_SIZE bsize = BLOCK_16X16;
     const int w = mi_size_wide[bsize];
     const int h = mi_size_high[bsize];
     const int num_cols = (mi_params.mi_cols + w - 1) / w;
@@ -1486,16 +1484,18 @@ AV1_COMP *av1_create_compressor(AV1_PRIMARY *ppi, const AV1EncoderConfig *oxcf,
     max_mi_rows = size_in_mi(oxcf->frm_dim_cfg.forced_max_frame_height);
   }
 
-  CHECK_MEM_ERROR(cm, cpi->consec_zero_mv,
-                  aom_calloc((max_mi_rows * max_mi_cols) >> 2,
-                             sizeof(*cpi->consec_zero_mv)));
+  const int consec_zero_mv_alloc_size = (max_mi_rows * max_mi_cols) >> 2;
+  CHECK_MEM_ERROR(
+      cm, cpi->consec_zero_mv,
+      aom_calloc(consec_zero_mv_alloc_size, sizeof(*cpi->consec_zero_mv)));
+  cpi->consec_zero_mv_alloc_size = consec_zero_mv_alloc_size;
 
   cpi->mb_weber_stats = NULL;
   cpi->mb_delta_q = NULL;
   cpi->palette_pixel_num = 0;
 
   {
-    const int bsize = BLOCK_16X16;
+    const BLOCK_SIZE bsize = BLOCK_16X16;
     const int w = mi_size_wide[bsize];
     const int h = mi_size_high[bsize];
     const int num_cols = (max_mi_cols + w - 1) / w;
@@ -1510,7 +1510,7 @@ AV1_COMP *av1_create_compressor(AV1_PRIMARY *ppi, const AV1EncoderConfig *oxcf,
 
 #if CONFIG_TUNE_VMAF
   {
-    const int bsize = BLOCK_64X64;
+    const BLOCK_SIZE bsize = BLOCK_64X64;
     const int w = mi_size_wide[bsize];
     const int h = mi_size_high[bsize];
     const int num_cols = (mi_params->mi_cols + w - 1) / w;
@@ -1728,9 +1728,7 @@ void av1_remove_compressor(AV1_COMP *cpi) {
     av1_loop_filter_dealloc(&mt_info->lf_row_sync);
     av1_cdef_mt_dealloc(&mt_info->cdef_sync);
 #if !CONFIG_REALTIME_ONLY
-    int num_lr_workers =
-        av1_get_num_mod_workers_for_alloc(&cpi->ppi->p_mt_info, MOD_LR);
-    av1_loop_restoration_dealloc(&mt_info->lr_row_sync, num_lr_workers);
+    av1_loop_restoration_dealloc(&mt_info->lr_row_sync);
     av1_tf_mt_dealloc(&mt_info->tf_sync);
 #endif
   }
@@ -2313,18 +2311,8 @@ static void cdef_restoration_frame(AV1_COMP *cpi, AV1_COMMON *cm,
     start_timing(cpi, cdef_time);
 #endif
     const int num_workers = cpi->mt_info.num_mod_workers[MOD_CDEF];
-    const int use_screen_content_model =
-        cm->quant_params.base_qindex >
-            AOMMAX(cpi->sf.rt_sf.screen_content_cdef_filter_qindex_thresh,
-                   cpi->rc.best_quality + 5) &&
-        cpi->oxcf.tune_cfg.content == AOM_CONTENT_SCREEN;
     // Find CDEF parameters
-    av1_cdef_search(&cpi->mt_info, &cm->cur_frame->buf, cpi->source, cm, xd,
-                    cpi->sf.lpf_sf.cdef_pick_method, cpi->td.mb.rdmult,
-                    cpi->sf.rt_sf.skip_cdef_sb, cpi->oxcf.tool_cfg.cdef_control,
-                    use_screen_content_model,
-                    cpi->ppi->rtc_ref.non_reference_frame,
-                    cpi->rc.rtc_external_ratectrl);
+    av1_cdef_search(cpi);
 
     // Apply the filter
     if ((skip_apply_postproc_filters & SKIP_APPLY_CDEF) == 0) {
@@ -2577,9 +2565,18 @@ static int encode_without_recode(AV1_COMP *cpi) {
       cm, unscaled, &cpi->scaled_source, filter_scaler, phase_scaler, true,
       false, cpi->oxcf.border_in_pixels, cpi->image_pyramid_levels);
   if (frame_is_intra_only(cm) || resize_pending != 0) {
-    memset(cpi->consec_zero_mv, 0,
-           ((cm->mi_params.mi_rows * cm->mi_params.mi_cols) >> 2) *
-               sizeof(*cpi->consec_zero_mv));
+    const int current_size =
+        (cm->mi_params.mi_rows * cm->mi_params.mi_cols) >> 2;
+    if (cpi->consec_zero_mv &&
+        (cpi->consec_zero_mv_alloc_size < current_size)) {
+      aom_free(cpi->consec_zero_mv);
+      cpi->consec_zero_mv_alloc_size = 0;
+      CHECK_MEM_ERROR(cm, cpi->consec_zero_mv,
+                      aom_malloc(current_size * sizeof(*cpi->consec_zero_mv)));
+      cpi->consec_zero_mv_alloc_size = current_size;
+    }
+    assert(cpi->consec_zero_mv != NULL);
+    memset(cpi->consec_zero_mv, 0, current_size * sizeof(*cpi->consec_zero_mv));
   }
 
   if (cpi->unscaled_last_source != NULL) {
@@ -4416,10 +4413,8 @@ void print_internal_stats(AV1_PRIMARY *ppi) {
 
     fclose(f);
 
-    if (ppi->ssim_vars != NULL) {
-      aom_free(ppi->ssim_vars);
-      ppi->ssim_vars = NULL;
-    }
+    aom_free(ppi->ssim_vars);
+    ppi->ssim_vars = NULL;
   }
 }
 #endif  // CONFIG_INTERNAL_STATS

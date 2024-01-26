@@ -38,9 +38,9 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y bash curl
 
 # Install various tools used by the build or the test suite
-#RUN apt-get update && apt-get install -y ninja-build python3 python3-sphinx python3-distutils python3-psutil git gdb ccache
+#RUN apt-get update && apt-get install -y ninja-build python3 python3-distutils python3-psutil git gdb ccache
 # TODO add ninja-build once 1.11 is available in Ubuntu, also remove the manual installation.
-RUN apt-get update && apt-get install -y python3 python3-sphinx python3-distutils python3-psutil git gdb ccache
+RUN apt-get update && apt-get install -y python3 python3-distutils python3-psutil git gdb ccache
 RUN apt-get update && apt-get install -y wget && \
   wget -qO /usr/local/bin/ninja.gz https://github.com/ninja-build/ninja/releases/latest/download/ninja-linux.zip && \
   gunzip /usr/local/bin/ninja.gz && \
@@ -67,7 +67,7 @@ RUN locale-gen
 # 14 release branch CI uses it. The tip-of-trunk CI will never use Clang 12,
 # though.
 # LLVM POST-BRANCH bump version
-ENV LLVM_HEAD_VERSION=17
+ENV LLVM_HEAD_VERSION=18
 RUN apt-get update && apt-get install -y lsb-release wget software-properties-common
 RUN wget https://apt.llvm.org/llvm.sh -O /tmp/llvm.sh
 RUN bash /tmp/llvm.sh $(($LLVM_HEAD_VERSION - 3)) # for CI transitions
@@ -112,7 +112,7 @@ RUN rm /tmp/install-cmake.sh
 
 # Install a newer CMake for modules
 # TODO Remove the duplicated installation when all runtimes can be build with CMake 3.27.
-RUN wget https://github.com/Kitware/CMake/releases/download/v3.27.0-rc2/cmake-3.27.0-rc2-linux-x86_64.sh -O /tmp/install-cmake.sh
+RUN wget https://github.com/Kitware/CMake/releases/download/v3.27.1/cmake-3.27.1-linux-x86_64.sh -O /tmp/install-cmake.sh
 RUN bash /tmp/install-cmake.sh --prefix=/opt --exclude-subdir --skip-license
 RUN rm /tmp/install-cmake.sh
 

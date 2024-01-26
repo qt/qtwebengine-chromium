@@ -10,6 +10,7 @@
 #ifndef EIGEN_CXX11_TENSOR_TENSOR_CUSTOM_OP_H
 #define EIGEN_CXX11_TENSOR_TENSOR_CUSTOM_OP_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

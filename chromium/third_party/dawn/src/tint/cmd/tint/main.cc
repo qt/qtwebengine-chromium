@@ -1,16 +1,29 @@
-// Copyright 2020 The Tint Authors.
+// Copyright 2020 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <charconv>
 #include <cstdio>
@@ -24,20 +37,16 @@
 #include <unordered_map>
 #include <vector>
 
-#if TINT_BUILD_GLSL_WRITER
-#include "glslang/Public/ResourceLimits.h"
-#include "glslang/Public/ShaderLang.h"
-#endif  // TINT_BUILD_GLSL_WRITER
-
 #if TINT_BUILD_SPV_READER || TINT_BUILD_SPV_WRITER
 #include "spirv-tools/libspirv.hpp"
 #endif  // TINT_BUILD_SPV_READER || TINT_BUILD_SPV_WRITER
 
+#include "src/tint/api/options/pixel_local.h"
 #include "src/tint/api/tint.h"
 #include "src/tint/cmd/common/generate_external_texture_bindings.h"
 #include "src/tint/cmd/common/helper.h"
-#include "src/tint/lang/hlsl/validate/val.h"
-#include "src/tint/lang/msl/validate/val.h"
+#include "src/tint/lang/core/ir/disassembler.h"
+#include "src/tint/lang/core/ir/module.h"
 #include "src/tint/lang/wgsl/ast/module.h"
 #include "src/tint/lang/wgsl/ast/transform/first_index_offset.h"
 #include "src/tint/lang/wgsl/ast/transform/manager.h"
@@ -59,10 +68,12 @@
 #endif  // TINT_BUILD_SPV_READER
 
 #if TINT_BUILD_WGSL_READER
+#include "src/tint/lang/wgsl/reader/program_to_ir/program_to_ir.h"
 #include "src/tint/lang/wgsl/reader/reader.h"
 #endif  // TINT_BUILD_WGSL_READER
 
 #if TINT_BUILD_SPV_WRITER
+#include "src/tint/lang/spirv/writer/helpers/generate_bindings.h"
 #include "src/tint/lang/spirv/writer/writer.h"
 #endif  // TINT_BUILD_SPV_WRITER
 
@@ -71,10 +82,12 @@
 #endif  // TINT_BUILD_WGSL_WRITER
 
 #if TINT_BUILD_MSL_WRITER
+#include "src/tint/lang/msl/validate/val.h"
 #include "src/tint/lang/msl/writer/writer.h"
 #endif  // TINT_BUILD_MSL_WRITER
 
 #if TINT_BUILD_HLSL_WRITER
+#include "src/tint/lang/hlsl/validate/val.h"
 #include "src/tint/lang/hlsl/writer/writer.h"
 #endif  // TINT_BUILD_HLSL_WRITER
 
@@ -82,11 +95,9 @@
 #include "src/tint/lang/glsl/writer/writer.h"
 #endif  // TINT_BUILD_GLSL_WRITER
 
-#if TINT_BUILD_IR
-#include "src/tint/lang/core/ir/disassembler.h"                     // nogncheck
-#include "src/tint/lang/core/ir/module.h"                           // nogncheck
-#include "src/tint/lang/wgsl/reader/program_to_ir/program_to_ir.h"  // nogncheck
-#endif                                                              // TINT_BUILD_IR
+#if TINT_BUILD_GLSL_VALIDATOR
+#include "src/tint/lang/glsl/validate/validate.h"
+#endif  // TINT_BUILD_GLSL_VALIDATOR
 
 #if TINT_BUILD_SPV_WRITER
 #define SPV_WRITER_ONLY(x) x
@@ -121,7 +132,7 @@
 namespace {
 
 /// Prints the given hash value in a format string that the end-to-end test runner can parse.
-void PrintHash(uint32_t hash) {
+[[maybe_unused]] void PrintHash(uint32_t hash) {
     std::cout << "<<HASH: 0x" << std::hex << hash << ">>" << std::endl;
 }
 
@@ -169,11 +180,10 @@ struct Options {
     std::string xcrun_path;
     tint::Hashmap<std::string, double, 8> overrides;
     std::optional<tint::BindingPoint> hlsl_root_constant_binding_point;
+    tint::PixelLocalOptions pixel_local_options;
 
-#if TINT_BUILD_IR
     bool dump_ir = false;
     bool use_ir = false;
-#endif  // TINT_BUILD_IR
 
 #if TINT_BUILD_SYNTAX_TREE_WRITER
     bool dump_ast = false;
@@ -279,7 +289,6 @@ When specified, automatically enables MSL validation)",
         }
     });
 
-#if TINT_BUILD_IR
     auto& dump_ir = options.Add<BoolOption>("dump-ir", "Writes the IR to stdout", Alias{"emit-ir"},
                                             Default{false});
     TINT_DEFER(opts->dump_ir = *dump_ir.value);
@@ -287,7 +296,6 @@ When specified, automatically enables MSL validation)",
     auto& use_ir = options.Add<BoolOption>(
         "use-ir", "Use the IR for writers and transforms when possible", Default{false});
     TINT_DEFER(opts->use_ir = *use_ir.value);
-#endif  // TINT_BUILD_IR
 
     auto& verbose =
         options.Add<BoolOption>("verbose", "Verbose output", ShortName{"v"}, Default{false});
@@ -365,6 +373,15 @@ used for num_workgroups in HLSL. If not specified, then
 default to binding 0 of the largest used group plus 1,
 or group 0 if no resource bound)");
 
+    auto& pixel_local_attachments =
+        options.Add<StringOption>("pixel_local_attachments",
+                                  R"(Pixel local storage attachment bindings, comma-separated
+Each binding is of the form MEMBER_INDEX=ATTACHMENT_INDEX,
+where MEMBER_INDEX is the pixel-local structure member
+index and ATTACHMENT_INDEX is the index of the emitted
+attachment.
+)");
+
     auto& skip_hash = options.Add<StringOption>(
         "skip-hash", R"(Skips validation if the hash of the output is equal to any
 of the hash codes in the comma separated list of hashes)");
@@ -396,9 +413,9 @@ Options:
         options.ShowHelp(std::cout);
     };
 
-    auto result = options.Parse(std::cerr, arguments);
+    auto result = options.Parse(arguments);
     if (!result) {
-        std::cerr << std::endl;
+        std::cerr << result.Failure() << std::endl;
         show_usage();
         return false;
     }
@@ -445,6 +462,32 @@ Options:
         opts->hlsl_root_constant_binding_point = tint::BindingPoint{group.Get(), binding.Get()};
     }
 
+    if (pixel_local_attachments.value.has_value()) {
+        auto bindings = tint::Split(*pixel_local_attachments.value, ",");
+        for (auto& binding : bindings) {
+            auto values = tint::Split(binding, "=");
+            if (values.Length() != 2) {
+                std::cerr << "Invalid binding " << pixel_local_attachments.name << ": " << binding
+                          << std::endl;
+                return false;
+            }
+            auto member_index = tint::ParseUint32(values[0]);
+            if (!member_index) {
+                std::cerr << "Invalid member index for " << pixel_local_attachments.name << ": "
+                          << values[0] << std::endl;
+                return false;
+            }
+            auto attachment_index = tint::ParseUint32(values[1]);
+            if (!attachment_index) {
+                std::cerr << "Invalid attachment index for " << pixel_local_attachments.name << ": "
+                          << values[1] << std::endl;
+                return false;
+            }
+            opts->pixel_local_options.attachments.emplace(member_index.Get(),
+                                                          attachment_index.Get());
+        }
+    }
+
     auto files = result.Get();
     if (files.Length() > 1) {
         std::cerr << "More than one input file specified: "
@@ -465,7 +508,9 @@ Options:
 /// like `std::string` and `std::vector` do.
 /// @returns true on success
 template <typename ContainerT>
-bool WriteFile(const std::string& output_file, const std::string mode, const ContainerT& buffer) {
+[[maybe_unused]] bool WriteFile(const std::string& output_file,
+                                const std::string mode,
+                                const ContainerT& buffer) {
     const bool use_stdout = output_file.empty() || output_file == "-";
     FILE* file = stdout;
 
@@ -543,20 +588,18 @@ std::string Disassemble(const std::vector<uint32_t>& data) {
 /// @param program the program to generate
 /// @param options the options that Tint was invoked with
 /// @returns true on success
-bool GenerateSpirv(const tint::Program* program, const Options& options) {
+bool GenerateSpirv(const tint::Program& program, const Options& options) {
 #if TINT_BUILD_SPV_WRITER
     // TODO(jrprice): Provide a way for the user to set non-default options.
     tint::spirv::writer::Options gen_options;
     gen_options.disable_robustness = !options.enable_robustness;
     gen_options.disable_workgroup_init = options.disable_workgroup_init;
-    gen_options.external_texture_options.bindings_map =
-        tint::cmd::GenerateExternalTextureBindings(program);
-#if TINT_BUILD_IR
+    gen_options.bindings = tint::spirv::writer::GenerateBindings(program);
     gen_options.use_tint_ir = options.use_ir;
-#endif
+
     auto result = tint::spirv::writer::Generate(program, gen_options);
     if (!result) {
-        tint::cmd::PrintWGSL(std::cerr, *program);
+        tint::cmd::PrintWGSL(std::cerr, program);
         std::cerr << "Failed to generate: " << result.Failure() << std::endl;
         return false;
     }
@@ -602,7 +645,8 @@ bool GenerateSpirv(const tint::Program* program, const Options& options) {
 /// @param program the program to generate
 /// @param options the options that Tint was invoked with
 /// @returns true on success
-bool GenerateWgsl(const tint::Program* program, const Options& options) {
+bool GenerateWgsl([[maybe_unused]] const tint::Program& program,
+                  [[maybe_unused]] const Options& options) {
 #if TINT_BUILD_WGSL_WRITER
     // TODO(jrprice): Provide a way for the user to set non-default options.
     tint::wgsl::writer::Options gen_options;
@@ -621,6 +665,7 @@ bool GenerateWgsl(const tint::Program* program, const Options& options) {
         PrintHash(hash);
     }
 
+#if TINT_BUILD_WGSL_READER
     if (options.validate && options.skip_hash.count(hash) == 0) {
         // Attempt to re-parse the output program with Tint's WGSL reader.
         auto source = std::make_unique<tint::Source::File>(options.input_filename, result->wgsl);
@@ -632,11 +677,10 @@ bool GenerateWgsl(const tint::Program* program, const Options& options) {
             return false;
         }
     }
+#endif  // TINT_BUILD_WGSL_READER
 
     return true;
 #else
-    (void)program;
-    (void)options;
     std::cerr << "WGSL writer not enabled in tint build" << std::endl;
     return false;
 #endif  // TINT_BUILD_WGSL_WRITER
@@ -646,33 +690,36 @@ bool GenerateWgsl(const tint::Program* program, const Options& options) {
 /// @param program the program to generate
 /// @param options the options that Tint was invoked with
 /// @returns true on success
-bool GenerateMsl(const tint::Program* program, const Options& options) {
-#if TINT_BUILD_MSL_WRITER
+bool GenerateMsl([[maybe_unused]] const tint::Program& program,
+                 [[maybe_unused]] const Options& options) {
+#if !TINT_BUILD_MSL_WRITER
+    std::cerr << "MSL writer not enabled in tint build" << std::endl;
+    return false;
+#else
     // Remap resource numbers to a flat namespace.
     // TODO(crbug.com/tint/1501): Do this via Options::BindingMap.
-    const tint::Program* input_program = program;
-    auto flattened = tint::writer::FlattenBindings(program);
+    const tint::Program* input_program = &program;
+    auto flattened = tint::wgsl::FlattenBindings(program);
     if (flattened) {
         input_program = &*flattened;
     }
 
     // TODO(jrprice): Provide a way for the user to set non-default options.
     tint::msl::writer::Options gen_options;
-#if TINT_BUILD_IR
     gen_options.use_tint_ir = options.use_ir;
-#endif
     gen_options.disable_robustness = !options.enable_robustness;
     gen_options.disable_workgroup_init = options.disable_workgroup_init;
+    gen_options.pixel_local_options = options.pixel_local_options;
     gen_options.external_texture_options.bindings_map =
-        tint::cmd::GenerateExternalTextureBindings(input_program);
+        tint::cmd::GenerateExternalTextureBindings(*input_program);
     gen_options.array_length_from_uniform.ubo_binding = tint::BindingPoint{0, 30};
     gen_options.array_length_from_uniform.bindpoint_to_size_index.emplace(tint::BindingPoint{0, 0},
                                                                           0);
     gen_options.array_length_from_uniform.bindpoint_to_size_index.emplace(tint::BindingPoint{0, 1},
                                                                           1);
-    auto result = tint::msl::writer::Generate(input_program, gen_options);
+    auto result = tint::msl::writer::Generate(*input_program, gen_options);
     if (!result) {
-        tint::cmd::PrintWGSL(std::cerr, *program);
+        tint::cmd::PrintWGSL(std::cerr, program);
         std::cerr << "Failed to generate: " << result.Failure() << std::endl;
         return false;
     }
@@ -689,9 +736,12 @@ bool GenerateMsl(const tint::Program* program, const Options& options) {
     // Default to validating against MSL 1.2.
     // If subgroups are used, bump the version to 2.1.
     auto msl_version = tint::msl::validate::MslVersion::kMsl_1_2;
-    for (auto* enable : program->AST().Enables()) {
-        if (enable->HasExtension(tint::core::Extension::kChromiumExperimentalSubgroups)) {
-            msl_version = tint::msl::validate::MslVersion::kMsl_2_1;
+    for (auto* enable : program.AST().Enables()) {
+        if (enable->HasExtension(tint::wgsl::Extension::kChromiumExperimentalSubgroups)) {
+            msl_version = std::max(msl_version, tint::msl::validate::MslVersion::kMsl_2_1);
+        }
+        if (enable->HasExtension(tint::wgsl::Extension::kChromiumExperimentalPixelLocal)) {
+            msl_version = std::max(msl_version, tint::msl::validate::MslVersion::kMsl_2_3);
         }
     }
 
@@ -721,11 +771,6 @@ bool GenerateMsl(const tint::Program* program, const Options& options) {
     }
 
     return true;
-#else
-    (void)program;
-    (void)options;
-    std::cerr << "MSL writer not enabled in tint build" << std::endl;
-    return false;
 #endif  // TINT_BUILD_MSL_WRITER
 }
 
@@ -733,7 +778,7 @@ bool GenerateMsl(const tint::Program* program, const Options& options) {
 /// @param program the program to generate
 /// @param options the options that Tint was invoked with
 /// @returns true on success
-bool GenerateHlsl(const tint::Program* program, const Options& options) {
+bool GenerateHlsl(const tint::Program& program, const Options& options) {
 #if TINT_BUILD_HLSL_WRITER
     // TODO(jrprice): Provide a way for the user to set non-default options.
     tint::hlsl::writer::Options gen_options;
@@ -744,7 +789,7 @@ bool GenerateHlsl(const tint::Program* program, const Options& options) {
     gen_options.root_constant_binding_point = options.hlsl_root_constant_binding_point;
     auto result = tint::hlsl::writer::Generate(program, gen_options);
     if (!result) {
-        tint::cmd::PrintWGSL(std::cerr, *program);
+        tint::cmd::PrintWGSL(std::cerr, program);
         std::cerr << "Failed to generate: " << result.Failure() << std::endl;
         return false;
     }
@@ -772,10 +817,10 @@ bool GenerateHlsl(const tint::Program* program, const Options& options) {
             if (dxc.Found()) {
                 dxc_found = true;
 
-                auto enable_list = program->AST().Enables();
+                auto enable_list = program.AST().Enables();
                 bool dxc_require_16bit_types = false;
                 for (auto* enable : enable_list) {
-                    if (enable->HasExtension(tint::core::Extension::kF16)) {
+                    if (enable->HasExtension(tint::wgsl::Extension::kF16)) {
                         dxc_require_16bit_types = true;
                         break;
                     }
@@ -852,33 +897,17 @@ bool GenerateHlsl(const tint::Program* program, const Options& options) {
 #endif  // TINT_BUILD_HLSL_WRITER
 }
 
-#if TINT_BUILD_GLSL_WRITER
-EShLanguage pipeline_stage_to_esh_language(tint::ast::PipelineStage stage) {
-    switch (stage) {
-        case tint::ast::PipelineStage::kFragment:
-            return EShLangFragment;
-        case tint::ast::PipelineStage::kVertex:
-            return EShLangVertex;
-        case tint::ast::PipelineStage::kCompute:
-            return EShLangCompute;
-        default:
-            TINT_UNREACHABLE();
-            return EShLangVertex;
-    }
-}
-#endif
-
 /// Generate GLSL code for a program.
 /// @param program the program to generate
 /// @param options the options that Tint was invoked with
 /// @returns true on success
-bool GenerateGlsl(const tint::Program* program, const Options& options) {
-#if TINT_BUILD_GLSL_WRITER
-    if (options.validate) {
-        glslang::InitializeProcess();
-    }
-
-    auto generate = [&](const tint::Program* prg, const std::string entry_point_name) -> bool {
+bool GenerateGlsl([[maybe_unused]] const tint::Program& program,
+                  [[maybe_unused]] const Options& options) {
+#if !TINT_BUILD_GLSL_WRITER
+    std::cerr << "GLSL writer not enabled in tint build" << std::endl;
+    return false;
+#else
+    auto generate = [&](const tint::Program& prg, const std::string entry_point_name) -> bool {
         tint::glsl::writer::Options gen_options;
         gen_options.disable_robustness = !options.enable_robustness;
         gen_options.external_texture_options.bindings_map =
@@ -889,7 +918,7 @@ bool GenerateGlsl(const tint::Program* program, const Options& options) {
         gen_options.texture_builtins_from_uniform = std::move(textureBuiltinsFromUniform);
         auto result = tint::glsl::writer::Generate(prg, gen_options, entry_point_name);
         if (!result) {
-            tint::cmd::PrintWGSL(std::cerr, *prg);
+            tint::cmd::PrintWGSL(std::cerr, prg);
             std::cerr << "Failed to generate: " << result.Failure() << std::endl;
             return false;
         }
@@ -904,22 +933,16 @@ bool GenerateGlsl(const tint::Program* program, const Options& options) {
         }
 
         if (options.validate && options.skip_hash.count(hash) == 0) {
-            for (auto entry_pt : result->entry_points) {
-                EShLanguage lang = pipeline_stage_to_esh_language(entry_pt.second);
-                glslang::TShader shader(lang);
-                const char* strings[1] = {result->glsl.c_str()};
-                int lengths[1] = {static_cast<int>(result->glsl.length())};
-                shader.setStringsWithLengths(strings, lengths, 1);
-                shader.setEntryPoint("main");
-                bool glslang_result = shader.parse(GetDefaultResources(), 310, EEsProfile, false,
-                                                   false, EShMsgDefault);
-                if (!glslang_result) {
-                    std::cerr << "Error parsing GLSL shader:\n"
-                              << shader.getInfoLog() << "\n"
-                              << shader.getInfoDebugLog() << "\n";
-                    return false;
-                }
+#if !TINT_BUILD_GLSL_VALIDATOR
+            std::cerr << "GLSL validator not enabled in tint build" << std::endl;
+            return false;
+#else
+            auto val = tint::glsl::validate::Validate(result->glsl, result->entry_points);
+            if (!val) {
+                std::cerr << val.Failure();
+                return false;
             }
+#endif
         }
         return true;
     };
@@ -937,11 +960,6 @@ bool GenerateGlsl(const tint::Program* program, const Options& options) {
         success &= generate(program, entry_point.name);
     }
     return success;
-#else
-    (void)program;
-    (void)options;
-    std::cerr << "GLSL writer not enabled in tint build" << std::endl;
-    return false;
 #endif  // TINT_BUILD_GLSL_WRITER
 }
 
@@ -1052,20 +1070,13 @@ int main(int argc, const char** argv) {
         options.format = Format::kSpvAsm;
     }
 
-    std::unique_ptr<tint::Program> program;
-    std::unique_ptr<tint::Source::File> source_file;
-
-    {
-        tint::cmd::LoadProgramOptions opts;
-        opts.filename = options.input_filename;
+    tint::cmd::LoadProgramOptions opts;
+    opts.filename = options.input_filename;
 #if TINT_BUILD_SPV_READER
-        opts.spirv_reader_options = options.spirv_reader_options;
+    opts.spirv_reader_options = options.spirv_reader_options;
 #endif
 
-        auto info = tint::cmd::LoadProgramInfo(opts);
-        program = std::move(info.program);
-        source_file = std::move(info.source_file);
-    }
+    auto info = tint::cmd::LoadProgramInfo(opts);
 
     if (options.parse_only) {
         return 1;
@@ -1075,7 +1086,7 @@ int main(int argc, const char** argv) {
     if (options.dump_ast) {
         tint::wgsl::writer::Options gen_options;
         gen_options.use_syntax_tree_writer = true;
-        auto result = tint::wgsl::writer::Generate(program.get(), gen_options);
+        auto result = tint::wgsl::writer::Generate(info.program, gen_options);
         if (!result) {
             std::cerr << "Failed to dump AST: " << result.Failure() << std::endl;
         } else {
@@ -1084,22 +1095,21 @@ int main(int argc, const char** argv) {
     }
 #endif  // TINT_BUILD_SYNTAX_TREE_WRITER
 
-#if TINT_BUILD_WGSL_READER && TINT_BUILD_IR
+#if TINT_BUILD_WGSL_READER
     if (options.dump_ir) {
-        auto result = tint::wgsl::reader::ProgramToIR(program.get());
+        auto result = tint::wgsl::reader::ProgramToIR(info.program);
         if (!result) {
             std::cerr << "Failed to build IR from program: " << result.Failure() << std::endl;
         } else {
             auto mod = result.Move();
             if (options.dump_ir) {
-                tint::core::ir::Disassembler d(mod);
-                std::cout << d.Disassemble() << std::endl;
+                std::cout << tint::core::ir::Disassemble(mod) << std::endl;
             }
         }
     }
-#endif  // TINT_BUILD_WGSL_READER && TINT_BUILD_IR
+#endif  // TINT_BUILD_WGSL_READER
 
-    tint::inspector::Inspector inspector(program.get());
+    tint::inspector::Inspector inspector(info.program);
     if (options.dump_inspector_bindings) {
         tint::cmd::PrintInspectorBindings(inspector);
     }
@@ -1181,32 +1191,30 @@ int main(int argc, const char** argv) {
     }
 
     tint::ast::transform::DataMap outputs;
-    auto out = transform_manager.Run(program.get(), std::move(transform_inputs), outputs);
-    if (!out.IsValid()) {
-        tint::cmd::PrintWGSL(std::cerr, out);
-        std::cerr << out.Diagnostics().str() << std::endl;
+    auto program = transform_manager.Run(info.program, std::move(transform_inputs), outputs);
+    if (!program.IsValid()) {
+        tint::cmd::PrintWGSL(std::cerr, program);
+        std::cerr << program.Diagnostics() << std::endl;
         return 1;
     }
-
-    *program = std::move(out);
 
     bool success = false;
     switch (options.format) {
         case Format::kSpirv:
         case Format::kSpvAsm:
-            success = GenerateSpirv(program.get(), options);
+            success = GenerateSpirv(program, options);
             break;
         case Format::kWgsl:
-            success = GenerateWgsl(program.get(), options);
+            success = GenerateWgsl(program, options);
             break;
         case Format::kMsl:
-            success = GenerateMsl(program.get(), options);
+            success = GenerateMsl(program, options);
             break;
         case Format::kHlsl:
-            success = GenerateHlsl(program.get(), options);
+            success = GenerateHlsl(program, options);
             break;
         case Format::kGlsl:
-            success = GenerateGlsl(program.get(), options);
+            success = GenerateGlsl(program, options);
             break;
         case Format::kNone:
             break;

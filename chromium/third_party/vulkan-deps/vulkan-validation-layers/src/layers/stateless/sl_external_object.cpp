@@ -160,14 +160,15 @@ bool StatelessValidation::manual_PreCallValidateImportSemaphoreWin32HandleKHR(Vk
     static constexpr auto kNameAllowedTypes =
         VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT | VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_D3D12_FENCE_BIT;
     if ((info->handleType & kNameAllowedTypes) == 0 && info->name) {
-        skip |= LogError("VUID-VkImportSemaphoreWin32HandleInfoKHR-handleType-01466", info->semaphore,
-                         error_obj.location.dot(Field::info).dot(Field::name), "(%p) must be NULL if handleType is %s", info->name,
-                         string_VkExternalSemaphoreHandleTypeFlagBits(info->handleType));
+        skip |=
+            LogError("VUID-VkImportSemaphoreWin32HandleInfoKHR-handleType-01466", info->semaphore,
+                     error_obj.location.dot(Field::info).dot(Field::name), "(%p) must be NULL if handleType is %s",
+                     reinterpret_cast<const void *>(info->name), string_VkExternalSemaphoreHandleTypeFlagBits(info->handleType));
     }
     if (info->handle && info->name) {
         skip |=
             LogError("VUID-VkImportSemaphoreWin32HandleInfoKHR-handle-01469", info->semaphore, error_obj.location.dot(Field::info),
-                     "both handle (%p) and name (%p) are non-NULL", info->handle, info->name);
+                     "both handle (%p) and name (%p) are non-NULL", info->handle, reinterpret_cast<const void *>(info->name));
     }
     return skip;
 }
@@ -194,12 +195,12 @@ bool StatelessValidation::manual_PreCallValidateImportFenceWin32HandleKHR(VkDevi
     static constexpr auto kNameAllowedTypes = VK_EXTERNAL_FENCE_HANDLE_TYPE_OPAQUE_WIN32_BIT;
     if ((info->handleType & kNameAllowedTypes) == 0 && info->name) {
         skip |= LogError("VUID-VkImportFenceWin32HandleInfoKHR-handleType-01459", info->fence,
-                         error_obj.location.dot(Field::info).dot(Field::name), "(%p) must be NULL if handleType is %s", info->name,
-                         string_VkExternalFenceHandleTypeFlagBits(info->handleType));
+                         error_obj.location.dot(Field::info).dot(Field::name), "(%p) must be NULL if handleType is %s",
+                         reinterpret_cast<const void *>(info->name), string_VkExternalFenceHandleTypeFlagBits(info->handleType));
     }
     if (info->handle && info->name) {
         skip |= LogError("VUID-VkImportFenceWin32HandleInfoKHR-handle-01462", info->fence, error_obj.location.dot(Field::info),
-                         "both handle (%p) and name (%p) are non-NULL", info->handle, info->name);
+                         "both handle (%p) and name (%p) are non-NULL", info->handle, reinterpret_cast<const void *>(info->name));
     }
     return skip;
 }
@@ -216,7 +217,7 @@ bool StatelessValidation::manual_PreCallValidateGetFenceWin32HandleKHR(VkDevice 
 bool StatelessValidation::ExportMetalObjectsPNextUtil(VkExportMetalObjectTypeFlagBitsEXT bit, const char *vuid, const Location &loc,
                                                       const char *sType, const void *pNext) const {
     bool skip = false;
-    auto export_metal_object_info = LvlFindInChain<VkExportMetalObjectCreateInfoEXT>(pNext);
+    auto export_metal_object_info = vku::FindStructInPNextChain<VkExportMetalObjectCreateInfoEXT>(pNext);
     while (export_metal_object_info) {
         if (export_metal_object_info->exportObjectType != bit) {
             skip |= LogError(vuid, device, loc,
@@ -224,7 +225,7 @@ bool StatelessValidation::ExportMetalObjectsPNextUtil(VkExportMetalObjectTypeFla
                              "VkExportMetalObjectCreateInfoEXT structs with exportObjectType of %s are allowed.",
                              string_VkExportMetalObjectTypeFlagBitsEXT(export_metal_object_info->exportObjectType), sType);
         }
-        export_metal_object_info = LvlFindInChain<VkExportMetalObjectCreateInfoEXT>(export_metal_object_info->pNext);
+        export_metal_object_info = vku::FindStructInPNextChain<VkExportMetalObjectCreateInfoEXT>(export_metal_object_info->pNext);
     }
     return skip;
 }
@@ -241,12 +242,10 @@ bool StatelessValidation::manual_PreCallValidateExportMetalObjectsEXT(VkDevice d
         VK_STRUCTURE_TYPE_EXPORT_METAL_DEVICE_INFO_EXT,       VK_STRUCTURE_TYPE_EXPORT_METAL_IO_SURFACE_INFO_EXT,
         VK_STRUCTURE_TYPE_EXPORT_METAL_SHARED_EVENT_INFO_EXT, VK_STRUCTURE_TYPE_EXPORT_METAL_TEXTURE_INFO_EXT,
     };
-    skip |= ValidateStructPnext(error_obj.location, "pMetalObjectsInfo->pNext",
-                                "VkExportMetalBufferInfoEXT, VkExportMetalCommandQueueInfoEXT, VkExportMetalDeviceInfoEXT, "
-                                "VkExportMetalIOSurfaceInfoEXT, VkExportMetalSharedEventInfoEXT, VkExportMetalTextureInfoEXT",
-                                pMetalObjectsInfo->pNext, allowed_structs.size(), allowed_structs.data(),
-                                GeneratedVulkanHeaderVersion, "VUID-VkExportMetalObjectsInfoEXT-pNext-pNext",
-                                "VUID-VkExportMetalObjectsInfoEXT-sType-unique", false, true);
+    skip |=
+        ValidateStructPnext(error_obj.location.dot(Field::pMetalObjectsInfo), pMetalObjectsInfo->pNext, allowed_structs.size(),
+                            allowed_structs.data(), GeneratedVulkanHeaderVersion, "VUID-VkExportMetalObjectsInfoEXT-pNext-pNext",
+                            "VUID-VkExportMetalObjectsInfoEXT-sType-unique", false, true);
     return skip;
 }
 #endif  // VK_USE_PLATFORM_METAL_EXT

@@ -26,7 +26,7 @@
 
 // Version number for shader translation API.
 // It is incremented every time the API changes.
-#define ANGLE_SH_VERSION 339
+#define ANGLE_SH_VERSION 342
 
 enum ShShaderSpec
 {
@@ -421,6 +421,9 @@ struct ShCompileOptions
 
     // Use an integer uniform to pass a bitset of enabled clip distances.
     uint64_t emulateClipDistanceState : 1;
+
+    // Use a uniform to emulate GL_CLIP_ORIGIN_EXT state.
+    uint64_t emulateClipOrigin : 1;
 
     // issuetracker.google.com/266235549 add aliased memory decoration to ssbo if the variable is
     // not declared with "restrict" memory qualifier in GLSL
@@ -972,9 +975,10 @@ enum NonSemanticInstruction
     kNonSemanticOverview,
     // The instruction identifying the entry to the shader, i.e. at the start of main()
     kNonSemanticEnter,
-    // The instruction identifying where vertex data is output.  This is before return from main()
-    // in vertex and tessellation shaders, and before OpEmitVertex in geometry shaders.
-    kNonSemanticVertexOutput,
+    // The instruction identifying where vertex or fragment data is output.
+    // This is before return from main() in vertex, tessellation, and fragment shaders,
+    // and before OpEmitVertex in geometry shaders.
+    kNonSemanticOutput,
     // The instruction identifying the location where transform feedback emulation should be
     // written.
     kNonSemanticTransformFeedbackEmulation,

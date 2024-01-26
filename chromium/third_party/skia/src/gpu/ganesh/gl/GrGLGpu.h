@@ -22,7 +22,6 @@
 #include "include/private/base/SkTArray.h"
 #include "include/private/base/SkTemplates.h"
 #include "include/private/base/SkTo.h"
-#include "include/private/gpu/ganesh/GrGLTypesPriv.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/core/SkChecksum.h"
 #include "src/core/SkLRUCache.h"
@@ -46,6 +45,7 @@
 #include "src/gpu/ganesh/gl/GrGLDefines.h"
 #include "src/gpu/ganesh/gl/GrGLRenderTarget.h"
 #include "src/gpu/ganesh/gl/GrGLTexture.h"
+#include "src/gpu/ganesh/gl/GrGLTypesPriv.h"
 #include "src/gpu/ganesh/gl/GrGLUtil.h"
 #include "src/gpu/ganesh/gl/GrGLVertexArray.h"
 
@@ -83,11 +83,14 @@ namespace skgpu {
 class RefCntedCallback;
 class Swizzle;
 enum class Budgeted : bool;
+enum class Mipmapped : bool;
 }
 
 class GrGLGpu final : public GrGpu {
 public:
-    static sk_sp<GrGpu> Make(sk_sp<const GrGLInterface>, const GrContextOptions&, GrDirectContext*);
+    static std::unique_ptr<GrGpu> Make(sk_sp<const GrGLInterface>,
+                                       const GrContextOptions&,
+                                       GrDirectContext*);
     ~GrGLGpu() override;
 
     void disconnect(DisconnectType) override;
@@ -280,13 +283,13 @@ private:
     GrBackendTexture onCreateBackendTexture(SkISize dimensions,
                                             const GrBackendFormat&,
                                             GrRenderable,
-                                            GrMipmapped,
+                                            skgpu::Mipmapped,
                                             GrProtected,
                                             std::string_view label) override;
 
     GrBackendTexture onCreateCompressedBackendTexture(SkISize dimensions,
                                                       const GrBackendFormat&,
-                                                      GrMipmapped,
+                                                      skgpu::Mipmapped,
                                                       GrProtected) override;
 
     bool onClearBackendTexture(const GrBackendTexture&,
@@ -316,7 +319,7 @@ private:
     sk_sp<GrTexture> onCreateCompressedTexture(SkISize dimensions,
                                                const GrBackendFormat&,
                                                skgpu::Budgeted,
-                                               GrMipmapped,
+                                               skgpu::Mipmapped,
                                                GrProtected,
                                                const void* data,
                                                size_t dataSize) override;
@@ -367,7 +370,7 @@ private:
     GrGLuint createCompressedTexture2D(SkISize dimensions,
                                        SkTextureCompressionType compression,
                                        GrGLFormat,
-                                       GrMipmapped,
+                                       skgpu::Mipmapped,
                                        GrProtected,
                                        GrGLTextureParameters::SamplerOverriddenState*);
 
@@ -448,7 +451,7 @@ private:
             const skia_private::TArray<GrSurfaceProxy*, true>& sampledProxies,
             GrXferBarrierFlags renderPassXferBarriers) override;
 
-    bool onSubmitToGpu(bool syncCpu) override;
+    bool onSubmitToGpu(GrSyncCpu sync) override;
 
     bool waitSync(GrGLsync, uint64_t timeout, bool flush);
 
@@ -566,9 +569,10 @@ private:
     bool uploadCompressedTexData(SkTextureCompressionType compressionType,
                                  GrGLFormat,
                                  SkISize dimensions,
-                                 GrMipmapped,
+                                 skgpu::Mipmapped,
                                  GrGLenum target,
-                                 const void* data, size_t dataSize);
+                                 const void* data,
+                                 size_t dataSize);
 
     // Calls one of various versions of renderBufferStorageMultisample.
     bool renderbufferStorageMSAA(const GrGLContext& ctx, int sampleCount, GrGLenum format,

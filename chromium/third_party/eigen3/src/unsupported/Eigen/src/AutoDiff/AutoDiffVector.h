@@ -10,6 +10,7 @@
 #ifndef EIGEN_AUTODIFF_VECTOR_H
 #define EIGEN_AUTODIFF_VECTOR_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

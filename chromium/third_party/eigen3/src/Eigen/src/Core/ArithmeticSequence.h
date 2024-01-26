@@ -10,6 +10,7 @@
 #ifndef EIGEN_ARITHMETIC_SEQUENCE_H
 #define EIGEN_ARITHMETIC_SEQUENCE_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

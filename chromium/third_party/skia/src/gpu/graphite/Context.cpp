@@ -17,8 +17,10 @@
 #include "include/gpu/graphite/TextureInfo.h"
 #include "src/base/SkRectMemcpy.h"
 #include "src/core/SkConvertPixels.h"
+#include "src/core/SkTraceEvent.h"
 #include "src/core/SkYUVMath.h"
 #include "src/gpu/RefCntedCallback.h"
+#include "src/gpu/graphite/AtlasProvider.h"
 #include "src/gpu/graphite/BufferManager.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/ClientMappedBufferManager.h"
@@ -47,6 +49,10 @@
 #include "src/gpu/graphite/TextureUtils.h"
 #include "src/gpu/graphite/UploadTask.h"
 
+#if defined(GRAPHITE_TEST_UTILS)
+#include "include/private/gpu/graphite/ContextOptionsPriv.h"
+#endif
+
 namespace skgpu::graphite {
 
 #define ASSERT_SINGLE_OWNER SKGPU_ASSERT_SINGLE_OWNER(this->singleOwner())
@@ -66,9 +72,6 @@ Context::Context(sk_sp<SharedContext> sharedContext,
                  const ContextOptions& options)
         : fSharedContext(std::move(sharedContext))
         , fQueueManager(std::move(queueManager))
-#if defined(GRAPHITE_TEST_UTILS)
-        , fStoreContextRefInRecorder(options.fStoreContextRefInRecorder)
-#endif
         , fContextID(ContextID::Next()) {
     // We have to create this outside the initializer list because we need to pass in the Context's
     // SingleOwner object and it is declared last
@@ -77,6 +80,11 @@ Context::Context(sk_sp<SharedContext> sharedContext,
                                                              options.fGpuBudgetInBytes);
     fMappedBufferManager = std::make_unique<ClientMappedBufferManager>(this->contextID());
     fPlotUploadTracker = std::make_unique<PlotUploadTracker>();
+#if defined(GRAPHITE_TEST_UTILS)
+    if (options.fOptionsPriv) {
+        fStoreContextRefInRecorder = options.fOptionsPriv->fStoreContextRefInRecorder;
+    }
+#endif
 }
 
 Context::~Context() {
@@ -240,6 +248,8 @@ void Context::asyncReadPixels(const TextureProxy* proxy,
                               const SkIRect& srcRect,
                               SkImage::ReadPixelsCallback callback,
                               SkImage::ReadPixelsContext callbackContext) {
+    TRACE_EVENT2("skia.gpu", TRACE_FUNC, "width", srcRect.width(), "height", srcRect.height());
+
     if (!proxy || proxy->textureInfo().isProtected() == Protected::kYes) {
         callback(callbackContext, nullptr);
         return;
@@ -472,6 +482,8 @@ void Context::asyncReadPixelsYUV420(Recorder* recorder,
                                     const SkIRect& srcRect,
                                     SkImage::ReadPixelsCallback callback,
                                     SkImage::ReadPixelsContext callbackContext) {
+    TRACE_EVENT2("skia.gpu", TRACE_FUNC, "width", srcRect.width(), "height", srcRect.height());
+
     // Make three or four Surfaces to draw the YUV[A] planes into
     SkImageInfo yaInfo = SkImageInfo::MakeA8(srcRect.size());
     sk_sp<SkSurface> ySurface = Surface::MakeGraphite(recorder, yaInfo, Budgeted::kNo);
@@ -728,7 +740,7 @@ void Context::checkAsyncWorkCompletion() {
     fQueueManager->checkForFinishedWork(SyncToCpu::kNo);
 }
 
-void Context::deleteBackendTexture(BackendTexture& texture) {
+void Context::deleteBackendTexture(const BackendTexture& texture) {
     ASSERT_SINGLE_OWNER
 
     if (!texture.isValid() || texture.backend() != this->backend()) {
@@ -752,6 +764,11 @@ void Context::performDeferredCleanup(std::chrono::milliseconds msNotUsed) {
 
     auto purgeTime = skgpu::StdSteadyClock::now() - msNotUsed;
     fResourceProvider->purgeResourcesNotUsedSince(purgeTime);
+}
+
+size_t Context::currentBudgetedBytes() const {
+    ASSERT_SINGLE_OWNER
+    return fResourceProvider->getResourceCacheCurrentBudgetedBytes();
 }
 
 ///////////////////////////////////////////////////////////////////////////////////
@@ -797,6 +814,23 @@ void ContextPriv::deregisterRecorder(const Recorder* recorder) {
             return;
         }
     }
+}
+
+bool ContextPriv::supportsPathRendererStrategy(PathRendererStrategy strategy) {
+    AtlasProvider::PathAtlasFlagsBitMask pathAtlasFlags =
+            AtlasProvider::QueryPathAtlasSupport(this->caps());
+    switch (strategy) {
+        case PathRendererStrategy::kDefault:
+            return true;
+        case PathRendererStrategy::kComputeAnalyticAA:
+            return SkToBool(pathAtlasFlags & AtlasProvider::PathAtlasFlags::kCompute);
+        case PathRendererStrategy::kRasterAA:
+            return SkToBool(pathAtlasFlags & AtlasProvider::PathAtlasFlags::kRaster);
+        case PathRendererStrategy::kTessellation:
+            return true;
+    }
+
+    return false;
 }
 
 #endif

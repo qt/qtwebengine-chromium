@@ -10,6 +10,7 @@
 #ifndef EIGEN_ARRAYBASE_H
 #define EIGEN_ARRAYBASE_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen { 
@@ -91,11 +92,11 @@ template<typename Derived> class ArrayBase
 
 #define EIGEN_CURRENT_STORAGE_BASE_CLASS Eigen::ArrayBase
 #define EIGEN_DOC_UNARY_ADDONS(X,Y)
-#   include "../plugins/MatrixCwiseUnaryOps.h"
-#   include "../plugins/ArrayCwiseUnaryOps.h"
-#   include "../plugins/CommonCwiseBinaryOps.h"
-#   include "../plugins/MatrixCwiseBinaryOps.h"
-#   include "../plugins/ArrayCwiseBinaryOps.h"
+#   include "../plugins/MatrixCwiseUnaryOps.inc"
+#   include "../plugins/ArrayCwiseUnaryOps.inc"
+#   include "../plugins/CommonCwiseBinaryOps.inc"
+#   include "../plugins/MatrixCwiseBinaryOps.inc"
+#   include "../plugins/ArrayCwiseBinaryOps.inc"
 #   ifdef EIGEN_ARRAYBASE_PLUGIN
 #     include EIGEN_ARRAYBASE_PLUGIN
 #   endif

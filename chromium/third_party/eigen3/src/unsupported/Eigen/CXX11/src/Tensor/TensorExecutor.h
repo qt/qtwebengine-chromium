@@ -10,6 +10,7 @@
 #ifndef EIGEN_CXX11_TENSOR_TENSOR_EXECUTOR_H
 #define EIGEN_CXX11_TENSOR_TENSOR_EXECUTOR_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {
@@ -260,7 +261,7 @@ TensorExecutorTilingContext<TensorBlockMapper> GetTensorExecutorTilingContext(
   const size_t align = numext::maxi(EIGEN_MAX_ALIGN_BYTES, 1);
   const size_t aligned_blocksize =
       align *
-      divup<size_t>(block_size * sizeof(typename Evaluator::Scalar), align);
+      numext::div_ceil<size_t>(block_size * sizeof(typename Evaluator::Scalar), align);
 
   return {block_mapper, requirements.cost_per_coeff * block_size,
           aligned_blocksize};
@@ -660,7 +661,7 @@ EIGEN_STRONG_INLINE void TensorExecutor<Expression, GpuDevice, Vectorizable, Til
         block_size;
     const StorageIndex size = array_prod(evaluator.dimensions());
     // Create a least one block to ensure we won't crash when tensorflow calls with tensors of size 0.
-    const int num_blocks = numext::maxi<int>(numext::mini<int>(max_blocks, divup<int>(size, block_size)), 1);
+    const int num_blocks = numext::maxi<int>(numext::mini<int>(max_blocks, numext::div_ceil<int>(size, block_size)), 1);
 
     LAUNCH_GPU_KERNEL(
         (EigenMetaKernel<TensorEvaluator<Expression, GpuDevice>, StorageIndex>),

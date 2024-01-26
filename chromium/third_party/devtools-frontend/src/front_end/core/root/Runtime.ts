@@ -303,7 +303,6 @@ export enum ExperimentName {
   IMPORTANT_DOM_PROPERTIES = 'importantDOMProperties',
   JUST_MY_CODE = 'justMyCode',
   PRELOADING_STATUS_PANEL = 'preloadingStatusPanel',
-  DISABLE_COLOR_FORMAT_SETTING = 'disableColorFormatSetting',
   TIMELINE_AS_CONSOLE_PROFILE_RESULT_PANEL = 'timelineAsConsoleProfileResultPanel',
   OUTERMOST_TARGET_SELECTOR = 'outermostTargetSelector',
   JS_PROFILER_TEMP_ENABLE = 'jsProfilerTemporarilyEnable',
@@ -312,7 +311,9 @@ export enum ExperimentName {
   SELF_XSS_WARNING = 'selfXssWarning',
   USE_SOURCE_MAP_SCOPES = 'useSourceMapScopes',
   STORAGE_BUCKETS_TREE = 'storageBucketsTree',
-  DELETE_OVERRIDES_TEMP_ENABLE = 'deleteOverridesTemporarilyEnable',
+  NETWORK_PANEL_FILTER_BAR_REDESIGN = 'networkPanelFilterBarRedesign',
+  BREADCRUMBS_PERFORMANCE_PANEL = 'breadcrumbsPerformancePanel',
+  TRACK_CONTEXT_MENU = 'trackContextMenu',
 }
 
 // TODO(crbug.com/1167717): Make this a const enum again

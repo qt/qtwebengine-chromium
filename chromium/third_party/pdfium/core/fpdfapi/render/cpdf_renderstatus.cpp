@@ -83,19 +83,16 @@ CFX_FillRenderOptions GetFillOptionsForDrawPathWithBlend(
     CFX_FillRenderOptions::FillType fill_type,
     bool is_stroke,
     bool is_type3_char) {
-  CFX_FillRenderOptions fill_options(fill_type);
-  if (fill_type != CFX_FillRenderOptions::FillType::kNoFill && options.bRectAA)
-    fill_options.rect_aa = true;
-  if (options.bNoPathSmooth)
-    fill_options.aliased_path = true;
-  if (path_obj->m_GeneralState.GetStrokeAdjust())
-    fill_options.adjust_stroke = true;
-  if (is_stroke)
-    fill_options.stroke = true;
-  if (is_type3_char)
-    fill_options.text_mode = true;
-
-  return fill_options;
+  const bool rect_aa = (fill_type != CFX_FillRenderOptions::FillType::kNoFill &&
+                        options.bRectAA);
+  return {
+      .fill_type = fill_type,
+      .adjust_stroke = path_obj->m_GeneralState.GetStrokeAdjust(),
+      .aliased_path = options.bNoPathSmooth,
+      .rect_aa = rect_aa,
+      .stroke = is_stroke,
+      .text_mode = is_type3_char,
+  };
 }
 
 CFX_FillRenderOptions GetFillOptionsForDrawTextPath(
@@ -103,17 +100,12 @@ CFX_FillRenderOptions GetFillOptionsForDrawTextPath(
     const CPDF_TextObject* text_obj,
     bool is_stroke,
     bool is_fill) {
-  CFX_FillRenderOptions fill_options;
-  if (is_stroke && is_fill) {
-    fill_options.stroke = true;
-    fill_options.stroke_text_mode = true;
-  }
-  if (text_obj->m_GeneralState.GetStrokeAdjust())
-    fill_options.adjust_stroke = true;
-  if (options.bNoTextSmooth)
-    fill_options.aliased_path = true;
-
-  return fill_options;
+  return {
+      .adjust_stroke = text_obj->m_GeneralState.GetStrokeAdjust(),
+      .aliased_path = options.bNoTextSmooth,
+      .stroke = (is_stroke && is_fill),
+      .stroke_text_mode = (is_stroke && is_fill),
+  };
 }
 
 FXDIB_Format GetFormatForLuminosity(bool is_luminosity) {
@@ -122,8 +114,9 @@ FXDIB_Format GetFormatForLuminosity(bool is_luminosity) {
 #if BUILDFLAG(IS_APPLE)
   return FXDIB_Format::kRgb32;
 #else
-  if (CFX_DefaultRenderDevice::SkiaIsDefaultRenderer())
+  if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
     return FXDIB_Format::kRgb32;
+  }
   return FXDIB_Format::kRgb;
 #endif
 }
@@ -492,8 +485,9 @@ void CPDF_RenderStatus::ProcessClipPath(const CPDF_ClipPath& ClipPath,
     if (pPath->GetPoints().empty()) {
       CFX_Path empty_path;
       empty_path.AppendRect(-1, -1, 0, 0);
-      m_pDevice->SetClip_PathFill(empty_path, nullptr,
-                                  CFX_FillRenderOptions::WindingOptions());
+      m_pDevice->SetClip_PathFill(
+          empty_path, nullptr,
+          {.fill_type = CFX_FillRenderOptions::FillType::kWinding});
     } else {
       m_pDevice->SetClip_PathFill(
           *pPath, &mtObj2Device,
@@ -518,13 +512,13 @@ void CPDF_RenderStatus::ProcessClipPath(const CPDF_ClipPath& ClipPath,
       ProcessText(pText, mtObj2Device, pTextClippingPath.get());
       continue;
     }
-
     if (!pTextClippingPath)
       continue;
 
-    CFX_FillRenderOptions fill_options(CFX_FillRenderOptions::WindingOptions());
-    if (m_Options.GetOptions().bNoTextSmooth)
-      fill_options.aliased_path = true;
+    const CFX_FillRenderOptions fill_options = {
+        .fill_type = CFX_FillRenderOptions::FillType::kWinding,
+        .aliased_path = m_Options.GetOptions().bNoTextSmooth,
+    };
     m_pDevice->SetClip_PathFill(*pTextClippingPath, nullptr, fill_options);
     pTextClippingPath.reset();
   }
@@ -551,10 +545,10 @@ bool CPDF_RenderStatus::SelectClipPath(const CPDF_PathObject* path_obj,
                                          &path_matrix,
                                          path_obj->m_GraphState.GetObject());
   }
-  CFX_FillRenderOptions fill_options(path_obj->filltype());
-  if (m_Options.GetOptions().bNoPathSmooth) {
-    fill_options.aliased_path = true;
-  }
+  const CFX_FillRenderOptions fill_options = {
+      .fill_type = path_obj->filltype(),
+      .aliased_path = m_Options.GetOptions().bNoPathSmooth,
+  };
   return m_pDevice->SetClip_PathFill(*path_obj->path().GetObject(),
                                      &path_matrix, fill_options);
 }
@@ -657,12 +651,12 @@ bool CPDF_RenderStatus::ProcessTransparency(CPDF_PageObject* pPageObj,
   bitmap_render.Initialize(nullptr, nullptr);
   bitmap_render.ProcessObjectNoClip(pPageObj, new_matrix);
 #if defined(_SKIA_SUPPORT_)
-  if (CFX_DefaultRenderDevice::SkiaIsDefaultRenderer()) {
+  if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
     // Safe because `CFX_SkiaDeviceDriver` always uses pre-multiplied alpha.
     // TODO(crbug.com/pdfium/2011): Remove the need for this.
     bitmap_device.GetBitmap()->ForcePreMultiply();
   }
-#endif  // _SKIA_SUPPORT
+#endif
   m_bStopped = bitmap_render.m_bStopped;
   if (pSMaskDict) {
     CFX_Matrix smask_matrix =
@@ -683,6 +677,11 @@ bool CPDF_RenderStatus::ProcessTransparency(CPDF_PageObject* pPageObj,
   if (pPageObj->IsForm()) {
     transparency.SetGroup();
   }
+#if defined(_SKIA_SUPPORT_)
+  if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
+    bitmap_device.GetBitmap()->UnPreMultiply();
+  }
+#endif
   CompositeDIBitmap(bitmap_device.GetBitmap(), rect.left, rect.top, 0, 255,
                     blend_type, transparency);
   return true;
@@ -701,21 +700,19 @@ RetainPtr<CFX_DIBitmap> CPDF_RenderStatus::GetBackdrop(
   int width = bbox.Width();
   int height = bbox.Height();
   auto pBackdrop = pdfium::MakeRetain<CFX_DIBitmap>();
-  if (bBackAlphaRequired && !m_bDropObjects)
-    pBackdrop->Create(width, height, FXDIB_Format::kArgb);
-  else
-    m_pDevice->CreateCompatibleBitmap(pBackdrop, width, height);
+  if (bBackAlphaRequired && !m_bDropObjects) {
+    if (!pBackdrop->Create(width, height, FXDIB_Format::kArgb)) {
+      return nullptr;
+    }
+  } else {
+    if (!m_pDevice->CreateCompatibleBitmap(pBackdrop, width, height)) {
+      return nullptr;
+    }
+  }
 
-  if (pBackdrop->GetBuffer().empty())
-    return nullptr;
-
-  bool bNeedDraw;
-  if (pBackdrop->IsAlphaFormat())
-    bNeedDraw = !(m_pDevice->GetRenderCaps() & FXRC_ALPHA_OUTPUT);
-  else
-    bNeedDraw = !(m_pDevice->GetRenderCaps() & FXRC_GET_BITS);
-
-  if (!bNeedDraw) {
+  const int cap_to_check =
+      pBackdrop->IsAlphaFormat() ? FXRC_ALPHA_OUTPUT : FXRC_GET_BITS;
+  if (m_pDevice->GetRenderCaps() & cap_to_check) {
     m_pDevice->GetDIBits(pBackdrop, bbox.left, bbox.top);
     return pBackdrop;
   }
@@ -793,13 +790,11 @@ bool CPDF_RenderStatus::ProcessText(CPDF_TextObject* textobj,
       case TextRenderingMode::MODE_INVISIBLE:
         // Already handled above, but the compiler is not smart enough to
         // realize it.
-        NOTREACHED();
-        return true;
+        NOTREACHED_NORETURN();
       case TextRenderingMode::MODE_CLIP:
         return true;
       case TextRenderingMode::MODE_UNKNOWN:
-        NOTREACHED();
-        return false;
+        NOTREACHED_NORETURN();
     }
   }
   FX_ARGB stroke_argb = 0;
@@ -1199,7 +1194,7 @@ void CPDF_RenderStatus::CompositeDIBitmap(
   if (blend_mode == BlendMode::kNormal) {
     if (!pDIBitmap->IsMaskFormat()) {
       if (bitmap_alpha < 255) {
-        if (CFX_DefaultRenderDevice::SkiaIsDefaultRenderer()) {
+        if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
           std::unique_ptr<CFX_ImageRenderer> dummy;
           CFX_Matrix m = CFX_RenderDevice::GetFlipMatrix(
               pDIBitmap->GetWidth(), pDIBitmap->GetHeight(), left, top);
@@ -1376,7 +1371,7 @@ RetainPtr<CFX_DIBitmap> CPDF_RenderStatus::LoadSMask(
     std::vector<float> results(pFunc->CountOutputs());
     for (size_t i = 0; i < transfers.size(); ++i) {
       float input = i / 255.0f;
-      pFunc->Call(pdfium::make_span(&input, 1), results);
+      pFunc->Call(pdfium::make_span(&input, 1u), results);
       transfers[i] = FXSYS_roundf(results[0] * 255);
     }
   } else {

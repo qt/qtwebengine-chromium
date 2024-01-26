@@ -10,6 +10,7 @@
 #ifndef EIGEN_CXX11_TENSOR_TENSOR_FORCED_EVAL_H
 #define EIGEN_CXX11_TENSOR_TENSOR_FORCED_EVAL_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

@@ -11,6 +11,7 @@
 #ifndef EIGEN_GMRES_H
 #define EIGEN_GMRES_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

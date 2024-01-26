@@ -94,6 +94,11 @@ class Domain {
     return feature / kDomainSize;
   }
 
+  // Returns the index into the domain of a feature.
+  static size_t FeatureToIndexInDomain(feature_t feature) {
+    return feature % kDomainSize;
+  }
+
  private:
   const size_t domain_id_;
 };
@@ -155,7 +160,7 @@ inline constexpr Domain kCMPHamming = {__COUNTER__};
 inline constexpr Domain kCMPDiffLog = {__COUNTER__};
 
 // Features derived from observing function call stacks.
-constexpr Domain kCallStack = {__COUNTER__};
+inline constexpr Domain kCallStack = {__COUNTER__};
 // Features derived from computing (bounded) control flow paths.
 inline constexpr Domain kBoundedPath = {__COUNTER__};
 // Features derived from (unordered) pairs of PCs.
@@ -176,6 +181,8 @@ inline constexpr Domain kLastDomain = {__COUNTER__};
 // For now, check that all domains (except maybe for kLastDomain) fit
 // into 32 bits.
 static_assert(kLastDomain.begin() <= (1ULL << 32));
+
+inline constexpr size_t kNumDomains = kLastDomain.domain_id();
 
 // Special feature used to indicate an absence of features. Typically used where
 // a feature array must not be empty, but doesn't have any other features.

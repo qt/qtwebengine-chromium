@@ -1,16 +1,29 @@
-// Copyright 2022 The Tint Authors.
+// Copyright 2022 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/core/ir/disassembler.h"
 
@@ -35,7 +48,6 @@
 #include "src/tint/lang/core/ir/exit_switch.h"
 #include "src/tint/lang/core/ir/if.h"
 #include "src/tint/lang/core/ir/instruction_result.h"
-#include "src/tint/lang/core/ir/intrinsic_call.h"
 #include "src/tint/lang/core/ir/let.h"
 #include "src/tint/lang/core/ir/load.h"
 #include "src/tint/lang/core/ir/load_vector_element.h"
@@ -74,6 +86,10 @@ class ScopedIndent {
 };
 
 }  // namespace
+
+std::string Disassemble(Module& mod) {
+    return Disassembler{mod}.Disassemble();
+}
 
 Disassembler::Disassembler(Module& mod) : mod_(mod) {}
 
@@ -153,7 +169,7 @@ std::string Disassembler::Disassemble() {
         }
     }
 
-    if (mod_.root_block) {
+    if (!mod_.root_block->IsEmpty()) {
         EmitBlock(mod_.root_block, "root");
         EmitLine();
     }
@@ -414,6 +430,7 @@ void Disassembler::EmitValue(Value* val) {
         [&](ir::InstructionResult* rv) { out_ << "%" << IdOf(rv); },
         [&](ir::BlockParam* p) { out_ << "%" << IdOf(p) << ":" << p->Type()->FriendlyName(); },
         [&](ir::FunctionParam* p) { out_ << "%" << IdOf(p); },
+        [&](ir::Function* f) { out_ << "%" << IdOf(f); },
         [&](Default) {
             if (val == nullptr) {
                 out_ << "undef";
@@ -423,9 +440,9 @@ void Disassembler::EmitValue(Value* val) {
         });
 }
 
-void Disassembler::EmitInstructionName(std::string_view name, Instruction* inst) {
+void Disassembler::EmitInstructionName(Instruction* inst) {
     SourceMarker sm(this);
-    out_ << name;
+    out_ << inst->FriendlyName();
     sm.Store(inst);
 }
 
@@ -445,75 +462,25 @@ void Disassembler::EmitInstruction(Instruction* inst) {
         [&](Loop* l) { EmitLoop(l); },      //
         [&](Binary* b) { EmitBinary(b); },  //
         [&](Unary* u) { EmitUnary(u); },    //
-        [&](Bitcast* b) {
-            EmitValueWithType(b);
-            out_ << " = ";
-            EmitInstructionName("bitcast", b);
-            out_ << " ";
-            EmitOperandList(b);
-        },
-        [&](Discard* d) { EmitInstructionName("discard", d); },
-        [&](CoreBuiltinCall* b) {
-            EmitValueWithType(b);
-            out_ << " = ";
-            EmitInstructionName(core::str(b->Func()), b);
-            out_ << " ";
-            EmitOperandList(b);
-        },
-        [&](Construct* c) {
-            EmitValueWithType(c);
-            out_ << " = ";
-            EmitInstructionName("construct", c);
-            if (!c->Operands().IsEmpty()) {
-                out_ << " ";
-                EmitOperandList(c);
-            }
-        },
-        [&](Convert* c) {
-            EmitValueWithType(c);
-            out_ << " = ";
-            EmitInstructionName("convert", c);
-            out_ << " ";
-            EmitOperandList(c);
-        },
-        [&](IntrinsicCall* i) {
-            EmitValueWithType(i);
-            out_ << " = ";
-            EmitInstructionName(tint::ToString(i->Kind()), i);
-            out_ << " ";
-            EmitOperandList(i);
-        },
-        [&](Load* l) {
-            EmitValueWithType(l);
-            out_ << " = ";
-            EmitInstructionName("load", l);
-            out_ << " ";
-            EmitValue(l->From());
-        },
+        [&](Discard* d) { EmitInstructionName(d); },
         [&](Store* s) {
-            EmitInstructionName("store", s);
+            EmitInstructionName(s);
             out_ << " ";
-            EmitValue(s->To());
+            EmitOperand(s, Store::kToOperandOffset);
             out_ << ", ";
-            EmitValue(s->From());
-        },
-        [&](LoadVectorElement* l) {
-            EmitValueWithType(l);
-            out_ << " = ";
-            EmitInstructionName("load_vector_element", l);
-            out_ << " ";
-            EmitOperandList(l);
+            EmitOperand(s, Store::kFromOperandOffset);
         },
         [&](StoreVectorElement* s) {
-            EmitInstructionName("store_vector_element", s);
+            EmitInstructionName(s);
             out_ << " ";
             EmitOperandList(s);
         },
         [&](UserCall* uc) {
             EmitValueWithType(uc);
             out_ << " = ";
-            EmitInstructionName("call", uc);
-            out_ << " %" << IdOf(uc->Func());
+            EmitInstructionName(uc);
+            out_ << " ";
+            EmitOperand(uc, UserCall::kFunctionOperandOffset);
             if (!uc->Args().IsEmpty()) {
                 out_ << ", ";
             }
@@ -522,7 +489,7 @@ void Disassembler::EmitInstruction(Instruction* inst) {
         [&](Var* v) {
             EmitValueWithType(v);
             out_ << " = ";
-            EmitInstructionName("var", v);
+            EmitInstructionName(v);
             if (v->Initializer()) {
                 out_ << ", ";
                 EmitOperand(v, Var::kInitializerOperandOffset);
@@ -531,25 +498,31 @@ void Disassembler::EmitInstruction(Instruction* inst) {
                 out_ << " ";
                 EmitBindingPoint(v->BindingPoint().value());
             }
-        },
-        [&](Let* l) {
-            EmitValueWithType(l);
-            out_ << " = ";
-            EmitInstructionName("let", l);
-            out_ << " ";
-            EmitOperandList(l);
-        },
-        [&](Access* a) {
-            EmitValueWithType(a);
-            out_ << " = ";
-            EmitInstructionName("access", a);
-            out_ << " ";
-            EmitOperandList(a);
+            if (v->Attributes().invariant) {
+                out_ << " @invariant";
+            }
+            if (v->Attributes().location.has_value()) {
+                out_ << " @location(" << v->Attributes().location.value() << ")";
+            }
+            if (v->Attributes().index.has_value()) {
+                out_ << " @index(" << v->Attributes().index.value() << ")";
+            }
+            if (v->Attributes().interpolation.has_value()) {
+                auto& interp = v->Attributes().interpolation.value();
+                out_ << " @interpolate(" << interp.type;
+                if (interp.sampling != core::InterpolationSampling::kUndefined) {
+                    out_ << ", " << interp.sampling;
+                }
+                out_ << ")";
+            }
+            if (v->Attributes().builtin.has_value()) {
+                out_ << " @builtin(" << v->Attributes().builtin.value() << ")";
+            }
         },
         [&](Swizzle* s) {
             EmitValueWithType(s);
             out_ << " = ";
-            EmitInstructionName("swizzle", s);
+            EmitInstructionName(s);
             out_ << " ";
             EmitValue(s->Object());
             out_ << ", ";
@@ -571,7 +544,15 @@ void Disassembler::EmitInstruction(Instruction* inst) {
             }
         },
         [&](Terminator* b) { EmitTerminator(b); },
-        [&](Default) { out_ << "Unknown instruction: " << inst->TypeInfo().name; });
+        [&](Default) {
+            EmitValueWithType(inst);
+            out_ << " = ";
+            EmitInstructionName(inst);
+            if (!inst->Operands().IsEmpty()) {
+                out_ << " ";
+                EmitOperandList(inst);
+            }
+        });
 
     {  // Add a comment if the result IDs don't match their names
         Vector<std::string, 4> names;
@@ -823,53 +804,53 @@ void Disassembler::EmitBinary(Binary* b) {
     SourceMarker sm(this);
     EmitValueWithType(b);
     out_ << " = ";
-    switch (b->Kind()) {
-        case Binary::Kind::kAdd:
+    switch (b->Op()) {
+        case BinaryOp::kAdd:
             out_ << "add";
             break;
-        case Binary::Kind::kSubtract:
+        case BinaryOp::kSubtract:
             out_ << "sub";
             break;
-        case Binary::Kind::kMultiply:
+        case BinaryOp::kMultiply:
             out_ << "mul";
             break;
-        case Binary::Kind::kDivide:
+        case BinaryOp::kDivide:
             out_ << "div";
             break;
-        case Binary::Kind::kModulo:
+        case BinaryOp::kModulo:
             out_ << "mod";
             break;
-        case Binary::Kind::kAnd:
+        case BinaryOp::kAnd:
             out_ << "and";
             break;
-        case Binary::Kind::kOr:
+        case BinaryOp::kOr:
             out_ << "or";
             break;
-        case Binary::Kind::kXor:
+        case BinaryOp::kXor:
             out_ << "xor";
             break;
-        case Binary::Kind::kEqual:
+        case BinaryOp::kEqual:
             out_ << "eq";
             break;
-        case Binary::Kind::kNotEqual:
+        case BinaryOp::kNotEqual:
             out_ << "neq";
             break;
-        case Binary::Kind::kLessThan:
+        case BinaryOp::kLessThan:
             out_ << "lt";
             break;
-        case Binary::Kind::kGreaterThan:
+        case BinaryOp::kGreaterThan:
             out_ << "gt";
             break;
-        case Binary::Kind::kLessThanEqual:
+        case BinaryOp::kLessThanEqual:
             out_ << "lte";
             break;
-        case Binary::Kind::kGreaterThanEqual:
+        case BinaryOp::kGreaterThanEqual:
             out_ << "gte";
             break;
-        case Binary::Kind::kShiftLeft:
+        case BinaryOp::kShiftLeft:
             out_ << "shiftl";
             break;
-        case Binary::Kind::kShiftRight:
+        case BinaryOp::kShiftRight:
             out_ << "shiftr";
             break;
     }
@@ -883,11 +864,11 @@ void Disassembler::EmitUnary(Unary* u) {
     SourceMarker sm(this);
     EmitValueWithType(u);
     out_ << " = ";
-    switch (u->Kind()) {
-        case Unary::Kind::kComplement:
+    switch (u->Op()) {
+        case UnaryOp::kComplement:
             out_ << "complement";
             break;
-        case Unary::Kind::kNegation:
+        case UnaryOp::kNegation:
             out_ << "negation";
             break;
     }

@@ -16,7 +16,7 @@
 # ~~~
 cmake_minimum_required(VERSION 3.17.2)
 
-project(VULKAN_LOADER VERSION 1.3.262)
+project(VULKAN_LOADER VERSION 1.3.268)
 
 add_subdirectory(scripts)
 
@@ -45,9 +45,7 @@ if(BUILD_STATIC_LOADER)
         "or tested as part of the loader. Use it at your own risk.")
 endif()
 
-if (NOT TARGET Vulkan::Headers)
-    find_package(VulkanHeaders REQUIRED CONFIG QUIET)
-endif()
+find_package(VulkanHeaders CONFIG QUIET)
 
 include(GNUInstallDirs)
 
@@ -102,7 +100,7 @@ elseif(ANDROID)
     message(FATAL_ERROR "Android build not supported!")
 elseif(APPLE)
     target_compile_definitions(platform_wsi INTERFACE VK_USE_PLATFORM_MACOS_MVK VK_USE_PLATFORM_METAL_EXT)
-elseif(UNIX AND NOT APPLE) # i.e.: Linux
+elseif(CMAKE_SYSTEM_NAME MATCHES "Linux|BSD|DragonFly|GNU")
     option(BUILD_WSI_XCB_SUPPORT "Build XCB WSI support" ON)
     option(BUILD_WSI_XLIB_SUPPORT "Build Xlib WSI support" ON)
     option(BUILD_WSI_WAYLAND_SUPPORT "Build Wayland WSI support" ON)
@@ -151,6 +149,12 @@ set(LOADER_STANDARD_CXX_PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED YES CXX
 
 set(TESTS_STANDARD_CXX_PROPERTIES ${LOADER_STANDARD_CXX_PROPERTIES} MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 
+# Build for iOS and tvOS
+option(APPLE_EMBEDDED "Apple non desktop devices" OFF)
+if (APPLE_EMBEDDED)
+    add_definitions(-D__APPLE_EMBEDDED__)
+endif()
+
 # Force the use of the multithreaded, static version of the C runtime.
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
@@ -197,11 +201,12 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang
 endif()
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "MSVC" OR (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND "${CMAKE_CXX_SIMULATE_ID}" MATCHES "MSVC"))
+    # /sdl: Enable additional security checks
     # /GR-: Disable RTTI
     # /guard:cf: Enable control flow guard
     # /wd4152: Disable warning on conversion of a function pointer to a data pointer
     # /wd4201: Disable warning on anonymous struct/unions
-    target_compile_options(loader_common_options INTERFACE /GR- /guard:cf /wd4152 /wd4201)
+    target_compile_options(loader_common_options INTERFACE /sdl /GR- /guard:cf /wd4152 /wd4201)
 
     # Enable control flow guard
     target_link_options(loader_common_options INTERFACE "LINKER:/guard:cf")
@@ -345,12 +350,6 @@ if(BUILD_TESTS)
                 target_compile_definitions(detours PUBLIC _USING_V110_SDK71_ DETOURS_WIN_7)
             endif(ver EQUAL 0x0700)
             target_compile_definitions(detours PUBLIC "_WIN32_WINNT=${ver}")
-
-            if("${CMAKE_SIZEOF_VOID_P}" EQUAL "8")
-                target_compile_definitions(detours PUBLIC "DETOURS_TARGET_PROCESSOR=X64" DETOURS_X64 DETOURS_64BIT _AMD64_)
-            else("${CMAKE_SIZEOF_VOID_P}" EQUAL "8")
-                target_compile_definitions(detours PUBLIC "DETOURS_TARGET_PROCESSOR=X86" DETOURS_X86 _X86_)
-            endif("${CMAKE_SIZEOF_VOID_P}" EQUAL "8")
 
             target_compile_definitions(detours PUBLIC  "DETOURS_VERSION=0x4c0c1" WIN32_LEAN_AND_MEAN)
 

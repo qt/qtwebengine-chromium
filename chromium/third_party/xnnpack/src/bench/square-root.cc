@@ -8,13 +8,14 @@
 #include <cmath>
 #include <functional>
 #include <limits>
+#include <memory>
 #include <random>
 #include <vector>
 
 #include <xnnpack.h>
 
-#include <benchmark/benchmark.h>
 #include "bench/utils.h"
+#include <benchmark/benchmark.h>
 #ifdef BENCHMARK_TENSORFLOW_LITE
 #include "flatbuffers/include/flatbuffers/flatbuffers.h"
 #include "tensorflow/lite/interpreter.h"
@@ -52,17 +53,20 @@ static void xnnpack_square_root_f32(benchmark::State& state) {
     return;
   }
 
-  status = xnn_setup_square_root_nc_f32(
-    sqrt_op, batch_size,
-    input.data(), output.data(),
-    nullptr /* thread pool */);
+  status = xnn_reshape_square_root_nc_f32(sqrt_op, batch_size, /*threadpool=*/nullptr);
+  if (status != xnn_status_success) {
+    state.SkipWithError("failed to reshape Square Root operator");
+    return;
+  }
+
+  status = xnn_setup_square_root_nc_f32(sqrt_op, input.data(), output.data());
   if (status != xnn_status_success) {
     state.SkipWithError("failed to setup Square Root operator");
     return;
   }
 
   for (auto _ : state) {
-    status = xnn_run_operator(sqrt_op, nullptr /* thread pool */);
+    status = xnn_run_operator(sqrt_op, /*threadpool=*/nullptr);
     if (status != xnn_status_success) {
       state.SkipWithError("failed to run Square Root operator");
       return;

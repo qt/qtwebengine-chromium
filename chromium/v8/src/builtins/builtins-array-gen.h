@@ -124,6 +124,60 @@ class ArrayBuiltinsAssembler : public CodeStubAssembler {
   ElementsKind source_elements_kind_ = ElementsKind::NO_ELEMENTS;
 };
 
+class ArrayBuiltins {
+ public:
+  enum ArrayFromAsyncIterableResolveContextSlots {
+    kArrayFromAsyncIterableResolveResumeStateStepSlot =
+        Context::MIN_CONTEXT_SLOTS,
+    kArrayFromAsyncIterableResolveResumeStateAwaitedValueSlot,
+    kArrayFromAsyncIterableResolveResumeStateIndexSlot,
+    kArrayFromAsyncIterableResolvePromiseSlot,
+    kArrayFromAsyncIterableResolvePromiseFunctionSlot,
+    kArrayFromAsyncIterableResolveOnFulfilledFunctionSlot,
+    kArrayFromAsyncIterableResolveOnRejectedFunctionSlot,
+    kArrayFromAsyncIterableResolveResultArraySlot,
+    kArrayFromAsyncIterableResolveIteratorSlot,
+    kArrayFromAsyncIterableResolveNextMethodSlot,
+    kArrayFromAsyncIterableResolveErrorSlot,
+    kArrayFromAsyncIterableResolveMapfnSlot,
+    kArrayFromAsyncIterableResolveThisArgSlot,
+    kArrayFromAsyncIterableResolveLength
+  };
+
+  enum ArrayFromAsyncArrayLikeResolveContextSlots {
+    kArrayFromAsyncArrayLikeResolveResumeStateStepSlot =
+        Context::MIN_CONTEXT_SLOTS,
+    kArrayFromAsyncArrayLikeResolveResumeStateAwaitedValueSlot,
+    kArrayFromAsyncArrayLikeResolveResumeStateLenSlot,
+    kArrayFromAsyncArrayLikeResolveResumeStateIndexSlot,
+    kArrayFromAsyncArrayLikeResolvePromiseSlot,
+    kArrayFromAsyncArrayLikeResolvePromiseFunctionSlot,
+    kArrayFromAsyncArrayLikeResolveOnFulfilledFunctionSlot,
+    kArrayFromAsyncArrayLikeResolveOnRejectedFunctionSlot,
+    kArrayFromAsyncArrayLikeResolveResultArraySlot,
+    kArrayFromAsyncArrayLikeResolveArrayLikeSlot,
+    kArrayFromAsyncArrayLikeResolveErrorSlot,
+    kArrayFromAsyncArrayLikeResolveMapfnSlot,
+    kArrayFromAsyncArrayLikeResolveThisArgSlot,
+    kArrayFromAsyncArrayLikeResolveLength
+  };
+
+  enum ArrayFromAsyncLabels {
+    kGetIteratorStep,
+    kCheckIteratorValueAndMapping,
+    kIteratorMapping,
+    kGetIteratorValueWithMapping,
+    kAddIteratorValueToTheArray,
+    kGetArrayLikeValue,
+    kCheckArrayLikeValueAndMapping,
+    kGetArrayLikeValueWithMapping,
+    kAddArrayLikeValueToTheArray,
+    kDoneAndResolvePromise,
+    kCloseAsyncIterator,
+    kRejectPromise
+  };
+};
+
 }  // namespace internal
 }  // namespace v8
 

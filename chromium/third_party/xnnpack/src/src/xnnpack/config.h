@@ -32,6 +32,7 @@ struct xnn_hardware_config {
   bool use_arm_neon_fp16_arith;
   bool use_arm_neon_bf16;
   bool use_arm_neon_dot;
+  bool use_arm_neon_i8mm;
 #endif  // XNN_ARCH_ARM || XNN_ARCH_ARM64
 #if XNN_ARCH_X86 || XNN_ARCH_X86_64
   bool use_x86_ssse3;
@@ -80,6 +81,16 @@ static inline bool xnn_is_f16_chw_compatible_config(const struct xnn_hardware_co
   #endif
 }
 
+static inline bool xnn_is_chw_compatible_config(const struct xnn_hardware_config hardware_config[XNN_MIN_ELEMENTS(1)]) {
+  #if (XNN_ARCH_X86 || XNN_ARCH_X86_64)
+    // Sparse microkernels on x86 currently target only SSE, and on processors
+    // with AVX ISA dense inference is expected to be faster than sparse.
+    return (!hardware_config->use_x86_avx);
+  #else
+    return true;
+  #endif
+}
+
 static inline bool xnn_is_f16_supported_natively(const struct xnn_hardware_config hardware_config[XNN_MIN_ELEMENTS(1)]) {
   #if (XNN_ARCH_ARM && XNN_ENABLE_ARM_FP16_VECTOR && XNN_ENABLE_ARM_FP16_SCALAR) || (XNN_ARCH_ARM64 && XNN_ENABLE_ARM_FP16_VECTOR)
     return hardware_config->use_arm_neon_fp16_arith;
@@ -124,6 +135,18 @@ struct xnn_transpose_config {
 };
 
 XNN_INTERNAL const struct xnn_transpose_config* xnn_init_transpose_config();
+
+struct xnn_cmul_config {
+  xnn_vbinary_ukernel_fn ukernel;
+  union {
+    xnn_init_f32_default_params_fn f32_default;
+  } init;
+  // Number of elements in a tile.
+  // For best efficiency, micro-kernel must process a multiple of this number of elements in each call.
+  size_t element_tile;
+};
+
+XNN_INTERNAL const struct xnn_cmul_config* xnn_init_f32_cmul_config();
 
 struct xnn_binary_elementwise_subconfig {
   xnn_vbinary_ukernel_fn op_ukernel;
@@ -196,10 +219,12 @@ struct xnn_unary_elementwise_config {
     xnn_init_f32_tanh_params_fn f32_tanh;
     xnn_init_qs8_cvt_params_fn qs8_cvt;
     xnn_init_qs8_f32_cvt_params_fn qs8_f32_cvt;
+    xnn_init_qs8_hswish_params_fn qs8_hswish;
     xnn_init_qs8_lrelu_params_fn qs8_lrelu;
     xnn_init_qs16_qs8_cvt_params_fn qs16_qs8_cvt;
     xnn_init_qu8_cvt_params_fn qu8_cvt;
     xnn_init_qu8_f32_cvt_params_fn qu8_f32_cvt;
+    xnn_init_qu8_hswish_params_fn qu8_hswish;
     xnn_init_qu8_lrelu_params_fn qu8_lrelu;
     xnn_init_s8_minmax_params_fn s8_minmax;
     xnn_init_u8_minmax_params_fn u8_minmax;
@@ -245,15 +270,33 @@ XNN_INTERNAL const struct xnn_unary_elementwise_config* xnn_init_f32_to_f16_cvt_
 XNN_INTERNAL const struct xnn_unary_elementwise_config* xnn_init_f32_to_qs8_cvt_config();
 XNN_INTERNAL const struct xnn_unary_elementwise_config* xnn_init_f32_to_qu8_cvt_config();
 XNN_INTERNAL const struct xnn_unary_elementwise_config* xnn_init_qs8_cvt_config();
+XNN_INTERNAL const struct xnn_unary_elementwise_config* xnn_init_qs8_hswish_config();
 XNN_INTERNAL const struct xnn_unary_elementwise_config* xnn_init_qs8_lrelu_config();
 XNN_INTERNAL const struct xnn_unary_elementwise_config* xnn_init_qs8_to_f32_cvt_config();
 XNN_INTERNAL const struct xnn_unary_elementwise_config* xnn_init_qs16_to_qs8_cvt_config();
 XNN_INTERNAL const struct xnn_unary_elementwise_config* xnn_init_qu8_cvt_config();
+XNN_INTERNAL const struct xnn_unary_elementwise_config* xnn_init_qu8_hswish_config();
 XNN_INTERNAL const struct xnn_unary_elementwise_config* xnn_init_qu8_lrelu_config();
 XNN_INTERNAL const struct xnn_unary_elementwise_config* xnn_init_qu8_to_f32_cvt_config();
 XNN_INTERNAL const struct xnn_unary_elementwise_config* xnn_init_s8_clamp_config();
 XNN_INTERNAL const struct xnn_unary_elementwise_config* xnn_init_u8_clamp_config();
 XNN_INTERNAL const struct xnn_unary_elementwise_config* xnn_init_xx_copy_config();
+
+struct xnn_reduce_config {
+  xnn_reduce_ukernel_fn ukernel;
+  union {
+    xnn_init_f16_f32acc_scale_params_fn f16_f32acc_scale;
+    xnn_init_f32_default_params_fn f32_default;
+    xnn_init_f32_scale_params_fn f32_scale;
+  } init;
+  // Number of elements in a tile.
+  // For best efficiency, micro-kernel must process a multiple of this number of
+  // elements in each call.
+  size_t element_tile;
+};
+XNN_INTERNAL const struct xnn_reduce_config* xnn_init_f16_f32acc_rsum_config();
+XNN_INTERNAL const struct xnn_reduce_config* xnn_init_f32_rminmax_config();
+XNN_INTERNAL const struct xnn_reduce_config* xnn_init_f32_rsum_config();
 
 struct xnn_xx_fill_config {
   xnn_fill_ukernel_fn ukernel;
@@ -369,8 +412,8 @@ struct xnn_dwconv_config {
   union xnn_dwconv_ukernel minmax;
   union xnn_dwconv_ukernel linear;
   union {
-    xnn_init_qc8_conv_minmax_params_fn qc8;
     xnn_init_qs8_conv_minmax_params_fn qs8;
+    xnn_init_qs8_qc8w_conv_minmax_params_fn qs8_qc8w;
     xnn_init_qu8_conv_minmax_params_fn qu8;
     xnn_init_f16_minmax_params_fn f16;
     xnn_init_f32_minmax_params_fn f32;
@@ -399,7 +442,7 @@ struct xnn_dwconv_config {
 
 XNN_INTERNAL struct xnn_dwconv_config* xnn_init_f16_dwconv_config();
 XNN_INTERNAL struct xnn_dwconv_config* xnn_init_f32_dwconv_config();
-XNN_INTERNAL struct xnn_dwconv_config* xnn_init_qc8_dwconv_config();
+XNN_INTERNAL struct xnn_dwconv_config* xnn_init_qs8_qc8w_dwconv_config();
 XNN_INTERNAL struct xnn_dwconv_config* xnn_init_qs8_dwconv_config();
 XNN_INTERNAL struct xnn_dwconv_config* xnn_init_qu8_dwconv_config();
 
@@ -446,22 +489,53 @@ struct xnn_prelu_config {
 XNN_INTERNAL const struct xnn_prelu_config* xnn_init_f16_prelu_config();
 XNN_INTERNAL const struct xnn_prelu_config* xnn_init_f32_prelu_config();
 
-struct xnn_hmp_gemm_ukernel {
-  xnn_gemm_ukernel_fn function[XNN_MAX_UARCH_TYPES];
+struct xnn_generated_code_chunk {
+  size_t offset;
+  size_t offset_end;
+};
+
+struct xnn_hmp_dqgemm_ukernel {
+  xnn_dqgemm_ukernel_fn function[XNN_MAX_UARCH_TYPES];
 #if XNN_PLATFORM_JIT
-  size_t generated_code_offset[XNN_MAX_UARCH_TYPES];
+  struct xnn_generated_code_chunk generated_code_chunk[XNN_MAX_UARCH_TYPES];
 #endif  // XNN_PLATFORM_JIT
 };
 
-static inline struct xnn_hmp_gemm_ukernel xnn_init_hmp_gemm_ukernel(xnn_gemm_ukernel_fn function) {
-  struct xnn_hmp_gemm_ukernel ukernel = {{ function }};
+struct xnn_hmp_gemm_ukernel {
+  xnn_gemm_ukernel_fn function[XNN_MAX_UARCH_TYPES];
 #if XNN_PLATFORM_JIT
-  ukernel.generated_code_offset[0] = SIZE_MAX;
+  struct xnn_generated_code_chunk generated_code_chunk[XNN_MAX_UARCH_TYPES];
+#endif  // XNN_PLATFORM_JIT
+};
+
+static inline struct xnn_hmp_dqgemm_ukernel xnn_init_hmp_dqgemm_ukernel(
+    xnn_dqgemm_ukernel_fn function) {
+  struct xnn_hmp_dqgemm_ukernel ukernel = {{ function }};
+#if XNN_PLATFORM_JIT
+  ukernel.generated_code_chunk[0].offset = SIZE_MAX;
+  ukernel.generated_code_chunk[0].offset_end = SIZE_MAX;
 #endif  // XNN_PLATFORM_JIT
   for (size_t i = 1; i < XNN_MAX_UARCH_TYPES; i++) {
     ukernel.function[i] = function;
 #if XNN_PLATFORM_JIT
-    ukernel.generated_code_offset[i] = SIZE_MAX;
+    ukernel.generated_code_chunk[i].offset = SIZE_MAX;
+    ukernel.generated_code_chunk[i].offset_end = SIZE_MAX;
+#endif  // XNN_PLATFORM_JIT
+  }
+  return ukernel;
+}
+
+static inline struct xnn_hmp_gemm_ukernel xnn_init_hmp_gemm_ukernel(xnn_gemm_ukernel_fn function) {
+  struct xnn_hmp_gemm_ukernel ukernel = {{ function }};
+#if XNN_PLATFORM_JIT
+  ukernel.generated_code_chunk[0].offset = SIZE_MAX;
+  ukernel.generated_code_chunk[0].offset_end = SIZE_MAX;
+#endif  // XNN_PLATFORM_JIT
+  for (size_t i = 1; i < XNN_MAX_UARCH_TYPES; i++) {
+    ukernel.function[i] = function;
+#if XNN_PLATFORM_JIT
+    ukernel.generated_code_chunk[i].offset = SIZE_MAX;
+    ukernel.generated_code_chunk[i].offset_end = SIZE_MAX;
 #endif  // XNN_PLATFORM_JIT
   }
   return ukernel;
@@ -483,19 +557,21 @@ static inline bool xnn_is_hmp_gemm_ukernel(struct xnn_hmp_gemm_ukernel ukernel) 
 struct xnn_hmp_igemm_ukernel {
   xnn_igemm_ukernel_fn function[XNN_MAX_UARCH_TYPES];
 #if XNN_PLATFORM_JIT
-  size_t generated_code_offset[XNN_MAX_UARCH_TYPES];
+  struct xnn_generated_code_chunk generated_code_chunk[XNN_MAX_UARCH_TYPES];
 #endif  // XNN_PLATFORM_JIT
 };
 
 static inline struct xnn_hmp_igemm_ukernel xnn_init_hmp_igemm_ukernel(xnn_igemm_ukernel_fn function) {
   struct xnn_hmp_igemm_ukernel ukernel = {{ function }};
 #if XNN_PLATFORM_JIT
-  ukernel.generated_code_offset[0] = SIZE_MAX;
+  ukernel.generated_code_chunk[0].offset = SIZE_MAX;
+  ukernel.generated_code_chunk[0].offset_end = SIZE_MAX;
 #endif  // XNN_PLATFORM_JIT
   for (size_t i = 1; i < XNN_MAX_UARCH_TYPES; i++) {
     ukernel.function[i] = function;
 #if XNN_PLATFORM_JIT
-    ukernel.generated_code_offset[i] = SIZE_MAX;
+    ukernel.generated_code_chunk[i].offset = SIZE_MAX;
+    ukernel.generated_code_chunk[i].offset_end = SIZE_MAX;
 #endif  // XNN_PLATFORM_JIT
   }
   return ukernel;
@@ -519,7 +595,10 @@ static inline bool xnn_is_hmp_igemm_ukernel(struct xnn_hmp_igemm_ukernel ukernel
 #define XNN_MAX_MR 8
 
 struct gemm_fused_ukernels {
-  struct xnn_hmp_gemm_ukernel gemm[XNN_MAX_MR];
+  union {
+    struct xnn_hmp_gemm_ukernel gemm[XNN_MAX_MR];
+    struct xnn_hmp_dqgemm_ukernel dqgemm[XNN_MAX_MR];
+  };
   struct xnn_hmp_igemm_ukernel igemm[XNN_MAX_MR];
 };
 
@@ -590,10 +669,12 @@ struct xnn_gemm_config {
   union {
     xnn_init_f16_minmax_params_fn f16;
     xnn_init_f32_minmax_params_fn f32;
-    xnn_init_qc8_conv_minmax_params_fn qc8;
+    xnn_init_f32_qc4w_minmax_params_fn f32_qc4w;
     xnn_init_qs8_conv_minmax_params_fn qs8;
+    xnn_init_qs8_qc8w_conv_minmax_params_fn qs8_qc8w;
     xnn_init_qu8_conv_minmax_params_fn qu8;
   } init;
+  xnn_packw_gemm_gio_ukernel_fn pack_gemm_gio;
   xnn_packw_gemm_goi_ukernel_fn pack_gemm_goi;
   uint8_t mr;
   uint8_t nr;
@@ -603,8 +684,11 @@ struct xnn_gemm_config {
 
 XNN_INTERNAL struct xnn_gemm_config* xnn_init_f16_gemm_config();
 XNN_INTERNAL struct xnn_gemm_config* xnn_init_f32_gemm_config();
-XNN_INTERNAL struct xnn_gemm_config* xnn_init_f32_gemm2_config();
-XNN_INTERNAL struct xnn_gemm_config* xnn_init_qc8_gemm_config();
+XNN_INTERNAL struct xnn_gemm_config* xnn_init_f32_gemm_nr2_config();
+XNN_INTERNAL struct xnn_gemm_config* xnn_init_f32_qc8w_gemm_config();
+XNN_INTERNAL struct xnn_gemm_config* xnn_init_f32_qc4w_gemm_config();
+XNN_INTERNAL struct xnn_gemm_config* xnn_init_qd8_f32_qc8w_gemm_config();
+XNN_INTERNAL struct xnn_gemm_config* xnn_init_qs8_qc8w_gemm_config();
 XNN_INTERNAL struct xnn_gemm_config* xnn_init_qs8_gemm_config();
 XNN_INTERNAL struct xnn_gemm_config* xnn_init_qu8_gemm_config();
 
@@ -640,11 +724,7 @@ XNN_INTERNAL const struct xnn_zip_config* xnn_init_x8_zip_config();
 XNN_INTERNAL const struct xnn_zip_config* xnn_init_x32_zip_config();
 
 struct xnn_rmax_config {
-  union {
-    xnn_rmax_ukernel_fn f16;
-    xnn_rmax_ukernel_fn f32;
-    xnn_u8_rmax_ukernel_fn u8;
-  } rmax;
+  xnn_rmax_ukernel_fn ukernel;
 };
 
 XNN_INTERNAL const struct xnn_rmax_config* xnn_init_f16_rmax_config();
@@ -784,7 +864,6 @@ struct xnn_unpool_config {
 };
 
 XNN_INTERNAL const struct xnn_unpool_config* xnn_init_x32_unpool_config();
-
 
 #ifdef __cplusplus
 }  // extern "C"

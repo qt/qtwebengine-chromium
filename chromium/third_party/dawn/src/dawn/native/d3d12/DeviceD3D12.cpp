@@ -1,16 +1,29 @@
-// Copyright 2017 The Dawn Authors
+// Copyright 2017 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/d3d12/DeviceD3D12.h"
 
@@ -76,7 +89,7 @@ ResultOrError<Ref<Device>> Device::Create(AdapterBase* adapter,
 MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
     mD3d12Device = ToBackend(GetPhysicalDevice())->GetDevice();
 
-    ASSERT(mD3d12Device != nullptr);
+    DAWN_ASSERT(mD3d12Device != nullptr);
 
     // Create device-global objects
     D3D12_COMMAND_QUEUE_DESC queueDesc = {};
@@ -86,7 +99,8 @@ MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
         CheckHRESULT(mD3d12Device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&mCommandQueue)),
                      "D3D12 create command queue"));
 
-    if ((HasFeature(Feature::TimestampQuery) || HasFeature(Feature::TimestampQueryInsidePasses)) &&
+    if ((HasFeature(Feature::TimestampQuery) ||
+         HasFeature(Feature::ChromiumExperimentalTimestampQueryInsidePasses)) &&
         !IsToggleEnabled(Toggle::DisableTimestampQueryConversion)) {
         // Get GPU timestamp counter frequency (in ticks/second). This fails if the specified
         // command queue doesn't support timestamps. D3D12_COMMAND_LIST_TYPE_DIRECT queues
@@ -108,12 +122,12 @@ MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
                           "D3D12 create fence"));
 
     mFenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-    ASSERT(mFenceEvent != nullptr);
+    DAWN_ASSERT(mFenceEvent != nullptr);
 
     DAWN_TRY(CheckHRESULT(mD3d12Device->CreateSharedHandle(mFence.Get(), nullptr, GENERIC_ALL,
                                                            nullptr, &mFenceHandle),
                           "D3D12 create fence handle"));
-    ASSERT(mFenceHandle != nullptr);
+    DAWN_ASSERT(mFenceHandle != nullptr);
 
     // Initialize backend services
     mCommandAllocatorManager = std::make_unique<CommandAllocatorManager>(this);
@@ -141,8 +155,8 @@ MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
 
     mSamplerHeapCache = std::make_unique<SamplerHeapCache>(this);
 
-    mResidencyManager = std::make_unique<ResidencyManager>(this);
-    mResourceAllocatorManager = std::make_unique<ResourceAllocatorManager>(this);
+    mResidencyManager = std::make_unique<MutexProtected<ResidencyManager>>(this);
+    mResourceAllocatorManager = std::make_unique<MutexProtected<ResourceAllocatorManager>>(this);
 
     // ShaderVisibleDescriptorAllocators use the ResidencyManager and must be initialized after.
     DAWN_TRY_ASSIGN(
@@ -226,7 +240,7 @@ ComPtr<ID3D12CommandSignature> Device::GetDrawIndexedIndirectSignature() const {
 // Ensure DXC if use_dxc toggles are set and validated.
 MaybeError Device::EnsureDXCIfRequired() {
     if (IsToggleEnabled(Toggle::UseDXC)) {
-        ASSERT(ToBackend(GetPhysicalDevice())->GetBackend()->IsDXCAvailable());
+        DAWN_ASSERT(ToBackend(GetPhysicalDevice())->GetBackend()->IsDXCAvailable());
         DAWN_TRY(ToBackend(GetPhysicalDevice())->GetBackend()->EnsureDxcCompiler());
         DAWN_TRY(ToBackend(GetPhysicalDevice())->GetBackend()->EnsureDxcLibrary());
         DAWN_TRY(ToBackend(GetPhysicalDevice())->GetBackend()->EnsureDxcValidator());
@@ -243,8 +257,8 @@ CommandAllocatorManager* Device::GetCommandAllocatorManager() const {
     return mCommandAllocatorManager.get();
 }
 
-ResidencyManager* Device::GetResidencyManager() const {
-    return mResidencyManager.get();
+MutexProtected<ResidencyManager>& Device::GetResidencyManager() const {
+    return *mResidencyManager;
 }
 
 ResultOrError<CommandRecordingContext*> Device::GetPendingCommandContext(
@@ -315,13 +329,13 @@ MaybeError Device::TickImpl() {
     // Perform cleanup operations to free unused objects
     ExecutionSerial completedSerial = GetQueue()->GetCompletedCommandSerial();
 
-    mResourceAllocatorManager->Tick(completedSerial);
+    (*mResourceAllocatorManager)->Tick(completedSerial);
     DAWN_TRY(mCommandAllocatorManager->Tick(completedSerial));
     (*mViewShaderVisibleDescriptorAllocator)->Tick(completedSerial);
     (*mSamplerShaderVisibleDescriptorAllocator)->Tick(completedSerial);
     (*mRenderTargetViewAllocator)->Tick(completedSerial);
     (*mDepthStencilViewAllocator)->Tick(completedSerial);
-    mUsedComObjectRefs.ClearUpTo(completedSerial);
+    mUsedComObjectRefs->ClearUpTo(completedSerial);
 
     if (mPendingCommands.IsOpen() && mPendingCommands.NeedsSubmit()) {
         DAWN_TRY(ExecutePendingCommandContext());
@@ -374,7 +388,7 @@ ResultOrError<ExecutionSerial> Device::CheckAndUpdateCompletedSerials() {
 }
 
 void Device::ReferenceUntilUnused(ComPtr<IUnknown> object) {
-    mUsedComObjectRefs.Enqueue(object, GetPendingCommandSerial());
+    mUsedComObjectRefs->Enqueue(std::move(object), GetPendingCommandSerial());
 }
 
 bool Device::HasPendingCommands() const {
@@ -388,7 +402,7 @@ void Device::ForceEventualFlushOfCommands() {
 }
 
 MaybeError Device::ExecutePendingCommandContext() {
-    ASSERT(IsLockedByCurrentThreadIfNeeded());
+    DAWN_ASSERT(IsLockedByCurrentThreadIfNeeded());
 
     return mPendingCommands.ExecuteCommandList(this);
 }
@@ -477,7 +491,7 @@ ResultOrError<Ref<SharedTextureMemoryBase>> Device::ImportSharedTextureMemoryImp
                 this, descriptor->label,
                 std::get<const SharedTextureMemoryDXGISharedHandleDescriptor*>(unpacked));
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -499,7 +513,7 @@ ResultOrError<Ref<SharedFenceBase>> Device::ImportSharedFenceImpl(
                 this, descriptor->label,
                 std::get<const SharedFenceDXGISharedHandleDescriptor*>(unpacked));
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -530,7 +544,7 @@ void Device::CopyFromStagingToBufferHelper(CommandRecordingContext* commandConte
                                            BufferBase* destination,
                                            uint64_t destinationOffset,
                                            uint64_t size) {
-    ASSERT(commandContext != nullptr);
+    DAWN_ASSERT(commandContext != nullptr);
     Buffer* dstBuffer = ToBackend(destination);
     Buffer* srcBuffer = ToBackend(source);
     dstBuffer->TrackUsageAndTransitionNow(commandContext, wgpu::BufferUsage::CopyDst);
@@ -550,7 +564,7 @@ MaybeError Device::CopyFromStagingToTextureImpl(const BufferBase* source,
 
     SubresourceRange range = GetSubresourcesAffectedByCopy(dst, copySizePixels);
 
-    if (IsCompleteSubresourceCopiedTo(texture, copySizePixels, dst.mipLevel)) {
+    if (IsCompleteSubresourceCopiedTo(texture, copySizePixels, dst.mipLevel, dst.aspect)) {
         texture->SetIsSubresourceContentInitialized(true, range);
     } else {
         DAWN_TRY(texture->EnsureSubresourceContentInitialized(commandContext, range));
@@ -567,7 +581,7 @@ MaybeError Device::CopyFromStagingToTextureImpl(const BufferBase* source,
 }
 
 void Device::DeallocateMemory(ResourceHeapAllocation& allocation) {
-    mResourceAllocatorManager->DeallocateMemory(allocation);
+    (*mResourceAllocatorManager)->DeallocateMemory(allocation);
 }
 
 ResultOrError<ResourceHeapAllocation> Device::AllocateMemory(
@@ -577,9 +591,9 @@ ResultOrError<ResourceHeapAllocation> Device::AllocateMemory(
     uint32_t formatBytesPerBlock,
     bool forceAllocateAsCommittedResource) {
     // formatBytesPerBlock is needed only for color non-compressed formats for a workaround.
-    return mResourceAllocatorManager->AllocateMemory(heapType, resourceDescriptor, initialUsage,
-                                                     formatBytesPerBlock,
-                                                     forceAllocateAsCommittedResource);
+    return (*mResourceAllocatorManager)
+        ->AllocateMemory(heapType, resourceDescriptor, initialUsage, formatBytesPerBlock,
+                         forceAllocateAsCommittedResource);
 }
 
 ResultOrError<Ref<d3d::Fence>> Device::CreateFence(
@@ -663,8 +677,8 @@ MaybeError Device::WaitForIdleForDestruction() {
 void AppendDebugLayerMessagesToError(ID3D12InfoQueue* infoQueue,
                                      uint64_t totalErrors,
                                      ErrorData* error) {
-    ASSERT(totalErrors > 0);
-    ASSERT(error != nullptr);
+    DAWN_ASSERT(totalErrors > 0);
+    DAWN_ASSERT(error != nullptr);
 
     uint64_t errorsToPrint = std::min(kMaxDebugMessagesToPrint, totalErrors);
     for (uint64_t i = 0; i < errorsToPrint; ++i) {
@@ -741,8 +755,24 @@ void Device::AppendDebugLayerMessages(ErrorData* error) {
     AppendDebugLayerMessagesToError(infoQueue.Get(), totalErrors, error);
 }
 
+void Device::AppendDeviceLostMessage(ErrorData* error) {
+    if (mD3d12Device) {
+        HRESULT result = mD3d12Device->GetDeviceRemovedReason();
+        error->AppendBackendMessage("Device removed reason: %s (0x%08X)",
+                                    d3d::HRESULTAsString(result), result);
+    }
+}
+
 void Device::DestroyImpl() {
-    ASSERT(GetState() == State::Disconnected);
+    DAWN_ASSERT(GetState() == State::Disconnected);
+
+    // TODO(crbug.com/dawn/831): DestroyImpl is called from two places.
+    // - It may be called if the device is explicitly destroyed with APIDestroy.
+    //   This case is NOT thread-safe and needs proper synchronization with other
+    //   simultaneous uses of the device.
+    // - It may be called when the last ref to the device is dropped and the device
+    //   is implicitly destroyed. This case is thread-safe because there are no
+    //   other threads using the device since there are no other live refs.
 
     Base::DestroyImpl();
 
@@ -761,10 +791,10 @@ void Device::DestroyImpl() {
     mResourceAllocatorManager.reset();
 
     // We need to handle clearing up com object refs that were enqeued after TickImpl
-    mUsedComObjectRefs.ClearUpTo(std::numeric_limits<ExecutionSerial>::max());
+    mUsedComObjectRefs->ClearUpTo(std::numeric_limits<ExecutionSerial>::max());
 
-    ASSERT(mUsedComObjectRefs.Empty());
-    ASSERT(!mPendingCommands.IsOpen());
+    DAWN_ASSERT(mUsedComObjectRefs->Empty());
+    DAWN_ASSERT(!mPendingCommands.IsOpen());
 
     // Now that we've cleared out pending work from the queue, we can safely release it and reclaim
     // memory.
@@ -783,7 +813,7 @@ Device::GetSamplerShaderVisibleDescriptorAllocator() const {
 
 MutexProtected<StagingDescriptorAllocator>* Device::GetViewStagingDescriptorAllocator(
     uint32_t descriptorCount) const {
-    ASSERT(descriptorCount <= kMaxViewDescriptorsPerBindGroup);
+    DAWN_ASSERT(descriptorCount <= kMaxViewDescriptorsPerBindGroup);
     // This is Log2 of the next power of two, plus 1.
     uint32_t allocatorIndex = descriptorCount == 0 ? 0 : Log2Ceil(descriptorCount) + 1;
     return mViewAllocators[allocatorIndex].get();
@@ -791,7 +821,7 @@ MutexProtected<StagingDescriptorAllocator>* Device::GetViewStagingDescriptorAllo
 
 MutexProtected<StagingDescriptorAllocator>* Device::GetSamplerStagingDescriptorAllocator(
     uint32_t descriptorCount) const {
-    ASSERT(descriptorCount <= kMaxSamplerDescriptorsPerBindGroup);
+    DAWN_ASSERT(descriptorCount <= kMaxSamplerDescriptorsPerBindGroup);
     // This is Log2 of the next power of two, plus 1.
     uint32_t allocatorIndex = descriptorCount == 0 ? 0 : Log2Ceil(descriptorCount) + 1;
     return mSamplerAllocators[allocatorIndex].get();
@@ -854,6 +884,14 @@ uint64_t Device::GetBufferCopyOffsetAlignmentForDepthStencil() const {
         return D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT;
     }
     return DeviceBase::GetBufferCopyOffsetAlignmentForDepthStencil();
+}
+
+ComPtr<IDxcLibrary> Device::GetDxcLibrary() const {
+    return ToBackend(GetPhysicalDevice())->GetBackend()->GetDxcLibrary();
+}
+
+ComPtr<IDxcCompiler3> Device::GetDxcCompiler() const {
+    return ToBackend(GetPhysicalDevice())->GetBackend()->GetDxcCompiler();
 }
 
 }  // namespace dawn::native::d3d12

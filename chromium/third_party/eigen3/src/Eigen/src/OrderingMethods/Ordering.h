@@ -11,6 +11,7 @@
 #ifndef EIGEN_ORDERING_H
 #define EIGEN_ORDERING_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

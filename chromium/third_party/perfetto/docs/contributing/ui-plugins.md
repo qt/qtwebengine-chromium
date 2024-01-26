@@ -63,53 +63,52 @@ They can be accessed via the omnibox.
 
 Follow the [create a plugin](#create-a-plugin) to get an initial
 skeleton for your plugin.
-To add your first command edit either the `commands()` or `traceCommands()`
-methods.
+
+To add your first command, add a call to `ctx.addCommand()` in either your
+`onActivate()` or `onTraceLoad()` hooks. The recommendation is to register
+commands in `onActivate()` by default unless they require something from
+`TracePluginContext` which is not available on `PluginContext`.
+
+The tradeoff is that commands registered in `onTraceLoad()` are only available
+while a trace is loaded, whereas commands registered in `onActivate()` are
+available all the time the plugin is active.
 
 ```typescript
 class MyPlugin implements Plugin {
-  // ...
-
-  commands(ctx: PluginContext): Command[] {
-    return [
+  onActivate(ctx: PluginContext): void {
+    ctx.addCommand(
        {
-         id: 'dev.perfetto.ExampleSimpleCommand#LogHelloWorld',
-         name: 'Log hello world',
-         callback: () => console.log('Hello, world!'),
+         id: 'dev.perfetto.ExampleSimpleCommand#LogHelloPlugin',
+         name: 'Log "Hello, plugin!"',
+         callback: () => console.log('Hello, plugin!'),
        },
-    ];
+    );
   }
 
-  traceCommands(ctx: TracePluginContext): Command[] {
-    return [
+  onTraceLoad(ctx: TracePluginContext): void {
+    ctx.addCommand(
        {
-         id: 'dev.perfetto.ExampleSimpleTraceCommand#LogHelloWorld',
-         name: 'Log hello trace',
+         id: 'dev.perfetto.ExampleSimpleTraceCommand#LogHelloTrace',
+         name: 'Log "Hello, trace!"',
          callback: () => console.log('Hello, trace!'),
        },
-    ];
+    );
   }
 }
 ```
 
-Commands are polled whenever the command list must be updated. When no trace is
-loaded, only the `commands()` method is called, whereas when a trace is loaded,
-both the `commands()` and the `traceCommands()` methods are called, and their
-outputs are concatenated.
-
-The difference between the two is that commands defined in `commands()` only
-have access to the viewer API, whereas commands defined in `traceCommands()` may
-access the store and the engine in addition to the viewer API.
-
-The tradeoff is that commands defined in `traceCommands()` are only available
-when a trace is loaded, whereas commands defined in `commands()` are available
-all the time.
-
 Here `id` is a unique string which identifies this command.
-The `id` should be prefixed with the plugin id followed by a `#`.
-`name` is a human readable name for the command.
+The `id` should be prefixed with the plugin id followed by a `#`. All command
+`id`s must be unique system-wide.
+`name` is a human readable name for the command, which is shown in the command
+palette.
 Finally `callback()` is the callback which actually performs the
 action.
+
+Commands are removed automatically when their context disappears. Commands
+registered with the `PluginContext` are removed when the plugin is deactivated,
+and commands registered with the `TracePluginContext` are removed when the trace
+is unloaded.
 
 Examples:
 - [dev.perfetto.ExampleSimpleCommand](https://cs.android.com/android/platform/superproject/main/+/main:external/perfetto/ui/src/plugins/dev.perfetto.ExampleSimpleCommand/index.ts).
@@ -177,58 +176,73 @@ interface MyState {
 }
 ```
 
-This interface will be used as type parameter to the `Plugin` and
-`TracePluginContext` interfaces.
+To access permalink state, call `mountStore()` on your `TracePluginContext`
+object, passing in a migration function.
 ```typescript
-class MyPlugin implements Plugin<MyState> {
-
-  migrate(initialState: unknown): MyState {
-    // ...
+class MyPlugin implements Plugin {
+  async onTraceLoad(ctx: TracePluginContext): Promise<void> {
+    const store = ctx.mountStore(migrate);
   }
+}
 
-  async onTraceLoad(ctx: TracePluginContext<MyState>): Promise<void> {
-    // You can access the store on ctx.store
-  }
-
-  async onTraceUnload(ctx: TracePluginContext<MyState>): Promise<void> {
-    // You can access the store on ctx.store
-  }
-
+function migrate(initialState: unknown): MyState {
   // ...
 }
 ```
 
-`migrate()` is called after `onActivate()` just before `onTraceLoad()`. There
-are two cases to consider:
+When it comes to migration, there are two cases to consider:
 - Loading a new trace
 - Loading from a permalink
 
-In case of a new trace `migrate()` is called with `undefined`. In this
-case you should return a default version of `MyState`:
+In case of a new trace, your migration function is called with `undefined`. In
+this case you should return a default version of `MyState`:
 ```typescript
-class MyPlugin implements Plugin<MyState> {
+const DEFAULT = {favouriteSlices: []};
 
-  migrate(initialState: unknown): MyState {
-    if (initialState === undefined) {
-      return {
-        favouriteSlices: [];
-      };
-    }
-    // ...
+function migrate(initialState: unknown): MyState {
+  if (initialState === undefined) {
+    // Return default version of MyState.
+    return DEFAULT;
+  } else {
+    // Migrate old version here.
   }
-
-  // ...
 }
 ```
 
-In the permalink case `migrate()` is called with the state of the plugin
-store at the time the permalink was generated. This may be from a
-older or newer version of the plugin.
-**Plugin's must not make assumptions about the contents of `initialState`**.
+In the permalink case, your migration function is called with the state of the
+plugin store at the time the permalink was generated. This may be from an older
+or newer version of the plugin.
 
-In this case you need to carefully validate the state object.
+**Plugins must not make assumptions about the contents of `initialState`!**
 
-TODO: Add validation example.
+In this case you need to carefully validate the state object. This could be
+achieved in several ways, none of which are particularly straight forward. State
+migration is difficult!
+
+One brute force way would be to use a version number.
+
+```typescript
+interface MyState {
+  version: number;
+  favouriteSlices: MySliceInfo[];
+}
+
+const VERSION = 3;
+const DEFAULT = {favouriteSlices: []};
+
+function migrate(initialState: unknown): MyState {
+  if (initialState && (initialState as {version: any}).version === VERSION) {
+    // Version number checks out, assume the structure is correct.
+    return initialState as State;
+  } else {
+    // Null, undefined, or bad version number - return default value.
+    return DEFAULT;
+  }
+}
+```
+
+You'll need to remember to update your version number when making changes!
+Migration should be unit-tested to ensure compatibility.
 
 Examples:
 - [dev.perfetto.ExampleState](https://cs.android.com/android/platform/superproject/main/+/main:external/perfetto/ui/src/plugins/dev.perfetto.ExampleState/index.ts).

@@ -1,16 +1,29 @@
-// Copyright 2019 The Dawn Authors
+// Copyright 2019 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/vulkan/PhysicalDeviceVk.h"
 
@@ -18,9 +31,11 @@
 #include <string>
 
 #include "dawn/common/GPUInfo.h"
+#include "dawn/native/Instance.h"
 #include "dawn/native/Limits.h"
 #include "dawn/native/vulkan/BackendVk.h"
 #include "dawn/native/vulkan/DeviceVk.h"
+#include "dawn/platform/DawnPlatform.h"
 
 namespace dawn::native::vulkan {
 
@@ -78,8 +93,8 @@ VulkanInstance* PhysicalDevice::GetVulkanInstance() const {
 }
 
 bool PhysicalDevice::IsDepthStencilFormatSupported(VkFormat format) const {
-    ASSERT(format == VK_FORMAT_D16_UNORM_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT ||
-           format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_S8_UINT);
+    DAWN_ASSERT(format == VK_FORMAT_D16_UNORM_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT ||
+                format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_S8_UINT);
 
     VkFormatProperties properties;
     mVulkanInstance->GetFunctions().GetPhysicalDeviceFormatProperties(mVkPhysicalDevice, format,
@@ -146,6 +161,11 @@ MaybeError PhysicalDevice::InitializeImpl() {
         return DAWN_INTERNAL_ERROR("Vulkan 1.1 or Vulkan 1.0 with KHR_Maintenance1 required.");
     }
 
+    // Needed for separate depth/stencilReadOnly
+    if (!mDeviceInfo.HasExt(DeviceExt::Maintenance2)) {
+        return DAWN_INTERNAL_ERROR("Vulkan 1.1 or Vulkan 1.0 with KHR_Maintenance2 required.");
+    }
+
     // Needed for security
     if (!mDeviceInfo.features.robustBufferAccess) {
         return DAWN_INTERNAL_ERROR("Vulkan robustBufferAccess feature required.");
@@ -196,16 +216,12 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
         EnableFeature(Feature::TextureCompressionASTC);
     }
 
-    if (mDeviceInfo.features.pipelineStatisticsQuery == VK_TRUE) {
-        EnableFeature(Feature::PipelineStatisticsQuery);
-    }
-
     // TODO(dawn:1559) Resolving timestamp queries after a render pass is failing on Qualcomm-based
     // Android devices.
     if (mDeviceInfo.properties.limits.timestampComputeAndGraphics == VK_TRUE &&
         !IsAndroidQualcomm()) {
         EnableFeature(Feature::TimestampQuery);
-        EnableFeature(Feature::TimestampQueryInsidePasses);
+        EnableFeature(Feature::ChromiumExperimentalTimestampQueryInsidePasses);
     }
 
     if (IsDepthStencilFormatSupported(VK_FORMAT_D32_SFLOAT_S8_UINT)) {
@@ -344,10 +360,18 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
          VK_TRUE)) {
         EnableFeature(Feature::ChromiumExperimentalSubgroupUniformControlFlow);
     }
+
+    if (mDeviceInfo.HasExt(DeviceExt::ExternalMemoryHost) &&
+        mDeviceInfo.externalMemoryHostProperties.minImportedHostPointerAlignment <= 4096) {
+        // TODO(crbug.com/dawn/2018): properly surface the limit.
+        // Linux nearly always exposes 4096.
+        // https://vulkan.gpuinfo.org/displayextensionproperty.php?platform=linux&extensionname=VK_EXT_external_memory_host&extensionproperty=minImportedHostPointerAlignment
+        EnableFeature(Feature::HostMappedPointer);
+    }
 }
 
 MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits) {
-    GetDefaultLimits(&limits->v1);
+    GetDefaultLimitsForSupportedFeatureLevel(&limits->v1);
     CombinedLimits baseLimits = *limits;
 
     const VkPhysicalDeviceLimits& vkLimits = mDeviceInfo.properties.limits;
@@ -460,6 +484,12 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
     limits->v1.maxInterStageShaderComponents =
         std::min(vkLimits.maxVertexOutputComponents, vkLimits.maxFragmentInputComponents);
 
+    // Reserve 4 components for the SPIR-V builtin `position`.
+    // See the discussions in https://github.com/gpuweb/gpuweb/issues/1962 for more details.
+    limits->v1.maxInterStageShaderComponents =
+        std::min(vkLimits.maxVertexOutputComponents, vkLimits.maxFragmentInputComponents) - 4;
+    limits->v1.maxInterStageShaderVariables = limits->v1.maxInterStageShaderComponents / 4;
+
     CHECK_AND_SET_V1_MAX_LIMIT(maxComputeSharedMemorySize, maxComputeWorkgroupStorageSize);
     CHECK_AND_SET_V1_MAX_LIMIT(maxComputeWorkGroupInvocations, maxComputeInvocationsPerWorkgroup);
     CHECK_AND_SET_V1_MAX_LIMIT(maxComputeWorkGroupSize[0], maxComputeWorkgroupSizeX);
@@ -506,9 +536,11 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
         }
     }
 
-    // Using base limits for:
-    // TODO(crbug.com/dawn/1448):
-    // - maxInterStageShaderVariables
+    // Experimental limits for subgroups
+    limits->experimentalSubgroupLimits.minSubgroupSize =
+        mDeviceInfo.subgroupSizeControlProperties.minSubgroupSize;
+    limits->experimentalSubgroupLimits.maxSubgroupSize =
+        mDeviceInfo.subgroupSizeControlProperties.maxSubgroupSize;
 
     return {};
 }
@@ -530,6 +562,15 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
     // TODO(crbug.com/dawn/857): tighten this workaround when this issue is fixed in both
     // Vulkan SPEC and drivers.
     deviceToggles->Default(Toggle::UseTemporaryBufferInCompressedTextureToTextureCopy, true);
+
+#if DAWN_PLATFORM_IS(ANDROID)
+    // Default to the IR backend on Android.
+    deviceToggles->Default(Toggle::UseTintIR, true);
+#else
+    // All other platforms default to the value corresponding to the feature flag.
+    deviceToggles->Default(Toggle::UseTintIR, GetInstance()->GetPlatform()->IsFeatureEnabled(
+                                                  platform::Features::kWebGPUUseTintIR));
+#endif
 
     if (IsAndroidQualcomm()) {
         // dawn:1564, dawn:1897: Recording a compute pass after a render pass in the same command
@@ -591,7 +632,7 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
     bool supportsD24s8 = IsDepthStencilFormatSupported(VK_FORMAT_D24_UNORM_S8_UINT);
     bool supportsS8 = IsDepthStencilFormatSupported(VK_FORMAT_S8_UINT);
 
-    ASSERT(supportsD32s8 || supportsD24s8);
+    DAWN_ASSERT(supportsD32s8 || supportsD24s8);
 
     if (!supportsD24s8) {
         deviceToggles->ForceSet(Toggle::VulkanUseD32S8, true);

@@ -34,6 +34,7 @@ namespace
 #define SOURCE_IDX_IS_U32_CONSTANT_NAME @"kSourceIndexIsU32"
 #define PREMULTIPLY_ALPHA_CONSTANT_NAME @"kPremultiplyAlpha"
 #define UNMULTIPLY_ALPHA_CONSTANT_NAME @"kUnmultiplyAlpha"
+#define TRANSFORM_LINEAR_TO_SRGB_CONSTANT_NAME @"kTransformLinearToSrgb"
 #define SOURCE_TEXTURE_TYPE_CONSTANT_NAME @"kSourceTextureType"
 #define SOURCE_TEXTURE2_TYPE_CONSTANT_NAME @"kSourceTexture2Type"
 #define COPY_FORMAT_TYPE_CONSTANT_NAME @"kCopyFormatType"
@@ -1045,6 +1046,12 @@ angle::Result RenderUtils::expandVertexFormatComponentsVS(const gl::Context *con
                                                              params);
 }
 
+angle::Result RenderUtils::linearizeBlocks(ContextMtl *contextMtl,
+                                           const BlockLinearizationParams &params)
+{
+    return mBlockLinearizationUtils.linearizeBlocks(contextMtl, params);
+}
+
 // ClearUtils implementation
 ClearUtils::ClearUtils(const std::string &fragmentShaderName)
     : mFragmentShaderName(fragmentShaderName)
@@ -1268,9 +1275,7 @@ ColorBlitUtils::ColorBlitUtils(const std::string &fragmentShaderName)
 
 angle::Result ColorBlitUtils::ensureShadersInitialized(
     ContextMtl *ctx,
-    uint32_t numOutputs,
-    int alphaPremultiplyType,
-    int textureType,
+    const ShaderKey &key,
     AutoObjCPtr<id<MTLFunction>> *fragmentShaderOut)
 {
     ANGLE_MTL_OBJC_SCOPE
@@ -1297,31 +1302,25 @@ angle::Result ColorBlitUtils::ensureShadersInitialized(
             MTLFunctionConstantValues *funcConstants =
                 [[[MTLFunctionConstantValues alloc] init] ANGLE_MTL_AUTORELEASE];
 
-            constexpr BOOL multiplyAlphaFlags[][2] = {// premultiply, unmultiply
-
-                                                      // Normal blit
-                                                      {NO, NO},
-                                                      // Blit premultiply-alpha
-                                                      {YES, NO},
-                                                      // Blit unmultiply alpha
-                                                      {NO, YES}};
-
             // Set alpha multiply flags
-            [funcConstants setConstantValue:&multiplyAlphaFlags[alphaPremultiplyType][0]
-                                       type:MTLDataTypeBool
-                                   withName:PREMULTIPLY_ALPHA_CONSTANT_NAME];
-            [funcConstants setConstantValue:&multiplyAlphaFlags[alphaPremultiplyType][1]
+            [funcConstants setConstantValue:&key.unmultiplyAlpha
                                        type:MTLDataTypeBool
                                    withName:UNMULTIPLY_ALPHA_CONSTANT_NAME];
+            [funcConstants setConstantValue:&key.premultiplyAlpha
+                                       type:MTLDataTypeBool
+                                   withName:PREMULTIPLY_ALPHA_CONSTANT_NAME];
+            [funcConstants setConstantValue:&key.transformLinearToSrgb
+                                       type:MTLDataTypeBool
+                                   withName:TRANSFORM_LINEAR_TO_SRGB_CONSTANT_NAME];
 
             // We create blit shader pipeline cache for each number of color outputs.
             // So blit k color outputs will use mBlitRenderPipelineCache[k-1] for example:
-            [funcConstants setConstantValue:&numOutputs
+            [funcConstants setConstantValue:&key.numColorAttachments
                                        type:MTLDataTypeUInt
                                    withName:NUM_COLOR_OUTPUTS_CONSTANT_NAME];
 
             // Set texture type constant
-            [funcConstants setConstantValue:&textureType
+            [funcConstants setConstantValue:&key.sourceTextureType
                                        type:MTLDataTypeInt
                                    withName:SOURCE_TEXTURE_TYPE_CONSTANT_NAME];
 
@@ -1360,28 +1359,18 @@ angle::Result ColorBlitUtils::getColorBlitRenderPipelineState(
 
     pipelineDesc.inputPrimitiveTopology = kPrimitiveTopologyClassTriangle;
 
-    AutoObjCPtr<id<MTLFunction>> *fragmentShader = nullptr;
-    int alphaPremultiplyType;
-    uint32_t nOutputIndex = renderPassDesc.numColorAttachments - 1;
-    int textureType       = GetShaderTextureType(params.src);
-    if (params.unpackPremultiplyAlpha == params.unpackUnmultiplyAlpha)
+    ShaderKey key;
+    key.numColorAttachments   = renderPassDesc.numColorAttachments;
+    key.sourceTextureType     = GetShaderTextureType(params.src);
+    key.transformLinearToSrgb = params.transformLinearToSrgb;
+    if (params.unpackPremultiplyAlpha != params.unpackUnmultiplyAlpha)
     {
-        alphaPremultiplyType = 0;
-        fragmentShader       = &mBlitFragmentShaders[nOutputIndex][textureType];
-    }
-    else if (params.unpackPremultiplyAlpha)
-    {
-        alphaPremultiplyType = 1;
-        fragmentShader       = &mBlitPremultiplyAlphaFragmentShaders[nOutputIndex][textureType];
-    }
-    else
-    {
-        alphaPremultiplyType = 2;
-        fragmentShader       = &mBlitUnmultiplyAlphaFragmentShaders[nOutputIndex][textureType];
+        key.unmultiplyAlpha  = params.unpackUnmultiplyAlpha;
+        key.premultiplyAlpha = params.unpackPremultiplyAlpha;
     }
 
-    ANGLE_TRY(ensureShadersInitialized(contextMtl, renderPassDesc.numColorAttachments,
-                                       alphaPremultiplyType, textureType, fragmentShader));
+    AutoObjCPtr<id<MTLFunction>> *fragmentShader = &mBlitFragmentShaders[key];
+    ANGLE_TRY(ensureShadersInitialized(contextMtl, key, fragmentShader));
 
     return contextMtl->getPipelineCache().getRenderPipeline(
         contextMtl, mVertexShader, *fragmentShader, pipelineDesc, outPipelineState);
@@ -2682,7 +2671,10 @@ angle::Result VertexFormatConversionUtils::convertVertexFormatToFloatCS(
     const angle::Format &srcAngleFormat,
     const VertexFormatConvertParams &params)
 {
-    ComputeCommandEncoder *cmdEncoder = contextMtl->getComputeCommandEncoder();
+    // Since vertex buffer doesn't depend on previous render commands we don't
+    // need to end the current render encoder.
+    ComputeCommandEncoder *cmdEncoder =
+        contextMtl->getComputeCommandEncoderWithoutEndingRenderEncoder();
     ASSERT(cmdEncoder);
 
     AutoObjCPtr<id<MTLComputePipelineState>> pipeline;
@@ -2758,7 +2750,10 @@ angle::Result VertexFormatConversionUtils::expandVertexFormatComponentsCS(
     const angle::Format &srcAngleFormat,
     const VertexFormatConvertParams &params)
 {
-    ComputeCommandEncoder *cmdEncoder = contextMtl->getComputeCommandEncoder();
+    // Since vertex buffer doesn't depend on previous render commands we don't
+    // need to end the current render encoder.
+    ComputeCommandEncoder *cmdEncoder =
+        contextMtl->getComputeCommandEncoderWithoutEndingRenderEncoder();
     ASSERT(cmdEncoder);
 
     AutoObjCPtr<id<MTLComputePipelineState>> pipeline;
@@ -2942,6 +2937,46 @@ angle::Result VertexFormatConversionUtils::getFloatConverstionRenderPipeline(
             contextMtl, mConvertToFloatVertexShaders[formatIDValue], nullptr, pipelineDesc,
             outPipelineState);
     }
+}
+
+angle::Result BlockLinearizationUtils::linearizeBlocks(ContextMtl *contextMtl,
+                                                       const BlockLinearizationParams &params)
+{
+    ComputeCommandEncoder *cmdEncoder = contextMtl->getComputeCommandEncoder();
+    ASSERT(cmdEncoder);
+
+    AutoObjCPtr<id<MTLComputePipelineState>> pipeline;
+    ANGLE_TRY(getBlockLinearizationComputePipeline(contextMtl, &pipeline));
+    cmdEncoder->setComputePipelineState(pipeline);
+
+    // Block layout
+    ASSERT(params.blocksWide >= 2 && params.blocksHigh >= 2);
+    const uint32_t dimensions[2] = {params.blocksWide, params.blocksHigh};
+    cmdEncoder->setData(dimensions, 0);
+
+    // Buffer with original PVRTC1 blocks
+    cmdEncoder->setBuffer(params.srcBuffer, params.srcBufferOffset, 1);
+
+    // Buffer to hold linearized PVRTC1 blocks
+    cmdEncoder->setBufferForWrite(params.dstBuffer, 0, 2);
+
+    NSUInteger w                  = pipeline.get().threadExecutionWidth;
+    NSUInteger h                  = pipeline.get().maxTotalThreadsPerThreadgroup / w;
+    MTLSize threadsPerThreadgroup = MTLSizeMake(w, h, 1);
+    MTLSize threads               = MTLSizeMake(params.blocksWide, params.blocksHigh, 1);
+    DispatchCompute(contextMtl, cmdEncoder,
+                    /** allowNonUniform */ true, threads, threadsPerThreadgroup);
+    return angle::Result::Continue;
+}
+
+angle::Result BlockLinearizationUtils::getBlockLinearizationComputePipeline(
+    ContextMtl *contextMtl,
+    AutoObjCPtr<id<MTLComputePipelineState>> *outPipelineState)
+{
+    ANGLE_TRY(EnsureComputeShaderInitialized(contextMtl, @"linearizeBlocks",
+                                             &mLinearizeBlocksComputeShader));
+    return contextMtl->getPipelineCache().getComputePipeline(
+        contextMtl, mLinearizeBlocksComputeShader, outPipelineState);
 }
 
 }  // namespace mtl

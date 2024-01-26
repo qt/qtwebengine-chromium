@@ -46,30 +46,29 @@ import * as Persistence from '../../models/persistence/persistence.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as NetworkForward from '../../panels/network/forward/forward.js';
 import * as Sources from '../../panels/sources/sources.js';
+import * as Adorners from '../../ui/components/adorners/adorners.js';
 import * as Coordinator from '../../ui/components/render_coordinator/render_coordinator.js';
 import * as DataGrid from '../../ui/legacy/components/data_grid/data_grid.js';
 import * as PerfUI from '../../ui/legacy/components/perf_ui/perf_ui.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
-import networkLogViewStyles from './networkLogView.css.js';
-
 import {
   Events,
+  type EventTypes,
   NetworkGroupNode,
-  NetworkRequestNode,
   type NetworkLogViewInterface,
   type NetworkNode,
-  type EventTypes,
+  NetworkRequestNode,
 } from './NetworkDataGridNode.js';
 import {NetworkFrameGrouper} from './NetworkFrameGrouper.js';
+import networkLogViewStyles from './networkLogView.css.js';
 import {NetworkLogViewColumns} from './NetworkLogViewColumns.js';
-
 import {
   NetworkTimeBoundary,
+  type NetworkTimeCalculator,
   NetworkTransferDurationCalculator,
   NetworkTransferTimeCalculator,
-  type NetworkTimeCalculator,
 } from './NetworkTimeCalculator.js';
 
 const UIStrings = {
@@ -81,6 +80,10 @@ const UIStrings = {
    *@description Tooltip for the 'invert' checkbox in the Network panel.
    */
   invertsFilter: 'Inverts the search filter',
+  /**
+   *@description Text for everything
+   */
+  allStrings: 'All',
   /**
    *@description Text in Network Log View of the Network panel
    */
@@ -100,7 +103,27 @@ const UIStrings = {
   /**
    *@description Aria accessible name in Network Log View of the Network panel
    */
-  resourceTypesToInclude: 'Resource types to include',
+  requestTypesToInclude: 'Request types to include',
+  /**
+   * @description Tooltip for the `Request types` dropdown in the Network Panel
+   */
+  requestTypesTooltip: 'Filter requests by type',
+  /**
+   * @description Label for the dropdown in the Network Panel
+   */
+  requestTypes: 'Request types',
+  /**
+   * @description Dynamic label for the `Request types` dropdown in the Network panel
+   * @example {Doc} PH1
+   * @example {CSS} PH2
+   */
+  twoTypesSelected: '{PH1}, {PH2}',
+  /**
+   * @description: Dynamic label for the `Request types` dropdown in the Network panel
+   * @example {Doc} PH1
+   * @example {CSS} PH2
+   */
+  overTwoTypesSelected: '{PH1}, {PH2}...',
   /**
    *@description Label for a checkbox in the Network panel. When checked, only requests with
    *             blocked response cookies are shown.
@@ -369,6 +392,14 @@ const UIStrings = {
    * for creating a header override
    */
   overrideHeaders: 'Override headers',
+  /**
+   * @description Tooltip for the Show only/Hide requests dropdown of the filterbar
+   */
+  showOnlyHideRequests: 'Show only/hide requests',
+  /**
+   * @description Text for the Show only/Hide requests dropdown button of the filterbar
+   */
+  moreFilters: 'More filters',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/network/NetworkLogView.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -413,12 +444,13 @@ export class NetworkLogView extends Common.ObjectWrapper.eventMixin<EventTypes, 
   private activeGroupLookup: GroupLookupInterface|null;
   private readonly textFilterUI: UI.FilterBar.TextFilterUI;
   private readonly invertFilterUI: UI.FilterBar.CheckboxFilterUI;
-  private readonly dataURLFilterUI: UI.FilterBar.CheckboxFilterUI;
-  private resourceCategoryFilterUI: UI.FilterBar.NamedBitSetFilterUI;
-  private readonly onlyBlockedResponseCookiesFilterUI: UI.FilterBar.CheckboxFilterUI;
-  private readonly onlyBlockedRequestsUI: UI.FilterBar.CheckboxFilterUI;
-  private readonly onlyThirdPartyFilterUI: UI.FilterBar.CheckboxFilterUI;
-  private readonly hideChromeExtensionsUI: UI.FilterBar.CheckboxFilterUI;
+  private readonly dataURLFilterUI: UI.FilterBar.CheckboxFilterUI|undefined;
+  private readonly moreFiltersDropDownUI: MoreFiltersDropDownUI|undefined;
+  private readonly onlyBlockedResponseCookiesFilterUI: UI.FilterBar.CheckboxFilterUI|undefined;
+  private readonly onlyBlockedRequestsUI: UI.FilterBar.CheckboxFilterUI|undefined;
+  private readonly onlyThirdPartyFilterUI: UI.FilterBar.CheckboxFilterUI|undefined;
+  private readonly hideChromeExtensionsUI: UI.FilterBar.CheckboxFilterUI|undefined;
+  private readonly resourceCategoryFilterUI: DropDownTypesUI|UI.FilterBar.NamedBitSetFilterUI;
   private readonly filterParser: TextUtils.TextUtils.FilterParser;
   private readonly suggestionBuilder: UI.FilterSuggestionBuilder.FilterSuggestionBuilder;
   private dataGrid: DataGrid.SortableDataGrid.SortableDataGrid<NetworkNode>;
@@ -501,56 +533,72 @@ export class NetworkLogView extends Common.ObjectWrapper.eventMixin<EventTypes, 
         UI.FilterBar.FilterUIEvents.FilterChanged, this.filterChanged.bind(this), this);
     UI.Tooltip.Tooltip.install(this.invertFilterUI.element(), i18nString(UIStrings.invertsFilter));
     filterBar.addFilter(this.invertFilterUI);
-
-    this.dataURLFilterUI = new UI.FilterBar.CheckboxFilterUI(
-        'hide-data-url', i18nString(UIStrings.hideDataUrls), true, this.networkHideDataURLSetting);
-    this.dataURLFilterUI.addEventListener(
-        UI.FilterBar.FilterUIEvents.FilterChanged, this.filterChanged.bind(this), this);
-    UI.Tooltip.Tooltip.install(this.dataURLFilterUI.element(), i18nString(UIStrings.hidesDataAndBlobUrls));
-    filterBar.addFilter(this.dataURLFilterUI);
-
-    this.hideChromeExtensionsUI = new UI.FilterBar.CheckboxFilterUI(
-        'chrome-extension', i18nString(UIStrings.chromeExtensions), true, this.networkHideChromeExtensions);
-    this.hideChromeExtensionsUI.addEventListener(
-        UI.FilterBar.FilterUIEvents.FilterChanged, this.filterChanged.bind(this), this);
-    UI.Tooltip.Tooltip.install(this.hideChromeExtensionsUI.element(), i18nString(UIStrings.hideChromeExtension));
-    filterBar.addFilter(this.hideChromeExtensionsUI);
+    filterBar.addDivider();
 
     const filterItems =
         Object.values(Common.ResourceType.resourceCategories)
             .map(
                 category =>
                     ({name: category.title(), label: (): string => category.shortTitle(), title: category.title()}));
-    this.resourceCategoryFilterUI =
-        new UI.FilterBar.NamedBitSetFilterUI(filterItems, this.networkResourceTypeFiltersSetting);
-    UI.ARIAUtils.setLabel(this.resourceCategoryFilterUI.element(), i18nString(UIStrings.resourceTypesToInclude));
-    this.resourceCategoryFilterUI.addEventListener(
-        UI.FilterBar.FilterUIEvents.FilterChanged, this.filterChanged.bind(this), this);
-    filterBar.addFilter(this.resourceCategoryFilterUI);
 
-    this.onlyBlockedResponseCookiesFilterUI = new UI.FilterBar.CheckboxFilterUI(
-        'only-show-blocked-cookies', i18nString(UIStrings.hasBlockedCookies), true,
-        this.networkShowBlockedCookiesOnlySetting);
-    this.onlyBlockedResponseCookiesFilterUI.addEventListener(
-        UI.FilterBar.FilterUIEvents.FilterChanged, this.filterChanged.bind(this), this);
-    UI.Tooltip.Tooltip.install(
-        this.onlyBlockedResponseCookiesFilterUI.element(), i18nString(UIStrings.onlyShowRequestsWithBlockedCookies));
-    filterBar.addFilter(this.onlyBlockedResponseCookiesFilterUI);
+    if (Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.NETWORK_PANEL_FILTER_BAR_REDESIGN)) {
+      this.resourceCategoryFilterUI =
+          new DropDownTypesUI(filterItems, this.filterChanged.bind(this), this.networkResourceTypeFiltersSetting);
+      UI.ARIAUtils.setLabel(this.resourceCategoryFilterUI.element(), i18nString(UIStrings.requestTypesToInclude));
+      this.resourceCategoryFilterUI.addEventListener(
+          UI.FilterBar.FilterUIEvents.FilterChanged, this.filterChanged.bind(this), this);
+      filterBar.addFilter(this.resourceCategoryFilterUI);
+      filterBar.addDivider();
 
-    this.onlyBlockedRequestsUI = new UI.FilterBar.CheckboxFilterUI(
-        'only-show-blocked-requests', i18nString(UIStrings.blockedRequests), true,
-        this.networkOnlyBlockedRequestsSetting);
-    this.onlyBlockedRequestsUI.addEventListener(
-        UI.FilterBar.FilterUIEvents.FilterChanged, this.filterChanged.bind(this), this);
-    UI.Tooltip.Tooltip.install(this.onlyBlockedRequestsUI.element(), i18nString(UIStrings.onlyShowBlockedRequests));
-    filterBar.addFilter(this.onlyBlockedRequestsUI);
+      this.moreFiltersDropDownUI = new MoreFiltersDropDownUI(this.filterChanged.bind(this));
+      filterBar.addFilter(this.moreFiltersDropDownUI);
+    } else {
+      this.dataURLFilterUI = new UI.FilterBar.CheckboxFilterUI(
+          'hide-data-url', i18nString(UIStrings.hideDataUrls), true, this.networkHideDataURLSetting);
+      this.dataURLFilterUI.addEventListener(
+          UI.FilterBar.FilterUIEvents.FilterChanged, this.filterChanged.bind(this), this);
+      UI.Tooltip.Tooltip.install(this.dataURLFilterUI.element(), i18nString(UIStrings.hidesDataAndBlobUrls));
+      filterBar.addFilter(this.dataURLFilterUI);
 
-    this.onlyThirdPartyFilterUI = new UI.FilterBar.CheckboxFilterUI(
-        'only-show-third-party', i18nString(UIStrings.thirdParty), true, this.networkOnlyThirdPartySetting);
-    this.onlyThirdPartyFilterUI.addEventListener(
-        UI.FilterBar.FilterUIEvents.FilterChanged, this.filterChanged.bind(this), this);
-    UI.Tooltip.Tooltip.install(this.onlyThirdPartyFilterUI.element(), i18nString(UIStrings.onlyShowThirdPartyRequests));
-    filterBar.addFilter(this.onlyThirdPartyFilterUI);
+      this.hideChromeExtensionsUI = new UI.FilterBar.CheckboxFilterUI(
+          'chrome-extension', i18nString(UIStrings.chromeExtensions), true, this.networkHideChromeExtensions);
+      this.hideChromeExtensionsUI.addEventListener(
+          UI.FilterBar.FilterUIEvents.FilterChanged, this.filterChanged.bind(this), this);
+      UI.Tooltip.Tooltip.install(this.hideChromeExtensionsUI.element(), i18nString(UIStrings.hideChromeExtension));
+      filterBar.addFilter(this.hideChromeExtensionsUI);
+
+      this.resourceCategoryFilterUI =
+          new UI.FilterBar.NamedBitSetFilterUI(filterItems, this.networkResourceTypeFiltersSetting);
+      UI.ARIAUtils.setLabel(this.resourceCategoryFilterUI.element(), i18nString(UIStrings.requestTypesToInclude));
+      this.resourceCategoryFilterUI.addEventListener(
+          UI.FilterBar.FilterUIEvents.FilterChanged, this.filterChanged.bind(this), this);
+      filterBar.addFilter(this.resourceCategoryFilterUI);
+
+      this.onlyBlockedResponseCookiesFilterUI = new UI.FilterBar.CheckboxFilterUI(
+          'only-show-blocked-cookies', i18nString(UIStrings.hasBlockedCookies), true,
+          this.networkShowBlockedCookiesOnlySetting);
+      this.onlyBlockedResponseCookiesFilterUI.addEventListener(
+          UI.FilterBar.FilterUIEvents.FilterChanged, this.filterChanged.bind(this), this);
+      UI.Tooltip.Tooltip.install(
+          this.onlyBlockedResponseCookiesFilterUI.element(), i18nString(UIStrings.onlyShowRequestsWithBlockedCookies));
+      filterBar.addFilter(this.onlyBlockedResponseCookiesFilterUI);
+
+      this.onlyBlockedRequestsUI = new UI.FilterBar.CheckboxFilterUI(
+          'only-show-blocked-requests', i18nString(UIStrings.blockedRequests), true,
+          this.networkOnlyBlockedRequestsSetting);
+      this.onlyBlockedRequestsUI.addEventListener(
+          UI.FilterBar.FilterUIEvents.FilterChanged, this.filterChanged.bind(this), this);
+      UI.Tooltip.Tooltip.install(this.onlyBlockedRequestsUI.element(), i18nString(UIStrings.onlyShowBlockedRequests));
+      filterBar.addFilter(this.onlyBlockedRequestsUI);
+
+      this.onlyThirdPartyFilterUI = new UI.FilterBar.CheckboxFilterUI(
+          'only-show-third-party', i18nString(UIStrings.thirdParty), true, this.networkOnlyThirdPartySetting);
+      this.onlyThirdPartyFilterUI.addEventListener(
+          UI.FilterBar.FilterUIEvents.FilterChanged, this.filterChanged.bind(this), this);
+      UI.Tooltip.Tooltip.install(
+          this.onlyThirdPartyFilterUI.element(), i18nString(UIStrings.onlyShowThirdPartyRequests));
+      filterBar.addFilter(this.onlyThirdPartyFilterUI);
+    }
 
     this.filterParser = new TextUtils.TextUtils.FilterParser(searchKeys);
     this.suggestionBuilder =
@@ -593,6 +641,10 @@ export class NetworkLogView extends Common.ObjectWrapper.eventMixin<EventTypes, 
     if (this.textFilterSetting.get()) {
       this.textFilterUI.setValue(this.textFilterSetting.get());
     }
+  }
+
+  getMoreFiltersDropdown(): MoreFiltersDropDownUI|undefined {
+    return this.moreFiltersDropDownUI;
   }
 
   private updateGroupByFrame(): void {
@@ -958,6 +1010,7 @@ export class NetworkLogView extends Common.ObjectWrapper.eventMixin<EventTypes, 
     this.parseFilterQuery(this.textFilterUI.value(), this.invertFilterUI.checked());
     this.filterRequests();
     this.textFilterSetting.set(this.textFilterUI.value());
+    this.moreFiltersDropDownUI?.updateActiveFiltersCount();
   }
 
   async resetFilter(): Promise<void> {
@@ -1482,12 +1535,22 @@ export class NetworkLogView extends Common.ObjectWrapper.eventMixin<EventTypes, 
     this.scheduleRefresh();
   }
 
+  // TODO(crbug.com/1477668)
   setTextFilterValue(filterString: string): void {
     this.textFilterUI.setValue(filterString);
-    this.dataURLFilterUI.setChecked(false);
-    this.onlyBlockedResponseCookiesFilterUI.setChecked(false);
-    this.onlyBlockedRequestsUI.setChecked(false);
-    this.hideChromeExtensionsUI.setChecked(false);
+    if (Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.NETWORK_PANEL_FILTER_BAR_REDESIGN)) {
+      this.networkHideDataURLSetting.set(false);
+      this.networkShowBlockedCookiesOnlySetting.set(false);
+      this.networkOnlyBlockedRequestsSetting.set(false);
+      this.networkOnlyThirdPartySetting.set(false);
+      this.networkHideChromeExtensions.set(false);
+    } else {
+      this.dataURLFilterUI?.setChecked(false);
+      this.onlyBlockedResponseCookiesFilterUI?.setChecked(false);
+      this.onlyBlockedRequestsUI?.setChecked(false);
+      this.onlyThirdPartyFilterUI?.setChecked(false);
+      this.hideChromeExtensionsUI?.setChecked(false);
+    }
     this.resourceCategoryFilterUI.reset();
   }
 
@@ -1838,19 +1901,36 @@ export class NetworkLogView extends Common.ObjectWrapper.eventMixin<EventTypes, 
     if (!this.resourceCategoryFilterUI.accept(categoryName)) {
       return false;
     }
-    if (this.dataURLFilterUI.checked() && (request.parsedURL.isDataURL() || request.parsedURL.isBlobURL())) {
+    const [hideDataURL, blockedCookies, blockedRequests, thirdParty, hideExtensionURL] =
+        Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.NETWORK_PANEL_FILTER_BAR_REDESIGN) ?
+        [
+          this.networkHideDataURLSetting.get(),
+          this.networkShowBlockedCookiesOnlySetting.get(),
+          this.networkOnlyBlockedRequestsSetting.get(),
+          this.networkOnlyThirdPartySetting.get(),
+          this.networkHideChromeExtensions.get(),
+        ] :
+        [
+          this.dataURLFilterUI?.checked(),
+          this.onlyBlockedResponseCookiesFilterUI?.checked(),
+          this.onlyBlockedRequestsUI?.checked(),
+          this.onlyThirdPartyFilterUI?.checked(),
+          this.hideChromeExtensionsUI?.checked(),
+        ];
+
+    if (hideDataURL && (request.parsedURL.isDataURL() || request.parsedURL.isBlobURL())) {
       return false;
     }
-    if (this.onlyBlockedResponseCookiesFilterUI.checked() && !request.blockedResponseCookies().length) {
+    if (blockedCookies && !request.blockedResponseCookies().length) {
       return false;
     }
-    if (this.onlyBlockedRequestsUI.checked() && !request.wasBlocked() && !request.corsErrorStatus()) {
+    if (blockedRequests && !request.wasBlocked() && !request.corsErrorStatus()) {
       return false;
     }
-    if (this.onlyThirdPartyFilterUI.checked() && request.isSameSite()) {
+    if (thirdParty && request.isSameSite()) {
       return false;
     }
-    if (this.hideChromeExtensionsUI.checked() && request.scheme === 'chrome-extension') {
+    if (hideExtensionURL && request.scheme === 'chrome-extension') {
       return false;
     }
     for (let i = 0; i < this.filters.length; ++i) {
@@ -2404,11 +2484,11 @@ export class NetworkLogView extends Common.ObjectWrapper.eventMixin<EventTypes, 
   }
 
   static getDCLEventColor(): string {
-    return '--color-syntax-3';
+    return '--sys-color-token-attribute-value';
   }
 
   static getLoadEventColor(): string {
-    return '--color-syntax-1';
+    return '--sys-color-token-property-special';
   }
 }
 
@@ -2453,3 +2533,309 @@ export const overrideFilter = {
 };
 
 export type Filter = (request: SDK.NetworkRequest.NetworkRequest) => boolean;
+
+export class DropDownTypesUI extends Common.ObjectWrapper.ObjectWrapper<UI.FilterBar.FilterUIEventTypes> implements
+    UI.FilterBar.FilterUI {
+  private readonly filterElement: HTMLDivElement;
+  private readonly dropDownButton: UI.Toolbar.ToolbarButton;
+  private readonly filterChanged: () => void;
+  private displayedTypes: Set<string>;
+  private readonly setting: Common.Settings.Setting<{[key: string]: boolean}>;
+  private readonly items: UI.FilterBar.Item[];
+  private contextMenu?: UI.ContextMenu.ContextMenu;
+  private selectedTypesCount: HTMLElement;
+  private typesCountAdorner: Adorners.Adorner.Adorner;
+
+  constructor(
+      items: UI.FilterBar.Item[], filterChangedCallback: () => void,
+      setting: Common.Settings.Setting<{[key: string]: boolean}>) {
+    super();
+    this.items = items;
+    this.filterChanged = filterChangedCallback;
+
+    this.filterElement = document.createElement('div');
+
+    this.typesCountAdorner = new Adorners.Adorner.Adorner();
+    this.selectedTypesCount = document.createElement('span');
+    this.typesCountAdorner.data = {
+      name: 'countWrapper',
+      content: this.selectedTypesCount,
+    };
+    this.typesCountAdorner.classList.add('active-filters-count');
+
+    this.dropDownButton = new UI.Toolbar.ToolbarButton(UIStrings.requestTypesTooltip, this.typesCountAdorner);
+    this.dropDownButton.setText(UIStrings.requestTypes);
+    this.filterElement.appendChild(this.dropDownButton.element);
+    this.dropDownButton.turnIntoSelect();
+    this.dropDownButton.element.classList.add('dropdown-filterbar');
+
+    this.dropDownButton.addEventListener(UI.Toolbar.ToolbarButton.Events.Click, this.showContextMenu.bind(this));
+    UI.ARIAUtils.markAsMenuButton(this.dropDownButton.element);
+
+    this.displayedTypes = new Set();
+
+    this.setting = setting;
+    setting.addChangeListener(this.settingChanged.bind(this));
+    this.setting.addChangeListener(this.filterChanged.bind(this));
+    this.settingChanged();
+  }
+
+  discard(): void {
+    this.contextMenu?.discard();
+  }
+
+  showContextMenu(event: Common.EventTarget.EventTargetEvent<Event>): void {
+    const mouseEvent = event.data;
+    this.contextMenu = new UI.ContextMenu.ContextMenu(mouseEvent, {
+      useSoftMenu: true,
+      keepOpen: true,
+      x: this.dropDownButton.element.getBoundingClientRect().left,
+      y: this.dropDownButton.element.getBoundingClientRect().top +
+          (this.dropDownButton.element as HTMLElement).offsetHeight,
+    });
+
+    this.addRequestType(this.contextMenu, DropDownTypesUI.ALL_TYPES, i18nString(UIStrings.allStrings));
+    this.contextMenu.defaultSection().appendSeparator();
+
+    for (const item of this.items) {
+      this.addRequestType(this.contextMenu, item.name, item.name);
+    }
+
+    this.update();
+    void this.contextMenu.show();
+  }
+
+  private addRequestType(contextMenu: UI.ContextMenu.ContextMenu, name: string, label: string): void {
+    contextMenu.defaultSection().appendCheckboxItem(label, () => {
+      this.setting.get()[name] = !this.setting.get()[name];
+      this.toggleTypeFilter(name);
+    }, this.setting.get()[name]);
+  }
+
+  private toggleTypeFilter(typeName: string): void {
+    if (typeName !== DropDownTypesUI.ALL_TYPES) {
+      this.displayedTypes.delete(DropDownTypesUI.ALL_TYPES);
+    } else {
+      this.displayedTypes = new Set();
+    }
+
+    if (this.displayedTypes.has(typeName)) {
+      this.displayedTypes.delete(typeName);
+    } else {
+      this.displayedTypes.add(typeName);
+    }
+
+    if (this.displayedTypes.size === 0) {
+      this.displayedTypes.add(DropDownTypesUI.ALL_TYPES);
+    }
+
+    // Settings do not support `Sets` so convert it back to the Map-like object.
+    const updatedSetting = {} as {[key: string]: boolean};
+    for (const type of this.displayedTypes) {
+      updatedSetting[type] = true;
+    }
+
+    this.setting.set(updatedSetting);
+
+    // For the feature of keeping the dropdown open while choosing its options:
+    // this code provides the dinamic changes of the checkboxes' state in this dropdown
+    const menuItems = this.contextMenu?.getItems() || [];
+    for (const i of menuItems) {
+      if (i.label) {
+        this.contextMenu?.setChecked(i, this.displayedTypes.has(i.label));
+      }
+    }
+    this.contextMenu?.setChecked(menuItems[0], this.displayedTypes.has('all'));
+  }
+
+  private settingChanged(): void {
+    this.displayedTypes = new Set();
+
+    for (const s in this.setting.get()) {
+      this.displayedTypes.add(s);
+    }
+    this.update();
+  }
+
+  private update(): void {
+    if (this.displayedTypes.size === 0 || this.displayedTypes.has(DropDownTypesUI.ALL_TYPES)) {
+      this.displayedTypes = new Set();
+      this.displayedTypes.add(DropDownTypesUI.ALL_TYPES);
+    }
+    this.updateSelectedTypesCount();
+    this.updateLabel();
+  }
+
+  updateSelectedTypesCount(): void {
+    if (!this.displayedTypes.has(DropDownTypesUI.ALL_TYPES)) {
+      this.selectedTypesCount.textContent = this.displayedTypes.size.toString();
+      this.typesCountAdorner.classList.remove('hidden');
+    } else {
+      this.typesCountAdorner.classList.add('hidden');
+    }
+  }
+
+  updateLabel(): void {
+    if (this.displayedTypes.has(DropDownTypesUI.ALL_TYPES)) {
+      this.dropDownButton.setText(i18nString(UIStrings.requestTypes));
+      return;
+    }
+
+    let newLabel;
+    if (this.displayedTypes.size === 1) {
+      const type = this.displayedTypes.values().next().value;
+      newLabel = Common.ResourceType.ResourceCategory.categoryByTitle(type)?.shortTitle() || '';
+    } else {
+      // show up to two last selected types
+      const twoLastSelected = Array.from(this.displayedTypes).slice(-2).reverse();
+      const shortNames =
+          twoLastSelected.map(type => Common.ResourceType.ResourceCategory.categoryByTitle(type)?.shortTitle() || '');
+      const valuesToDisplay = {PH1: shortNames[0], PH2: shortNames[1]};
+      newLabel = this.displayedTypes.size === 2 ? i18nString(UIStrings.twoTypesSelected, valuesToDisplay) :
+                                                  i18nString(UIStrings.overTwoTypesSelected, valuesToDisplay);
+    }
+    this.dropDownButton.setText(newLabel);
+  }
+
+  isActive(): boolean {
+    return !this.displayedTypes.has(DropDownTypesUI.ALL_TYPES);
+  }
+
+  element(): HTMLDivElement {
+    return this.filterElement;
+  }
+
+  reset(): void {
+    this.toggleTypeFilter(DropDownTypesUI.ALL_TYPES);
+  }
+
+  accept(typeName: string): boolean {
+    return this.displayedTypes.has(DropDownTypesUI.ALL_TYPES) || this.displayedTypes.has(typeName);
+  }
+
+  static readonly ALL_TYPES = 'all';
+}
+
+export class MoreFiltersDropDownUI extends
+    Common.ObjectWrapper.ObjectWrapper<UI.FilterBar.FilterUIEventTypes> implements UI.FilterBar.FilterUI {
+  private readonly filterElement: HTMLDivElement;
+  private readonly dropDownButton: UI.Toolbar.ToolbarButton;
+  private readonly filterChangedCallback: () => void;
+  private networkHideDataURLSetting: Common.Settings.Setting<boolean>;
+  private networkHideChromeExtensionsSetting: Common.Settings.Setting<boolean>;
+  private networkShowBlockedCookiesOnlySetting: Common.Settings.Setting<boolean>;
+  private networkOnlyBlockedRequestsSetting: Common.Settings.Setting<boolean>;
+  private networkOnlyThirdPartySetting: Common.Settings.Setting<boolean>;
+  private contextMenu?: UI.ContextMenu.ContextMenu;
+  private activeFiltersCount: HTMLElement;
+  private activeFiltersCountAdorner: Adorners.Adorner.Adorner;
+
+  constructor(filterChangedCallback: () => void) {
+    super();
+    this.filterChangedCallback = filterChangedCallback;
+
+    this.networkHideDataURLSetting = Common.Settings.Settings.instance().createSetting('networkHideDataURL', false);
+    this.networkHideChromeExtensionsSetting =
+        Common.Settings.Settings.instance().createSetting('networkHideChromeExtensions', false);
+    this.networkShowBlockedCookiesOnlySetting =
+        Common.Settings.Settings.instance().createSetting('networkShowBlockedCookiesOnlySetting', false);
+    this.networkOnlyBlockedRequestsSetting =
+        Common.Settings.Settings.instance().createSetting('networkOnlyBlockedRequests', false);
+    this.networkOnlyThirdPartySetting =
+        Common.Settings.Settings.instance().createSetting('networkOnlyThirdPartySetting', false);
+
+    this.filterElement = document.createElement('div');
+    this.filterElement.setAttribute('aria-label', 'Show only/hide requests dropdown');
+
+    this.activeFiltersCountAdorner = new Adorners.Adorner.Adorner();
+    this.activeFiltersCount = document.createElement('span');
+    this.activeFiltersCountAdorner.data = {
+      name: 'countWrapper',
+      content: this.activeFiltersCount,
+    };
+    this.activeFiltersCountAdorner.classList.add('active-filters-count');
+    this.updateActiveFiltersCount();
+
+    this.dropDownButton = new UI.Toolbar.ToolbarButton(
+        i18nString(UIStrings.showOnlyHideRequests), this.activeFiltersCountAdorner, i18nString(UIStrings.moreFilters));
+    this.filterElement.appendChild(this.dropDownButton.element);
+    this.dropDownButton.turnIntoSelect();
+    this.dropDownButton.element.classList.add('dropdown-filterbar');
+    this.dropDownButton.addEventListener(
+        UI.Toolbar.ToolbarButton.Events.Click, this.showMoreFiltersContextMenu.bind(this));
+    UI.ARIAUtils.markAsMenuButton(this.dropDownButton.element);
+  }
+
+  showMoreFiltersContextMenu(event: Common.EventTarget.EventTargetEvent<Event>): void {
+    const mouseEvent = event.data;
+
+    this.networkHideDataURLSetting.addChangeListener(this.filterChangedCallback.bind(this));
+    this.networkHideChromeExtensionsSetting.addChangeListener(this.filterChangedCallback.bind(this));
+    this.networkShowBlockedCookiesOnlySetting.addChangeListener(this.filterChangedCallback.bind(this));
+    this.networkOnlyBlockedRequestsSetting.addChangeListener(this.filterChangedCallback.bind(this));
+    this.networkOnlyThirdPartySetting.addChangeListener(this.filterChangedCallback.bind(this));
+    this.contextMenu = new UI.ContextMenu.ContextMenu(mouseEvent, {
+      useSoftMenu: true,
+      keepOpen: true,
+      x: this.dropDownButton.element.getBoundingClientRect().left,
+      y: this.dropDownButton.element.getBoundingClientRect().top +
+          (this.dropDownButton.element as HTMLElement).offsetHeight,
+    });
+
+    this.contextMenu.defaultSection().appendCheckboxItem(
+        i18nString(UIStrings.hideDataUrls),
+        () => this.networkHideDataURLSetting.set(!this.networkHideDataURLSetting.get()),
+        this.networkHideDataURLSetting.get(), undefined, undefined, i18nString(UIStrings.hidesDataAndBlobUrls));
+    this.contextMenu.defaultSection().appendCheckboxItem(
+        i18nString(UIStrings.chromeExtensions),
+        () => this.networkHideChromeExtensionsSetting.set(!this.networkHideChromeExtensionsSetting.get()),
+        this.networkHideChromeExtensionsSetting.get(), undefined, undefined, i18nString(UIStrings.hideChromeExtension));
+    this.contextMenu.defaultSection().appendSeparator();
+
+    this.contextMenu.defaultSection().appendCheckboxItem(
+        i18nString(UIStrings.hasBlockedCookies),
+        () => this.networkShowBlockedCookiesOnlySetting.set(!this.networkShowBlockedCookiesOnlySetting.get()),
+        this.networkShowBlockedCookiesOnlySetting.get(), undefined, undefined,
+        i18nString(UIStrings.onlyShowRequestsWithBlockedCookies));
+    this.contextMenu.defaultSection().appendCheckboxItem(
+        i18nString(UIStrings.blockedRequests),
+        () => this.networkOnlyBlockedRequestsSetting.set(!this.networkOnlyBlockedRequestsSetting.get()),
+        this.networkOnlyBlockedRequestsSetting.get(), undefined, undefined,
+        i18nString(UIStrings.onlyShowBlockedRequests));
+    this.contextMenu.defaultSection().appendCheckboxItem(
+        i18nString(UIStrings.thirdParty),
+        () => this.networkOnlyThirdPartySetting.set(!this.networkOnlyThirdPartySetting.get()),
+        this.networkOnlyThirdPartySetting.get(), undefined, undefined,
+        i18nString(UIStrings.onlyShowThirdPartyRequests));
+
+    void this.contextMenu.show();
+  }
+
+  updateActiveFiltersCount(): void {
+    const settings = [
+      this.networkHideDataURLSetting.get(),
+      this.networkHideChromeExtensionsSetting.get(),
+      this.networkShowBlockedCookiesOnlySetting.get(),
+      this.networkOnlyBlockedRequestsSetting.get(),
+      this.networkOnlyThirdPartySetting.get(),
+    ];
+    const count = settings.filter(Boolean).length;
+    this.activeFiltersCount.textContent = count.toString();
+    count ? this.activeFiltersCountAdorner.classList.remove('hidden') :
+            this.activeFiltersCountAdorner.classList.add('hidden');
+  }
+
+  discard(): void {
+    if (this.contextMenu) {
+      this.contextMenu.discard();
+    }
+  }
+
+  isActive(): boolean {
+    return true;
+  }
+
+  element(): HTMLDivElement {
+    return this.filterElement;
+  }
+}

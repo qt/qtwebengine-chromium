@@ -771,11 +771,6 @@ bool TCompiler::checkAndSimplifyAST(TIntermBlock *root,
         return false;
     }
 
-    if (shouldLimitTypeSizes() && !ValidateTypeSizeLimitations(root, &mSymbolTable, &mDiagnostics))
-    {
-        return false;
-    }
-
     if (!ValidateFragColorAndFragData(mShaderType, mShaderVersion, mSymbolTable, &mDiagnostics))
     {
         return false;
@@ -994,7 +989,8 @@ bool TCompiler::checkAndSimplifyAST(TIntermBlock *root,
         mResources.MaxDrawBuffers > 1 &&
         IsExtensionEnabled(mExtensionBehavior, TExtension::EXT_draw_buffers))
     {
-        if (!EmulateGLFragColorBroadcast(this, root, mResources.MaxDrawBuffers, &mOutputVariables,
+        if (!EmulateGLFragColorBroadcast(this, root, mResources.MaxDrawBuffers,
+                                         mResources.MaxDualSourceDrawBuffers, &mOutputVariables,
                                          &mSymbolTable, mShaderVersion))
         {
             return false;
@@ -1056,6 +1052,13 @@ bool TCompiler::checkAndSimplifyAST(TIntermBlock *root,
         return false;
     }
 
+    // Run after RemoveUnreferencedVariables, validate that the shader does not have excessively
+    // large variables.
+    if (shouldLimitTypeSizes() && !ValidateTypeSizeLimitations(root, &mSymbolTable, &mDiagnostics))
+    {
+        return false;
+    }
+
     // Built-in function emulation needs to happen after validateLimitations pass.
     GetGlobalPoolAllocator()->lock();
     initBuiltInFunctionEmulator(&mBuiltInFunctionEmulator, compileOptions);
@@ -1095,6 +1098,10 @@ bool TCompiler::checkAndSimplifyAST(TIntermBlock *root,
     if (compileOptions.enforcePackingRestrictions)
     {
         int maxUniformVectors = GetMaxUniformVectorsForShaderType(mShaderType, mResources);
+        if (mShaderType == GL_VERTEX_SHADER && compileOptions.emulateClipOrigin)
+        {
+            --maxUniformVectors;
+        }
         // Returns true if, after applying the packing rules in the GLSL ES 1.00.17 spec
         // Appendix A, section 7, the shader does not use too many uniforms.
         if (!CheckVariablesInPackingLimits(maxUniformVectors, mUniforms))

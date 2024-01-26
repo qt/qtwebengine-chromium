@@ -1,16 +1,29 @@
-// Copyright 2019 The Dawn Authors
+// Copyright 2019 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/vulkan/BackendVk.h"
 
@@ -148,9 +161,10 @@ static constexpr ICD kICDs[] = {
 
 // Suppress validation errors that are known. Returns false in that case.
 bool ShouldReportDebugMessage(const char* messageId, const char* message) {
-    // pMessageIdName may be NULL
-    if (messageId == nullptr) {
-        return true;
+    // If a driver gives us a NULL pMessage (which would be a violation of the Vulkan spec)
+    // then ignore this message.
+    if (message == nullptr) {
+        return false;
     }
 
     // Some Vulkan drivers send "error" messages of "VK_SUCCESS" when zero devices are
@@ -162,6 +176,12 @@ bool ShouldReportDebugMessage(const char* messageId, const char* message) {
         return false;
     }
 
+    // The Vulkan spec does allow pMessageIdName to be NULL, but it may still contain a valid
+    // message. Since we can't compare it with our skipped message list allow it through.
+    if (messageId == nullptr) {
+        return true;
+    }
+
     for (const SkippedMessage& msg : kSkippedMessages) {
         if (strstr(messageId, msg.messageId) != nullptr &&
             strstr(message, msg.messageContents) != nullptr) {
@@ -169,6 +189,21 @@ bool ShouldReportDebugMessage(const char* messageId, const char* message) {
         }
     }
     return true;
+}
+
+void LogCallbackData(LogSeverity severity,
+                     const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData) {
+    LogMessage log = LogMessage(severity);
+
+    // pMessageIdName may be NULL, according to the Vulkan spec. Passing NULL into an ostream is
+    // undefined behavior, so we'll handle that scenario separately.
+    if (pCallbackData->pMessageIdName != nullptr) {
+        log << pCallbackData->pMessageIdName;
+    } else {
+        log << "nullptr";
+    }
+
+    log << ": " << pCallbackData->pMessage;
 }
 
 VKAPI_ATTR VkBool32 VKAPI_CALL
@@ -181,7 +216,7 @@ OnDebugUtilsCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     }
 
     if (!(messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)) {
-        dawn::WarningLog() << pCallbackData->pMessageIdName << ": " << pCallbackData->pMessage;
+        LogCallbackData(LogSeverity::Warning, pCallbackData);
         return VK_FALSE;
     }
 
@@ -207,13 +242,13 @@ OnDebugUtilsCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
 
     // We get to this line if no device was associated with the message. Crash so that the failure
     // is loud and makes tests fail in Debug.
-    dawn::ErrorLog() << pCallbackData->pMessageIdName << ": " << pCallbackData->pMessage;
-    ASSERT(false);
+    LogCallbackData(LogSeverity::Error, pCallbackData);
+    DAWN_ASSERT(false);
 
     return VK_FALSE;
 }
 
-// A debug callback specifically for instance creation so that we don't fire an ASSERT when
+// A debug callback specifically for instance creation so that we don't fire an DAWN_ASSERT when
 // the instance fails creation in an expected manner (for example the system not having
 // Vulkan drivers).
 VKAPI_ATTR VkBool32 VKAPI_CALL
@@ -230,7 +265,7 @@ OnInstanceCreationDebugUtilsCallback(VkDebugUtilsMessageSeverityFlagBitsEXT mess
 VulkanInstance::VulkanInstance() = default;
 
 VulkanInstance::~VulkanInstance() {
-    ASSERT(mMessageListenerDevices.empty());
+    DAWN_ASSERT(mMessageListenerDevices.empty());
 
     if (mDebugUtilsMessenger != VK_NULL_HANDLE) {
         mFunctions.DestroyDebugUtilsMessengerEXT(mInstance, mDebugUtilsMessenger, nullptr);
@@ -311,7 +346,7 @@ MaybeError VulkanInstance::Initialize(const InstanceBase* instance, ICD icd) {
             break;
 #endif  // defined(DAWN_ENABLE_SWIFTSHADER)
         // ICD::SwiftShader should not be passed if SwiftShader is not enabled.
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
         }
     }
 

@@ -10,6 +10,7 @@
 #ifndef EIGEN_LEAST_SQUARE_CONJUGATE_GRADIENT_H
 #define EIGEN_LEAST_SQUARE_CONJUGATE_GRADIENT_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen { 

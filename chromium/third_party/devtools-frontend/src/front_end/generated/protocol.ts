@@ -720,6 +720,7 @@ export namespace Audits {
     WarnAttributeValueExceedsMaxSize = 'WarnAttributeValueExceedsMaxSize',
     WarnDomainNonASCII = 'WarnDomainNonASCII',
     WarnThirdPartyPhaseout = 'WarnThirdPartyPhaseout',
+    WarnCrossSiteRedirectDowngradeChangesInclusion = 'WarnCrossSiteRedirectDowngradeChangesInclusion',
   }
 
   export const enum CookieOperation {
@@ -1044,6 +1045,17 @@ export namespace Audits {
     trackingSites: string[];
   }
 
+  /**
+   * This issue warns about third-party sites that are accessing cookies on the
+   * current page, and have been permitted due to having a global metadata grant.
+   * Note that in this context 'site' means eTLD+1. For example, if the URL
+   * `https://example.test:80/web_page` was accessing cookies, the site reported
+   * would be `example.test`.
+   */
+  export interface CookieDeprecationMetadataIssueDetails {
+    allowedSites: string[];
+  }
+
   export const enum ClientHintIssueReason {
     MetaTagAllowListInvalidOrigin = 'MetaTagAllowListInvalidOrigin',
     MetaTagModifiedHTML = 'MetaTagModifiedHTML',
@@ -1095,6 +1107,7 @@ export namespace Audits {
     RpPageNotVisible = 'RpPageNotVisible',
     SilentMediationFailure = 'SilentMediationFailure',
     ThirdPartyCookiesBlocked = 'ThirdPartyCookiesBlocked',
+    NotSignedInWithIdp = 'NotSignedInWithIdp',
   }
 
   export interface FederatedAuthUserInfoRequestIssueDetails {
@@ -1162,6 +1175,32 @@ export namespace Audits {
     failedRequestInfo?: FailedRequestInfo;
   }
 
+  export const enum PropertyRuleIssueReason {
+    InvalidSyntax = 'InvalidSyntax',
+    InvalidInitialValue = 'InvalidInitialValue',
+    InvalidInherits = 'InvalidInherits',
+    InvalidName = 'InvalidName',
+  }
+
+  /**
+   * This issue warns about errors in property rules that lead to property
+   * registrations being ignored.
+   */
+  export interface PropertyRuleIssueDetails {
+    /**
+     * Source code position of the property rule.
+     */
+    sourceCodeLocation: SourceCodeLocation;
+    /**
+     * Reason why the property rule was discarded.
+     */
+    propertyRuleIssueReason: PropertyRuleIssueReason;
+    /**
+     * The value of the property rule property that failed to parse
+     */
+    propertyValue?: string;
+  }
+
   /**
    * A unique identifier for the type of issue. Each type may use one of the
    * optional fields in InspectorIssueDetails to convey more specific
@@ -1184,8 +1223,10 @@ export namespace Audits {
     ClientHintIssue = 'ClientHintIssue',
     FederatedAuthRequestIssue = 'FederatedAuthRequestIssue',
     BounceTrackingIssue = 'BounceTrackingIssue',
+    CookieDeprecationMetadataIssue = 'CookieDeprecationMetadataIssue',
     StylesheetLoadingIssue = 'StylesheetLoadingIssue',
     FederatedAuthUserInfoRequestIssue = 'FederatedAuthUserInfoRequestIssue',
+    PropertyRuleIssue = 'PropertyRuleIssue',
   }
 
   /**
@@ -1210,7 +1251,9 @@ export namespace Audits {
     clientHintIssueDetails?: ClientHintIssueDetails;
     federatedAuthRequestIssueDetails?: FederatedAuthRequestIssueDetails;
     bounceTrackingIssueDetails?: BounceTrackingIssueDetails;
+    cookieDeprecationMetadataIssueDetails?: CookieDeprecationMetadataIssueDetails;
     stylesheetLoadingIssueDetails?: StylesheetLoadingIssueDetails;
+    propertyRuleIssueDetails?: PropertyRuleIssueDetails;
     federatedAuthUserInfoRequestIssueDetails?: FederatedAuthUserInfoRequestIssueDetails;
   }
 
@@ -1323,16 +1366,74 @@ export namespace Autofill {
      */
     name: string;
     /**
-     * address field name, for example Jon Doe.
+     * address field value, for example Jon Doe.
      */
     value: string;
   }
 
+  /**
+   * A list of address fields.
+   */
+  export interface AddressFields {
+    fields: AddressField[];
+  }
+
   export interface Address {
     /**
-     * fields and values defining a test address.
+     * fields and values defining an address.
      */
     fields: AddressField[];
+  }
+
+  /**
+   * Defines how an address can be displayed like in chrome://settings/addresses.
+   * Address UI is a two dimensional array, each inner array is an "address information line", and when rendered in a UI surface should be displayed as such.
+   * The following address UI for instance:
+   * [[{name: "GIVE_NAME", value: "Jon"}, {name: "FAMILY_NAME", value: "Doe"}], [{name: "CITY", value: "Munich"}, {name: "ZIP", value: "81456"}]]
+   * should allow the receiver to render:
+   * Jon Doe
+   * Munich 81456
+   */
+  export interface AddressUI {
+    /**
+     * A two dimension array containing the repesentation of values from an address profile.
+     */
+    addressFields: AddressFields[];
+  }
+
+  /**
+   * Specified whether a filled field was done so by using the html autocomplete attribute or autofill heuristics.
+   */
+  export const enum FillingStrategy {
+    AutocompleteAttribute = 'autocompleteAttribute',
+    AutofillInferred = 'autofillInferred',
+  }
+
+  export interface FilledField {
+    /**
+     * The type of the field, e.g text, password etc.
+     */
+    htmlType: string;
+    /**
+     * the html id
+     */
+    id: string;
+    /**
+     * the html name
+     */
+    name: string;
+    /**
+     * the field value
+     */
+    value: string;
+    /**
+     * The actual field type, e.g FAMILY_NAME
+     */
+    autofillType: string;
+    /**
+     * The filling strategy
+     */
+    fillingStrategy: FillingStrategy;
   }
 
   export interface TriggerRequest {
@@ -1352,6 +1453,21 @@ export namespace Autofill {
 
   export interface SetAddressesRequest {
     addresses: Address[];
+  }
+
+  /**
+   * Emitted when an address form is filled.
+   */
+  export interface AddressFormFilledEvent {
+    /**
+     * Information about the fields that were filled
+     */
+    filledFields: FilledField[];
+    /**
+     * An UI representation of the address used to fill the form.
+     * Consists of a 2D array where each child represents an address/profile line.
+     */
+    addressUi: AddressUI;
   }
 }
 
@@ -2910,6 +3026,19 @@ export namespace CSS {
     nodeId: DOM.NodeId;
     propertyName: string;
     value: string;
+  }
+
+  export interface SetPropertyRulePropertyNameRequest {
+    styleSheetId: StyleSheetId;
+    range: SourceRange;
+    propertyName: string;
+  }
+
+  export interface SetPropertyRulePropertyNameResponse extends ProtocolResponseWithError {
+    /**
+     * The resulting key text after modification.
+     */
+    propertyName: Value;
   }
 
   export interface SetKeyframeKeyRequest {
@@ -4726,10 +4855,9 @@ export namespace DOMDebugger {
 }
 
 /**
- * EventBreakpoints permits setting breakpoints on particular operations and
- * events in targets that run JavaScript but do not have a DOM.
- * JavaScript execution will stop on these operations as if there was a regular
- * breakpoint set.
+ * EventBreakpoints permits setting JavaScript breakpoints on operations and events
+ * occurring in native code invoked from JavaScript. Once breakpoint is hit, it is
+ * reported through Debugger domain, similarly to regular breakpoints being hit.
  */
 export namespace EventBreakpoints {
 
@@ -5536,6 +5664,51 @@ export namespace Emulation {
   }
 
   /**
+   * Used to specify sensor types to emulate.
+   * See https://w3c.github.io/sensors/#automation for more information.
+   */
+  export const enum SensorType {
+    AbsoluteOrientation = 'absolute-orientation',
+    Accelerometer = 'accelerometer',
+    AmbientLight = 'ambient-light',
+    Gravity = 'gravity',
+    Gyroscope = 'gyroscope',
+    LinearAcceleration = 'linear-acceleration',
+    Magnetometer = 'magnetometer',
+    Proximity = 'proximity',
+    RelativeOrientation = 'relative-orientation',
+  }
+
+  export interface SensorMetadata {
+    available?: boolean;
+    minimumFrequency?: number;
+    maximumFrequency?: number;
+  }
+
+  export interface SensorReadingSingle {
+    value: number;
+  }
+
+  export interface SensorReadingXYZ {
+    x: number;
+    y: number;
+    z: number;
+  }
+
+  export interface SensorReadingQuaternion {
+    x: number;
+    y: number;
+    z: number;
+    w: number;
+  }
+
+  export interface SensorReading {
+    single?: SensorReadingSingle;
+    xyz?: SensorReadingXYZ;
+    quaternion?: SensorReadingQuaternion;
+  }
+
+  /**
    * Enum of image types that can be disabled.
    */
   export const enum DisabledImageType {
@@ -5710,6 +5883,25 @@ export namespace Emulation {
      * Mock accuracy
      */
     accuracy?: number;
+  }
+
+  export interface GetOverriddenSensorInformationRequest {
+    type: SensorType;
+  }
+
+  export interface GetOverriddenSensorInformationResponse extends ProtocolResponseWithError {
+    requestedSamplingFrequency: number;
+  }
+
+  export interface SetSensorOverrideEnabledRequest {
+    enabled: boolean;
+    type: SensorType;
+    metadata?: SensorMetadata;
+  }
+
+  export interface SetSensorOverrideReadingsRequest {
+    type: SensorType;
+    reading: SensorReading;
   }
 
   export interface SetIdleOverrideRequest {
@@ -6381,11 +6573,11 @@ export namespace Input {
     /**
      * The plane angle between the Y-Z plane and the plane containing both the stylus axis and the Y axis, in degrees of the range [-90,90], a positive tiltX is to the right (default: 0)
      */
-    tiltX?: integer;
+    tiltX?: number;
     /**
      * The plane angle between the X-Z plane and the plane containing both the stylus axis and the X axis, in degrees of the range [-90,90], a positive tiltY is towards the user (default: 0).
      */
-    tiltY?: integer;
+    tiltY?: number;
     /**
      * The clockwise rotation of a pen stylus around its own major axis, in degrees in the range [0,359] (default: 0).
      */
@@ -6644,11 +6836,11 @@ export namespace Input {
     /**
      * The plane angle between the Y-Z plane and the plane containing both the stylus axis and the Y axis, in degrees of the range [-90,90], a positive tiltX is to the right (default: 0).
      */
-    tiltX?: integer;
+    tiltX?: number;
     /**
      * The plane angle between the X-Z plane and the plane containing both the stylus axis and the X axis, in degrees of the range [-90,90], a positive tiltY is towards the user (default: 0).
      */
-    tiltY?: integer;
+    tiltY?: number;
     /**
      * The clockwise rotation of a pen stylus around its own major axis, in degrees in the range [0,359] (default: 0).
      */
@@ -8230,6 +8422,7 @@ export namespace Network {
     SameSiteUnspecifiedTreatedAsLax = 'SameSiteUnspecifiedTreatedAsLax',
     SameSiteNoneInsecure = 'SameSiteNoneInsecure',
     UserPreferences = 'UserPreferences',
+    ThirdPartyPhaseout = 'ThirdPartyPhaseout',
     ThirdPartyBlockedInFirstPartySet = 'ThirdPartyBlockedInFirstPartySet',
     SyntaxError = 'SyntaxError',
     SchemeNotSupported = 'SchemeNotSupported',
@@ -8244,6 +8437,7 @@ export namespace Network {
     SamePartyConflictsWithOtherAttributes = 'SamePartyConflictsWithOtherAttributes',
     NameValuePairExceedsMaxSize = 'NameValuePairExceedsMaxSize',
     DisallowedCharacter = 'DisallowedCharacter',
+    NoCookieContent = 'NoCookieContent',
   }
 
   /**
@@ -8258,6 +8452,7 @@ export namespace Network {
     SameSiteUnspecifiedTreatedAsLax = 'SameSiteUnspecifiedTreatedAsLax',
     SameSiteNoneInsecure = 'SameSiteNoneInsecure',
     UserPreferences = 'UserPreferences',
+    ThirdPartyPhaseout = 'ThirdPartyPhaseout',
     ThirdPartyBlockedInFirstPartySet = 'ThirdPartyBlockedInFirstPartySet',
     UnknownError = 'UnknownError',
     SchemefulSameSiteStrict = 'SchemefulSameSiteStrict',
@@ -10226,6 +10421,24 @@ export namespace Overlay {
     outlineColor?: DOM.RGBA;
   }
 
+  /**
+   * Configuration for Window Controls Overlay
+   */
+  export interface WindowControlsOverlayConfig {
+    /**
+     * Whether the title bar CSS should be shown when emulating the Window Controls Overlay.
+     */
+    showCSS: boolean;
+    /**
+     * Seleted platforms to show the overlay.
+     */
+    selectedPlatform: string;
+    /**
+     * The theme color defined in app manifest.
+     */
+    themeColor: string;
+  }
+
   export interface ContainerQueryHighlightConfig {
     /**
      * A descriptor for the highlight appearance of container query containers.
@@ -10560,6 +10773,13 @@ export namespace Overlay {
     isolatedElementHighlightConfigs: IsolatedElementHighlightConfig[];
   }
 
+  export interface SetShowWindowControlsOverlayRequest {
+    /**
+     * Window Controls Overlay data, null means hide Window Controls Overlay
+     */
+    windowControlsOverlayConfig?: WindowControlsOverlayConfig;
+  }
+
   /**
    * Fired when the node should be inspected. This happens after call to `setInspectMode` or when
    * user manually inspects an element.
@@ -10682,6 +10902,7 @@ export namespace Page {
     ChEct = 'ch-ect',
     ChPrefersColorScheme = 'ch-prefers-color-scheme',
     ChPrefersReducedMotion = 'ch-prefers-reduced-motion',
+    ChPrefersReducedTransparency = 'ch-prefers-reduced-transparency',
     ChRtt = 'ch-rtt',
     ChSaveData = 'ch-save-data',
     ChUa = 'ch-ua',
@@ -11467,6 +11688,25 @@ export namespace Page {
     Circumstantial = 'Circumstantial',
   }
 
+  export interface BackForwardCacheBlockingDetails {
+    /**
+     * Url of the file where blockage happened. Optional because of tests.
+     */
+    url?: string;
+    /**
+     * Function name where blockage happened. Optional because of anonymous functions and tests.
+     */
+    function?: string;
+    /**
+     * Line number in the script (0-based).
+     */
+    lineNumber: integer;
+    /**
+     * Column number in the script (0-based).
+     */
+    columnNumber: integer;
+  }
+
   export interface BackForwardCacheNotRestoredExplanation {
     /**
      * Type of the reason
@@ -11482,6 +11722,7 @@ export namespace Page {
      * - EmbedderExtensionSentMessageToCachedFrame: the extension ID.
      */
     context?: string;
+    details?: BackForwardCacheBlockingDetails[];
   }
 
   export interface BackForwardCacheNotRestoredExplanationTree {
@@ -13251,13 +13492,16 @@ export namespace Storage {
     Loaded = 'loaded',
     Bid = 'bid',
     Win = 'win',
+    AdditionalBid = 'additionalBid',
+    AdditionalBidWin = 'additionalBidWin',
+    Clear = 'clear',
   }
 
   /**
    * Ad advertising element inside an interest group.
    */
   export interface InterestGroupAd {
-    renderUrl: string;
+    renderURL: string;
     metadata?: string;
   }
 
@@ -13269,10 +13513,10 @@ export namespace Storage {
     name: string;
     expirationTime: Network.TimeSinceEpoch;
     joiningOrigin: string;
-    biddingUrl?: string;
-    biddingWasmHelperUrl?: string;
-    updateUrl?: string;
-    trustedBiddingSignalsUrl?: string;
+    biddingLogicURL?: string;
+    biddingWasmHelperURL?: string;
+    updateURL?: string;
+    trustedBiddingSignalsURL?: string;
     trustedBiddingSignalsKeys: string[];
     userBiddingSignals?: string;
     ads: InterestGroupAd[];
@@ -13440,20 +13684,33 @@ export namespace Storage {
     value: UnsignedInt128AsBase16;
   }
 
+  export interface AttributionReportingEventReportWindows {
+    /**
+     * duration in seconds
+     */
+    start: integer;
+    /**
+     * duration in seconds
+     */
+    ends: integer[];
+  }
+
+  export const enum AttributionReportingTriggerDataMatching {
+    Exact = 'exact',
+    Modulus = 'modulus',
+  }
+
   export interface AttributionReportingSourceRegistration {
     time: Network.TimeSinceEpoch;
     /**
      * duration in seconds
      */
-    expiry?: integer;
+    expiry: integer;
+    eventReportWindows: AttributionReportingEventReportWindows;
     /**
      * duration in seconds
      */
-    eventReportWindow?: integer;
-    /**
-     * duration in seconds
-     */
-    aggregatableReportWindow?: integer;
+    aggregatableReportWindow: integer;
     type: AttributionReportingSourceType;
     sourceOrigin: string;
     reportingOrigin: string;
@@ -13463,6 +13720,7 @@ export namespace Storage {
     filterData: AttributionReportingFilterDataEntry[];
     aggregationKeys: AttributionReportingAggregationKeysEntry[];
     debugKey?: UnsignedInt64AsBase10;
+    triggerDataMatching: AttributionReportingTriggerDataMatching;
   }
 
   export const enum AttributionReportingSourceRegistrationResult {
@@ -15847,7 +16105,6 @@ export namespace Preload {
     LowEndDevice = 'LowEndDevice',
     InvalidSchemeRedirect = 'InvalidSchemeRedirect',
     InvalidSchemeNavigation = 'InvalidSchemeNavigation',
-    InProgressNavigation = 'InProgressNavigation',
     NavigationRequestBlockedByCsp = 'NavigationRequestBlockedByCsp',
     MainFrameNavigation = 'MainFrameNavigation',
     MojoBinderPolicy = 'MojoBinderPolicy',
@@ -15859,7 +16116,6 @@ export namespace Preload {
     NavigationBadHttpStatus = 'NavigationBadHttpStatus',
     ClientCertRequested = 'ClientCertRequested',
     NavigationRequestNetworkError = 'NavigationRequestNetworkError',
-    MaxNumOfRunningPrerendersExceeded = 'MaxNumOfRunningPrerendersExceeded',
     CancelAllHostsForTesting = 'CancelAllHostsForTesting',
     DidFailLoad = 'DidFailLoad',
     Stop = 'Stop',
@@ -15871,9 +16127,8 @@ export namespace Preload {
     MixedContent = 'MixedContent',
     TriggerBackgrounded = 'TriggerBackgrounded',
     MemoryLimitExceeded = 'MemoryLimitExceeded',
-    FailToGetMemoryUsage = 'FailToGetMemoryUsage',
     DataSaverEnabled = 'DataSaverEnabled',
-    HasEffectiveUrl = 'HasEffectiveUrl',
+    TriggerUrlHasEffectiveUrl = 'TriggerUrlHasEffectiveUrl',
     ActivatedBeforeStarted = 'ActivatedBeforeStarted',
     InactivePageRestriction = 'InactivePageRestriction',
     StartFailed = 'StartFailed',
@@ -15902,9 +16157,14 @@ export namespace Preload {
     MemoryPressureOnTrigger = 'MemoryPressureOnTrigger',
     MemoryPressureAfterTriggered = 'MemoryPressureAfterTriggered',
     PrerenderingDisabledByDevTools = 'PrerenderingDisabledByDevTools',
-    ResourceLoadBlockedByClient = 'ResourceLoadBlockedByClient',
     SpeculationRuleRemoved = 'SpeculationRuleRemoved',
     ActivatedWithAuxiliaryBrowsingContexts = 'ActivatedWithAuxiliaryBrowsingContexts',
+    MaxNumOfRunningEagerPrerendersExceeded = 'MaxNumOfRunningEagerPrerendersExceeded',
+    MaxNumOfRunningNonEagerPrerendersExceeded = 'MaxNumOfRunningNonEagerPrerendersExceeded',
+    MaxNumOfRunningEmbedderPrerendersExceeded = 'MaxNumOfRunningEmbedderPrerendersExceeded',
+    PrerenderingUrlHasEffectiveUrl = 'PrerenderingUrlHasEffectiveUrl',
+    RedirectedPrerenderingUrlHasEffectiveUrl = 'RedirectedPrerenderingUrlHasEffectiveUrl',
+    ActivationUrlHasEffectiveUrl = 'ActivationUrlHasEffectiveUrl',
   }
 
   /**
@@ -15966,24 +16226,6 @@ export namespace Preload {
 
   export interface RuleSetRemovedEvent {
     id: RuleSetId;
-  }
-
-  /**
-   * Fired when a prerender attempt is completed.
-   */
-  export interface PrerenderAttemptCompletedEvent {
-    key: PreloadingAttemptKey;
-    /**
-     * The frame id of the frame initiating prerendering.
-     */
-    initiatingFrameId: Page.FrameId;
-    prerenderingUrl: string;
-    finalStatus: PrerenderFinalStatus;
-    /**
-     * This is used to give users more information about the name of the API call
-     * that is incompatible with prerender and has caused the cancellation of the attempt
-     */
-    disallowedApiMethod?: string;
   }
 
   /**
@@ -16055,7 +16297,7 @@ export namespace FedCm {
   export const enum DialogType {
     AccountChooser = 'AccountChooser',
     AutoReauthn = 'AutoReauthn',
-    ConfirmIdpSignin = 'ConfirmIdpSignin',
+    ConfirmIdpLogin = 'ConfirmIdpLogin',
   }
 
   /**
@@ -16068,7 +16310,7 @@ export namespace FedCm {
     givenName: string;
     pictureUrl: string;
     idpConfigUrl: string;
-    idpSigninUrl: string;
+    idpLoginUrl: string;
     loginState: LoginState;
     /**
      * These two are only set if the loginState is signUp
@@ -16089,6 +16331,10 @@ export namespace FedCm {
   export interface SelectAccountRequest {
     dialogId: string;
     accountIndex: integer;
+  }
+
+  export interface ConfirmIdpLoginRequest {
+    dialogId: string;
   }
 
   export interface DismissDialogRequest {
@@ -17525,8 +17771,7 @@ export namespace Runtime {
   }
 
   /**
-   * Represents options for serialization. Overrides `generatePreview`, `returnByValue` and
-   * `generateWebDriverValue`.
+   * Represents options for serialization. Overrides `generatePreview` and `returnByValue`.
    */
   export interface SerializationOptions {
     serialization: SerializationOptionsSerialization;
@@ -17566,6 +17811,7 @@ export namespace Runtime {
     Arraybuffer = 'arraybuffer',
     Node = 'node',
     Window = 'window',
+    Generator = 'generator',
   }
 
   /**
@@ -17658,10 +17904,6 @@ export namespace Runtime {
      * String representation of the object.
      */
     description?: string;
-    /**
-     * Deprecated. Use `deepSerializedValue` instead. WebDriver BiDi representation of the value.
-     */
-    webDriverValue?: DeepSerializedValue;
     /**
      * Deep serialized value.
      */
@@ -18173,15 +18415,8 @@ export namespace Runtime {
      */
     uniqueContextId?: string;
     /**
-     * Deprecated. Use `serializationOptions: {serialization:"deep"}` instead.
-     * Whether the result should contain `webDriverValue`, serialized according to
-     * https://w3c.github.io/webdriver-bidi. This is mutually exclusive with `returnByValue`, but
-     * resulting `objectId` is still provided.
-     */
-    generateWebDriverValue?: boolean;
-    /**
      * Specifies the result serialization. If provided, overrides
-     * `generatePreview`, `returnByValue` and `generateWebDriverValue`.
+     * `generatePreview` and `returnByValue`.
      */
     serializationOptions?: SerializationOptions;
   }
@@ -18307,16 +18542,8 @@ export namespace Runtime {
      */
     uniqueContextId?: string;
     /**
-     * Deprecated. Use `serializationOptions: {serialization:"deep"}` instead.
-     * Whether the result should contain `webDriverValue`, serialized
-     * according to
-     * https://w3c.github.io/webdriver-bidi. This is mutually exclusive with `returnByValue`, but
-     * resulting `objectId` is still provided.
-     */
-    generateWebDriverValue?: boolean;
-    /**
      * Specifies the result serialization. If provided, overrides
-     * `generatePreview`, `returnByValue` and `generateWebDriverValue`.
+     * `generatePreview` and `returnByValue`.
      */
     serializationOptions?: SerializationOptions;
   }

@@ -11,6 +11,7 @@
 #ifndef EIGEN_DENSEBASE_H
 #define EIGEN_DENSEBASE_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {
@@ -657,10 +658,10 @@ template<typename Derived> class DenseBase
 #define EIGEN_DOC_BLOCK_ADDONS_NOT_INNER_PANEL
 #define EIGEN_DOC_BLOCK_ADDONS_INNER_PANEL_IF(COND)
 #define EIGEN_DOC_UNARY_ADDONS(X,Y)
-#   include "../plugins/CommonCwiseUnaryOps.h"
-#   include "../plugins/BlockMethods.h"
-#   include "../plugins/IndexedViewMethods.h"
-#   include "../plugins/ReshapedMethods.h"
+#   include "../plugins/CommonCwiseUnaryOps.inc"
+#   include "../plugins/BlockMethods.inc"
+#   include "../plugins/IndexedViewMethods.inc"
+#   include "../plugins/ReshapedMethods.inc"
 #   ifdef EIGEN_DENSEBASE_PLUGIN
 #     include EIGEN_DENSEBASE_PLUGIN
 #   endif

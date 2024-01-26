@@ -6489,6 +6489,24 @@ template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_PROPER
     typedef VkPhysicalDevicePipelinePropertiesFeaturesEXT Type;
 };
 
+// Map type VkPhysicalDeviceFrameBoundaryFeaturesEXT to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAME_BOUNDARY_FEATURES_EXT
+template <> struct LvlTypeMap<VkPhysicalDeviceFrameBoundaryFeaturesEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAME_BOUNDARY_FEATURES_EXT;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAME_BOUNDARY_FEATURES_EXT> {
+    typedef VkPhysicalDeviceFrameBoundaryFeaturesEXT Type;
+};
+
+// Map type VkFrameBoundaryEXT to id VK_STRUCTURE_TYPE_FRAME_BOUNDARY_EXT
+template <> struct LvlTypeMap<VkFrameBoundaryEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_FRAME_BOUNDARY_EXT;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_FRAME_BOUNDARY_EXT> {
+    typedef VkFrameBoundaryEXT Type;
+};
+
 // Map type VkPhysicalDeviceMultisampledRenderToSingleSampledFeaturesEXT to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTISAMPLED_RENDER_TO_SINGLE_SAMPLED_FEATURES_EXT
 template <> struct LvlTypeMap<VkPhysicalDeviceMultisampledRenderToSingleSampledFeaturesEXT> {
     static const VkStructureType kSType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTISAMPLED_RENDER_TO_SINGLE_SAMPLED_FEATURES_EXT;
@@ -7001,6 +7019,24 @@ template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_PROCESSIN
     typedef VkPhysicalDeviceImageProcessingPropertiesQCOM Type;
 };
 
+// Map type VkPhysicalDeviceNestedCommandBufferFeaturesEXT to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_NESTED_COMMAND_BUFFER_FEATURES_EXT
+template <> struct LvlTypeMap<VkPhysicalDeviceNestedCommandBufferFeaturesEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_NESTED_COMMAND_BUFFER_FEATURES_EXT;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_NESTED_COMMAND_BUFFER_FEATURES_EXT> {
+    typedef VkPhysicalDeviceNestedCommandBufferFeaturesEXT Type;
+};
+
+// Map type VkPhysicalDeviceNestedCommandBufferPropertiesEXT to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_NESTED_COMMAND_BUFFER_PROPERTIES_EXT
+template <> struct LvlTypeMap<VkPhysicalDeviceNestedCommandBufferPropertiesEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_NESTED_COMMAND_BUFFER_PROPERTIES_EXT;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_NESTED_COMMAND_BUFFER_PROPERTIES_EXT> {
+    typedef VkPhysicalDeviceNestedCommandBufferPropertiesEXT Type;
+};
+
 // Map type VkExternalMemoryAcquireUnmodifiedEXT to id VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_ACQUIRE_UNMODIFIED_EXT
 template <> struct LvlTypeMap<VkExternalMemoryAcquireUnmodifiedEXT> {
     static const VkStructureType kSType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_ACQUIRE_UNMODIFIED_EXT;
@@ -7199,6 +7235,39 @@ template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_PROTEC
     typedef VkPhysicalDevicePipelineProtectedAccessFeaturesEXT Type;
 };
 
+#ifdef VK_USE_PLATFORM_ANDROID_KHR
+// Map type VkPhysicalDeviceExternalFormatResolveFeaturesANDROID to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_FORMAT_RESOLVE_FEATURES_ANDROID
+template <> struct LvlTypeMap<VkPhysicalDeviceExternalFormatResolveFeaturesANDROID> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_FORMAT_RESOLVE_FEATURES_ANDROID;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_FORMAT_RESOLVE_FEATURES_ANDROID> {
+    typedef VkPhysicalDeviceExternalFormatResolveFeaturesANDROID Type;
+};
+
+#endif // VK_USE_PLATFORM_ANDROID_KHR
+#ifdef VK_USE_PLATFORM_ANDROID_KHR
+// Map type VkPhysicalDeviceExternalFormatResolvePropertiesANDROID to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_FORMAT_RESOLVE_PROPERTIES_ANDROID
+template <> struct LvlTypeMap<VkPhysicalDeviceExternalFormatResolvePropertiesANDROID> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_FORMAT_RESOLVE_PROPERTIES_ANDROID;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_FORMAT_RESOLVE_PROPERTIES_ANDROID> {
+    typedef VkPhysicalDeviceExternalFormatResolvePropertiesANDROID Type;
+};
+
+#endif // VK_USE_PLATFORM_ANDROID_KHR
+#ifdef VK_USE_PLATFORM_ANDROID_KHR
+// Map type VkAndroidHardwareBufferFormatResolvePropertiesANDROID to id VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_FORMAT_RESOLVE_PROPERTIES_ANDROID
+template <> struct LvlTypeMap<VkAndroidHardwareBufferFormatResolvePropertiesANDROID> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_FORMAT_RESOLVE_PROPERTIES_ANDROID;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_FORMAT_RESOLVE_PROPERTIES_ANDROID> {
+    typedef VkAndroidHardwareBufferFormatResolvePropertiesANDROID Type;
+};
+
+#endif // VK_USE_PLATFORM_ANDROID_KHR
 // Map type VkPhysicalDeviceShaderObjectFeaturesEXT to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_OBJECT_FEATURES_EXT
 template <> struct LvlTypeMap<VkPhysicalDeviceShaderObjectFeaturesEXT> {
     static const VkStructureType kSType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_OBJECT_FEATURES_EXT;
@@ -7289,6 +7358,24 @@ template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_INV
     typedef VkPhysicalDeviceRayTracingInvocationReorderFeaturesNV Type;
 };
 
+// Map type VkPhysicalDeviceExtendedSparseAddressSpaceFeaturesNV to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_SPARSE_ADDRESS_SPACE_FEATURES_NV
+template <> struct LvlTypeMap<VkPhysicalDeviceExtendedSparseAddressSpaceFeaturesNV> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_SPARSE_ADDRESS_SPACE_FEATURES_NV;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_SPARSE_ADDRESS_SPACE_FEATURES_NV> {
+    typedef VkPhysicalDeviceExtendedSparseAddressSpaceFeaturesNV Type;
+};
+
+// Map type VkPhysicalDeviceExtendedSparseAddressSpacePropertiesNV to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_SPARSE_ADDRESS_SPACE_PROPERTIES_NV
+template <> struct LvlTypeMap<VkPhysicalDeviceExtendedSparseAddressSpacePropertiesNV> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_SPARSE_ADDRESS_SPACE_PROPERTIES_NV;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_SPARSE_ADDRESS_SPACE_PROPERTIES_NV> {
+    typedef VkPhysicalDeviceExtendedSparseAddressSpacePropertiesNV Type;
+};
+
 // Map type VkPhysicalDeviceShaderCoreBuiltinsFeaturesARM to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CORE_BUILTINS_FEATURES_ARM
 template <> struct LvlTypeMap<VkPhysicalDeviceShaderCoreBuiltinsFeaturesARM> {
     static const VkStructureType kSType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CORE_BUILTINS_FEATURES_ARM;
@@ -7323,6 +7410,87 @@ template <> struct LvlTypeMap<VkPhysicalDeviceDynamicRenderingUnusedAttachmentsF
 
 template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_UNUSED_ATTACHMENTS_FEATURES_EXT> {
     typedef VkPhysicalDeviceDynamicRenderingUnusedAttachmentsFeaturesEXT Type;
+};
+
+// Map type VkLatencySleepModeInfoNV to id VK_STRUCTURE_TYPE_LATENCY_SLEEP_MODE_INFO_NV
+template <> struct LvlTypeMap<VkLatencySleepModeInfoNV> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_LATENCY_SLEEP_MODE_INFO_NV;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_LATENCY_SLEEP_MODE_INFO_NV> {
+    typedef VkLatencySleepModeInfoNV Type;
+};
+
+// Map type VkLatencySleepInfoNV to id VK_STRUCTURE_TYPE_LATENCY_SLEEP_INFO_NV
+template <> struct LvlTypeMap<VkLatencySleepInfoNV> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_LATENCY_SLEEP_INFO_NV;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_LATENCY_SLEEP_INFO_NV> {
+    typedef VkLatencySleepInfoNV Type;
+};
+
+// Map type VkSetLatencyMarkerInfoNV to id VK_STRUCTURE_TYPE_SET_LATENCY_MARKER_INFO_NV
+template <> struct LvlTypeMap<VkSetLatencyMarkerInfoNV> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_SET_LATENCY_MARKER_INFO_NV;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_SET_LATENCY_MARKER_INFO_NV> {
+    typedef VkSetLatencyMarkerInfoNV Type;
+};
+
+// Map type VkLatencyTimingsFrameReportNV to id VK_STRUCTURE_TYPE_LATENCY_TIMINGS_FRAME_REPORT_NV
+template <> struct LvlTypeMap<VkLatencyTimingsFrameReportNV> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_LATENCY_TIMINGS_FRAME_REPORT_NV;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_LATENCY_TIMINGS_FRAME_REPORT_NV> {
+    typedef VkLatencyTimingsFrameReportNV Type;
+};
+
+// Map type VkGetLatencyMarkerInfoNV to id VK_STRUCTURE_TYPE_GET_LATENCY_MARKER_INFO_NV
+template <> struct LvlTypeMap<VkGetLatencyMarkerInfoNV> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_GET_LATENCY_MARKER_INFO_NV;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_GET_LATENCY_MARKER_INFO_NV> {
+    typedef VkGetLatencyMarkerInfoNV Type;
+};
+
+// Map type VkLatencySubmissionPresentIdNV to id VK_STRUCTURE_TYPE_LATENCY_SUBMISSION_PRESENT_ID_NV
+template <> struct LvlTypeMap<VkLatencySubmissionPresentIdNV> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_LATENCY_SUBMISSION_PRESENT_ID_NV;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_LATENCY_SUBMISSION_PRESENT_ID_NV> {
+    typedef VkLatencySubmissionPresentIdNV Type;
+};
+
+// Map type VkSwapchainLatencyCreateInfoNV to id VK_STRUCTURE_TYPE_SWAPCHAIN_LATENCY_CREATE_INFO_NV
+template <> struct LvlTypeMap<VkSwapchainLatencyCreateInfoNV> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_SWAPCHAIN_LATENCY_CREATE_INFO_NV;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_SWAPCHAIN_LATENCY_CREATE_INFO_NV> {
+    typedef VkSwapchainLatencyCreateInfoNV Type;
+};
+
+// Map type VkOutOfBandQueueTypeInfoNV to id VK_STRUCTURE_TYPE_OUT_OF_BAND_QUEUE_TYPE_INFO_NV
+template <> struct LvlTypeMap<VkOutOfBandQueueTypeInfoNV> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_OUT_OF_BAND_QUEUE_TYPE_INFO_NV;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_OUT_OF_BAND_QUEUE_TYPE_INFO_NV> {
+    typedef VkOutOfBandQueueTypeInfoNV Type;
+};
+
+// Map type VkLatencySurfaceCapabilitiesNV to id VK_STRUCTURE_TYPE_LATENCY_SURFACE_CAPABILITIES_NV
+template <> struct LvlTypeMap<VkLatencySurfaceCapabilitiesNV> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_LATENCY_SURFACE_CAPABILITIES_NV;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_LATENCY_SURFACE_CAPABILITIES_NV> {
+    typedef VkLatencySurfaceCapabilitiesNV Type;
 };
 
 // Map type VkPhysicalDeviceMultiviewPerViewRenderAreasFeaturesQCOM to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_PER_VIEW_RENDER_AREAS_FEATURES_QCOM
@@ -7488,6 +7656,24 @@ template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_MEMORY
 };
 
 #endif // VK_USE_PLATFORM_SCREEN_QNX
+// Map type VkPhysicalDeviceLayeredDriverPropertiesMSFT to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LAYERED_DRIVER_PROPERTIES_MSFT
+template <> struct LvlTypeMap<VkPhysicalDeviceLayeredDriverPropertiesMSFT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LAYERED_DRIVER_PROPERTIES_MSFT;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LAYERED_DRIVER_PROPERTIES_MSFT> {
+    typedef VkPhysicalDeviceLayeredDriverPropertiesMSFT Type;
+};
+
+// Map type VkPhysicalDeviceDescriptorPoolOverallocationFeaturesNV to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_POOL_OVERALLOCATION_FEATURES_NV
+template <> struct LvlTypeMap<VkPhysicalDeviceDescriptorPoolOverallocationFeaturesNV> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_POOL_OVERALLOCATION_FEATURES_NV;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_POOL_OVERALLOCATION_FEATURES_NV> {
+    typedef VkPhysicalDeviceDescriptorPoolOverallocationFeaturesNV Type;
+};
+
 // Map type VkAccelerationStructureGeometryTrianglesDataKHR to id VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR
 template <> struct LvlTypeMap<VkAccelerationStructureGeometryTrianglesDataKHR> {
     static const VkStructureType kSType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;

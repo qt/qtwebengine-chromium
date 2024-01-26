@@ -13,6 +13,7 @@
 #include "src/objects/maybe-object-inl.h"
 #include "src/objects/shared-function-info.h"
 #include "src/objects/smi.h"
+#include "src/objects/tagged.h"
 #include "src/roots/roots-inl.h"
 #include "src/torque/runtime-macro-shims.h"
 
@@ -26,7 +27,8 @@ namespace internal {
 
 TQ_OBJECT_CONSTRUCTORS_IMPL(FeedbackVector)
 OBJECT_CONSTRUCTORS_IMPL(FeedbackMetadata, HeapObject)
-OBJECT_CONSTRUCTORS_IMPL(ClosureFeedbackCellArray, FixedArray)
+OBJECT_CONSTRUCTORS_IMPL(ClosureFeedbackCellArray,
+                         ClosureFeedbackCellArray::Super)
 
 NEVER_READ_ONLY_SPACE_IMPL(FeedbackVector)
 NEVER_READ_ONLY_SPACE_IMPL(ClosureFeedbackCellArray)
@@ -93,14 +95,6 @@ int FeedbackMetadata::GetSlotSize(FeedbackSlotKind kind) {
     case FeedbackSlotKind::kInvalid:
       UNREACHABLE();
   }
-}
-
-Handle<FeedbackCell> ClosureFeedbackCellArray::GetFeedbackCell(int index) {
-  return handle(FeedbackCell::cast(get(index)), GetIsolate());
-}
-
-Tagged<FeedbackCell> ClosureFeedbackCellArray::cell(int index) {
-  return FeedbackCell::cast(get(index));
 }
 
 bool FeedbackVector::is_empty() const { return length() == 0; }
@@ -216,8 +210,8 @@ void FeedbackVector::set_log_next_execution(bool value) {
   set_flags(LogNextExecutionBit::update(flags(), value));
 }
 
-base::Optional<Code> FeedbackVector::GetOptimizedOsrCode(Isolate* isolate,
-                                                         FeedbackSlot slot) {
+base::Optional<Tagged<Code>> FeedbackVector::GetOptimizedOsrCode(
+    Isolate* isolate, FeedbackSlot slot) {
   MaybeObject maybe_code = Get(isolate, slot);
   if (maybe_code->IsCleared()) return {};
 
@@ -235,6 +229,9 @@ base::Optional<Code> FeedbackVector::GetOptimizedOsrCode(Isolate* isolate,
 // Conversion from an integer index to either a slot or an ic slot.
 // static
 FeedbackSlot FeedbackVector::ToSlot(intptr_t index) {
+  if (index == static_cast<intptr_t>(FeedbackSlot::Invalid().ToInt())) {
+    return FeedbackSlot();
+  }
   DCHECK_LE(static_cast<uintptr_t>(index),
             static_cast<uintptr_t>(std::numeric_limits<int>::max()));
   return FeedbackSlot(static_cast<int>(index));
@@ -266,14 +263,15 @@ MaybeObject FeedbackVector::Get(PtrComprCageBase cage_base,
   return value;
 }
 
-Handle<FeedbackCell> FeedbackVector::GetClosureFeedbackCell(int index) const {
+Handle<FeedbackCell> FeedbackVector::GetClosureFeedbackCell(Isolate* isolate,
+                                                            int index) const {
   DCHECK_GE(index, 0);
-  return closure_feedback_cell_array()->GetFeedbackCell(index);
+  return handle(closure_feedback_cell_array()->get(index), isolate);
 }
 
 Tagged<FeedbackCell> FeedbackVector::closure_feedback_cell(int index) const {
   DCHECK_GE(index, 0);
-  return closure_feedback_cell_array()->cell(index);
+  return closure_feedback_cell_array()->get(index);
 }
 
 MaybeObject FeedbackVector::SynchronizedGet(FeedbackSlot slot) const {
@@ -501,18 +499,14 @@ std::pair<MaybeObject, MaybeObject> FeedbackNexus::GetFeedbackPair() const {
 }
 
 template <typename T>
-struct IsValidFeedbackType
-    : public std::integral_constant<bool,
-                                    std::is_base_of<MaybeObject, T>::value ||
-                                        std::is_base_of<Object, T>::value> {
-  static_assert(kTaggedCanConvertToRawObjects);
-};
+struct IsValidFeedbackType : public std::false_type {};
 
+template <>
+struct IsValidFeedbackType<MaybeObject> : public std::true_type {};
+template <>
+struct IsValidFeedbackType<HeapObjectReference> : public std::true_type {};
 template <typename T>
-struct IsValidFeedbackType<Tagged<T>>
-    : public std::integral_constant<bool,
-                                    std::is_base_of<MaybeObject, T>::value ||
-                                        std::is_base_of<Object, T>::value> {};
+struct IsValidFeedbackType<Tagged<T>> : public std::true_type {};
 
 template <typename FeedbackType>
 void FeedbackNexus::SetFeedback(FeedbackType feedback, WriteBarrierMode mode) {

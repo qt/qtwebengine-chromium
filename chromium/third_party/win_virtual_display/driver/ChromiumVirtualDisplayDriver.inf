@@ -16,8 +16,8 @@ DriverVer= ; TODO: set DriverVer in stampinf property pages
 %ManufacturerName%=Standard,NT$ARCH$
 
 [Standard.NT$ARCH$]
-%DeviceName%=MyDevice_Install, Root\ChromiumVirtualDisplayDriver ; TODO: edit hw-id, this hardware id is used by Visual Studio remote debugging
-%DeviceName%=MyDevice_Install, ChromiumVirtualDisplayDriver      ; TODO: edit hw-id, this hardware if is used by the IddSampleApp.exe is used by the IddSampleApp.exe
+%DeviceName%=MyDevice_Install, Root\ChromiumVirtualDisplayDriver
+%DeviceName%=MyDevice_Install, ChromiumVirtualDisplayDriver
 
 [SourceDisksFiles]
 ChromiumVirtualDisplayDriver.dll=1

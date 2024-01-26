@@ -1,16 +1,29 @@
-// Copyright 2023 The Tint Authors.
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "gmock/gmock.h"
 #include "src/tint/lang/core/constant/scalar.h"
@@ -31,7 +44,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Add) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():u32 -> %b1 {
   %b1 = block {
@@ -54,7 +67,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Increment) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%b1 = block {  # root
   %v1:ptr<private, u32, read_write> = var
@@ -77,7 +90,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_CompoundAdd) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%b1 = block {  # root
   %v1:ptr<private, u32, read_write> = var
@@ -100,7 +113,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Subtract) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():u32 -> %b1 {
   %b1 = block {
@@ -123,7 +136,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Decrement) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%b1 = block {  # root
   %v1:ptr<private, i32, read_write> = var
@@ -146,7 +159,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_CompoundSubtract) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%b1 = block {  # root
   %v1:ptr<private, u32, read_write> = var
@@ -169,7 +182,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Multiply) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():u32 -> %b1 {
   %b1 = block {
@@ -192,7 +205,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_CompoundMultiply) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%b1 = block {  # root
   %v1:ptr<private, u32, read_write> = var
@@ -215,7 +228,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Div) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():u32 -> %b1 {
   %b1 = block {
@@ -238,7 +251,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_CompoundDiv) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%b1 = block {  # root
   %v1:ptr<private, u32, read_write> = var
@@ -261,7 +274,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Modulo) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():u32 -> %b1 {
   %b1 = block {
@@ -284,7 +297,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_CompoundModulo) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%b1 = block {  # root
   %v1:ptr<private, u32, read_write> = var
@@ -307,7 +320,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_And) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():u32 -> %b1 {
   %b1 = block {
@@ -330,7 +343,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_CompoundAnd) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%b1 = block {  # root
   %v1:ptr<private, bool, read_write> = var
@@ -353,7 +366,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Or) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():u32 -> %b1 {
   %b1 = block {
@@ -376,7 +389,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_CompoundOr) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%b1 = block {  # root
   %v1:ptr<private, bool, read_write> = var
@@ -399,7 +412,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Xor) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():u32 -> %b1 {
   %b1 = block {
@@ -422,7 +435,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_CompoundXor) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%b1 = block {  # root
   %v1:ptr<private, u32, read_write> = var
@@ -446,7 +459,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_LogicalAnd) {
     WrapInFunction(let, expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():bool -> %b1 {
   %b1 = block {
@@ -482,7 +495,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_LogicalOr) {
     WrapInFunction(let, expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():bool -> %b1 {
   %b1 = block {
@@ -517,7 +530,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Equal) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():u32 -> %b1 {
   %b1 = block {
@@ -540,7 +553,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_NotEqual) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():u32 -> %b1 {
   %b1 = block {
@@ -563,7 +576,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_LessThan) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():u32 -> %b1 {
   %b1 = block {
@@ -586,7 +599,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_GreaterThan) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():u32 -> %b1 {
   %b1 = block {
@@ -609,7 +622,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_LessThanEqual) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():u32 -> %b1 {
   %b1 = block {
@@ -632,7 +645,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_GreaterThanEqual) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():u32 -> %b1 {
   %b1 = block {
@@ -655,7 +668,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_ShiftLeft) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():u32 -> %b1 {
   %b1 = block {
@@ -678,7 +691,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_CompoundShiftLeft) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%b1 = block {  # root
   %v1:ptr<private, u32, read_write> = var
@@ -701,7 +714,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_ShiftRight) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():u32 -> %b1 {
   %b1 = block {
@@ -724,7 +737,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_CompoundShiftRight) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%b1 = block {  # root
   %v1:ptr<private, u32, read_write> = var
@@ -749,7 +762,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Compound) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():f32 -> %b1 {
   %b1 = block {
@@ -786,7 +799,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Compound_WithConstEval) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func(%p:bool):bool -> %b1 {
   %b1 = block {

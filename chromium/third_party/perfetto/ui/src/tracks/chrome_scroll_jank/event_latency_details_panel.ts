@@ -29,10 +29,11 @@ import {renderArguments} from '../../frontend/slice_args';
 import {renderDetails} from '../../frontend/slice_details';
 import {getSlice, SliceDetails, sliceRef} from '../../frontend/sql/slice';
 import {asSliceSqlId} from '../../frontend/sql_types';
-import {DetailsShell} from '../../frontend/widgets/details_shell';
-import {GridLayout, GridLayoutColumn} from '../../frontend/widgets/grid_layout';
-import {Section} from '../../frontend/widgets/section';
-import {Tree, TreeNode} from '../../frontend/widgets/tree';
+import {DetailsShell} from '../../widgets/details_shell';
+import {GridLayout, GridLayoutColumn} from '../../widgets/grid_layout';
+import {Section} from '../../widgets/section';
+import {MultiParagraphText, TextParagraph} from '../../widgets/text_paragraph';
+import {Tree, TreeNode} from '../../widgets/tree';
 
 import {
   getScrollJankSlices,
@@ -134,23 +135,27 @@ export class EventLatencySliceDetailsPanel extends
 
   private getDescriptionText(): m.Child {
     return m(
-        `div[style='white-space:pre-wrap']`,
-        `EventLatency tracks the latency of handling a given input event
-        (Scrolls, Touchs, Taps, etc). Ideally from when the input was read by
-        the hardware to when it was reflected on the screen.{new_lines}
-
-        Note however the concept of coalescing or terminating early. This occurs
-        when we receive multiple events or handle them quickly by converting
-        the into a different event. Such as a TOUCH_MOVE being converted into a
-        GESTURE_SCROLL_UPDATE type, or a multiple GESTURE_SCROLL_UPDATE events
-        being formed into a single frame at the end of the
-        RendererCompositorQueuingDelay.{new_lines}
-
-        *Important:* On some platforms (MacOS) we do not get feedback on when
-        something is presented on the screen so the timings are only accurate
-        for what we know on a given platform.`.replace(/\s\s+/g, ' ')
-            .replace(/{new_lines}/g, '\n\n')
-            .replace(/ Note:/g, 'Note:'),
+        MultiParagraphText,
+        m(TextParagraph, {
+          text: `EventLatency tracks the latency of handling a given input event
+                 (Scrolls, Touches, Taps, etc). Ideally from when the input was
+                 read by the hardware to when it was reflected on the screen.`,
+        }),
+        m(TextParagraph, {
+          text:
+              `Note however the concept of coalescing or terminating early. This
+               occurs when we receive multiple events or handle them quickly by
+               converting them into a different event. Such as a TOUCH_MOVE
+               being converted into a GESTURE_SCROLL_UPDATE type, or a multiple
+               GESTURE_SCROLL_UPDATE events being formed into a single frame at
+               the end of the RendererCompositorQueuingDelay.`,
+        }),
+        m(TextParagraph, {
+          text:
+              `*Important:* On some platforms (MacOS) we do not get feedback on
+               when something is presented on the screen so the timings are only
+               accurate for what we know on a given platform.`,
+        }),
     );
   }
 
@@ -184,10 +189,6 @@ export class EventLatencySliceDetailsPanel extends
 
   getTitle(): string {
     return `Current Selection`;
-  }
-
-  renderTabCanvas() {
-    return;
   }
 }
 

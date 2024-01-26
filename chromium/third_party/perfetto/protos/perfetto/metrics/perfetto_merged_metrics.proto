@@ -13,6 +13,31 @@ package perfetto.protos;
 
 option go_package = "github.com/google/perfetto/perfetto_proto";
 
+// Begin of protos/perfetto/metrics/android/ad_services_metric.proto
+
+// Next: 2
+message AdServicesUiMetric {
+  optional double latency = 1;
+}
+
+// Next: 2
+message AdServicesAdIdMetric {
+  optional double latency = 1;
+}
+
+// Next: 2
+message AdServicesAppSetIdMetric {
+  optional double latency = 1;
+}
+
+// Next: 4
+message AdServicesMetric {
+  repeated AdServicesUiMetric ui_metric = 1;
+  repeated AdServicesAdIdMetric ad_id_metric = 2;
+  repeated AdServicesAppSetIdMetric app_set_id_metric = 3;
+}
+// End of protos/perfetto/metrics/android/ad_services_metric.proto
+
 // Begin of protos/perfetto/metrics/android/android_blocking_call.proto
 
 // Blocking call on the main thread.
@@ -104,6 +129,29 @@ message AndroidBlockingCallsCujMetric {
 }
 
 // End of protos/perfetto/metrics/android/android_blocking_calls_cuj_metric.proto
+
+// Begin of protos/perfetto/metrics/android/android_boot.proto
+
+// This metric computes how much time processes spend in UNINTERRUPTIBLE_SLEEP state
+message ProcessStateDurations {
+  optional int64 total_dur = 2;
+  optional int64 uninterruptible_sleep_dur = 3;
+}
+
+message AndroidBootMetric {
+  optional ProcessStateDurations system_server_durations = 1;
+  optional ProcessStateDurations systemui_durations = 2;
+  optional ProcessStateDurations launcher_durations = 3;
+  optional ProcessStateDurations gms_durations = 4;
+  // Launcher related boot metrics
+  message LauncherBreakdown {
+    //  reports cold start time of NexusLauncher
+    optional int64 cold_start_dur = 1;
+  }
+  optional LauncherBreakdown launcher_breakdown = 5;
+}
+
+// End of protos/perfetto/metrics/android/android_boot.proto
 
 // Begin of protos/perfetto/metrics/android/android_frame_timeline_metric.proto
 
@@ -1823,7 +1871,7 @@ message AndroidStartupMetric {
 
   // Timing information spanning the intent received by the
   // activity manager to the first frame drawn.
-  // Next id: 35.
+  // Next id: 36.
   message ToFirstFrame {
     // The duration between the intent received and first frame.
     optional int64 dur_ns = 1;
@@ -1861,6 +1909,9 @@ message AndroidStartupMetric {
 
     // The actual duration of the process start (based on the zygote slice).
     optional Slice time_during_start_process = 11;
+
+    // The duration from launch to first running state thread of startup process.
+    optional Slice time_to_running_state = 35;
 
     optional Slice to_post_fork = 18;
     optional Slice to_activity_thread_main = 19;
@@ -2231,6 +2282,7 @@ message TraceMetadata {
   optional string unique_session_name = 8;
   optional string trace_config_pbtxt = 9;
   optional int64 sched_duration_ns = 10;
+  optional int64 tracing_started_ns = 11;
 }
 
 // Stats counters for the trace.
@@ -2263,7 +2315,7 @@ message TraceAnalysisStats {
 
 // Root message for all Perfetto-based metrics.
 //
-// Next id: 57
+// Next id: 59
 message TraceMetrics {
   reserved 4, 10, 13, 14, 16, 19;
 
@@ -2415,8 +2467,14 @@ message TraceMetrics {
 
   // Metrics for App Not Responding (ANR) errors.
   optional AndroidAnrMetric android_anr = 55;
+
   // Aggregated Android Monitor Contention metrics
   optional AndroidMonitorContentionAggMetric android_monitor_contention_agg = 56;
+
+  optional AndroidBootMetric android_boot = 57;
+
+  // Metric for AdServices module.
+  optional AdServicesMetric ad_services_metric = 58;
 
   // Demo extensions.
   extensions 450 to 499;

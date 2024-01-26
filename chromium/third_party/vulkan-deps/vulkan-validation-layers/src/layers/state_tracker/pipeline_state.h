@@ -54,16 +54,14 @@ class PIPELINE_CACHE_STATE : public BASE_NODE {
 };
 
 struct StageCreateInfo {
-    vvl::Func command;
-    uint32_t create_index;
     const PIPELINE_STATE *pipeline;
 
     const PushConstantRangesId shader_object_const_ranges;
 
     std::vector<VkPushConstantRange> const *GetPushConstantRanges() const;
 
-    StageCreateInfo(vvl::Func command, const PIPELINE_STATE *pipeline);
-    StageCreateInfo(vvl::Func command, uint32_t create_index, const VkShaderCreateInfoEXT &create_info);
+    StageCreateInfo(const PIPELINE_STATE *pipeline);
+    StageCreateInfo(const VkShaderCreateInfoEXT &create_info);
 };
 
 class PIPELINE_STATE : public BASE_NODE {
@@ -79,7 +77,7 @@ class PIPELINE_STATE : public BASE_NODE {
             bool use_depth_stencil = false;
 
             if (ci.renderPass == VK_NULL_HANDLE) {
-                auto dynamic_rendering = LvlFindInChain<VkPipelineRenderingCreateInfo>(ci.pNext);
+                auto dynamic_rendering = vku::FindStructInPNextChain<VkPipelineRenderingCreateInfo>(ci.pNext);
                 if (dynamic_rendering) {
                     use_color = (dynamic_rendering->colorAttachmentCount > 0);
                     use_depth_stencil = (dynamic_rendering->depthAttachmentFormat != VK_FORMAT_UNDEFINED) ||
@@ -132,8 +130,6 @@ class PIPELINE_STATE : public BASE_NODE {
     const CreateInfo create_info;
 
   public:
-    const uint32_t create_index;  // which index in pCreateInfos, used for error messages
-
     // Create Info values saved for fast access later
     const VkPipelineRenderingCreateInfo *rendering_create_info = nullptr;
     const VkPipelineLibraryCreateInfoKHR *library_create_info = nullptr;
@@ -183,21 +179,19 @@ class PIPELINE_STATE : public BASE_NODE {
     CreateShaderModuleStates *csm_states = nullptr;
 
     // Executable or legacy pipeline
-    PIPELINE_STATE(const ValidationStateTracker *state_data, const VkGraphicsPipelineCreateInfo *pCreateInfo, uint32_t create_index,
+    PIPELINE_STATE(const ValidationStateTracker *state_data, const VkGraphicsPipelineCreateInfo *pCreateInfo,
                    std::shared_ptr<const RENDER_PASS_STATE> &&rpstate, std::shared_ptr<const PIPELINE_LAYOUT_STATE> &&layout,
                    CreateShaderModuleStates *csm_states = nullptr);
 
     // Compute pipeline
-    PIPELINE_STATE(const ValidationStateTracker *state_data, const VkComputePipelineCreateInfo *pCreateInfo, uint32_t create_index,
+    PIPELINE_STATE(const ValidationStateTracker *state_data, const VkComputePipelineCreateInfo *pCreateInfo,
                    std::shared_ptr<const PIPELINE_LAYOUT_STATE> &&layout, CreateShaderModuleStates *csm_states = nullptr);
 
     PIPELINE_STATE(const ValidationStateTracker *state_data, const VkRayTracingPipelineCreateInfoKHR *pCreateInfo,
-                   uint32_t create_index, std::shared_ptr<const PIPELINE_LAYOUT_STATE> &&layout,
-                   CreateShaderModuleStates *csm_states = nullptr);
+                   std::shared_ptr<const PIPELINE_LAYOUT_STATE> &&layout, CreateShaderModuleStates *csm_states = nullptr);
 
     PIPELINE_STATE(const ValidationStateTracker *state_data, const VkRayTracingPipelineCreateInfoNV *pCreateInfo,
-                   uint32_t create_index, std::shared_ptr<const PIPELINE_LAYOUT_STATE> &&layout,
-                   CreateShaderModuleStates *csm_states = nullptr);
+                   std::shared_ptr<const PIPELINE_LAYOUT_STATE> &&layout, CreateShaderModuleStates *csm_states = nullptr);
 
     VkPipeline pipeline() const { return handle_.Cast<VkPipeline>(); }
 
@@ -447,11 +441,27 @@ class PIPELINE_STATE : public BASE_NODE {
     // Return true if for a given PSO, the given state enum is dynamic, else return false
     bool IsDynamic(const VkDynamicState state) const { return dynamic_state.test(ConvertToCBDynamicState(state)); }
 
+    // From https://gitlab.khronos.org/vulkan/vulkan/-/issues/3263
+    // None of these require VK_EXT_extended_dynamic_state3
+    inline bool IsDepthStencilStateDynamic() const {
+        return IsDynamic(VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE) && IsDynamic(VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE) &&
+               IsDynamic(VK_DYNAMIC_STATE_DEPTH_COMPARE_OP) && IsDynamic(VK_DYNAMIC_STATE_DEPTH_BOUNDS_TEST_ENABLE) &&
+               IsDynamic(VK_DYNAMIC_STATE_STENCIL_TEST_ENABLE) && IsDynamic(VK_DYNAMIC_STATE_STENCIL_OP) &&
+               IsDynamic(VK_DYNAMIC_STATE_DEPTH_BOUNDS);
+    }
+
+    // If true, VK_EXT_extended_dynamic_state3 must also have been enabled
+    inline bool IsColorBlendStateDynamic() const {
+        return IsDynamic(VK_DYNAMIC_STATE_LOGIC_OP_ENABLE_EXT) && IsDynamic(VK_DYNAMIC_STATE_LOGIC_OP_EXT) &&
+               IsDynamic(VK_DYNAMIC_STATE_COLOR_BLEND_ENABLE_EXT) && IsDynamic(VK_DYNAMIC_STATE_COLOR_BLEND_EQUATION_EXT) &&
+               IsDynamic(VK_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT) && IsDynamic(VK_DYNAMIC_STATE_BLEND_CONSTANTS);
+    }
+
     template <typename ValidationObject, typename CreateInfo>
     static bool EnablesRasterizationStates(const ValidationObject &vo, const CreateInfo &create_info) {
         // If this is an executable pipeline created from linking graphics libraries, we need to find the pre-raster library to
         // check if rasterization is enabled
-        auto link_info = LvlFindInChain<VkPipelineLibraryCreateInfoKHR>(create_info.pNext);
+        auto link_info = vku::FindStructInPNextChain<VkPipelineLibraryCreateInfoKHR>(create_info.pNext);
         if (link_info) {
             const auto libs = vvl::make_span(link_info->pLibraries, link_info->libraryCount);
             for (const auto handle : libs) {
@@ -467,7 +477,7 @@ class PIPELINE_STATE : public BASE_NODE {
         }
 
         // Check if rasterization is enabled if this is a graphics library (only known in pre-raster libraries)
-        auto lib_info = LvlFindInChain<VkGraphicsPipelineLibraryCreateInfoEXT>(create_info.pNext);
+        auto lib_info = vku::FindStructInPNextChain<VkGraphicsPipelineLibraryCreateInfoEXT>(create_info.pNext);
         if (lib_info) {
             if (lib_info && (lib_info->flags & VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT)) {
                 return EnablesRasterizationStates(create_info);
@@ -487,7 +497,7 @@ class PIPELINE_STATE : public BASE_NODE {
         VkGraphicsPipelineLibraryFlagsEXT current_state = null_lib;
 
         // Check linked libraries
-        auto link_info = LvlFindInChain<VkPipelineLibraryCreateInfoKHR>(create_info.pNext);
+        auto link_info = vku::FindStructInPNextChain<VkPipelineLibraryCreateInfoKHR>(create_info.pNext);
         if (link_info) {
             auto state_tracker = dynamic_cast<const ValidationStateTracker *>(vo);
             if (state_tracker) {
@@ -500,7 +510,7 @@ class PIPELINE_STATE : public BASE_NODE {
         }
 
         // Check if this is a graphics library
-        auto lib_info = LvlFindInChain<VkGraphicsPipelineLibraryCreateInfoEXT>(create_info.pNext);
+        auto lib_info = vku::FindStructInPNextChain<VkGraphicsPipelineLibraryCreateInfoEXT>(create_info.pNext);
         if (lib_info) {
             current_state |= lib_info->flags;
         }
@@ -519,11 +529,11 @@ class PIPELINE_STATE : public BASE_NODE {
         constexpr VkGraphicsPipelineLibraryFlagsEXT null_lib = static_cast<VkGraphicsPipelineLibraryFlagsEXT>(0);
         VkGraphicsPipelineLibraryFlagsEXT current_state = null_lib;
 
-        auto link_info = LvlFindInChain<VkPipelineLibraryCreateInfoKHR>(create_info.pNext);
+        auto link_info = vku::FindStructInPNextChain<VkPipelineLibraryCreateInfoKHR>(create_info.pNext);
         // Cannot check linked library state in stateless VO
 
         // Check if this is a graphics library
-        auto lib_info = LvlFindInChain<VkGraphicsPipelineLibraryCreateInfoEXT>(create_info.pNext);
+        auto lib_info = vku::FindStructInPNextChain<VkGraphicsPipelineLibraryCreateInfoEXT>(create_info.pNext);
         if (lib_info) {
             current_state |= lib_info->flags;
         }
@@ -774,12 +784,15 @@ struct LAST_BOUND_STATE {
 
     // Dynamic State helpers that require both the Pipeline and CommandBuffer state are here
     bool IsDepthTestEnable() const;
+    bool IsDepthBoundTestEnable() const;
     bool IsDepthWriteEnable() const;
     bool IsStencilTestEnable() const;
     VkStencilOpState GetStencilOpStateFront() const;
     VkStencilOpState GetStencilOpStateBack() const;
     VkSampleCountFlagBits GetRasterizationSamples() const;
     bool IsRasterizationDisabled() const;
+    VkColorComponentFlags GetColorWriteMask(uint32_t i) const;
+    bool IsColorWriteEnabled(uint32_t i) const;
 
     bool ValidShaderObjectCombination(const VkPipelineBindPoint bind_point, const DeviceFeatures &device_features) const;
     VkShaderEXT GetShader(ShaderObjectStage stage) const;

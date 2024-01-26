@@ -743,20 +743,21 @@ bool DeclResultIdMapper::createStageOutputVar(const DeclaratorDecl *decl,
 
       spv::BuiltIn builtinID = spv::BuiltIn::Max;
       if (featureManager.isExtensionEnabled(Extension::EXT_mesh_shader)) {
-        // For EXT_mesh_shader, set builtin type as PrimitivePoint/Line/TriangleIndicesEXT
-        // based on the vertices per primitive
-        switch (verticesPerPrim) { 
-          case 1:
-            builtinID = spv::BuiltIn::PrimitivePointIndicesEXT;
-            break;
-          case 2:
-            builtinID = spv::BuiltIn::PrimitiveLineIndicesEXT;
-            break;
-          case 3:
-            builtinID = spv::BuiltIn::PrimitiveTriangleIndicesEXT;
-            break;
-          default:
-            break;
+        // For EXT_mesh_shader, set builtin type as
+        // PrimitivePoint/Line/TriangleIndicesEXT based on the vertices per
+        // primitive
+        switch (verticesPerPrim) {
+        case 1:
+          builtinID = spv::BuiltIn::PrimitivePointIndicesEXT;
+          break;
+        case 2:
+          builtinID = spv::BuiltIn::PrimitiveLineIndicesEXT;
+          break;
+        case 3:
+          builtinID = spv::BuiltIn::PrimitiveTriangleIndicesEXT;
+          break;
+        default:
+          break;
         }
         QualType arrayType = astContext.getConstantArrayType(
             type, llvm::APInt(32, arraySize), clang::ArrayType::Normal, 0);
@@ -764,16 +765,16 @@ bool DeclResultIdMapper::createStageOutputVar(const DeclaratorDecl *decl,
         stageVarInstructions[cast<DeclaratorDecl>(decl)] =
             getBuiltinVar(builtinID, arrayType, decl->getLocation());
       } else {
-          // For NV_mesh_shader, the built type is PrimitiveIndicesNV
-          builtinID = spv::BuiltIn::PrimitiveIndicesNV;
+        // For NV_mesh_shader, the built type is PrimitiveIndicesNV
+        builtinID = spv::BuiltIn::PrimitiveIndicesNV;
 
-          arraySize = arraySize * verticesPerPrim;
-          QualType arrayType = astContext.getConstantArrayType(
-              astContext.UnsignedIntTy, llvm::APInt(32, arraySize),
-              clang::ArrayType::Normal, 0);
+        arraySize = arraySize * verticesPerPrim;
+        QualType arrayType = astContext.getConstantArrayType(
+            astContext.UnsignedIntTy, llvm::APInt(32, arraySize),
+            clang::ArrayType::Normal, 0);
 
-          stageVarInstructions[cast<DeclaratorDecl>(decl)] =
-              getBuiltinVar(builtinID, arrayType, decl->getLocation());
+        stageVarInstructions[cast<DeclaratorDecl>(decl)] =
+            getBuiltinVar(builtinID, arrayType, decl->getLocation());
       }
 
       return true;
@@ -849,9 +850,10 @@ bool DeclResultIdMapper::createStageInputVar(const ParmVarDecl *paramDecl,
   SemanticInfo inheritSemantic = {};
 
   if (paramDecl->hasAttr<HLSLPayloadAttr>()) {
-    spv::StorageClass sc = (featureManager.isExtensionEnabled(Extension::EXT_mesh_shader))
-                           ? spv::StorageClass::TaskPayloadWorkgroupEXT
-                           : getStorageClassForSigPoint(sigPoint);
+    spv::StorageClass sc =
+        (featureManager.isExtensionEnabled(Extension::EXT_mesh_shader))
+            ? spv::StorageClass::TaskPayloadWorkgroupEXT
+            : getStorageClassForSigPoint(sigPoint);
     return createPayloadStageVars(sigPoint, sc, paramDecl, /*asInput=*/true,
                                   type, "in.var", loadedValue);
   } else {
@@ -1013,6 +1015,12 @@ SpirvDebugGlobalVariable *DeclResultIdMapper::createDebugGlobalVariable(
 SpirvVariable *
 DeclResultIdMapper::createFileVar(const VarDecl *var,
                                   llvm::Optional<SpirvInstruction *> init) {
+  // In the case of template specialization, the same VarDecl node in the AST
+  // may be traversed more than once.
+  if (astDecls[var].instr != nullptr) {
+    return cast<SpirvVariable>(astDecls[var].instr);
+  }
+
   const auto type = getTypeOrFnRetType(var);
   const auto loc = var->getLocation();
   const auto name = var->getName();
@@ -1023,8 +1031,6 @@ DeclResultIdMapper::createFileVar(const VarDecl *var,
   bool isAlias = false;
   (void)getTypeAndCreateCounterForPotentialAliasVar(var, &isAlias);
   varInstr->setContainsAliasComponent(isAlias);
-
-  assert(astDecls[var].instr == nullptr);
   astDecls[var].instr = varInstr;
 
   createDebugGlobalVariable(varInstr, type, loc, name);
@@ -2017,9 +2023,9 @@ bool DeclResultIdMapper::finalizeStageIOLocations(bool forInput) {
   if (spirvOptions.stageIoOrder == "alpha") {
     // Sort stage input/output variables alphabetically
     std::stable_sort(vars.begin(), vars.end(),
-              [](const StageVar *a, const StageVar *b) {
-                return a->getSemanticStr() < b->getSemanticStr();
-              });
+                     [](const StageVar *a, const StageVar *b) {
+                       return a->getSemanticStr() < b->getSemanticStr();
+                     });
     return assignLocations(vars, nextLocs, &stageVariableLocationInfo);
   }
 
@@ -2039,9 +2045,9 @@ bool DeclResultIdMapper::finalizeStageIOLocations(bool forInput) {
   if ((!forInput && spvContext.isHS()) || (forInput && spvContext.isDS())) {
     // Sort stage input/output variables alphabetically
     std::stable_sort(vars.begin(), vars.end(),
-              [](const StageVar *a, const StageVar *b) {
-                return a->getSemanticStr() < b->getSemanticStr();
-              });
+                     [](const StageVar *a, const StageVar *b) {
+                       return a->getSemanticStr() < b->getSemanticStr();
+                     });
   }
   return assignLocations(vars, nextLocs, &stageVariableLocationInfo);
 }
@@ -3651,6 +3657,7 @@ SpirvVariable *DeclResultIdMapper::createSpirvStageVar(
   // According to DXIL spec, the SampleIndex SV can only be used by PSIn.
   // According to Vulkan spec, the SampleId BuiltIn can only be used in PSIn.
   case hlsl::Semantic::Kind::SampleIndex: {
+    setInterlockExecutionMode(spv::ExecutionMode::SampleInterlockOrderedEXT);
     stageVar->setIsSpirvBuiltin();
     return spvBuilder.addStageBuiltinVar(type, sc, BuiltIn::SampleId, isPrecise,
                                          srcLoc);
@@ -3774,6 +3781,8 @@ SpirvVariable *DeclResultIdMapper::createSpirvStageVar(
   // VSOut, or PSIn. According to Vulkan spec, the FragSizeEXT BuiltIn can only
   // be used as VSOut, GSOut, MSOut or PSIn.
   case hlsl::Semantic::Kind::ShadingRate: {
+    setInterlockExecutionMode(
+        spv::ExecutionMode::ShadingRateInterlockOrderedEXT);
     switch (sigPointKind) {
     case hlsl::SigPoint::Kind::PSIn:
       stageVar->setIsSpirvBuiltin();
@@ -4200,6 +4209,15 @@ void DeclResultIdMapper::decorateStageVarWithIntrinsicAttrs(
         }
       };
   decorateWithIntrinsicAttrs(decl, varInst, checkBuiltInLocationDecoration);
+}
+
+void DeclResultIdMapper::setInterlockExecutionMode(spv::ExecutionMode mode) {
+  interlockExecutionMode = mode;
+}
+
+spv::ExecutionMode DeclResultIdMapper::getInterlockExecutionMode() {
+  return interlockExecutionMode.getValueOr(
+      spv::ExecutionMode::PixelInterlockOrderedEXT);
 }
 
 void DeclResultIdMapper::copyHullOutStageVarsToOutputPatch(

@@ -44,12 +44,24 @@ export const generatedProperties = [
   "name": "-alternative-animation-with-timeline"
  },
  {
-  "inherited": true,
   "longhands": [
-   "white-space-collapse",
-   "text-wrap"
+   "view-timeline-name",
+   "view-timeline-axis",
+   "view-timeline-inset"
   ],
-  "name": "-alternative-white-space"
+  "name": "-alternative-view-timeline-with-inset"
+ },
+ {
+  "longhands": [
+   "mask-image",
+   "-webkit-mask-position-x",
+   "-webkit-mask-position-y",
+   "mask-size",
+   "mask-repeat",
+   "mask-origin",
+   "mask-clip"
+  ],
+  "name": "-webkit-alternative-mask"
  },
  {
   "inherited": true,
@@ -86,6 +98,13 @@ export const generatedProperties = [
    "reverse"
   ],
   "name": "-webkit-box-direction"
+ },
+ {
+  "keywords": [
+   "normal",
+   "reverse"
+  ],
+  "name": "-webkit-box-direction-alternative"
  },
  {
   "name": "-webkit-box-flex"
@@ -159,8 +178,7 @@ export const generatedProperties = [
    "-webkit-mask-position-x",
    "-webkit-mask-position-y",
    "-webkit-mask-size",
-   "-webkit-mask-repeat-x",
-   "-webkit-mask-repeat-y",
+   "-webkit-mask-repeat",
    "-webkit-mask-origin",
    "-webkit-mask-clip"
   ],
@@ -217,17 +235,7 @@ export const generatedProperties = [
   "name": "-webkit-mask-position-y"
  },
  {
-  "longhands": [
-   "-webkit-mask-repeat-x",
-   "-webkit-mask-repeat-y"
-  ],
   "name": "-webkit-mask-repeat"
- },
- {
-  "name": "-webkit-mask-repeat-x"
- },
- {
-  "name": "-webkit-mask-repeat-y"
  },
  {
   "name": "-webkit-mask-size"
@@ -535,8 +543,7 @@ export const generatedProperties = [
    "background-position-x",
    "background-position-y",
    "background-size",
-   "background-repeat-x",
-   "background-repeat-y",
+   "background-repeat",
    "background-attachment",
    "background-origin",
    "background-clip",
@@ -577,7 +584,8 @@ export const generatedProperties = [
   "keywords": [
    "border-box",
    "padding-box",
-   "content-box"
+   "content-box",
+   "text"
   ],
   "name": "background-clip"
  },
@@ -616,17 +624,7 @@ export const generatedProperties = [
   "name": "background-position-y"
  },
  {
-  "longhands": [
-   "background-repeat-x",
-   "background-repeat-y"
-  ],
   "name": "background-repeat"
- },
- {
-  "name": "background-repeat-x"
- },
- {
-  "name": "background-repeat-y"
  },
  {
   "keywords": [
@@ -1180,6 +1178,13 @@ export const generatedProperties = [
  },
  {
   "keywords": [
+   "border-box",
+   "padding-box",
+   "content-box",
+   "margin-box",
+   "fill-box",
+   "stroke-box",
+   "view-box",
    "none"
   ],
   "name": "clip-path"
@@ -1325,7 +1330,6 @@ export const generatedProperties = [
  },
  {
   "keywords": [
-   "auto",
    "none"
   ],
   "name": "contain-intrinsic-height"
@@ -1342,7 +1346,6 @@ export const generatedProperties = [
  },
  {
   "keywords": [
-   "auto",
    "none"
   ],
   "name": "contain-intrinsic-width"
@@ -1365,7 +1368,8 @@ export const generatedProperties = [
    "normal",
    "inline-size",
    "size",
-   "sticky"
+   "sticky",
+   "snap"
   ],
   "name": "container-type"
  },
@@ -1514,6 +1518,15 @@ export const generatedProperties = [
  {
   "inherited": true,
   "keywords": [
+   "standard",
+   "high",
+   "constrained-high"
+  ],
+  "name": "dynamic-range-limit"
+ },
+ {
+  "inherited": true,
+  "keywords": [
    "show",
    "hide"
   ],
@@ -1521,6 +1534,13 @@ export const generatedProperties = [
  },
  {
   "name": "fallback"
+ },
+ {
+  "keywords": [
+   "fixed",
+   "content"
+  ],
+  "name": "field-sizing"
  },
  {
   "inherited": true,
@@ -2305,6 +2325,31 @@ export const generatedProperties = [
   "name": "mask"
  },
  {
+  "name": "mask-clip"
+ },
+ {
+  "name": "mask-composite"
+ },
+ {
+  "name": "mask-image"
+ },
+ {
+  "name": "mask-origin"
+ },
+ {
+  "longhands": [
+   "-webkit-mask-position-x",
+   "-webkit-mask-position-y"
+  ],
+  "name": "mask-position"
+ },
+ {
+  "name": "mask-repeat"
+ },
+ {
+  "name": "mask-size"
+ },
+ {
   "keywords": [
    "luminance",
    "alpha"
@@ -2388,6 +2433,9 @@ export const generatedProperties = [
    "plus-lighter"
   ],
   "name": "mix-blend-mode"
+ },
+ {
+  "name": "navigation-trigger"
  },
  {
   "name": "negative"
@@ -2837,9 +2885,6 @@ export const generatedProperties = [
    "smooth"
   ],
   "name": "scroll-behavior"
- },
- {
-  "name": "scroll-customization"
  },
  {
   "longhands": [
@@ -3334,7 +3379,7 @@ export const generatedProperties = [
   "name": "text-decoration-style"
  },
  {
-  "inherited": true,
+  "inherited": false,
   "keywords": [
    "auto",
    "from-font"
@@ -3408,6 +3453,22 @@ export const generatedProperties = [
    "auto"
   ],
   "name": "text-size-adjust"
+ },
+ {
+  "inherited": true,
+  "longhands": [
+   "text-autospace",
+   "text-spacing-trim"
+  ],
+  "name": "text-spacing"
+ },
+ {
+  "inherited": true,
+  "keywords": [
+   "space-first",
+   "space-all"
+  ],
+  "name": "text-spacing-trim"
  },
  {
   "inherited": true,
@@ -3649,13 +3710,9 @@ export const generatedProperties = [
  },
  {
   "inherited": true,
-  "keywords": [
-   "normal",
-   "pre",
-   "pre-wrap",
-   "pre-line",
-   "nowrap",
-   "break-spaces"
+  "longhands": [
+   "white-space-collapse",
+   "text-wrap"
   ],
   "name": "white-space"
  },
@@ -3748,6 +3805,12 @@ export const generatedPropertyValues = {
   ]
  },
  "-webkit-box-direction": {
+  "values": [
+   "normal",
+   "reverse"
+  ]
+ },
+ "-webkit-box-direction-alternative": {
   "values": [
    "normal",
    "reverse"
@@ -3963,7 +4026,8 @@ export const generatedPropertyValues = {
   "values": [
    "border-box",
    "padding-box",
-   "content-box"
+   "content-box",
+   "text"
   ]
  },
  "background-color": {
@@ -4231,6 +4295,13 @@ export const generatedPropertyValues = {
  },
  "clip-path": {
   "values": [
+   "border-box",
+   "padding-box",
+   "content-box",
+   "margin-box",
+   "fill-box",
+   "stroke-box",
+   "view-box",
    "none"
   ]
  },
@@ -4334,13 +4405,11 @@ export const generatedPropertyValues = {
  },
  "contain-intrinsic-height": {
   "values": [
-   "auto",
    "none"
   ]
  },
  "contain-intrinsic-width": {
   "values": [
-   "auto",
    "none"
   ]
  },
@@ -4354,7 +4423,8 @@ export const generatedPropertyValues = {
    "normal",
    "inline-size",
    "size",
-   "sticky"
+   "sticky",
+   "snap"
   ]
  },
  "content-visibility": {
@@ -4475,10 +4545,23 @@ export const generatedPropertyValues = {
    "text-before-edge"
   ]
  },
+ "dynamic-range-limit": {
+  "values": [
+   "standard",
+   "high",
+   "constrained-high"
+  ]
+ },
  "empty-cells": {
   "values": [
    "show",
    "hide"
+  ]
+ },
+ "field-sizing": {
+  "values": [
+   "fixed",
+   "content"
   ]
  },
  "fill-rule": {
@@ -5508,6 +5591,12 @@ export const generatedPropertyValues = {
    "auto"
   ]
  },
+ "text-spacing-trim": {
+  "values": [
+   "space-first",
+   "space-all"
+  ]
+ },
  "text-transform": {
   "values": [
    "capitalize",
@@ -5665,16 +5754,6 @@ export const generatedPropertyValues = {
    "collapse"
   ]
  },
- "white-space": {
-  "values": [
-   "normal",
-   "pre",
-   "pre-wrap",
-   "pre-line",
-   "nowrap",
-   "break-spaces"
-  ]
- },
  "white-space-collapse": {
   "values": [
    "collapse",
@@ -5783,6 +5862,34 @@ export const generatedAliasesFor = new Map([
  [
   "-webkit-alternative-animation-with-timeline",
   "-alternative-animation-with-timeline"
+ ],
+ [
+  "-webkit-alternative-mask-clip",
+  "mask-clip"
+ ],
+ [
+  "-webkit-alternative-mask-composite",
+  "mask-composite"
+ ],
+ [
+  "-webkit-alternative-mask-image",
+  "mask-image"
+ ],
+ [
+  "-webkit-alternative-mask-origin",
+  "mask-origin"
+ ],
+ [
+  "-webkit-alternative-mask-position",
+  "mask-position"
+ ],
+ [
+  "-webkit-alternative-mask-repeat",
+  "mask-repeat"
+ ],
+ [
+  "-webkit-alternative-mask-size",
+  "mask-size"
  ],
  [
   "-webkit-animation",

@@ -22,7 +22,7 @@ void av1_set_ssim_rdmult(const AV1_COMP *const cpi, int *errorperbit,
                          const int mi_col, int *const rdmult) {
   const AV1_COMMON *const cm = &cpi->common;
 
-  const int bsize_base = BLOCK_16X16;
+  const BLOCK_SIZE bsize_base = BLOCK_16X16;
   const int num_mi_w = mi_size_wide[bsize_base];
   const int num_mi_h = mi_size_high[bsize_base];
   const int num_cols = (cm->mi_params.mi_cols + num_mi_w - 1) / num_mi_w;
@@ -177,7 +177,7 @@ int av1_get_hier_tpl_rdmult(const AV1_COMP *const cpi, MACROBLOCK *const x,
   const int block_mi_width_sr =
       coded_to_superres_mi(mi_size_wide[bsize], cm->superres_scale_denominator);
 
-  const int bsize_base = BLOCK_16X16;
+  const BLOCK_SIZE bsize_base = BLOCK_16X16;
   const int num_mi_w = mi_size_wide[bsize_base];
   const int num_mi_h = mi_size_high[bsize_base];
   const int num_cols = (mi_cols_sr + num_mi_w - 1) / num_mi_w;
@@ -588,13 +588,13 @@ void av1_sum_intra_stats(const AV1_COMMON *const cm, FRAME_COUNTS *counts,
       update_cdf(cdf_v, CFL_IDX_V(idx), CFL_ALPHABET_SIZE);
     }
   }
-  if (av1_is_directional_mode(get_uv_mode(uv_mode)) &&
-      av1_use_angle_delta(bsize)) {
+  const PREDICTION_MODE equiv_mode = get_uv_mode(uv_mode);
+  if (av1_is_directional_mode(equiv_mode) && av1_use_angle_delta(bsize)) {
 #if CONFIG_ENTROPY_STATS
-    ++counts->angle_delta[uv_mode - UV_V_PRED]
+    ++counts->angle_delta[equiv_mode - V_PRED]
                          [mbmi->angle_delta[PLANE_TYPE_UV] + MAX_ANGLE_DELTA];
 #endif
-    update_cdf(fc->angle_delta_cdf[uv_mode - UV_V_PRED],
+    update_cdf(fc->angle_delta_cdf[equiv_mode - V_PRED],
                mbmi->angle_delta[PLANE_TYPE_UV] + MAX_ANGLE_DELTA,
                2 * MAX_ANGLE_DELTA + 1);
   }

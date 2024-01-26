@@ -41,8 +41,8 @@ export class Model<EnabledModelHandlers extends {[key: string]: Handlers.Types.T
   #processor: TraceProcessor<Handlers.Types.HandlersWithMeta<EnabledModelHandlers>>;
   #config: Types.Configuration.Configuration = Types.Configuration.DEFAULT;
 
-  static createWithAllHandlers(): Model<typeof Handlers.ModelHandlers> {
-    return new Model(Handlers.ModelHandlers);
+  static createWithAllHandlers(config?: Types.Configuration.Configuration): Model<typeof Handlers.ModelHandlers> {
+    return new Model(Handlers.ModelHandlers, config);
   }
 
   static createWithRequiredHandlersForMigration(config?: Types.Configuration.Configuration): Model<{
@@ -56,7 +56,7 @@ export class Model<EnabledModelHandlers extends {[key: string]: Handlers.Types.T
     if (config) {
       this.#config = config;
     }
-    this.#processor = new TraceProcessor(handlers, {/* Settings for how event processing is chunked */}, this.#config);
+    this.#processor = new TraceProcessor(handlers, this.#config);
   }
 
   /**

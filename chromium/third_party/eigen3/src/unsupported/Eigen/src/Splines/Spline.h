@@ -10,6 +10,7 @@
 #ifndef EIGEN_SPLINE_H
 #define EIGEN_SPLINE_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 #include "SplineFwd.h"

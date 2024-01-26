@@ -45,7 +45,7 @@ const UIStrings = {
   /**
    *@description button: Title of button to reveal preloading attempts with filter by selected rule set
    */
-  buttonRevealPreloadsAssociatedWithRuleSet: 'Reveal preloads associated with this rule set',
+  buttonRevealPreloadsAssociatedWithRuleSet: 'Reveal speculative loads associated with this rule set',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/application/preloading/components/RuleSetGrid.ts', UIStrings);
 export const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -173,6 +173,9 @@ function ruleSetRenderer(
         style=${LitHtml.Directives.styleMap({
           border: 'none',
           background: 'none',
+          color: 'var(--icon-link)',
+          cursor: 'pointer',
+          'text-decoration': 'underline',
           'padding-inline-start': '0',
           'padding-inline-end': '0',
         })}
@@ -224,6 +227,9 @@ function ruleSetRenderer(
         style=${LitHtml.Directives.styleMap({
           border: 'none',
           background: 'none',
+          color: 'var(--icon-link)',
+          cursor: 'pointer',
+          'text-decoration': 'underline',
           'padding-inline-start': '0',
           'padding-inline-end': '0',
         })}
@@ -272,8 +278,9 @@ function statusRenderer(preloadsStatusSummary: string, ruleSet: Protocol.Preload
         @click=${revealAttemptViewWithFilter}
         title=${i18nString(UIStrings.buttonRevealPreloadsAssociatedWithRuleSet)}
         style=${LitHtml.Directives.styleMap({
-          color: 'var(--color-link)',
+          color: 'var(--sys-color-primary)',
           'text-decoration': 'underline',
+          cursor: 'pointer',
           border: 'none',
           background: 'none',
           'padding-inline-start': '0',
@@ -291,7 +298,7 @@ function statusRenderer(preloadsStatusSummary: string, ruleSet: Protocol.Preload
     return LitHtml.html`
       <span
         style=${LitHtml.Directives.styleMap({
-      color: 'var(--color-error)',
+      color: 'var(--sys-color-error)',
     })}
       >
         ${nErrors}

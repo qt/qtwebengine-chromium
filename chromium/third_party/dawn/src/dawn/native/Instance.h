@@ -1,16 +1,29 @@
-// Copyright 2018 The Dawn Authors
+// Copyright 2018 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef SRC_DAWN_NATIVE_INSTANCE_H_
 #define SRC_DAWN_NATIVE_INSTANCE_H_
@@ -20,7 +33,6 @@
 #include <mutex>
 #include <set>
 #include <string>
-#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -30,6 +42,7 @@
 #include "dawn/native/Adapter.h"
 #include "dawn/native/BackendConnection.h"
 #include "dawn/native/BlobCache.h"
+#include "dawn/native/EventManager.h"
 #include "dawn/native/Features.h"
 #include "dawn/native/RefCountedWithExternalCount.h"
 #include "dawn/native/Toggles.h"
@@ -50,6 +63,7 @@ using BackendsBitset = ityp::bitset<wgpu::BackendType, kEnumCount<wgpu::BackendT
 using BackendsArray = ityp::
     array<wgpu::BackendType, std::unique_ptr<BackendConnection>, kEnumCount<wgpu::BackendType>>;
 
+wgpu::Bool APIGetInstanceFeatures(InstanceFeatures* features);
 InstanceBase* APICreateInstance(const InstanceDescriptor* descriptor);
 
 // This is called InstanceBase for consistency across the frontend, even if the backends don't
@@ -61,14 +75,6 @@ class InstanceBase final : public RefCountedWithExternalCount {
     void APIRequestAdapter(const RequestAdapterOptions* options,
                            WGPURequestAdapterCallback callback,
                            void* userdata);
-
-    // Deprecated: Discover physical devices and save them on the instance.
-    void DiscoverDefaultPhysicalDevices();
-    bool DiscoverPhysicalDevices(const PhysicalDeviceDiscoveryOptionsBase* options);
-
-    // Deprecated. Use EnumerateAdapters instead.
-    // Return adapters created on physical device discovered by the instance.
-    std::vector<Ref<AdapterBase>> GetAdapters() const;
 
     // Discovers and returns a vector of adapters.
     // All systems adapters that can be found are returned if no options are passed.
@@ -115,6 +121,9 @@ class InstanceBase final : public RefCountedWithExternalCount {
     // name of an feature supported in Dawn.
     const FeatureInfo* GetFeatureInfo(wgpu::FeatureName feature);
 
+    // TODO(dawn:2166): Move this method to PhysicalDevice to better detect that the backend
+    // validation is actually enabled or not when a physical device is created. Sometimes it is
+    // enabled externally via command line or environment variables.
     bool IsBackendValidationEnabled() const;
     void SetBackendValidationLevel(BackendValidationLevel level);
     BackendValidationLevel GetBackendValidationLevel() const;
@@ -139,13 +148,17 @@ class InstanceBase final : public RefCountedWithExternalCount {
     const std::vector<std::string>& GetRuntimeSearchPaths() const;
 
     const Ref<CallbackTaskManager>& GetCallbackTaskManager() const;
+    EventManager* GetEventManager();
 
     // Get backend-independent libraries that need to be loaded dynamically.
     const X11Functions* GetOrLoadX11Functions();
 
     // Dawn API
     Surface* APICreateSurface(const SurfaceDescriptor* descriptor);
-    bool APIProcessEvents();
+    void APIProcessEvents();
+    [[nodiscard]] wgpu::WaitStatus APIWaitAny(size_t count,
+                                              FutureWaitInfo* futures,
+                                              uint64_t timeoutNS);
 
   private:
     explicit InstanceBase(const TogglesState& instanceToggles);
@@ -163,8 +176,6 @@ class InstanceBase final : public RefCountedWithExternalCount {
     // compiled in backends.
     BackendConnection* GetBackendConnection(wgpu::BackendType backendType);
 
-    // Deprecated: Discover physical devices with options, and save them on the instance.
-    void DeprecatedDiscoverPhysicalDevices(const RequestAdapterOptions* options);
     // Enumerate physical devices according to options and return them.
     std::vector<Ref<PhysicalDeviceBase>> EnumeratePhysicalDevices(
         const RequestAdapterOptions* options);
@@ -194,9 +205,6 @@ class InstanceBase final : public RefCountedWithExternalCount {
     BackendsArray mBackends;
     BackendsBitset mBackendsTried;
 
-    std::vector<Ref<PhysicalDeviceBase>> mDeprecatedPhysicalDevices;
-    bool mDeprecatedDiscoveredDefaultPhysicalDevices = false;
-
     TogglesState mToggles;
     TogglesInfo mTogglesInfo;
 
@@ -205,6 +213,7 @@ class InstanceBase final : public RefCountedWithExternalCount {
 #endif  // defined(DAWN_USE_X11)
 
     Ref<CallbackTaskManager> mCallbackTaskManager;
+    EventManager mEventManager;
 
     std::set<DeviceBase*> mDevicesList;
     mutable std::mutex mDevicesListMutex;

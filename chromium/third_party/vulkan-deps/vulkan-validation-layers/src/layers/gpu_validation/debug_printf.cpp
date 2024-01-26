@@ -40,7 +40,7 @@ void DebugPrintf::CreateDevice(const VkDeviceCreateInfo *pCreateInfo) {
     std::string stdout_string = getLayerOption("khronos_validation.printf_to_stdout");
     vvl::ToLower(stdout_string);
     use_stdout = !stdout_string.compare("true");
-    if (getenv("DEBUG_PRINTF_TO_STDOUT")) use_stdout = true;
+    if (!GetEnvironment("DEBUG_PRINTF_TO_STDOUT").empty()) use_stdout = true;
 
     // GpuAssistedBase::CreateDevice will set up bindings
     VkDescriptorSetLayoutBinding binding = {3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1,
@@ -66,11 +66,6 @@ void DebugPrintf::CreateDevice(const VkDeviceCreateInfo *pCreateInfo) {
         aborted = true;
         return;
     }
-
-    if (IsExtEnabled(device_extensions.vk_ext_shader_object)) {
-        ReportSetupProblem(
-            device, "VK_EXT_shader_object is enabled, but Debug Printf does not currently support printing from shader_objects");
-    }
 }
 
 // Free the device memory and descriptor set associated with a command buffer.
@@ -83,7 +78,7 @@ void DebugPrintf::DestroyBuffer(DPFBufferInfo &buffer_info) {
 
 // Call the SPIR-V Optimizer to run the instrumentation pass on the shader.
 bool DebugPrintf::InstrumentShader(const vvl::span<const uint32_t> &input, std::vector<uint32_t> &new_pgm,
-                                   uint32_t *unique_shader_id) {
+                                   uint32_t unique_shader_id) {
     if (aborted) return false;
     if (input[0] != spv::MagicNumber) return false;
 
@@ -116,9 +111,8 @@ bool DebugPrintf::InstrumentShader(const vvl::span<const uint32_t> &input, std::
                 break;
         }
     };
-    *unique_shader_id = unique_shader_module_id++;
     optimizer.SetMessageConsumer(debug_printf_console_message_consumer);
-    optimizer.RegisterPass(CreateInstDebugPrintfPass(desc_set_bind_index, *unique_shader_id));
+    optimizer.RegisterPass(CreateInstDebugPrintfPass(desc_set_bind_index, unique_shader_id));
     const bool pass = optimizer.Run(new_pgm.data(), new_pgm.size(), &new_pgm, opt_options);
     if (!pass) {
         ReportSetupProblem(device, "Failure to instrument shader.  Proceeding with non-instrumented shader.");
@@ -131,18 +125,32 @@ void DebugPrintf::PreCallRecordCreateShaderModule(VkDevice device, const VkShade
                                                   void *csm_state_data) {
     ValidationStateTracker::PreCallRecordCreateShaderModule(device, pCreateInfo, pAllocator, pShaderModule, csm_state_data);
     create_shader_module_api_state *csm_state = static_cast<create_shader_module_api_state *>(csm_state_data);
+    csm_state->unique_shader_id = unique_shader_module_id++;
     const bool pass = InstrumentShader(vvl::make_span(pCreateInfo->pCode, pCreateInfo->codeSize / sizeof(uint32_t)),
-                                       csm_state->instrumented_pgm, &csm_state->unique_shader_id);
+                                       csm_state->instrumented_spirv, csm_state->unique_shader_id);
     if (pass) {
-        csm_state->instrumented_create_info.pCode = csm_state->instrumented_pgm.data();
-        csm_state->instrumented_create_info.codeSize = csm_state->instrumented_pgm.size() * sizeof(uint32_t);
+        csm_state->instrumented_create_info.pCode = csm_state->instrumented_spirv.data();
+        csm_state->instrumented_create_info.codeSize = csm_state->instrumented_spirv.size() * sizeof(uint32_t);
     }
 }
 
 void DebugPrintf::PreCallRecordCreateShadersEXT(VkDevice device, uint32_t createInfoCount,
                                                 const VkShaderCreateInfoEXT *pCreateInfos, const VkAllocationCallbacks *pAllocator,
                                                 VkShaderEXT *pShaders, void *csm_state_data) {
-    // TODO - Add VK_EXT_shader_object support
+    ValidationStateTracker::PreCallRecordCreateShadersEXT(device, createInfoCount, pCreateInfos, pAllocator, pShaders,
+                                                          csm_state_data);
+    GpuAssistedBase::PreCallRecordCreateShadersEXT(device, createInfoCount, pCreateInfos, pAllocator, pShaders, csm_state_data);
+    create_shader_object_api_state *csm_state = static_cast<create_shader_object_api_state *>(csm_state_data);
+    for (uint32_t i = 0; i < createInfoCount; ++i) {
+        csm_state->unique_shader_ids[i] = unique_shader_module_id++;
+        const bool pass = InstrumentShader(
+            vvl::make_span(static_cast<const uint32_t *>(pCreateInfos[i].pCode), pCreateInfos[i].codeSize / sizeof(uint32_t)),
+            csm_state->instrumented_spirv[i], csm_state->unique_shader_ids[i]);
+        if (pass) {
+            csm_state->instrumented_create_info[i].pCode = csm_state->instrumented_spirv[i].data();
+            csm_state->instrumented_create_info[i].codeSize = csm_state->instrumented_spirv[i].size() * sizeof(uint32_t);
+        }
+    }
 }
 
 vartype vartype_lookup(char intype) {
@@ -271,31 +279,6 @@ std::string DebugPrintf::FindFormatString(vvl::span<const uint32_t> pgm, uint32_
 #pragma GCC diagnostic ignored "-Wformat-security"
 #endif
 
-void snprintf_with_malloc(std::stringstream &shader_message, const DPFSubstring &substring, size_t needed, void *values) {
-    char *buffer = static_cast<char *>(malloc((needed + 1) * sizeof(char)));  // Add 1 for terminator
-    if (substring.longval) {
-        snprintf(buffer, needed, substring.string.c_str(), substring.longval);
-    } else if (!substring.needs_value) {
-        snprintf(buffer, needed, substring.string.c_str());
-    } else {
-        switch (substring.type) {
-            case varunsigned:
-                needed = snprintf(buffer, needed, substring.string.c_str(), *static_cast<uint32_t *>(values) - 1);
-                break;
-
-            case varsigned:
-                needed = snprintf(buffer, needed, substring.string.c_str(), *static_cast<int32_t *>(values) - 1);
-                break;
-
-            case varfloat:
-                needed = snprintf(buffer, needed, substring.string.c_str(), *static_cast<float *>(values) - 1);
-                break;
-        }
-    }
-    shader_message << buffer;
-    free(buffer);
-}
-
 void DebugPrintf::AnalyzeAndGenerateMessages(VkCommandBuffer command_buffer, VkQueue queue, DPFBufferInfo &buffer_info,
                                              uint32_t operation_index, uint32_t *const debug_output_buffer) {
     // Word         Content
@@ -313,11 +296,15 @@ void DebugPrintf::AnalyzeAndGenerateMessages(VkCommandBuffer command_buffer, VkQ
     uint32_t expect = debug_output_buffer[1];
     if (!expect) return;
 
+    // TODO - have Loc passed in correctly
+    Location loc(vvl::Func::vkQueueSubmit);
+
     uint32_t index = spvtools::kDebugOutputDataOffset;
     while (debug_output_buffer[index]) {
         std::stringstream shader_message;
         VkShaderModule shader_module_handle = VK_NULL_HANDLE;
         VkPipeline pipeline_handle = VK_NULL_HANDLE;
+        VkShaderEXT shader_object_handle = VK_NULL_HANDLE;
         vvl::span<const uint32_t> pgm;
 
         DPFOutputRecord *debug_record = reinterpret_cast<DPFOutputRecord *>(&debug_output_buffer[index]);
@@ -327,6 +314,7 @@ void DebugPrintf::AnalyzeAndGenerateMessages(VkCommandBuffer command_buffer, VkQ
         if (it != shader_map.end()) {
             shader_module_handle = it->second.shader_module;
             pipeline_handle = it->second.pipeline;
+            shader_object_handle = it->second.shader_object;
             pgm = it->second.pgm;
         }
         assert(pgm.size() != 0);
@@ -335,10 +323,9 @@ void DebugPrintf::AnalyzeAndGenerateMessages(VkCommandBuffer command_buffer, VkQ
         // Break the format string into strings with 1 or 0 value
         auto format_substrings = ParseFormatString(format_string);
         void *values = static_cast<void *>(&debug_record->values);
-        const uint32_t static_size = 1024;
         // Sprintf each format substring into a temporary string then add that to the message
         for (auto &substring : format_substrings) {
-            char temp_string[static_size];
+            std::string temp_string;
             size_t needed = 0;
             std::vector<std::string> format_strings = {"%ul", "%lu", "%lx"};
             size_t ul_pos = 0;
@@ -359,34 +346,40 @@ void DebugPrintf::AnalyzeAndGenerateMessages(VkCommandBuffer command_buffer, VkQ
                 } else {
                     substring.string.replace(ul_pos + 1, 2, PRIu64);
                 }
-                needed = snprintf(temp_string, static_size, substring.string.c_str(), substring.longval);
+                // +1 for null terminator
+                needed = std::snprintf(nullptr, 0, substring.string.c_str(), substring.longval) + 1;
+                temp_string.resize(needed);
+                std::snprintf(&temp_string[0], needed, substring.string.c_str(), substring.longval);
             } else {
                 if (substring.needs_value) {
                     switch (substring.type) {
                         case varunsigned:
-                            needed = snprintf(temp_string, static_size, substring.string.c_str(), *static_cast<uint32_t *>(values));
+                            // +1 for null terminator
+                            needed = std::snprintf(nullptr, 0, substring.string.c_str(), *static_cast<uint32_t *>(values)) + 1;
+                            temp_string.resize(needed);
+                            std::snprintf(&temp_string[0], needed, substring.string.c_str(), *static_cast<uint32_t *>(values));
                             break;
 
                         case varsigned:
-                            needed = snprintf(temp_string, static_size, substring.string.c_str(), *static_cast<int32_t *>(values));
+                            needed = std::snprintf(nullptr, 0, substring.string.c_str(), *static_cast<int32_t *>(values)) + 1;
+                            temp_string.resize(needed);
+                            std::snprintf(&temp_string[0], needed, substring.string.c_str(), *static_cast<int32_t *>(values));
                             break;
 
                         case varfloat:
-                            needed = snprintf(temp_string, static_size, substring.string.c_str(), *static_cast<float *>(values));
+                            needed = std::snprintf(nullptr, 0, substring.string.c_str(), *static_cast<float *>(values)) + 1;
+                            temp_string.resize(needed);
+                            std::snprintf(&temp_string[0], needed, substring.string.c_str(), *static_cast<float *>(values));
                             break;
                     }
                     values = static_cast<uint32_t *>(values) + 1;
                 } else {
-                    needed = snprintf(temp_string, static_size, substring.string.c_str());
+                    needed = std::snprintf(nullptr, 0, substring.string.c_str()) + 1;
+                    temp_string.resize(needed);
+                    std::snprintf(&temp_string[0], needed, substring.string.c_str());
                 }
             }
-
-            if (needed < static_size) {
-                shader_message << temp_string;
-            } else {
-                // Static buffer not big enough for message, use malloc to get enough
-                snprintf_with_malloc(shader_message, substring, needed, values);
-            }
+            shader_message << temp_string.c_str();
         }
 
         if (verbose) {
@@ -396,13 +389,13 @@ void DebugPrintf::AnalyzeAndGenerateMessages(VkCommandBuffer command_buffer, VkQ
             std::string source_message;
             UtilGenerateStageMessage(&debug_output_buffer[index], stage_message);
             UtilGenerateCommonMessage(report_data, command_buffer, &debug_output_buffer[index], shader_module_handle,
-                                      pipeline_handle, buffer_info.pipeline_bind_point, operation_index, common_message);
+                                      pipeline_handle, shader_object_handle, buffer_info.pipeline_bind_point, operation_index, common_message);
             UtilGenerateSourceMessages(pgm, &debug_output_buffer[index], true, filename_message, source_message);
             if (use_stdout) {
                 std::cout << "UNASSIGNED-DEBUG-PRINTF " << common_message.c_str() << " " << stage_message.c_str() << " "
                           << shader_message.str().c_str() << " " << filename_message.c_str() << " " << source_message.c_str();
             } else {
-                LogInfo(queue, "UNASSIGNED-DEBUG-PRINTF", "%s %s %s %s%s", common_message.c_str(), stage_message.c_str(),
+                LogInfo("UNASSIGNED-DEBUG-PRINTF", queue, loc, "%s %s %s %s%s", common_message.c_str(), stage_message.c_str(),
                         shader_message.str().c_str(), filename_message.c_str(), source_message.c_str());
             }
         } else {
@@ -410,13 +403,13 @@ void DebugPrintf::AnalyzeAndGenerateMessages(VkCommandBuffer command_buffer, VkQ
                 std::cout << shader_message.str();
             } else {
                 // Don't let LogInfo process any '%'s in the string
-                LogInfo(device, "UNASSIGNED-DEBUG-PRINTF", "%s", shader_message.str().c_str());
+                LogInfo("UNASSIGNED-DEBUG-PRINTF", device, loc, "%s", shader_message.str().c_str());
             }
         }
         index += debug_record->size;
     }
     if ((index - spvtools::kDebugOutputDataOffset) != expect) {
-        LogWarning(device, "UNASSIGNED-DEBUG-PRINTF",
+        LogWarning("UNASSIGNED-DEBUG-PRINTF", device, loc,
                    "WARNING - Debug Printf message was truncated, likely due to a buffer size that was too small for the message");
     }
     memset(debug_output_buffer, 0, 4 * (debug_output_buffer[spvtools::kDebugOutputSizeOffset] + spvtools::kDebugOutputDataOffset));
@@ -662,15 +655,15 @@ void DebugPrintf::AllocateDebugPrintfResources(const VkCommandBuffer cmd_buffer,
     const auto &last_bound = cb_node->lastBound[lv_bind_point];
     const auto *pipeline_state = last_bound.pipeline_state;
 
-    if (!pipeline_state) {
-        ReportSetupProblem(device, "Pipeline state not found, aborting Debug Printf");
+    if (!pipeline_state && !last_bound.HasShaderObjects()) {
+        ReportSetupProblem(device, "Neither pipeline state nor shader object states were found, aborting Debug Printf");
         aborted = true;
         return;
     }
 
     // Allocate memory for the output block that the gpu will use to return values for printf
     DPFDeviceMemoryBlock output_block = {};
-    VkBufferCreateInfo buffer_info = LvlInitStruct<VkBufferCreateInfo>();
+    VkBufferCreateInfo buffer_info = vku::InitStructHelper();
     buffer_info.size = output_buffer_size;
     buffer_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
     VmaAllocationCreateInfo alloc_info = {};
@@ -690,7 +683,7 @@ void DebugPrintf::AllocateDebugPrintfResources(const VkCommandBuffer cmd_buffer,
         vmaUnmapMemory(vmaAllocator, output_block.allocation);
     }
 
-    auto desc_writes = LvlInitStruct<VkWriteDescriptorSet>();
+    VkWriteDescriptorSet desc_writes = vku::InitStructHelper();
     const uint32_t desc_count = 1;
 
     // Write the descriptor
@@ -704,16 +697,24 @@ void DebugPrintf::AllocateDebugPrintfResources(const VkCommandBuffer cmd_buffer,
     desc_writes.dstBinding = 3;
     DispatchUpdateDescriptorSets(device, desc_count, &desc_writes, 0, NULL);
 
-    const auto pipeline_layout = pipeline_state->PipelineLayoutState();
-    // If GPL is used, it's possible the pipeline layout used at pipeline creation time is null. If CmdBindDescriptorSets has
-    // not been called yet (i.e., state.pipeline_null), then fall back to the layout associated with pre-raster state.
-    // PipelineLayoutState should be used for the purposes of determining the number of sets in the layout, but this layout
-    // may be a "pseudo layout" used to represent the union of pre-raster and fragment shader layouts, and therefore have a
-    // null handle.
-    const auto pipeline_layout_handle =
-        (last_bound.pipeline_layout) ? last_bound.pipeline_layout : pipeline_state->PreRasterPipelineLayoutState()->layout();
-    if (pipeline_layout->set_layouts.size() <= desc_set_bind_index) {
-        DispatchCmdBindDescriptorSets(cmd_buffer, bind_point, pipeline_layout_handle, desc_set_bind_index, 1, desc_sets.data(), 0,
+    const auto pipeline_layout =
+        pipeline_state ? pipeline_state->PipelineLayoutState() : Get<PIPELINE_LAYOUT_STATE>(last_bound.pipeline_layout);
+    if (pipeline_layout) {
+        // If GPL is used, it's possible the pipeline layout used at pipeline creation time is null. If CmdBindDescriptorSets has
+        // not been called yet (i.e., state.pipeline_null), then fall back to the layout associated with pre-raster state.
+        // PipelineLayoutState should be used for the purposes of determining the number of sets in the layout, but this layout
+        // may be a "pseudo layout" used to represent the union of pre-raster and fragment shader layouts, and therefore have a
+        // null handle.
+        const auto pipeline_layout_handle =
+            (last_bound.pipeline_layout) ? last_bound.pipeline_layout : pipeline_state->PreRasterPipelineLayoutState()->layout();
+        if (pipeline_layout->set_layouts.size() <= desc_set_bind_index) {
+            DispatchCmdBindDescriptorSets(cmd_buffer, bind_point, pipeline_layout_handle, desc_set_bind_index, 1, desc_sets.data(),
+                                          0, nullptr);
+        }
+    } else {
+        // If no pipeline layout was bound when using shader objects that don't use any descriptor set, bind the debug pipeline
+        // layout
+        DispatchCmdBindDescriptorSets(cmd_buffer, bind_point, debug_pipeline_layout, desc_set_bind_index, 1, desc_sets.data(), 0,
                                       nullptr);
     }
     // Record buffer and memory info in CB state tracking

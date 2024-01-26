@@ -32,6 +32,7 @@
 #include "src/objects/string.h"
 #include "src/objects/swiss-name-dictionary.h"
 #include "src/objects/tagged-index.h"
+#include "src/objects/tagged.h"
 #include "src/roots/roots.h"
 #include "torque-generated/exported-macros-assembler.h"
 
@@ -128,7 +129,19 @@ enum class PrimitiveType { kBoolean, kNumber, kString, kSymbol };
   V(ProxyRevokeSharedFun, proxy_revoke_shared_fun, ProxyRevokeSharedFun)       \
   V(ShadowRealmImportValueFulfilledSFI,                                        \
     shadow_realm_import_value_fulfilled_sfi,                                   \
-    ShadowRealmImportValueFulfilledSFI)
+    ShadowRealmImportValueFulfilledSFI)                                        \
+  V(ArrayFromAsyncIterableOnFulfilledSharedFun,                                \
+    array_from_async_iterable_on_fulfilled_shared_fun,                         \
+    ArrayFromAsyncIterableOnFulfilledSharedFun)                                \
+  V(ArrayFromAsyncIterableOnRejectedSharedFun,                                 \
+    array_from_async_iterable_on_rejected_shared_fun,                          \
+    ArrayFromAsyncIterableOnRejectedSharedFun)                                 \
+  V(ArrayFromAsyncArrayLikeOnFulfilledSharedFun,                               \
+    array_from_async_array_like_on_fulfilled_shared_fun,                       \
+    ArrayFromAsyncArrayLikeOnFulfilledSharedFun)                               \
+  V(ArrayFromAsyncArrayLikeOnRejectedSharedFun,                                \
+    array_from_async_array_like_on_rejected_shared_fun,                        \
+    ArrayFromAsyncArrayLikeOnRejectedSharedFun)
 
 #define UNIQUE_INSTANCE_TYPE_IMMUTABLE_IMMOVABLE_MAP_ADAPTER( \
     V, rootIndexName, rootAccessorName, class_name)           \
@@ -178,6 +191,7 @@ enum class PrimitiveType { kBoolean, kNumber, kString, kSymbol };
     IsConcatSpreadableSymbol)                                                \
   V(iterator_symbol, iterator_symbol, IteratorSymbol)                        \
   V(keys_string, keys_string, KeysString)                                    \
+  V(async_iterator_symbol, async_iterator_symbol, AsyncIteratorSymbol)       \
   V(length_string, length_string, LengthString)                              \
   V(ManyClosuresCellMap, many_closures_cell_map, ManyClosuresCellMap)        \
   V(match_symbol, match_symbol, MatchSymbol)                                 \
@@ -230,6 +244,7 @@ enum class PrimitiveType { kBoolean, kNumber, kString, kSymbol };
   V(SeqTwoByteStringMap, seq_two_byte_string_map, SeqTwoByteStringMap)       \
   V(TheHoleValue, the_hole_value, TheHole)                                   \
   V(PropertyCellHoleValue, property_cell_hole_value, PropertyCellHole)       \
+  V(HashTableHoleValue, hash_table_hole_value, HashTableHole)                \
   V(then_string, then_string, ThenString)                                    \
   V(toJSON_string, toJSON_string, ToJSONString)                              \
   V(toString_string, toString_string, ToStringString)                        \
@@ -256,6 +271,13 @@ enum class PrimitiveType { kBoolean, kNumber, kString, kSymbol };
 #else
 #define CSA_CHECK(csa, x) (csa)->FastCheck(x)
 #endif
+
+#define CSA_CHECK_WITH_ABORT(csa, x) \
+  (csa)->Check([&]() -> TNode<BoolT> { return x; }, #x, __FILE__, __LINE__)
+
+// This is a check that always calls into the runtime if it aborts.
+// This also exits silently when --hole-fuzzing is enabled.
+#define CSA_HOLE_SECURITY_CHECK(csa, x) CSA_CHECK_WITH_ABORT(csa, x)
 
 #ifdef DEBUG
 // CSA_DCHECK_ARGS generates an
@@ -999,7 +1021,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
 
   TNode<String> SingleCharacterStringConstant(char const* single_char) {
     DCHECK_EQ(strlen(single_char), 1);
-    return HeapConstant(
+    return HeapConstantNoHole(
         isolate()->factory()->LookupSingleCharacterStringFromCode(
             single_char[0]));
   }
@@ -1169,27 +1191,35 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                                     ExternalPointerTag tag);
 
   // Load an indirect pointer field.
+  // Only available when the sandbox is enabled.
   TNode<HeapObject> LoadIndirectPointerFromObject(TNode<HeapObject> object,
-                                                  int offset);
+                                                  int offset,
+                                                  IndirectPointerTag tag);
 
-  // Load a field that contains either an indirect pointer (if the sandbox is
-  // enabled) or a regular/tagged pointer (otherwise).
-  TNode<HeapObject> LoadMaybeIndirectPointerFromObject(TNode<HeapObject> object,
-                                                       int offset);
+  // Load a trusted pointer field.
+  // When the sandbox is enabled, these are indirect pointers using the trusted
+  // pointer table. Otherwise they are regular tagged fields.
+  TNode<HeapObject> LoadTrustedPointerFromObject(TNode<HeapObject> object,
+                                                 int offset,
+                                                 IndirectPointerTag tag);
 
-  // When the sandbox is enabled, this will load the Code object pointer from
-  // the code pointer table entry.
-  // Load a code entrypoint pointer from an object.
-  // When the sandbox is enabled, this will load the entrypoint pointer from the
-  // code pointer table entry.
-  TNode<RawPtrT> LoadCodeEntrypointFromObject(TNode<HeapObject> object,
-                                              int offset) {
-    return LoadCodeEntrypointFromObject(object, IntPtrConstant(offset));
+  // Load a code pointer field.
+  // These are special versions of trusted pointers that, when the sandbox is
+  // enabled, reference code objects through the code pointer table.
+  TNode<Code> LoadCodePointerFromObject(TNode<HeapObject> object, int offset);
+
+  // Load the pointer to a Code's entrypoint via code pointer.
+  // Only available when the sandbox is enabled as it requires the code pointer
+  // table.
+  TNode<RawPtrT> LoadCodeEntrypointViaCodePointerField(TNode<HeapObject> object,
+                                                       int offset) {
+    return LoadCodeEntrypointViaCodePointerField(object,
+                                                 IntPtrConstant(offset));
   }
-  TNode<RawPtrT> LoadCodeEntrypointFromObject(TNode<HeapObject> object,
-                                              TNode<IntPtrT> offset);
+  TNode<RawPtrT> LoadCodeEntrypointViaCodePointerField(TNode<HeapObject> object,
+                                                       TNode<IntPtrT> offset);
 
-#ifdef V8_CODE_POINTER_SANDBOXING
+#ifdef V8_ENABLE_SANDBOX
   // Helper function to load a CodePointerHandle from an object and compute the
   // offset into the code pointer table from it.
   TNode<UintPtrT> ComputeCodePointerTableEntryOffset(
@@ -1472,6 +1502,10 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   TNode<Smi> LoadFastJSArrayLength(TNode<JSArray> array);
   // Load the length of a fixed array base instance.
   TNode<Smi> LoadFixedArrayBaseLength(TNode<FixedArrayBase> array);
+  template <typename Array>
+  TNode<Smi> LoadArrayCapacity(TNode<Array> array) {
+    return LoadObjectField<Smi>(array, Array::Shape::kCapacityOffset);
+  }
   // Load the length of a fixed array base instance.
   TNode<IntPtrT> LoadAndUntagFixedArrayBaseLength(TNode<FixedArrayBase> array);
   TNode<Uint32T> LoadAndUntagFixedArrayBaseLengthAsUint32(
@@ -1481,6 +1515,8 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   TNode<IntPtrT> LoadAndUntagWeakFixedArrayLength(TNode<WeakFixedArray> array);
   TNode<Uint32T> LoadAndUntagWeakFixedArrayLengthAsUint32(
       TNode<WeakFixedArray> array);
+  // Load the length of a BytecodeArray.
+  TNode<Uint32T> LoadAndUntagBytecodeArrayLength(TNode<BytecodeArray> array);
   // Load the number of descriptors in DescriptorArray.
   TNode<Int32T> LoadNumberOfDescriptors(TNode<DescriptorArray> array);
   // Load the number of own descriptors of a map.
@@ -1599,9 +1635,19 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
 
   void FixedArrayBoundsCheck(TNode<FixedArrayBase> array, TNode<Smi> index,
                              int additional_offset);
+  void FixedArrayBoundsCheck(TNode<FixedArray> array, TNode<Smi> index,
+                             int additional_offset) {
+    FixedArrayBoundsCheck(UncheckedCast<FixedArrayBase>(array), index,
+                          additional_offset);
+  }
 
   void FixedArrayBoundsCheck(TNode<FixedArrayBase> array, TNode<IntPtrT> index,
                              int additional_offset);
+  void FixedArrayBoundsCheck(TNode<FixedArray> array, TNode<IntPtrT> index,
+                             int additional_offset) {
+    FixedArrayBoundsCheck(UncheckedCast<FixedArrayBase>(array), index,
+                          additional_offset);
+  }
 
   void FixedArrayBoundsCheck(TNode<FixedArrayBase> array, TNode<UintPtrT> index,
                              int additional_offset) {
@@ -1619,6 +1665,12 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   TNode<TValue> LoadArrayElement(TNode<Array> array, int array_header_size,
                                  TNode<TIndex> index,
                                  int additional_offset = 0);
+  template <typename Array, typename TIndex>
+  TNode<typename Array::Shape::ElementT> LoadArrayElement(
+      TNode<Array> array, TNode<TIndex> index, int additional_offset = 0) {
+    return LoadArrayElement<Array, TIndex, typename Array::Shape::ElementT>(
+        array, Array::Shape::kHeaderSize, index, additional_offset);
+  }
 
   template <typename TIndex>
   TNode<Object> LoadFixedArrayElement(
@@ -1792,21 +1844,37 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   // Store to an indirect pointer field. This involves loading the index for
   // the pointer table entry owned by the pointed-to object (which points back
   // to it) and storing that into the specified field.
-  // TODO(saelo) Currently, only Code objects can be referenced through
-  // indirect pointers, and so we only support these here, but we should
-  // generalize this.
+  // Stores that may require a write barrier also need to know the indirect
+  // pointer tag for the field. Otherwise, it is not needed
   void StoreIndirectPointerField(TNode<HeapObject> object, int offset,
-                                 TNode<Code> value);
-  void StoreIndirectPointerFieldNoWriteBarrier(TNode<HeapObject> object,
-                                               int offset, TNode<Code> value);
+                                 IndirectPointerTag tag,
+                                 TNode<ExposedTrustedObject> value);
+  void StoreIndirectPointerFieldNoWriteBarrier(
+      TNode<HeapObject> object, int offset, IndirectPointerTag tag,
+      TNode<ExposedTrustedObject> value);
 
-  // Store to a field that either contains an indirect pointer (when the
-  // sandbox is enabled) or a regular (tagged) pointer otherwise.
-  void StoreMaybeIndirectPointerField(TNode<HeapObject> object, int offset,
-                                      TNode<Code> value);
-  void StoreMaybeIndirectPointerFieldNoWriteBarrier(TNode<HeapObject> object,
-                                                    int offset,
-                                                    TNode<Code> value);
+  // Store a trusted pointer field.
+  // When the sandbox is enabled, these are indirect pointers using the trusted
+  // pointer table. Otherwise they are regular tagged fields.
+  void StoreTrustedPointerField(TNode<HeapObject> object, int offset,
+                                IndirectPointerTag tag,
+                                TNode<ExposedTrustedObject> value);
+  void StoreTrustedPointerFieldNoWriteBarrier(
+      TNode<HeapObject> object, int offset, IndirectPointerTag tag,
+      TNode<ExposedTrustedObject> value);
+
+  // Store a code pointer field.
+  // These are special versions of trusted pointers that, when the sandbox is
+  // enabled, reference code objects through the code pointer table.
+  void StoreCodePointerField(TNode<HeapObject> object, int offset,
+                             TNode<Code> value) {
+    StoreTrustedPointerField(object, offset, kCodeIndirectPointerTag, value);
+  }
+  void StoreCodePointerFieldNoWriteBarrier(TNode<HeapObject> object, int offset,
+                                           TNode<Code> value) {
+    StoreTrustedPointerFieldNoWriteBarrier(object, offset,
+                                           kCodeIndirectPointerTag, value);
+  }
 
   template <class T>
   void StoreObjectFieldNoWriteBarrier(TNode<HeapObject> object,
@@ -1894,6 +1962,48 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
       WriteBarrierMode barrier_mode = UPDATE_WRITE_BARRIER) {
     return StoreFixedArrayElement(object, IntPtrConstant(index), value,
                                   barrier_mode, 0, CheckBounds::kDebugOnly);
+  }
+  template <typename Array>
+  void UnsafeStoreArrayElement(
+      TNode<Array> object, int index,
+      TNode<typename Array::Shape::ElementT> value,
+      WriteBarrierMode barrier_mode = UPDATE_WRITE_BARRIER) {
+    DCHECK(barrier_mode == SKIP_WRITE_BARRIER ||
+           barrier_mode == UNSAFE_SKIP_WRITE_BARRIER ||
+           barrier_mode == UPDATE_WRITE_BARRIER);
+    // TODO(jgruber): This is just a barebones implementation taken from
+    // StoreFixedArrayOrPropertyArrayElement. We can make it more robust and
+    // generic if needed.
+    int offset = Array::OffsetOfElementAt(index);
+    if (barrier_mode == UNSAFE_SKIP_WRITE_BARRIER) {
+      UnsafeStoreObjectFieldNoWriteBarrier(object, offset, value);
+    } else if (barrier_mode == SKIP_WRITE_BARRIER) {
+      StoreObjectFieldNoWriteBarrier(object, offset, value);
+    } else if (barrier_mode == UPDATE_WRITE_BARRIER) {
+      StoreObjectField(object, offset, value);
+    } else {
+      UNREACHABLE();
+    }
+  }
+  template <typename Array>
+  void UnsafeStoreArrayElement(
+      TNode<Array> object, TNode<Smi> index,
+      TNode<typename Array::Shape::ElementT> value,
+      WriteBarrierMode barrier_mode = UPDATE_WRITE_BARRIER) {
+    DCHECK(barrier_mode == SKIP_WRITE_BARRIER ||
+           barrier_mode == UPDATE_WRITE_BARRIER);
+    // TODO(jgruber): This is just a barebones implementation taken from
+    // StoreFixedArrayOrPropertyArrayElement. We can make it more robust and
+    // generic if needed.
+    TNode<IntPtrT> offset = ElementOffsetFromIndex(index, PACKED_ELEMENTS,
+                                                   Array::Shape::kHeaderSize);
+    if (barrier_mode == SKIP_WRITE_BARRIER) {
+      StoreObjectFieldNoWriteBarrier(object, offset, value);
+    } else if (barrier_mode == UPDATE_WRITE_BARRIER) {
+      StoreObjectField(object, offset, value);
+    } else {
+      UNREACHABLE();
+    }
   }
 
   void UnsafeStoreFixedArrayElement(TNode<FixedArray> object, int index,
@@ -2227,6 +2337,13 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   void FillFixedArrayWithValue(ElementsKind kind, TNode<FixedArrayBase> array,
                                TNode<TIndex> from_index, TNode<TIndex> to_index,
                                RootIndex value_root_index);
+  template <typename TIndex>
+  void FillFixedArrayWithValue(ElementsKind kind, TNode<FixedArray> array,
+                               TNode<TIndex> from_index, TNode<TIndex> to_index,
+                               RootIndex value_root_index) {
+    FillFixedArrayWithValue(kind, UncheckedCast<FixedArrayBase>(array),
+                            from_index, to_index, value_root_index);
+  }
 
   // Uses memset to effectively initialize the given FixedArray with zeroes.
   void FillFixedArrayWithSmiZero(ElementsKind kind, TNode<FixedArray> array,
@@ -2341,6 +2458,11 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                     TNode<IntPtrT> src_index, TNode<IntPtrT> length,
                     WriteBarrierMode write_barrier = UPDATE_WRITE_BARRIER);
 
+  void CopyRange(TNode<HeapObject> dst_object, int dst_offset,
+                 TNode<HeapObject> src_object, int src_offset,
+                 TNode<IntPtrT> length_in_tagged,
+                 WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
+
   TNode<FixedArray> HeapObjectToFixedArray(TNode<HeapObject> base,
                                            Label* cast_fail);
 
@@ -2352,19 +2474,14 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   }
 
   TNode<ArrayList> AllocateArrayList(TNode<Smi> size);
-
   TNode<ArrayList> ArrayListEnsureSpace(TNode<ArrayList> array,
-                                        TNode<Smi> size);
-
+                                        TNode<Smi> length);
   TNode<ArrayList> ArrayListAdd(TNode<ArrayList> array, TNode<Object> object);
-
   void ArrayListSet(TNode<ArrayList> array, TNode<Smi> index,
                     TNode<Object> object);
-
   TNode<Smi> ArrayListGetLength(TNode<ArrayList> array);
-
   void ArrayListSetLength(TNode<ArrayList> array, TNode<Smi> length);
-
+  // TODO(jgruber): Rename to ArrayListToFixedArray.
   TNode<FixedArray> ArrayListElements(TNode<ArrayList> array);
 
   template <typename T>
@@ -3448,7 +3565,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
 
   TNode<Object> GetProperty(TNode<Context> context, TNode<Object> receiver,
                             Handle<Name> name) {
-    return GetProperty(context, receiver, HeapConstant(name));
+    return GetProperty(context, receiver, HeapConstantNoHole(name));
   }
 
   TNode<Object> GetProperty(TNode<Context> context, TNode<Object> receiver,
@@ -4047,6 +4164,12 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   template <typename TIndex>
   TNode<IntPtrT> ElementOffsetFromIndex(TNode<TIndex> index, ElementsKind kind,
                                         int base_size = 0);
+  template <typename Array, typename TIndex>
+  TNode<IntPtrT> OffsetOfElementAt(TNode<TIndex> index) {
+    static_assert(Array::Shape::kElementSize == kTaggedSize);
+    return ElementOffsetFromIndex(index, PACKED_ELEMENTS,
+                                  Array::kHeaderSize - kHeapObjectTag);
+  }
 
   // Check that a field offset is within the bounds of the an object.
   TNode<BoolT> IsOffsetInBounds(TNode<IntPtrT> offset, TNode<IntPtrT> length,

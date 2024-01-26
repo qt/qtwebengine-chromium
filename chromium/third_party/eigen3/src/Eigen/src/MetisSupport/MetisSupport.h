@@ -9,6 +9,7 @@
 #ifndef METIS_SUPPORT_H
 #define METIS_SUPPORT_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

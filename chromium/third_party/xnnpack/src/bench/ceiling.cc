@@ -8,10 +8,11 @@
 #include <cmath>
 #include <functional>
 #include <limits>
+#include <memory>
 #include <random>
 #include <vector>
 
-#include <fp16.h>
+#include <fp16/fp16.h>
 
 #include <xnnpack.h>
 
@@ -55,17 +56,20 @@ static void xnnpack_ceiling_f16(benchmark::State& state) {
     return;
   }
 
-  status = xnn_setup_ceiling_nc_f16(
-    ceiling_op, batch_size,
-    input.data(), output.data(),
-    nullptr /* thread pool */);
+  status = xnn_reshape_ceiling_nc_f16(ceiling_op, batch_size, /*threadpool=*/nullptr);
+  if (status != xnn_status_success) {
+    state.SkipWithError("failed to reshape Ceiling operator");
+    return;
+  }
+
+  status = xnn_setup_ceiling_nc_f16(ceiling_op, input.data(), output.data());
   if (status != xnn_status_success) {
     state.SkipWithError("failed to setup Ceiling operator");
     return;
   }
 
   for (auto _ : state) {
-    status = xnn_run_operator(ceiling_op, nullptr /* thread pool */);
+    status = xnn_run_operator(ceiling_op, /*threadpool=*/nullptr);
     if (status != xnn_status_success) {
       state.SkipWithError("failed to run Ceiling operator");
       return;
@@ -118,17 +122,20 @@ static void xnnpack_ceiling_f32(benchmark::State& state) {
     return;
   }
 
-  status = xnn_setup_ceiling_nc_f32(
-    ceiling_op, batch_size,
-    input.data(), output.data(),
-    nullptr /* thread pool */);
+  status = xnn_reshape_ceiling_nc_f32(ceiling_op, batch_size, /*threadpool=*/nullptr);
+  if (status != xnn_status_success) {
+    state.SkipWithError("failed to reshape Ceiling operator");
+    return;
+  }
+
+  status = xnn_setup_ceiling_nc_f32(ceiling_op, input.data(), output.data());
   if (status != xnn_status_success) {
     state.SkipWithError("failed to setup Ceiling operator");
     return;
   }
 
   for (auto _ : state) {
-    status = xnn_run_operator(ceiling_op, nullptr /* thread pool */);
+    status = xnn_run_operator(ceiling_op, /*threadpool=*/nullptr);
     if (status != xnn_status_success) {
       state.SkipWithError("failed to run Ceiling operator");
       return;

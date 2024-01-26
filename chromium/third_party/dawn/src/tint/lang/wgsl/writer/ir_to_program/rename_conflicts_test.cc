@@ -1,16 +1,29 @@
-// Copyright 2023 The Tint Authors.
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/wgsl/writer/ir_to_program/rename_conflicts.h"
 
@@ -19,6 +32,7 @@
 
 #include "gtest/gtest.h"
 #include "src/tint/lang/core/ir/builder.h"
+#include "src/tint/lang/core/ir/disassembler.h"
 #include "src/tint/lang/core/ir/validator.h"
 #include "src/tint/lang/core/type/matrix.h"
 
@@ -35,7 +49,7 @@ class IRToProgramRenameConflictsTest : public testing::Test {
         // Validate the input IR.
         {
             auto res = core::ir::Validate(mod);
-            EXPECT_TRUE(res) << res.Failure().str();
+            EXPECT_TRUE(res) << res.Failure().reason.str();
             if (!res) {
                 return;
             }
@@ -47,7 +61,7 @@ class IRToProgramRenameConflictsTest : public testing::Test {
 
         // Validate the output IR.
         auto res = core::ir::Validate(mod);
-        EXPECT_TRUE(res) << res.Failure().str();
+        EXPECT_TRUE(res) << res.Failure().reason.str();
     }
 
     /// @returns the transformed module as a disassembled string
@@ -66,7 +80,7 @@ class IRToProgramRenameConflictsTest : public testing::Test {
 };
 
 TEST_F(IRToProgramRenameConflictsTest, NoModify_SingleNamedRootBlockVar) {
-    b.Append(b.RootBlock(), [&] { b.ir.SetName(b.Var(ty.ptr<private_, i32>()), "v"); });
+    b.Append(mod.root_block, [&] { b.ir.SetName(b.Var(ty.ptr<private_, i32>()), "v"); });
 
     auto* src = R"(
 %b1 = block {  # root
@@ -84,7 +98,7 @@ TEST_F(IRToProgramRenameConflictsTest, NoModify_SingleNamedRootBlockVar) {
 }
 
 TEST_F(IRToProgramRenameConflictsTest, Conflict_TwoRootBlockVarsWithSameName) {
-    b.Append(b.RootBlock(), [&] {
+    b.Append(mod.root_block, [&] {
         b.ir.SetName(b.Var(ty.ptr<private_, i32>()), "v");
         b.ir.SetName(b.Var(ty.ptr<private_, u32>()), "v");
     });
@@ -113,7 +127,7 @@ TEST_F(IRToProgramRenameConflictsTest, Conflict_TwoRootBlockVarsWithSameName) {
 
 TEST_F(IRToProgramRenameConflictsTest, Conflict_RootBlockVarAndStructWithSameName) {
     auto* s = ty.Struct(b.ir.symbols.New("v"), {{b.ir.symbols.New("x"), ty.i32()}});
-    b.Append(b.RootBlock(), [&] { b.ir.SetName(b.Var(ty.ptr(function, s)), "v"); });
+    b.Append(mod.root_block, [&] { b.ir.SetName(b.Var(ty.ptr(function, s)), "v"); });
 
     auto* src = R"(
 v = struct @align(4) {
@@ -144,7 +158,7 @@ v = struct @align(4) {
 }
 
 TEST_F(IRToProgramRenameConflictsTest, Conflict_RootBlockVarAndFnWithSameName) {
-    b.Append(b.RootBlock(), [&] { b.ir.SetName(b.Var(ty.ptr<private_, i32>()), "v"); });
+    b.Append(mod.root_block, [&] { b.ir.SetName(b.Var(ty.ptr<private_, i32>()), "v"); });
 
     auto* fn = b.Function("v", ty.void_());
     b.Append(fn->Block(), [&] { b.Return(fn); });
@@ -180,7 +194,7 @@ TEST_F(IRToProgramRenameConflictsTest, Conflict_RootBlockVarAndFnWithSameName) {
 }
 
 TEST_F(IRToProgramRenameConflictsTest, NoModify_RootBlockVar_ShadowedBy_FnVar) {
-    b.Append(b.RootBlock(), [&] {
+    b.Append(mod.root_block, [&] {
         auto* outer = b.Var(ty.ptr<private_, i32>());
         b.ir.SetName(outer, "v");
 
@@ -221,7 +235,7 @@ TEST_F(IRToProgramRenameConflictsTest, NoModify_RootBlockVar_ShadowedBy_FnVar) {
 }
 
 TEST_F(IRToProgramRenameConflictsTest, Conflict_RootBlockVar_ShadowedBy_FnVar) {
-    b.Append(b.RootBlock(), [&] {
+    b.Append(mod.root_block, [&] {
         auto* outer = b.Var(ty.ptr<private_, i32>());
         b.ir.SetName(outer, "v");
 
@@ -921,7 +935,7 @@ TEST_F(IRToProgramRenameConflictsTest, Conflict_BuiltinScalar_ShadowedBy_NamedIn
 }
 
 TEST_F(IRToProgramRenameConflictsTest, NoModify_BuiltinAddressSpace_ShadowedBy_RootBlockVar) {
-    b.Append(b.RootBlock(), [&] {  //
+    b.Append(mod.root_block, [&] {  //
         b.ir.SetName(b.Var(ty.ptr<private_, i32>()), "function");
     });
 
@@ -941,7 +955,7 @@ TEST_F(IRToProgramRenameConflictsTest, NoModify_BuiltinAddressSpace_ShadowedBy_R
 }
 
 TEST_F(IRToProgramRenameConflictsTest, Conflict_BuiltinAddressSpace_ShadowedBy_RootBlockVar) {
-    b.Append(b.RootBlock(), [&] {  //
+    b.Append(mod.root_block, [&] {  //
         b.ir.SetName(b.Var(ty.ptr<private_, i32>()), "private");
     });
 
@@ -966,7 +980,7 @@ TEST_F(IRToProgramRenameConflictsTest, Conflict_BuiltinAddressSpace_ShadowedBy_R
 }
 
 TEST_F(IRToProgramRenameConflictsTest, NoModify_BuiltinAccess_ShadowedBy_RootBlockVar) {
-    b.Append(b.RootBlock(), [&] {  //
+    b.Append(mod.root_block, [&] {  //
         b.ir.SetName(b.Var(ty.ptr<private_, i32>()), "read");
     });
 
@@ -986,7 +1000,7 @@ TEST_F(IRToProgramRenameConflictsTest, NoModify_BuiltinAccess_ShadowedBy_RootBlo
 }
 
 TEST_F(IRToProgramRenameConflictsTest, Conflict_BuiltinAccess_ShadowedBy_RootBlockVar) {
-    b.Append(b.RootBlock(), [&] {  //
+    b.Append(mod.root_block, [&] {  //
         b.ir.SetName(b.Var(ty.ptr<private_, i32>()), "read_write");
     });
 
@@ -1011,14 +1025,14 @@ TEST_F(IRToProgramRenameConflictsTest, Conflict_BuiltinAccess_ShadowedBy_RootBlo
 }
 
 TEST_F(IRToProgramRenameConflictsTest, NoModify_BuiltinFn_ShadowedBy_RootBlockVar) {
-    b.Append(b.RootBlock(), [&] {  //
+    b.Append(mod.root_block, [&] {  //
         auto* v = b.Var(ty.ptr<private_, i32>());
         b.ir.SetName(v, "min");
     });
 
     auto* fn = b.Function("f", ty.i32());
     b.Append(fn->Block(), [&] {  //
-        auto* res = b.Call(ty.i32(), core::Function::kMax, 1_i, 2_i)->Result();
+        auto* res = b.Call(ty.i32(), core::BuiltinFn::kMax, 1_i, 2_i)->Result();
         b.Return(fn, res);
     });
 
@@ -1044,14 +1058,14 @@ TEST_F(IRToProgramRenameConflictsTest, NoModify_BuiltinFn_ShadowedBy_RootBlockVa
 }
 
 TEST_F(IRToProgramRenameConflictsTest, Conflict_BuiltinFn_ShadowedBy_RootBlockVar) {
-    b.Append(b.RootBlock(), [&] {  //
+    b.Append(mod.root_block, [&] {  //
         auto* v = b.Var(ty.ptr<private_, i32>());
         b.ir.SetName(v, "max");
     });
 
     auto* fn = b.Function("f", ty.i32());
     b.Append(fn->Block(), [&] {  //
-        auto* res = b.Call(ty.i32(), core::Function::kMax, 1_i, 2_i)->Result();
+        auto* res = b.Call(ty.i32(), core::BuiltinFn::kMax, 1_i, 2_i)->Result();
         b.Return(fn, res);
     });
 

@@ -1,16 +1,29 @@
-// Copyright 2022 The Tint Authors.
+// Copyright 2022 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/wgsl/ast/transform/direct_variable_access.h"
 
@@ -43,6 +56,8 @@ TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::DirectVariableAccess::Config);
 using namespace tint::core::number_suffixes;  // NOLINT
 using namespace tint::core::fluent_types;     // NOLINT
 
+namespace tint::ast::transform {
+
 namespace {
 
 /// AccessRoot describes the root of an AccessShape.
@@ -56,6 +71,9 @@ struct AccessRoot {
     tint::sem::Variable const* variable = nullptr;
     /// The address space of the variable or pointer type.
     tint::core::AddressSpace address_space = tint::core::AddressSpace::kUndefined;
+
+    /// @return a hash code for this object
+    size_t HashCode() const { return Hash(type, variable); }
 };
 
 /// Inequality operator for AccessRoot
@@ -68,6 +86,9 @@ bool operator!=(const AccessRoot& a, const AccessRoot& b) {
 struct DynamicIndex {
     /// The index of the expression in DirectVariableAccess::State::AccessChain::dynamic_indices
     size_t slot = 0;
+
+    /// @return a hash code for this object
+    size_t HashCode() const { return Hash(slot); }
 };
 
 /// Inequality operator for DynamicIndex
@@ -140,6 +161,9 @@ struct AccessShape {
         }
         return count;
     }
+
+    /// @return a hash code for this object
+    size_t HashCode() const { return Hash(root, ops); }
 };
 
 /// Equality operator for AccessShape
@@ -156,59 +180,26 @@ bool operator!=(const AccessShape& a, const AccessShape& b) {
 struct AccessChain : AccessShape {
     /// The array accessor index expressions. This vector is indexed by the `DynamicIndex`s in
     /// #indices.
-    tint::Vector<const tint::sem::ValueExpression*, 8> dynamic_indices;
+    Vector<const sem::ValueExpression*, 8> dynamic_indices;
     /// If true, then this access chain is used as an argument to call a variant.
     bool used_in_call = false;
 };
 
 }  // namespace
 
-namespace tint {
-
-/// Hasher specialization for AccessRoot
-template <>
-struct Hasher<AccessRoot> {
-    /// The hash function for the AccessRoot
-    /// @param d the AccessRoot to hash
-    /// @return the hash for the given AccessRoot
-    size_t operator()(const AccessRoot& d) const { return Hash(d.type, d.variable); }
-};
-
-/// Hasher specialization for DynamicIndex
-template <>
-struct Hasher<DynamicIndex> {
-    /// The hash function for the DynamicIndex
-    /// @param d the DynamicIndex to hash
-    /// @return the hash for the given DynamicIndex
-    size_t operator()(const DynamicIndex& d) const { return Hash(d.slot); }
-};
-
-/// Hasher specialization for AccessShape
-template <>
-struct Hasher<AccessShape> {
-    /// The hash function for the AccessShape
-    /// @param s the AccessShape to hash
-    /// @return the hash for the given AccessShape
-    size_t operator()(const AccessShape& s) const { return Hash(s.root, s.ops); }
-};
-
-}  // namespace tint
-
-namespace tint::ast::transform {
-
 /// The PIMPL state for the DirectVariableAccess transform
 struct DirectVariableAccess::State {
     /// Constructor
     /// @param src the source Program
     /// @param options the transform options
-    State(const Program* src, const Options& options)
-        : ctx{&b, src, /* auto_clone_symbols */ true}, opts(options) {}
+    State(const Program& src, const Options& options)
+        : ctx{&b, &src, /* auto_clone_symbols */ true}, opts(options) {}
 
     /// The main function for the transform.
     /// @returns the ApplyResult
     ApplyResult Run() {
         if (!ctx.src->Sem().Module()->Extensions().Contains(
-                core::Extension::kChromiumExperimentalFullPtrParameters)) {
+                wgsl::Extension::kChromiumExperimentalFullPtrParameters)) {
             // If the 'chromium_experimental_full_ptr_parameters' extension is not enabled, then
             // there's nothing for this transform to do.
             return SkipTransform;
@@ -1210,7 +1201,7 @@ DirectVariableAccess::DirectVariableAccess() = default;
 
 DirectVariableAccess::~DirectVariableAccess() = default;
 
-Transform::ApplyResult DirectVariableAccess::Apply(const Program* program,
+Transform::ApplyResult DirectVariableAccess::Apply(const Program& program,
                                                    const DataMap& inputs,
                                                    DataMap&) const {
     Options options;

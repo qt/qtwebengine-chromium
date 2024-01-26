@@ -1,16 +1,29 @@
-// Copyright 2023 The Tint Authors.
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/spirv/writer/raise/handle_matrix_arithmetic.h"
 
@@ -21,6 +34,7 @@
 #include "src/tint/lang/core/ir/module.h"
 #include "src/tint/lang/core/ir/validator.h"
 #include "src/tint/lang/core/type/matrix.h"
+#include "src/tint/lang/spirv/ir/builtin_call.h"
 #include "src/tint/utils/ice/ice.h"
 
 using namespace tint::core::number_suffixes;  // NOLINT
@@ -30,13 +44,13 @@ namespace tint::spirv::writer::raise {
 
 namespace {
 
-void Run(core::ir::Module* ir) {
-    core::ir::Builder b(*ir);
+void Run(core::ir::Module& ir) {
+    core::ir::Builder b{ir};
 
     // Find the instructions that need to be modified.
     Vector<core::ir::Binary*, 4> binary_worklist;
     Vector<core::ir::Convert*, 4> convert_worklist;
-    for (auto* inst : ir->instructions.Objects()) {
+    for (auto* inst : ir.instructions.Objects()) {
         if (!inst->Alive()) {
             continue;
         }
@@ -63,8 +77,8 @@ void Run(core::ir::Module* ir) {
 
         // Helper to replace the instruction with a new one.
         auto replace = [&](core::ir::Instruction* inst) {
-            if (auto name = ir->NameOf(binary)) {
-                ir->SetName(inst->Result(), name);
+            if (auto name = ir.NameOf(binary)) {
+                ir.SetName(inst->Result(), name);
             }
             binary->Result()->ReplaceAllUsesWith(inst->Result());
             binary->ReplaceWith(inst);
@@ -86,33 +100,33 @@ void Run(core::ir::Module* ir) {
             replace(b.Construct(ty, std::move(args)));
         };
 
-        switch (binary->Kind()) {
-            case core::ir::Binary::Kind::kAdd:
-                column_wise(core::ir::Binary::Kind::kAdd);
+        switch (binary->Op()) {
+            case core::ir::BinaryOp::kAdd:
+                column_wise(core::ir::BinaryOp::kAdd);
                 break;
-            case core::ir::Binary::Kind::kSubtract:
-                column_wise(core::ir::Binary::Kind::kSubtract);
+            case core::ir::BinaryOp::kSubtract:
+                column_wise(core::ir::BinaryOp::kSubtract);
                 break;
-            case core::ir::Binary::Kind::kMultiply:
+            case core::ir::BinaryOp::kMultiply:
                 // Select the SPIR-V intrinsic that corresponds to the operation being performed.
                 if (lhs_ty->Is<core::type::Matrix>()) {
                     if (rhs_ty->Is<core::type::Scalar>()) {
-                        replace(b.Call(ty, core::ir::IntrinsicCall::Kind::kSpirvMatrixTimesScalar,
-                                       lhs, rhs));
+                        replace(b.Call<spirv::ir::BuiltinCall>(
+                            ty, spirv::BuiltinFn::kMatrixTimesScalar, lhs, rhs));
                     } else if (rhs_ty->Is<core::type::Vector>()) {
-                        replace(b.Call(ty, core::ir::IntrinsicCall::Kind::kSpirvMatrixTimesVector,
-                                       lhs, rhs));
+                        replace(b.Call<spirv::ir::BuiltinCall>(
+                            ty, spirv::BuiltinFn::kMatrixTimesVector, lhs, rhs));
                     } else if (rhs_ty->Is<core::type::Matrix>()) {
-                        replace(b.Call(ty, core::ir::IntrinsicCall::Kind::kSpirvMatrixTimesMatrix,
-                                       lhs, rhs));
+                        replace(b.Call<spirv::ir::BuiltinCall>(
+                            ty, spirv::BuiltinFn::kMatrixTimesMatrix, lhs, rhs));
                     }
                 } else {
                     if (lhs_ty->Is<core::type::Scalar>()) {
-                        replace(b.Call(ty, core::ir::IntrinsicCall::Kind::kSpirvMatrixTimesScalar,
-                                       rhs, lhs));
+                        replace(b.Call<spirv::ir::BuiltinCall>(
+                            ty, spirv::BuiltinFn::kMatrixTimesScalar, rhs, lhs));
                     } else if (lhs_ty->Is<core::type::Vector>()) {
-                        replace(b.Call(ty, core::ir::IntrinsicCall::Kind::kSpirvVectorTimesMatrix,
-                                       lhs, rhs));
+                        replace(b.Call<spirv::ir::BuiltinCall>(
+                            ty, spirv::BuiltinFn::kVectorTimesMatrix, lhs, rhs));
                     }
                 }
                 break;
@@ -141,8 +155,8 @@ void Run(core::ir::Module* ir) {
 
         // Reconstruct the result matrix from the converted columns.
         auto* construct = b.Construct(out_mat, std::move(args));
-        if (auto name = ir->NameOf(convert)) {
-            ir->SetName(construct->Result(), name);
+        if (auto name = ir.NameOf(convert)) {
+            ir.SetName(construct->Result(), name);
         }
         convert->Result()->ReplaceAllUsesWith(construct->Result());
         convert->ReplaceWith(construct);
@@ -152,10 +166,10 @@ void Run(core::ir::Module* ir) {
 
 }  // namespace
 
-Result<SuccessType, std::string> HandleMatrixArithmetic(core::ir::Module* ir) {
-    auto result = ValidateAndDumpIfNeeded(*ir, "HandleMatrixArithmetic transform");
+Result<SuccessType> HandleMatrixArithmetic(core::ir::Module& ir) {
+    auto result = ValidateAndDumpIfNeeded(ir, "HandleMatrixArithmetic transform");
     if (!result) {
-        return result;
+        return result.Failure();
     }
 
     Run(ir);

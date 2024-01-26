@@ -54,6 +54,7 @@
   using Eigen::complex_operator_detail::operator==; \
   using Eigen::complex_operator_detail::operator!=;
 
+// IWYU pragma: private
 #include "../../InternalHeaderCheck.h"
 
 namespace Eigen {

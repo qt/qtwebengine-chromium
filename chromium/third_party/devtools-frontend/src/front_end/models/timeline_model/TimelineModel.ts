@@ -130,10 +130,10 @@ export class TimelineModelImpl {
   private asyncEventTracker!: TimelineAsyncEventTracker;
   private invalidationTracker!: InvalidationTracker;
   private layoutInvalidate!: {
-    [x: string]: TraceEngine.Legacy.Event|null,
+    [x: string]: TraceEngine.Types.TraceEvents.TraceEventData|null,
   };
   private lastScheduleStyleRecalculation!: {
-    [x: string]: TraceEngine.Legacy.Event,
+    [x: string]: TraceEngine.Types.TraceEvents.TraceEventData,
   };
   private paintImageEventByPixelRefId!: {
     [x: string]: TraceEngine.Legacy.Event,
@@ -151,6 +151,7 @@ export class TimelineModelImpl {
   private tracingModelInternal: TraceEngine.Legacy.TracingModel|null;
   private mainFrameLayerTreeId?: any;
   #isFreshRecording = false;
+  #isCpuProfile = false;
 
   constructor() {
     this.minimumRecordTimeInternal = 0;
@@ -325,16 +326,19 @@ export class TimelineModelImpl {
     }
     // FIXME: Consider returning null for loaded traces.
     const workerId = this.workerIdByThread.get(thread);
-    const rootTarget = SDK.TargetManager.TargetManager.instance().rootTarget();
-    return workerId ? SDK.TargetManager.TargetManager.instance().targetById(workerId) : rootTarget;
+    const primaryPageTarget = SDK.TargetManager.TargetManager.instance().primaryPageTarget();
+    return workerId ? SDK.TargetManager.TargetManager.instance().targetById(workerId) : primaryPageTarget;
   }
 
   isFreshRecording(): boolean {
     return this.#isFreshRecording;
   }
 
-  setEvents(tracingModel: TraceEngine.Legacy.TracingModel, isFreshRecording: boolean = false): void {
+  setEvents(
+      tracingModel: TraceEngine.Legacy.TracingModel, isFreshRecording: boolean = false,
+      isCpuProfile: boolean = false): void {
     this.#isFreshRecording = isFreshRecording;
+    this.#isCpuProfile = isCpuProfile;
     this.reset();
     this.resetProcessingState();
     this.tracingModelInternal = tracingModel;
@@ -744,9 +748,12 @@ export class TimelineModelImpl {
 
     try {
       const profile = (cpuProfile as Protocol.Profiler.Profile);
-      const jsProfileModel = new CPUProfile.CPUProfileDataModel.CPUProfileDataModel(profile);
-      this.cpuProfilesInternal.push({cpuProfileData: jsProfileModel, target});
-      return jsProfileModel;
+      // Sometimes we see cpuProfiles without any nodes. As these are entirely empty, we early exit
+      if (profile.nodes.length) {
+        const jsProfileModel = new CPUProfile.CPUProfileDataModel.CPUProfileDataModel(profile);
+        this.cpuProfilesInternal.push({cpuProfileData: jsProfileModel, target});
+        return jsProfileModel;
+      }
     } catch (e) {
       Common.Console.Console.instance().error('Failed to parse CPU profile.');
     }
@@ -771,7 +778,7 @@ export class TimelineModelImpl {
       const jsFrameEvents = TimelineJSProfileProcessor.generateJSFrameEvents(events, {
         showAllEvents: Root.Runtime.experiments.isEnabled('timelineShowAllEvents'),
         showRuntimeCallStats: Root.Runtime.experiments.isEnabled('timelineV8RuntimeCallStats'),
-        showNativeFunctions: Common.Settings.Settings.instance().moduleSetting('showNativeFunctionsInJSProfile').get(),
+        isDataOriginCpuProfile: this.#isCpuProfile,
       });
       if (jsFrameEvents && jsFrameEvents.length) {
         events = Platform.ArrayUtilities.mergeOrdered(
@@ -967,13 +974,20 @@ export class TimelineModelImpl {
     switch (event.name) {
       case RecordType.ResourceSendRequest:
       case RecordType.WebSocketCreate: {
-        timelineData.setInitiator(eventStack[eventStack.length - 1] || null);
+        const lastEvent = eventStack[eventStack.length - 1];
+        if (!(lastEvent instanceof TraceEngine.Legacy.PayloadEvent)) {
+          break;
+        }
+        timelineData.setInitiator(lastEvent.rawPayload() || null);
         timelineData.url = eventData['url'];
         break;
       }
 
       case RecordType.ScheduleStyleRecalculation: {
-        this.lastScheduleStyleRecalculation[eventData['frame']] = event;
+        if (!(event instanceof TraceEngine.Legacy.PayloadEvent)) {
+          break;
+        }
+        this.lastScheduleStyleRecalculation[eventData['frame']] = event.rawPayload();
         break;
       }
 
@@ -1001,7 +1015,10 @@ export class TimelineModelImpl {
       case RecordType.InvalidateLayout: {
         // Consider style recalculation as a reason for layout invalidation,
         // but only if we had no earlier layout invalidation records.
-        let layoutInitator: (TraceEngine.Legacy.Event|null)|TraceEngine.Legacy.Event = event;
+        if (!(event instanceof TraceEngine.Legacy.PayloadEvent)) {
+          break;
+        }
+        let layoutInitator: TraceEngine.Types.TraceEvents.TraceEventData|null = event.rawPayload();
         const frameId = eventData['frame'];
         if (!this.layoutInvalidate[frameId] && this.lastRecalculateStylesEvent &&
             this.lastRecalculateStylesEvent.endTime !== undefined &&
@@ -2186,7 +2203,10 @@ export class TimelineAsyncEventTracker {
       }
       const initiator = initiatorMap.get(id);
       const timelineData = EventOnTimelineData.forEvent(event);
-      timelineData.setInitiator(initiator ? initiator : null);
+      if (!(initiator instanceof TraceEngine.Legacy.PayloadEvent)) {
+        return;
+      }
+      timelineData.setInitiator(initiator.rawPayload());
       if (!timelineData.frameId && initiator) {
         timelineData.frameId = TimelineModelImpl.eventFrameId(initiator);
       }
@@ -2203,7 +2223,7 @@ export class EventOnTimelineData {
   backendNodeIds: Protocol.DOM.BackendNodeId[];
   stackTrace: Protocol.Runtime.CallFrame[]|null;
   picture: TraceEngine.Legacy.ObjectSnapshot|null;
-  private initiatorInternal: TraceEngine.Legacy.Event|null;
+  private initiatorInternal: TraceEngine.Types.TraceEvents.TraceEventData|null;
   frameId: Protocol.Page.FrameId|null;
 
   constructor() {
@@ -2216,7 +2236,7 @@ export class EventOnTimelineData {
     this.frameId = null;
   }
 
-  setInitiator(initiator: TraceEngine.Legacy.Event|null): void {
+  setInitiator(initiator: TraceEngine.Types.TraceEvents.TraceEventData|null): void {
     this.initiatorInternal = initiator;
     if (!initiator || this.url) {
       return;
@@ -2227,7 +2247,7 @@ export class EventOnTimelineData {
     }
   }
 
-  initiator(): TraceEngine.Legacy.Event|null {
+  initiator(): TraceEngine.Types.TraceEvents.TraceEventData|null {
     return this.initiatorInternal;
   }
 

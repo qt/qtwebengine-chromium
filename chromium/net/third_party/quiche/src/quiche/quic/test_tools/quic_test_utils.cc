@@ -5,9 +5,11 @@
 #include "quiche/quic/test_tools/quic_test_utils.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <utility>
+#include <vector>
 
 #include "absl/base/macros.h"
 #include "absl/strings/string_view.h"
@@ -584,6 +586,19 @@ void PacketSavingConnection::SendOrQueuePacket(SerializedPacket packet) {
       HAS_RETRANSMITTABLE_DATA, true, ECN_NOT_ECT);
 }
 
+std::vector<const QuicEncryptedPacket*> PacketSavingConnection::GetPackets()
+    const {
+  std::vector<const QuicEncryptedPacket*> packets;
+  for (size_t i = num_cleared_packets_; i < encrypted_packets_.size(); ++i) {
+    packets.push_back(encrypted_packets_[i].get());
+  }
+  return packets;
+}
+
+void PacketSavingConnection::ClearPackets() {
+  num_cleared_packets_ = encrypted_packets_.size();
+}
+
 MockQuicSession::MockQuicSession(QuicConnection* connection)
     : MockQuicSession(connection, true) {}
 
@@ -593,7 +608,8 @@ MockQuicSession::MockQuicSession(QuicConnection* connection,
                   connection->supported_versions(),
                   /*num_expected_unidirectional_static_streams = */ 0) {
   if (create_mock_crypto_stream) {
-    crypto_stream_ = std::make_unique<MockQuicCryptoStream>(this);
+    crypto_stream_ =
+        std::make_unique<testing::NiceMock<MockQuicCryptoStream>>(this);
   }
   ON_CALL(*this, WritevData(_, _, _, _, _, _))
       .WillByDefault(testing::Return(QuicConsumedData(0, false)));
@@ -637,8 +653,6 @@ MockQuicCryptoStream::~MockQuicCryptoStream() {}
 ssl_early_data_reason_t MockQuicCryptoStream::EarlyDataReason() const {
   return ssl_early_data_unknown;
 }
-
-bool MockQuicCryptoStream::encryption_established() const { return false; }
 
 bool MockQuicCryptoStream::one_rtt_keys_available() const { return false; }
 
@@ -744,8 +758,8 @@ TestQuicSpdyClientSession::TestQuicSpdyClientSession(
     const ParsedQuicVersionVector& supported_versions,
     const QuicServerId& server_id, QuicCryptoClientConfig* crypto_config,
     absl::optional<QuicSSLConfig> ssl_config)
-    : QuicSpdyClientSessionBase(connection, nullptr, &push_promise_index_,
-                                config, supported_versions),
+    : QuicSpdyClientSessionBase(connection, nullptr, config,
+                                supported_versions),
       ssl_config_(std::move(ssl_config)) {
   // TODO(b/153726130): Consider adding SetServerApplicationStateForResumption
   // calls in tests and set |has_application_state| to true.
@@ -760,10 +774,6 @@ TestQuicSpdyClientSession::TestQuicSpdyClientSession(
 
 TestQuicSpdyClientSession::~TestQuicSpdyClientSession() {}
 
-bool TestQuicSpdyClientSession::IsAuthorized(const std::string& /*authority*/) {
-  return true;
-}
-
 QuicCryptoClientStream* TestQuicSpdyClientSession::GetMutableCryptoStream() {
   return crypto_stream_.get();
 }
@@ -775,22 +785,6 @@ const QuicCryptoClientStream* TestQuicSpdyClientSession::GetCryptoStream()
 
 void TestQuicSpdyClientSession::RealOnConfigNegotiated() {
   QuicSpdyClientSessionBase::OnConfigNegotiated();
-}
-
-TestPushPromiseDelegate::TestPushPromiseDelegate(bool match)
-    : match_(match), rendezvous_fired_(false), rendezvous_stream_(nullptr) {}
-
-bool TestPushPromiseDelegate::CheckVary(
-    const spdy::Http2HeaderBlock& /*client_request*/,
-    const spdy::Http2HeaderBlock& /*promise_request*/,
-    const spdy::Http2HeaderBlock& /*promise_response*/) {
-  QUIC_DVLOG(1) << "match " << match_;
-  return match_;
-}
-
-void TestPushPromiseDelegate::OnRendezvousResult(QuicSpdyStream* stream) {
-  rendezvous_fired_ = true;
-  rendezvous_stream_ = stream;
 }
 
 MockPacketWriter::MockPacketWriter() {

@@ -23,6 +23,7 @@
 #include "chrome/browser/bluetooth/bluetooth_chooser_context_factory.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
 #include "chrome/browser/file_system_access/chrome_file_system_access_permission_context.h"
+#include "chrome/browser/file_system_access/file_system_access_features.h"
 #include "chrome/browser/file_system_access/file_system_access_permission_context_factory.h"
 #include "chrome/browser/hid/hid_chooser_context.h"
 #include "chrome/browser/hid/hid_chooser_context_factory.h"
@@ -45,6 +46,7 @@
 #include "components/content_settings/core/common/content_settings_pattern.h"
 #include "components/content_settings/core/common/content_settings_utils.h"
 #include "components/permissions/contexts/bluetooth_chooser_context.h"
+#include "components/permissions/features.h"
 #include "components/permissions/object_permission_context_base.h"
 #include "components/permissions/permission_decision_auto_blocker.h"
 #include "components/permissions/permission_util.h"
@@ -101,6 +103,7 @@ const ContentSettingsTypeNameEntry kContentSettingsTypeGroupNames[] = {
     {ContentSettingsType::MEDIASTREAM_CAMERA, "media-stream-camera"},
     {ContentSettingsType::PROTOCOL_HANDLERS, "register-protocol-handler"},
     {ContentSettingsType::AUTOMATIC_DOWNLOADS, "multiple-automatic-downloads"},
+    {ContentSettingsType::MIDI, "midi"},
     {ContentSettingsType::MIDI_SYSEX, "midi-sysex"},
     {ContentSettingsType::PROTECTED_MEDIA_IDENTIFIER, "protected-content"},
     {ContentSettingsType::BACKGROUND_SYNC, "background-sync"},
@@ -150,7 +153,6 @@ const ContentSettingsTypeNameEntry kContentSettingsTypeGroupNames[] = {
     {ContentSettingsType::IMPORTANT_SITE_INFO, nullptr},
     {ContentSettingsType::PERMISSION_AUTOBLOCKER_DATA, nullptr},
     {ContentSettingsType::ADS_DATA, nullptr},
-    {ContentSettingsType::MIDI, nullptr},
     {ContentSettingsType::PASSWORD_PROTECTION, nullptr},
     {ContentSettingsType::MEDIA_ENGAGEMENT, nullptr},
     {ContentSettingsType::CLIENT_HINTS, nullptr},
@@ -198,6 +200,10 @@ const ContentSettingsTypeNameEntry kContentSettingsTypeGroupNames[] = {
     {ContentSettingsType::COOKIE_CONTROLS_METADATA, nullptr},
     {ContentSettingsType::TPCD_SUPPORT, nullptr},
     {ContentSettingsType::TPCD_METADATA_GRANTS, nullptr},
+    // TODO(crbug.com/1011533): Update the name once the design is finalized
+    // for the integration with Safety Hub.
+    {ContentSettingsType::FILE_SYSTEM_ACCESS_EXTENDED_PERMISSION, nullptr},
+    {ContentSettingsType::TPCD_HEURISTICS_GRANTS, nullptr},
 };
 
 static_assert(std::size(kContentSettingsTypeGroupNames) ==
@@ -247,8 +253,9 @@ SiteSettingSource CalculateSiteSettingSource(
     const GURL& origin,
     const content_settings::SettingInfo& info,
     const content::PermissionResult result) {
-  if (info.source == content_settings::SETTING_SOURCE_ALLOWLIST)
+  if (info.source == content_settings::SETTING_SOURCE_ALLOWLIST) {
     return SiteSettingSource::kAllowlist;  // Source #1.
+  }
 
   if (result.source == content::PermissionStatusSource::KILL_SWITCH) {
     return SiteSettingSource::kKillSwitch;  // Source #2.
@@ -263,8 +270,9 @@ SiteSettingSource CalculateSiteSettingSource(
     return SiteSettingSource::kPolicy;  // Source #4.
   }
 
-  if (info.source == content_settings::SETTING_SOURCE_EXTENSION)
+  if (info.source == content_settings::SETTING_SOURCE_EXTENSION) {
     return SiteSettingSource::kExtension;  // Source #5.
+  }
 
   if (content_type == ContentSettingsType::ADS &&
       base::FeatureList::IsEnabled(
@@ -513,7 +521,6 @@ const std::vector<ContentSettingsType>& GetVisiblePermissionCategories() {
       ContentSettingsType::LOCAL_FONTS,
       ContentSettingsType::MEDIASTREAM_CAMERA,
       ContentSettingsType::MEDIASTREAM_MIC,
-      ContentSettingsType::MIDI_SYSEX,
       ContentSettingsType::MIXEDSCRIPT,
       ContentSettingsType::NOTIFICATIONS,
       ContentSettingsType::POPUPS,
@@ -536,8 +543,9 @@ const std::vector<ContentSettingsType>& GetVisiblePermissionCategories() {
       base_types->push_back(ContentSettingsType::BLUETOOTH_SCANNING);
     }
 
-    if (base::FeatureList::IsEnabled(::features::kServiceWorkerPaymentApps))
+    if (base::FeatureList::IsEnabled(::features::kServiceWorkerPaymentApps)) {
       base_types->push_back(ContentSettingsType::PAYMENT_HANDLER);
+    }
 
     if (base::FeatureList::IsEnabled(features::kFedCm)) {
       base_types->push_back(ContentSettingsType::FEDERATED_IDENTITY_API);
@@ -561,6 +569,13 @@ const std::vector<ContentSettingsType>& GetVisiblePermissionCategories() {
     if (base::FeatureList::IsEnabled(
             blink::features::kMediaSessionEnterPictureInPicture)) {
       base_types->push_back(ContentSettingsType::AUTO_PICTURE_IN_PICTURE);
+    }
+
+    if (base::FeatureList::IsEnabled(
+            permissions::features::kBlockMidiByDefault)) {
+      base_types->push_back(ContentSettingsType::MIDI);
+    } else {
+      base_types->push_back(ContentSettingsType::MIDI_SYSEX);
     }
 
     initialized = true;
@@ -829,18 +844,19 @@ void GetRawExceptionsForContentSettingsType(
     // Off-the-record HostContentSettingsMap contains incognito content settings
     // as well as normal content settings. Here, we use the incognito settings
     // only.
-    if (map->IsOffTheRecord() && !setting.incognito)
+    if (map->IsOffTheRecord() && !setting.incognito) {
       continue;
+    }
 
     // Don't add WebUI settings.
     if (PatternAppliesToWebUISchemes(setting)) {
       continue;
     }
 
-    // Don't add auto granted permissions for storage access exceptions.
-    if (type == ContentSettingsType::STORAGE_ACCESS &&
-        setting.metadata.session_model() ==
-            content_settings::SessionModel::NonRestorableUserSession) {
+    // Don't add auto-granted permissions for storage access exceptions.
+    if (IsGrantedByRelatedWebsiteSets(type, setting.metadata) &&
+        !base::FeatureList::IsEnabled(
+            permissions::features::kShowRelatedWebsiteSetsPermissionGrants)) {
       continue;
     }
 
@@ -875,8 +891,9 @@ void GetRawExceptionsForContentSettingsType(
     // Off-the-record HostContentSettingsMap contains incognito content
     // settings as well as normal content settings. Here, we use the
     // incognito settings only.
-    if (map->IsOffTheRecord() && !setting.incognito)
+    if (map->IsOffTheRecord() && !setting.incognito) {
       continue;
+    }
 
     if (!permissions::PermissionDecisionAutoBlocker::IsEnabledForContentSetting(
             type)) {
@@ -954,8 +971,9 @@ void GetExceptionsForContentType(ContentSettingsType type,
   }
 
   for (auto& one_provider_exceptions : all_provider_exceptions) {
-    for (auto& exception : one_provider_exceptions)
+    for (auto& exception : one_provider_exceptions) {
       exceptions->Append(std::move(exception));
+    }
   }
 }
 
@@ -1019,8 +1037,9 @@ void GetContentCategorySetting(const HostContentSettingsMap* map,
   DCHECK(!setting.empty());
 
   object->Set(kSetting, setting);
-  if (provider != SiteSettingSourceToString(SiteSettingSource::kDefault))
+  if (provider != SiteSettingSourceToString(SiteSettingSource::kDefault)) {
     object->Set(kSource, provider);
+  }
 }
 
 ContentSetting GetContentSettingForOrigin(Profile* profile,
@@ -1053,8 +1072,9 @@ ContentSetting GetContentSettingForOrigin(Profile* profile,
               ->GetPermissionDecisionAutoBlocker(profile);
       absl::optional<content::PermissionResult> embargo_result =
           auto_blocker->GetEmbargoResult(origin, content_type);
-      if (embargo_result)
+      if (embargo_result) {
         result = embargo_result.value();
+      }
     }
   }
 
@@ -1066,7 +1086,7 @@ ContentSetting GetContentSettingForOrigin(Profile* profile,
       content_settings::SessionModel::OneTime) {
     DCHECK(
         permissions::PermissionUtil::CanPermissionBeAllowedOnce(content_type));
-    DCHECK_EQ(result.status, PermissionStatus::ASK);
+    DCHECK_EQ(result.status, PermissionStatus::GRANTED);
     return CONTENT_SETTING_DEFAULT;
   }
   return permissions::PermissionUtil::PermissionStatusToContentSetting(
@@ -1118,8 +1138,9 @@ void GetFileSystemGrantedEntries(std::vector<base::Value::Dict>* exceptions,
 
 const ChooserTypeNameEntry* ChooserTypeFromGroupName(base::StringPiece name) {
   for (const auto& chooser_type : kChooserTypeGroupNames) {
-    if (chooser_type.name == name)
+    if (chooser_type.name == name) {
       return &chooser_type;
+    }
   }
   return nullptr;
 }
@@ -1193,8 +1214,9 @@ base::Value::List GetChooserExceptionListFromProfile(
   // by default.
   permissions::ObjectPermissionContextBase* chooser_context =
       chooser_type.get_context(profile);
-  if (!chooser_context)
+  if (!chooser_context) {
     return exceptions;
+  }
 
   std::vector<std::unique_ptr<permissions::ObjectPermissionContextBase::Object>>
       objects = chooser_context->GetAllGrantedObjects();
@@ -1219,8 +1241,9 @@ base::Value::List GetChooserExceptionListFromProfile(
       all_chooser_objects;
   for (const auto& object : objects) {
     // Don't include WebUI settings.
-    if (content::HasWebUIScheme(object->origin))
+    if (content::HasWebUIScheme(object->origin)) {
       continue;
+    }
 
     std::u16string name = chooser_context->GetObjectDisplayName(object->value);
     auto& chooser_exception_details = all_chooser_objects[std::make_pair(

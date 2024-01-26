@@ -65,7 +65,6 @@ class WasmIntoJSInlinerImpl : private wasm::Decoder {
   Node* Param(int index, const char* debug_name = nullptr) {
     DCHECK_NOT_NULL(graph_->start());
     // Turbofan allows negative parameter indices.
-    static constexpr int kMinParameterIndex = -1;
     DCHECK_GE(index, kMinParameterIndex);
     int array_index = index - kMinParameterIndex;
     if (parameters_[array_index] == nullptr) {
@@ -97,13 +96,13 @@ class WasmIntoJSInlinerImpl : private wasm::Decoder {
     while (is_inlineable_) {
       WasmOpcode opcode = ReadOpcode();
       switch (opcode) {
-        case wasm::kExprExternInternalize:
+        case wasm::kExprAnyConvertExtern:
           DCHECK(!stack.empty());
-          stack.back() = ParseExternInternalize(stack.back());
+          stack.back() = ParseAnyConvertExtern(stack.back());
           continue;
-        case wasm::kExprExternExternalize:
+        case wasm::kExprExternConvertAny:
           DCHECK(!stack.empty());
-          stack.back() = ParseExternExternalize(stack.back());
+          stack.back() = ParseExternConvertAny(stack.back());
           continue;
         case wasm::kExprRefCast:
         case wasm::kExprRefCastNull:
@@ -184,24 +183,24 @@ class WasmIntoJSInlinerImpl : private wasm::Decoder {
   }
 
  private:
-  Value ParseExternInternalize(Value input) {
+  Value ParseAnyConvertExtern(Value input) {
     DCHECK(input.type.is_reference_to(wasm::HeapType::kExtern) ||
            input.type.is_reference_to(wasm::HeapType::kNoExtern));
     wasm::ValueType result_type = wasm::ValueType::RefMaybeNull(
         wasm::HeapType::kAny, input.type.is_nullable()
                                   ? wasm::Nullability::kNullable
                                   : wasm::Nullability::kNonNullable);
-    Node* internalized = gasm_.WasmExternInternalize(input.node);
+    Node* internalized = gasm_.WasmAnyConvertExtern(input.node);
     return TypeNode(internalized, result_type);
   }
 
-  Value ParseExternExternalize(Value input) {
+  Value ParseExternConvertAny(Value input) {
     DCHECK(input.type.is_reference());
     wasm::ValueType result_type = wasm::ValueType::RefMaybeNull(
         wasm::HeapType::kExtern, input.type.is_nullable()
                                      ? wasm::Nullability::kNullable
                                      : wasm::Nullability::kNonNullable);
-    Node* internalized = gasm_.WasmExternExternalize(input.node);
+    Node* internalized = gasm_.WasmExternConvertAny(input.node);
     return TypeNode(internalized, result_type);
   }
 

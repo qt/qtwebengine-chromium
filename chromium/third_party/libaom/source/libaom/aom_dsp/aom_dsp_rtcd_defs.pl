@@ -762,7 +762,7 @@ if (aom_config("CONFIG_AV1_HIGHBITDEPTH") eq "yes") {
   specialize "aom_highbd_blend_a64_mask", qw/sse4_1 neon/;
   specialize "aom_highbd_blend_a64_hmask", qw/sse4_1 neon/;
   specialize "aom_highbd_blend_a64_vmask", qw/sse4_1 neon/;
-  specialize "aom_highbd_blend_a64_d16_mask", qw/sse4_1 avx2/;
+  specialize "aom_highbd_blend_a64_d16_mask", qw/sse4_1 neon avx2/;
 }
 
 if (aom_config("CONFIG_AV1_ENCODER") eq "yes") {
@@ -773,7 +773,7 @@ if (aom_config("CONFIG_AV1_ENCODER") eq "yes") {
   specialize qw/aom_subtract_block neon sse2 avx2/;
 
   add_proto qw/int64_t/, "aom_sse", "const uint8_t *a, int a_stride, const uint8_t *b,int b_stride, int width, int height";
-  specialize qw/aom_sse  sse4_1 avx2 neon neon_dotprod/;
+  specialize qw/aom_sse sse4_1 avx2 neon neon_dotprod/;
 
   add_proto qw/void/, "aom_get_blk_sse_sum", "const int16_t *data, int stride, int bw, int bh, int *x_sum, int64_t *x2_sum";
   specialize qw/aom_get_blk_sse_sum sse2 avx2 neon/;
@@ -783,25 +783,23 @@ if (aom_config("CONFIG_AV1_ENCODER") eq "yes") {
     specialize qw/aom_highbd_subtract_block sse2 neon/;
 
     add_proto qw/int64_t/, "aom_highbd_sse", "const uint8_t *a8, int a_stride, const uint8_t *b8,int b_stride, int width, int height";
-    specialize qw/aom_highbd_sse  sse4_1 avx2 neon/;
+    specialize qw/aom_highbd_sse sse4_1 avx2 neon/;
   }
 
-  if (aom_config("CONFIG_AV1_ENCODER") eq "yes") {
-    #
-    # Sum of Squares
-    #
-    add_proto qw/uint64_t aom_sum_squares_2d_i16/, "const int16_t *src, int stride, int width, int height";
-    specialize qw/aom_sum_squares_2d_i16 sse2 avx2 neon/;
+  #
+  # Sum of Squares
+  #
+  add_proto qw/uint64_t aom_sum_squares_2d_i16/, "const int16_t *src, int stride, int width, int height";
+  specialize qw/aom_sum_squares_2d_i16 sse2 avx2 neon/;
 
-    add_proto qw/uint64_t aom_sum_squares_i16/, "const int16_t *src, uint32_t N";
-    specialize qw/aom_sum_squares_i16 sse2 neon/;
+  add_proto qw/uint64_t aom_sum_squares_i16/, "const int16_t *src, uint32_t N";
+  specialize qw/aom_sum_squares_i16 sse2 neon/;
 
-    add_proto qw/uint64_t aom_var_2d_u8/, "uint8_t *src, int src_stride, int width, int height";
-    specialize qw/aom_var_2d_u8 sse2 avx2 neon neon_dotprod/;
+  add_proto qw/uint64_t aom_var_2d_u8/, "uint8_t *src, int src_stride, int width, int height";
+  specialize qw/aom_var_2d_u8 sse2 avx2 neon neon_dotprod/;
 
-    add_proto qw/uint64_t aom_var_2d_u16/, "uint8_t *src, int src_stride, int width, int height";
-    specialize qw/aom_var_2d_u16 sse2 avx2 neon/;
-  }
+  add_proto qw/uint64_t aom_var_2d_u16/, "uint8_t *src, int src_stride, int width, int height";
+  specialize qw/aom_var_2d_u16 sse2 avx2 neon/;
 
   #
   # Single block SAD / Single block Avg SAD
@@ -1379,7 +1377,7 @@ if (aom_config("CONFIG_AV1_ENCODER") eq "yes") {
   specialize qw/aom_mse_wxh_16bit  sse2 avx2 neon/;
 
   add_proto qw/uint64_t/, "aom_mse_16xh_16bit", "uint8_t *dst, int dstride,uint16_t *src, int w, int h";
-  specialize qw/aom_mse_16xh_16bit sse2 avx2/;
+  specialize qw/aom_mse_16xh_16bit sse2 avx2 neon/;
 
   foreach (@encoder_block_sizes) {
     ($w, $h) = @$_;
@@ -1683,6 +1681,36 @@ if (aom_config("CONFIG_AV1_ENCODER") eq "yes") {
         specialize "aom_highbd_${bd}_sub_pixel_avg_variance4x16" , qw/neon/;
       }
     }
+
+    foreach $bd (8, 10, 12) {
+      specialize "aom_highbd_${bd}_dist_wtd_sub_pixel_avg_variance128x128", qw/neon/;
+      specialize "aom_highbd_${bd}_dist_wtd_sub_pixel_avg_variance128x64" , qw/neon/;
+      specialize "aom_highbd_${bd}_dist_wtd_sub_pixel_avg_variance64x128" , qw/neon/;
+      specialize "aom_highbd_${bd}_dist_wtd_sub_pixel_avg_variance64x64"  , qw/neon/;
+      specialize "aom_highbd_${bd}_dist_wtd_sub_pixel_avg_variance64x32"  , qw/neon/;
+      specialize "aom_highbd_${bd}_dist_wtd_sub_pixel_avg_variance32x64"  , qw/neon/;
+      specialize "aom_highbd_${bd}_dist_wtd_sub_pixel_avg_variance32x32"  , qw/neon/;
+      specialize "aom_highbd_${bd}_dist_wtd_sub_pixel_avg_variance32x16"  , qw/neon/;
+      specialize "aom_highbd_${bd}_dist_wtd_sub_pixel_avg_variance16x32"  , qw/neon/;
+      specialize "aom_highbd_${bd}_dist_wtd_sub_pixel_avg_variance16x16"  , qw/neon/;
+      specialize "aom_highbd_${bd}_dist_wtd_sub_pixel_avg_variance16x8"   , qw/neon/;
+      specialize "aom_highbd_${bd}_dist_wtd_sub_pixel_avg_variance8x16"   , qw/neon/;
+      specialize "aom_highbd_${bd}_dist_wtd_sub_pixel_avg_variance8x8"    , qw/neon/;
+      specialize "aom_highbd_${bd}_dist_wtd_sub_pixel_avg_variance8x4"    , qw/neon/;
+      specialize "aom_highbd_${bd}_dist_wtd_sub_pixel_avg_variance4x8"    , qw/neon/;
+      specialize "aom_highbd_${bd}_dist_wtd_sub_pixel_avg_variance4x4"    , qw/neon/;
+    }
+
+    if (aom_config("CONFIG_REALTIME_ONLY") ne "yes") {
+      foreach $bd (8, 10, 12) {
+        specialize "aom_highbd_${bd}_dist_wtd_sub_pixel_avg_variance64x16", qw/neon/;
+        specialize "aom_highbd_${bd}_dist_wtd_sub_pixel_avg_variance32x8" , qw/neon/;
+        specialize "aom_highbd_${bd}_dist_wtd_sub_pixel_avg_variance16x64", qw/neon/;
+        specialize "aom_highbd_${bd}_dist_wtd_sub_pixel_avg_variance16x4" , qw/neon/;
+        specialize "aom_highbd_${bd}_dist_wtd_sub_pixel_avg_variance8x32" , qw/neon/;
+        specialize "aom_highbd_${bd}_dist_wtd_sub_pixel_avg_variance4x16" , qw/neon/;
+      }
+    }
   }
   #
   # Masked Variance / Masked Subpixel Variance
@@ -1745,7 +1773,7 @@ if (aom_config("CONFIG_AV1_ENCODER") eq "yes") {
     specialize qw/aom_highbd_dist_wtd_comp_avg_pred sse2 neon/;
 
     add_proto qw/uint64_t/, "aom_mse_wxh_16bit_highbd", "uint16_t *dst, int dstride,uint16_t *src, int sstride, int w, int h";
-    specialize qw/aom_mse_wxh_16bit_highbd   sse2 avx2/;
+    specialize qw/aom_mse_wxh_16bit_highbd   sse2 avx2 neon/;
   }
 
   add_proto qw/void aom_comp_mask_pred/, "uint8_t *comp_pred, const uint8_t *pred, int width, int height, const uint8_t *ref, int ref_stride, const uint8_t *mask, int mask_stride, int invert_mask";

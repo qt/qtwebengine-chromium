@@ -5,6 +5,7 @@
 #ifndef QUICHE_QUIC_CORE_TLS_CHLO_EXTRACTOR_H_
 #define QUICHE_QUIC_CORE_TLS_CHLO_EXTRACTOR_H_
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -26,7 +27,7 @@ namespace quic {
 // then uses a QuicStreamSequencer to reassemble the contents of the crypto
 // stream, and implements QuicStreamSequencer::StreamInterface to access the
 // reassembled data.
-class QUIC_NO_EXPORT TlsChloExtractor
+class QUICHE_EXPORT TlsChloExtractor
     : public QuicFramerVisitorInterface,
       public QuicStreamSequencer::StreamInterface {
  public:
@@ -49,6 +50,9 @@ class QUIC_NO_EXPORT TlsChloExtractor
   std::string server_name() const { return server_name_; }
   bool resumption_attempted() const { return resumption_attempted_; }
   bool early_data_attempted() const { return early_data_attempted_; }
+  const std::vector<uint16_t>& supported_groups() const {
+    return supported_groups_;
+  }
   absl::Span<const uint8_t> client_hello_bytes() const {
     return client_hello_bytes_;
   }
@@ -253,6 +257,8 @@ class QUIC_NO_EXPORT TlsChloExtractor
   std::string error_details_;
   // Whether a CRYPTO frame was parsed in this packet.
   bool parsed_crypto_frame_in_this_packet_;
+  // Array of NamedGroups parsed from the CHLO's supported_groups extension.
+  std::vector<uint16_t> supported_groups_;
   // Array of ALPNs parsed from the CHLO.
   std::vector<std::string> alpns_;
   // SNI parsed from the CHLO.
@@ -271,8 +277,8 @@ class QUIC_NO_EXPORT TlsChloExtractor
 };
 
 // Convenience method to facilitate logging TlsChloExtractor::State.
-QUIC_NO_EXPORT std::ostream& operator<<(std::ostream& os,
-                                        const TlsChloExtractor::State& state);
+QUICHE_EXPORT std::ostream& operator<<(std::ostream& os,
+                                       const TlsChloExtractor::State& state);
 
 }  // namespace quic
 

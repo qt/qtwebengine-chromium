@@ -21,6 +21,12 @@
 
 #define V8_INFINITY std::numeric_limits<double>::infinity()
 
+// AIX has jmpbuf redefined as __jmpbuf in /usr/include/sys/context.h
+// which replaces v8's jmpbuf , resulting in undefined symbol errors
+#if defined(V8_OS_AIX) && defined(jmpbuf)
+#undef jmpbuf
+#endif
+
 namespace v8 {
 
 namespace base {
@@ -134,12 +140,6 @@ namespace internal {
 #define V8_ENABLE_SANDBOX_BOOL false
 #endif
 
-#ifdef V8_CODE_POINTER_SANDBOXING
-#define V8_CODE_POINTER_SANDBOXING_BOOL true
-#else
-#define V8_CODE_POINTER_SANDBOXING_BOOL false
-#endif
-
 // D8's MultiMappedAllocator is only available on Linux, and only if the sandbox
 // is not enabled.
 #if V8_OS_LINUX && !V8_ENABLE_SANDBOX_BOOL
@@ -153,8 +153,6 @@ namespace internal {
 #else
 #define ENABLE_CONTROL_FLOW_INTEGRITY_BOOL false
 #endif
-
-#define ENABLE_SPARKPLUG true
 
 #if V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_ARM64
 // Set stack limit lower for ARM and ARM64 than for other architectures because:
@@ -171,6 +169,13 @@ namespace internal {
 // So we speculatively lower the ia32 limit to the ARM limit for the time
 // being. See crbug.com/1346791.
 #define V8_DEFAULT_STACK_SIZE_KB 864
+#elif V8_USE_ADDRESS_SANITIZER
+// ASan makes C++ frames consume more stack, so V8 should leave more stack
+// space available in case a C++ call happens. ClusterFuzz found a case where
+// even just 1 KB less than the default stack size would be enough (see
+// crbug.com/1486275); to be more robust towards future CF reports we'll
+// use an even lower limit.
+#define V8_DEFAULT_STACK_SIZE_KB 960
 #else
 // Slightly less than 1MB, since Windows' default stack size for
 // the main execution thread is 1MB.
@@ -281,10 +286,10 @@ const size_t kShortBuiltinCallsOldSpaceSizeThreshold = size_t{2} * GB;
 #define V8_HEAP_USE_PTHREAD_JIT_WRITE_PROTECT false
 #endif
 
-// TODO(v8:13023): enable PKU support when we have a test coverage
+// Protect the JavaScript heap with memory protection keys.
 #if V8_HAS_PKU_JIT_WRITE_PROTECT && \
     !(defined(V8_COMPRESS_POINTERS) && !defined(V8_EXTERNAL_CODE_SPACE))
-#define V8_HEAP_USE_PKU_JIT_WRITE_PROTECT false
+#define V8_HEAP_USE_PKU_JIT_WRITE_PROTECT true
 #else
 #define V8_HEAP_USE_PKU_JIT_WRITE_PROTECT false
 #endif
@@ -437,6 +442,10 @@ constexpr size_t kReservedCodeRangePages = 1;
 constexpr size_t kMinimumCodeRangeSize = 3 * MB;
 constexpr size_t kReservedCodeRangePages = 0;
 #endif
+
+// These constants define the total trusted space memory per process.
+constexpr size_t kMaximalTrustedRangeSize = 256 * MB;
+constexpr size_t kMinimumTrustedRangeSize = 3 * MB;
 
 #else  // V8_HOST_ARCH_64_BIT
 
@@ -679,16 +688,6 @@ enum class TypeofMode { kInside, kNotInside };
 
 // Whether floating point registers should be saved (and restored).
 enum class SaveFPRegsMode { kIgnore, kSave };
-
-// Whether a field contains a direct (i.e. tagged) pointer to another HeapObject
-// or an indirect (i.e. an index into a pointer table) one.
-enum class PointerType { kDirect, kIndirect };
-
-// The type of pointers to Code objects. When the sandbox is enabled, these are
-// referenced through indirect pointers, otherwise regular/direct pointers.
-constexpr PointerType kCodePointerType = V8_CODE_POINTER_SANDBOXING_BOOL
-                                             ? PointerType::kIndirect
-                                             : PointerType::kDirect;
 
 // This enum describes the ownership semantics of an indirect pointer.
 enum class IndirectPointerMode {
@@ -935,6 +934,7 @@ class DirectHandle;
 #endif
 class TransitionArray;
 class ExternalReference;
+class ExposedTrustedObject;
 class FeedbackVector;
 class FixedArray;
 class Foreign;
@@ -1088,25 +1088,29 @@ using WeakSlotCallbackWithHeap = bool (*)(Heap* heap, FullObjectSlot pointer);
 // NOTE: SpaceIterator depends on AllocationSpace enumeration values being
 // consecutive.
 enum AllocationSpace {
-  RO_SPACE,         // Immortal, immovable and immutable objects,
-  NEW_SPACE,        // Young generation space for regular objects collected
-                    // with Scavenger/MinorMS.
-  OLD_SPACE,        // Old generation regular object space.
-  CODE_SPACE,       // Old generation code object space, marked executable.
-  SHARED_SPACE,     // Space shared between multiple isolates. Optional.
-  NEW_LO_SPACE,     // Young generation large object space.
-  LO_SPACE,         // Old generation large object space.
-  CODE_LO_SPACE,    // Old generation large code object space.
-  SHARED_LO_SPACE,  // Space shared between multiple isolates. Optional.
+  RO_SPACE,       // Immortal, immovable and immutable objects,
+  NEW_SPACE,      // Young generation space for regular objects collected
+                  // with Scavenger/MinorMS.
+  OLD_SPACE,      // Old generation regular object space.
+  CODE_SPACE,     // Old generation code object space, marked executable.
+  SHARED_SPACE,   // Space shared between multiple isolates. Optional.
+  TRUSTED_SPACE,  // Space for trusted objects. When the sandbox is enabled,
+                  // this space will be located outside of it so that objects in
+                  // it cannot directly be corrupted by an attacker.
+  NEW_LO_SPACE,   // Young generation large object space.
+  LO_SPACE,       // Old generation large object space.
+  CODE_LO_SPACE,  // Old generation large code object space.
+  SHARED_LO_SPACE,   // Space shared between multiple isolates. Optional.
+  TRUSTED_LO_SPACE,  // Like TRUSTED_SPACE but for large objects.
 
   FIRST_SPACE = RO_SPACE,
-  LAST_SPACE = SHARED_LO_SPACE,
+  LAST_SPACE = TRUSTED_LO_SPACE,
   FIRST_MUTABLE_SPACE = NEW_SPACE,
-  LAST_MUTABLE_SPACE = SHARED_LO_SPACE,
+  LAST_MUTABLE_SPACE = TRUSTED_LO_SPACE,
   FIRST_GROWABLE_PAGED_SPACE = OLD_SPACE,
-  LAST_GROWABLE_PAGED_SPACE = SHARED_SPACE,
+  LAST_GROWABLE_PAGED_SPACE = TRUSTED_SPACE,
   FIRST_SWEEPABLE_SPACE = NEW_SPACE,
-  LAST_SWEEPABLE_SPACE = SHARED_SPACE
+  LAST_SWEEPABLE_SPACE = TRUSTED_SPACE
 };
 constexpr int kSpaceTagSize = 4;
 static_assert(FIRST_SPACE == 0);
@@ -1127,6 +1131,8 @@ constexpr const char* ToString(AllocationSpace space) {
       return "code_space";
     case AllocationSpace::SHARED_SPACE:
       return "shared_space";
+    case AllocationSpace::TRUSTED_SPACE:
+      return "trusted_space";
     case AllocationSpace::NEW_LO_SPACE:
       return "new_large_object_space";
     case AllocationSpace::LO_SPACE:
@@ -1135,6 +1141,8 @@ constexpr const char* ToString(AllocationSpace space) {
       return "code_large_object_space";
     case AllocationSpace::SHARED_LO_SPACE:
       return "shared_large_object_space";
+    case AllocationSpace::TRUSTED_LO_SPACE:
+      return "trusted_large_object_space";
   }
 }
 
@@ -1150,6 +1158,7 @@ enum class AllocationType : uint8_t {
   kReadOnly,   // Object allocated in RO_SPACE.
   kSharedOld,  // Regular object allocated in OLD_SPACE in the shared heap.
   kSharedMap,  // Map object in OLD_SPACE in the shared heap.
+  kTrusted,    // Object allocated in TRUSTED_SPACE or TRUSTED_LO_SPACE.
 };
 
 constexpr const char* ToString(AllocationType kind) {
@@ -1168,6 +1177,8 @@ constexpr const char* ToString(AllocationType kind) {
       return "SharedOld";
     case AllocationType::kSharedMap:
       return "SharedMap";
+    case AllocationType::kTrusted:
+      return "Trusted";
   }
 }
 
@@ -1678,6 +1689,7 @@ constexpr uint64_t kHoleNanInt64 =
 
 // ES6 section 20.1.2.6 Number.MAX_SAFE_INTEGER
 constexpr uint64_t kMaxSafeIntegerUint64 = 9007199254740991;  // 2^53-1
+static_assert(kMaxSafeIntegerUint64 == (uint64_t{1} << 53) - 1);
 constexpr double kMaxSafeInteger = static_cast<double>(kMaxSafeIntegerUint64);
 // ES6 section 21.1.2.8 Number.MIN_SAFE_INTEGER
 constexpr double kMinSafeInteger = -kMaxSafeInteger;
@@ -2325,6 +2337,7 @@ inline constexpr int JSParameterCount(int param_count_without_receiver) {
 // The constant is defined here for accessibility (without having to include TF
 // internals), even though it is mostly relevant to Turbofan.
 constexpr int kJSCallClosureParameterIndex = -1;
+constexpr int kMinParameterIndex = kJSCallClosureParameterIndex;
 
 // Opaque data type for identifying stack frames. Used extensively
 // by the debugger.

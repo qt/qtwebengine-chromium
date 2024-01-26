@@ -21,8 +21,6 @@ export class Chip extends LitElement {
   /** @export */
   disabled: boolean;
   /** @export */
-  selected: boolean;
-  /** @export */
   label: string;
   /** @export */
   type: 'filter'|'input';
@@ -64,7 +62,10 @@ export class Chip extends LitElement {
       --md-filter-chip-hover-state-layer-color: var(--cros-sys-hover_on_subtle);
       --md-filter-chip-hover-state-layer-opacity: 1;
       --md-filter-chip-icon-size: ${ICON_SIZE};
-      --md-filter-chip-label-text-type: var(--cros-button-1-font);
+      --md-filter-chip-label-text-font: var(--cros-button-1-font-family);
+      --md-filter-chip-label-text-size: var(--cros-button-1-font-size);
+      --md-filter-chip-label-text-line-height: var(--cros-button-1-line-height);
+      --md-filter-chip-label-text-weight: var(--cros-button-1-font-weight);
       --md-filter-chip-label-text-color: var(--cros-sys-on_surface);
       --md-filter-chip-leading-icon-color: var(--cros-sys-on_surface);
       --md-filter-chip-outline-color: var(--cros-sys-separator);
@@ -83,9 +84,11 @@ export class Chip extends LitElement {
       --md-filter-chip-selected-pressed-state-layer-opacity: 1;
       --md-filter-chip-selected-trailing-icon-color: var(--cros-sys-on_secondary_container);
       --md-filter-chip-trailing-icon-color: var(--cros-sys-on_surface);
+      --md-focus-ring-duration: 0s;
     }
 
     md-suggestion-chip {
+      --md-focus-ring-duration: 0s;
       --md-suggestion-chip-disabled-label-text-color: var(--cros-sys-on_surface);
       --md-suggestion-chip-disabled-label-text-opacity: var(--cros-sys-opacity-disabled);
       --md-suggestion-chip-disabled-leading-icon-color: var(--cros-sys-disabled);
@@ -99,7 +102,10 @@ export class Chip extends LitElement {
       --md-suggestion-chip-hover-state-layer-color: var(--cros-sys-hover_on_subtle);
       --md-suggestion-chip-hover-state-layer-opacity: 1;
       --md-suggestion-chip-icon-size: ${ICON_SIZE};
-      --md-suggestion-chip-label-text-type: var(--cros-button-1-font);
+      --md-suggestion-chip-label-text-font: var(--cros-button-1-font-family);
+      --md-suggestion-chip-label-text-size: var(--cros-button-1-font-size);
+      --md-suggestion-chip-label-text-line-height: var(--cros-button-1-line-height);
+      --md-suggestion-chip-label-text-weight: var(--cros-button-1-font-weight);
       --md-suggestion-chip-label-text-color: var(--cros-sys-on_surface);
       --md-suggestion-chip-leading-icon-color: var(--cros-sys-on_surface);
       --md-suggestion-chip-outline-color: var(--cros-sys-separator);
@@ -110,20 +116,27 @@ export class Chip extends LitElement {
     }
 
     md-input-chip {
+      --md-focus-ring-duration: 0s;
       --md-input-chip-disabled-label-text-color: var(--cros-sys-on_surface);
       --md-input-chip-disabled-label-text-opacity: var(--cros-sys-opacity-disabled);
       --md-input-chip-disabled-leading-icon-color: var(--cros-sys-disabled);
       --md-input-chip-disabled-leading-icon-opacity: var(--cros-sys-opacity-disabled);
       --md-input-chip-disabled-outline-color: var(--cros-sys-separator);
       --md-input-chip-disabled-outline-opacity: var(--cros-sys-opacity-disabled);
+      --md-input-chip-disabled-trailing-icon-color: var(--cros-sys-disabled);
       --md-input-chip-focus-label-text-color: var(--cros-sys-on_surface);
       --md-input-chip-focus-leading-icon-color: var(--cros-sys-on_surface);
+      --md-input-chip-focus-trailing-icon-color: var(--cros-sys-on_surface);
       --md-input-chip-hover-label-text-color: var(--cros-sys-on_surface);
       --md-input-chip-hover-leading-icon-color: var(--cros-sys-on_surface);
       --md-input-chip-hover-state-layer-color: var(--cros-sys-hover_on_subtle);
       --md-input-chip-hover-state-layer-opacity: 1;
+      --md-input-chip-hover-trailing-icon-color: var(--cros-sys-on_surface);
       --md-input-chip-icon-size: ${ICON_SIZE};
-      --md-input-chip-label-text-type: var(--cros-button-1-font);
+      --md-input-chip-label-text-font: var(--cros-button-1-font-family);
+      --md-input-chip-label-text-size: var(--cros-button-1-font-size);
+      --md-input-chip-label-text-line-height: var(--cros-button-1-line-height);
+      --md-input-chip-label-text-weight: var(--cros-button-1-font-weight);
       --md-input-chip-label-text-color: var(--cros-sys-on_surface);
       --md-input-chip-leading-icon-color: var(--cros-sys-on_surface);
       --md-input-chip-outline-color: var(--cros-sys-separator);
@@ -131,6 +144,8 @@ export class Chip extends LitElement {
       --md-input-chip-pressed-leading-icon-color: var(--cros-sys-on_surface);
       --md-input-chip-pressed-state-layer-color: var(--cros-sys-ripple_neutral_on_subtle);
       --md-input-chip-pressed-state-layer-opacity: 1;
+      --md-input-chip-pressed-trailing-icon-color: var(--cros-sys-on_surface);
+      --md-input-chip-trailing-icon-color: var(--cros-sys-on_surface);
       }
 
       :host([avatar]) md-input-chip {
@@ -156,6 +171,27 @@ export class Chip extends LitElement {
     trailingIcon: {type: Boolean},
     avatar: {type: Boolean},
   };
+
+  /** @export */
+  set selected(value) {
+    // Selected only makes sense for filter chips.
+    if (this.type !== 'filter') {
+      return;
+    }
+    // Set may be called before shadowroot exists - await updateComplete to
+    // ensure shadowroot exists.
+    this.updateComplete.then(
+        () => this.shadowRoot!.querySelector('md-filter-chip')!.selected =
+            value);
+    // No need to requestupdate since this is a property of the child.
+  }
+
+  /** @export */
+  get selected() {
+    // Update needs to use this to calculate the old value even when shadowroot
+    // doesn't exist.
+    return this.shadowRoot?.querySelector('md-filter-chip')?.selected ?? false;
+  }
 
   constructor() {
     super();

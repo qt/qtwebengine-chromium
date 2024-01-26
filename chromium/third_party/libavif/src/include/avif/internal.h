@@ -15,26 +15,44 @@ extern "C" {
 #define AVIF_MIN(a, b) (((a) < (b)) ? (a) : (b))
 #define AVIF_MAX(a, b) (((a) > (b)) ? (a) : (b))
 
+// Used for debugging. Define AVIF_BREAK_ON_ERROR to catch the earliest failure during encoding or decoding.
+#if defined(AVIF_BREAK_ON_ERROR)
+static inline void avifBreakOnError()
+{
+    // Same mechanism as OpenCV's error() function, or replace by a breakpoint.
+    int * p = NULL;
+    *p = 0;
+}
+#else
+#define avifBreakOnError()
+#endif
+
 // Used by stream related things.
-#define AVIF_CHECK(A)          \
-    do {                       \
-        if (!(A))              \
-            return AVIF_FALSE; \
+#define AVIF_CHECK(A)           \
+    do {                        \
+        if (!(A)) {             \
+            avifBreakOnError(); \
+            return AVIF_FALSE;  \
+        }                       \
     } while (0)
 
 // Used instead of CHECK if needing to return a specific error on failure, instead of AVIF_FALSE
-#define AVIF_CHECKERR(A, ERR) \
-    do {                      \
-        if (!(A))             \
-            return ERR;       \
+#define AVIF_CHECKERR(A, ERR)   \
+    do {                        \
+        if (!(A)) {             \
+            avifBreakOnError(); \
+            return ERR;         \
+        }                       \
     } while (0)
 
 // Forward any error to the caller now or continue execution.
-#define AVIF_CHECKRES(A)                 \
-    do {                                 \
-        const avifResult result__ = (A); \
-        if (result__ != AVIF_RESULT_OK)  \
-            return result__;             \
+#define AVIF_CHECKRES(A)                  \
+    do {                                  \
+        const avifResult result__ = (A);  \
+        if (result__ != AVIF_RESULT_OK) { \
+            avifBreakOnError();           \
+            return result__;              \
+        }                                 \
     } while (0)
 
 // ---------------------------------------------------------------------------
@@ -81,9 +99,14 @@ void avifArrayPop(void * arrayStruct);
 void avifArrayDestroy(void * arrayStruct);
 
 void avifFractionSimplify(avifFraction * f);
+// Makes the fractions have a common denominator.
 avifBool avifFractionCD(avifFraction * a, avifFraction * b);
 avifBool avifFractionAdd(avifFraction a, avifFraction b, avifFraction * result);
 avifBool avifFractionSub(avifFraction a, avifFraction b, avifFraction * result);
+
+// Creates a uint32 fraction that is approximately equal to 'v'.
+// Returns AVIF_FALSE if 'v' is < 0 or > UINT32_MAX or NaN.
+avifBool avifDoubleToUnsignedFraction(double v, uint32_t * numerator, uint32_t * denominator);
 
 void avifImageSetDefaults(avifImage * image);
 // Copies all fields that do not need to be freed/allocated from srcImage to dstImage.
@@ -92,6 +115,7 @@ void avifImageCopyNoAlloc(avifImage * dstImage, const avifImage * srcImage);
 // Copies the samples from srcImage to dstImage. dstImage must be allocated.
 // srcImage and dstImage must have the same width, height, and depth.
 // If the AVIF_PLANES_YUV bit is set in planes, then srcImage and dstImage must have the same yuvFormat and yuvRange.
+// Ignores the gainMap field (which exists only if AVIF_ENABLE_EXPERIMENTAL_GAIN_MAP is defined).
 void avifImageCopySamples(avifImage * dstImage, const avifImage * srcImage, avifPlanesFlags planes);
 
 typedef struct avifAlphaParams
@@ -134,34 +158,45 @@ typedef enum avifAlphaMultiplyMode
     AVIF_ALPHA_MULTIPLY_MODE_UNMULTIPLY
 } avifAlphaMultiplyMode;
 
-typedef struct avifReformatState
+// Information about an RGB color space.
+typedef struct avifRGBColorSpaceInfo
 {
-    // YUV coefficients
+    uint32_t channelBytes; // Number of bytes per channel.
+    uint32_t pixelBytes;   // Number of bytes per pixel (= channelBytes * num channels).
+    uint32_t offsetBytesR; // Offset in bytes of the red channel in a pixel.
+    uint32_t offsetBytesG; // Offset in bytes of the green channel in a pixel.
+    uint32_t offsetBytesB; // Offset in bytes of the blue channel in a pixel.
+    uint32_t offsetBytesA; // Offset in bytes of the alpha channel in a pixel.
+
+    int maxChannel;    // Maximum value for a channel (e.g. 255 for 8 bit).
+    float maxChannelF; // Same as maxChannel but as a float.
+} avifRGBColorSpaceInfo;
+
+// Information about a YUV color space.
+typedef struct avifYUVColorSpaceInfo
+{
+    // YUV coefficients. Y = kr*R + kg*G + kb*B.
     float kr;
     float kg;
     float kb;
 
-    uint32_t yuvChannelBytes;
-    uint32_t rgbChannelBytes;
-    uint32_t rgbPixelBytes;
-    uint32_t rgbOffsetBytesR;
-    uint32_t rgbOffsetBytesG;
-    uint32_t rgbOffsetBytesB;
-    uint32_t rgbOffsetBytesA;
+    uint32_t channelBytes; // Number of bytes per channel.
+    uint32_t depth;        // Bit depth.
+    avifRange range;       // Full or limited range.
+    int maxChannel;        // Maximum value for a channel (e.g. 255 for 8 bit).
+    float biasY;           // Minimum Y value.
+    float biasUV;          // The value of 0.5 for the appropriate bit depth (128 for 8 bit, 512 for 10 bit, 2048 for 12 bit).
+    float rangeY;          // Difference between max and min Y.
+    float rangeUV;         // Difference between max and min UV.
 
-    uint32_t yuvDepth;
-    avifRange yuvRange;
-    int yuvMaxChannel;
-    int rgbMaxChannel;
-    float rgbMaxChannelF;
-    float biasY;   // minimum Y value
-    float biasUV;  // the value of 0.5 for the appropriate bit depth [128, 512, 2048]
-    float rangeY;  // difference between max and min Y
-    float rangeUV; // difference between max and min UV
+    avifPixelFormatInfo formatInfo; // Chroma subsampling information.
+    avifReformatMode mode;          // Appropriate RGB<->YUV conversion mode.
+} avifYUVColorSpaceInfo;
 
-    avifPixelFormatInfo formatInfo;
-
-    avifReformatMode mode;
+typedef struct avifReformatState
+{
+    avifRGBColorSpaceInfo rgb;
+    avifYUVColorSpaceInfo yuv;
 } avifReformatState;
 
 // Returns:
@@ -225,13 +260,30 @@ avifBool avifImageScale(avifImage * image,
                         avifDiagnostics * diag);
 
 // ---------------------------------------------------------------------------
-// AVIF item type
+// AVIF item category
 
 typedef enum avifItemCategory
 {
-    AVIF_ITEM_COLOR = 0,
-    AVIF_ITEM_ALPHA = 1
+    AVIF_ITEM_COLOR,
+    AVIF_ITEM_ALPHA,
+#if defined(AVIF_ENABLE_EXPERIMENTAL_GAIN_MAP)
+    AVIF_ITEM_GAIN_MAP,
+#endif
+    AVIF_ITEM_CATEGORY_COUNT
 } avifItemCategory;
+
+// ---------------------------------------------------------------------------
+
+#if defined(AVIF_ENABLE_EXPERIMENTAL_AVIR)
+// AVIF color_type field meaning in CondensedImageBox
+typedef enum avifConiColorType
+{
+    AVIF_CONI_COLOR_TYPE_SRGB = 0,
+    AVIF_CONI_COLOR_TYPE_NCLX_5BIT = 1,
+    AVIF_CONI_COLOR_TYPE_NCLX_8BIT = 2,
+    AVIF_CONI_COLOR_TYPE_ICC = 3
+} avifConiColorType;
+#endif // AVIF_ENABLE_EXPERIMENTAL_AVIR
 
 // ---------------------------------------------------------------------------
 // Grid AVIF images
@@ -430,6 +482,10 @@ const char * avifCodecVersionAVM(void);   // requires AVIF_CODEC_AVM (codec_avm.
 __attribute__((__format__(__printf__, 2, 3)))
 #endif
 void avifDiagnosticsPrintf(avifDiagnostics * diag, const char * format, ...);
+
+#if defined(AVIF_ENABLE_COMPLIANCE_WARDEN)
+avifResult avifIsCompliant(const uint8_t * data, size_t size);
+#endif
 
 // ---------------------------------------------------------------------------
 // avifStream

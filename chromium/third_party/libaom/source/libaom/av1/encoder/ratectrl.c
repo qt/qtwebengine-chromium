@@ -2968,10 +2968,8 @@ static void rc_scene_detection_onepass_rt(AV1_COMP *cpi,
   }
   if (width != cm->render_width || height != cm->render_height ||
       unscaled_src == NULL || unscaled_last_src == NULL) {
-    if (cpi->src_sad_blk_64x64) {
-      aom_free(cpi->src_sad_blk_64x64);
-      cpi->src_sad_blk_64x64 = NULL;
-    }
+    aom_free(cpi->src_sad_blk_64x64);
+    cpi->src_sad_blk_64x64 = NULL;
   }
   if (unscaled_src == NULL || unscaled_last_src == NULL) return;
   src_y = unscaled_src->y_buffer;
@@ -2983,10 +2981,8 @@ static void rc_scene_detection_onepass_rt(AV1_COMP *cpi,
   last_src_width = unscaled_last_src->y_width;
   last_src_height = unscaled_last_src->y_height;
   if (src_width != last_src_width || src_height != last_src_height) {
-    if (cpi->src_sad_blk_64x64) {
-      aom_free(cpi->src_sad_blk_64x64);
-      cpi->src_sad_blk_64x64 = NULL;
-    }
+    aom_free(cpi->src_sad_blk_64x64);
+    cpi->src_sad_blk_64x64 = NULL;
     return;
   }
   rc->high_source_sad = 0;
@@ -3406,7 +3402,7 @@ void av1_get_one_pass_rt_params(AV1_COMP *cpi, FRAME_TYPE *const frame_type,
     if (rc->prev_coded_width == cm->width &&
         rc->prev_coded_height == cm->height) {
       rc_scene_detection_onepass_rt(cpi, frame_input);
-    } else if (cpi->src_sad_blk_64x64) {
+    } else {
       aom_free(cpi->src_sad_blk_64x64);
       cpi->src_sad_blk_64x64 = NULL;
     }

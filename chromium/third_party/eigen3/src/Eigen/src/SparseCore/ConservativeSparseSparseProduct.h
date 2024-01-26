@@ -10,6 +10,7 @@
 #ifndef EIGEN_CONSERVATIVESPARSESPARSEPRODUCT_H
 #define EIGEN_CONSERVATIVESPARSESPARSEPRODUCT_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

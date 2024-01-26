@@ -182,14 +182,24 @@ export function sortObjectByKey(v: { [k: string]: unknown }): { [k: string]: unk
 
 /**
  * Determines whether two JS values are equal, recursing into objects and arrays.
- * NaN is treated specially, such that `objectEquals(NaN, NaN)`.
+ * NaN is treated specially, such that `objectEquals(NaN, NaN)`. +/-0.0 are treated as equal
+ * by default, but can be opted to be distinguished.
+ * @param x the first JS values that get compared
+ * @param y the second JS values that get compared
+ * @param distinguishSignedZero if set to true, treat 0.0 and -0.0 as unequal. Default to false.
  */
-export function objectEquals(x: unknown, y: unknown): boolean {
+export function objectEquals(
+  x: unknown,
+  y: unknown,
+  distinguishSignedZero: boolean = false
+): boolean {
   if (typeof x !== 'object' || typeof y !== 'object') {
     if (typeof x === 'number' && typeof y === 'number' && Number.isNaN(x) && Number.isNaN(y)) {
       return true;
     }
-    return x === y;
+    // Object.is(0.0, -0.0) is false while (0.0 === -0.0) is true. Other than +/-0.0 and NaN cases,
+    // Object.is works in the same way as ===.
+    return distinguishSignedZero ? Object.is(x, y) : x === y;
   }
   if (x === null || y === null) return x === y;
   if (x.constructor !== y.constructor) return false;
@@ -336,7 +346,7 @@ interface TypedArrayMap {
 
 type TypedArrayParam<K extends keyof TypedArrayMap> = {
   type: K;
-  data: number[];
+  data: readonly number[];
 };
 
 /**
@@ -377,7 +387,7 @@ export function typedArrayParam<K extends keyof TypedArrayMap>(
 
 export function createTypedArray<K extends keyof TypedArrayMap>(
   type: K,
-  data: number[]
+  data: readonly number[]
 ): TypedArrayMap[K] {
   return new kTypedArrayBufferViews[type](data) as TypedArrayMap[K];
 }
@@ -422,4 +432,32 @@ export function memcpy(
   dst: { dst: ArrayBuffer | TypedArrayBufferView; start?: number }
 ): void {
   subarrayAsU8(dst.dst, dst).set(subarrayAsU8(src.src, src));
+}
+
+/**
+ * Used to create a value that is specified by multiplying some runtime value
+ * by a constant and then adding a constant to it.
+ */
+export interface ValueTestVariant {
+  mult: number;
+  add: number;
+}
+
+/**
+ * Filters out SpecValues that are the same.
+ */
+export function filterUniqueValueTestVariants(valueTestVariants: ValueTestVariant[]) {
+  return new Map<string, ValueTestVariant>(
+    valueTestVariants.map(v => [`m:${v.mult},a:${v.add}`, v])
+  ).values();
+}
+
+/**
+ * Used to create a value that is specified by multiplied some runtime value
+ * by a constant and then adding a constant to it. This happens often in test
+ * with limits that can only be known at runtime and yet we need a way to
+ * add parameters to a test and those parameters must be constants.
+ */
+export function makeValueTestVariant(base: number, variant: ValueTestVariant) {
+  return base * variant.mult + variant.add;
 }

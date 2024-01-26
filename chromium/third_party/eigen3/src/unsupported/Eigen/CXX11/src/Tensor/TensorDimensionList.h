@@ -10,6 +10,7 @@
 #ifndef EIGEN_CXX11_TENSOR_TENSOR_DIMENSION_LIST_H
 #define EIGEN_CXX11_TENSOR_TENSOR_DIMENSION_LIST_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

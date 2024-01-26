@@ -20,6 +20,7 @@
 #include <time.h>
 
 #include <chrono>
+#include <optional>
 #include <string>
 
 #include "perfetto/base/build_config.h"
@@ -84,6 +85,8 @@ inline TimeNanos GetBootTimeNs() {
   return GetWallTimeNs();
 }
 
+// Before MacOS 10.12 clock_gettime() was not implemented.
+#if __MAC_OS_X_VERSION_MIN_REQUIRED < 101200
 inline TimeNanos GetThreadCPUTimeNs() {
   mach_port_t this_thread = mach_thread_self();
   mach_msg_type_number_t count = THREAD_BASIC_INFO_COUNT;
@@ -102,6 +105,13 @@ inline TimeNanos GetThreadCPUTimeNs() {
                    info.system_time.seconds * 1000000000LL +
                    info.system_time.microseconds * 1000LL);
 }
+#else
+inline TimeNanos GetThreadCPUTimeNs() {
+  struct timespec ts = {};
+  PERFETTO_CHECK(clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts) == 0);
+  return FromPosixTimespec(ts);
+}
+#endif
 
 #elif PERFETTO_BUILDFLAG(PERFETTO_OS_WASM)
 
@@ -235,6 +245,8 @@ inline int64_t MkTime(int year, int month, int day, int h, int m, int s) {
   tms.tm_sec = s;
   return TimeGm(&tms);
 }
+
+std::optional<int32_t> GetTimezoneOffsetMins();
 
 }  // namespace base
 }  // namespace perfetto

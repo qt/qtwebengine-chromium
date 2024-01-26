@@ -1225,6 +1225,7 @@ static int mov_write_pcmc_tag(AVFormatContext *s, AVIOContext *pb, MOVTrack *tra
 {
     int64_t pos = avio_tell(pb);
     int format_flags;
+    int sample_size;
 
     avio_wb32(pb, 0); /* size */
     ffio_wfourcc(pb, "pcmC");
@@ -1237,7 +1238,11 @@ static int mov_write_pcmc_tag(AVFormatContext *s, AVIOContext *pb, MOVTrack *tra
                     track->par->codec_id == AV_CODEC_ID_PCM_S24LE ||
                     track->par->codec_id == AV_CODEC_ID_PCM_S32LE);
     avio_w8(pb, format_flags);
-    avio_w8(pb, track->par->bits_per_raw_sample);
+    sample_size = track->par->bits_per_raw_sample;
+    if (!sample_size)
+        sample_size = av_get_exact_bits_per_sample(track->par->codec_id);
+    av_assert0(sample_size);
+    avio_w8(pb, sample_size);
 
     return update_size(pb, pos);
 }
@@ -1436,10 +1441,7 @@ static int mov_write_vpcc_tag(AVFormatContext *s, AVIOContext *pb, MOVTrack *tra
 
     avio_wb32(pb, 0);
     ffio_wfourcc(pb, "vpcC");
-    avio_w8(pb, 1); /* version */
-    avio_wb24(pb, 0); /* flags */
     ff_isom_write_vpcc(s, pb, track->vos_data, track->vos_len, track->par);
-
     return update_size(pb, pos);
 }
 
@@ -1755,8 +1757,8 @@ static const struct {
 static int mov_get_dnxhd_codec_tag(AVFormatContext *s, MOVTrack *track)
 {
   int tag = MKTAG('A','V','d','n');
-  if (track->par->profile != FF_PROFILE_UNKNOWN &&
-      track->par->profile != FF_PROFILE_DNXHD)
+  if (track->par->profile != AV_PROFILE_UNKNOWN &&
+      track->par->profile != AV_PROFILE_DNXHD)
       tag = MKTAG('A','V','d','h');
   return tag;
 }
@@ -4764,10 +4766,10 @@ static int mov_write_isml_manifest(AVIOContext *pb, MOVMuxContext *mov, AVFormat
             if (track->par->codec_id == AV_CODEC_ID_AAC) {
                 switch (track->par->profile)
                 {
-                    case FF_PROFILE_AAC_HE_V2:
+                    case AV_PROFILE_AAC_HE_V2:
                         param_write_string(pb, "FourCC", "AACP");
                         break;
-                    case FF_PROFILE_AAC_HE:
+                    case AV_PROFILE_AAC_HE:
                         param_write_string(pb, "FourCC", "AACH");
                         break;
                     default:
@@ -7817,6 +7819,7 @@ static const AVCodecTag codec_mp4_tags[] = {
     { AV_CODEC_ID_H264,            MKTAG('a', 'v', 'c', '3') },
     { AV_CODEC_ID_HEVC,            MKTAG('h', 'e', 'v', '1') },
     { AV_CODEC_ID_HEVC,            MKTAG('h', 'v', 'c', '1') },
+    { AV_CODEC_ID_HEVC,            MKTAG('d', 'v', 'h', '1') },
     { AV_CODEC_ID_EVC,             MKTAG('e', 'v', 'c', '1') },
     { AV_CODEC_ID_MPEG2VIDEO,      MKTAG('m', 'p', '4', 'v') },
     { AV_CODEC_ID_MPEG1VIDEO,      MKTAG('m', 'p', '4', 'v') },
@@ -7929,12 +7932,17 @@ const FFOutputFormat ff_mov_muxer = {
     .write_packet      = mov_write_packet,
     .write_trailer     = mov_write_trailer,
     .deinit            = mov_free,
+#if FF_API_ALLOW_FLUSH
     .p.flags           = AVFMT_GLOBALHEADER | AVFMT_ALLOW_FLUSH | AVFMT_TS_NEGATIVE,
+#else
+    .p.flags           = AVFMT_GLOBALHEADER | AVFMT_TS_NEGATIVE,
+#endif
     .p.codec_tag       = (const AVCodecTag* const []){
         ff_codec_movvideo_tags, ff_codec_movaudio_tags, ff_codec_movsubtitle_tags, 0
     },
     .check_bitstream   = mov_check_bitstream,
     .p.priv_class      = &mov_isobmff_muxer_class,
+    .flags_internal    = FF_FMT_ALLOW_FLUSH,
 };
 #endif
 #if CONFIG_TGP_MUXER
@@ -7950,10 +7958,15 @@ const FFOutputFormat ff_tgp_muxer = {
     .write_packet      = mov_write_packet,
     .write_trailer     = mov_write_trailer,
     .deinit            = mov_free,
+#if FF_API_ALLOW_FLUSH
     .p.flags           = AVFMT_GLOBALHEADER | AVFMT_ALLOW_FLUSH | AVFMT_TS_NEGATIVE,
+#else
+    .p.flags           = AVFMT_GLOBALHEADER | AVFMT_TS_NEGATIVE,
+#endif
     .p.codec_tag       = codec_3gp_tags_list,
     .check_bitstream   = mov_check_bitstream,
     .p.priv_class      = &mov_isobmff_muxer_class,
+    .flags_internal    = FF_FMT_ALLOW_FLUSH,
 };
 #endif
 #if CONFIG_MP4_MUXER
@@ -7971,10 +7984,15 @@ const FFOutputFormat ff_mp4_muxer = {
     .write_packet      = mov_write_packet,
     .write_trailer     = mov_write_trailer,
     .deinit            = mov_free,
+#if FF_API_ALLOW_FLUSH
     .p.flags           = AVFMT_GLOBALHEADER | AVFMT_ALLOW_FLUSH | AVFMT_TS_NEGATIVE,
+#else
+    .p.flags           = AVFMT_GLOBALHEADER | AVFMT_TS_NEGATIVE,
+#endif
     .p.codec_tag       = mp4_codec_tags_list,
     .check_bitstream   = mov_check_bitstream,
     .p.priv_class      = &mov_isobmff_muxer_class,
+    .flags_internal    = FF_FMT_ALLOW_FLUSH,
 };
 #endif
 #if CONFIG_PSP_MUXER
@@ -7991,10 +8009,15 @@ const FFOutputFormat ff_psp_muxer = {
     .write_packet      = mov_write_packet,
     .write_trailer     = mov_write_trailer,
     .deinit            = mov_free,
+#if FF_API_ALLOW_FLUSH
     .p.flags           = AVFMT_GLOBALHEADER | AVFMT_ALLOW_FLUSH | AVFMT_TS_NEGATIVE,
+#else
+    .p.flags           = AVFMT_GLOBALHEADER | AVFMT_TS_NEGATIVE,
+#endif
     .p.codec_tag       = mp4_codec_tags_list,
     .check_bitstream   = mov_check_bitstream,
     .p.priv_class      = &mov_isobmff_muxer_class,
+    .flags_internal    = FF_FMT_ALLOW_FLUSH,
 };
 #endif
 #if CONFIG_TG2_MUXER
@@ -8010,10 +8033,15 @@ const FFOutputFormat ff_tg2_muxer = {
     .write_packet      = mov_write_packet,
     .write_trailer     = mov_write_trailer,
     .deinit            = mov_free,
+#if FF_API_ALLOW_FLUSH
     .p.flags           = AVFMT_GLOBALHEADER | AVFMT_ALLOW_FLUSH | AVFMT_TS_NEGATIVE,
+#else
+    .p.flags           = AVFMT_GLOBALHEADER | AVFMT_TS_NEGATIVE,
+#endif
     .p.codec_tag       = codec_3gp_tags_list,
     .check_bitstream   = mov_check_bitstream,
     .p.priv_class      = &mov_isobmff_muxer_class,
+    .flags_internal    = FF_FMT_ALLOW_FLUSH,
 };
 #endif
 #if CONFIG_IPOD_MUXER
@@ -8030,10 +8058,15 @@ const FFOutputFormat ff_ipod_muxer = {
     .write_packet      = mov_write_packet,
     .write_trailer     = mov_write_trailer,
     .deinit            = mov_free,
+#if FF_API_ALLOW_FLUSH
     .p.flags           = AVFMT_GLOBALHEADER | AVFMT_ALLOW_FLUSH | AVFMT_TS_NEGATIVE,
+#else
+    .p.flags           = AVFMT_GLOBALHEADER | AVFMT_TS_NEGATIVE,
+#endif
     .p.codec_tag       = (const AVCodecTag* const []){ codec_ipod_tags, 0 },
     .check_bitstream   = mov_check_bitstream,
     .p.priv_class      = &mov_isobmff_muxer_class,
+    .flags_internal    = FF_FMT_ALLOW_FLUSH,
 };
 #endif
 #if CONFIG_ISMV_MUXER
@@ -8050,11 +8083,16 @@ const FFOutputFormat ff_ismv_muxer = {
     .write_packet      = mov_write_packet,
     .write_trailer     = mov_write_trailer,
     .deinit            = mov_free,
+#if FF_API_ALLOW_FLUSH
     .p.flags           = AVFMT_GLOBALHEADER | AVFMT_ALLOW_FLUSH | AVFMT_TS_NEGATIVE,
+#else
+    .p.flags           = AVFMT_GLOBALHEADER | AVFMT_TS_NEGATIVE,
+#endif
     .p.codec_tag       = (const AVCodecTag* const []){
         codec_mp4_tags, codec_ism_tags, 0 },
     .check_bitstream   = mov_check_bitstream,
     .p.priv_class      = &mov_isobmff_muxer_class,
+    .flags_internal    = FF_FMT_ALLOW_FLUSH,
 };
 #endif
 #if CONFIG_F4V_MUXER
@@ -8071,10 +8109,15 @@ const FFOutputFormat ff_f4v_muxer = {
     .write_packet      = mov_write_packet,
     .write_trailer     = mov_write_trailer,
     .deinit            = mov_free,
+#if FF_API_ALLOW_FLUSH
     .p.flags           = AVFMT_GLOBALHEADER | AVFMT_ALLOW_FLUSH,
+#else
+    .p.flags           = AVFMT_GLOBALHEADER,
+#endif
     .p.codec_tag       = (const AVCodecTag* const []){ codec_f4v_tags, 0 },
     .check_bitstream   = mov_check_bitstream,
     .p.priv_class      = &mov_isobmff_muxer_class,
+    .flags_internal    = FF_FMT_ALLOW_FLUSH,
 };
 #endif
 #if CONFIG_AVIF_MUXER
@@ -8090,8 +8133,13 @@ const FFOutputFormat ff_avif_muxer = {
     .write_packet      = mov_write_packet,
     .write_trailer     = avif_write_trailer,
     .deinit            = mov_free,
+#if FF_API_ALLOW_FLUSH
     .p.flags           = AVFMT_GLOBALHEADER | AVFMT_ALLOW_FLUSH,
+#else
+    .p.flags           = AVFMT_GLOBALHEADER,
+#endif
     .p.codec_tag       = codec_avif_tags_list,
     .p.priv_class      = &mov_avif_muxer_class,
+    .flags_internal    = FF_FMT_ALLOW_FLUSH,
 };
 #endif

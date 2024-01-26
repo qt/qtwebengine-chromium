@@ -58,6 +58,7 @@
 
 #endif  // EIGEN_AVOID_THREAD_LOCAL
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

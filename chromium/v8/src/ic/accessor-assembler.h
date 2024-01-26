@@ -36,12 +36,10 @@ class V8_EXPORT_PRIVATE AccessorAssembler : public CodeStubAssembler {
   void GenerateLoadSuperICBaseline();
   void GenerateKeyedLoadIC();
   void GenerateKeyedLoadIC_Megamorphic();
-  void GenerateKeyedLoadIC_MegamorphicStringKey();
   void GenerateKeyedLoadIC_PolymorphicName();
   void GenerateKeyedLoadICTrampoline();
   void GenerateKeyedLoadICBaseline();
   void GenerateKeyedLoadICTrampoline_Megamorphic();
-  void GenerateKeyedLoadICTrampoline_MegamorphicStringKey();
   void GenerateStoreIC();
   void GenerateStoreICTrampoline();
   void GenerateStoreICBaseline();
@@ -70,6 +68,7 @@ class V8_EXPORT_PRIVATE AccessorAssembler : public CodeStubAssembler {
 
   void GenerateKeyedStoreIC();
   void GenerateKeyedStoreICTrampoline();
+  void GenerateKeyedStoreICTrampoline_Megamorphic();
   void GenerateKeyedStoreICBaseline();
 
   void GenerateDefineKeyedOwnIC();
@@ -344,7 +343,6 @@ class V8_EXPORT_PRIVATE AccessorAssembler : public CodeStubAssembler {
 
   void KeyedLoadIC(const LoadICParameters* p, LoadAccessMode access_mode);
   void KeyedLoadICGeneric(const LoadICParameters* p);
-  void KeyedLoadICGeneric_StringKey(const LoadICParameters* p);
   void KeyedLoadICPolymorphicName(const LoadICParameters* p,
                                   LoadAccessMode access_mode);
 

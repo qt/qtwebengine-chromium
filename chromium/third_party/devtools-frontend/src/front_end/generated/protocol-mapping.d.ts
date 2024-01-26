@@ -35,6 +35,10 @@ export namespace ProtocolMapping {
     'Animation.animationStarted': [Protocol.Animation.AnimationStartedEvent];
     'Audits.issueAdded': [Protocol.Audits.IssueAddedEvent];
     /**
+     * Emitted when an address form is filled.
+     */
+    'Autofill.addressFormFilled': [Protocol.Autofill.AddressFormFilledEvent];
+    /**
      * Called when the recording state for the service has been updated.
      */
     'BackgroundService.recordingStateChanged': [Protocol.BackgroundService.RecordingStateChangedEvent];
@@ -643,10 +647,6 @@ export namespace ProtocolMapping {
     'Preload.ruleSetUpdated': [Protocol.Preload.RuleSetUpdatedEvent];
     'Preload.ruleSetRemoved': [Protocol.Preload.RuleSetRemovedEvent];
     /**
-     * Fired when a prerender attempt is completed.
-     */
-    'Preload.prerenderAttemptCompleted': [Protocol.Preload.PrerenderAttemptCompletedEvent];
-    /**
      * Fired when a preload enabled state is updated.
      */
     'Preload.preloadEnabledStateUpdated': [Protocol.Preload.PreloadEnabledStateUpdatedEvent];
@@ -934,6 +934,20 @@ export namespace ProtocolMapping {
       returnType: void;
     };
     /**
+     * Disables autofill domain notifications.
+     */
+    'Autofill.disable': {
+      paramsType: [];
+      returnType: void;
+    };
+    /**
+     * Enables autofill domain notifications.
+     */
+    'Autofill.enable': {
+      paramsType: [];
+      returnType: void;
+    };
+    /**
      * Enables event updates for the service.
      */
     'BackgroundService.startObserving': {
@@ -1218,6 +1232,13 @@ export namespace ProtocolMapping {
     'CSS.setEffectivePropertyValueForNode': {
       paramsType: [Protocol.CSS.SetEffectivePropertyValueForNodeRequest];
       returnType: void;
+    };
+    /**
+     * Modifies the property rule property name.
+     */
+    'CSS.setPropertyRulePropertyName': {
+      paramsType: [Protocol.CSS.SetPropertyRulePropertyNameRequest];
+      returnType: Protocol.CSS.SetPropertyRulePropertyNameResponse;
     };
     /**
      * Modifies the keyframe rule key text.
@@ -1840,6 +1861,13 @@ export namespace ProtocolMapping {
       returnType: void;
     };
     /**
+     * Removes all breakpoints
+     */
+    'EventBreakpoints.disable': {
+      paramsType: [];
+      returnType: void;
+    };
+    /**
      * Disables DOM snapshot agent for the given page.
      */
     'DOMSnapshot.disable': {
@@ -2037,6 +2065,29 @@ export namespace ProtocolMapping {
      */
     'Emulation.setGeolocationOverride': {
       paramsType: [Protocol.Emulation.SetGeolocationOverrideRequest?];
+      returnType: void;
+    };
+    'Emulation.getOverriddenSensorInformation': {
+      paramsType: [Protocol.Emulation.GetOverriddenSensorInformationRequest];
+      returnType: Protocol.Emulation.GetOverriddenSensorInformationResponse;
+    };
+    /**
+     * Overrides a platform sensor of a given type. If |enabled| is true, calls to
+     * Sensor.start() will use a virtual sensor as backend rather than fetching
+     * data from a real hardware sensor. Otherwise, existing virtual
+     * sensor-backend Sensor objects will fire an error event and new calls to
+     * Sensor.start() will attempt to use a real sensor instead.
+     */
+    'Emulation.setSensorOverrideEnabled': {
+      paramsType: [Protocol.Emulation.SetSensorOverrideEnabledRequest];
+      returnType: void;
+    };
+    /**
+     * Updates the sensor readings reported by a sensor type previously overriden
+     * by setSensorOverrideEnabled.
+     */
+    'Emulation.setSensorOverrideReadings': {
+      paramsType: [Protocol.Emulation.SetSensorOverrideReadingsRequest];
       returnType: void;
     };
     /**
@@ -2947,6 +2998,13 @@ export namespace ProtocolMapping {
      */
     'Overlay.setShowIsolatedElements': {
       paramsType: [Protocol.Overlay.SetShowIsolatedElementsRequest];
+      returnType: void;
+    };
+    /**
+     * Show Window Controls Overlay for PWA
+     */
+    'Overlay.setShowWindowControlsOverlay': {
+      paramsType: [Protocol.Overlay.SetShowWindowControlsOverlayRequest?];
       returnType: void;
     };
     /**
@@ -4207,6 +4265,14 @@ export namespace ProtocolMapping {
     };
     'FedCm.selectAccount': {
       paramsType: [Protocol.FedCm.SelectAccountRequest];
+      returnType: void;
+    };
+    /**
+     * Only valid if the dialog type is ConfirmIdpLogin. Acts as if the user had
+     * clicked the continue button.
+     */
+    'FedCm.confirmIdpLogin': {
+      paramsType: [Protocol.FedCm.ConfirmIdpLoginRequest];
       returnType: void;
     };
     'FedCm.dismissDialog': {

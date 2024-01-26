@@ -10,6 +10,7 @@
 #ifndef EIGEN_SELFADJOINTRANK2UPTADE_H
 #define EIGEN_SELFADJOINTRANK2UPTADE_H
 
+// IWYU pragma: private
 #include "../InternalHeaderCheck.h"
 
 namespace Eigen { 

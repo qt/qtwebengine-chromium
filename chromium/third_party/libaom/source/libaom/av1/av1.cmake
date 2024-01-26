@@ -372,7 +372,7 @@ list(APPEND AOM_AV1_ENCODER_INTRIN_NEON_DOTPROD
             "${AOM_ROOT}/av1/encoder/arm/neon/temporal_filter_neon_dotprod.c")
 
 list(APPEND AOM_AV1_ENCODER_INTRIN_ARM_CRC32
-            "${AOM_ROOT}/av1/encoder/arm/crc32/hash_crc32.c")
+            "${AOM_ROOT}/av1/encoder/arm/crc32/hash_arm_crc32.c")
 
 list(APPEND AOM_AV1_COMMON_INTRIN_NEON
             "${AOM_ROOT}/av1/common/arm/av1_inv_txfm_neon.c"
@@ -468,6 +468,8 @@ if(CONFIG_AV1_HIGHBITDEPTH)
               "${AOM_ROOT}/av1/common/arm/highbd_convolve_horiz_rs_neon.c"
               "${AOM_ROOT}/av1/common/arm/highbd_convolve_neon.c"
               "${AOM_ROOT}/av1/common/arm/highbd_convolve_scale_neon.c"
+              "${AOM_ROOT}/av1/common/arm/highbd_reconinter_neon.c"
+              "${AOM_ROOT}/av1/common/arm/highbd_reconintra_neon.c"
               "${AOM_ROOT}/av1/common/arm/highbd_warp_plane_neon.c"
               "${AOM_ROOT}/av1/common/arm/highbd_wiener_convolve_neon.c")
 
@@ -482,6 +484,11 @@ if(CONFIG_AV1_HIGHBITDEPTH)
               "${AOM_ROOT}/av1/encoder/x86/av1_highbd_quantize_avx2.c"
               "${AOM_ROOT}/av1/encoder/x86/highbd_block_error_intrin_avx2.c"
               "${AOM_ROOT}/av1/encoder/x86/highbd_temporal_filter_avx2.c")
+
+  list(APPEND AOM_AV1_ENCODER_INTRIN_NEON
+              "${AOM_ROOT}/av1/encoder/arm/neon/highbd_pickrst_neon.c"
+              "${AOM_ROOT}/av1/encoder/arm/neon/highbd_rdopt_neon.c"
+              "${AOM_ROOT}/av1/encoder/arm/neon/highbd_temporal_filter_neon.c")
 endif()
 
 if(CONFIG_ACCOUNTING)
@@ -661,7 +668,7 @@ function(setup_av1_targets)
 
   if(HAVE_ARM_CRC32)
     if(CONFIG_AV1_ENCODER)
-      add_intrinsics_object_library("${AOM_ARM_CRC32_FLAG}" "crc32"
+      add_intrinsics_object_library("${AOM_ARM_CRC32_FLAG}" "arm_crc32"
                                     "aom_av1_encoder"
                                     "AOM_AV1_ENCODER_INTRIN_ARM_CRC32")
     endif()

@@ -16,6 +16,7 @@
 #define EIGEN_CXX11_TENSOR_TENSOR_DEVICE_SYCL_H
 #include <unordered_set>
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

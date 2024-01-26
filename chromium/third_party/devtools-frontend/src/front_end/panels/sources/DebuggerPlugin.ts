@@ -2426,24 +2426,27 @@ const theme = CodeMirror.EditorView.baseTheme({
   },
 
   '.cm-executionLine': {
-    backgroundColor: 'var(--color-execution-line-background)',
-    outline: '1px solid var(--color-execution-line-outline)',
+    backgroundColor: 'var(--sys-color-yellow-container)',
+    outline: '1px solid var(--sys-color-yellow-outline)',
     '.cm-hasContinueMarkers &': {
       backgroundColor: 'transparent',
     },
     '&.cm-highlightedLine': {
       animation: 'cm-fading-highlight-execution 2s 0s',
     },
+    '&.cm-line::selection, &.cm-line ::selection': {
+      backgroundColor: 'var(--sys-color-tonal-container) !important',
+    },
   },
   '.cm-executionToken': {
-    backgroundColor: 'var(--color-execution-token-background)',
+    backgroundColor: 'var(--sys-color-state-focus-select)',
   },
   '@keyframes cm-fading-highlight-execution': {
     from: {
-      backgroundColor: 'var(--color-highlighted-line)',
+      backgroundColor: 'var(--sys-color-tonal-container)',
     },
     to: {
-      backgroundColor: 'var(--color-execution-line-background)',
+      backgroundColor: 'var(--sys-color-yellow-container)',
     },
   },
 

@@ -419,6 +419,7 @@ const EnumeratedHistogram = {
   KeyboardShortcutFired: 'DevTools.KeyboardShortcutFired',
   Language: 'DevTools.Language',
   LighthouseModeRun: 'DevTools.LighthouseModeRun',
+  LighthouseCategoryUsed: 'DevTools.LighthouseCategoryUsed',
   LinearMemoryInspectorRevealedFrom: 'DevTools.LinearMemoryInspector.RevealedFrom',
   LinearMemoryInspectorTarget: 'DevTools.LinearMemoryInspector.Target',
   ManifestSectionSelected: 'DevTools.ManifestSectionSelected',
@@ -981,6 +982,54 @@ const InspectorFrontendHostImpl = class {
     DevToolsAPI.setAddExtensionCallback(callback);
   }
 
+  /**
+   * @override
+   * @param {InspectorFrontendHostAPI.ImpressionEvent} impressionEvent
+   */
+  recordImpression(impressionEvent) {
+    DevToolsAPI.sendMessageToEmbedder('recordImpression', [impressionEvent], null);
+  }
+
+  /**
+   * @override
+   * @param {InspectorFrontendHostAPI.ClickEvent} clickEvent
+   */
+  recordClick(clickEvent) {
+    DevToolsAPI.sendMessageToEmbedder('recordClick', [clickEvent], null);
+  }
+
+  /**
+   * @override
+   * @param {InspectorFrontendHostAPI.HoverEvent} hoverEvent
+   */
+  recordHover(hoverEvent) {
+    DevToolsAPI.sendMessageToEmbedder('recordHover', [hoverEvent], null);
+  }
+
+  /**
+   * @override
+   * @param {InspectorFrontendHostAPI.DragEvent} dragEvent
+   */
+  recordDrag(DragEvent) {
+    DevToolsAPI.sendMessageToEmbedder('recordDrag', [dragEvent], null);
+  }
+
+  /**
+   * @override
+   * @param {InspectorFrontendHostAPI.ChangeEvent} changeEvent
+   */
+  recordChange(changeEvent) {
+    DevToolsAPI.sendMessageToEmbedder('recordChange', [changeEvent], null);
+  }
+
+  /**
+   * @override
+   * @param {InspectorFrontendHostAPI.KeyDownEvent} keyDownEvent
+   */
+  recordKeyDown(keyDownEvent) {
+    DevToolsAPI.sendMessageToEmbedder('recordKeyDown', [keyDownEvent], null);
+  }
+
   // Backward-compatible methods below this line --------------------------------------------
 
   /**
@@ -1201,7 +1250,6 @@ function installObjectObserve() {
     'showHeaSnapshotObjectsHiddenProperties',
     'showInheritedComputedStyleProperties',
     'showMediaQueryInspector',
-    'showNativeFunctionsInJSProfile',
     'showUAShadowDOM',
     'showWhitespacesInEditor',
     'sidebarPosition',

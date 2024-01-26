@@ -26,9 +26,17 @@ module.exports = function (grunt) {
         cmd: 'node',
         args: ['tools/validate', 'src/webgpu', 'src/stress', 'src/manual', 'src/unittests', 'src/demo'],
       },
+      'validate-cache': {
+        cmd: 'node',
+        args: ['tools/gen_cache', 'out', 'src/webgpu', '--validate'],
+      },
       'generate-wpt-cts-html': {
         cmd: 'node',
-        args: ['tools/gen_wpt_cts_html', 'out-wpt/cts.https.html', 'src/common/templates/cts.https.html'],
+        args: ['tools/gen_wpt_cts_html', 'tools/gen_wpt_cfg_unchunked.json'],
+      },
+      'generate-wpt-cts-html-chunked2sec': {
+        cmd: 'node',
+        args: ['tools/gen_wpt_cts_html', 'tools/gen_wpt_cfg_chunked2sec.json'],
       },
       'generate-cache': {
         cmd: 'node',
@@ -181,6 +189,7 @@ module.exports = function (grunt) {
     'copy:out-wpt-generated',
     'copy:out-wpt-htmlfiles',
     'run:generate-wpt-cts-html',
+    'run:generate-wpt-cts-html-chunked2sec',
   ]);
   grunt.registerTask('build-done-message', () => {
     process.stderr.write('\nBuild completed! Running checks/tests');
@@ -189,11 +198,11 @@ module.exports = function (grunt) {
   registerTaskAndAddToHelp('pre', 'Run all presubmit checks: standalone+wpt+typecheck+unittest+lint', [
     'clean',
     'run:validate',
+    'run:validate-cache',
     'build-standalone',
     'run:generate-listings',
     'build-wpt',
     'run:build-out-node',
-    'run:generate-cache',
     'build-done-message',
     'ts:check',
     'run:presubmit',

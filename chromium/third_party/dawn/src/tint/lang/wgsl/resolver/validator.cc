@@ -1,26 +1,39 @@
-// Copyright 2020 The Tint Authors.
+// Copyright 2020 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/wgsl/resolver/validator.h"
 
 #include <algorithm>
 #include <limits>
+#include <tuple>
 #include <utility>
 
 #include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/type/abstract_numeric.h"
-#include "src/tint/lang/core/type/array.h"
 #include "src/tint/lang/core/type/atomic.h"
 #include "src/tint/lang/core/type/depth_multisampled_texture.h"
 #include "src/tint/lang/core/type/depth_texture.h"
@@ -52,6 +65,7 @@
 #include "src/tint/lang/wgsl/ast/unary_op_expression.h"
 #include "src/tint/lang/wgsl/ast/variable_decl_statement.h"
 #include "src/tint/lang/wgsl/ast/workgroup_attribute.h"
+#include "src/tint/lang/wgsl/sem/array.h"
 #include "src/tint/lang/wgsl/sem/break_if_statement.h"
 #include "src/tint/lang/wgsl/sem/call.h"
 #include "src/tint/lang/wgsl/sem/for_loop_statement.h"
@@ -150,7 +164,7 @@ void TraverseCallChain(const sem::Function* from, const sem::Function* to, CALLB
 Validator::Validator(
     ProgramBuilder* builder,
     SemHelper& sem,
-    const core::Extensions& enabled_extensions,
+    const wgsl::Extensions& enabled_extensions,
     const Hashmap<const core::type::Type*, const Source*, 8>& atomic_composite_info,
     Hashset<TypeAndAddressSpace, 8>& valid_type_storage_layouts)
     : symbols_(builder->Symbols()),
@@ -160,10 +174,10 @@ Validator::Validator(
       atomic_composite_info_(atomic_composite_info),
       valid_type_storage_layouts_(valid_type_storage_layouts) {
     // Set default severities for filterable diagnostic rules.
-    diagnostic_filters_.Set(core::CoreDiagnosticRule::kDerivativeUniformity,
-                            core::DiagnosticSeverity::kError);
-    diagnostic_filters_.Set(core::ChromiumDiagnosticRule::kUnreachableCode,
-                            core::DiagnosticSeverity::kWarning);
+    diagnostic_filters_.Set(wgsl::CoreDiagnosticRule::kDerivativeUniformity,
+                            wgsl::DiagnosticSeverity::kError);
+    diagnostic_filters_.Set(wgsl::ChromiumDiagnosticRule::kUnreachableCode,
+                            wgsl::DiagnosticSeverity::kWarning);
 }
 
 Validator::~Validator() = default;
@@ -180,18 +194,18 @@ void Validator::AddNote(const std::string& msg, const Source& source) const {
     diagnostics_.add_note(diag::System::Resolver, msg, source);
 }
 
-bool Validator::AddDiagnostic(core::DiagnosticRule rule,
+bool Validator::AddDiagnostic(wgsl::DiagnosticRule rule,
                               const std::string& msg,
                               const Source& source) const {
     auto severity = diagnostic_filters_.Get(rule);
-    if (severity != core::DiagnosticSeverity::kOff) {
+    if (severity != wgsl::DiagnosticSeverity::kOff) {
         diag::Diagnostic d{};
         d.severity = ToSeverity(severity);
         d.system = diag::System::Resolver;
         d.source = source;
         d.message = msg;
         diagnostics_.add(std::move(d));
-        if (severity == core::DiagnosticSeverity::kError) {
+        if (severity == wgsl::DiagnosticSeverity::kError) {
             return false;
         }
     }
@@ -201,7 +215,7 @@ bool Validator::AddDiagnostic(core::DiagnosticRule rule,
 // https://gpuweb.github.io/gpuweb/wgsl/#plain-types-section
 bool Validator::IsPlain(const core::type::Type* type) const {
     return type->IsAnyOf<core::type::Scalar, core::type::Atomic, core::type::Vector,
-                         core::type::Matrix, core::type::Array, core::type::Struct>();
+                         core::type::Matrix, sem::Array, core::type::Struct>();
 }
 
 // https://gpuweb.github.io/gpuweb/wgsl/#fixed-footprint-types
@@ -211,7 +225,7 @@ bool Validator::IsFixedFootprint(const core::type::Type* type) const {
         [&](const core::type::Vector*) { return true; },  //
         [&](const core::type::Matrix*) { return true; },  //
         [&](const core::type::Atomic*) { return true; },
-        [&](const core::type::Array* arr) {
+        [&](const sem::Array* arr) {
             return !arr->Count()->Is<core::type::RuntimeArrayCount>() &&
                    IsFixedFootprint(arr->ElemType());
         },
@@ -235,7 +249,7 @@ bool Validator::IsHostShareable(const core::type::Type* type) const {
         type,  //
         [&](const core::type::Vector* vec) { return IsHostShareable(vec->type()); },
         [&](const core::type::Matrix* mat) { return IsHostShareable(mat->type()); },
-        [&](const core::type::Array* arr) { return IsHostShareable(arr->ElemType()); },
+        [&](const sem::Array* arr) { return IsHostShareable(arr->ElemType()); },
         [&](const core::type::Struct* str) {
             for (auto* member : str->Members()) {
                 if (!IsHostShareable(member->Type())) {
@@ -306,6 +320,12 @@ bool Validator::Pointer(const ast::TemplatedIdentifier* a, const core::type::Poi
         }
     }
 
+    if (auto* store_ty = s->StoreType(); !IsStorable(store_ty)) {
+        AddError(sem_.TypeNameOf(store_ty) + " cannot be used as the store type of a pointer",
+                 a->arguments[1]->source);
+        return false;
+    }
+
     return CheckTypeAccessAddressSpace(s->StoreType(), s->Access(), s->AddressSpace(), tint::Empty,
                                        a->source);
 }
@@ -314,7 +334,7 @@ bool Validator::StorageTexture(const core::type::StorageTexture* t, const Source
     switch (t->access()) {
         case core::Access::kRead:
             if (!enabled_extensions_.Contains(
-                    core::Extension::kChromiumExperimentalReadWriteStorageTexture)) {
+                    wgsl::Extension::kChromiumExperimentalReadWriteStorageTexture)) {
                 AddError(
                     "read-only storage textures require the "
                     "chromium_experimental_read_write_storage_texture extension to be enabled",
@@ -324,7 +344,7 @@ bool Validator::StorageTexture(const core::type::StorageTexture* t, const Source
             break;
         case core::Access::kReadWrite:
             if (!enabled_extensions_.Contains(
-                    core::Extension::kChromiumExperimentalReadWriteStorageTexture)) {
+                    wgsl::Extension::kChromiumExperimentalReadWriteStorageTexture)) {
                 AddError(
                     "read-write storage textures require the "
                     "chromium_experimental_read_write_storage_texture extension to be enabled",
@@ -415,7 +435,7 @@ bool Validator::AddressSpaceLayout(const core::type::Type* store_ty,
 
     auto is_uniform_struct_or_array = [address_space](const core::type::Type* ty) {
         return address_space == core::AddressSpace::kUniform &&
-               ty->IsAnyOf<core::type::Array, core::type::Struct>();
+               ty->IsAnyOf<sem::Array, core::type::Struct>();
     };
 
     auto is_uniform_struct = [address_space](const core::type::Type* ty) {
@@ -471,7 +491,7 @@ bool Validator::AddressSpaceLayout(const core::type::Type* store_ty,
             // Validate that member is at a valid byte offset
             if (m->Offset() % required_align != 0 &&
                 !enabled_extensions_.Contains(
-                    core::Extension::kChromiumInternalRelaxedUniformLayout)) {
+                    wgsl::Extension::kChromiumInternalRelaxedUniformLayout)) {
                 AddError("the offset of a struct member of type '" +
                              m->Type()->UnwrapRef()->FriendlyName() + "' in address space '" +
                              tint::ToString(address_space) + "' must be a multiple of " +
@@ -499,7 +519,7 @@ bool Validator::AddressSpaceLayout(const core::type::Type* store_ty,
                 const uint32_t prev_to_curr_offset = m->Offset() - prev_member->Offset();
                 if (prev_to_curr_offset % 16 != 0 &&
                     !enabled_extensions_.Contains(
-                        core::Extension::kChromiumInternalRelaxedUniformLayout)) {
+                        wgsl::Extension::kChromiumInternalRelaxedUniformLayout)) {
                     AddError(
                         "uniform storage requires that the number of bytes between the start of "
                         "the previous member of type struct and the current member be a multiple "
@@ -522,7 +542,7 @@ bool Validator::AddressSpaceLayout(const core::type::Type* store_ty,
     }
 
     // For uniform buffer array members, validate that array elements are aligned to 16 bytes
-    if (auto* arr = store_ty->As<core::type::Array>()) {
+    if (auto* arr = store_ty->As<sem::Array>()) {
         // Recurse into the element type.
         // TODO(crbug.com/tint/1388): Ideally we'd pass the source for nested element type here, but
         // we can't easily get that from the semantic node. We should consider recursing through the
@@ -532,7 +552,7 @@ bool Validator::AddressSpaceLayout(const core::type::Type* store_ty,
         }
 
         if (address_space == core::AddressSpace::kUniform &&
-            !enabled_extensions_.Contains(core::Extension::kChromiumInternalRelaxedUniformLayout)) {
+            !enabled_extensions_.Contains(wgsl::Extension::kChromiumInternalRelaxedUniformLayout)) {
             // We already validated that this array member is itself aligned to 16 bytes above, so
             // we only need to validate that stride is a multiple of 16 bytes.
             if (arr->Stride() % 16 != 0) {
@@ -587,11 +607,7 @@ bool Validator::LocalVariable(const sem::Variable* local) const {
         },                                            //
         [&](const ast::Let*) { return Let(local); },  //
         [&](const ast::Const*) { return true; },      //
-        [&](Default) {
-            TINT_ICE() << "Validator::Variable() called with a unknown variable type: "
-                       << decl->TypeInfo().name;
-            return false;
-        });
+        TINT_ICE_ON_NO_MATCH);
 }
 
 bool Validator::GlobalVariable(
@@ -625,12 +641,8 @@ bool Validator::GlobalVariable(
             return Var(global);
         },
         [&](const ast::Override*) { return Override(global, override_ids); },
-        [&](const ast::Const*) { return Const(global); },
-        [&](Default) {
-            TINT_ICE() << "Validator::GlobalVariable() called with a unknown variable type: "
-                       << decl->TypeInfo().name;
-            return false;
-        });
+        [&](const ast::Const*) { return Const(global); },  //
+        TINT_ICE_ON_NO_MATCH);
 
     if (!ok) {
         return false;
@@ -802,7 +814,7 @@ bool Validator::Parameter(const sem::Variable* var) const {
                 case core::AddressSpace::kUniform:
                 case core::AddressSpace::kWorkgroup:
                     ok = enabled_extensions_.Contains(
-                        core::Extension::kChromiumExperimentalFullPtrParameters);
+                        wgsl::Extension::kChromiumExperimentalFullPtrParameters);
                     break;
                 default:
                     break;
@@ -843,19 +855,21 @@ bool Validator::BuiltinAttribute(const ast::BuiltinAttribute* attr,
     bool is_output = !is_input;
     auto builtin = sem_.Get(attr)->Value();
     switch (builtin) {
-        case core::BuiltinValue::kPosition:
+        case core::BuiltinValue::kPosition: {
             if (stage != ast::PipelineStage::kNone &&
                 !((is_input && stage == ast::PipelineStage::kFragment) ||
                   (is_output && stage == ast::PipelineStage::kVertex))) {
                 is_stage_mismatch = true;
             }
-            if (!(type->is_float_vector() && type->As<core::type::Vector>()->Width() == 4)) {
+            auto* vec = type->As<core::type::Vector>();
+            if (!(vec && vec->Width() == 4 && vec->type()->Is<core::type::F32>())) {
                 StringStream err;
                 err << "store type of @builtin(" << builtin << ") must be 'vec4<f32>'";
                 AddError(err.str(), attr->source);
                 return false;
             }
             break;
+        }
         case core::BuiltinValue::kGlobalInvocationId:
         case core::BuiltinValue::kLocalInvocationId:
         case core::BuiltinValue::kNumWorkgroups:
@@ -946,7 +960,7 @@ bool Validator::BuiltinAttribute(const ast::BuiltinAttribute* attr,
             break;
         case core::BuiltinValue::kSubgroupInvocationId:
         case core::BuiltinValue::kSubgroupSize:
-            if (!enabled_extensions_.Contains(core::Extension::kChromiumExperimentalSubgroups)) {
+            if (!enabled_extensions_.Contains(wgsl::Extension::kChromiumExperimentalSubgroups)) {
                 StringStream err;
                 err << "use of @builtin(" << builtin
                     << ") attribute requires enabling extension 'chromium_experimental_subgroups'";
@@ -1433,7 +1447,7 @@ bool Validator::EvaluationStage(const sem::ValueExpression* expr,
 bool Validator::Statements(VectorRef<const ast::Statement*> stmts) const {
     for (auto* stmt : stmts) {
         if (!sem_.Get(stmt)->IsReachable()) {
-            if (!AddDiagnostic(core::ChromiumDiagnosticRule::kUnreachableCode,
+            if (!AddDiagnostic(wgsl::ChromiumDiagnosticRule::kUnreachableCode,
                                "code is unreachable", stmt->source)) {
                 return false;
             }
@@ -1518,8 +1532,8 @@ bool Validator::Call(const sem::Call* call, sem::Statement* current_statement) c
                          call->Declaration()->source);
                 sem_.NoteDeclarationSource(fn->Declaration());
             },
-            [&](const sem::Builtin* b) {
-                AddError("ignoring return value of builtin '" + tint::ToString(b->Type()) + "'",
+            [&](const sem::BuiltinFn* b) {
+                AddError("ignoring return value of builtin '" + tint::ToString(b->Fn()) + "'",
                          call->Declaration()->source);
             },
             [&](const sem::ValueConversion*) {
@@ -1632,9 +1646,10 @@ bool Validator::BuiltinCall(const sem::Call* call) const {
             // https://gpuweb.github.io/gpuweb/wgsl/#function-call-expr
             // If the called function does not return a value, a function call statement should be
             // used instead.
-            auto* builtin = call->Target()->As<sem::Builtin>();
-            auto name = tint::ToString(builtin->Type());
-            AddError("builtin '" + name + "' does not return a value", call->Declaration()->source);
+            auto* builtin = call->Target()->As<sem::BuiltinFn>();
+            auto name = tint::ToString(builtin->Fn());
+            AddError("builtin function '" + name + "' does not return a value",
+                     call->Declaration()->source);
             return false;
         }
     }
@@ -1642,8 +1657,8 @@ bool Validator::BuiltinCall(const sem::Call* call) const {
     return true;
 }
 
-bool Validator::TextureBuiltinFunction(const sem::Call* call) const {
-    auto* builtin = call->Target()->As<sem::Builtin>();
+bool Validator::TextureBuiltinFn(const sem::Call* call) const {
+    auto* builtin = call->Target()->As<sem::BuiltinFn>();
     if (!builtin) {
         return false;
     }
@@ -1694,7 +1709,7 @@ bool Validator::TextureBuiltinFunction(const sem::Call* call) const {
 }
 
 bool Validator::WorkgroupUniformLoad(const sem::Call* call) const {
-    auto* builtin = call->Target()->As<sem::Builtin>();
+    auto* builtin = call->Target()->As<sem::BuiltinFn>();
     if (!builtin) {
         return false;
     }
@@ -1715,14 +1730,31 @@ bool Validator::WorkgroupUniformLoad(const sem::Call* call) const {
     return true;
 }
 
-bool Validator::RequiredExtensionForBuiltinFunction(const sem::Call* call) const {
-    const auto* builtin = call->Target()->As<sem::Builtin>();
+bool Validator::SubgroupBroadcast(const sem::Call* call) const {
+    auto* builtin = call->Target()->As<sem::BuiltinFn>();
+    if (!builtin) {
+        return false;
+    }
+
+    TINT_ASSERT(call->Arguments().Length() == 2);
+    auto* laneArg = call->Arguments()[1];
+    if (!laneArg->ConstantValue()) {
+        AddError("the sourceLaneIndex argument of subgroupBroadcast must be a const-expression",
+                 laneArg->Declaration()->source);
+        return false;
+    }
+
+    return true;
+}
+
+bool Validator::RequiredExtensionForBuiltinFn(const sem::Call* call) const {
+    const auto* builtin = call->Target()->As<sem::BuiltinFn>();
     if (!builtin) {
         return true;
     }
 
     const auto extension = builtin->RequiredExtension();
-    if (extension == core::Extension::kUndefined) {
+    if (extension == wgsl::Extension::kUndefined) {
         return true;
     }
 
@@ -1738,7 +1770,7 @@ bool Validator::RequiredExtensionForBuiltinFunction(const sem::Call* call) const
 
 bool Validator::CheckF16Enabled(const Source& source) const {
     // Validate if f16 type is allowed.
-    if (!enabled_extensions_.Contains(core::Extension::kF16)) {
+    if (!enabled_extensions_.Contains(wgsl::Extension::kF16)) {
         AddError("f16 type used without 'f16' extension enabled", source);
         return false;
     }
@@ -1789,7 +1821,7 @@ bool Validator::FunctionCall(const sem::Call* call, sem::Statement* current_stat
 
         if (param_type->Is<core::type::Pointer>() &&
             !enabled_extensions_.Contains(
-                core::Extension::kChromiumExperimentalFullPtrParameters)) {
+                wgsl::Extension::kChromiumExperimentalFullPtrParameters)) {
             // https://gpuweb.github.io/gpuweb/wgsl/#function-restriction
             // Each argument of pointer type to a user-defined function must have the same memory
             // view as its root identifier.
@@ -1870,7 +1902,7 @@ bool Validator::StructureInitializer(const ast::CallExpression* ctor,
 }
 
 bool Validator::ArrayConstructor(const ast::CallExpression* ctor,
-                                 const core::type::Array* array_type) const {
+                                 const sem::Array* array_type) const {
     auto& values = ctor->args;
     auto* elem_ty = array_type->ElemType();
     for (auto* value : values) {
@@ -1946,26 +1978,33 @@ bool Validator::PipelineStages(VectorRef<sem::Function*> entry_points) const {
         }
     };
 
-    auto check_workgroup_storage = [&](const sem::Function* func,
-                                       const sem::Function* entry_point) {
-        auto stage = entry_point->Declaration()->PipelineStage();
-        if (stage != ast::PipelineStage::kCompute) {
-            for (auto* var : func->DirectlyReferencedGlobals()) {
-                if (var->AddressSpace() == core::AddressSpace::kWorkgroup) {
-                    StringStream stage_name;
-                    stage_name << stage;
-                    for (auto* user : var->Users()) {
-                        if (func == user->Stmt()->Function()) {
-                            AddError("workgroup memory cannot be used by " + stage_name.str() +
-                                         " pipeline stage",
-                                     user->Declaration()->source);
-                            break;
-                        }
-                    }
-                    AddNote("variable is declared here", var->Declaration()->source);
-                    backtrace(func, entry_point);
-                    return false;
+    auto check_var_uses = [&](const sem::Function* func, const sem::Function* entry_point) {
+        auto err = [&](ast::PipelineStage stage, const sem::GlobalVariable* var) {
+            Source source;
+            for (auto* user : var->Users()) {
+                if (func == user->Stmt()->Function()) {
+                    source = user->Declaration()->source;
+                    break;
                 }
+            }
+            StringStream msg;
+            msg << "var with '" << var->AddressSpace() << "' address space cannot be used by "
+                << stage << " pipeline stage";
+            AddError(msg.str(), source);
+            AddNote("variable is declared here", var->Declaration()->source);
+            backtrace(func, entry_point);
+            return false;
+        };
+
+        auto stage = entry_point->Declaration()->PipelineStage();
+        for (auto* var : func->DirectlyReferencedGlobals()) {
+            if (stage != ast::PipelineStage::kCompute &&
+                var->AddressSpace() == core::AddressSpace::kWorkgroup) {
+                return err(stage, var);
+            }
+            if (stage != ast::PipelineStage::kFragment &&
+                var->AddressSpace() == core::AddressSpace::kPixelLocal) {
+                return err(stage, var);
             }
         }
         return true;
@@ -2000,7 +2039,7 @@ bool Validator::PipelineStages(VectorRef<sem::Function*> entry_points) const {
     };
 
     auto check_func = [&](const sem::Function* func, const sem::Function* entry_point) {
-        if (!check_workgroup_storage(func, entry_point)) {
+        if (!check_var_uses(func, entry_point)) {
             return false;
         }
         if (!check_builtin_calls(func, entry_point)) {
@@ -2028,73 +2067,22 @@ bool Validator::PipelineStages(VectorRef<sem::Function*> entry_points) const {
     return true;
 }
 
-bool Validator::PushConstants(VectorRef<sem::Function*> entry_points) const {
+bool Validator::ModuleScopeVarUsages(VectorRef<sem::Function*> entry_points) const {
     for (auto* entry_point : entry_points) {
-        // State checked and modified by check_push_constant so that it remembers previously seen
-        // push_constant variables for an entry-point.
-        const sem::Variable* push_constant_var = nullptr;
-        const sem::Function* push_constant_func = nullptr;
-
-        auto check_push_constant = [&](const sem::Function* func, const sem::Function* ep) {
-            for (auto* var : func->DirectlyReferencedGlobals()) {
-                if (var->AddressSpace() != core::AddressSpace::kPushConstant ||
-                    var == push_constant_var) {
-                    continue;
-                }
-
-                if (push_constant_var == nullptr) {
-                    push_constant_var = var;
-                    push_constant_func = func;
-                    continue;
-                }
-
-                AddError("entry point '" + ep->Declaration()->name->symbol.Name() +
-                             "' uses two different 'push_constant' variables.",
-                         ep->Declaration()->source);
-                AddNote("first 'push_constant' variable declaration is here",
-                        var->Declaration()->source);
-                if (func != ep) {
-                    TraverseCallChain(ep, func, [&](const sem::Function* f) {
-                        AddNote(
-                            "called by function '" + f->Declaration()->name->symbol.Name() + "'",
-                            f->Declaration()->source);
-                    });
-                    AddNote(
-                        "called by entry point '" + ep->Declaration()->name->symbol.Name() + "'",
-                        ep->Declaration()->source);
-                }
-                AddNote("second 'push_constant' variable declaration is here",
-                        push_constant_var->Declaration()->source);
-                if (push_constant_func != ep) {
-                    TraverseCallChain(ep, push_constant_func, [&](const sem::Function* f) {
-                        AddNote(
-                            "called by function '" + f->Declaration()->name->symbol.Name() + "'",
-                            f->Declaration()->source);
-                    });
-                    AddNote(
-                        "called by entry point '" + ep->Declaration()->name->symbol.Name() + "'",
-                        ep->Declaration()->source);
-                }
-                return false;
-            }
-
-            return true;
-        };
-
-        if (!check_push_constant(entry_point, entry_point)) {
+        if (!CheckNoMultipleModuleScopeVarsOfAddressSpace(entry_point,
+                                                          core::AddressSpace::kPushConstant)) {
             return false;
         }
-        for (auto* func : entry_point->TransitivelyCalledFunctions()) {
-            if (!check_push_constant(func, entry_point)) {
-                return false;
-            }
+        if (!CheckNoMultipleModuleScopeVarsOfAddressSpace(entry_point,
+                                                          core::AddressSpace::kPixelLocal)) {
+            return false;
         }
     }
 
     return true;
 }
 
-bool Validator::Array(const core::type::Array* arr, const Source& el_source) const {
+bool Validator::Array(const sem::Array* arr, const Source& el_source) const {
     auto* el_ty = arr->ElemType();
 
     if (!IsPlain(el_ty)) {
@@ -2148,7 +2136,7 @@ bool Validator::Structure(const sem::Struct* str, ast::PipelineStage stage) cons
     auto has_index = false;
     Hashset<std::pair<uint32_t, uint32_t>, 8> locationsAndIndexes;
     for (auto* member : str->Members()) {
-        if (auto* r = member->Type()->As<core::type::Array>()) {
+        if (auto* r = member->Type()->As<sem::Array>()) {
             if (r->Count()->Is<core::type::RuntimeArrayCount>()) {
                 if (member != str->Members().Back()) {
                     AddError("runtime arrays may only appear as the last member of a struct",
@@ -2320,7 +2308,7 @@ bool Validator::LocationAttribute(const ast::LocationAttribute* loc_attr,
 
 bool Validator::IndexAttribute(const ast::IndexAttribute* index_attr,
                                ast::PipelineStage stage) const {
-    if (!enabled_extensions_.Contains(core::Extension::kChromiumInternalDualSourceBlending)) {
+    if (!enabled_extensions_.Contains(wgsl::Extension::kChromiumInternalDualSourceBlending)) {
         AddError(
             "use of '@index' attribute requires enabling extension "
             "'chromium_internal_dual_source_blending'",
@@ -2632,7 +2620,7 @@ bool Validator::IsValidationEnabled(VectorRef<const ast::Attribute*> attributes,
 }
 
 bool Validator::IsArrayWithOverrideCount(const core::type::Type* ty) const {
-    if (auto* arr = ty->UnwrapRef()->As<core::type::Array>()) {
+    if (auto* arr = ty->UnwrapRef()->As<sem::Array>()) {
         if (arr->Count()->IsAnyOf<sem::NamedOverrideArrayCount, sem::UnnamedOverrideArrayCount>()) {
             return true;
         }
@@ -2661,20 +2649,49 @@ bool Validator::CheckTypeAccessAddressSpace(const core::type::Type* store_ty,
         return false;
     }
 
-    if (address_space == core::AddressSpace::kPushConstant &&
-        !enabled_extensions_.Contains(core::Extension::kChromiumExperimentalPushConstant) &&
-        IsValidationEnabled(attributes, ast::DisabledValidation::kIgnoreAddressSpace)) {
-        AddError(
-            "use of variable address space 'push_constant' requires enabling extension "
-            "'chromium_experimental_push_constant'",
-            source);
-        return false;
-    }
-
-    if (address_space == core::AddressSpace::kStorage && access == core::Access::kWrite) {
-        // The access mode for the storage address space can only be 'read' or 'read_write'.
-        AddError("access mode 'write' is not valid for the 'storage' address space", source);
-        return false;
+    switch (address_space) {
+        case core::AddressSpace::kPixelLocal:
+            if (auto* str = store_ty->As<sem::Struct>()) {
+                for (auto* member : str->Members()) {
+                    using Allowed = std::tuple<core::type::I32, core::type::U32, core::type::F32>;
+                    if (TINT_UNLIKELY(!member->Type()->TypeInfo().IsAnyOfTuple<Allowed>())) {
+                        AddError(
+                            "struct members used in the 'pixel_local' address space can only be of "
+                            "the type 'i32', 'u32' or 'f32'",
+                            member->Declaration()->source);
+                        AddNote("struct '" + str->Name().Name() +
+                                    "' used in the 'pixel_local' address space here",
+                                source);
+                        return false;
+                    }
+                }
+            } else if (TINT_UNLIKELY(!store_ty->TypeInfo().Is<core::type::Struct>())) {
+                AddError("'pixel_local' variable only support struct storage types", source);
+                return false;
+            }
+            break;
+        case core::AddressSpace::kPushConstant:
+            if (TINT_UNLIKELY(!enabled_extensions_.Contains(
+                                  wgsl::Extension::kChromiumExperimentalPushConstant) &&
+                              IsValidationEnabled(attributes,
+                                                  ast::DisabledValidation::kIgnoreAddressSpace))) {
+                AddError(
+                    "use of variable address space 'push_constant' requires enabling extension "
+                    "'chromium_experimental_push_constant'",
+                    source);
+                return false;
+            }
+            break;
+        case core::AddressSpace::kStorage:
+            if (TINT_UNLIKELY(access == core::Access::kWrite)) {
+                // The access mode for the storage address space can only be 'read' or 'read_write'.
+                AddError("access mode 'write' is not valid for the 'storage' address space",
+                         source);
+                return false;
+            }
+            break;
+        default:
+            break;
     }
 
     auto atomic_error = [&]() -> const char* {
@@ -2711,8 +2728,68 @@ bool Validator::CheckTypeAccessAddressSpace(const core::type::Type* store_ty,
             return true;
         },
         [&](const core::type::Struct*) { return check_sub_atomics(); },  //
-        [&](const core::type::Array*) { return check_sub_atomics(); },   //
+        [&](const sem::Array*) { return check_sub_atomics(); },          //
         [&](Default) { return true; });
+}
+
+bool Validator::CheckNoMultipleModuleScopeVarsOfAddressSpace(sem::Function* entry_point,
+                                                             core::AddressSpace space) const {
+    // State checked and modified by check() so that it remembers previously seen push_constant
+    // variables for an entry-point.
+    const sem::Variable* seen_var = nullptr;
+    const sem::Function* seen_func = nullptr;
+
+    auto check = [&](const sem::Function* func, const sem::Function* ep) {
+        for (auto* var : func->DirectlyReferencedGlobals()) {
+            if (var->AddressSpace() != space || var == seen_var) {
+                continue;
+            }
+
+            if (seen_var == nullptr) {
+                seen_var = var;
+                seen_func = func;
+                continue;
+            }
+
+            std::string s{core::ToString(space)};
+
+            AddError("entry point '" + ep->Declaration()->name->symbol.Name() +
+                         "' uses two different '" + s + "' variables.",
+                     ep->Declaration()->source);
+            AddNote("first '" + s + "' variable declaration is here", var->Declaration()->source);
+            if (func != ep) {
+                TraverseCallChain(ep, func, [&](const sem::Function* f) {
+                    AddNote("called by function '" + f->Declaration()->name->symbol.Name() + "'",
+                            f->Declaration()->source);
+                });
+                AddNote("called by entry point '" + ep->Declaration()->name->symbol.Name() + "'",
+                        ep->Declaration()->source);
+            }
+            AddNote("second '" + s + "' variable declaration is here",
+                    seen_var->Declaration()->source);
+            if (seen_func != ep) {
+                TraverseCallChain(ep, seen_func, [&](const sem::Function* f) {
+                    AddNote("called by function '" + f->Declaration()->name->symbol.Name() + "'",
+                            f->Declaration()->source);
+                });
+                AddNote("called by entry point '" + ep->Declaration()->name->symbol.Name() + "'",
+                        ep->Declaration()->source);
+            }
+            return false;
+        }
+
+        return true;
+    };
+
+    if (!check(entry_point, entry_point)) {
+        return false;
+    }
+    for (auto* func : entry_point->TransitivelyCalledFunctions()) {
+        if (!check(func, entry_point)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 }  // namespace tint::resolver

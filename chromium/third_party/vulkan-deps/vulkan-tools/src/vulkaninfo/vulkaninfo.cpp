@@ -155,6 +155,50 @@ void DumpSurfaceCapabilities(Printer &p, AppInstance &inst, AppGpu &gpu, AppSurf
     if (inst.CheckExtensionEnabled(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME)) {
         chain_iterator_surface_capabilities2(p, inst, gpu, surface.surface_capabilities2_khr.pNext);
     }
+    if (inst.CheckExtensionEnabled(VK_EXT_SURFACE_MAINTENANCE_1_EXTENSION_NAME)) {
+        p.SetSubHeader();
+        ObjectWrapper obj(p, "VK_EXT_surface_maintenance_1");
+        for (auto &mode : surface.surf_present_modes) {
+            VkSurfacePresentModeEXT present_mode{};
+            present_mode.sType = VK_STRUCTURE_TYPE_SURFACE_PRESENT_MODE_EXT;
+            present_mode.presentMode = mode;
+
+            VkPhysicalDeviceSurfaceInfo2KHR surface_info{};
+            surface_info.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SURFACE_INFO_2_KHR;
+            surface_info.surface = surface.surface_extension.surface;
+            surface_info.pNext = &present_mode;
+
+            VkSurfacePresentModeCompatibilityEXT SurfacePresentModeCompatibilityEXT{};
+            SurfacePresentModeCompatibilityEXT.sType = VK_STRUCTURE_TYPE_SURFACE_PRESENT_MODE_COMPATIBILITY_EXT;
+
+            VkSurfacePresentScalingCapabilitiesEXT SurfacePresentScalingCapabilitiesEXT{};
+            SurfacePresentScalingCapabilitiesEXT.sType = VK_STRUCTURE_TYPE_SURFACE_PRESENT_SCALING_CAPABILITIES_EXT;
+            SurfacePresentScalingCapabilitiesEXT.pNext = &SurfacePresentModeCompatibilityEXT;
+
+            VkSurfaceCapabilities2KHR surface_caps2{};
+            surface_caps2.sType = VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_2_KHR;
+            surface_caps2.pNext = &SurfacePresentScalingCapabilitiesEXT;
+
+            VkResult err =
+                inst.ext_funcs.vkGetPhysicalDeviceSurfaceCapabilities2KHR(gpu.phys_device, &surface_info, &surface_caps2);
+            if (err != VK_SUCCESS) {
+                continue;
+            }
+
+            std::vector<VkPresentModeKHR> compatible_present_modes{SurfacePresentModeCompatibilityEXT.presentModeCount};
+            SurfacePresentModeCompatibilityEXT.pPresentModes = compatible_present_modes.data();
+
+            err = inst.ext_funcs.vkGetPhysicalDeviceSurfaceCapabilities2KHR(gpu.phys_device, &surface_info, &surface_caps2);
+
+            if (err == VK_SUCCESS) {
+                ObjectWrapper present_mode_obj(p, VkPresentModeKHRString(mode));
+                DumpVkSurfacePresentScalingCapabilitiesEXT(p, "VkSurfacePresentScalingCapabilitiesEXT",
+                                                           SurfacePresentScalingCapabilitiesEXT);
+                DumpVkSurfacePresentModeCompatibilityEXT(p, "VkSurfacePresentModeCompatibilityEXT",
+                                                         SurfacePresentModeCompatibilityEXT);
+            }
+        }
+    }
 }
 
 void DumpSurface(Printer &p, AppInstance &inst, AppGpu &gpu, AppSurface &surface, std::set<std::string> surface_types) {
@@ -289,6 +333,22 @@ void DumpGroups(Printer &p, AppInstance &inst) {
     }
 }
 
+void GetAndDumpHostImageCopyPropertiesEXT(Printer &p, AppGpu &gpu) {
+    // Manually implement VkPhysicalDeviceHostImageCopyPropertiesEXT due to it needing to be called twice
+    VkPhysicalDeviceHostImageCopyPropertiesEXT host_image_copy_properties_ext{};
+    host_image_copy_properties_ext.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_IMAGE_COPY_PROPERTIES_EXT;
+    VkPhysicalDeviceProperties2KHR props2{};
+    props2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2_KHR;
+    props2.pNext = static_cast<void *>(&host_image_copy_properties_ext);
+    gpu.inst.ext_funcs.vkGetPhysicalDeviceProperties2KHR(gpu.phys_device, &props2);
+    std::vector<VkImageLayout> src_layouts(host_image_copy_properties_ext.copySrcLayoutCount);
+    host_image_copy_properties_ext.pCopySrcLayouts = src_layouts.data();
+    std::vector<VkImageLayout> dst_layouts(host_image_copy_properties_ext.copyDstLayoutCount);
+    host_image_copy_properties_ext.pCopyDstLayouts = dst_layouts.data();
+    gpu.inst.ext_funcs.vkGetPhysicalDeviceProperties2KHR(gpu.phys_device, &props2);
+    DumpVkPhysicalDeviceHostImageCopyPropertiesEXT(p, "VkPhysicalDeviceHostImageCopyPropertiesEXT", host_image_copy_properties_ext);
+}
+
 void GpuDumpProps(Printer &p, AppGpu &gpu) {
     auto props = gpu.GetDeviceProperties();
     p.SetSubHeader();
@@ -318,6 +378,7 @@ void GpuDumpProps(Printer &p, AppGpu &gpu) {
         void *place = gpu.props2.pNext;
         chain_iterator_phys_device_props2(p, gpu.inst, gpu, place);
         p.AddNewline();
+        GetAndDumpHostImageCopyPropertiesEXT(p, gpu);
     }
 }
 
@@ -614,6 +675,7 @@ void DumpGpuProfileCapabilities(Printer &p, AppGpu &gpu) {
             if (gpu.inst.CheckExtensionEnabled(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME)) {
                 void *place = gpu.props2.pNext;
                 chain_iterator_phys_device_props2(p, gpu.inst, gpu, place);
+                GetAndDumpHostImageCopyPropertiesEXT(p, gpu);
             }
         }
         {

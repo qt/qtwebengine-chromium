@@ -694,8 +694,8 @@ void WasmIndirectFunctionTable::Resize(Isolate* isolate,
 
   Handle<FixedUInt32Array> new_sig_ids =
       FixedUInt32Array::New(isolate, new_capacity);
-  new_sig_ids->copy_in(0, old_sig_ids->GetDataStartAddress(),
-                       old_capacity * kUInt32Size);
+  MemCopy(new_sig_ids->begin(), old_sig_ids->begin(),
+          old_capacity * kUInt32Size);
   table->set_sig_ids(*new_sig_ids);
 
   Handle<ExternalPointerArray> new_targets =
@@ -779,7 +779,7 @@ Handle<WasmMemoryObject> WasmMemoryObject::New(Isolate* isolate,
   // For debugging purposes we memorize a link from the JSArrayBuffer
   // to it's owning WasmMemoryObject instance.
   Handle<Symbol> symbol = isolate->factory()->array_buffer_wasm_memory_symbol();
-  JSObject::SetProperty(isolate, buffer, symbol, memory_object).Check();
+  Object::SetProperty(isolate, buffer, symbol, memory_object).Check();
 
   return memory_object;
 }
@@ -949,7 +949,7 @@ int32_t WasmMemoryObject::Grow(Isolate* isolate,
     // to it's owning WasmMemoryObject instance.
     Handle<Symbol> symbol =
         isolate->factory()->array_buffer_wasm_memory_symbol();
-    JSObject::SetProperty(isolate, new_buffer, symbol, memory_object).Check();
+    Object::SetProperty(isolate, new_buffer, symbol, memory_object).Check();
     DCHECK_EQ(result_inplace.value(), old_pages);
     return static_cast<int32_t>(result_inplace.value());  // success
   }
@@ -988,7 +988,7 @@ int32_t WasmMemoryObject::Grow(Isolate* isolate,
   // For debugging purposes we memorize a link from the JSArrayBuffer
   // to it's owning WasmMemoryObject instance.
   Handle<Symbol> symbol = isolate->factory()->array_buffer_wasm_memory_symbol();
-  JSObject::SetProperty(isolate, new_buffer, symbol, memory_object).Check();
+  Object::SetProperty(isolate, new_buffer, symbol, memory_object).Check();
   return static_cast<int32_t>(old_pages);  // success
 }
 
@@ -1109,11 +1109,11 @@ void ImportedFunctionEntry::SetWasmToWasm(Tagged<WasmInstanceObject> instance,
   instance_->imported_function_targets()->set(index_, call_target);
 }
 
-// Returns an empty Object() if no callable is available, a JSReceiver
+// Returns an empty Tagged<Object>() if no callable is available, a JSReceiver
 // otherwise.
 Tagged<Object> ImportedFunctionEntry::maybe_callable() {
   Tagged<Object> value = object_ref();
-  if (!IsWasmApiFunctionRef(value)) return Object();
+  if (!IsWasmApiFunctionRef(value)) return Tagged<Object>();
   return JSReceiver::cast(WasmApiFunctionRef::cast(value)->callable());
 }
 
@@ -1246,10 +1246,6 @@ Handle<WasmInstanceObject> WasmInstanceObject::New(
     instance->set_data_segment_sizes(*data_segment_sizes);
     instance->set_element_segments(empty_fixed_array);
     instance->set_imported_function_refs(*imported_function_refs);
-    instance->set_stack_limit_address(
-        isolate->stack_guard()->address_of_jslimit());
-    instance->set_real_stack_limit_address(
-        isolate->stack_guard()->address_of_real_jslimit());
     instance->set_new_allocation_limit_address(
         isolate->heap()->NewSpaceAllocationLimitAddress());
     instance->set_new_allocation_top_address(
@@ -1531,6 +1527,9 @@ Handle<JSFunction> WasmInternalFunction::GetOrCreateExternal(
   // {entry} can be cleared, {undefined}, or a ready {Code}.
   if (entry.IsStrongOrWeak() && IsCode(entry.GetHeapObject())) {
     wrapper = handle(Code::cast(entry.GetHeapObject()), isolate);
+  } else if (!function.imported &&
+             CanUseGenericJsToWasmWrapper(module, function.sig)) {
+    wrapper = isolate->builtins()->code_handle(Builtin::kJSToWasmWrapper);
   } else {
     // The wrapper may not exist yet if no function in the exports section has
     // this signature. We compile it and store the wrapper in the module for
@@ -2263,8 +2262,7 @@ bool WasmJSFunction::IsWasmJSFunction(Tagged<Object> object) {
   return js_function->shared()->HasWasmJSFunctionData();
 }
 
-Handle<Map> CreateFuncRefMap(Isolate* isolate, Handle<Map> opt_rtt_parent,
-                             Handle<WasmInstanceObject> opt_instance) {
+Handle<Map> CreateFuncRefMap(Isolate* isolate, Handle<Map> opt_rtt_parent) {
   const int inobject_properties = 0;
   const int instance_size =
       Map::cast(isolate->root(RootIndex::kWasmInternalFunctionMap))
@@ -2273,7 +2271,8 @@ Handle<Map> CreateFuncRefMap(Isolate* isolate, Handle<Map> opt_rtt_parent,
   const ElementsKind elements_kind = TERMINAL_FAST_ELEMENTS_KIND;
   constexpr uint32_t kNoIndex = ~0u;
   Handle<WasmTypeInfo> type_info = isolate->factory()->NewWasmTypeInfo(
-      kNullAddress, opt_rtt_parent, instance_size, opt_instance, kNoIndex);
+      kNullAddress, opt_rtt_parent, instance_size, Handle<WasmInstanceObject>(),
+      kNoIndex);
   Handle<Map> map = isolate->factory()->NewMap(
       instance_type, instance_size, elements_kind, inobject_properties);
   map->set_wasm_type_info(*type_info);
@@ -2321,8 +2320,7 @@ Handle<WasmJSFunction> WasmJSFunction::New(Isolate* isolate,
         IsMap(maybe_canonical_map.GetHeapObject())) {
       rtt = handle(Map::cast(maybe_canonical_map.GetHeapObject()), isolate);
     } else {
-      rtt = CreateFuncRefMap(isolate, Handle<Map>(),
-                             Handle<WasmInstanceObject>());
+      rtt = CreateFuncRefMap(isolate, Handle<Map>());
       canonical_rtts->Set(canonical_type_index,
                           HeapObjectReference::Weak(*rtt));
     }
@@ -2547,6 +2545,10 @@ MaybeHandle<Object> JSToWasmObject(Isolate* isolate, Handle<Object> value,
       *error_message = "null is not allowed for (ref any)";
       return {};
     }
+    case HeapType::kExn:
+      if (!IsNull(*value, isolate)) return value;
+      *error_message = "null is not allowed for (ref exn)";
+      return {};
     case HeapType::kStruct: {
       if (IsWasmStruct(*value)) {
         return value;

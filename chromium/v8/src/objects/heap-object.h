@@ -5,10 +5,11 @@
 #ifndef V8_OBJECTS_HEAP_OBJECT_H_
 #define V8_OBJECTS_HEAP_OBJECT_H_
 
+#include "src/base/macros.h"
 #include "src/common/globals.h"
 #include "src/objects/instance-type.h"
-#include "src/objects/objects.h"
 #include "src/objects/tagged-field.h"
+#include "src/sandbox/indirect-pointer-tag.h"
 
 // Has to be the last include (doesn't have include guards):
 #include "src/objects/object-macros.h"
@@ -20,16 +21,21 @@ class Heap;
 class PrimitiveHeapObject;
 class ExternalPointerSlot;
 class IndirectPointerSlot;
-template <typename T>
-class Tagged;
+class ExposedTrustedObject;
+class ObjectVisitor;
+
+V8_OBJECT class HeapObjectLayout {
+ private:
+  friend class HeapObject;
+
+  TaggedMember<Map> map_;
+} V8_OBJECT_END;
 
 // HeapObject is the superclass for all classes describing heap allocated
 // objects.
-class HeapObject : public Object {
+class HeapObject : public TaggedImpl<HeapObjectReferenceType::STRONG, Address> {
  public:
-  bool is_null() const {
-    return static_cast<Tagged_t>(ptr()) == static_cast<Tagged_t>(kNullAddress);
-  }
+  constexpr HeapObject() = default;
 
   // [map]: Contains a map which contains the object's reflective
   // information.
@@ -225,18 +231,60 @@ class HeapObject : public Object {
   inline void ResetLazilyInitializedExternalPointerField(size_t offset);
 
   //
-  // IndirectPointer field accessors.
+  // Indirect pointers.
   //
-  inline Tagged<Object> ReadIndirectPointerField(size_t offset) const;
+  // Indirect pointer fields can be initialized on background threads, so take a
+  // LocalIsolate instead of an Isolate as parameter.
+  //
+  // These are only available when the sandbox is enabled.
+  inline void InitSelfIndirectPointerField(size_t offset,
+                                           LocalIsolate* isolate);
 
+  template <IndirectPointerTag tag>
+  inline Tagged<Object> ReadIndirectPointerField(size_t offset,
+                                                 const Isolate* isolate) const;
+
+  template <IndirectPointerTag tag>
+  inline void WriteIndirectPointerField(size_t offset,
+                                        Tagged<ExposedTrustedObject> value);
+
+  // Trusted pointers.
   //
-  // CodePointer field accessors.
+  // A pointer to a trusted object. When the sandbox is enabled, these are
+  // indirect pointers using the the TrustedPointerTable (TPT). When the sandbox
+  // is disabled, they are regular tagged pointers. They must always point to an
+  // ExposedTrustedObject as (only) these objects can be referenced through the
+  // trusted pointer table.
+  template <IndirectPointerTag tag>
+  inline Tagged<ExposedTrustedObject> ReadTrustedPointerField(
+      size_t offset, const Isolate* isolate) const;
+  template <IndirectPointerTag tag>
+  inline void WriteTrustedPointerField(size_t offset,
+                                       Tagged<ExposedTrustedObject> value);
+
+  // Trusted pointer fields can be cleared, in which case they no longer point
+  // to any object. When the sandbox is enabled, this will set the fields
+  // indirect pointer handle to the null handle (referencing the zeroth entry in
+  // the TrustedPointerTable which just contains nullptr). When the sandbox is
+  // disabled, this will set the field to Smi::zero().
+  inline bool IsTrustedPointerFieldCleared(size_t offset) const;
+  inline void ClearTrustedPointerField(size_t offest);
+
+  // Code pointers.
   //
-  inline void InitCodePointerTableEntryField(size_t offset, Isolate* isolate,
-                                             Tagged<Code> owning_code,
-                                             Address entrypoint);
-  inline Address ReadCodeEntrypointField(size_t offset) const;
-  inline void WriteCodeEntrypointField(size_t offset, Address value);
+  // These are special versions of trusted pointers that always point to Code
+  // objects. When the sandbox is enabled, they are indirect pointers using the
+  // code pointer table (CPT) instead of the TrustedPointerTable. When the
+  // sandbox is disabled, they are regular tagged pointers.
+  inline Tagged<Code> ReadCodePointerField(size_t offset) const;
+  inline void WriteCodePointerField(size_t offset, Tagged<Code> value);
+
+  inline void InitSelfCodePointerField(size_t offset, Isolate* isolate,
+                                       Tagged<Code> owning_code,
+                                       Address entrypoint);
+  inline Address ReadCodeEntrypointViaCodePointerField(size_t offset) const;
+  inline void WriteCodeEntrypointViaCodePointerField(size_t offset,
+                                                     Address value);
 
   // Returns the field at offset in obj, as a read/write Object reference.
   // Does no checking, and is safe to use during GC, while maps are invalid.
@@ -245,8 +293,10 @@ class HeapObject : public Object {
   inline ObjectSlot RawField(int byte_offset) const;
   inline MaybeObjectSlot RawMaybeWeakField(int byte_offset) const;
   inline InstructionStreamSlot RawInstructionStreamField(int byte_offset) const;
-  inline ExternalPointerSlot RawExternalPointerField(int byte_offset) const;
-  inline IndirectPointerSlot RawIndirectPointerField(int byte_offset) const;
+  inline ExternalPointerSlot RawExternalPointerField(
+      int byte_offset, ExternalPointerTag tag) const;
+  inline IndirectPointerSlot RawIndirectPointerField(
+      int byte_offset, IndirectPointerTag tag) const;
 
   DECL_CAST(HeapObject)
 
@@ -295,13 +345,8 @@ class HeapObject : public Object {
   void RehashBasedOnMap(IsolateT* isolate);
 
   // Layout description.
-#define HEAP_OBJECT_FIELDS(V) \
-  V(kMapOffset, kTaggedSize)  \
-  /* Header size. */          \
-  V(kHeaderSize, 0)
-
-  DEFINE_FIELD_OFFSET_CONSTANTS(Object::kHeaderSize, HEAP_OBJECT_FIELDS)
-#undef HEAP_OBJECT_FIELDS
+  static constexpr int kMapOffset = offsetof(HeapObjectLayout, map_);
+  static constexpr int kHeaderSize = sizeof(HeapObjectLayout);
 
   static_assert(kMapOffset == Internals::kHeapObjectMapOffset);
 
@@ -309,8 +354,23 @@ class HeapObject : public Object {
 
   inline Address GetFieldAddress(int field_offset) const;
 
+  HeapObject* operator->() { return this; }
+  const HeapObject* operator->() const { return this; }
+
  protected:
-  OBJECT_CONSTRUCTORS(HeapObject, Object);
+  struct SkipTypeCheckTag {};
+  friend class Tagged<HeapObject>;
+  explicit V8_INLINE constexpr HeapObject(Address ptr,
+                                          HeapObject::SkipTypeCheckTag)
+      : TaggedImpl(ptr) {}
+  explicit inline HeapObject(Address ptr);
+
+  // Static overwrites of TaggedImpl's IsSmi/IsHeapObject, to avoid conflicts
+  // with IsSmi(Tagged<HeapObject>) inside HeapObject subclasses' methods.
+  template <typename T>
+  static bool IsSmi(T obj);
+  template <typename T>
+  static bool IsHeapObject(T obj);
 
   inline Address field_address(size_t offset) const {
     return ptr() + offset - kHeapObjectTag;
@@ -332,8 +392,21 @@ class HeapObject : public Object {
                          VerificationMode mode);
 };
 
-OBJECT_CONSTRUCTORS_IMPL(HeapObject, Object)
+inline HeapObject::HeapObject(Address ptr) : TaggedImpl(ptr) {
+  IsHeapObject(*this);
+}
 CAST_ACCESSOR(HeapObject)
+
+template <typename T>
+// static
+bool HeapObject::IsSmi(T obj) {
+  return i::IsSmi(obj);
+}
+template <typename T>
+// static
+bool HeapObject::IsHeapObject(T obj) {
+  return i::IsHeapObject(obj);
+}
 
 // Define Tagged<HeapObject> now that HeapObject exists.
 constexpr HeapObject Tagged<HeapObject>::operator*() const {
@@ -342,13 +415,6 @@ constexpr HeapObject Tagged<HeapObject>::operator*() const {
 constexpr detail::TaggedOperatorArrowRef<HeapObject>
 Tagged<HeapObject>::operator->() const {
   return detail::TaggedOperatorArrowRef<HeapObject>{ToRawPtr()};
-}
-// Implicit conversions and explicit casts to/from raw pointers
-// TODO(leszeks): Remove once we're using Tagged everywhere.
-// NOLINTNEXTLINE
-constexpr Tagged<HeapObject>::operator HeapObject() {
-  static_assert(kTaggedCanConvertToRawObjects);
-  return ToRawPtr();
 }
 constexpr HeapObject Tagged<HeapObject>::ToRawPtr() const {
   return HeapObject(this->ptr(), HeapObject::SkipTypeCheckTag{});

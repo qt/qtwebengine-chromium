@@ -36,6 +36,7 @@
 #ifndef EIGEN_HALF_H
 #define EIGEN_HALF_H
 
+// IWYU pragma: private
 #include "../../InternalHeaderCheck.h"
 
 #if defined(EIGEN_HAS_GPU_FP16) || defined(EIGEN_HAS_ARM64_FP16_SCALAR_ARITHMETIC)

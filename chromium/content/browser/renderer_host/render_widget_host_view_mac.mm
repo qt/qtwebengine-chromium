@@ -78,6 +78,7 @@
 #include "ui/events/keycodes/dom/dom_code.h"
 #include "ui/events/keycodes/dom/dom_keyboard_layout_map.h"
 #include "ui/gfx/geometry/dip_util.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/mac/coordinate_conversion.h"
 
 using blink::WebInputEvent;
@@ -229,13 +230,6 @@ RenderWidgetHostViewMac::RenderWidgetHostViewMac(RenderWidgetHost* widget)
   DCHECK(![GetInProcessNSView() window]);
 
   host()->SetView(this);
-
-  // Let the page-level input event router know about our surface ID
-  // namespace for surface-based hit testing.
-  if (host()->delegate() && host()->delegate()->GetInputEventRouter()) {
-    host()->delegate()->GetInputEventRouter()->AddFrameSinkIdOwner(
-        GetFrameSinkId(), this);
-  }
 
   RenderWidgetHostOwnerDelegate* owner_delegate = host()->owner_delegate();
   if (owner_delegate) {
@@ -445,6 +439,7 @@ void RenderWidgetHostViewMac::InitAsPopup(
 
   // This path is used by the time/date picker.
   ns_view_->InitAsPopup(pos, popup_parent_host_view_->ns_view_id_);
+  Show();
 }
 
 RenderWidgetHostViewBase*
@@ -486,6 +481,11 @@ void RenderWidgetHostViewMac::Hide() {
   ns_view_->SetVisible(is_visible_);
   browser_compositor_->SetViewVisible(is_visible_);
   WasOccluded();
+
+  if (base::FeatureList::IsEnabled(::features::kHideDelegatedFrameHostMac)) {
+    browser_compositor_->GetDelegatedFrameHost()->WasHidden(
+        DelegatedFrameHost::HiddenCause::kOther);
+  }
 }
 
 void RenderWidgetHostViewMac::WasUnOccluded() {
@@ -1573,9 +1573,9 @@ void RenderWidgetHostViewMac::SetActive(bool active) {
     UpdateActiveState(active);
     if (active) {
       if (HasFocus())
-        host()->Focus();
+        host()->GotFocus();
     } else {
-      host()->Blur();
+      host()->LostFocus();
     }
   }
   if (HasFocus())
@@ -2074,8 +2074,13 @@ bool RenderWidgetHostViewMac::SyncGetFirstRectForRange(
     // https://crbug.com/121917
     base::ScopedAllowBlocking allow_wait;
     // TODO(thakis): Pipe |actualRange| through TextInputClientMac machinery.
-    *rect = TextInputClientMac::GetInstance()->GetFirstRectForRange(
-        GetFocusedWidget(), requested_range);
+    gfx::Rect blink_rect =
+        TextInputClientMac::GetInstance()->GetFirstRectForRange(
+            GetFocusedWidget(), requested_range);
+
+    // With zoom-for-dsf, RenderWidgetHost coordinate system is physical points,
+    // which means we have to scale the rect by the device scale factor.
+    *rect = gfx::ScaleToEnclosingRect(blink_rect, 1.f / GetDeviceScaleFactor());
   }
   return true;
 }

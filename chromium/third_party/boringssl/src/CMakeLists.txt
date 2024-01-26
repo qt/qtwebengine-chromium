@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.12)
 
 # Defer enabling C and CXX languages.
 project(BoringSSL NONE)
@@ -56,7 +56,7 @@ endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT CMAKE_CROSSCOMPILING)
   find_package(PkgConfig QUIET)
   if (PkgConfig_FOUND)
-    pkg_check_modules(LIBUNWIND libunwind-generic)
+    pkg_check_modules(LIBUNWIND libunwind-generic>=1.3.0)
     if(LIBUNWIND_FOUND)
       add_definitions(-DBORINGSSL_HAVE_LIBUNWIND)
     else()
@@ -478,14 +478,22 @@ endif()
 
 # Add minimal googletest targets. The provided one has many side-effects, and
 # googletest has a very straightforward build.
-add_library(boringssl_gtest third_party/googletest/src/gtest-all.cc)
+add_library(
+  boringssl_gtest
+  third_party/googletest/googlemock/src/gmock-all.cc
+  third_party/googletest/googletest/src/gtest-all.cc
+)
 if(USE_CUSTOM_LIBCXX)
   target_link_libraries(boringssl_gtest libcxx)
 endif()
 target_include_directories(
     boringssl_gtest
-    PUBLIC third_party/googletest/include
-    PRIVATE third_party/googletest
+    PUBLIC
+    third_party/googletest/googlemock/include
+    third_party/googletest/googletest/include
+    PRIVATE
+    third_party/googletest/googlemock
+    third_party/googletest/googletest
 )
 
 # Declare a dummy target to build all unit tests. Test targets should inject

@@ -19,6 +19,8 @@ export class Switch extends LitElement {
       display: inline-block;
     }
     md-switch {
+      --md-focus-ring-duration: 0s;
+
       --md-switch-handle-height: 12px;
       --md-switch-handle-width: 12px;
 

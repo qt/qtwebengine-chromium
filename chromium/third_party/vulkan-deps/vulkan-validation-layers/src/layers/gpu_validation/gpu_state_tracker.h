@@ -81,6 +81,7 @@ VkResult UtilInitializeVma(VkInstance instance, VkPhysicalDevice physical_device
 struct GpuAssistedShaderTracker {
     VkPipeline pipeline;
     VkShaderModule shader_module;
+    VkShaderEXT shader_object;
     std::vector<uint32_t> pgm;
 };
 
@@ -118,6 +119,13 @@ class GpuAssistedBase : public ValidationStateTracker {
     void PostCallRecordCreatePipelineLayout(VkDevice device, const VkPipelineLayoutCreateInfo *pCreateInfo,
                                             const VkAllocationCallbacks *pAllocator, VkPipelineLayout *pPipelineLayout,
                                             const RecordObject &record_obj) override;
+    void PreCallRecordCreateShadersEXT(VkDevice device, uint32_t createInfoCount, const VkShaderCreateInfoEXT *pCreateInfos,
+                                       const VkAllocationCallbacks *pAllocator, VkShaderEXT *pShaders,
+                                       void *csm_state_data) override;
+    void PostCallRecordCreateShadersEXT(VkDevice device, uint32_t createInfoCount, const VkShaderCreateInfoEXT *pCreateInfos,
+                                        const VkAllocationCallbacks *pAllocator, VkShaderEXT *pShaders,
+                                        const RecordObject &record_obj, void *state_data) override;
+    void PreCallRecordDestroyShaderEXT(VkDevice device, VkShaderEXT shader, const VkAllocationCallbacks *pAllocator) override;
 
     void PreCallRecordCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache, uint32_t count,
                                               const VkGraphicsPipelineCreateInfo *pCreateInfos,
@@ -167,11 +175,7 @@ class GpuAssistedBase : public ValidationStateTracker {
         }
         LogError(object, setup_vuid, "Setup Error. Detail: (%s)", logit.c_str());
     }
-    bool GpuGetOption(const char *option, bool default_value) {
-        std::string option_string = getLayerOption(option);
-        vvl::ToLower(option_string);
-        return !option_string.empty() ? !option_string.compare("true") : default_value;
-    }
+    bool CheckForGpuAvEnabled(const void *pNext);
 
   protected:
     bool CommandBufferNeedsProcessing(VkCommandBuffer command_buffer) const;
@@ -201,11 +205,12 @@ class GpuAssistedBase : public ValidationStateTracker {
                                          const VkPipelineBindPoint bind_point, const SafeCreateInfo &modified_create_infos);
 
     virtual bool InstrumentShader(const vvl::span<const uint32_t> &input, std::vector<uint32_t> &new_pgm,
-                                  uint32_t *unique_shader_id) = 0;
+                                  uint32_t unique_shader_id) = 0;
 
   public:
     bool aborted = false;
     bool force_buffer_device_address;
+    vvl::unordered_map<uint32_t, std::pair<size_t, std::vector<uint32_t>>> instrumented_shaders;
     PFN_vkSetDeviceLoaderData vkSetDeviceLoaderData;
     const char *setup_vuid;
     VkPhysicalDeviceFeatures supported_features{};
@@ -215,6 +220,7 @@ class GpuAssistedBase : public ValidationStateTracker {
     uint32_t output_buffer_size = 0;
     VkDescriptorSetLayout debug_desc_layout = VK_NULL_HANDLE;
     VkDescriptorSetLayout dummy_desc_layout = VK_NULL_HANDLE;
+    VkPipelineLayout debug_pipeline_layout = VK_NULL_HANDLE;
     uint32_t desc_set_bind_index = 0;
     VmaAllocator vmaAllocator = {};
     VmaPool output_buffer_pool = VK_NULL_HANDLE;

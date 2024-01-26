@@ -1253,11 +1253,11 @@ double av1_estimate_noise_from_single_plane_c(const uint8_t *src, int height,
 }
 
 #if CONFIG_AV1_HIGHBITDEPTH
-double av1_highbd_estimate_noise_from_single_plane(const uint16_t *src16,
-                                                   int height, int width,
-                                                   const int stride,
-                                                   int bit_depth,
-                                                   int edge_thresh) {
+double av1_highbd_estimate_noise_from_single_plane_c(const uint16_t *src16,
+                                                     int height, int width,
+                                                     const int stride,
+                                                     int bit_depth,
+                                                     int edge_thresh) {
   int64_t accum = 0;
   int count = 0;
   for (int i = 1; i < height - 1; ++i) {

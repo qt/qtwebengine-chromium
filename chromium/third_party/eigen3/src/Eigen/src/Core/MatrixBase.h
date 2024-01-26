@@ -11,6 +11,7 @@
 #ifndef EIGEN_MATRIXBASE_H
 #define EIGEN_MATRIXBASE_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {
@@ -125,9 +126,9 @@ template<typename Derived> class MatrixBase
 
 #define EIGEN_CURRENT_STORAGE_BASE_CLASS Eigen::MatrixBase
 #define EIGEN_DOC_UNARY_ADDONS(X,Y)
-#   include "../plugins/CommonCwiseBinaryOps.h"
-#   include "../plugins/MatrixCwiseUnaryOps.h"
-#   include "../plugins/MatrixCwiseBinaryOps.h"
+#   include "../plugins/CommonCwiseBinaryOps.inc"
+#   include "../plugins/MatrixCwiseUnaryOps.inc"
+#   include "../plugins/MatrixCwiseBinaryOps.inc"
 #   ifdef EIGEN_MATRIXBASE_PLUGIN
 #     include EIGEN_MATRIXBASE_PLUGIN
 #   endif

@@ -284,6 +284,12 @@ const UIStrings = {
    *@description Tooltip to explain the resource's overridden status
    */
   requestHeadersOverridden: 'Request headers are overridden',
+  /**
+   *@description Tooltip to explain the resource's initial priority
+   *@example {High} PH1
+   *@example {Low} PH2
+   */
+  initialPriorityToolTip: '{PH1}, Initial priority: {PH2}',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/network/NetworkDataGridNode.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -950,13 +956,27 @@ export class NetworkRequestNode extends NetworkNode {
         break;
       }
       case 'setcookies': {
-        this.setTextAndTitle(cell, this.arrayLength(this.requestInternal.responseCookies));
+        this.setTextAndTitle(cell, this.arrayLength(this.requestInternal.nonBlockedResponseCookies()));
         break;
       }
       case 'priority': {
         const priority = this.requestInternal.priority();
-        this.setTextAndTitle(cell, priority ? PerfUI.NetworkPriorities.uiLabelForNetworkPriority(priority) : '');
         const initialPriority = this.requestInternal.initialPriority();
+        if (priority && initialPriority) {
+          this.setTextAndTitle(
+              cell,
+              PerfUI.NetworkPriorities.uiLabelForNetworkPriority(priority),
+              i18nString(
+                  UIStrings.initialPriorityToolTip,
+                  {
+                    PH1: PerfUI.NetworkPriorities.uiLabelForNetworkPriority(priority),
+                    PH2: PerfUI.NetworkPriorities.uiLabelForNetworkPriority(initialPriority),
+                  },
+                  ),
+          );
+        } else {
+          this.setTextAndTitle(cell, priority ? PerfUI.NetworkPriorities.uiLabelForNetworkPriority(priority) : '');
+        }
         this.appendSubtitle(
             cell, initialPriority ? PerfUI.NetworkPriorities.uiLabelForNetworkPriority(initialPriority) : '');
         break;
@@ -1233,9 +1253,10 @@ export class NetworkRequestNode extends NetworkNode {
         this.setTextAndTitle(cell, failText);
       }
     } else if (this.requestInternal.statusCode && this.requestInternal.statusCode >= 400) {
+      const statusText = this.requestInternal.getInferredStatusText();
       UI.UIUtils.createTextChild(cell, String(this.requestInternal.statusCode));
-      this.appendSubtitle(cell, this.requestInternal.statusText);
-      UI.Tooltip.Tooltip.install(cell, this.requestInternal.statusCode + ' ' + this.requestInternal.statusText);
+      this.appendSubtitle(cell, statusText);
+      UI.Tooltip.Tooltip.install(cell, this.requestInternal.statusCode + ' ' + statusText);
     } else if (!this.requestInternal.statusCode && this.requestInternal.parsedURL.isDataURL()) {
       this.setTextAndTitle(cell, i18nString(UIStrings.data));
     } else if (!this.requestInternal.statusCode && this.requestInternal.canceled) {
@@ -1306,8 +1327,9 @@ export class NetworkRequestNode extends NetworkNode {
           i18nString(UIStrings.crossoriginResourceSharingErrorS, {PH1: corsErrorStatus.corsError}));
     } else if (this.requestInternal.statusCode) {
       UI.UIUtils.createTextChild(cell, String(this.requestInternal.statusCode));
-      this.appendSubtitle(cell, this.requestInternal.statusText);
-      UI.Tooltip.Tooltip.install(cell, this.requestInternal.statusCode + ' ' + this.requestInternal.statusText);
+      const statusText = this.requestInternal.getInferredStatusText();
+      this.appendSubtitle(cell, statusText);
+      UI.Tooltip.Tooltip.install(cell, this.requestInternal.statusCode + ' ' + statusText);
     } else if (this.requestInternal.finished) {
       this.setTextAndTitle(cell, i18nString(UIStrings.finished));
     } else if (this.requestInternal.preserved) {

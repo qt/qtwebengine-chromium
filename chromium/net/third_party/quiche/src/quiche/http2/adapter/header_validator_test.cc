@@ -61,7 +61,8 @@ TEST(HeaderValidatorTest, NameHasInvalidChar) {
                                                 : absl::StrCat("na", c, "me");
       HeaderValidator::HeaderStatus status =
           v.ValidateSingleHeader(name, "value");
-      EXPECT_EQ(HeaderValidator::HEADER_FIELD_INVALID, status);
+      EXPECT_EQ(HeaderValidator::HEADER_FIELD_INVALID, status)
+          << "with name [" << name << "]";
     }
     // Test nul separately.
     {
@@ -170,7 +171,8 @@ TEST(HeaderValidatorTest, AuthorityHasInvalidChar) {
       HeaderValidator v;
       v.StartHeaderBlock();
       HeaderValidator::HeaderStatus status = v.ValidateSingleHeader(key, value);
-      EXPECT_EQ(HeaderValidator::HEADER_OK, status);
+      EXPECT_EQ(HeaderValidator::HEADER_OK, status)
+          << " with name [" << key << "] and value [" << value << "]";
     }
     // These should not.
     for (const absl::string_view c : {"\r", "\n", "|", "\\", "`"}) {
@@ -779,6 +781,44 @@ TEST(HeaderValidatorTest, ConnectionSpecificHeaders) {
     EXPECT_EQ(HeaderValidator::HEADER_FIELD_INVALID,
               v.ValidateSingleHeader(connection_key, connection_value));
   }
+}
+
+TEST(HeaderValidatorTest, MixedCaseHeaderName) {
+  HeaderValidator v;
+  v.SetAllowUppercaseInHeaderNames();
+  EXPECT_EQ(HeaderValidator::HEADER_OK,
+            v.ValidateSingleHeader("MixedCaseName", "value"));
+}
+
+// SetAllowUppercaseInHeaderNames() only applies to non-pseudo-headers.
+TEST(HeaderValidatorTest, MixedCasePseudoHeader) {
+  HeaderValidator v;
+  v.SetAllowUppercaseInHeaderNames();
+  EXPECT_EQ(HeaderValidator::HEADER_FIELD_INVALID,
+            v.ValidateSingleHeader(":PATH", "/"));
+}
+
+// Matching `host` is case-insensitive.
+TEST(HeaderValidatorTest, MixedCaseHost) {
+  HeaderValidator v;
+  v.SetAllowUppercaseInHeaderNames();
+  for (Header to_add : kSampleRequestPseudoheaders) {
+    EXPECT_EQ(HeaderValidator::HEADER_OK,
+              v.ValidateSingleHeader(to_add.first, to_add.second));
+  }
+  // Validation fails, because "host" and ":authority" have different values.
+  EXPECT_EQ(HeaderValidator::HEADER_FIELD_INVALID,
+            v.ValidateSingleHeader("Host", "www.bar.com"));
+}
+
+// Matching `content-length` is case-insensitive.
+TEST(HeaderValidatorTest, MixedCaseContentLength) {
+  HeaderValidator v;
+  v.SetAllowUppercaseInHeaderNames();
+  EXPECT_EQ(v.content_length(), absl::nullopt);
+  EXPECT_EQ(HeaderValidator::HEADER_OK,
+            v.ValidateSingleHeader("Content-Length", "42"));
+  EXPECT_THAT(v.content_length(), Optional(42));
 }
 
 }  // namespace test

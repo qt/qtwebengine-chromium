@@ -12,6 +12,7 @@
 #ifndef EIGEN_CWISE_TERNARY_OP_H
 #define EIGEN_CWISE_TERNARY_OP_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

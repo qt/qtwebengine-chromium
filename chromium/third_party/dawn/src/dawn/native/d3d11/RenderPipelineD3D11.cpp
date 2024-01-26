@@ -1,16 +1,29 @@
-// Copyright 2023 The Dawn Authors
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/d3d11/RenderPipelineD3D11.h"
 
@@ -18,6 +31,7 @@
 
 #include <array>
 #include <memory>
+#include <optional>
 #include <utility>
 
 #include "dawn/native/CreatePipelineAsyncTask.h"
@@ -39,7 +53,7 @@ D3D11_INPUT_CLASSIFICATION VertexStepModeFunction(wgpu::VertexStepMode mode) {
         case wgpu::VertexStepMode::Instance:
             return D3D11_INPUT_PER_INSTANCE_DATA;
         case wgpu::VertexStepMode::VertexBufferNotUsed:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -56,7 +70,7 @@ D3D_PRIMITIVE_TOPOLOGY D3DPrimitiveTopology(wgpu::PrimitiveTopology topology) {
         case wgpu::PrimitiveTopology::TriangleStrip:
             return D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP;
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -69,7 +83,7 @@ D3D11_CULL_MODE D3DCullMode(wgpu::CullMode cullMode) {
         case wgpu::CullMode::Back:
             return D3D11_CULL_BACK;
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -110,7 +124,7 @@ D3D11_BLEND D3DBlendFactor(wgpu::BlendFactor blendFactor) {
         case wgpu::BlendFactor::OneMinusSrc1Alpha:
             return D3D11_BLEND_INV_SRC1_ALPHA;
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -151,7 +165,7 @@ D3D11_BLEND_OP D3DBlendOperation(wgpu::BlendOperation blendOperation) {
         case wgpu::BlendOperation::Max:
             return D3D11_BLEND_OP_MAX;
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -237,14 +251,14 @@ RenderPipeline::~RenderPipeline() = default;
 void RenderPipeline::ApplyNow(CommandRecordingContext* commandContext,
                               const std::array<float, 4>& blendColor,
                               uint32_t stencilReference) {
-    ID3D11DeviceContext1* d3dDeviceContext1 = commandContext->GetD3D11DeviceContext1();
-    d3dDeviceContext1->IASetPrimitiveTopology(mD3DPrimitiveTopology);
+    auto* d3d11DeviceContext = commandContext->GetD3D11DeviceContext4();
+    d3d11DeviceContext->IASetPrimitiveTopology(mD3DPrimitiveTopology);
     // TODO(dawn:1753): deduplicate these objects in the backend eventually, and to avoid redundant
     // state setting.
-    d3dDeviceContext1->IASetInputLayout(mInputLayout.Get());
-    d3dDeviceContext1->RSSetState(mRasterizerState.Get());
-    d3dDeviceContext1->VSSetShader(mVertexShader.Get(), nullptr, 0);
-    d3dDeviceContext1->PSSetShader(mPixelShader.Get(), nullptr, 0);
+    d3d11DeviceContext->IASetInputLayout(mInputLayout.Get());
+    d3d11DeviceContext->RSSetState(mRasterizerState.Get());
+    d3d11DeviceContext->VSSetShader(mVertexShader.Get(), nullptr, 0);
+    d3d11DeviceContext->PSSetShader(mPixelShader.Get(), nullptr, 0);
 
     ApplyBlendState(commandContext, blendColor);
     ApplyDepthStencilState(commandContext, stencilReference);
@@ -252,14 +266,14 @@ void RenderPipeline::ApplyNow(CommandRecordingContext* commandContext,
 
 void RenderPipeline::ApplyBlendState(CommandRecordingContext* commandContext,
                                      const std::array<float, 4>& blendColor) {
-    ID3D11DeviceContext1* d3dDeviceContext1 = commandContext->GetD3D11DeviceContext1();
-    d3dDeviceContext1->OMSetBlendState(mBlendState.Get(), blendColor.data(), GetSampleMask());
+    auto* d3d11DeviceContext = commandContext->GetD3D11DeviceContext4();
+    d3d11DeviceContext->OMSetBlendState(mBlendState.Get(), blendColor.data(), GetSampleMask());
 }
 
 void RenderPipeline::ApplyDepthStencilState(CommandRecordingContext* commandContext,
                                             uint32_t stencilReference) {
-    ID3D11DeviceContext1* d3dDeviceContext1 = commandContext->GetD3D11DeviceContext1();
-    d3dDeviceContext1->OMSetDepthStencilState(mDepthStencilState.Get(), stencilReference);
+    auto* d3d11DeviceContext = commandContext->GetD3D11DeviceContext4();
+    d3d11DeviceContext->OMSetDepthStencilState(mDepthStencilState.Get(), stencilReference);
 }
 
 void RenderPipeline::SetLabelImpl() {
@@ -415,19 +429,20 @@ MaybeError RenderPipeline::InitializeShaders() {
     // Tint does matrix multiplication expecting row major matrices
     compileFlags |= D3DCOMPILE_PACK_MATRIX_ROW_MAJOR;
 
-    // FXC can miscompile code that depends on special float values (NaN, INF, etc) when IEEE
-    // strictness is not enabled. See crbug.com/tint/976.
-    compileFlags |= D3DCOMPILE_IEEE_STRICTNESS;
+    if (!device->IsToggleEnabled(Toggle::D3DDisableIEEEStrictness)) {
+        compileFlags |= D3DCOMPILE_IEEE_STRICTNESS;
+    }
 
     PerStage<d3d::CompiledShader> compiledShader;
 
-    std::bitset<kMaxInterStageShaderVariables>* usedInterstageVariables = nullptr;
+    std::optional<dawn::native::d3d::InterStageShaderVariablesMask> usedInterstageVariables;
     dawn::native::EntryPointMetadata fragmentEntryPoint;
     if (GetStageMask() & wgpu::ShaderStage::Fragment) {
         // Now that only fragment shader can have inter-stage inputs.
         const ProgrammableStage& programmableStage = GetStage(SingleShaderStage::Fragment);
         fragmentEntryPoint = programmableStage.module->GetEntryPoint(programmableStage.entryPoint);
-        usedInterstageVariables = &fragmentEntryPoint.usedInterStageVariables;
+        usedInterstageVariables = dawn::native::d3d::ToInterStageShaderVariablesMask(
+            fragmentEntryPoint.usedInterStageVariables);
     }
 
     if (GetStageMask() & wgpu::ShaderStage::Vertex) {

@@ -11,6 +11,7 @@
 #ifndef EIGEN_RETURNBYVALUE_H
 #define EIGEN_RETURNBYVALUE_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

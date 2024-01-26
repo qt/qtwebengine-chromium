@@ -28,14 +28,14 @@ set(cube_RESOURCES ${CMAKE_BINARY_DIR}/staging-json/MoltenVK_icd.json
     ${CMAKE_CURRENT_SOURCE_DIR}/macOS/cube/Resources/VulkanIcon.icns)
 
 # Have Xcode handle the Storyboard
-if(${CMAKE_GENERATOR} MATCHES "^Xcode.*")
+if(XCODE)
     set(cube_RESOURCES ${cube_RESOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/macOS/cube/Resources/Main.storyboard)
 endif()
 
 add_executable(vkcube MACOSX_BUNDLE ${cube_SRCS} ${cube_HDRS} ${cube_RESOURCES} cube.vert.inc cube.frag.inc)
 
 # Handle the Storyboard ourselves
-if(NOT ${CMAKE_GENERATOR} MATCHES "^Xcode.*")
+if(NOT XCODE)
     # Compile the storyboard file with the ibtool.
     add_custom_command(TARGET vkcube POST_BUILD
                        COMMAND ${IBTOOL}
@@ -55,7 +55,10 @@ add_dependencies(vkcube MoltenVK_icd-staging-json)
 target_include_directories(vkcube PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${MOLTENVK_DIR}/MoltenVK/include)
 
 # We do this so vulkaninfo is linked to an individual library and NOT a framework.
-target_link_libraries(vkcube ${Vulkan_LIBRARY} "-framework Cocoa -framework QuartzCore")
+target_link_libraries(vkcube Vulkan::Loader "-framework Cocoa -framework QuartzCore")
+
+# Disable warnings about sprintf
+target_compile_options(vkcube PRIVATE -Wno-deprecated-declarations)
 
 set_target_properties(vkcube PROPERTIES MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/macOS/cube/Info.plist)
 
@@ -70,7 +73,7 @@ set_source_files_properties("${CMAKE_BINARY_DIR}/staging-json/MoltenVK_icd.json"
                             "Resources/vulkan/icd.d")
 
 # Copy the MoltenVK lib into the bundle.
-if(${CMAKE_GENERATOR} MATCHES "^Xcode.*")
+if(XCODE)
     add_custom_command(TARGET vkcube POST_BUILD
                        COMMAND ${CMAKE_COMMAND} -E copy "${MOLTENVK_DIR}/MoltenVK/dylib/macOS/libMoltenVK.dylib"
                                ${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/vkcube.app/Contents/Frameworks/libMoltenVK.dylib

@@ -58,9 +58,9 @@ endif()
 # passed to libtool.
 #
 # We set SO_FILE_VERSION = [c-a].a.r
-set(LT_CURRENT 9)
-set(LT_REVISION 1)
-set(LT_AGE 6)
+set(LT_CURRENT 10)
+set(LT_REVISION 0)
+set(LT_AGE 7)
 math(EXPR SO_VERSION "${LT_CURRENT} - ${LT_AGE}")
 set(SO_FILE_VERSION "${SO_VERSION}.${LT_AGE}.${LT_REVISION}")
 unset(LT_CURRENT)
@@ -288,9 +288,9 @@ if(BUILD_SHARED_LIBS)
   add_library(aom_static STATIC ${target_objs_aom} $<TARGET_OBJECTS:aom_rtcd>)
   set_target_properties(aom_static PROPERTIES OUTPUT_NAME aom)
   if(MSVC OR (WIN32 AND NOT MINGW))
-    # Fix race condition on the export library file between the two versions.
-    # Affects MSVC in all three flavors (stock, Clang/CL, LLVM-- the latter sets
-    # MSVC and MINGW both to FALSE).
+    # Fix race condition between the import library and the static library.
+    # Affects MSVC in all three flavors (stock, clang-cl, LLVM -- the latter
+    # sets MSVC and MINGW both to FALSE).
     set_target_properties(aom PROPERTIES ARCHIVE_OUTPUT_NAME "aom_dll")
   endif()
 
@@ -385,13 +385,6 @@ if(ENABLE_EXAMPLES OR ENABLE_TESTS OR ENABLE_TOOLS)
     add_library(aom_encoder_app_util OBJECT ${AOM_ENCODER_APP_UTIL_SOURCES})
     set_property(TARGET ${example} PROPERTY FOLDER examples)
   endif()
-endif()
-
-if((CONFIG_AV1_DECODER OR CONFIG_AV1_ENCODER) AND ENABLE_EXAMPLES)
-  add_executable(resize_util "${AOM_ROOT}/examples/resize_util.c"
-                             $<TARGET_OBJECTS:aom_common_app_util>)
-  set_property(TARGET ${example} PROPERTY FOLDER examples)
-  list(APPEND AOM_APP_TARGETS resize_util)
 endif()
 
 if(CONFIG_AV1_DECODER AND ENABLE_EXAMPLES)
@@ -946,7 +939,8 @@ endif()
 get_cmake_property(all_cmake_vars VARIABLES)
 foreach(var ${all_cmake_vars})
   if("${var}" MATCHES "SOURCES$\|_INTRIN_\|_ASM_"
-     AND NOT "${var}" MATCHES "DOXYGEN\|LIBYUV\|_PKG_\|TEST")
+     AND NOT "${var}" MATCHES "DOXYGEN\|LIBYUV\|_PKG_\|TEST"
+     AND NOT "${var}" MATCHES "_ASM_NASM\|_ASM_COMPILER_")
     list(APPEND aom_source_vars ${var})
   endif()
 endforeach()

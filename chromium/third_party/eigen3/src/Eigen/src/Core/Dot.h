@@ -10,6 +10,7 @@
 #ifndef EIGEN_DOT_H
 #define EIGEN_DOT_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen { 

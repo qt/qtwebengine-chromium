@@ -780,7 +780,7 @@ class LoaderExtensionOutputGenerator(OutputGenerator):
                 tables += 'VKAPI_ATTR void VKAPI_CALL loader_init_device_dispatch_table(struct loader_dev_dispatch_table *dev_table, PFN_vkGetDeviceProcAddr gpa,\n'
                 tables += '                                                             VkDevice dev) {\n'
                 tables += '    VkLayerDispatchTable *table = &dev_table->core_dispatch;\n'
-                tables += '    assert(table->magic == DEVICE_DISP_TABLE_MAGIC_NUMBER);\n'
+                tables += '    if (table->magic != DEVICE_DISP_TABLE_MAGIC_NUMBER) { abort(); }\n'
                 tables += '    for (uint32_t i = 0; i < MAX_NUM_UNKNOWN_EXTS; i++) dev_table->ext_dispatch[i] = (PFN_vkDevExt)vkDevExtError;\n'
 
             elif x == 1:
@@ -936,9 +936,9 @@ class LoaderExtensionOutputGenerator(OutputGenerator):
                         tables += f'    if (!strcmp(name, "{base_name}")) '
                         if cur_cmd.name in DEVICE_CMDS_MUST_USE_TRAMP:
                             if version_check != '':
-                                tables += f'{{\n{version_check}        return dev->extensions.{cur_cmd.ext_name[3:].lower()}_enabled ? (void *){base_name} : NULL;\n    }}\n'
+                                tables += f'{{\n{version_check}        return dev->layer_extensions.{cur_cmd.ext_name[3:].lower()}_enabled ? (void *){base_name} : NULL;\n    }}\n'
                             else:
-                                tables += f'return dev->extensions.{cur_cmd.ext_name[3:].lower()}_enabled ? (void *){base_name} : NULL;\n'
+                                tables += f'return dev->layer_extensions.{cur_cmd.ext_name[3:].lower()}_enabled ? (void *){base_name} : NULL;\n'
 
                         else:
                             if version_check != '':
@@ -1501,9 +1501,9 @@ class LoaderExtensionOutputGenerator(OutputGenerator):
                 term_func += f'    if (!strcmp(name, "{ext_cmd.name[2:]}")) {{\n'
                 term_func += f'        *found_name = true;\n'
                 if ext_cmd.require:
-                    term_func += f'        return dev->extensions.{ext_cmd.ext_name[3:].lower()}_enabled && dev->extensions.{ext_cmd.require[3:].lower()}_enabled ?\n'
+                    term_func += f'        return dev->driver_extensions.{ext_cmd.ext_name[3:].lower()}_enabled && dev->driver_extensions.{ext_cmd.require[3:].lower()}_enabled ?\n'
                 else:
-                    term_func += f'        return dev->extensions.{ext_cmd.ext_name[3:].lower()}_enabled ?\n'
+                    term_func += f'        return dev->driver_extensions.{ext_cmd.ext_name[3:].lower()}_enabled ?\n'
                 term_func += f'            (PFN_vkVoidFunction)terminator_{(ext_cmd.name[2:])} : NULL;\n'
                 term_func += f'    }}\n'
 
@@ -1598,10 +1598,10 @@ class LoaderExtensionOutputGenerator(OutputGenerator):
 
 
                 if ext_cmd.require:
-                    term_func += f'    if (dev->extensions.{ext_cmd.ext_name[3:].lower()}_enabled && dev->extensions.{ext_cmd.require[3:].lower()}_enabled)\n'
+                    term_func += f'    if (dev->driver_extensions.{ext_cmd.ext_name[3:].lower()}_enabled && dev->driver_extensions.{ext_cmd.require[3:].lower()}_enabled)\n'
                     term_func += f'       dispatch->{ext_cmd.name[2:]} = (PFN_{(ext_cmd.name)})gpda(dev->icd_device, "{(ext_cmd.name)}");\n'
                 else:
-                    term_func += f'    if (dev->extensions.{ext_cmd.ext_name[3:].lower()}_enabled)\n'
+                    term_func += f'    if (dev->driver_extensions.{ext_cmd.ext_name[3:].lower()}_enabled)\n'
                     term_func += f'       dispatch->{ext_cmd.name[2:]} = (PFN_{(ext_cmd.name)})gpda(dev->icd_device, "{(ext_cmd.name)}");\n'
 
         if last_protect is not None:

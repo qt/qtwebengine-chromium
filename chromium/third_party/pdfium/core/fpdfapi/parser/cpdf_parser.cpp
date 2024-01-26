@@ -66,7 +66,7 @@ CPDF_Parser::ObjectType GetObjectTypeFromCrossRefStreamType(
     case 0:
       return CPDF_Parser::ObjectType::kFree;
     case 1:
-      return CPDF_Parser::ObjectType::kNotCompressed;
+      return CPDF_Parser::ObjectType::kNormal;
     case 2:
       return CPDF_Parser::ObjectType::kCompressed;
     default:
@@ -189,12 +189,11 @@ bool CPDF_Parser::IsObjectFreeOrNull(uint32_t objnum) const {
     case ObjectType::kFree:
     case ObjectType::kNull:
       return true;
-    case ObjectType::kNotCompressed:
+    case ObjectType::kNormal:
     case ObjectType::kCompressed:
       return false;
   }
-  NOTREACHED();
-  return false;
+  NOTREACHED_NORETURN();
 }
 
 bool CPDF_Parser::IsObjectFree(uint32_t objnum) const {
@@ -575,7 +574,7 @@ bool CPDF_Parser::ParseAndAppendCrossRefSubsectionData(
         // greated than max<uint16_t>. Needs solve this issue.
         const int32_t version = FXSYS_atoi(pEntry + 11);
         info.gennum = version;
-        info.type = ObjectType::kNotCompressed;
+        info.type = ObjectType::kNormal;
       }
     }
     entries_to_read -= entries_in_block;
@@ -750,13 +749,11 @@ bool CPDF_Parser::RebuildCrossRef() {
 }
 
 bool CPDF_Parser::LoadCrossRefV5(FX_FILESIZE* pos, bool bMainXRef) {
-  RetainPtr<CPDF_Object> pObject(ParseIndirectObjectAt(*pos, 0));
-  if (!pObject || !pObject->GetObjNum())
+  RetainPtr<const CPDF_Stream> pStream =
+      ToStream(ParseIndirectObjectAt(*pos, 0));
+  if (!pStream || !pStream->GetObjNum()) {
     return false;
-
-  RetainPtr<const CPDF_Stream> pStream(pObject->AsStream());
-  if (!pStream)
-    return false;
+  }
 
   RetainPtr<const CPDF_Dictionary> pDict = pStream->GetDict();
   int32_t prev = pDict->GetIntegerFor("Prev");
@@ -769,16 +766,15 @@ bool CPDF_Parser::LoadCrossRefV5(FX_FILESIZE* pos, bool bMainXRef) {
 
   *pos = prev;
 
-  RetainPtr<CPDF_Dictionary> pNewTrailer = ToDictionary(pDict->Clone());
+  auto new_cross_ref_table = std::make_unique<CPDF_CrossRefTable>(
+      /*trailer=*/ToDictionary(pDict->Clone()),
+      /*trailer_object_number=*/pStream->GetObjNum());
   if (bMainXRef) {
-    m_CrossRefTable = std::make_unique<CPDF_CrossRefTable>(
-        std::move(pNewTrailer), pStream->GetObjNum());
+    m_CrossRefTable = std::move(new_cross_ref_table);
     m_CrossRefTable->SetObjectMapSize(size);
   } else {
     m_CrossRefTable = CPDF_CrossRefTable::MergeUp(
-        std::make_unique<CPDF_CrossRefTable>(std::move(pNewTrailer),
-                                             pStream->GetObjNum()),
-        std::move(m_CrossRefTable));
+        std::move(new_cross_ref_table), std::move(m_CrossRefTable));
   }
 
   std::vector<CrossRefV5IndexEntry> indices =
@@ -796,7 +792,7 @@ bool CPDF_Parser::LoadCrossRefV5(FX_FILESIZE* pos, bool bMainXRef) {
     return false;
 
   uint32_t total_width = dwAccWidth.ValueOrDie();
-  auto pAcc = pdfium::MakeRetain<CPDF_StreamAcc>(std::move(pStream));
+  auto pAcc = pdfium::MakeRetain<CPDF_StreamAcc>(pStream);
   pAcc->LoadAllDataFiltered();
 
   pdfium::span<const uint8_t> data_span = pAcc->GetSpan();
@@ -863,7 +859,7 @@ void CPDF_Parser::ProcessCrossRefV5Entry(
     // Per ISO 32000-1:2008 table 17, use the default value of 1 for the xref
     // stream entry when it is not specified. The `type` assignment is the
     // equivalent to calling GetObjectTypeFromCrossRefStreamType(1).
-    type = ObjectType::kNotCompressed;
+    type = ObjectType::kNormal;
   }
 
   const ObjectType existing_type = GetObjectType(obj_num);
@@ -882,7 +878,7 @@ void CPDF_Parser::ProcessCrossRefV5Entry(
     return;
   }
 
-  if (type == ObjectType::kNotCompressed) {
+  if (type == ObjectType::kNormal) {
     const uint32_t offset = GetSecondXRefStreamEntry(entry_span, field_widths);
     if (pdfium::base::IsValueInRangeForNumericType<FX_FILESIZE>(offset))
       m_CrossRefTable->AddNormal(obj_num, 0, offset);
@@ -977,7 +973,7 @@ RetainPtr<CPDF_Object> CPDF_Parser::ParseIndirectObject(uint32_t objnum) {
     return nullptr;
 
   ScopedSetInsertion<uint32_t> local_insert(&m_ParsingObjNums, objnum);
-  if (GetObjectType(objnum) == ObjectType::kNotCompressed) {
+  if (GetObjectType(objnum) == ObjectType::kNormal) {
     FX_FILESIZE pos = GetObjectPositionOrZero(objnum);
     if (pos <= 0)
       return nullptr;
@@ -1069,8 +1065,10 @@ RetainPtr<CPDF_Dictionary> CPDF_Parser::LoadTrailerV4() {
   return ToDictionary(m_pSyntax->GetObjectBody(m_pObjectsHolder));
 }
 
-uint32_t CPDF_Parser::GetPermissions() const {
-  return m_pSecurityHandler ? m_pSecurityHandler->GetPermissions() : 0xFFFFFFFF;
+uint32_t CPDF_Parser::GetPermissions(bool get_owner_perms) const {
+  return m_pSecurityHandler
+             ? m_pSecurityHandler->GetPermissions(get_owner_perms)
+             : 0xFFFFFFFF;
 }
 
 std::unique_ptr<CPDF_LinearizedHeader> CPDF_Parser::ParseLinearizedHeader() {

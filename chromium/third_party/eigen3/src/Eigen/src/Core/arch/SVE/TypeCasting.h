@@ -10,6 +10,7 @@
 #ifndef EIGEN_TYPE_CASTING_SVE_H
 #define EIGEN_TYPE_CASTING_SVE_H
 
+// IWYU pragma: private
 #include "../../InternalHeaderCheck.h"
 
 namespace Eigen {

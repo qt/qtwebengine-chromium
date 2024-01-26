@@ -300,8 +300,7 @@ export class DebuggerModel extends SDKModel<EventTypes> {
   }
 
   private registerDebugger(response: Protocol.Debugger.EnableResponse): void {
-    if (response.getError() || response.debuggerId === undefined) {
-      this.#debuggerEnabledInternal = false;
+    if (response.getError()) {
       return;
     }
     const {debuggerId} = response;
@@ -1516,6 +1515,13 @@ export interface SetBreakpointResult {
 
 interface PausedOnInstrumentationData {
   scriptId: Protocol.Runtime.ScriptId;
+}
+
+export interface EventListenerPausedDetailsAuxData {
+  eventName: string;
+  targetName?: string;
+  webglErrorName?: string;
+  directiveText?: string;
 }
 
 export const enum BreakpointType {

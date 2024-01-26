@@ -18,6 +18,7 @@
   #define EIGEN_INTERNAL_DENSE_STORAGE_CTOR_PLUGIN(X)
 #endif
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

@@ -29,12 +29,9 @@ std::vector<VkPushConstantRange> const *StageCreateInfo::GetPushConstantRanges()
     return shader_object_const_ranges.get();
 }
 
-StageCreateInfo::StageCreateInfo(vvl::Func command, const PIPELINE_STATE *pipeline)
-    : command(command), create_index(pipeline->create_index), pipeline(pipeline) {}
-StageCreateInfo::StageCreateInfo(vvl::Func command, uint32_t create_index, const VkShaderCreateInfoEXT &create_info)
-    : command(command),
-      create_index(create_index),
-      pipeline(nullptr),
+StageCreateInfo::StageCreateInfo(const PIPELINE_STATE *pipeline) : pipeline(pipeline) {}
+StageCreateInfo::StageCreateInfo(const VkShaderCreateInfoEXT &create_info)
+    : pipeline(nullptr),
       shader_object_const_ranges(GetCanonicalId(create_info.pushConstantRangeCount, create_info.pPushConstantRanges)) {}
 
 // static
@@ -57,7 +54,7 @@ StageStateVec PIPELINE_STATE::GetStageStates(const ValidationStateTracker &state
                 if (!module_state || !module_state->spirv) {
                     // If module is null and there is a VkShaderModuleCreateInfo in the pNext chain of the stage info, then this
                     // module is part of a library and the state must be created
-                    const auto shader_ci = LvlFindInChain<VkShaderModuleCreateInfo>(stage_ci.pNext);
+                    const auto shader_ci = vku::FindStructInPNextChain<VkShaderModuleCreateInfo>(stage_ci.pNext);
                     const uint32_t unique_shader_id = (csm_states) ? (*csm_states)[stage].unique_shader_id : 0;
                     if (shader_ci) {
                         // don't need to worry about GroupDecoration in GPL
@@ -325,7 +322,7 @@ static CBDynamicFlags GetGraphicsDynamicState(PIPELINE_STATE &pipe_state) {
 
 static bool UsesPipelineRobustness(const void *pNext, const PIPELINE_STATE &pipe_state) {
     bool result = false;
-    const auto robustness_info = LvlFindInChain<VkPipelineRobustnessCreateInfoEXT>(pNext);
+    const auto robustness_info = vku::FindStructInPNextChain<VkPipelineRobustnessCreateInfoEXT>(pNext);
     if (!robustness_info) {
         return false;
     }
@@ -335,7 +332,7 @@ static bool UsesPipelineRobustness(const void *pNext, const PIPELINE_STATE &pipe
               (robustness_info->uniformBuffers == VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_ROBUST_BUFFER_ACCESS_EXT);
     if (!result) {
         for (const auto &stage_ci : pipe_state.shader_stages_ci) {
-            const auto stage_robustness_info = LvlFindInChain<VkPipelineRobustnessCreateInfoEXT>(stage_ci.pNext);
+            const auto stage_robustness_info = vku::FindStructInPNextChain<VkPipelineRobustnessCreateInfoEXT>(stage_ci.pNext);
             if (stage_robustness_info) {
                 result |=
                     (stage_robustness_info->storageBuffers == VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_ROBUST_BUFFER_ACCESS_2_EXT) ||
@@ -372,7 +369,7 @@ static bool IgnoreColorAttachments(const ValidationStateTracker *state_data, PIP
 
 static bool UsesShaderModuleId(const PIPELINE_STATE &pipe_state) {
     for (const auto &stage_ci : pipe_state.shader_stages_ci) {
-        const auto module_id_info = LvlFindInChain<VkPipelineShaderStageModuleIdentifierCreateInfoEXT>(stage_ci.pNext);
+        const auto module_id_info = vku::FindStructInPNextChain<VkPipelineShaderStageModuleIdentifierCreateInfoEXT>(stage_ci.pNext);
         if (module_id_info && (module_id_info->identifierSize > 0)) {
             return true;
         }
@@ -386,7 +383,7 @@ static vvl::unordered_set<uint32_t> GetFSOutputLocations(const StageStateVec &st
         if (!stage_state.entrypoint) {
             continue;
         }
-        if (stage_state.getStage() == VK_SHADER_STAGE_FRAGMENT_BIT) {
+        if (stage_state.GetStage() == VK_SHADER_STAGE_FRAGMENT_BIT) {
             for (const auto *variable : stage_state.entrypoint->user_defined_interface_variables) {
                 if ((variable->storage_class != spv::StorageClassOutput) || variable->interface_slots.empty()) {
                     continue;  // not an output interface
@@ -656,14 +653,13 @@ std::shared_ptr<const SHADER_MODULE_STATE> PIPELINE_STATE::GetSubStateShader(VkS
 }
 
 PIPELINE_STATE::PIPELINE_STATE(const ValidationStateTracker *state_data, const VkGraphicsPipelineCreateInfo *pCreateInfo,
-                               uint32_t create_index, std::shared_ptr<const RENDER_PASS_STATE> &&rpstate,
+                               std::shared_ptr<const RENDER_PASS_STATE> &&rpstate,
                                std::shared_ptr<const PIPELINE_LAYOUT_STATE> &&layout, CreateShaderModuleStates *csm_states)
     : BASE_NODE(static_cast<VkPipeline>(VK_NULL_HANDLE), kVulkanObjectTypePipeline),
       rp_state(rpstate),
       create_info(*pCreateInfo, rpstate, state_data),
-      create_index(create_index),
-      rendering_create_info(LvlFindInChain<VkPipelineRenderingCreateInfo>(PNext())),
-      library_create_info(LvlFindInChain<VkPipelineLibraryCreateInfoKHR>(PNext())),
+      rendering_create_info(vku::FindStructInPNextChain<VkPipelineRenderingCreateInfo>(PNext())),
+      library_create_info(vku::FindStructInPNextChain<VkPipelineLibraryCreateInfoKHR>(PNext())),
       graphics_lib_type(GetGraphicsLibType(create_info.graphics)),
       pipeline_type(VK_PIPELINE_BIND_POINT_GRAPHICS),
       create_flags(create_info.graphics.flags),
@@ -712,11 +708,9 @@ PIPELINE_STATE::PIPELINE_STATE(const ValidationStateTracker *state_data, const V
 }
 
 PIPELINE_STATE::PIPELINE_STATE(const ValidationStateTracker *state_data, const VkComputePipelineCreateInfo *pCreateInfo,
-                               uint32_t create_index, std::shared_ptr<const PIPELINE_LAYOUT_STATE> &&layout,
-                               CreateShaderModuleStates *csm_states)
+                               std::shared_ptr<const PIPELINE_LAYOUT_STATE> &&layout, CreateShaderModuleStates *csm_states)
     : BASE_NODE(static_cast<VkPipeline>(VK_NULL_HANDLE), kVulkanObjectTypePipeline),
       create_info(pCreateInfo),
-      create_index(create_index),
       pipeline_type(VK_PIPELINE_BIND_POINT_COMPUTE),
       create_flags(create_info.compute.flags),
       shader_stages_ci(&create_info.compute.stage, 1),
@@ -736,11 +730,9 @@ PIPELINE_STATE::PIPELINE_STATE(const ValidationStateTracker *state_data, const V
 }
 
 PIPELINE_STATE::PIPELINE_STATE(const ValidationStateTracker *state_data, const VkRayTracingPipelineCreateInfoKHR *pCreateInfo,
-                               uint32_t create_index, std::shared_ptr<const PIPELINE_LAYOUT_STATE> &&layout,
-                               CreateShaderModuleStates *csm_states)
+                               std::shared_ptr<const PIPELINE_LAYOUT_STATE> &&layout, CreateShaderModuleStates *csm_states)
     : BASE_NODE(static_cast<VkPipeline>(VK_NULL_HANDLE), kVulkanObjectTypePipeline),
       create_info(pCreateInfo),
-      create_index(create_index),
       pipeline_type(VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR),
       create_flags(create_info.raytracing.flags),
       shader_stages_ci(create_info.raytracing.pStages, create_info.raytracing.stageCount),
@@ -763,11 +755,9 @@ PIPELINE_STATE::PIPELINE_STATE(const ValidationStateTracker *state_data, const V
 }
 
 PIPELINE_STATE::PIPELINE_STATE(const ValidationStateTracker *state_data, const VkRayTracingPipelineCreateInfoNV *pCreateInfo,
-                               uint32_t create_index, std::shared_ptr<const PIPELINE_LAYOUT_STATE> &&layout,
-                               CreateShaderModuleStates *csm_states)
+                               std::shared_ptr<const PIPELINE_LAYOUT_STATE> &&layout, CreateShaderModuleStates *csm_states)
     : BASE_NODE(static_cast<VkPipeline>(VK_NULL_HANDLE), kVulkanObjectTypePipeline),
       create_info(pCreateInfo),
-      create_index(create_index),
       pipeline_type(VK_PIPELINE_BIND_POINT_RAY_TRACING_NV),
       create_flags(create_info.raytracing.flags),
       shader_stages_ci(create_info.raytracing.pStages, create_info.raytracing.stageCount),
@@ -814,8 +804,25 @@ void LAST_BOUND_STATE::Reset() {
 }
 
 bool LAST_BOUND_STATE::IsDepthTestEnable() const {
-    return pipeline_state->IsDynamic(VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE) ? cb_state.dynamic_state_value.depth_test_enable
-                                                                         : pipeline_state->DepthStencilState()->depthTestEnable;
+    if (pipeline_state->IsDynamic(VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE)) {
+        return cb_state.dynamic_state_value.depth_test_enable;
+    } else {
+        if (pipeline_state->DepthStencilState()) {
+            return pipeline_state->DepthStencilState()->depthTestEnable;
+        }
+    }
+    return false;
+}
+
+bool LAST_BOUND_STATE::IsDepthBoundTestEnable() const {
+    if (pipeline_state->IsDynamic(VK_DYNAMIC_STATE_DEPTH_BOUNDS_TEST_ENABLE)) {
+        return cb_state.dynamic_state_value.depth_bounds_test_enable;
+    } else {
+        if (pipeline_state->DepthStencilState()) {
+            return pipeline_state->DepthStencilState()->depthBoundsTestEnable;
+        }
+    }
+    return false;
 }
 
 bool LAST_BOUND_STATE::IsDepthWriteEnable() const {
@@ -828,8 +835,14 @@ bool LAST_BOUND_STATE::IsDepthWriteEnable() const {
 }
 
 bool LAST_BOUND_STATE::IsStencilTestEnable() const {
-    return pipeline_state->IsDynamic(VK_DYNAMIC_STATE_STENCIL_TEST_ENABLE) ? cb_state.dynamic_state_value.stencil_test_enable
-                                                                           : pipeline_state->DepthStencilState()->stencilTestEnable;
+    if (pipeline_state->IsDynamic(VK_DYNAMIC_STATE_STENCIL_TEST_ENABLE)) {
+        return cb_state.dynamic_state_value.stencil_test_enable;
+    } else {
+        if (pipeline_state->DepthStencilState()) {
+            return pipeline_state->DepthStencilState()->stencilTestEnable;
+        }
+    }
+    return false;
 }
 
 VkStencilOpState LAST_BOUND_STATE::GetStencilOpStateFront() const {
@@ -878,6 +891,34 @@ bool LAST_BOUND_STATE::IsRasterizationDisabled() const {
                : pipeline_state->RasterizationDisabled();
 }
 
+VkColorComponentFlags LAST_BOUND_STATE::GetColorWriteMask(uint32_t i) const {
+    if (pipeline_state->IsDynamic(VK_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT)) {
+        if (i < cb_state.dynamic_state_value.color_write_masks.size()) {
+            return cb_state.dynamic_state_value.color_write_masks[i];
+        }
+    } else {
+        if (pipeline_state->ColorBlendState() && i < pipeline_state->ColorBlendState()->attachmentCount) {
+            return pipeline_state->ColorBlendState()->pAttachments[i].colorWriteMask;
+        }
+    }
+    return (VkColorComponentFlags)0u;
+}
+
+bool LAST_BOUND_STATE::IsColorWriteEnabled(uint32_t i) const {
+    if (pipeline_state->IsDynamic(VK_DYNAMIC_STATE_COLOR_WRITE_ENABLE_EXT)) {
+        return cb_state.dynamic_state_value.color_write_enabled[i];
+    } else {
+        if (pipeline_state->ColorBlendState()) {
+            auto color_write =
+                vku::FindStructInPNextChain<VkPipelineColorWriteCreateInfoEXT>(pipeline_state->ColorBlendState()->pNext);
+            if (color_write && i < color_write->attachmentCount) {
+                return color_write->pColorWriteEnables[i];
+            }
+        }
+    }
+    return true;
+}
+
 bool LAST_BOUND_STATE::ValidShaderObjectCombination(const VkPipelineBindPoint bind_point,
                                                     const DeviceFeatures &device_features) const {
     if (bind_point == VK_PIPELINE_BIND_POINT_COMPUTE) {
@@ -886,22 +927,15 @@ bool LAST_BOUND_STATE::ValidShaderObjectCombination(const VkPipelineBindPoint bi
             return false;
     } else {
         if (!IsValidShaderOrNullBound(ShaderObjectStage::VERTEX)) return false;
-        if (device_features.core.tessellationShader &&
-            !IsValidShaderOrNullBound(ShaderObjectStage::TESSELLATION_CONTROL))
+        if (device_features.tessellationShader && !IsValidShaderOrNullBound(ShaderObjectStage::TESSELLATION_CONTROL)) return false;
+        if (device_features.tessellationShader && !IsValidShaderOrNullBound(ShaderObjectStage::TESSELLATION_EVALUATION))
             return false;
-        if (device_features.core.tessellationShader &&
-            !IsValidShaderOrNullBound(ShaderObjectStage::TESSELLATION_EVALUATION))
-            return false;
-        if (device_features.core.geometryShader && !IsValidShaderOrNullBound(ShaderObjectStage::GEOMETRY))
-            return false;
+        if (device_features.geometryShader && !IsValidShaderOrNullBound(ShaderObjectStage::GEOMETRY)) return false;
         if (!IsValidShaderOrNullBound(ShaderObjectStage::FRAGMENT)) return false;
-        if (device_features.mesh_shader_features.taskShader && !IsValidShaderOrNullBound(ShaderObjectStage::TASK))
-            return false;
-        if (device_features.mesh_shader_features.meshShader && !IsValidShaderOrNullBound(ShaderObjectStage::MESH))
-            return false;
+        if (device_features.taskShader && !IsValidShaderOrNullBound(ShaderObjectStage::TASK)) return false;
+        if (device_features.meshShader && !IsValidShaderOrNullBound(ShaderObjectStage::MESH)) return false;
         if (GetShader(ShaderObjectStage::VERTEX) == VK_NULL_HANDLE &&
-            (!device_features.mesh_shader_features.meshShader ||
-             GetShader(ShaderObjectStage::MESH) == VK_NULL_HANDLE))
+            (!device_features.meshShader || GetShader(ShaderObjectStage::MESH) == VK_NULL_HANDLE))
             return false;
     }
     return true;

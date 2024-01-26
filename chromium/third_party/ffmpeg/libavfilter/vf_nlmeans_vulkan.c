@@ -23,6 +23,7 @@
 #include "vulkan_filter.h"
 #include "vulkan_spirv.h"
 #include "internal.h"
+#include "video.h"
 
 #define TYPE_NAME  "vec4"
 #define TYPE_ELEMS 4
@@ -423,8 +424,6 @@ static av_cold int init_weights_pipeline(FFVulkanContext *vkctx, FFVkExecPool *e
     RET(ff_vk_init_compute_pipeline(vkctx, pl, shd));
     RET(ff_vk_exec_pipeline_register(vkctx, exec, pl));
 
-    return 0;
-
 fail:
     if (spv_opaque)
         spv->free_shader(spv, &spv_opaque);
@@ -569,8 +568,6 @@ static av_cold int init_denoise_pipeline(FFVulkanContext *vkctx, FFVkExecPool *e
     RET(ff_vk_init_compute_pipeline(vkctx, pl, shd));
     RET(ff_vk_exec_pipeline_register(vkctx, exec, pl));
 
-    return 0;
-
 fail:
     if (spv_opaque)
         spv->free_shader(spv, &spv_opaque);
@@ -669,8 +666,6 @@ static av_cold int init_filter(AVFilterContext *ctx)
            s->nb_offsets, (FFALIGN(s->nb_offsets, TYPE_ELEMS) / TYPE_ELEMS) + 1, s->opts.t);
 
     s->initialized = 1;
-
-    return 0;
 
 fail:
     if (spv)
@@ -1063,6 +1058,9 @@ static void nlmeans_vulkan_uninit(AVFilterContext *avctx)
                            vkctx->hwctx->alloc);
 
     ff_vk_uninit(&s->vkctx);
+
+    av_freep(&s->xoffsets);
+    av_freep(&s->yoffsets);
 
     s->initialized = 0;
 }

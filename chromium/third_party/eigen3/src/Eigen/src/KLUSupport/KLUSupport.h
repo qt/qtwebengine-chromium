@@ -10,6 +10,7 @@
 #ifndef EIGEN_KLUSUPPORT_H
 #define EIGEN_KLUSUPPORT_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

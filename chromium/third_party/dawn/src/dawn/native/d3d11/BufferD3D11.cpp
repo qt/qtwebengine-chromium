@@ -1,16 +1,29 @@
-// Copyright 2023 The Dawn Authors
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/d3d11/BufferD3D11.h"
 
@@ -198,7 +211,7 @@ MaybeError Buffer::Initialize(bool mappedAtCreation) {
             "ID3D11Device::CreateBuffer"));
     }
 
-    ASSERT(mD3d11NonConstantBuffer || mD3d11ConstantBuffer);
+    DAWN_ASSERT(mD3d11NonConstantBuffer || mD3d11ConstantBuffer);
 
     SetLabelImpl();
 
@@ -239,9 +252,9 @@ MaybeError Buffer::MapInternal() {
     // TODO(dawn:1705): investigate the performance impact of mapping with D3D11_MAP_READ_WRITE.
     D3D11_MAPPED_SUBRESOURCE mappedResource;
     DAWN_TRY(CheckHRESULT(
-        commandContext->GetD3D11DeviceContext()->Map(mD3d11NonConstantBuffer.Get(),
-                                                     /*Subresource=*/0, D3D11_MAP_READ_WRITE,
-                                                     /*MapFlags=*/0, &mappedResource),
+        commandContext->GetD3D11DeviceContext4()->Map(mD3d11NonConstantBuffer.Get(),
+                                                      /*Subresource=*/0, D3D11_MAP_READ_WRITE,
+                                                      /*MapFlags=*/0, &mappedResource),
         "ID3D11DeviceContext::Map"));
     mMappedData = reinterpret_cast<uint8_t*>(mappedResource.pData);
 
@@ -252,8 +265,8 @@ void Buffer::UnmapInternal() {
     DAWN_ASSERT(mMappedData);
 
     CommandRecordingContext* commandContext = ToBackend(GetDevice())->GetPendingCommandContext();
-    commandContext->GetD3D11DeviceContext()->Unmap(mD3d11NonConstantBuffer.Get(),
-                                                   /*Subresource=*/0);
+    commandContext->GetD3D11DeviceContext4()->Unmap(mD3d11NonConstantBuffer.Get(),
+                                                    /*Subresource=*/0);
     mMappedData = nullptr;
 }
 
@@ -287,6 +300,13 @@ void* Buffer::GetMappedPointer() {
 }
 
 void Buffer::DestroyImpl() {
+    // TODO(crbug.com/dawn/831): DestroyImpl is called from two places.
+    // - It may be called if the buffer is explicitly destroyed with APIDestroy.
+    //   This case is NOT thread-safe and needs proper synchronization with other
+    //   simultaneous uses of the buffer.
+    // - It may be called when the last ref to the buffer is dropped and the buffer
+    //   is implicitly destroyed. This case is thread-safe because there are no
+    //   other threads using the buffer since there are no other live refs.
     BufferBase::DestroyImpl();
     if (mMappedData) {
         UnmapInternal();
@@ -361,7 +381,7 @@ void Buffer::EnsureConstantBufferIsUpdated(CommandRecordingContext* commandConte
 
     DAWN_ASSERT(mD3d11NonConstantBuffer);
     DAWN_ASSERT(mD3d11ConstantBuffer);
-    commandContext->GetD3D11DeviceContext1()->CopyResource(mD3d11ConstantBuffer.Get(),
+    commandContext->GetD3D11DeviceContext4()->CopyResource(mD3d11ConstantBuffer.Get(),
                                                            mD3d11NonConstantBuffer.Get());
     mConstantBufferIsUpdated = true;
 }
@@ -447,7 +467,7 @@ MaybeError Buffer::ClearInternal(CommandRecordingContext* commandContext,
     if (mMappedData) {
         memset(mMappedData + offset, clearValue, size);
         // The WebGPU uniform buffer is not mappable.
-        ASSERT(!mD3d11ConstantBuffer);
+        DAWN_ASSERT(!mD3d11ConstantBuffer);
         return {};
     }
 
@@ -489,14 +509,14 @@ MaybeError Buffer::WriteInternal(CommandRecordingContext* commandContext,
     if (scopedMap.GetMappedData()) {
         memcpy(scopedMap.GetMappedData() + offset, data, size);
         // The WebGPU uniform buffer is not mappable.
-        ASSERT(!mD3d11ConstantBuffer);
+        DAWN_ASSERT(!mD3d11ConstantBuffer);
         return {};
     }
 
     // UpdateSubresource can only be used to update non-mappable buffers.
     DAWN_ASSERT(!IsMappable(GetUsage()));
 
-    ID3D11DeviceContext1* d3d11DeviceContext1 = commandContext->GetD3D11DeviceContext1();
+    auto* d3d11DeviceContext = commandContext->GetD3D11DeviceContext4();
 
     if (mD3d11NonConstantBuffer) {
         D3D11_BOX box;
@@ -506,10 +526,10 @@ MaybeError Buffer::WriteInternal(CommandRecordingContext* commandContext,
         box.bottom = 1;
         box.front = 0;
         box.back = 1;
-        d3d11DeviceContext1->UpdateSubresource(mD3d11NonConstantBuffer.Get(), /*DstSubresource=*/0,
-                                               &box, data,
-                                               /*SrcRowPitch=*/0,
-                                               /*SrcDepthPitch*/ 0);
+        d3d11DeviceContext->UpdateSubresource(mD3d11NonConstantBuffer.Get(), /*DstSubresource=*/0,
+                                              &box, data,
+                                              /*SrcRowPitch=*/0,
+                                              /*SrcDepthPitch*/ 0);
         if (!mD3d11ConstantBuffer) {
             return {};
         }
@@ -521,7 +541,7 @@ MaybeError Buffer::WriteInternal(CommandRecordingContext* commandContext,
         }
 
         // Copy the modified part of the mD3d11NonConstantBuffer to mD3d11ConstantBuffer.
-        d3d11DeviceContext1->CopySubresourceRegion(
+        d3d11DeviceContext->CopySubresourceRegion(
             mD3d11ConstantBuffer.Get(), /*DstSubresource=*/0, /*DstX=*/offset,
             /*DstY=*/0,
             /*DstZ=*/0, mD3d11NonConstantBuffer.Get(), /*SrcSubresource=*/0, &box);
@@ -529,11 +549,28 @@ MaybeError Buffer::WriteInternal(CommandRecordingContext* commandContext,
         return {};
     }
 
-    ASSERT(mD3d11ConstantBuffer);
+    DAWN_ASSERT(mD3d11ConstantBuffer);
+
+    // For a full size write, UpdateSubresource() can be used to update mD3d11ConstantBuffer.
+    if (size == GetSize() && offset == 0) {
+        if (size == mAllocatedSize) {
+            d3d11DeviceContext->UpdateSubresource(mD3d11ConstantBuffer.Get(), /*DstSubresource=*/0,
+                                                  nullptr, data,
+                                                  /*SrcRowPitch=*/size,
+                                                  /*SrcDepthPitch*/ 0);
+        } else {
+            std::vector<uint8_t> allocatedData(mAllocatedSize, 0);
+            std::memcpy(allocatedData.data(), data, size);
+            d3d11DeviceContext->UpdateSubresource(mD3d11ConstantBuffer.Get(), /*DstSubresource=*/0,
+                                                  nullptr, allocatedData.data(),
+                                                  /*SrcRowPitch=*/mAllocatedSize,
+                                                  /*SrcDepthPitch*/ 0);
+        }
+        return {};
+    }
 
     // If the mD3d11NonConstantBuffer is null, we have to create a staging buffer for transfer the
-    // data to mD3d11ConstantBuffer, since UpdateSubresource() has many restrictions. For example,
-    // the size of the data has to be a multiple of 16, etc
+    // data to mD3d11ConstantBuffer.
     BufferDescriptor descriptor;
     descriptor.usage = wgpu::BufferUsage::MapWrite | wgpu::BufferUsage::CopySrc;
     descriptor.size = Align(size, D3D11BufferSizeAlignment(descriptor.usage));
@@ -580,10 +617,10 @@ MaybeError Buffer::CopyInternal(CommandRecordingContext* commandContext,
     ID3D11Buffer* d3d11SourceBuffer = source->mD3d11NonConstantBuffer
                                           ? source->mD3d11NonConstantBuffer.Get()
                                           : source->mD3d11ConstantBuffer.Get();
-    ASSERT(d3d11SourceBuffer);
+    DAWN_ASSERT(d3d11SourceBuffer);
 
     if (destination->mD3d11NonConstantBuffer) {
-        commandContext->GetD3D11DeviceContext()->CopySubresourceRegion(
+        commandContext->GetD3D11DeviceContext4()->CopySubresourceRegion(
             destination->mD3d11NonConstantBuffer.Get(), /*DstSubresource=*/0,
             /*DstX=*/destinationOffset,
             /*DstY=*/0,
@@ -597,7 +634,7 @@ MaybeError Buffer::CopyInternal(CommandRecordingContext* commandContext,
     }
 
     if (destination->mD3d11ConstantBuffer) {
-        commandContext->GetD3D11DeviceContext()->CopySubresourceRegion(
+        commandContext->GetD3D11DeviceContext4()->CopySubresourceRegion(
             destination->mD3d11ConstantBuffer.Get(), /*DstSubresource=*/0,
             /*DstX=*/destinationOffset,
             /*DstY=*/0,

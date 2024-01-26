@@ -31,15 +31,15 @@
 // All information related to each SPIR-V opcode instruction
 struct InstructionInfo {
     const char* name;
-    bool has_type; // always operand 0 if present
-    bool has_result; // always operand 1 if present
+    bool has_type;    // always operand 0 if present
+    bool has_result;  // always operand 1 if present
 
-    uint32_t memory_scope_position; // operand ID position or zero if not present
-    uint32_t execution_scope_position; // operand ID position or zero if not present
-    uint32_t image_operands_position; // operand ID position or zero if not present
+    uint32_t memory_scope_position;     // operand ID position or zero if not present
+    uint32_t execution_scope_position;  // operand ID position or zero if not present
+    uint32_t image_operands_position;   // operand ID position or zero if not present
 
-    uint32_t image_access_operands_position; // operand ID position or zero if not present
-    uint32_t sampled_image_access_operands_position; // operand ID position or zero if not present
+    uint32_t image_access_operands_position;          // operand ID position or zero if not present
+    uint32_t sampled_image_access_operands_position;  // operand ID position or zero if not present
 };
 
 // Static table to replace having many large switch statement functions for looking up each part
@@ -421,6 +421,8 @@ static const vvl::unordered_map<uint32_t, InstructionInfo> kInstructionTable {
     {spv::OpSetMeshOutputsEXT, {"OpSetMeshOutputsEXT", false, false, 0, 0, 0, 0, 0}},
     {spv::OpGroupNonUniformPartitionNV, {"OpGroupNonUniformPartitionNV", true, true, 0, 0, 0, 0, 0}},
     {spv::OpWritePackedPrimitiveIndices4x8NV, {"OpWritePackedPrimitiveIndices4x8NV", false, false, 0, 0, 0, 0, 0}},
+    {spv::OpFetchMicroTriangleVertexPositionNV, {"OpFetchMicroTriangleVertexPositionNV", true, true, 0, 0, 0, 0, 0}},
+    {spv::OpFetchMicroTriangleVertexBarycentricNV, {"OpFetchMicroTriangleVertexBarycentricNV", true, true, 0, 0, 0, 0, 0}},
     {spv::OpReportIntersectionKHR, {"OpReportIntersectionKHR", true, true, 0, 0, 0, 0, 0}},
     {spv::OpIgnoreIntersectionNV, {"OpIgnoreIntersectionNV", false, false, 0, 0, 0, 0, 0}},
     {spv::OpTerminateRayNV, {"OpTerminateRayNV", false, false, 0, 0, 0, 0, 0}},
@@ -783,7 +785,7 @@ const char* string_SpvOpcode(uint32_t opcode) {
 }
 
 const char* string_SpvStorageClass(uint32_t storage_class) {
-    switch(storage_class) {
+    switch (storage_class) {
         case spv::StorageClassUniformConstant:
             return "UniformConstant";
         case spv::StorageClassInput:
@@ -847,7 +849,7 @@ const char* string_SpvStorageClass(uint32_t storage_class) {
 }
 
 const char* string_SpvExecutionModel(uint32_t execution_model) {
-    switch(execution_model) {
+    switch (execution_model) {
         case spv::ExecutionModelVertex:
             return "Vertex";
         case spv::ExecutionModelTessellationControl:
@@ -888,8 +890,186 @@ const char* string_SpvExecutionModel(uint32_t execution_model) {
     }
 }
 
+const char* string_SpvExecutionMode(uint32_t execution_mode) {
+    switch (execution_mode) {
+        case spv::ExecutionModeInvocations:
+            return "Invocations";
+        case spv::ExecutionModeSpacingEqual:
+            return "SpacingEqual";
+        case spv::ExecutionModeSpacingFractionalEven:
+            return "SpacingFractionalEven";
+        case spv::ExecutionModeSpacingFractionalOdd:
+            return "SpacingFractionalOdd";
+        case spv::ExecutionModeVertexOrderCw:
+            return "VertexOrderCw";
+        case spv::ExecutionModeVertexOrderCcw:
+            return "VertexOrderCcw";
+        case spv::ExecutionModePixelCenterInteger:
+            return "PixelCenterInteger";
+        case spv::ExecutionModeOriginUpperLeft:
+            return "OriginUpperLeft";
+        case spv::ExecutionModeOriginLowerLeft:
+            return "OriginLowerLeft";
+        case spv::ExecutionModeEarlyFragmentTests:
+            return "EarlyFragmentTests";
+        case spv::ExecutionModePointMode:
+            return "PointMode";
+        case spv::ExecutionModeXfb:
+            return "Xfb";
+        case spv::ExecutionModeDepthReplacing:
+            return "DepthReplacing";
+        case spv::ExecutionModeDepthGreater:
+            return "DepthGreater";
+        case spv::ExecutionModeDepthLess:
+            return "DepthLess";
+        case spv::ExecutionModeDepthUnchanged:
+            return "DepthUnchanged";
+        case spv::ExecutionModeLocalSize:
+            return "LocalSize";
+        case spv::ExecutionModeLocalSizeHint:
+            return "LocalSizeHint";
+        case spv::ExecutionModeInputPoints:
+            return "InputPoints";
+        case spv::ExecutionModeInputLines:
+            return "InputLines";
+        case spv::ExecutionModeInputLinesAdjacency:
+            return "InputLinesAdjacency";
+        case spv::ExecutionModeTriangles:
+            return "Triangles";
+        case spv::ExecutionModeInputTrianglesAdjacency:
+            return "InputTrianglesAdjacency";
+        case spv::ExecutionModeQuads:
+            return "Quads";
+        case spv::ExecutionModeIsolines:
+            return "Isolines";
+        case spv::ExecutionModeOutputVertices:
+            return "OutputVertices";
+        case spv::ExecutionModeOutputPoints:
+            return "OutputPoints";
+        case spv::ExecutionModeOutputLineStrip:
+            return "OutputLineStrip";
+        case spv::ExecutionModeOutputTriangleStrip:
+            return "OutputTriangleStrip";
+        case spv::ExecutionModeVecTypeHint:
+            return "VecTypeHint";
+        case spv::ExecutionModeContractionOff:
+            return "ContractionOff";
+        case spv::ExecutionModeInitializer:
+            return "Initializer";
+        case spv::ExecutionModeFinalizer:
+            return "Finalizer";
+        case spv::ExecutionModeSubgroupSize:
+            return "SubgroupSize";
+        case spv::ExecutionModeSubgroupsPerWorkgroup:
+            return "SubgroupsPerWorkgroup";
+        case spv::ExecutionModeSubgroupsPerWorkgroupId:
+            return "SubgroupsPerWorkgroupId";
+        case spv::ExecutionModeLocalSizeId:
+            return "LocalSizeId";
+        case spv::ExecutionModeLocalSizeHintId:
+            return "LocalSizeHintId";
+        case spv::ExecutionModeNonCoherentColorAttachmentReadEXT:
+            return "NonCoherentColorAttachmentReadEXT";
+        case spv::ExecutionModeNonCoherentDepthAttachmentReadEXT:
+            return "NonCoherentDepthAttachmentReadEXT";
+        case spv::ExecutionModeNonCoherentStencilAttachmentReadEXT:
+            return "NonCoherentStencilAttachmentReadEXT";
+        case spv::ExecutionModeSubgroupUniformControlFlowKHR:
+            return "SubgroupUniformControlFlowKHR";
+        case spv::ExecutionModePostDepthCoverage:
+            return "PostDepthCoverage";
+        case spv::ExecutionModeDenormPreserve:
+            return "DenormPreserve";
+        case spv::ExecutionModeDenormFlushToZero:
+            return "DenormFlushToZero";
+        case spv::ExecutionModeSignedZeroInfNanPreserve:
+            return "SignedZeroInfNanPreserve";
+        case spv::ExecutionModeRoundingModeRTE:
+            return "RoundingModeRTE";
+        case spv::ExecutionModeRoundingModeRTZ:
+            return "RoundingModeRTZ";
+        case spv::ExecutionModeEarlyAndLateFragmentTestsAMD:
+            return "EarlyAndLateFragmentTestsAMD";
+        case spv::ExecutionModeStencilRefReplacingEXT:
+            return "StencilRefReplacingEXT";
+        case spv::ExecutionModeCoalescingAMDX:
+            return "CoalescingAMDX";
+        case spv::ExecutionModeMaxNodeRecursionAMDX:
+            return "MaxNodeRecursionAMDX";
+        case spv::ExecutionModeStaticNumWorkgroupsAMDX:
+            return "StaticNumWorkgroupsAMDX";
+        case spv::ExecutionModeShaderIndexAMDX:
+            return "ShaderIndexAMDX";
+        case spv::ExecutionModeMaxNumWorkgroupsAMDX:
+            return "MaxNumWorkgroupsAMDX";
+        case spv::ExecutionModeStencilRefUnchangedFrontAMD:
+            return "StencilRefUnchangedFrontAMD";
+        case spv::ExecutionModeStencilRefGreaterFrontAMD:
+            return "StencilRefGreaterFrontAMD";
+        case spv::ExecutionModeStencilRefLessFrontAMD:
+            return "StencilRefLessFrontAMD";
+        case spv::ExecutionModeStencilRefUnchangedBackAMD:
+            return "StencilRefUnchangedBackAMD";
+        case spv::ExecutionModeStencilRefGreaterBackAMD:
+            return "StencilRefGreaterBackAMD";
+        case spv::ExecutionModeStencilRefLessBackAMD:
+            return "StencilRefLessBackAMD";
+        case spv::ExecutionModeOutputLinesNV:
+            return "OutputLinesNV";
+        case spv::ExecutionModeOutputPrimitivesNV:
+            return "OutputPrimitivesNV";
+        case spv::ExecutionModeDerivativeGroupQuadsNV:
+            return "DerivativeGroupQuadsNV";
+        case spv::ExecutionModeDerivativeGroupLinearNV:
+            return "DerivativeGroupLinearNV";
+        case spv::ExecutionModeOutputTrianglesNV:
+            return "OutputTrianglesNV";
+        case spv::ExecutionModePixelInterlockOrderedEXT:
+            return "PixelInterlockOrderedEXT";
+        case spv::ExecutionModePixelInterlockUnorderedEXT:
+            return "PixelInterlockUnorderedEXT";
+        case spv::ExecutionModeSampleInterlockOrderedEXT:
+            return "SampleInterlockOrderedEXT";
+        case spv::ExecutionModeSampleInterlockUnorderedEXT:
+            return "SampleInterlockUnorderedEXT";
+        case spv::ExecutionModeShadingRateInterlockOrderedEXT:
+            return "ShadingRateInterlockOrderedEXT";
+        case spv::ExecutionModeShadingRateInterlockUnorderedEXT:
+            return "ShadingRateInterlockUnorderedEXT";
+        case spv::ExecutionModeSharedLocalMemorySizeINTEL:
+            return "SharedLocalMemorySizeINTEL";
+        case spv::ExecutionModeRoundingModeRTPINTEL:
+            return "RoundingModeRTPINTEL";
+        case spv::ExecutionModeRoundingModeRTNINTEL:
+            return "RoundingModeRTNINTEL";
+        case spv::ExecutionModeFloatingPointModeALTINTEL:
+            return "FloatingPointModeALTINTEL";
+        case spv::ExecutionModeFloatingPointModeIEEEINTEL:
+            return "FloatingPointModeIEEEINTEL";
+        case spv::ExecutionModeMaxWorkgroupSizeINTEL:
+            return "MaxWorkgroupSizeINTEL";
+        case spv::ExecutionModeMaxWorkDimINTEL:
+            return "MaxWorkDimINTEL";
+        case spv::ExecutionModeNoGlobalOffsetINTEL:
+            return "NoGlobalOffsetINTEL";
+        case spv::ExecutionModeNumSIMDWorkitemsINTEL:
+            return "NumSIMDWorkitemsINTEL";
+        case spv::ExecutionModeSchedulerTargetFmaxMhzINTEL:
+            return "SchedulerTargetFmaxMhzINTEL";
+        case spv::ExecutionModeStreamingInterfaceINTEL:
+            return "StreamingInterfaceINTEL";
+        case spv::ExecutionModeRegisterMapInterfaceINTEL:
+            return "RegisterMapInterfaceINTEL";
+        case spv::ExecutionModeNamedBarrierCountINTEL:
+            return "NamedBarrierCountINTEL";
+
+        default:
+            return "Unknown Execution Mode";
+    }
+}
+
 const char* string_SpvDecoration(uint32_t decoration) {
-    switch(decoration) {
+    switch (decoration) {
         case spv::DecorationRelaxedPrecision:
             return "RelaxedPrecision";
         case spv::DecorationSpecId:
@@ -1152,6 +1332,10 @@ const char* string_SpvDecoration(uint32_t decoration) {
             return "MMHostInterfaceWaitRequestINTEL";
         case spv::DecorationStableKernelArgumentINTEL:
             return "StableKernelArgumentINTEL";
+        case spv::DecorationCacheControlLoadINTEL:
+            return "CacheControlLoadINTEL";
+        case spv::DecorationCacheControlStoreINTEL:
+            return "CacheControlStoreINTEL";
 
         default:
             return "Unknown Decoration";
@@ -1159,7 +1343,7 @@ const char* string_SpvDecoration(uint32_t decoration) {
 }
 
 const char* string_SpvBuiltIn(uint32_t built_in) {
-    switch(built_in) {
+    switch (built_in) {
         case spv::BuiltInPosition:
             return "Position";
         case spv::BuiltInPointSize:
@@ -1370,6 +1554,10 @@ const char* string_SpvBuiltIn(uint32_t built_in) {
             return "CurrentRayTimeNV";
         case spv::BuiltInHitTriangleVertexPositionsKHR:
             return "HitTriangleVertexPositionsKHR";
+        case spv::BuiltInHitMicroTriangleVertexPositionsNV:
+            return "HitMicroTriangleVertexPositionsNV";
+        case spv::BuiltInHitMicroTriangleVertexBarycentricsNV:
+            return "HitMicroTriangleVertexBarycentricsNV";
         case spv::BuiltInIncomingRayFlagsNV:
             return "IncomingRayFlagsNV";
         case spv::BuiltInRayGeometryIndexKHR:
@@ -1382,6 +1570,10 @@ const char* string_SpvBuiltIn(uint32_t built_in) {
             return "WarpIDNV";
         case spv::BuiltInSMIDNV:
             return "SMIDNV";
+        case spv::BuiltInHitKindFrontFacingMicroTriangleNV:
+            return "HitKindFrontFacingMicroTriangleNV";
+        case spv::BuiltInHitKindBackFacingMicroTriangleNV:
+            return "HitKindBackFacingMicroTriangleNV";
         case spv::BuiltInCullMaskKHR:
             return "CullMaskKHR";
 
@@ -1391,7 +1583,7 @@ const char* string_SpvBuiltIn(uint32_t built_in) {
 }
 
 const char* string_SpvDim(uint32_t dim) {
-    switch(dim) {
+    switch (dim) {
         case spv::Dim1D:
             return "1D";
         case spv::Dim2D:
@@ -1412,6 +1604,39 @@ const char* string_SpvDim(uint32_t dim) {
         default:
             return "Unknown Dim";
     }
+}
+
+static const char* string_SpvCooperativeMatrixOperandsMask(spv::CooperativeMatrixOperandsMask mask) {
+    switch (mask) {
+        case spv::CooperativeMatrixOperandsMaskNone:
+            return "None";
+        case spv::CooperativeMatrixOperandsMatrixASignedComponentsKHRMask:
+            return "MatrixASignedComponentsKHR";
+        case spv::CooperativeMatrixOperandsMatrixBSignedComponentsKHRMask:
+            return "MatrixBSignedComponentsKHR";
+        case spv::CooperativeMatrixOperandsMatrixCSignedComponentsKHRMask:
+            return "MatrixCSignedComponentsKHR";
+        case spv::CooperativeMatrixOperandsMatrixResultSignedComponentsKHRMask:
+            return "MatrixResultSignedComponentsKHR";
+        case spv::CooperativeMatrixOperandsSaturatingAccumulationKHRMask:
+            return "SaturatingAccumulationKHR";
+
+        default:
+            return "Unknown CooperativeMatrixOperandsMask";
+    }
+}
+
+std::string string_SpvCooperativeMatrixOperands(uint32_t mask) {
+    std::string ret;
+    while (mask) {
+        if (mask & 1) {
+            if (!ret.empty()) ret.append("|");
+            ret.append(string_SpvCooperativeMatrixOperandsMask(static_cast<spv::CooperativeMatrixOperandsMask>(1U << mask)));
+        }
+        mask >>= 1;
+    }
+    if (ret.empty()) ret.append("CooperativeMatrixOperandsMask(0)");
+    return ret;
 }
 
 // NOLINTEND

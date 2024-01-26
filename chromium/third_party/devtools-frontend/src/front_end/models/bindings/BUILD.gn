@@ -52,6 +52,8 @@ devtools_entrypoint("bundle") {
     "../../../test/unittests/front_end/models/bindings/*",
     "../../../test/unittests/front_end/models/formatter/*",
     "../../../test/unittests/front_end/panels/console/*",
+    "../../../test/unittests/front_end/panels/coverage/*",
+    "../../../test/unittests/front_end/panels/sources/*",
     "../../../test/unittests/front_end/panels/timeline/*",
     "../../entrypoints/main/*",
     "../../legacy_test_runner/*",
@@ -81,16 +83,4 @@ devtools_entrypoint("bundle") {
   ]
 
   visibility += devtools_models_visibility
-}
-
-devtools_entrypoint("legacy") {
-  entrypoint = "bindings-legacy.ts"
-
-  deps = [ ":bundle" ]
-
-  visibility = [
-    "../..:legacy_entrypoints",
-    "../../entrypoints/shell/*",
-    "../../legacy_test_runner/*",
-  ]
 }

@@ -13,6 +13,7 @@
 
 #include "include/gpu/graphite/Context.h"
 #include "include/gpu/graphite/Recorder.h"
+#include "src/core/SkTraceEvent.h"
 #include "src/gpu/graphite/AtlasProvider.h"
 #include "src/gpu/graphite/Buffer.h"
 #include "src/gpu/graphite/Caps.h"
@@ -22,6 +23,7 @@
 #include "src/gpu/graphite/DrawList.h"
 #include "src/gpu/graphite/DrawPass.h"
 #include "src/gpu/graphite/PathAtlas.h"
+#include "src/gpu/graphite/RasterPathAtlas.h"
 #include "src/gpu/graphite/RecorderPriv.h"
 #include "src/gpu/graphite/RenderPassTask.h"
 #include "src/gpu/graphite/ResourceTypes.h"
@@ -130,15 +132,15 @@ bool DrawContext::recordUpload(Recorder* recorder,
                                          std::move(condContext));
 }
 
-PathAtlas* DrawContext::getOrCreatePathAtlas(Recorder* recorder) {
+PathAtlas* DrawContext::getComputePathAtlas(Recorder* recorder) {
     if (!fComputePathAtlas) {
-        fComputePathAtlas = recorder->priv().atlasProvider()->createComputePathAtlas(recorder);
+        fComputePathAtlas = recorder->priv().atlasProvider()->createComputePathAtlas();
     }
     return fComputePathAtlas.get();
 }
 
 void DrawContext::snapDrawPass(Recorder* recorder) {
-    if (fPendingDraws->drawCount() == 0 && fPendingLoadOp != LoadOp::kClear) {
+    if (fPendingDraws->renderStepCount() == 0 && fPendingLoadOp != LoadOp::kClear) {
         return;
     }
 
@@ -151,7 +153,9 @@ void DrawContext::snapDrawPass(Recorder* recorder) {
                                this->imageInfo(),
                                std::make_pair(fPendingLoadOp, fPendingStoreOp),
                                fPendingClearColor);
-    fDrawPasses.push_back(std::move(pass));
+    if (pass) {
+        fDrawPasses.push_back(std::move(pass));
+    }
     fPendingDraws = std::make_unique<DrawList>();
     fPendingLoadOp = LoadOp::kLoad;
     fPendingStoreOp = StoreOp::kStore;
@@ -233,6 +237,9 @@ sk_sp<Task> DrawContext::snapRenderPassTask(Recorder* recorder) {
         return nullptr;
     }
 
+    TRACE_EVENT_INSTANT1("skia.gpu", TRACE_FUNC, TRACE_EVENT_SCOPE_THREAD,
+                         "# passes", fDrawPasses.size());
+
     const Caps* caps = recorder->priv().caps();
 
     // TODO: At this point we would determine all the targets used by the drawPasses,
@@ -258,6 +265,8 @@ sk_sp<Task> DrawContext::snapUploadTask(Recorder* recorder) {
         return nullptr;
     }
 
+    TRACE_EVENT_INSTANT1("skia.gpu", TRACE_FUNC, TRACE_EVENT_SCOPE_THREAD,
+                         "# uploads", fPendingUploads->size());
     sk_sp<Task> uploadTask = UploadTask::Make(fPendingUploads.get());
 
     fPendingUploads = std::make_unique<UploadList>();
@@ -269,6 +278,10 @@ sk_sp<Task> DrawContext::snapComputeTask(Recorder* recorder) {
     if (fDispatchGroups.empty()) {
         return nullptr;
     }
+
+    TRACE_EVENT_INSTANT1("skia.gpu", TRACE_FUNC, TRACE_EVENT_SCOPE_THREAD,
+                         "# groups", fDispatchGroups.size());
+
     SkASSERT(fDispatchGroups.size() == 1);
     return ComputeTask::Make(std::move(fDispatchGroups));
 }
@@ -280,7 +293,8 @@ void DrawContext::snapPathAtlasDispatches(Recorder* recorder) {
     }
     auto dispatchGroup = fComputePathAtlas->recordDispatches(recorder);
     if (dispatchGroup) {
-        SkASSERT(fPendingDraws->hasAtlasDraws());
+        // For now this check is valid as all coverage mask draws involve dispatches
+        SkASSERT(fPendingDraws->hasCoverageMaskDraws());
         fDispatchGroups.push_back(std::move(dispatchGroup));
     }
     fComputePathAtlas->reset();

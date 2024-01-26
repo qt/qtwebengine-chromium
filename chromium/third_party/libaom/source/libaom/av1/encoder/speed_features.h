@@ -597,9 +597,10 @@ typedef struct PARTITION_SPEED_FEATURES {
   // Used if partition_search_type = FIXED_PARTITION
   BLOCK_SIZE fixed_partition_size;
 
-  // Prune extended partition types search
-  // Can take values 0 - 2, 0 referring to no pruning, and 1 - 2 increasing
-  // aggressiveness of pruning in order.
+  // Prune extended partition types search based on the current best partition
+  // and the combined rdcost of the subblocks estimated from previous
+  // partitions. Can take values 0 - 2, 0 referring to no pruning, and 1 - 2
+  // increasing aggressiveness of pruning in order.
   int prune_ext_partition_types_search_level;
 
   // Prune part4 based on block size
@@ -684,8 +685,9 @@ typedef struct PARTITION_SPEED_FEATURES {
   // 2: Prune none, split and rectangular partitions
   int intra_cnn_based_part_prune_level;
 
-  // Disable extended partition search for lower block sizes.
-  int ext_partition_eval_thresh;
+  // Disable extended partition search if the current bsize is greater than the
+  // threshold. Must be a square block size BLOCK_8X8 or higher.
+  BLOCK_SIZE ext_partition_eval_thresh;
 
   // Use best partition decision so far to tune 'ext_partition_eval_thresh'
   int ext_part_eval_based_on_cur_best;
@@ -693,7 +695,8 @@ typedef struct PARTITION_SPEED_FEATURES {
   // Disable rectangular partitions for larger block sizes.
   int rect_partition_eval_thresh;
 
-  // prune extended partition search
+  // Prune extended partition search based on whether the split/rect partitions
+  // provided an improvement in the previous search.
   // 0 : no pruning
   // 1 : prune 1:4 partition search using winner info from split partitions
   // 2 : prune 1:4 and AB partition search using split and HORZ/VERT info
@@ -854,6 +857,9 @@ typedef struct MV_SPEED_FEATURES {
 
   // Accurate full pixel motion search based on TPL stats.
   int full_pixel_search_level;
+
+  // Allow intrabc motion search
+  int use_intrabc;
 
   // Whether to downsample the rows in sad calculation during motion search.
   // This is only active when there are at least 16 rows. When this sf is

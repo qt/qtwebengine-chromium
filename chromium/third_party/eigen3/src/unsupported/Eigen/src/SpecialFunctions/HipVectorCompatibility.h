@@ -5,6 +5,7 @@ namespace hip_impl {
   template <typename, typename, unsigned int> struct Scalar_accessor;
 }   // end namespace hip_impl
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

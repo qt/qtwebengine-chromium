@@ -28,7 +28,7 @@
 -- Function : function takes scroll ids of frames to verify it's from
 -- the same scroll, and makes sure the frame ts occured within the scroll
 -- timestamp of the neighbour and computes whether the frame was janky or not.
-CREATE PERFETTO FUNCTION is_janky_frame(cur_gesture_id LONG,
+CREATE PERFETTO FUNCTION internal_is_janky_frame(cur_gesture_id LONG,
                                       neighbour_gesture_id LONG,
                                       neighbour_ts LONG,
                                       cur_gesture_begin_ts LONG,
@@ -56,7 +56,7 @@ SELECT
 --
 -- Returns the jank budget in percentage (i.e. 0.75) of vsync interval
 -- percentage.
-CREATE PERFETTO FUNCTION jank_budget(
+CREATE PERFETTO FUNCTION internal_jank_budget(
   cur_frame_exact FLOAT,
   prev_frame_exact FLOAT,
   next_frame_exact FLOAT
@@ -95,20 +95,22 @@ SELECT
 -- @column ipc_hash            Hash of the IPC call.
 -- @column message_type        Message type (e.g. reply).
 -- @column id                  The slice ID.
-SELECT CREATE_VIEW_FUNCTION(
-  'CHROME_SELECT_LONG_TASK_SLICES(name STRING)',
-  'interface_name STRING, ipc_hash INT, message_type STRING, id INT',
-  'SELECT
-      EXTRACT_ARG(s.arg_set_id, "chrome_mojo_event_info.mojo_interface_tag") AS interface_name,
-      EXTRACT_ARG(arg_set_id, "chrome_mojo_event_info.ipc_hash") AS ipc_hash,
-      CASE
-        WHEN EXTRACT_ARG(arg_set_id, "chrome_mojo_event_info.is_reply") THEN "reply"
-        ELSE "message"
-      END AS message_type,
-      s.id
-    FROM slice s
-    WHERE
-      category GLOB "*scheduler.long_tasks*"
-      AND name = $name
-  '
-);
+CREATE PERFETTO FUNCTION chrome_select_long_task_slices(name STRING)
+RETURNS TABLE(
+  interface_name STRING,
+  ipc_hash INT,
+  message_type STRING,
+  id INT
+) AS
+SELECT
+  EXTRACT_ARG(s.arg_set_id, "chrome_mojo_event_info.mojo_interface_tag") AS interface_name,
+  EXTRACT_ARG(arg_set_id, "chrome_mojo_event_info.ipc_hash") AS ipc_hash,
+  CASE
+    WHEN EXTRACT_ARG(arg_set_id, "chrome_mojo_event_info.is_reply") THEN "reply"
+    ELSE "message"
+  END AS message_type,
+  s.id
+FROM slice s
+WHERE
+  category GLOB "*scheduler.long_tasks*"
+  AND name = $name;

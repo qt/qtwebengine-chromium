@@ -11,6 +11,8 @@
 
 #include "include/core/SkSurface.h"
 #include "include/gpu/GrDirectContext.h"
+#include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/vk/GrVkDirectContext.h"
 #include "tools/gpu/vk/VkTestUtils.h"
 
 #define ACQUIRE_INST_VK_PROC(name)                                                               \
@@ -70,7 +72,7 @@ bool VkTestHelper::init() {
     ACQUIRE_DEVICE_VK_PROC(FlushMappedMemoryRanges)
     ACQUIRE_DEVICE_VK_PROC(GetImageSubresourceLayout)
 
-    fDirectContext = GrDirectContext::MakeVulkan(fBackendContext);
+    fDirectContext = GrDirectContexts::MakeVulkan(fBackendContext);
     if (!fDirectContext) {
         return false;
     }
@@ -83,7 +85,7 @@ void VkTestHelper::cleanup() {
     // Make sure any work, release procs, etc left on the context are finished with before we start
     // tearing everything down.
     if (fDirectContext) {
-        fDirectContext->flushAndSubmit(true);
+        fDirectContext->flushAndSubmit(GrSyncCpu::kYes);
     }
 
     fDirectContext.reset();

@@ -34,6 +34,7 @@
 #include "core/fxge/freetype/fx_freetype.h"
 #include "core/fxge/fx_font.h"
 #include "third_party/base/check.h"
+#include "third_party/base/numerics/clamped_math.h"
 #include "third_party/base/numerics/safe_conversions.h"
 
 namespace {
@@ -412,6 +413,15 @@ int CPDF_Font::TT2PDF(FT_Pos m, FXFT_FaceRec* face) {
 
   const double dm = (m * 1000.0 + upm / 2) / upm;
   return pdfium::base::saturated_cast<int>(dm);
+}
+
+// static
+FX_RECT CPDF_Font::GetCharBBoxForFace(FXFT_FaceRec* face) {
+  pdfium::base::ClampedNumeric<FT_Pos> left = FXFT_Get_Glyph_HoriBearingX(face);
+  pdfium::base::ClampedNumeric<FT_Pos> top = FXFT_Get_Glyph_HoriBearingY(face);
+  return FX_RECT(TT2PDF(left, face), TT2PDF(top, face),
+                 TT2PDF(left + FXFT_Get_Glyph_Width(face), face),
+                 TT2PDF(top - FXFT_Get_Glyph_Height(face), face));
 }
 
 // static

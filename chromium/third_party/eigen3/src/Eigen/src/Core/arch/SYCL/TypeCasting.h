@@ -21,6 +21,7 @@
 #ifndef EIGEN_TYPE_CASTING_SYCL_H
 #define EIGEN_TYPE_CASTING_SYCL_H
 
+// IWYU pragma: private
 #include "../../InternalHeaderCheck.h"
 
 namespace Eigen {

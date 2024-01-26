@@ -20,7 +20,6 @@
 #include "base/containers/flat_map.h"
 #include "base/containers/flat_set.h"
 #include "base/containers/unique_ptr_adapters.h"
-#include "base/debug/stack_trace.h"
 #include "base/files/file_path.h"
 #include "base/functional/callback.h"
 #include "base/functional/function_ref.h"
@@ -59,11 +58,11 @@
 #include "content/browser/renderer_host/media/render_frame_audio_input_stream_factory.h"
 #include "content/browser/renderer_host/media/render_frame_audio_output_stream_factory.h"
 #include "content/browser/renderer_host/navigation_discard_reason.h"
+#include "content/browser/renderer_host/origin_trial_state_host_impl.h"
 #include "content/browser/renderer_host/page_impl.h"
 #include "content/browser/renderer_host/pending_beacon_host.h"
 #include "content/browser/renderer_host/policy_container_host.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
-#include "content/browser/renderer_host/runtime_feature_state_controller_impl.h"
 #include "content/browser/renderer_host/transient_allow_popup.h"
 #include "content/browser/renderer_host/transient_focus_source_user_activation.h"
 #include "content/browser/site_instance_group.h"
@@ -72,6 +71,7 @@
 #include "content/common/buildflags.h"
 #include "content/common/content_export.h"
 #include "content/common/dom_automation_controller.mojom.h"
+#include "content/common/features.h"
 #include "content/common/frame.mojom.h"
 #include "content/common/input/input_injector.mojom-forward.h"
 #include "content/common/navigation_client.mojom-forward.h"
@@ -82,6 +82,7 @@
 #include "content/public/browser/global_request_id.h"
 #include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/javascript_dialog_manager.h"
+#include "content/public/browser/reload_type.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_ui.h"
@@ -107,7 +108,6 @@
 #include "net/cookies/cookie_setting_override.h"
 #include "net/net_buildflags.h"
 #include "ppapi/buildflags/buildflags.h"
-#include "services/device/public/mojom/sensor_provider.mojom-forward.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
 #include "services/network/public/cpp/attribution_reporting_runtime_features.h"
 #include "services/network/public/cpp/cross_origin_embedder_policy.h"
@@ -149,19 +149,21 @@
 #include "third_party/blink/public/mojom/image_downloader/image_downloader.mojom.h"
 #include "third_party/blink/public/mojom/input/focus_type.mojom-forward.h"
 #include "third_party/blink/public/mojom/installedapp/installed_app_provider.mojom-forward.h"
+#include "third_party/blink/public/mojom/loader/fetch_later.mojom-forward.h"
 #include "third_party/blink/public/mojom/loader/resource_cache.mojom-forward.h"
 #include "third_party/blink/public/mojom/loader/resource_load_info.mojom-forward.h"
 #include "third_party/blink/public/mojom/navigation/navigation_params.mojom-forward.h"
 #include "third_party/blink/public/mojom/navigation/navigation_params.mojom.h"
 #include "third_party/blink/public/mojom/navigation/renderer_eviction_reason.mojom.h"
 #include "third_party/blink/public/mojom/notifications/notification_service.mojom-forward.h"
+#include "third_party/blink/public/mojom/origin_trial_state/origin_trial_state_host.mojom.h"
 #include "third_party/blink/public/mojom/peerconnection/peer_connection_tracker.mojom-forward.h"
 #include "third_party/blink/public/mojom/permissions/permission.mojom-forward.h"
 #include "third_party/blink/public/mojom/portal/portal.mojom-forward.h"
 #include "third_party/blink/public/mojom/presentation/presentation.mojom-forward.h"
 #include "third_party/blink/public/mojom/render_accessibility.mojom.h"
-#include "third_party/blink/public/mojom/runtime_feature_state/runtime_feature_state_controller.mojom.h"
 #include "third_party/blink/public/mojom/security_context/insecure_request_policy.mojom-forward.h"
+#include "third_party/blink/public/mojom/sensor/web_sensor_provider.mojom-forward.h"
 #include "third_party/blink/public/mojom/sms/webotp_service.mojom-forward.h"
 #include "third_party/blink/public/mojom/speech/speech_synthesis.mojom-forward.h"
 #include "third_party/blink/public/mojom/webaudio/audio_context_manager.mojom-forward.h"
@@ -242,9 +244,6 @@ CONTENT_EXPORT BASE_DECLARE_FEATURE(
 
 // Feature to evict when accessibility events occur while in back/forward cache.
 CONTENT_EXPORT BASE_DECLARE_FEATURE(kEvictOnAXEvents);
-
-// Feature to make SpeechSynthesis no longer block back/forward cache.
-CONTENT_EXPORT BASE_DECLARE_FEATURE(kUnblockSpeechSynthesisForBFCache);
 }  // namespace features
 
 namespace content {
@@ -668,6 +667,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
       int opt_request_id,
       base::OnceCallback<void(ui::AXPlatformTreeManager* hit_manager,
                               ui::AXNodeID hit_node_id)> opt_callback) override;
+  gfx::NativeWindow GetTopLevelNativeWindow() override;
   bool AccessibilityIsRootFrame() const override;
   RenderFrameHostImpl* AccessibilityRenderFrameHost() override;
   WebContentsAccessibility* AccessibilityGetWebContentsAccessibility() override;
@@ -1097,6 +1097,9 @@ class CONTENT_EXPORT RenderFrameHostImpl
 
   // Process the acknowledgment of the unload of this frame from the renderer.
   void OnUnloadACK();
+
+  // Depending on switches, may log when an unload ack has not been received.
+  void MaybeLogMissingUnloadAck();
 
   // Remove this frame and its children. This happens asynchronously, an IPC
   // round trip with the renderer process is needed to ensure children's unload
@@ -2011,7 +2014,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
       mojo::PendingReceiver<blink::mojom::BucketManagerHost> receiver);
 
   void GetSensorProvider(
-      mojo::PendingReceiver<device::mojom::SensorProvider> receiver);
+      mojo::PendingReceiver<blink::mojom::WebSensorProvider> receiver);
 
   void CreatePermissionService(
       mojo::PendingReceiver<blink::mojom::PermissionService> receiver);
@@ -2136,9 +2139,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
       mojo::PendingReceiver<blink::mojom::NonAssociatedLocalFrameHost>
           receiver);
 
-  void CreateRuntimeFeatureStateController(
-      mojo::PendingReceiver<blink::mojom::RuntimeFeatureStateController>
-          receiver);
+  void CreateOriginTrialStateHost(
+      mojo::PendingReceiver<blink::mojom::OriginTrialStateHost> receiver);
 
   // Prerender2:
   // Tells PrerenderHostRegistry to cancel the prerendering of the page this
@@ -2146,8 +2148,14 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // Returns true if a prerender was canceled. Does nothing and returns false if
   // `this` is not prerendered.
   bool CancelPrerendering(const PrerenderCancellationReason& reason);
-  // Called by MojoBinderPolicyApplier when it receives a kCancel interface.
+  // Called by MojoBinderPolicyApplier when it receives a kCancel interface
+  // while prerendering.
   void CancelPrerenderingByMojoBinderPolicy(const std::string& interface_name);
+
+  // LinkPreview:
+  // Called by MojoBinderPolicyApplier when it receives a kCancel interface in
+  // preview mode.
+  void CancelPreviewByMojoBinderPolicy(const std::string& interface_name);
 
   // Called when the Activate IPC is sent to the renderer. Puts the
   // MojoPolicyBinderApplier in "loose" mode via PrepareToGrantAll() until
@@ -2225,6 +2233,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
 
   bool has_unload_handler() const { return has_unload_handler_; }
 
+  // See member declaration for details.
   bool has_committed_any_navigation() const {
     return has_committed_any_navigation_;
   }
@@ -2303,11 +2312,9 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void FullscreenStateChanged(
       bool is_fullscreen,
       blink::mojom::FullscreenOptionsPtr options) override;
-#if defined(USE_AURA)
   void Maximize() override;
   void Minimize() override;
   void Restore() override;
-#endif
   void RegisterProtocolHandler(const std::string& scheme,
                                const GURL& url,
                                bool user_gesture) override;
@@ -2456,6 +2463,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
       network::AttributionReportingRuntimeFeatures
           attribution_reporting_runtime_features) override;
   void SetFencedFrameAutomaticBeaconReportEventData(
+      blink::mojom::AutomaticBeaconType event_type,
       const std::string& event_data,
       const std::vector<blink::FencedFrame::ReportingDestination>& destinations,
       network::AttributionReportingRuntimeFeatures
@@ -2518,6 +2526,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
                      SetWindowRectCallback callback) override;
   void DidFirstVisuallyNonEmptyPaint() override;
   void DidAccessInitialMainDocument() override;
+  void SetResizable(bool resizable) override;
 
   void ReportNoBinderForInterface(const std::string& error);
 
@@ -3023,15 +3032,12 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void RecordBackForwardCacheDisablingReason(
       BackForwardCacheDisablingFeature feature);
 
-  void SetCreationInfoForBug1425281(const std::string& current_site_info,
-                                    const std::string& speculative_site_info,
-                                    const std::string& get_frame_host_reason,
-                                    const GURL& initial_url) {
-    current_site_info_ = current_site_info;
-    speculative_site_info_ = speculative_site_info;
-    get_frame_host_reason_ = get_frame_host_reason;
-    initial_url_ = initial_url;
-  }
+  // Send an automatic beacon of type `event_type` if one was registered
+  // with the NavigationRequest's initiator frame using the
+  // `window.fence.setReportEventDataForAutomaticBeacons` API.
+  void MaybeSendFencedFrameAutomaticReportingBeacon(
+      NavigationRequest& navigation_request,
+      blink::mojom::AutomaticBeaconType event_type);
 
  protected:
   friend class RenderFrameHostFactory;
@@ -3082,6 +3088,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
           subresource_proxying_loader_factory,
       mojo::PendingRemote<network::mojom::URLLoaderFactory>
           keep_alive_loader_factory,
+      mojo::PendingAssociatedRemote<blink::mojom::FetchLaterLoaderFactory>
+          fetch_later_loader_factory,
       mojo::PendingRemote<blink::mojom::ResourceCache> resource_cache_remote,
       const absl::optional<blink::ParsedPermissionsPolicy>& permissions_policy,
       blink::mojom::PolicyContainerPtr policy_container,
@@ -3254,6 +3262,9 @@ class CONTENT_EXPORT RenderFrameHostImpl
       NavigationBrowserTest,
       NavigationSuddenTerminationDisablerTypeRecordUmaActivation);
   FRIEND_TEST_ALL_PREFIXES(NavigationRequestTest, SharedStorageWritable);
+  FRIEND_TEST_ALL_PREFIXES(WebContentsImplBrowserTest, SetTitleOnUnload);
+  FRIEND_TEST_ALL_PREFIXES(SitePerProcessBrowserTest,
+                           DetachedIframeUnloadHandlerABCB);
 
   class SubresourceLoaderFactoriesConfig;
 
@@ -3386,6 +3397,12 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void Clone(
       mojo::PendingReceiver<network::mojom::SharedDictionaryAccessObserver>
           observer) override;
+
+  // Returns true if this RFH's compositor should be reused by a speculattive
+  // RFH with the `speculative_site_instance`.
+  // Returns false if the speculative RFH should initialize a new compositor.
+  bool ShouldReuseCompositing(
+      SiteInstanceImpl& speculative_site_instance) const;
 
   // Resets any waiting state of this RenderFrameHost that is no longer
   // relevant.
@@ -3832,9 +3849,12 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // This function should only be called on swapped out RenderFrameHosts.
   void ResetNavigationsUsingSwappedOutRFH();
 
-  // Called on an unloading frame when its unload timeout is reached. This
-  // immediately deletes the RenderFrameHost.
-  void OnUnloadTimeout();
+  // Called when on a subframe that is being deleted when its unload timeout is
+  // reached. This immediately deletes the RenderFrameHost.
+  void OnSubframeDeletionUnloadTimeout();
+  // Called on a frame that is being navigated away from when its unload timeout
+  // is reached.
+  void OnNavigationUnloadTimeout();
 
   // Runs interception set up in testing code, if any.
   // Returns true if we should proceed to the Commit callback, false otherwise.
@@ -4050,30 +4070,22 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // document commits first.
   void ClosePageTimeout(ClosePageSource source);
 
-  // Send an automatic `reserved.top_navigation` beacon if one was registered
-  // with the NavigationRequest's initiator frame using the
-  // `window.fence.setReportEventDataForAutomaticBeacons` API.
-  void MaybeSendFencedFrameReportingBeacon(
-      NavigationRequest& navigation_request);
-
   // Helper function that handles creating and sending a fenced frame beacon.
   // This also handles sending console messages if the call to send the beacon
   // originated from the renderer.
   // Calls to this function for automatic beacons (i.e. the
-  // "reserved.top_navigation" beacon) will originate from the browser. All
+  // "reserved.top_navigation_*" beacon) will originate from the browser. All
   // other fenced frame beacon calls happen through a `fence.sendBeacon()`
   // JavaScript call which will originate from the renderer.
   // `attribution_reporting_runtime_features` indicates whether Attribution
   // Reporting API related runtime features are enabled and is needed for
   // integration with Attribution Reporting API.
   void SendFencedFrameReportingBeaconInternal(
-      const absl::variant<DestinationEnumEvent, DestinationURLEvent>&
-          event_variant,
+      const FencedFrameReporter::DestinationVariant& event_variant,
       blink::FencedFrame::ReportingDestination destination,
       bool from_renderer,
       network::AttributionReportingRuntimeFeatures
           attribution_reporting_features,
-      int initiator_frame_tree_node_id,
       absl::optional<int64_t> navigation_id = absl::nullopt);
 
   // Indicates whether this frame has third-party storage
@@ -4091,9 +4103,14 @@ class CONTENT_EXPORT RenderFrameHostImpl
   std::vector<RenderFrameHostImpl*> GetAncestorChainForStorageKeyCalculation(
       const url::Origin& new_rfh_origin);
 
-#if defined(USE_AURA)
-  bool CanUseWindowingControls();
-#endif
+  // Returns whether the `RenderFrameHost` can use Additional Windowing Controls
+  // APIs.
+  // https://github.com/ivansandrk/additional-windowing-controls/blob/main/awc-explainer.md
+  bool CanUseWindowingControls(base::StringPiece js_api_name);
+
+  // Notifies when the renderer side Widget instance has been created and mojo
+  // interfaces to it can be bound.
+  void RendererWidgetCreated();
 
   // The RenderViewHost that this RenderFrameHost is associated with.
   //
@@ -4536,7 +4553,15 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // navigation or not. Starts off false and is set to true for the lifetime of
   // the RenderFrame when the first CommitNavigation message is sent to the
   // RenderFrame. It is reset after a renderer process crash.
+  //
+  // Note that some use cases may still consider a RenderFrameHost used after a
+  // crash, in which case is_initial_empty_document() may be a more relevant
+  // check. Also, unlike is_initial_empty_document(), this field does not change
+  // if this frame is modified via document.open().  However, note that
+  // is_initial_empty_document() is updated at DidCommitNavigation() time,
+  // whereas this field is updated at CommitNavigation() time.
   bool has_committed_any_navigation_ = false;
+
   bool must_be_replaced_ = false;
 
   // Counts the number of times the associated renderer process has exited.
@@ -5100,7 +5125,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // Whether this document is the initial about:blank document or the
   // synchronously committed about:blank document committed at frame creation,
   // and its "initial empty document"-ness is still true.
-  // This will be false if either of these has happened:
+  // This will become false if either of these has happened:
   // - The RenderFrameHost had committed a cross-document navigation that is
   //   not the synchronously committed about:blank document per:
   //   https://html.spec.whatwg.org/multipage/browsers.html#creating-browsing-contexts:is-initial-about:blank
@@ -5113,6 +5138,15 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // "initial about:blank document". See also:
   // - https://github.com/whatwg/html/issues/6863
   // - https://crbug.com/1215096
+  //
+  // Note that cross-document navigations update this state at
+  // DidCommitNavigation() time. Thus, this is still true when a cross-document
+  // navigation from an initial empty document is in the pending-commit window,
+  // after sending the CommitNavigation IPC but before receiving
+  // DidCommitNavigation().  This is in contrast to
+  // has_committed_any_navigation(), which is updated in CommitNavigation().
+  // TODO(alexmos): Consider updating this at CommitNavigation() time as well to
+  // match the has_committed_any_navigation() behavior.
   bool is_initial_empty_document_ = true;
 
   // Testing callback run in DidStopLoading() regardless of loading state. This
@@ -5227,13 +5261,9 @@ class CONTENT_EXPORT RenderFrameHostImpl
   absl::optional<blink::DocumentToken>
       fullscreen_document_on_document_element_ready_ = absl::nullopt;
 
-  // TODO(crbug.com/1425281): Temporary for debugging.
-  const base::debug::StackTrace create_rfh_stack_trace_;
-  absl::optional<base::debug::StackTrace> last_commit_navigation_stack_trace_;
-  std::string current_site_info_;
-  std::string speculative_site_info_;
-  std::string get_frame_host_reason_;
-  GURL initial_url_;
+  // If true, the renderer side widget is created after the navigation is
+  // committed.
+  bool waiting_for_renderer_widget_creation_after_commit_ = false;
 
   // WeakPtrFactories are the last members, to ensure they are destroyed before
   // all other fields of `this`.

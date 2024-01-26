@@ -16,6 +16,7 @@
 // * Eigen/SVD
 // * Eigen/Array
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen { 

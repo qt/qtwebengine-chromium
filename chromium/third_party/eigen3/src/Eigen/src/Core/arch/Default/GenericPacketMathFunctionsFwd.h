@@ -10,6 +10,7 @@
 #ifndef EIGEN_ARCH_GENERIC_PACKET_MATH_FUNCTIONS_FWD_H
 #define EIGEN_ARCH_GENERIC_PACKET_MATH_FUNCTIONS_FWD_H
 
+// IWYU pragma: private
 #include "../../InternalHeaderCheck.h"
 
 namespace Eigen {

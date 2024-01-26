@@ -614,10 +614,12 @@ Tagged<BytecodeArray> SharedFunctionInfo::GetBytecodeArray(
 
   DCHECK(HasBytecodeArray());
 
-  base::Optional<DebugInfo> debug_info =
+  base::Optional<Tagged<DebugInfo>> debug_info =
       TryGetDebugInfo(isolate->GetMainThreadIsolateUnsafe());
-  if (debug_info.has_value() && debug_info->HasInstrumentedBytecodeArray()) {
-    return debug_info->OriginalBytecodeArray();
+  if (debug_info.has_value() &&
+      debug_info.value()->HasInstrumentedBytecodeArray()) {
+    return debug_info.value()->OriginalBytecodeArray(
+        isolate->GetMainThreadIsolateUnsafe());
   }
 
   return GetActiveBytecodeArray();
@@ -757,23 +759,26 @@ void SharedFunctionInfo::set_asm_wasm_data(Tagged<AsmWasmData> data,
 
 const wasm::WasmModule* SharedFunctionInfo::wasm_module() const {
   if (!HasWasmExportedFunctionData()) return nullptr;
-  const WasmExportedFunctionData& function_data = wasm_exported_function_data();
-  const WasmInstanceObject& wasm_instance = function_data->instance();
-  const WasmModuleObject& wasm_module_object = wasm_instance->module_object();
+  Tagged<WasmExportedFunctionData> function_data =
+      wasm_exported_function_data();
+  Tagged<WasmInstanceObject> wasm_instance = function_data->instance();
+  Tagged<WasmModuleObject> wasm_module_object = wasm_instance->module_object();
   return wasm_module_object->module();
 }
 
 const wasm::FunctionSig* SharedFunctionInfo::wasm_function_signature() const {
   const wasm::WasmModule* module = wasm_module();
   if (!module) return nullptr;
-  const WasmExportedFunctionData& function_data = wasm_exported_function_data();
+  Tagged<WasmExportedFunctionData> function_data =
+      wasm_exported_function_data();
   DCHECK_LT(function_data->function_index(), module->functions.size());
   return module->functions[function_data->function_index()].sig;
 }
 
 int SharedFunctionInfo::wasm_function_index() const {
   if (!HasWasmExportedFunctionData()) return -1;
-  const WasmExportedFunctionData& function_data = wasm_exported_function_data();
+  Tagged<WasmExportedFunctionData> function_data =
+      wasm_exported_function_data();
   DCHECK_GE(function_data->function_index(), 0);
   DCHECK_LT(function_data->function_index(), wasm_module()->functions.size());
   return function_data->function_index();
@@ -888,7 +893,8 @@ void SharedFunctionInfo::ClearPreparseData() {
 
   // We are basically trimming that object to its supertype, so recorded slots
   // within the object don't need to be invalidated.
-  heap->NotifyObjectLayoutChange(data, no_gc, InvalidateRecordedSlots::kNo);
+  heap->NotifyObjectLayoutChange(data, no_gc, InvalidateRecordedSlots::kNo,
+                                 InvalidateExternalPointerSlots::kNo);
   static_assert(UncompiledDataWithoutPreparseData::kSize <
                 UncompiledDataWithPreparseData::kSize);
   static_assert(UncompiledDataWithoutPreparseData::kSize ==

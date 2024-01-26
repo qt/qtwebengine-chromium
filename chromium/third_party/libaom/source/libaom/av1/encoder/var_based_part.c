@@ -1413,7 +1413,6 @@ static void setup_planes(AV1_COMP *cpi, MACROBLOCK *x, unsigned int *y_sad,
     mi->mv[0].as_int = 0;
     mi->interp_filters = av1_broadcast_interp_filter(BILINEAR);
 
-    int is_screen = cpi->oxcf.tune_cfg.content == AOM_CONTENT_SCREEN;
     int est_motion = cpi->sf.rt_sf.estimate_motion_for_var_based_partition;
     // TODO(b/290596301): Look into adjusting this condition.
     // There is regression on color content when
@@ -1425,8 +1424,8 @@ static void setup_planes(AV1_COMP *cpi, MACROBLOCK *x, unsigned int *y_sad,
       if (xd->mb_to_right_edge >= 0 && xd->mb_to_bottom_edge >= 0) {
         // For screen only do int_pro_motion for spatial variance above
         // threshold and motion level above LowSad.
-        if (!is_screen ||
-            (x->source_variance > 100 && source_sad_nonrd > kLowSad)) {
+        if (x->source_variance > 100 && source_sad_nonrd > kLowSad) {
+          int is_screen = cpi->oxcf.tune_cfg.content == AOM_CONTENT_SCREEN;
           int me_search_size_col =
               is_screen ? 96 : block_size_wide[cm->seq_params->sb_size] >> 1;
           // For screen use larger search size row motion to capture
@@ -1548,8 +1547,8 @@ static AOM_INLINE bool set_force_zeromv_skip_for_sb(
       uv_sad[0] < thresh_exit_part_uv && uv_sad[1] < thresh_exit_part_uv) {
     set_block_size(cpi, mi_row, mi_col, bsize);
     x->force_zeromv_skip_for_sb = 1;
-    if (vt2) aom_free(vt2);
-    if (vt) aom_free(vt);
+    aom_free(vt2);
+    aom_free(vt);
     // Partition shape is set here at SB level.
     // Exit needs to happen from av1_choose_var_based_partitioning().
     return true;
@@ -1609,7 +1608,7 @@ int av1_choose_var_based_partitioning(AV1_COMP *cpi, const TileInfo *const tile,
   // Ref frame used in partitioning.
   MV_REFERENCE_FRAME ref_frame_partition = LAST_FRAME;
 
-  CHECK_MEM_ERROR(cm, vt, aom_malloc(sizeof(*vt)));
+  AOM_CHECK_MEM_ERROR(xd->error_info, vt, aom_malloc(sizeof(*vt)));
 
   vt->split = td->vt64x64;
 
@@ -1730,8 +1729,14 @@ int av1_choose_var_based_partitioning(AV1_COMP *cpi, const TileInfo *const tile,
   if (cpi->noise_estimate.enabled)
     noise_level = av1_noise_estimate_extract_level(&cpi->noise_estimate);
 
-  if (low_res && threshold_4x4avg < INT64_MAX)
-    CHECK_MEM_ERROR(cm, vt2, aom_malloc(sizeof(*vt2)));
+  if (low_res && threshold_4x4avg < INT64_MAX) {
+    vt2 = aom_malloc(sizeof(*vt2));
+    if (!vt2) {
+      aom_free(vt);
+      aom_internal_error(xd->error_info, AOM_CODEC_MEM_ERROR,
+                         "Error allocating partition buffer vt2");
+    }
+  }
   // Fill in the entire tree of 8x8 (or 4x4 under some conditions) variances
   // for splits.
   fill_variance_tree_leaves(cpi, x, vt, force_split, avg_16x16, maxvar_16x16,
@@ -1909,8 +1914,8 @@ int av1_choose_var_based_partitioning(AV1_COMP *cpi, const TileInfo *const tile,
                           ref_frame_partition, mi_col, mi_row, is_small_sb);
   }
 
-  if (vt2) aom_free(vt2);
-  if (vt) aom_free(vt);
+  aom_free(vt2);
+  aom_free(vt);
 #if CONFIG_COLLECT_COMPONENT_TIMING
   end_timing(cpi, choose_var_based_partitioning_time);
 #endif

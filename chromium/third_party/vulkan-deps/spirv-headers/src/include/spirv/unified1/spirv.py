@@ -63,6 +63,7 @@ spv = {
         'HERO_C' : 8,
         'NZSL' : 9,
         'WGSL' : 10,
+        'Slang' : 11,
     },
 
     'ExecutionModel' : {
@@ -555,6 +556,9 @@ spv = {
         'MergeINTEL' : 5834,
         'BankBitsINTEL' : 5835,
         'ForcePow2DepthINTEL' : 5836,
+        'StridesizeINTEL' : 5883,
+        'WordsizeINTEL' : 5884,
+        'TrueDualPortINTEL' : 5885,
         'BurstCoalesceINTEL' : 5899,
         'CacheSizeINTEL' : 5900,
         'DontStaticallyCoalesceINTEL' : 5901,
@@ -588,6 +592,8 @@ spv = {
         'MMHostInterfaceMaxBurstINTEL' : 6181,
         'MMHostInterfaceWaitRequestINTEL' : 6182,
         'StableKernelArgumentINTEL' : 6183,
+        'CacheControlLoadINTEL' : 6442,
+        'CacheControlStoreINTEL' : 6443,
     },
 
     'BuiltIn' : {
@@ -717,6 +723,8 @@ spv = {
         'HitKindNV' : 5333,
         'CurrentRayTimeNV' : 5334,
         'HitTriangleVertexPositionsKHR' : 5335,
+        'HitMicroTriangleVertexPositionsNV' : 5337,
+        'HitMicroTriangleVertexBarycentricsNV' : 5344,
         'IncomingRayFlagsKHR' : 5351,
         'IncomingRayFlagsNV' : 5351,
         'RayGeometryIndexKHR' : 5352,
@@ -724,6 +732,8 @@ spv = {
         'SMCountNV' : 5375,
         'WarpIDNV' : 5376,
         'SMIDNV' : 5377,
+        'HitKindFrontFacingMicroTriangleNV' : 5405,
+        'HitKindBackFacingMicroTriangleNV' : 5406,
         'CullMaskKHR' : 6021,
     },
 
@@ -1082,10 +1092,12 @@ spv = {
         'FragmentShaderPixelInterlockEXT' : 5378,
         'DemoteToHelperInvocation' : 5379,
         'DemoteToHelperInvocationEXT' : 5379,
+        'DisplacementMicromapNV' : 5380,
         'RayTracingOpacityMicromapEXT' : 5381,
         'ShaderInvocationReorderNV' : 5383,
         'BindlessTextureNV' : 5390,
         'RayQueryPositionFetchKHR' : 5391,
+        'RayTracingDisplacementMicromapNV' : 5409,
         'SubgroupShuffleINTEL' : 5568,
         'SubgroupBufferBlockIOINTEL' : 5569,
         'SubgroupImageBlockIOINTEL' : 5570,
@@ -1155,6 +1167,7 @@ spv = {
         'FPGALatencyControlINTEL' : 6171,
         'FPGAArgumentInterfacesINTEL' : 6174,
         'GroupUniformArithmeticKHR' : 6400,
+        'CacheControlsINTEL' : 6441,
     },
 
     'RayFlagsShift' : {
@@ -1288,6 +1301,21 @@ spv = {
         'ReadINTEL' : 1,
         'WriteINTEL' : 2,
         'ReadWriteINTEL' : 3,
+    },
+
+    'LoadCacheControl' : {
+        'UncachedINTEL' : 0,
+        'CachedINTEL' : 1,
+        'StreamingINTEL' : 2,
+        'InvalidateAfterReadINTEL' : 3,
+        'ConstCachedINTEL' : 4,
+    },
+
+    'StoreCacheControl' : {
+        'UncachedINTEL' : 0,
+        'WriteThroughINTEL' : 1,
+        'WriteBackINTEL' : 2,
+        'StreamingINTEL' : 3,
     },
 
     'Op' : {
@@ -1731,6 +1759,8 @@ spv = {
         'OpSetMeshOutputsEXT' : 5295,
         'OpGroupNonUniformPartitionNV' : 5296,
         'OpWritePackedPrimitiveIndices4x8NV' : 5299,
+        'OpFetchMicroTriangleVertexPositionNV' : 5300,
+        'OpFetchMicroTriangleVertexBarycentricNV' : 5301,
         'OpReportIntersectionKHR' : 5334,
         'OpReportIntersectionNV' : 5334,
         'OpIgnoreIntersectionNV' : 5335,

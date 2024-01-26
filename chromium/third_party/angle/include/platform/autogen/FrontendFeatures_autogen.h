@@ -161,6 +161,27 @@ struct FrontendFeatures : FeatureSetBase
         &members, "http://anglebug.com/8280"
     };
 
+    FeatureInfo linkJobIsThreadSafe = {
+        "linkJobIsThreadSafe",
+        FeatureCategory::FrontendFeatures,
+        "If false, parts of the link job cannot be parallelized",
+        &members, "http://anglebug.com/8297"
+    };
+
+    FeatureInfo uncurrentEglSurfaceUponSurfaceDestroy = {
+        "uncurrentEglSurfaceUponSurfaceDestroy",
+        FeatureCategory::FrontendWorkarounds,
+        "Make egl surface uncurrent when calling eglDestroySurface(), if the surface is still bound by the context of current render thread",
+        &members, "https://issuetracker.google.com/292285899"
+    };
+
+    FeatureInfo forceMinimumMaxVertexAttributes = {
+        "forceMinimumMaxVertexAttributes",
+        FeatureCategory::FrontendFeatures,
+        "Force the minimum GL_MAX_VERTEX_ATTRIBS that the context's client version allows.",
+        &members, ""
+    };
+
 };
 
 inline FrontendFeatures::FrontendFeatures()  = default;

@@ -50,7 +50,7 @@ void DESCRIPTOR_POOL_STATE::Allocate(const VkDescriptorSetAllocateInfo *alloc_in
         available_counts_[it->first] -= ds_data->required_descriptors_by_type.at(it->first);
     }
 
-    const auto *variable_count_info = LvlFindInChain<VkDescriptorSetVariableDescriptorCountAllocateInfo>(alloc_info->pNext);
+    const auto *variable_count_info = vku::FindStructInPNextChain<VkDescriptorSetVariableDescriptorCountAllocateInfo>(alloc_info->pNext);
     const bool variable_count_valid =
         variable_count_info && variable_count_info->descriptorSetCount == alloc_info->descriptorSetCount;
 
@@ -101,15 +101,15 @@ void DESCRIPTOR_POOL_STATE::Reset() {
     available_sets_ = maxSets;
 }
 
-bool DESCRIPTOR_POOL_STATE::InUse() const {
+const VulkanTypedHandle *DESCRIPTOR_POOL_STATE::InUse() const {
     auto guard = ReadLock();
     for (const auto &entry : sets_) {
         const auto *ds = entry.second;
-        if (ds && ds->InUse()) {
-            return true;
+        if (ds) {
+            return ds->InUse();
         }
     }
-    return false;
+    return nullptr;
 }
 
 void DESCRIPTOR_POOL_STATE::Destroy() {
@@ -182,7 +182,7 @@ DescriptorSetLayoutId GetCanonicalId(const VkDescriptorSetLayoutCreateInfo *p_cr
 // Proactively reserve and resize as possible, as the reallocation was visible in profiling
 cvdescriptorset::DescriptorSetLayoutDef::DescriptorSetLayoutDef(const VkDescriptorSetLayoutCreateInfo *p_create_info)
     : flags_(p_create_info->flags), binding_count_(0), descriptor_count_(0), dynamic_descriptor_count_(0) {
-    const auto *flags_create_info = LvlFindInChain<VkDescriptorSetLayoutBindingFlagsCreateInfo>(p_create_info->pNext);
+    const auto *flags_create_info = vku::FindStructInPNextChain<VkDescriptorSetLayoutBindingFlagsCreateInfo>(p_create_info->pNext);
 
     binding_type_stats_ = {0, 0};
     std::set<ExtendedBinding, BindingNumCmp> sorted_bindings;
@@ -196,7 +196,7 @@ cvdescriptorset::DescriptorSetLayoutDef::DescriptorSetLayoutDef(const VkDescript
         sorted_bindings.emplace(p_create_info->pBindings + i, flags);
     }
 
-    const auto *mutable_descriptor_type_create_info = LvlFindInChain<VkMutableDescriptorTypeCreateInfoEXT>(p_create_info->pNext);
+    const auto *mutable_descriptor_type_create_info = vku::FindStructInPNextChain<VkMutableDescriptorTypeCreateInfoEXT>(p_create_info->pNext);
     if (mutable_descriptor_type_create_info) {
         mutable_types_.resize(mutable_descriptor_type_create_info->mutableDescriptorTypeListCount);
         for (uint32_t i = 0; i < mutable_descriptor_type_create_info->mutableDescriptorTypeListCount; ++i) {
@@ -473,6 +473,13 @@ void cvdescriptorset::DescriptorSet::LinkChildNodes() {
     // Connect child node(s), which cannot safely be done in the constructor.
     for (auto &binding : bindings_) {
         binding->AddParent(this);
+    }
+}
+
+void cvdescriptorset::DescriptorSet::NotifyInvalidate(const NodeList &invalid_nodes, bool unlink) {
+    BaseClass::NotifyInvalidate(invalid_nodes, unlink);
+    for (auto &binding : bindings_) {
+        binding->NotifyInvalidate(invalid_nodes, unlink);
     }
 }
 
@@ -754,6 +761,7 @@ void cvdescriptorset::ImageSamplerDescriptor::WriteUpdate(DescriptorSet &set_sta
     }
     image_layout_ = image_info.imageLayout;
     ReplaceStatePtr(set_state, image_view_state_, dev_data.GetConstCastShared<IMAGE_VIEW_STATE>(image_info.imageView), is_bindless);
+    UpdateKnownValidView(is_bindless);
 }
 
 void cvdescriptorset::ImageSamplerDescriptor::CopyUpdate(DescriptorSet &set_state, const ValidationStateTracker &dev_data,
@@ -778,6 +786,7 @@ void cvdescriptorset::ImageDescriptor::WriteUpdate(DescriptorSet &set_state, con
     const auto &image_info = update.pImageInfo[index];
     image_layout_ = image_info.imageLayout;
     ReplaceStatePtr(set_state, image_view_state_, dev_data.GetConstCastShared<IMAGE_VIEW_STATE>(image_info.imageView), is_bindless);
+    UpdateKnownValidView(is_bindless);
 }
 
 void cvdescriptorset::ImageDescriptor::CopyUpdate(DescriptorSet &set_state, const ValidationStateTracker &dev_data,
@@ -787,12 +796,14 @@ void cvdescriptorset::ImageDescriptor::CopyUpdate(DescriptorSet &set_state, cons
 
         image_layout_ = image_src.GetImageLayout();
         ReplaceStatePtr(set_state, image_view_state_, image_src.GetSharedImageViewState(), is_bindless);
+        UpdateKnownValidView(is_bindless);
         return;
     }
     auto &image_src = static_cast<const ImageDescriptor &>(src);
 
     image_layout_ = image_src.image_layout_;
     ReplaceStatePtr(set_state, image_view_state_, image_src.image_view_state_, is_bindless);
+    UpdateKnownValidView(is_bindless);
 }
 
 void cvdescriptorset::ImageDescriptor::UpdateDrawState(ValidationStateTracker *dev_data, CMD_BUFFER_STATE *cb_state) {
@@ -846,8 +857,8 @@ void cvdescriptorset::TexelDescriptor::CopyUpdate(DescriptorSet &set_state, cons
 void cvdescriptorset::AccelerationStructureDescriptor::WriteUpdate(DescriptorSet &set_state, const ValidationStateTracker &dev_data,
                                                                    const VkWriteDescriptorSet &update, const uint32_t index,
                                                                    bool is_bindless) {
-    const auto *acc_info = LvlFindInChain<VkWriteDescriptorSetAccelerationStructureKHR>(update.pNext);
-    const auto *acc_info_nv = LvlFindInChain<VkWriteDescriptorSetAccelerationStructureNV>(update.pNext);
+    const auto *acc_info = vku::FindStructInPNextChain<VkWriteDescriptorSetAccelerationStructureKHR>(update.pNext);
+    const auto *acc_info_nv = vku::FindStructInPNextChain<VkWriteDescriptorSetAccelerationStructureNV>(update.pNext);
     assert(acc_info || acc_info_nv);
     is_khr_ = (acc_info != NULL);
     if (is_khr_) {
@@ -855,7 +866,8 @@ void cvdescriptorset::AccelerationStructureDescriptor::WriteUpdate(DescriptorSet
         ReplaceStatePtr(set_state, acc_state_, dev_data.GetConstCastShared<ACCELERATION_STRUCTURE_STATE_KHR>(acc_), is_bindless);
     } else {
         acc_nv_ = acc_info_nv->pAccelerationStructures[index];
-        ReplaceStatePtr(set_state, acc_state_nv_, dev_data.GetConstCastShared<ACCELERATION_STRUCTURE_STATE>(acc_nv_), is_bindless);
+        ReplaceStatePtr(set_state, acc_state_nv_, dev_data.GetConstCastShared<ACCELERATION_STRUCTURE_STATE_NV>(acc_nv_),
+                        is_bindless);
     }
 }
 
@@ -871,7 +883,7 @@ void cvdescriptorset::AccelerationStructureDescriptor::CopyUpdate(DescriptorSet 
                             is_bindless);
         } else {
             acc_nv_ = acc_desc.GetAccelerationStructureNV();
-            ReplaceStatePtr(set_state, acc_state_nv_, dev_data.GetConstCastShared<ACCELERATION_STRUCTURE_STATE>(acc_nv_),
+            ReplaceStatePtr(set_state, acc_state_nv_, dev_data.GetConstCastShared<ACCELERATION_STRUCTURE_STATE_NV>(acc_nv_),
                             is_bindless);
         }
         return;
@@ -883,7 +895,8 @@ void cvdescriptorset::AccelerationStructureDescriptor::CopyUpdate(DescriptorSet 
         ReplaceStatePtr(set_state, acc_state_, dev_data.GetConstCastShared<ACCELERATION_STRUCTURE_STATE_KHR>(acc_), is_bindless);
     } else {
         acc_nv_ = acc_desc.acc_nv_;
-        ReplaceStatePtr(set_state, acc_state_nv_, dev_data.GetConstCastShared<ACCELERATION_STRUCTURE_STATE>(acc_nv_), is_bindless);
+        ReplaceStatePtr(set_state, acc_state_nv_, dev_data.GetConstCastShared<ACCELERATION_STRUCTURE_STATE_NV>(acc_nv_),
+                        is_bindless);
     }
 }
 
@@ -946,8 +959,8 @@ void cvdescriptorset::MutableDescriptor::WriteUpdate(DescriptorSet &set_state, c
             break;
         }
         case DescriptorClass::AccelerationStructure: {
-            const auto *acc_info = LvlFindInChain<VkWriteDescriptorSetAccelerationStructureKHR>(update.pNext);
-            const auto *acc_info_nv = LvlFindInChain<VkWriteDescriptorSetAccelerationStructureNV>(update.pNext);
+            const auto *acc_info = vku::FindStructInPNextChain<VkWriteDescriptorSetAccelerationStructureKHR>(update.pNext);
+            const auto *acc_info_nv = vku::FindStructInPNextChain<VkWriteDescriptorSetAccelerationStructureNV>(update.pNext);
             assert(acc_info || acc_info_nv);
             is_khr_ = (acc_info != NULL);
             if (is_khr_) {
@@ -956,7 +969,7 @@ void cvdescriptorset::MutableDescriptor::WriteUpdate(DescriptorSet &set_state, c
                                 is_bindless);
             } else {
                 acc_nv_ = acc_info_nv->pAccelerationStructures[index];
-                ReplaceStatePtr(set_state, acc_state_nv_, dev_data.GetConstCastShared<ACCELERATION_STRUCTURE_STATE>(acc_nv_),
+                ReplaceStatePtr(set_state, acc_state_nv_, dev_data.GetConstCastShared<ACCELERATION_STRUCTURE_STATE_NV>(acc_nv_),
                                 is_bindless);
             }
             break;
@@ -1006,7 +1019,7 @@ void cvdescriptorset::MutableDescriptor::CopyUpdate(DescriptorSet &set_state, co
                             is_bindless);
         } else {
             acc_nv_ = acc_desc.GetAccelerationStructureNV();
-            ReplaceStatePtr(set_state, acc_state_nv_, dev_data.GetConstCastShared<ACCELERATION_STRUCTURE_STATE>(acc_nv_),
+            ReplaceStatePtr(set_state, acc_state_nv_, dev_data.GetConstCastShared<ACCELERATION_STRUCTURE_STATE_NV>(acc_nv_),
                             is_bindless);
         }
     } else if (src.GetClass() == DescriptorClass::Mutable) {
@@ -1045,7 +1058,7 @@ void cvdescriptorset::MutableDescriptor::CopyUpdate(DescriptorSet &set_state, co
                                     is_bindless);
                 } else {
                     acc_nv_ = mutable_src.GetAccelerationStructureNV();
-                    ReplaceStatePtr(set_state, acc_state_nv_, dev_data.GetConstCastShared<ACCELERATION_STRUCTURE_STATE>(acc_nv_),
+                    ReplaceStatePtr(set_state, acc_state_nv_, dev_data.GetConstCastShared<ACCELERATION_STRUCTURE_STATE_NV>(acc_nv_),
                                     is_bindless);
                 }
 

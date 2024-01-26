@@ -1442,6 +1442,8 @@ typedef struct RD_COUNTS {
 
 typedef struct ThreadData {
   MACROBLOCK mb;
+  MvCosts *mv_costs_alloc;
+  IntraBCMVCosts *dv_costs_alloc;
   RD_COUNTS rd_counts;
   FRAME_COUNTS *counts;
   PC_TREE_SHARED_BUFFERS shared_coeff_buf;
@@ -2953,6 +2955,11 @@ typedef struct AV1_COMP {
   TemporalFilterCtx tf_ctx;
 
   /*!
+   * Pointer to CDEF search context.
+   */
+  CdefSearchCtx *cdef_search_ctx;
+
+  /*!
    * Variables related to forcing integer mv decisions for the current frame.
    */
   ForceIntegerMVInfo force_intpel_info;
@@ -3378,6 +3385,11 @@ typedef struct AV1_COMP {
    * in a scale of 8x8 block.
    */
   uint8_t *consec_zero_mv;
+
+  /*!
+   * Allocated memory size for |consec_zero_mv|.
+   */
+  int consec_zero_mv_alloc_size;
 
   /*!
    * Block size of first pass encoding

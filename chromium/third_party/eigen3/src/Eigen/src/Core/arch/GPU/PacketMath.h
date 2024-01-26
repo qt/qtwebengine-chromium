@@ -10,6 +10,7 @@
 #ifndef EIGEN_PACKET_MATH_GPU_H
 #define EIGEN_PACKET_MATH_GPU_H
 
+// IWYU pragma: private
 #include "../../InternalHeaderCheck.h"
 
 namespace Eigen {

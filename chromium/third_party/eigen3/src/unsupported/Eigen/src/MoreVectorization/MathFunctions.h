@@ -11,6 +11,7 @@
 #ifndef EIGEN_MOREVECTORIZATION_MATHFUNCTIONS_H
 #define EIGEN_MOREVECTORIZATION_MATHFUNCTIONS_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen { 

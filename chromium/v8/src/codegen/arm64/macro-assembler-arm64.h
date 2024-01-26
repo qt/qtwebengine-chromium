@@ -914,14 +914,16 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   void CallEphemeronKeyBarrier(Register object, Operand offset,
                                SaveFPRegsMode fp_mode);
 
+  void CallIndirectPointerBarrier(Register object, Operand offset,
+                                  SaveFPRegsMode fp_mode,
+                                  IndirectPointerTag tag);
+
   void CallRecordWriteStubSaveRegisters(
       Register object, Operand offset, SaveFPRegsMode fp_mode,
-      StubCallMode mode = StubCallMode::kCallBuiltinPointer,
-      PointerType type = PointerType::kDirect);
+      StubCallMode mode = StubCallMode::kCallBuiltinPointer);
   void CallRecordWriteStub(
       Register object, Register slot_address, SaveFPRegsMode fp_mode,
-      StubCallMode mode = StubCallMode::kCallBuiltinPointer,
-      PointerType type = PointerType::kDirect);
+      StubCallMode mode = StubCallMode::kCallBuiltinPointer);
 
   // For a given |object| and |offset|:
   //   - Move |object| to |dst_object|.
@@ -1001,6 +1003,9 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
 
   void LoadMap(Register dst, Register object);
   void LoadCompressedMap(Register dst, Register object);
+
+  void LoadFeedbackVector(Register dst, Register closure, Register scratch,
+                          Label* fbv_undef);
 
   inline void Fmov(VRegister fd, VRegister fn);
   inline void Fmov(VRegister fd, Register rn);
@@ -1578,21 +1583,32 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
                                 ExternalPointerTag tag,
                                 Register isolate_root = Register::no_reg());
 
-  // Loads an indirect pointer from the heap.
-  void LoadIndirectPointerField(Register destination, MemOperand field_operand);
+  // Load an indirect pointer field.
+  // Only available when the sandbox is enabled.
+  void LoadIndirectPointerField(Register destination, MemOperand field_operand,
+                                IndirectPointerTag tag);
 
-  // Store an indirect pointer to the given object in the destination field.
+  // Store an indirect pointer field.
+  // Only available when the sandbox is enabled.
   void StoreIndirectPointerField(Register value, MemOperand dst_field_operand);
 
-  // Store an indirect (if the sandbox is enabled) or direct/tagged (otherwise)
-  // pointer to the given object in the destination field.
-  void StoreMaybeIndirectPointerField(Register value,
-                                      MemOperand dst_field_operand);
+  // Store a trusted pointer field.
+  // When the sandbox is enabled, these are indirect pointers using the trusted
+  // pointer table. Otherwise they are regular tagged fields.
+  void StoreTrustedPointerField(Register value, MemOperand dst_field_operand);
 
-  // Laod a pointer to a code entrypoint from the heap.
-  // When the sandbox is enabled the pointer is loaded indirectly via the code
-  // pointer table, otherwise it is loaded direclty as a raw pointer.
-  void LoadCodeEntrypointField(Register destination, MemOperand field_operand);
+  // Store a code pointer field.
+  // These are special versions of trusted pointers that, when the sandbox is
+  // enabled, reference code objects through the code pointer table.
+  void StoreCodePointerField(Register value, MemOperand dst_field_operand) {
+    StoreTrustedPointerField(value, dst_field_operand);
+  }
+
+  // Load the pointer to a Code's entrypoint via a code pointer.
+  // Only available when the sandbox is enabled as it requires the code pointer
+  // table.
+  void LoadCodeEntrypointViaCodePointer(Register destination,
+                                        MemOperand field_operand);
 
   // Instruction set functions ------------------------------------------------
   // Logical macros.
@@ -1897,6 +1913,8 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   void PopCalleeSavedRegisters();
 
   // Tiering support.
+  void AssertFeedbackCell(Register object,
+                          Register scratch) NOOP_UNLESS_DEBUG_CODE;
   inline void AssertFeedbackVector(Register object);
   void AssertFeedbackVector(Register object,
                             Register scratch) NOOP_UNLESS_DEBUG_CODE;
@@ -2167,17 +2185,18 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   // stored.
   // The offset is the offset from the start of the object, not the offset from
   // the tagged HeapObject pointer.  For use with FieldMemOperand(reg, off).
-  void RecordWriteField(Register object, int offset, Register value,
-                        LinkRegisterStatus lr_status, SaveFPRegsMode save_fp,
-                        SmiCheck smi_check = SmiCheck::kInline,
-                        PointerType type = PointerType::kDirect);
+  void RecordWriteField(
+      Register object, int offset, Register value, LinkRegisterStatus lr_status,
+      SaveFPRegsMode save_fp, SmiCheck smi_check = SmiCheck::kInline,
+      SlotDescriptor slot = SlotDescriptor::ForDirectPointerSlot());
 
   // For a given |object| notify the garbage collector that the slot at |offset|
   // has been written. |value| is the object being stored.
-  void RecordWrite(Register object, Operand offset, Register value,
-                   LinkRegisterStatus lr_status, SaveFPRegsMode save_fp,
-                   SmiCheck smi_check = SmiCheck::kInline,
-                   PointerType type = PointerType::kDirect);
+  void RecordWrite(
+      Register object, Operand offset, Register value,
+      LinkRegisterStatus lr_status, SaveFPRegsMode save_fp,
+      SmiCheck smi_check = SmiCheck::kInline,
+      SlotDescriptor slot = SlotDescriptor::ForDirectPointerSlot());
 
   // ---------------------------------------------------------------------------
   // Debugging.
@@ -2475,7 +2494,7 @@ void CallApiFunctionAndReturn(MacroAssembler* masm, bool with_profiling,
                               Register function_address,
                               ExternalReference thunk_ref, Register thunk_arg,
                               int stack_space, MemOperand* stack_space_operand,
-                              MemOperand return_value_operand);
+                              MemOperand return_value_operand, Label* done);
 
 }  // namespace internal
 }  // namespace v8

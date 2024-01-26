@@ -17,7 +17,6 @@
 #include "core/fxcrt/fx_codepage.h"
 #include "core/fxge/freetype/fx_freetype.h"
 #include "core/fxge/fx_font.h"
-#include "third_party/base/numerics/safe_math.h"
 
 namespace {
 
@@ -84,12 +83,7 @@ void CPDF_SimpleFont::LoadCharMetrics(int charcode) {
   if (err)
     return;
 
-  FT_Pos iHoriBearingX = FXFT_Get_Glyph_HoriBearingX(face);
-  FT_Pos iHoriBearingY = FXFT_Get_Glyph_HoriBearingY(face);
-  m_CharBBox[charcode] =
-      FX_RECT(TT2PDF(iHoriBearingX, face), TT2PDF(iHoriBearingY, face),
-              TT2PDF(iHoriBearingX + FXFT_Get_Glyph_Width(face), face),
-              TT2PDF(iHoriBearingY - FXFT_Get_Glyph_Height(face), face));
+  m_CharBBox[charcode] = GetCharBBoxForFace(face);
 
   if (m_bUseFontWidth) {
     int TT_Width = TT2PDF(FXFT_Get_Glyph_HoriAdvance(face), face);
@@ -227,8 +221,9 @@ bool CPDF_SimpleFont::LoadCommon() {
     LoadFontDescriptor(pFontDesc.Get());
   LoadCharWidths(pFontDesc.Get());
   if (m_pFontFile) {
-    if (m_BaseFontName.GetLength() > 8 && m_BaseFontName[7] == '+')
-      m_BaseFontName = m_BaseFontName.Last(m_BaseFontName.GetLength() - 8);
+    if (m_BaseFontName.GetLength() > 7 && m_BaseFontName[6] == '+') {
+      m_BaseFontName = m_BaseFontName.Last(m_BaseFontName.GetLength() - 7);
+    }
   } else {
     LoadSubstFont();
   }

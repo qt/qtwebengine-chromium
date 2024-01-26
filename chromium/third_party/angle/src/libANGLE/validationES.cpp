@@ -482,17 +482,16 @@ bool ValidateTextureMaxAnisotropyValue(const Context *context,
 
 bool ValidateFragmentShaderColorBufferMaskMatch(const Context *context)
 {
-    const auto &glState            = context->getState();
-    const Program *program         = context->getActiveLinkedProgram();
-    const Framebuffer *framebuffer = glState.getDrawFramebuffer();
+    const auto &glState                 = context->getState();
+    const ProgramExecutable *executable = context->getState().getLinkedProgramExecutable(context);
+    const Framebuffer *framebuffer      = glState.getDrawFramebuffer();
 
     const auto &blendStateExt = glState.getBlendStateExt();
     auto drawBufferMask = framebuffer->getDrawBufferMask() & blendStateExt.compareColorMask(0);
     auto dualSourceBlendingMask = drawBufferMask & blendStateExt.getEnabledMask() &
                                   blendStateExt.getUsesExtendedBlendFactorMask();
-    auto fragmentOutputMask = program->getExecutable().getActiveOutputVariablesMask();
-    auto fragmentSecondaryOutputMask =
-        program->getExecutable().getActiveSecondaryOutputVariablesMask();
+    auto fragmentOutputMask          = executable->getActiveOutputVariablesMask();
+    auto fragmentSecondaryOutputMask = executable->getActiveSecondaryOutputVariablesMask();
 
     return drawBufferMask == (drawBufferMask & fragmentOutputMask) &&
            dualSourceBlendingMask == (dualSourceBlendingMask & fragmentSecondaryOutputMask);
@@ -511,11 +510,11 @@ bool ValidateFragmentShaderColorBufferTypeMatch(const Context *context)
 
 bool ValidateVertexShaderAttributeTypeMatch(const Context *context)
 {
-    const auto &glState    = context->getState();
-    const Program *program = context->getActiveLinkedProgram();
-    const VertexArray *vao = context->getState().getVertexArray();
+    const auto &glState                 = context->getState();
+    const ProgramExecutable *executable = context->getState().getLinkedProgramExecutable(context);
+    const VertexArray *vao              = context->getState().getVertexArray();
 
-    if (!program)
+    if (executable == nullptr)
     {
         return false;
     }
@@ -528,9 +527,8 @@ bool ValidateVertexShaderAttributeTypeMatch(const Context *context)
     vaoAttribTypeBits = (vaoAttribEnabledMask & vaoAttribTypeBits);
     vaoAttribTypeBits |= (~vaoAttribEnabledMask & stateCurrentValuesTypeBits);
 
-    const ProgramExecutable &executable = program->getExecutable();
-    return ValidateComponentTypeMasks(executable.getAttributesTypeMask().to_ulong(),
-                                      vaoAttribTypeBits, executable.getAttributesMask().to_ulong(),
+    return ValidateComponentTypeMasks(executable->getAttributesTypeMask().to_ulong(),
+                                      vaoAttribTypeBits, executable->getAttributesMask().to_ulong(),
                                       0xFFFF);
 }
 
@@ -585,12 +583,12 @@ unsigned int GetSamplerParameterCount(GLenum pname)
     return pname == GL_TEXTURE_BORDER_COLOR ? 4 : 1;
 }
 
-const char *ValidateProgramDrawAdvancedBlendState(const Context *context, Program *program)
+const char *ValidateProgramDrawAdvancedBlendState(const Context *context,
+                                                  const ProgramExecutable &executable)
 {
-    const State &state = context->getState();
-    const BlendEquationBitSet &supportedBlendEquations =
-        program->getExecutable().getAdvancedBlendEquations();
-    const DrawBufferMask &enabledDrawBufferMask = state.getBlendStateExt().getEnabledMask();
+    const State &state                                 = context->getState();
+    const BlendEquationBitSet &supportedBlendEquations = executable.getAdvancedBlendEquations();
+    const DrawBufferMask &enabledDrawBufferMask        = state.getBlendStateExt().getEnabledMask();
 
     for (size_t blendEnabledBufferIndex : enabledDrawBufferMask)
     {
@@ -614,12 +612,12 @@ const char *ValidateProgramDrawAdvancedBlendState(const Context *context, Progra
 
 ANGLE_INLINE const char *ValidateProgramDrawStates(const Context *context,
                                                    const Extensions &extensions,
-                                                   Program *program)
+                                                   const ProgramExecutable &executable)
 {
     const State &state = context->getState();
     if (extensions.multiviewOVR || extensions.multiview2OVR)
     {
-        const int programNumViews     = program->usesMultiview() ? program->getNumViews() : 1;
+        const int programNumViews     = executable.usesMultiview() ? executable.getNumViews() : 1;
         Framebuffer *framebuffer      = state.getDrawFramebuffer();
         const int framebufferNumViews = framebuffer->getNumViews();
 
@@ -641,11 +639,11 @@ ANGLE_INLINE const char *ValidateProgramDrawStates(const Context *context,
     }
 
     // Uniform buffer validation
-    for (unsigned int uniformBlockIndex = 0;
-         uniformBlockIndex < program->getActiveUniformBlockCount(); uniformBlockIndex++)
+    for (size_t uniformBlockIndex = 0; uniformBlockIndex < executable.getUniformBlocks().size();
+         uniformBlockIndex++)
     {
-        const InterfaceBlock &uniformBlock = program->getUniformBlockByIndex(uniformBlockIndex);
-        GLuint blockBinding                = program->getUniformBlockBinding(uniformBlockIndex);
+        const InterfaceBlock &uniformBlock = executable.getUniformBlockByIndex(uniformBlockIndex);
+        GLuint blockBinding                = executable.getUniformBlockBinding(uniformBlockIndex);
         const OffsetBindingPointer<Buffer> &uniformBuffer =
             state.getIndexedUniformBuffer(blockBinding);
 
@@ -656,7 +654,7 @@ ANGLE_INLINE const char *ValidateProgramDrawStates(const Context *context,
         }
 
         size_t uniformBufferSize = GetBoundBufferAvailableSize(uniformBuffer);
-        if (uniformBufferSize < uniformBlock.dataSize &&
+        if (uniformBufferSize < uniformBlock.pod.dataSize &&
             (context->isWebGL() || context->isBufferAccessValidationEnabled()))
         {
             // undefined behaviour
@@ -674,7 +672,7 @@ ANGLE_INLINE const char *ValidateProgramDrawStates(const Context *context,
 
     if (extensions.blendEquationAdvancedKHR)
     {
-        errorString = ValidateProgramDrawAdvancedBlendState(context, program);
+        errorString = ValidateProgramDrawAdvancedBlendState(context, executable);
     }
 
     return errorString;
@@ -2841,8 +2839,9 @@ bool ValidateUniformCommonBase(const Context *context,
         return false;
     }
 
-    const auto &uniformLocations = program->getUniformLocations();
-    size_t castedLocation        = static_cast<size_t>(location.value);
+    const ProgramExecutable &executable = program->getExecutable();
+    const auto &uniformLocations        = executable.getUniformLocations();
+    size_t castedLocation               = static_cast<size_t>(location.value);
     if (castedLocation >= uniformLocations.size())
     {
         ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kInvalidUniformLocation);
@@ -2862,7 +2861,7 @@ bool ValidateUniformCommonBase(const Context *context,
         return false;
     }
 
-    const auto &uniform = program->getUniformByIndex(uniformLocation.index);
+    const LinkedUniform &uniform = executable.getUniformByIndex(uniformLocation.index);
 
     // attempting to write an array to a non-array uniform is an INVALID_OPERATION
     if (count > 1 && !uniform.isArray())
@@ -4033,10 +4032,11 @@ const char *ValidateProgramPipelineDrawStates(const Context *context,
 {
     for (const ShaderType shaderType : gl::AllShaderTypes())
     {
-        Program *program = programPipeline->getShaderProgram(shaderType);
-        if (program)
+        const SharedProgramExecutable &executable =
+            programPipeline->getShaderProgramExecutable(shaderType);
+        if (executable)
         {
-            const char *errorMsg = ValidateProgramDrawStates(context, extensions, program);
+            const char *errorMsg = ValidateProgramDrawStates(context, extensions, *executable);
             if (errorMsg)
             {
                 return errorMsg;
@@ -4062,10 +4062,10 @@ const char *ValidateProgramPipelineAttachedPrograms(ProgramPipeline *programPipe
     }
     for (const ShaderType shaderType : gl::AllShaderTypes())
     {
-        Program *shaderProgram = programPipeline->getShaderProgram(shaderType);
+        const Program *shaderProgram = programPipeline->getShaderProgram(shaderType);
         if (shaderProgram)
         {
-            ProgramExecutable &executable = shaderProgram->getExecutable();
+            const ProgramExecutable &executable = shaderProgram->getExecutable();
             for (const ShaderType programShaderType : executable.getLinkedShaderStages())
             {
                 if (shaderProgram != programPipeline->getShaderProgram(programShaderType))
@@ -4248,10 +4248,14 @@ const char *ValidateDrawStates(const Context *context, GLenum *outErrorCode)
         // Imply the strictest spec interpretation to pass on all OpenGL drivers:
         // dual-source blending is considered active if the blend state contains
         // any SRC1 factor no matter what.
-        const DrawBufferMask bufferMask = framebuffer->getDrawBufferMask();
-        if (bufferMask.any() && bufferMask.last() >= context->getCaps().maxDualSourceDrawBuffers)
+        const size_t drawBufferCount = framebuffer->getDrawbufferStateCount();
+        for (size_t drawBufferIndex = context->getCaps().maxDualSourceDrawBuffers;
+             drawBufferIndex < drawBufferCount; ++drawBufferIndex)
         {
-            return kDualSourceBlendingDrawBuffersLimit;
+            if (framebuffer->getDrawBufferState(drawBufferIndex) != GL_NONE)
+            {
+                return kDualSourceBlendingDrawBuffersLimit;
+            }
         }
     }
 
@@ -4285,7 +4289,7 @@ const char *ValidateDrawStates(const Context *context, GLenum *outErrorCode)
 
         if (program)
         {
-            const char *errorMsg = ValidateProgramDrawStates(context, extensions, program);
+            const char *errorMsg = ValidateProgramDrawStates(context, extensions, *executable);
             if (errorMsg)
             {
                 return errorMsg;
@@ -4677,7 +4681,7 @@ bool ValidateGetUniformBase(const Context *context,
         return false;
     }
 
-    if (!programObject->isValidUniformLocation(location))
+    if (!programObject->getExecutable().isValidUniformLocation(location))
     {
         ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kInvalidUniformLocation);
         return false;
@@ -4713,7 +4717,7 @@ bool ValidateSizedGetUniform(const Context *context,
     ASSERT(programObject);
 
     // sized queries -- ensure the provided buffer is large enough
-    const LinkedUniform &uniform = programObject->getUniformByLocation(location);
+    const LinkedUniform &uniform = programObject->getExecutable().getUniformByLocation(location);
     size_t requiredBytes         = VariableExternalSize(uniform.getType());
     if (static_cast<size_t>(bufSize) < requiredBytes)
     {
@@ -7638,12 +7642,6 @@ bool ValidateTexParameterBase(const Context *context,
                 ANGLE_VALIDATION_ERROR(GL_INVALID_ENUM, kES3Required);
                 return false;
             }
-            if (target == TextureType::External &&
-                !context->getExtensions().EGLImageExternalEssl3OES)
-            {
-                ANGLE_VALIDATION_ERRORF(GL_INVALID_ENUM, kEnumNotSupported, pname);
-                return false;
-            }
             if (target == TextureType::VideoImage && !context->getExtensions().videoTextureWEBGL)
             {
                 ANGLE_VALIDATION_ERRORF(GL_INVALID_ENUM, kEnumNotSupported, pname);
@@ -7991,7 +7989,8 @@ bool ValidateGetActiveUniformBlockivBase(const Context *context,
         return false;
     }
 
-    if (uniformBlockIndex.value >= programObject->getActiveUniformBlockCount())
+    const ProgramExecutable &executable = programObject->getExecutable();
+    if (uniformBlockIndex.value >= executable.getUniformBlocks().size())
     {
         ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kIndexExceedsActiveUniformBlockCount);
         return false;
@@ -8018,7 +8017,7 @@ bool ValidateGetActiveUniformBlockivBase(const Context *context,
         if (pname == GL_UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES)
         {
             const InterfaceBlock &uniformBlock =
-                programObject->getUniformBlockByIndex(uniformBlockIndex.value);
+                executable.getUniformBlockByIndex(uniformBlockIndex.value);
             *length = static_cast<GLsizei>(uniformBlock.memberIndexes.size());
         }
         else

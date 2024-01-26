@@ -10,6 +10,7 @@
 #ifndef EIGEN_GENERAL_MATRIX_VECTOR_H
 #define EIGEN_GENERAL_MATRIX_VECTOR_H
 
+// IWYU pragma: private
 #include "../InternalHeaderCheck.h"
 
 namespace Eigen {

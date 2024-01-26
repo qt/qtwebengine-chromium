@@ -20,7 +20,6 @@
  */
 
 #include <fstream>
-#include <sys/stat.h>
 #include <vector>
 
 #if defined(__linux__) || defined(__FreeBSD__) || defined(__OpenBSD__)
@@ -78,35 +77,38 @@ bool CoreChecks::ValidatePhysicalDeviceQueueFamilies(uint32_t queue_family_count
     return skip;
 }
 
-bool CoreChecks::GetPhysicalDeviceImageFormatProperties(IMAGE_STATE &image_state, const char *vuid_string) const {
+bool CoreChecks::GetPhysicalDeviceImageFormatProperties(IMAGE_STATE &image_state, const char *vuid_string,
+                                                        const Location &loc) const {
     bool skip = false;
     const auto image_create_info = image_state.createInfo;
     VkResult image_properties_result = VK_SUCCESS;
+    Func command = Func::vkGetPhysicalDeviceImageFormatProperties;
     if (image_create_info.tiling != VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT) {
         image_properties_result = DispatchGetPhysicalDeviceImageFormatProperties(
             physical_device, image_create_info.format, image_create_info.imageType, image_create_info.tiling,
             image_create_info.usage, image_create_info.flags, &image_state.image_format_properties);
     } else {
-        auto image_format_info = LvlInitStruct<VkPhysicalDeviceImageFormatInfo2>();
+        command = Func::vkGetPhysicalDeviceImageFormatProperties2;
+        VkPhysicalDeviceImageFormatInfo2 image_format_info = vku::InitStructHelper();
         image_format_info.type = image_create_info.imageType;
         image_format_info.format = image_create_info.format;
         image_format_info.tiling = image_create_info.tiling;
         image_format_info.usage = image_create_info.usage;
         image_format_info.flags = image_create_info.flags;
-        auto image_format_properties = LvlInitStruct<VkImageFormatProperties2>();
+        VkImageFormatProperties2 image_format_properties = vku::InitStructHelper();
         image_properties_result =
             DispatchGetPhysicalDeviceImageFormatProperties2(physical_device, &image_format_info, &image_format_properties);
         image_state.image_format_properties = image_format_properties.imageFormatProperties;
     }
     if (image_properties_result != VK_SUCCESS) {
-        skip |= LogError(device, vuid_string,
-                         "vkGetPhysicalDeviceImageFormatProperties() or vkGetPhysicalDeviceImageFormatProperties2() unexpectedly "
+        skip |= LogError(vuid_string, device, loc,
+                         "internal call to %s unexpectedly "
                          "failed with result = %s, "
                          "when called for validation with following params: "
                          "format: %s, imageType: %s, "
                          "tiling: %s, usage: %s, "
                          "flags: %s.",
-                         string_VkResult(image_properties_result), string_VkFormat(image_create_info.format),
+                         String(command), string_VkResult(image_properties_result), string_VkFormat(image_create_info.format),
                          string_VkImageType(image_create_info.imageType), string_VkImageTiling(image_create_info.tiling),
                          string_VkImageUsageFlags(image_create_info.usage).c_str(),
                          string_VkImageCreateFlags(image_create_info.flags).c_str());
@@ -246,7 +248,7 @@ bool CoreChecks::ValidateDeviceQueueCreateInfos(const PHYSICAL_DEVICE_STATE *pd_
         }
 
         VkQueueGlobalPriorityKHR global_priority = VK_QUEUE_GLOBAL_PRIORITY_MEDIUM_KHR;  // Implicit default value
-        const auto *global_priority_ci = LvlFindInChain<VkDeviceQueueGlobalPriorityCreateInfoKHR>(infos[i].pNext);
+        const auto *global_priority_ci = vku::FindStructInPNextChain<VkDeviceQueueGlobalPriorityCreateInfoKHR>(infos[i].pNext);
         if (global_priority_ci) {
             global_priority = global_priority_ci->globalPriority;
         }
@@ -318,11 +320,11 @@ bool CoreChecks::PreCallValidateCreateDevice(VkPhysicalDevice gpu, const VkDevic
                                                error_obj.location.dot(Field::pCreateInfo));
 
         const VkPhysicalDeviceFragmentShadingRateFeaturesKHR *fragment_shading_rate_features =
-            LvlFindInChain<VkPhysicalDeviceFragmentShadingRateFeaturesKHR>(pCreateInfo->pNext);
+            vku::FindStructInPNextChain<VkPhysicalDeviceFragmentShadingRateFeaturesKHR>(pCreateInfo->pNext);
 
         if (fragment_shading_rate_features) {
             const VkPhysicalDeviceShadingRateImageFeaturesNV *shading_rate_image_features =
-                LvlFindInChain<VkPhysicalDeviceShadingRateImageFeaturesNV>(pCreateInfo->pNext);
+                vku::FindStructInPNextChain<VkPhysicalDeviceShadingRateImageFeaturesNV>(pCreateInfo->pNext);
 
             if (shading_rate_image_features && shading_rate_image_features->shadingRateImage) {
                 if (fragment_shading_rate_features->pipelineFragmentShadingRate) {
@@ -341,7 +343,7 @@ bool CoreChecks::PreCallValidateCreateDevice(VkPhysicalDevice gpu, const VkDevic
             }
 
             const VkPhysicalDeviceFragmentDensityMapFeaturesEXT *fragment_density_map_features =
-                LvlFindInChain<VkPhysicalDeviceFragmentDensityMapFeaturesEXT>(pCreateInfo->pNext);
+                vku::FindStructInPNextChain<VkPhysicalDeviceFragmentDensityMapFeaturesEXT>(pCreateInfo->pNext);
 
             if (fragment_density_map_features && fragment_density_map_features->fragmentDensityMap) {
                 if (fragment_shading_rate_features->pipelineFragmentShadingRate) {
@@ -363,7 +365,7 @@ bool CoreChecks::PreCallValidateCreateDevice(VkPhysicalDevice gpu, const VkDevic
         }
 
         const auto *shader_image_atomic_int64_features =
-            LvlFindInChain<VkPhysicalDeviceShaderImageAtomicInt64FeaturesEXT>(pCreateInfo->pNext);
+            vku::FindStructInPNextChain<VkPhysicalDeviceShaderImageAtomicInt64FeaturesEXT>(pCreateInfo->pNext);
         if (shader_image_atomic_int64_features) {
             if (shader_image_atomic_int64_features->sparseImageInt64Atomics &&
                 !shader_image_atomic_int64_features->shaderImageInt64Atomics) {
@@ -372,7 +374,7 @@ bool CoreChecks::PreCallValidateCreateDevice(VkPhysicalDevice gpu, const VkDevic
                                  "feature must also be enabled.");
             }
         }
-        const auto *shader_atomic_float_features = LvlFindInChain<VkPhysicalDeviceShaderAtomicFloatFeaturesEXT>(pCreateInfo->pNext);
+        const auto *shader_atomic_float_features = vku::FindStructInPNextChain<VkPhysicalDeviceShaderAtomicFloatFeaturesEXT>(pCreateInfo->pNext);
         if (shader_atomic_float_features) {
             if (shader_atomic_float_features->sparseImageFloat32Atomics &&
                 !shader_atomic_float_features->shaderImageFloat32Atomics) {
@@ -388,7 +390,7 @@ bool CoreChecks::PreCallValidateCreateDevice(VkPhysicalDevice gpu, const VkDevic
             }
         }
         const auto *shader_atomic_float2_features =
-            LvlFindInChain<VkPhysicalDeviceShaderAtomicFloat2FeaturesEXT>(pCreateInfo->pNext);
+            vku::FindStructInPNextChain<VkPhysicalDeviceShaderAtomicFloat2FeaturesEXT>(pCreateInfo->pNext);
         if (shader_atomic_float2_features) {
             if (shader_atomic_float2_features->sparseImageFloat32AtomicMinMax &&
                 !shader_atomic_float2_features->shaderImageFloat32AtomicMinMax) {
@@ -398,7 +400,7 @@ bool CoreChecks::PreCallValidateCreateDevice(VkPhysicalDevice gpu, const VkDevic
                              "feature must also be enabled.");
             }
         }
-        const auto *device_group_ci = LvlFindInChain<VkDeviceGroupDeviceCreateInfo>(pCreateInfo->pNext);
+        const auto *device_group_ci = vku::FindStructInPNextChain<VkDeviceGroupDeviceCreateInfo>(pCreateInfo->pNext);
         if (device_group_ci) {
             for (uint32_t i = 0; i < device_group_ci->physicalDeviceCount - 1; ++i) {
                 for (uint32_t j = i + 1; j < device_group_ci->physicalDeviceCount; ++j) {
@@ -430,20 +432,7 @@ void CoreChecks::CreateDevice(const VkDeviceCreateInfo *pCreateInfo) {
 
     // Allocate shader validation cache
     if (!disabled[shader_validation_caching] && !disabled[shader_validation] && !core_validation_cache) {
-        auto tmp_path = GetEnvironment("XDG_CACHE_HOME");
-        if (!tmp_path.size()) {
-            auto cachepath = GetEnvironment("HOME") + "/.cache";
-            struct stat info;
-            if (stat(cachepath.c_str(), &info) == 0) {
-                if ((info.st_mode & S_IFMT) == S_IFDIR) {
-                    tmp_path = cachepath;
-                }
-            }
-        }
-        if (!tmp_path.size()) tmp_path = GetEnvironment("TMPDIR");
-        if (!tmp_path.size()) tmp_path = GetEnvironment("TMP");
-        if (!tmp_path.size()) tmp_path = GetEnvironment("TEMP");
-        if (!tmp_path.size()) tmp_path = "/tmp";
+        auto tmp_path = GetTempFilePath();
         validation_cache_path = tmp_path + "/shader_validation_cache";
 #if defined(__linux__) || defined(__FreeBSD__) || defined(__OpenBSD__)
         validation_cache_path += "-" + std::to_string(getuid());
@@ -457,11 +446,12 @@ void CoreChecks::CreateDevice(const VkDeviceCreateInfo *pCreateInfo) {
             std::copy(std::istreambuf_iterator<char>(read_file), {}, std::back_inserter(validation_cache_data));
             read_file.close();
         } else {
-            LogInfo(device, "UNASSIGNED-cache-file-error",
+            Location loc(Func::vkCreateDevice);
+            LogInfo("UNASSIGNED-cache-file-error", device, loc,
                     "Cannot open shader validation cache at %s for reading (it may not exist yet)", validation_cache_path.c_str());
         }
 
-        VkValidationCacheCreateInfoEXT cacheCreateInfo = LvlInitStruct<VkValidationCacheCreateInfoEXT>();
+        VkValidationCacheCreateInfoEXT cacheCreateInfo = vku::InitStructHelper();
         cacheCreateInfo.initialDataSize = validation_cache_data.size();
         cacheCreateInfo.pInitialData = validation_cache_data.data();
         cacheCreateInfo.flags = 0;
@@ -475,6 +465,7 @@ void CoreChecks::PreCallRecordDestroyDevice(VkDevice device, const VkAllocationC
     StateTracker::PreCallRecordDestroyDevice(device, pAllocator);
 
     if (core_validation_cache) {
+        Location loc(Func::vkDestroyDevice);
         size_t validation_cache_size = 0;
         void *validation_cache_data = nullptr;
 
@@ -482,7 +473,7 @@ void CoreChecks::PreCallRecordDestroyDevice(VkDevice device, const VkAllocationC
 
         validation_cache_data = (char *)malloc(sizeof(char) * validation_cache_size);
         if (!validation_cache_data) {
-            LogInfo(device, "UNASSIGNED-cache-memory-error", "Validation Cache Memory Error");
+            LogInfo("UNASSIGNED-cache-memory-error", device, loc, "Validation Cache Memory Error");
             return;
         }
 
@@ -490,7 +481,7 @@ void CoreChecks::PreCallRecordDestroyDevice(VkDevice device, const VkAllocationC
             CoreLayerGetValidationCacheDataEXT(device, core_validation_cache, &validation_cache_size, validation_cache_data);
 
         if (result != VK_SUCCESS) {
-            LogInfo(device, "UNASSIGNED-cache-retrieval-error", "Validation Cache Retrieval Error");
+            LogInfo("UNASSIGNED-cache-retrieval-error", device, loc, "Validation Cache Retrieval Error");
             free(validation_cache_data);
             return;
         }
@@ -501,7 +492,7 @@ void CoreChecks::PreCallRecordDestroyDevice(VkDevice device, const VkAllocationC
                 write_file.write(static_cast<char *>(validation_cache_data), validation_cache_size);
                 write_file.close();
             } else {
-                LogInfo(device, "UNASSIGNED-cache-write-error", "Cannot open shader validation cache at %s for writing",
+                LogInfo("UNASSIGNED-cache-write-error", device, loc, "Cannot open shader validation cache at %s for writing",
                         validation_cache_path.c_str());
             }
         }
@@ -596,7 +587,7 @@ bool CoreChecks::ValidateGetPhysicalDeviceImageFormatProperties2(const VkPhysica
                                                                  VkImageFormatProperties2 *pImageFormatProperties,
                                                                  const ErrorObject &error_obj) const {
     bool skip = false;
-    const auto *copy_perf_query = LvlFindInChain<VkHostImageCopyDevicePerformanceQueryEXT>(pImageFormatProperties->pNext);
+    const auto *copy_perf_query = vku::FindStructInPNextChain<VkHostImageCopyDevicePerformanceQueryEXT>(pImageFormatProperties->pNext);
     if (copy_perf_query) {
         if ((pImageFormatInfo->usage & VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT) == 0) {
             skip |= LogError("VUID-vkGetPhysicalDeviceImageFormatProperties2-pNext-09004", physical_device, error_obj.location,
@@ -629,8 +620,8 @@ bool CoreChecks::PreCallValidateGetPhysicalDeviceImageFormatProperties2KHR(VkPhy
 
 // Access helper functions for external modules
 VkFormatProperties3KHR CoreChecks::GetPDFormatProperties(const VkFormat format) const {
-    auto fmt_props_3 = LvlInitStruct<VkFormatProperties3KHR>();
-    auto fmt_props_2 = LvlInitStruct<VkFormatProperties2>(&fmt_props_3);
+    VkFormatProperties3KHR fmt_props_3 = vku::InitStructHelper();
+    VkFormatProperties2 fmt_props_2 = vku::InitStructHelper(&fmt_props_3);
 
     if (has_format_feature2) {
         DispatchGetPhysicalDeviceFormatProperties2(physical_device, format, &fmt_props_2);
@@ -674,9 +665,9 @@ VkResult CoreChecks::CoreLayerMergeValidationCachesEXT(VkDevice device, VkValida
     for (uint32_t i = 0; i < srcCacheCount; i++) {
         auto src = CastFromHandle<const ValidationCache *>(pSrcCaches[i]);
         if (src == dst) {
-            skip |= LogError(device, "VUID-vkMergeValidationCachesEXT-dstCache-01536",
-                             "vkMergeValidationCachesEXT: dstCache (0x%" PRIx64 ") must not appear in pSrcCaches array.",
-                             HandleToUint64(dstCache));
+            const Location loc(Func::vkMergePipelineCaches, Field::dstCache);
+            skip |= LogError("VUID-vkMergeValidationCachesEXT-dstCache-01536", device, loc,
+                             "(0x%" PRIx64 ") must not appear in pSrcCaches array.", HandleToUint64(dstCache));
             result = VK_ERROR_VALIDATION_FAILED_EXT;
         }
         if (!skip) {
@@ -723,7 +714,7 @@ bool CoreChecks::PreCallValidateCreatePrivateDataSlot(VkDevice device, const VkP
                                                       const VkAllocationCallbacks *pAllocator, VkPrivateDataSlot *pPrivateDataSlot,
                                                       const ErrorObject &error_obj) const {
     bool skip = false;
-    if (!enabled_features.core13.privateData) {
+    if (!enabled_features.privateData) {
         skip |= LogError("VUID-vkCreatePrivateDataSlot-privateData-04564", device, error_obj.location,
                          "The privateData feature was not enabled.");
     }
@@ -737,8 +728,7 @@ bool CoreChecks::PreCallValidateCreateCommandPool(VkDevice device, const VkComma
     const Location create_info_loc = error_obj.location.dot(Field::pCreateInfo);
     skip |= ValidateDeviceQueueFamily(pCreateInfo->queueFamilyIndex, create_info_loc.dot(Field::queueFamilyIndex),
                                       "VUID-vkCreateCommandPool-queueFamilyIndex-01937");
-    if ((enabled_features.core11.protectedMemory == VK_FALSE) &&
-        ((pCreateInfo->flags & VK_COMMAND_POOL_CREATE_PROTECTED_BIT) != 0)) {
+    if ((enabled_features.protectedMemory == VK_FALSE) && ((pCreateInfo->flags & VK_COMMAND_POOL_CREATE_PROTECTED_BIT) != 0)) {
         skip |= LogError("VUID-VkCommandPoolCreateInfo-flags-02860", device, create_info_loc.dot(Field::flags),
                          "includes VK_COMMAND_POOL_CREATE_PROTECTED_BIT, but the protectedMemory feature was not enabled.");
     }
@@ -748,21 +738,36 @@ bool CoreChecks::PreCallValidateCreateCommandPool(VkDevice device, const VkComma
 
 bool CoreChecks::PreCallValidateDestroyCommandPool(VkDevice device, VkCommandPool commandPool,
                                                    const VkAllocationCallbacks *pAllocator, const ErrorObject &error_obj) const {
-    auto cp_state = Get<COMMAND_POOL_STATE>(commandPool);
     bool skip = false;
-    if (cp_state) {
-        // Verify that command buffers in pool are complete (not in-flight)
-        skip |=
-            CheckCommandBuffersInFlight(cp_state.get(), "destroy command pool with", "VUID-vkDestroyCommandPool-commandPool-00041");
+    auto cp_state = Get<COMMAND_POOL_STATE>(commandPool);
+    if (!cp_state) { return false; }
+    // Verify that command buffers in pool are complete (not in-flight)
+    for (auto &entry : cp_state->commandBuffers) {
+        auto cb_state = entry.second;
+        if (cb_state->InUse()) {
+            const LogObjectList objlist(cb_state->Handle(), commandPool);
+            skip |= LogError("VUID-vkDestroyCommandPool-commandPool-00041", objlist, error_obj.location, "(%s) is in use.",
+                             FormatHandle(cb_state->Handle()).c_str());
+        }
     }
     return skip;
 }
 
 bool CoreChecks::PreCallValidateResetCommandPool(VkDevice device, VkCommandPool commandPool, VkCommandPoolResetFlags flags,
                                                  const ErrorObject &error_obj) const {
-    auto command_pool_state = Get<COMMAND_POOL_STATE>(commandPool);
-    return CheckCommandBuffersInFlight(command_pool_state.get(), "reset command pool with",
-                                       "VUID-vkResetCommandPool-commandPool-00040");
+    bool skip = false;
+    auto cp_state = Get<COMMAND_POOL_STATE>(commandPool);
+    if (!cp_state) { return false; }
+    // Verify that command buffers in pool are complete (not in-flight)
+    for (auto &entry : cp_state->commandBuffers) {
+        auto cb_state = entry.second;
+        if (cb_state->InUse()) {
+            const LogObjectList objlist(cb_state->Handle(), commandPool);
+            skip |= LogError("VUID-vkResetCommandPool-commandPool-00040", objlist, error_obj.location, "(%s) is in use.",
+                             FormatHandle(cb_state->Handle()).c_str());
+        }
+    }
+    return skip;
 }
 
 // For given obj node, if it is use, flag a validation error and return callback result, else return false
@@ -770,9 +775,42 @@ bool CoreChecks::ValidateObjectNotInUse(const BASE_NODE *obj_node, const Locatio
     if (disabled[object_in_use]) return false;
     auto obj_struct = obj_node->Handle();
     bool skip = false;
-    if (obj_node->InUse()) {
-        skip |= LogError(error_code, device, loc, "can't be called on %s that is currently in use by a command buffer.",
-                         FormatHandle(obj_struct).c_str());
+
+    const auto *used_handle = obj_node->InUse();
+    if (used_handle) {
+        skip |= LogError(error_code, device, loc, "can't be called on %s that is currently in use by %s.",
+                         FormatHandle(obj_struct).c_str(), FormatHandle(*used_handle).c_str());
+    }
+    return skip;
+}
+
+bool CoreChecks::PreCallValidateGetCalibratedTimestampsEXT(VkDevice device, uint32_t timestampCount,
+                                                           const VkCalibratedTimestampInfoEXT *pTimestampInfos,
+                                                           uint64_t *pTimestamps, uint64_t *pMaxDeviation,
+                                                           const ErrorObject &error_obj) const {
+    bool skip = false;
+
+    uint32_t count = 0;
+    DispatchGetPhysicalDeviceCalibrateableTimeDomainsEXT(physical_device, &count, nullptr);
+    std::vector<VkTimeDomainEXT> valid_time_domains(count);
+    DispatchGetPhysicalDeviceCalibrateableTimeDomainsEXT(physical_device, &count, valid_time_domains.data());
+
+    vvl::unordered_map<VkTimeDomainEXT, uint32_t> time_domain_map;
+    for (uint32_t i = 0; i < timestampCount; i++) {
+        const VkTimeDomainEXT time_domain = pTimestampInfos[i].timeDomain;
+        auto it = time_domain_map.find(time_domain);
+        if (it != time_domain_map.end()) {
+            skip |= LogError("VUID-vkGetCalibratedTimestampsEXT-timeDomain-09246", device,
+                             error_obj.location.dot(Field::pTimestampInfos, i).dot(Field::timeDomain),
+                             "and pTimestampInfos[%" PRIu32 "].timeDomain are both %s.", it->second,
+                             string_VkTimeDomainEXT(time_domain));
+            break;  // no reason to check after finding 1 duplicate
+        } else if (!IsValueIn(time_domain, valid_time_domains)) {
+            skip |= LogError("VUID-VkCalibratedTimestampInfoEXT-timeDomain-02354", device,
+                             error_obj.location.dot(Field::pTimestampInfos, i).dot(Field::timeDomain), "is %s.",
+                             string_VkTimeDomainEXT(time_domain));
+        }
+        time_domain_map[time_domain] = i;
     }
     return skip;
 }

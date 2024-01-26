@@ -39,19 +39,18 @@ import * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Extensions from '../../models/extensions/extensions.js';
-
-import elementsPanelStyles from './elementsPanel.css.js';
-
 import type * as Adorners from '../../ui/components/adorners/adorners.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
-import * as UI from '../../ui/legacy/legacy.js';
 import * as TreeOutline from '../../ui/components/tree_outline/tree_outline.js';
+import * as UI from '../../ui/legacy/legacy.js';
+import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 
-import {AccessibilityTreeView} from './AccessibilityTreeView.js';
 import {type AXTreeNodeData} from './AccessibilityTreeUtils.js';
+import {AccessibilityTreeView} from './AccessibilityTreeView.js';
+import {ColorSwatchPopoverIcon} from './ColorSwatchPopoverIcon.js';
 import * as ElementsComponents from './components/components.js';
 import {ComputedStyleWidget} from './ComputedStyleWidget.js';
-
+import elementsPanelStyles from './elementsPanel.css.js';
 import {type ElementsTreeElement} from './ElementsTreeElement.js';
 import {ElementsTreeElementHighlighter} from './ElementsTreeElementHighlighter.js';
 import {ElementsTreeOutline} from './ElementsTreeOutline.js';
@@ -62,7 +61,6 @@ import {
   StylesSidebarPane,
   type StylesUpdateCompletedEvent,
 } from './StylesSidebarPane.js';
-import {ColorSwatchPopoverIcon} from './ColorSwatchPopoverIcon.js';
 
 const UIStrings = {
   /**
@@ -220,6 +218,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
   constructor() {
     super('elements');
 
+    this.element.setAttribute('jslog', `${VisualLogging.elementsPanel()}`);
     this.splitWidget = new UI.SplitWidget.SplitWidget(true, true, 'elementsPanelSplitViewState', 325, 325);
     this.splitWidget.addEventListener(
         UI.SplitWidget.Events.SidebarSizeChanged, this.updateTreeOutlineVisibleWidth.bind(this));
@@ -988,7 +987,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     this.stylesWidget.addEventListener(StylesSidebarPaneEvents.InitialUpdateCompleted, () => {
       this.stylesWidget.appendToolbarItem(stylesSplitWidget.createShowHideSidebarButton(
           i18nString(UIStrings.showComputedStylesSidebar), i18nString(UIStrings.hideComputedStylesSidebar),
-          i18nString(UIStrings.computedStylesShown), i18nString(UIStrings.computedStylesHidden)));
+          i18nString(UIStrings.computedStylesShown), i18nString(UIStrings.computedStylesHidden), 'computedStyles'));
     });
 
     const showMetricsWidgetInComputedPane = (): void => {
@@ -1478,7 +1477,9 @@ export class PseudoStateMarkerDecorator implements MarkerDecorator {
     if (!pseudoState) {
       return null;
     }
-
-    return {color: 'orange', title: i18nString(UIStrings.elementStateS, {PH1: ':' + pseudoState.join(', :')})};
+    return {
+      color: '--sys-color-orange-bright',
+      title: i18nString(UIStrings.elementStateS, {PH1: ':' + pseudoState.join(', :')}),
+    };
   }
 }

@@ -75,6 +75,7 @@ bool TraceBuffer::Initialize(size_t size) {
     return false;
   }
   size_ = size;
+  used_size_ = 0;
   stats_.set_buffer_size(size);
   max_chunk_size_ = std::min(size, ChunkRecord::kMaxSize);
   wptr_ = begin();
@@ -134,7 +135,7 @@ void TraceBuffer::CopyChunkUntrusted(ProducerID producer_id_trusted,
   record.chunk_id = chunk_id;
   record.writer_id = writer_id;
   record.num_fragments = num_fragments;
-  record.flags = chunk_flags;
+  record.flags = chunk_flags & ChunkRecord::kFlagsBitMask;
   ChunkMeta::Key key(record);
 
   // Check whether we have already copied the same chunk previously. This may
@@ -451,7 +452,7 @@ bool TraceBuffer::TryPatchChunkContents(ProducerID producer_id,
   stats_.set_patches_succeeded(stats_.patches_succeeded() + patches_size);
   if (!other_patches_pending) {
     chunk_meta.flags &= ~kChunkNeedsPatching;
-    chunk_record->flags = chunk_meta.flags;
+    chunk_record->flags = chunk_meta.flags & ChunkRecord::kFlagsBitMask;
   }
   return true;
 }
@@ -915,8 +916,8 @@ TraceBuffer::TraceBuffer(CloneCtor, const TraceBuffer& src)
 
   // The assignments below must be done after Initialize().
 
-  data_.EnsureCommitted(data_.size());
-  memcpy(data_.Get(), src.data_.Get(), src.data_.size());
+  EnsureCommitted(src.used_size_);
+  memcpy(data_.Get(), src.data_.Get(), src.used_size_);
   last_chunk_id_written_ = src.last_chunk_id_written_;
 
   stats_ = src.stats_;

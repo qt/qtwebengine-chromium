@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import '@material/web/textfield/outlined-text-field';
+import '@material/web/textfield/outlined-text-field.js';
 
-import {MdOutlinedTextField, TextFieldType} from '@material/web/textfield/outlined-text-field';
+import {MdOutlinedTextField, TextFieldType} from '@material/web/textfield/outlined-text-field.js';
 import {css, CSSResultGroup, html, LitElement, nothing, PropertyValues} from 'lit';
 
 /**
@@ -21,7 +21,32 @@ import {css, CSSResultGroup, html, LitElement, nothing, PropertyValues} from 'li
 const TEXTFIELD_CONTAINER_ON_BASE = css`var(--cros-sys-input_field_on_base)`;
 const TEXTFIELD_CONTAINER_ON_SHADED =
     css`var(--cros-sys-input_field_on_shaded)`;
+const ICON_COLOR =
+    css`var(--cros-textfield-icon-color, var(--cros-sys-secondary))`;
 
+/**
+ * We need the outline to render on the outside of the textfield filled
+ * container, which is an element we control. This adds an extra
+ * 2px padding to the text to accomodate the extra space, as the
+ * md-textfield does not support changing it's height, only line height.
+ * These values are computed from the default values at
+ * https://carbon.googleplex.com/google-material-3/pages/text-fields/specs
+ * and adding on the outline width. Computed to
+ */
+const MD_TEXTFIELD_OUTLINE_WIDTH = 2;
+const DEFAULT_TOP_BOTTOM_SPACE = 8;
+const DEFAULT_LEFT_RIGHT_SPACE = 16;
+const MD_FIELD_TOP_BOTTOM_SPACE_PX =
+    css`${DEFAULT_TOP_BOTTOM_SPACE + MD_TEXTFIELD_OUTLINE_WIDTH}px`;
+const MD_FIELD_LEFT_RIGHT_SPACE_PX =
+    css`${DEFAULT_LEFT_RIGHT_SPACE + MD_TEXTFIELD_OUTLINE_WIDTH}px`;
+
+/**
+ * To account for the extra spacing around the textfield background and the
+ * focus outline, we have to increase the corner radius by the outline width.
+ */
+const MD_TEXTFIELD_CONTAINER_CORNER_RADIUS =
+    css`${8 + MD_TEXTFIELD_OUTLINE_WIDTH}px`;
 /**
  * Textfield component. See the specs here:
  * https://www.figma.com/file/1XsFoZH868xLcLPfPZRxLh/CrOS-Next---Component-Library-%26-Spec?node-id=3227%3A25882&t=50tDpMdSJky6eT9O-0
@@ -37,60 +62,68 @@ export class Textfield extends LitElement {
       outline: none;
     }
 
-    :host([disabled]) {
+    :host([disabled]) .text-labels {
       opacity: var(--cros-disabled-opacity);
     }
 
     md-outlined-text-field {
       /** Base styles */
-      --md-outlined-field-leading-content-color: var(--cros-sys-secondary);
-      --md-outlined-field-trailing-content-color: var(--cros-sys-secondary);
       --md-outlined-field-supporting-text-color: var(--cros-sys-on_surface);
-      --md-outlined-field-supporting-text-leading-space: 0px;
-      --md-outlined-field-supporting-text-trailing-space: 0px;
+      --md-outlined-field-supporting-text-leading-space: ${
+      MD_TEXTFIELD_OUTLINE_WIDTH}px;
+      --md-outlined-field-supporting-text-trailing-space: ${
+      MD_TEXTFIELD_OUTLINE_WIDTH}px;
       --md-outlined-field-supporting-text-top-space: 8px;;
-      --md-outlined-text-field-container-shape-end-end: 8px;
-      --md-outlined-text-field-container-shape-end-start: 8px;
-      --md-outlined-text-field-container-shape-start-end: 8px;
-      --md-outlined-text-field-container-shape-start-start: 8px;
+      --md-outlined-text-field-focus-caret-color: var(--cros-sys-primary);
+      --md-outlined-text-field-container-shape-end-end: ${
+      MD_TEXTFIELD_CONTAINER_CORNER_RADIUS};
+      --md-outlined-text-field-container-shape-end-start: ${
+      MD_TEXTFIELD_CONTAINER_CORNER_RADIUS};
+      --md-outlined-text-field-container-shape-start-end: ${
+      MD_TEXTFIELD_CONTAINER_CORNER_RADIUS};
+      --md-outlined-text-field-container-shape-start-start: ${
+      MD_TEXTFIELD_CONTAINER_CORNER_RADIUS};
       --md-outlined-text-field-bottom-space: 8px;
       --md-outlined-text-field-input-text-color: var(--cros-sys-on_surface);
       --md-outlined-text-field-input-text-placeholder-color: var(--cros-sys-secondary);
       --md-outlined-text-field-input-text-prefix-color: var(--cros-sys-on_surface);
-      --md-outlined-text-field-input-text-suffix-color: var(--cros-sys-on_surface);
-      --md-outlined-text-field-input-text-type: var(--cros-body-2-font);
+      --md-outlined-text-field-input-text-suffix-color: var(--cros-sys-secondary);
+      --md-outlined-text-field-input-text-suffix-leading-space: 8px;
+      --md-outlined-text-field-input-text-font: var(--cros-body-2-font-family);
+      --md-outlined-text-field-input-text-size: var(--cros-body-2-font-size);
+      --md-outlined-text-field-input-text-line-height: var(--cros-body-2-line-height);
+      --md-outlined-text-field-input-text-weight: var(--cros-body-2-font-weight);
       --md-outlined-text-field-outline-width: 0px;
-      --md-outlined-text-field-supporting-text-type: var(--cros-label-2-font);
+      --md-outlined-text-field-supporting-text-font: var(--cros-label-2-font-family);
+      --md-outlined-text-field-supporting-text-size: var(--cros-label-2-font-size);
+      --md-outlined-text-field-supporting-text-line-height: var(--cros-label-2-line-height);
+      --md-outlined-text-field-supporting-text-weight: var(--cros-label-2-font-weight);
       --md-outlined-text-field-top-space: 8px;
+      --md-outlined-field-bottom-space: ${MD_FIELD_TOP_BOTTOM_SPACE_PX};
+      --md-outlined-field-leading-space: ${MD_FIELD_LEFT_RIGHT_SPACE_PX};
+      --md-outlined-field-top-space: ${MD_FIELD_TOP_BOTTOM_SPACE_PX};
+      --md-outlined-field-trailing-space: ${MD_FIELD_LEFT_RIGHT_SPACE_PX};
       /** Disabled */
-      --md-outlined-field-disabled-leading-content-color: var(--cros-sys-secondary);
-      --md-outlined-field-disabled-trailing-content-color: var(--cros-sys-secondary);
       --md-outlined-field-disabled-supporting-text-color: var(--cros-sys-on_surface);
       --md-outlined-text-field-disabled-input-text-color: var(--cros-sys-on_surface);
       --md-outlined-text-field-disabled-input-text-prefix-color: var(--cros-sys-on_surface);
-      --md-outlined-text-field-disabled-input-text-suffix-color: var(--cros-sys-on_surface);
+      --md-outlined-text-field-disabled-input-text-suffix-color: var(--cros-sys-secondary);
+      --md-outlined-text-field-disabled-outline-width: 0px;
       /** Error */
-      --md-outlined-field-error-focus-leading-content-color: var(--cros-sys-secondary);
-      --md-outlined-field-error-focus-trailing-content-color: var(--cros-sys-secondary);
-      --md-outlined-field-error-leading-content-color: var(--cros-sys-secondary);
-      --md-outlined-field-error-trailing-content-color: var(--cros-sys-secondary);
+      --md-outlined-text-field-error-focus-caret-color: var(--cros-sys-primary);
       --md-outlined-text-field-error-focus-input-text-color: var(--cros-sys-on_surface);
+      --md-outlined-text-field-error-focus-outline-color: var(--cros-sys-error);
       --md-outlined-text-field-error-hover-input-text-color: var(--cros-sys-on_surface);
       --md-outlined-text-field-error-hover-state-layer-opacity: 0;
       --md-outlined-text-field-error-hover-supporting-text-color: var(--cros-sys-error);
       --md-outlined-text-field-error-input-text-color: var(--cros-sys-on_surface);
       --md-outlined-text-field-error-supporting-text-color: var(--cros-sys-error);
       /** Focus */
-      --md-outlined-field-focus-leading-content-color: var(--cros-sys-secondary);
-      --md-outlined-field-focus-trailing-content-color: var(--cros-sys-secondary);
       --md-outlined-field-focus-outline-color: var(--cros-sys-primary);
+      --md-outlined-field-focus-outline-width: ${MD_TEXTFIELD_OUTLINE_WIDTH}px;
       --md-outlined-text-field-focus-outline-color: var(--cros-sys-primary);
-      --md-outlined-text-field-focus-caret-color: var(--cros-sys-primary);
       --md-outlined-text-field-focus-input-text-color: var(--cros-sys-on_surface);
       /** Hover */
-      --md-outlined-field-hover-leading-content-color: var(--cros-sys-secondary);
-      --md-outlined-field-hover-trailing-content-color: var(--cros-sys-secondary);
-      --md-outlined-text-field-caret-color: var(--cros-sys-primary);
       --md-outlined-text-field-hover-outline-width: 0px;
       --md-outlined-text-field-hover-supporting-text-color: var(--cros-sys-on_surface);
       --md-outlined-text-field-hover-input-text-color: var(--cros-sys-on_surface);
@@ -113,6 +146,7 @@ export class Textfield extends LitElement {
     #visible-label {
       font: var(--cros-label-1-font);
       padding-bottom: 8px;
+      padding-inline-start: ${MD_TEXTFIELD_OUTLINE_WIDTH}px;
     }
 
     #main-container {
@@ -120,17 +154,41 @@ export class Textfield extends LitElement {
     }
 
     #textfield-background {
-      position:absolute;
-      min-height: 36px;
-      width: 100%;
-      border-radius: 8px;
       background-color: ${TEXTFIELD_CONTAINER_ON_BASE};
+      border-radius: 8px;
+      left: ${MD_TEXTFIELD_OUTLINE_WIDTH}px;
+      min-height: 36px;
+      position:absolute;
+      right: ${MD_TEXTFIELD_OUTLINE_WIDTH}px;
+      top: ${MD_TEXTFIELD_OUTLINE_WIDTH}px;
     }
 
     :host([shaded]) #textfield-background {
       background-color: ${TEXTFIELD_CONTAINER_ON_SHADED};
     }
+
+    /**
+     * Some md styling can override the color provided to the md-textfield, so
+     * so we explicitly set it here as well.
+     */
+    ::slotted(cros-icon-button) {
+      --cros-icon-button-color-override: ${ICON_COLOR};
+    }
+
+    ::slotted(svg) {
+      fill: ${ICON_COLOR};
+    }
+
+    ::slotted(*) {
+      color: ${ICON_COLOR};
+    }
   `;
+
+  /** @nocollapse */
+  static override shadowRootOptions = {
+    ...LitElement.shadowRootOptions,
+    delegatesFocus: true
+  };
 
   /** @nocollapse */
   static override properties = {
@@ -138,6 +196,7 @@ export class Textfield extends LitElement {
     shaded: {type: Boolean, reflect: true},
     value: {type: String, attribute: true},
     label: {type: String, attribute: true},
+    ariaLabel: {type: String, reflect: true, attribute: 'aria-label'},
     suffix: {type: String, attribute: true},
     disabled: {type: Boolean, reflect: true},
     hint: {type: String, attribute: true},
@@ -240,6 +299,7 @@ export class Textfield extends LitElement {
   }
 
   override render() {
+    const ariaLabel = this.ariaLabel || this.label;
     return html`
       ${this.maybeRenderLabel()}
       <div id="main-container">
@@ -247,7 +307,7 @@ export class Textfield extends LitElement {
         <md-outlined-text-field
             ?disabled=${this.disabled}
             type=${this.type}
-            data-aria-label=${this.label}
+            aria-label=${ariaLabel}
             value=${this.value}
             suffix-text=${this.suffix}
             maxLength=${this.maxLength}
@@ -267,6 +327,17 @@ export class Textfield extends LitElement {
     `;
   }
 
+  focusTextfield() {
+    this.mdTextfield!.focus();
+  }
+
+  override async getUpdateComplete() {
+    const result = await super.getUpdateComplete();
+    await this.mdTextfield?.updateComplete;
+    return result;
+  }
+
+
   private maybeRenderLabel() {
     return this.label ?
         html`<div id="visible-label" class="text-labels">${this.label}</div>` :
@@ -283,12 +354,12 @@ export class Textfield extends LitElement {
         this.shadowRoot!.querySelector('slot[name="trailing"]');
 
     if (leadingIcon) {
-      leadingSlot!.setAttribute('slot', 'leadingicon');
+      leadingSlot!.setAttribute('slot', 'leading-icon');
     } else {
       leadingSlot!.removeAttribute('slot');
     }
     if (trailingIcon) {
-      trailingSlot!.setAttribute('slot', 'trailingicon');
+      trailingSlot!.setAttribute('slot', 'trailing-icon');
     } else {
       trailingSlot!.removeAttribute('slot');
     }

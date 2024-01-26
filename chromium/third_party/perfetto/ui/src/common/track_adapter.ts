@@ -13,13 +13,13 @@
 // limitations under the License.
 
 import m from 'mithril';
+import {v4 as uuidv4} from 'uuid';
 
 import {assertExists} from '../base/logging';
+import {duration, Span, time} from '../base/time';
 import {EngineProxy} from '../common/engine';
-import {duration, Span, time} from '../common/time';
 import {PxSpan, TimeScale} from '../frontend/time_scale';
 import {NewTrackArgs, SliceRect} from '../frontend/track';
-import {TrackButtonAttrs} from '../frontend/track_panel';
 
 import {BasicAsyncTrack} from './basic_async_track';
 
@@ -40,14 +40,15 @@ export class TrackWithControllerAdapter<Config, Data> extends
     BasicAsyncTrack<Data> {
   private track: TrackAdapter<Config, Data>;
   private controller: TrackControllerAdapter<Config, Data>;
+  private isSetup = false;
 
   constructor(
-      engine: EngineProxy, id: string, config: Config,
+      engine: EngineProxy, trackKey: string, config: Config,
       Track: TrackAdapterClass<Config, Data>,
       Controller: TrackControllerAdapterClass<Config, Data>) {
     super();
     const args: NewTrackArgs = {
-      trackId: id,
+      trackKey,
       engine,
     };
     this.track = new Track(args);
@@ -58,6 +59,7 @@ export class TrackWithControllerAdapter<Config, Data> extends
 
   onDestroy(): void {
     this.track.onDestroy();
+    this.controller.onDestroy();
     super.onDestroy();
   }
 
@@ -73,12 +75,8 @@ export class TrackWithControllerAdapter<Config, Data> extends
     return this.track.getHeight();
   }
 
-  getTrackShellButtons(): m.Vnode<TrackButtonAttrs, {}>[] {
+  getTrackShellButtons(): m.Children {
     return this.track.getTrackShellButtons();
-  }
-
-  getContextMenu(): m.Vnode<any, {}>|null {
-    return this.track.getContextMenu();
   }
 
   onMouseMove(position: {x: number; y: number;}): void {
@@ -97,8 +95,13 @@ export class TrackWithControllerAdapter<Config, Data> extends
     this.track.onFullRedraw();
   }
 
-  onBoundsChange(start: time, end: time, resolution: duration): Promise<Data> {
-    return this.controller.onBoundsChange(start, end, resolution);
+  async onBoundsChange(start: time, end: time, resolution: duration):
+      Promise<Data> {
+    if (!this.isSetup) {
+      await this.controller.onSetup();
+      this.isSetup = true;
+    }
+    return await this.controller.onBoundsChange(start, end, resolution);
   }
 
   renderCanvas(ctx: CanvasRenderingContext2D): void {
@@ -111,6 +114,7 @@ export class TrackWithControllerAdapter<Config, Data> extends
 export abstract class TrackAdapter<Config, Data> {
   private _config?: Config;
   private dataSource?: () => Data | undefined;
+  protected trackKey: string;
 
   get config(): Config {
     return assertExists(this._config);
@@ -129,7 +133,9 @@ export abstract class TrackAdapter<Config, Data> {
     this.dataSource = dataSource;
   }
 
-  constructor(_args: NewTrackArgs) {}
+  constructor(args: NewTrackArgs) {
+    this.trackKey = args.trackKey;
+  }
 
   abstract renderCanvas(ctx: CanvasRenderingContext2D): void;
 
@@ -144,12 +150,8 @@ export abstract class TrackAdapter<Config, Data> {
     return 40;
   }
 
-  getTrackShellButtons(): Array<m.Vnode<TrackButtonAttrs>> {
+  getTrackShellButtons(): m.Children {
     return [];
-  }
-
-  getContextMenu(): m.Vnode<any>|null {
-    return null;
   }
 
   onMouseMove(_position: {x: number, y: number}) {}
@@ -171,10 +173,21 @@ type TrackAdapterClass<Config, Data> = {
   new (args: NewTrackArgs): TrackAdapter<Config, Data>
 }
 
+function hasNamespace(config: unknown): config is {
+  namespace: string
+} {
+  return !!config && typeof config === 'object' && 'namespace' in config;
+}
+
 // Extend from this class instead of `TrackController` to use existing track
 // controller implementations with `TrackWithControllerAdapter`.
 export abstract class TrackControllerAdapter<Config, Data> {
-  constructor(protected config: Config, private engine: EngineProxy) {}
+  // This unique ID is just used to create the table names.
+  // In the future we should probably use the track instance ID, but for now we
+  // don't have access to it.
+  private uuid = uuidv4();
+
+  constructor(protected config: Config, protected engine: EngineProxy) {}
 
   protected async query(query: string) {
     const result = await this.engine.query(query);
@@ -183,6 +196,26 @@ export abstract class TrackControllerAdapter<Config, Data> {
 
   abstract onBoundsChange(start: time, end: time, resolution: duration):
       Promise<Data>;
+
+  async onSetup(): Promise<void> {}
+  async onDestroy(): Promise<void> {}
+
+  // Returns a valid SQL table name with the given prefix that should be unique
+  // for each track.
+  tableName(prefix: string) {
+    // Derive table name from, since that is unique for each track.
+    // Track ID can be UUID but '-' is not valid for sql table name.
+    const idSuffix = this.uuid.split('-').join('_');
+    return `${prefix}_${idSuffix}`;
+  }
+
+  namespaceTable(tableName: string): string {
+    if (hasNamespace(this.config)) {
+      return this.config.namespace + '_' + tableName;
+    } else {
+      return tableName;
+    }
+  }
 }
 
 type TrackControllerAdapterClass<Config, Data> = {

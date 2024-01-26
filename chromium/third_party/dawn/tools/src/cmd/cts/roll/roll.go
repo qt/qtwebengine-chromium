@@ -1,16 +1,29 @@
-// Copyright 2022 The Dawn Authors
+// Copyright 2022 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 package roll
 
@@ -61,6 +74,7 @@ const (
 	tsSourcesRelPath     = "third_party/gn/webgpu-cts/ts_sources.txt"
 	testListRelPath      = "third_party/gn/webgpu-cts/test_list.txt"
 	cacheListRelPath     = "third_party/gn/webgpu-cts/cache_list.txt"
+	cacheTarGz           = "third_party/gn/webgpu-cts/cache.tar.gz"
 	resourceFilesRelPath = "third_party/gn/webgpu-cts/resource_files.txt"
 	webTestsPath         = "webgpu-cts/webtests"
 	refMain              = "refs/heads/main"
@@ -77,7 +91,8 @@ type rollerFlags struct {
 	rebuild             bool // Rebuild the expectations file from scratch
 	preserve            bool // If false, abandon past roll changes
 	sendToGardener      bool // If true, automatically send to the gardener for review
-	parentSwarmingRunId string
+	parentSwarmingRunID string
+	maxAttempts         int
 }
 
 type cmd struct {
@@ -95,17 +110,17 @@ func (cmd) Desc() string {
 func (c *cmd) RegisterFlags(ctx context.Context, cfg common.Config) ([]string, error) {
 	gitPath, _ := exec.LookPath("git")
 	npmPath, _ := exec.LookPath("npm")
-	nodePath, _ := exec.LookPath("node")
-	c.flags.auth.Register(flag.CommandLine, commonAuth.DefaultAuthOptions())
+	c.flags.auth.Register(flag.CommandLine, commonAuth.DefaultAuthOptions( /* needsCloudScopes */ true))
 	flag.StringVar(&c.flags.gitPath, "git", gitPath, "path to git")
 	flag.StringVar(&c.flags.npmPath, "npm", npmPath, "path to npm")
-	flag.StringVar(&c.flags.nodePath, "node", nodePath, "path to node")
+	flag.StringVar(&c.flags.nodePath, "node", fileutils.NodePath(), "path to node")
 	flag.StringVar(&c.flags.cacheDir, "cache", common.DefaultCacheDir, "path to the results cache")
 	flag.BoolVar(&c.flags.force, "force", false, "create a new roll, even if CTS is up to date")
 	flag.BoolVar(&c.flags.rebuild, "rebuild", false, "rebuild the expectation file from scratch")
 	flag.BoolVar(&c.flags.preserve, "preserve", false, "do not abandon existing rolls")
 	flag.BoolVar(&c.flags.sendToGardener, "send-to-gardener", false, "send the CL to the WebGPU gardener for review")
-	flag.StringVar(&c.flags.parentSwarmingRunId, "parent-swarming-run-id", "", "parent swarming run id. All triggered tasks will be children of this task and will be canceled if the parent is canceled.")
+	flag.StringVar(&c.flags.parentSwarmingRunID, "parent-swarming-run-id", "", "parent swarming run id. All triggered tasks will be children of this task and will be canceled if the parent is canceled.")
+	flag.IntVar(&c.flags.maxAttempts, "max-attempts", 3, "number of update attempts before giving up")
 	return nil, nil
 }
 
@@ -169,7 +184,7 @@ func (c *cmd) Run(ctx context.Context, cfg common.Config) error {
 		flags:               c.flags,
 		auth:                auth,
 		bb:                  bb,
-		parentSwarmingRunId: c.flags.parentSwarmingRunId,
+		parentSwarmingRunID: c.flags.parentSwarmingRunID,
 		rdb:                 rdb,
 		git:                 git,
 		gerrit:              gerrit,
@@ -185,7 +200,7 @@ type roller struct {
 	flags               rollerFlags
 	auth                auth.Options
 	bb                  *buildbucket.Buildbucket
-	parentSwarmingRunId string
+	parentSwarmingRunID string
 	rdb                 *resultsdb.ResultsDB
 	git                 *git.Git
 	gerrit              *gerrit.Gerrit
@@ -237,16 +252,13 @@ func (r *roller) roll(ctx context.Context) error {
 		return fmt.Errorf("failed to load expectations: %v", err)
 	}
 
-	// If the user requested a full rebuild of the expecations, strip out
+	// If the user requested a full rebuild of the expectations, strip out
 	// everything but comment chunks.
 	if r.flags.rebuild {
 		rebuilt := ex.Clone()
 		rebuilt.Chunks = rebuilt.Chunks[:0]
 		for _, c := range ex.Chunks {
-			switch {
-			case c.IsBlankLine():
-				rebuilt.MaybeAddBlankLine()
-			case c.IsCommentOnly():
+			if c.IsCommentOnly() {
 				rebuilt.Chunks = append(rebuilt.Chunks, c)
 			}
 		}
@@ -333,12 +345,11 @@ func (r *roller) roll(ctx context.Context) error {
 	}
 
 	// Begin main roll loop
-	const maxAttempts = 3
 	results := result.List{}
 	for attempt := 0; ; attempt++ {
 		// Kick builds
 		log.Printf("building (attempt %v)...\n", attempt)
-		builds, err := common.GetOrStartBuildsAndWait(ctx, r.cfg, ps, r.bb, r.parentSwarmingRunId, false)
+		builds, err := common.GetOrStartBuildsAndWait(ctx, r.cfg, ps, r.bb, r.parentSwarmingRunID, false)
 		if err != nil {
 			return err
 		}
@@ -397,7 +408,7 @@ func (r *roller) roll(ctx context.Context) error {
 			return fmt.Errorf("failed to update change '%v': %v", changeID, err)
 		}
 
-		if attempt >= maxAttempts {
+		if attempt >= r.flags.maxAttempts {
 			err := fmt.Errorf("CTS failed after %v attempts.\nGiving up", attempt)
 			r.gerrit.Comment(ps, err.Error(), nil)
 			return err
@@ -417,10 +428,10 @@ func (r *roller) roll(ctx context.Context) error {
 			return err
 		}
 
-		type StructuredJsonResponse struct {
+		type StructuredJSONResponse struct {
 			Emails []string
 		}
-		var jsonRes StructuredJsonResponse
+		var jsonRes StructuredJSONResponse
 		if err := json.Unmarshal(jsonResponse, &jsonRes); err != nil {
 			return err
 		}
@@ -651,14 +662,8 @@ func (r *roller) checkout(project, dir, host, hash string) (*git.Repository, err
 // * webtest file sources
 func (r *roller) generateFiles(ctx context.Context) (map[string]string, error) {
 	// Run 'npm ci' to fetch modules and tsc
-	{
-		log.Printf("fetching npm modules with 'npm ci'...")
-		cmd := exec.CommandContext(ctx, r.flags.npmPath, "ci")
-		cmd.Dir = r.ctsDir
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			return nil, fmt.Errorf("failed to run 'npm ci': %w\n%v", err, string(out))
-		}
+	if err := common.InstallCTSDeps(ctx, r.ctsDir, r.flags.npmPath); err != nil {
+		return nil, err
 	}
 
 	log.Printf("generating files for changelist...")
@@ -689,8 +694,10 @@ func (r *roller) generateFiles(ctx context.Context) (map[string]string, error) {
 	for relPath, generator := range map[string]func(context.Context) (string, error){
 		tsSourcesRelPath:     r.genTSDepList,
 		testListRelPath:      r.genTestList,
-		cacheListRelPath:     r.genCacheList,
 		resourceFilesRelPath: r.genResourceFilesList,
+		cacheListRelPath: func(context.Context) (string, error) {
+			return common.BuildCache(ctx, r.ctsDir, r.flags.nodePath, r.flags.npmPath, r.flags.auth)
+		},
 	} {
 		relPath, generator := relPath, generator // Capture values, not iterators
 		wg.Add(1)
@@ -802,40 +809,6 @@ func (r *roller) genTestList(ctx context.Context) (string, error) {
 	}
 
 	return strings.Join(tests, "\n"), nil
-}
-
-// genCacheList returns the file list of cached data
-func (r *roller) genCacheList(ctx context.Context) (string, error) {
-	// Run 'src/common/runtime/cmdline.ts' to obtain the full test list
-	cmd := exec.CommandContext(ctx, r.flags.nodePath,
-		"-e", "require('./src/common/tools/setup-ts-in-node.js');require('./src/common/tools/gen_cache.ts');",
-		"--", // Start of arguments
-		// src/common/runtime/helper/sys.ts expects 'node file.js <args>'
-		// and slices away the first two arguments. When running with '-e', args
-		// start at 1, so just inject a placeholder argument.
-		"placeholder-arg",
-		".",
-		"src/webgpu",
-		"--list",
-	)
-	cmd.Dir = r.ctsDir
-
-	stderr := bytes.Buffer{}
-	cmd.Stderr = &stderr
-
-	out, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("failed to generate cache list: %w\n%v", err, stderr.String())
-	}
-
-	files := []string{}
-	for _, file := range strings.Split(string(out), "\n") {
-		if file != "" {
-			files = append(files, strings.TrimPrefix(file, "./"))
-		}
-	}
-
-	return strings.Join(files, "\n") + "\n", nil
 }
 
 // genResourceFilesList returns a list of resource files, for the CTS checkout at r.ctsDir

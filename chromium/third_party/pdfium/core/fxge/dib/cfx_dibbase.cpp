@@ -38,40 +38,25 @@ void ColorDecode(uint32_t pal_v, uint8_t* r, uint8_t* g, uint8_t* b) {
   *b = static_cast<uint8_t>((pal_v & 0x00f) << 4);
 }
 
-void Obtain_Pal(std::pair<uint32_t, uint32_t>* luts,
-                uint32_t* dest_pal,
-                uint32_t lut) {
-  uint32_t lut_1 = lut - 1;
-  for (int row = 0; row < 256; ++row) {
-    int lut_offset = lut_1 - row;
-    if (lut_offset < 0)
-      lut_offset += 256;
-    uint32_t color = luts[lut_offset].second;
-    uint8_t r;
-    uint8_t g;
-    uint8_t b;
-    ColorDecode(color, &r, &g, &b);
-    dest_pal[row] = (static_cast<uint32_t>(r) << 16) |
-                    (static_cast<uint32_t>(g) << 8) | b | 0xff000000;
-    luts[lut_offset].first = row;
-  }
-}
-
 class CFX_Palette {
  public:
+  // (Amount, Color) pairs
+  using LutsData = std::pair<uint32_t, uint32_t>;
+
   explicit CFX_Palette(const RetainPtr<const CFX_DIBBase>& pBitmap);
   ~CFX_Palette();
 
-  const uint32_t* GetPalette() { return m_Palette.data(); }
-  const std::pair<uint32_t, uint32_t>* GetLuts() const { return m_Luts.data(); }
-  int32_t GetLutCount() const { return m_lut; }
-  void SetAmountLut(int row, uint32_t value) { m_Luts[row].first = value; }
+  pdfium::span<const uint32_t> GetPalette() { return m_Palette; }
+  pdfium::span<const LutsData> GetValidLuts() {
+    return pdfium::make_span(m_Luts).first(m_lut);
+  }
 
  private:
+  void ObtainPalette();
+
   std::vector<uint32_t> m_Palette;
-  // (Amount, Color) pairs
-  std::vector<std::pair<uint32_t, uint32_t>> m_Luts;
-  int m_lut = 0;
+  std::vector<LutsData> m_Luts;
+  uint32_t m_lut = 0;
 };
 
 CFX_Palette::CFX_Palette(const RetainPtr<const CFX_DIBBase>& pBitmap)
@@ -92,22 +77,61 @@ CFX_Palette::CFX_Palette(const RetainPtr<const CFX_DIBBase>& pBitmap)
     }
   }
   // Move non-zeros to the front and count them
-  for (int row = 0; row < 4096; ++row) {
+  for (uint32_t row = 0; row < m_Luts.size(); ++row) {
     if (m_Luts[row].first != 0) {
       m_Luts[m_lut].first = m_Luts[row].first;
       m_Luts[m_lut].second = row;
       ++m_lut;
     }
   }
-  std::sort(m_Luts.begin(), m_Luts.begin() + m_lut,
-            [](const std::pair<uint32_t, uint32_t>& arg1,
-               const std::pair<uint32_t, uint32_t>& arg2) {
+  pdfium::span<LutsData> lut_span = pdfium::make_span(m_Luts).first(m_lut);
+  std::sort(lut_span.begin(), lut_span.end(),
+            [](const LutsData& arg1, const LutsData& arg2) {
               return arg1.first < arg2.first;
             });
-  Obtain_Pal(m_Luts.data(), m_Palette.data(), m_lut);
+  ObtainPalette();
 }
 
 CFX_Palette::~CFX_Palette() = default;
+
+void CFX_Palette::ObtainPalette() {
+  for (uint32_t row = 0; row < m_Palette.size(); ++row) {
+    const uint32_t lut_offset = (m_lut - row - 1) % m_Palette.size();
+    const uint32_t color = m_Luts[lut_offset].second;
+    uint8_t r;
+    uint8_t g;
+    uint8_t b;
+    ColorDecode(color, &r, &g, &b);
+    m_Palette[row] = (static_cast<uint32_t>(r) << 16) |
+                     (static_cast<uint32_t>(g) << 8) | b | 0xff000000;
+    m_Luts[lut_offset].first = row;
+  }
+  if (m_lut > 256) {
+    int err;
+    int min_err;
+    const uint32_t lut_256 = m_lut - 256;
+    for (uint32_t row = 0; row < lut_256; ++row) {
+      min_err = 1000000;
+      uint8_t r;
+      uint8_t g;
+      uint8_t b;
+      ColorDecode(m_Luts[row].second, &r, &g, &b);
+      uint32_t clrindex = 0;
+      for (int col = 0; col < 256; ++col) {
+        uint32_t p_color = m_Palette[col];
+        int d_r = r - static_cast<uint8_t>(p_color >> 16);
+        int d_g = g - static_cast<uint8_t>(p_color >> 8);
+        int d_b = b - static_cast<uint8_t>(p_color);
+        err = d_r * d_r + d_g * d_g + d_b * d_b;
+        if (err < min_err) {
+          min_err = err;
+          clrindex = col;
+        }
+      }
+      m_Luts[row].first = clrindex;
+    }
+  }
+}
 
 void ConvertBuffer_1bppMask2Gray(pdfium::span<uint8_t> dest_buf,
                                  int dest_pitch,
@@ -285,35 +309,7 @@ void ConvertBuffer_Rgb2PltRgb8(pdfium::span<uint8_t> dest_buf,
                                pdfium::span<uint32_t> dst_plt) {
   int bpp = pSrcBitmap->GetBPP() / 8;
   CFX_Palette palette(pSrcBitmap);
-  const std::pair<uint32_t, uint32_t>* Luts = palette.GetLuts();
-  int lut = palette.GetLutCount();
-  const uint32_t* pal = palette.GetPalette();
-  if (lut > 256) {
-    int err;
-    int min_err;
-    int lut_256 = lut - 256;
-    for (int row = 0; row < lut_256; ++row) {
-      min_err = 1000000;
-      uint8_t r;
-      uint8_t g;
-      uint8_t b;
-      ColorDecode(Luts[row].second, &r, &g, &b);
-      uint32_t clrindex = 0;
-      for (int col = 0; col < 256; ++col) {
-        uint32_t p_color = pal[col];
-        int d_r = r - static_cast<uint8_t>(p_color >> 16);
-        int d_g = g - static_cast<uint8_t>(p_color >> 8);
-        int d_b = b - static_cast<uint8_t>(p_color);
-        err = d_r * d_r + d_g * d_g + d_b * d_b;
-        if (err < min_err) {
-          min_err = err;
-          clrindex = col;
-        }
-      }
-      palette.SetAmountLut(row, clrindex);
-    }
-  }
-  int32_t lut_1 = lut - 1;
+  pdfium::span<const CFX_Palette::LutsData> luts = palette.GetValidLuts();
   for (int row = 0; row < height; ++row) {
     pdfium::span<const uint8_t> src_span =
         pSrcBitmap->GetScanline(src_top + row).subspan(src_left);
@@ -326,15 +322,15 @@ void ConvertBuffer_Rgb2PltRgb8(pdfium::span<uint8_t> dest_buf,
       int g = src_port[1] & 0xf0;
       int b = src_port[0] & 0xf0;
       uint32_t clrindex = (r << 4) + g + (b >> 4);
-      for (int i = lut_1; i >= 0; --i)
-        if (clrindex == Luts[i].second) {
-          *(dest_scan + col) = static_cast<uint8_t>(Luts[i].first);
+      for (size_t i = luts.size(); i > 0; --i) {
+        if (clrindex == luts[i - 1].second) {
+          *(dest_scan + col) = static_cast<uint8_t>(luts[i - 1].first);
           break;
         }
+      }
     }
   }
-  for (size_t i = 0; i < 256; ++i)
-    dst_plt[i] = pal[i];
+  fxcrt::spancpy(dst_plt, palette.GetPalette());
 }
 
 void ConvertBuffer_1bppMask2Rgb(FXDIB_Format dest_format,
@@ -621,10 +617,6 @@ CFX_DIBBase::CFX_DIBBase() = default;
 
 CFX_DIBBase::~CFX_DIBBase() = default;
 
-pdfium::span<const uint8_t> CFX_DIBBase::GetBuffer() const {
-  return pdfium::span<const uint8_t>();
-}
-
 bool CFX_DIBBase::SkipToScanline(int line, PauseIndicatorIface* pPause) const {
   return false;
 }
@@ -633,12 +625,9 @@ size_t CFX_DIBBase::GetEstimatedImageMemoryBurden() const {
   return GetRequiredPaletteSize() * sizeof(uint32_t);
 }
 
-#if BUILDFLAG(IS_WIN)
-RetainPtr<const CFX_DIBBase> CFX_DIBBase::RealizeIfNeeded() const {
-  if (GetBuffer().empty()) {
-    return Realize();
-  }
-  return pdfium::WrapRetain(this);
+#if BUILDFLAG(IS_WIN) || defined(_SKIA_SUPPORT_)
+RetainPtr<const CFX_DIBitmap> CFX_DIBBase::RealizeIfNeeded() const {
+  return Realize();
 }
 #endif
 
@@ -950,17 +939,10 @@ RetainPtr<CFX_DIBitmap> CFX_DIBBase::ConvertTo(FXDIB_Format dest_format) const {
   if (!pClone->Create(m_Width, m_Height, dest_format))
     return nullptr;
 
-  RetainPtr<CFX_DIBitmap> pSrcAlpha;
-  if (IsAlphaFormat()) {
-    pSrcAlpha = CloneAlphaMask();
-    if (!pSrcAlpha)
-      return nullptr;
-  }
   if (dest_format == FXDIB_Format::kArgb) {
-    bool ret = pSrcAlpha ? pClone->SetAlphaFromBitmap(pSrcAlpha)
-                         : pClone->SetUniformOpaqueAlpha();
-    if (!ret)
+    if (!pClone->SetUniformOpaqueAlpha()) {
       return nullptr;
+    }
   }
 
   RetainPtr<const CFX_DIBBase> holder(this);

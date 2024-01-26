@@ -10,6 +10,7 @@
 #ifndef EIGEN_SYMBOLIC_INDEX_H
 #define EIGEN_SYMBOLIC_INDEX_H
 
+// IWYU pragma: private
 #include "../InternalHeaderCheck.h"
 
 namespace Eigen {

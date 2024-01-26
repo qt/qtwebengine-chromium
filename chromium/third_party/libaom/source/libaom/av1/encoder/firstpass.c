@@ -774,9 +774,8 @@ static int firstpass_inter_prediction(
   if ((current_frame->frame_number > 1) && golden_frame != NULL) {
     FULLPEL_MV tmp_mv = kZeroFullMv;
     // Assume 0,0 motion with no mv overhead.
-    xd->plane[0].pre[0].buf = golden_frame->y_buffer + recon_yoffset;
-    xd->plane[0].pre[0].stride = golden_frame->y_stride;
-    xd->plane[0].pre[0].width = golden_frame->y_width;
+    av1_setup_pre_planes(xd, 0, golden_frame, 0, 0, NULL, 1);
+    xd->plane[0].pre[0].buf += recon_yoffset;
     gf_motion_error =
         get_prediction_error_bitdepth(is_high_bitdepth, bitdepth, bsize,
                                       &x->plane[0].src, &xd->plane[0].pre[0]);

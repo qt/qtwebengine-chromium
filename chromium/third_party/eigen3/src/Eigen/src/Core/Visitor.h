@@ -10,6 +10,7 @@
 #ifndef EIGEN_VISITOR_H
 #define EIGEN_VISITOR_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

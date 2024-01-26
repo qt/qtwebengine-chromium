@@ -34,6 +34,15 @@ message StartArcMiniInstanceRequest {
     MEMORY_PROFILE_16G = 3;
   }
 
+  enum HostUreadaheadMode {
+    // By default, ureadahead is in readahead mode.
+    MODE_DEFAULT = 0;
+    // Ureadahead is in generate mode.
+    MODE_GENERATE = 1;
+    // Ureadahead is in disabled mode.
+    MODE_DISABLED = 2;
+  }
+
   optional bool native_bridge_experiment = 1 [default = false];
 
   // The density value passed to "ro.sf.lcd_density" property.
@@ -107,7 +116,11 @@ message StartArcMiniInstanceRequest {
   // Flag to use dev caches in arccachesetup service.
   optional bool use_dev_caches = 20 [default = false];
 
-  // Next ID to use: 21
+  // Flag to set ureadahead mode.
+  optional HostUreadaheadMode host_ureadahead_mode = 21
+      [default = MODE_DEFAULT];
+
+  // Next ID to use: 22
 }
 
 // ARC upgrade options sent from Chrome to session manager. This message is used

@@ -10,6 +10,7 @@
 #include "include/gpu/graphite/GraphiteTypes.h"
 #include "include/gpu/graphite/Recorder.h"
 #include "include/private/base/SkAlign.h"
+#include "src/core/SkTraceEvent.h"
 #include "src/gpu/graphite/Buffer.h"
 #include "src/gpu/graphite/BufferManager.h"
 #include "src/gpu/graphite/Caps.h"
@@ -65,8 +66,7 @@ public:
 
     // See note below in GeometryUniformField. This value can be round-tripped within the SortKey
     // packing for all fields but will not be produced when recording actual draw data.
-    static constexpr Index kInvalidIndex{1 << SkNextLog2_portable(Renderer::kMaxRenderSteps *
-                                                                  DrawList::kMaxDraws)};
+    static constexpr Index kInvalidIndex{1 << SkNextLog2_portable(DrawList::kMaxRenderSteps)};
 
     bool empty() const { return fIndexToData.empty(); }
     size_t size() const { return fIndexToData.size(); }
@@ -369,15 +369,15 @@ private:
     using ColorDepthOrderField = Bitfield<16, 48>; // sizeof(CompressedPaintersOrder)
     using StencilIndexField    = Bitfield<16, 32>; // sizeof(DisjointStencilIndex)
     using RenderStepField      = Bitfield<2,  30>; // bits >= log2(Renderer::kMaxRenderSteps)
-    using PipelineField        = Bitfield<30, 0>;  // bits >= log2(max steps*DrawList::kMaxDraws)
+    using PipelineField        = Bitfield<30, 0>;  // bits >= log2(max total steps in draw list)
     uint64_t fPipelineKey;
 
     // The uniform/texture index fields need 1 extra bit to encode "no-data". Values that are
     // greater than or equal to 2^(bits-1) represent "no-data", while values between
     // [0, 2^(bits-1)-1] can access data arrays without extra logic.
-    using GeometryUniformField = Bitfield<22, 42>; // bits >= 1+log2(max steps * max draw count)
-    using ShadingUniformField  = Bitfield<21, 21>; // bits >= 1+log2(max steps * max draw count)
-    using TextureBindingsField = Bitfield<21, 0>;  // bits >= 1+log2(max steps * max draw count)
+    using GeometryUniformField = Bitfield<17, 47>; // bits >= 1+log2(max total steps)
+    using ShadingUniformField  = Bitfield<17, 30>; // bits >= 1+log2(max total steps)
+    using TextureBindingsField = Bitfield<30, 0>;  // bits >= 1+log2(max total steps)
     uint64_t fUniformKey;
 
     // Backpointer to the draw that produced the sort key
@@ -386,14 +386,10 @@ private:
     static_assert(ColorDepthOrderField::kBits >= sizeof(CompressedPaintersOrder));
     static_assert(StencilIndexField::kBits    >= sizeof(DisjointStencilIndex));
     static_assert(RenderStepField::kBits      >= SkNextLog2_portable(Renderer::kMaxRenderSteps));
-    static_assert(PipelineField::kBits        >=
-                          SkNextLog2_portable(Renderer::kMaxRenderSteps * DrawList::kMaxDraws));
-    static_assert(GeometryUniformField::kBits >=
-                          1 + SkNextLog2_portable(Renderer::kMaxRenderSteps * DrawList::kMaxDraws));
-    static_assert(ShadingUniformField::kBits  >=
-                          1 + SkNextLog2_portable(Renderer::kMaxRenderSteps * DrawList::kMaxDraws));
-    static_assert(TextureBindingsField::kBits >=
-                          1 + SkNextLog2_portable(Renderer::kMaxRenderSteps * DrawList::kMaxDraws));
+    static_assert(PipelineField::kBits        >= SkNextLog2_portable(DrawList::kMaxRenderSteps));
+    static_assert(GeometryUniformField::kBits >= 1+SkNextLog2_portable(DrawList::kMaxRenderSteps));
+    static_assert(ShadingUniformField::kBits  >= 1+SkNextLog2_portable(DrawList::kMaxRenderSteps));
+    static_assert(TextureBindingsField::kBits >= 1+SkNextLog2_portable(DrawList::kMaxRenderSteps));
 };
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -409,12 +405,14 @@ sk_sp<TextureProxy> add_copy_target_task(Recorder* recorder,
                                                   target->textureInfo(),
                                                   skgpu::Budgeted::kYes);
     if (!copy) {
+        SKGPU_LOG_W("Failed to create destination copy texture for dst read.");
         return nullptr;
     }
 
     sk_sp<CopyTextureToTextureTask> copyTask = CopyTextureToTextureTask::Make(
-            std::move(target), dstSrcRect, copy, /*dstOffset=*/{0, 0});
+            std::move(target), dstSrcRect, copy, /*dstPoint=*/{0, 0});
     if (!copyTask) {
+        SKGPU_LOG_W("Failed to create destination copy task for dst read.");
         return nullptr;
     }
 
@@ -455,6 +453,8 @@ std::unique_ptr<DrawPass> DrawPass::Make(Recorder* recorder,
     static_assert(sizeof(DrawPass::SortKey) ==
                   SkAlignTo(16 + sizeof(void*), alignof(DrawPass::SortKey)));
 
+    TRACE_EVENT1("skia.gpu", TRACE_FUNC, "draw count", draws->fDraws.count());
+
     // The DrawList is converted directly into the DrawPass' data structures, but once the DrawPass
     // is returned from Make(), it is considered immutable.
     std::unique_ptr<DrawPass> drawPass(new DrawPass(target, ops, clearColor));
@@ -492,11 +492,16 @@ std::unique_ptr<DrawPass> DrawPass::Make(Recorder* recorder,
     sk_sp<TextureProxy> dst;
     SkIPoint dstOffset;
     if (!draws->dstCopyBounds().isEmptyNegativeOrNaN()) {
+        TRACE_EVENT_INSTANT0("skia.gpu", "DrawPass requires dst copy", TRACE_EVENT_SCOPE_THREAD);
+
         SkIRect dstCopyPixelBounds = draws->dstCopyBounds().makeRoundOut().asSkIRect();
         dstOffset = dstCopyPixelBounds.topLeft();
         dst = add_copy_target_task(
                 recorder, target, targetInfo.makeDimensions(dstCopyPixelBounds.size()), dstOffset);
-        SkASSERT(dst);
+        if (!dst) {
+            SKGPU_LOG_W("Failed to copy destination for reading. Dropping draw pass!");
+            return nullptr;
+        }
     }
 
     std::vector<SortKey> keys;
@@ -639,12 +644,18 @@ std::unique_ptr<DrawPass> DrawPass::Make(Recorder* recorder,
     drawPass->fSamplerDescs    = textureBindingTracker.detachSamplers();
     drawPass->fSampledTextures = textureBindingTracker.detachTextures();
 
+    TRACE_COUNTER1("skia.gpu", "# pipelines", drawPass->fPipelineDescs.size());
+    TRACE_COUNTER1("skia.gpu", "# textures", drawPass->fSampledTextures.size());
+    TRACE_COUNTER1("skia.gpu", "# commands", drawPass->fCommandList.count());
+
     return drawPass;
 }
 
 bool DrawPass::prepareResources(ResourceProvider* resourceProvider,
                                 const RuntimeEffectDictionary* runtimeDict,
                                 const RenderPassDesc& renderPassDesc) {
+    TRACE_EVENT0("skia.gpu", TRACE_FUNC);
+
     fFullPipelines.reserve(fFullPipelines.size() + fPipelineDescs.size());
     for (const GraphicsPipelineDesc& pipelineDesc : fPipelineDescs) {
         auto pipeline = resourceProvider->findOrCreateGraphicsPipeline(runtimeDict,

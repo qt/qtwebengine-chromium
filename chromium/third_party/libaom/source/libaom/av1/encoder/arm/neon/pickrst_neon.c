@@ -681,151 +681,157 @@ static INLINE void compute_stats_win7_neon(int16_t *dgd_avg, int dgd_avg_stride,
     dgd_avg += downsample_factor * dgd_avg_stride;
     src_avg += src_avg_stride;
     h += downsample_factor;
-  } while (h < v_end - downsample_factor);
+  } while (h <= v_end - downsample_factor);
 
-  // The last row is scaled by a different downsample factor, so process
-  // separately.
+  if (h < v_end) {
+    // The last row is scaled by a different downsample factor, so process
+    // separately.
 
-  // Cross-correlation (M).
-  for (int row = 0; row < 7; row++) {
-    int16x8_t dgd0 = vld1q_s16(dgd_avg + row * dgd_avg_stride);
+    // Cross-correlation (M).
+    for (int row = 0; row < 7; row++) {
+      int16x8_t dgd0 = vld1q_s16(dgd_avg + row * dgd_avg_stride);
+      int j = 0;
+      while (j <= width - 8) {
+        int16x8_t dgd1 = vld1q_s16(dgd_avg + row * dgd_avg_stride + j + 8);
+        // Load src vector and scale based on downsampling factor.
+        int16x8_t s =
+            vmulq_n_s16(vld1q_s16(src_avg + j), last_row_downsample_factor);
+
+        // Compute all the elements of one row of M.
+        compute_M_one_row_win7(s, dgd0, dgd1, M_trn, wiener_win, row);
+
+        dgd0 = dgd1;
+        j += 8;
+      }
+      // Process remaining elements without Neon.
+      while (j < width) {
+        int16_t s = src_avg[j];
+        int16_t d0 = dgd_avg[row * dgd_avg_stride + 0 + j];
+        int16_t d1 = dgd_avg[row * dgd_avg_stride + 1 + j];
+        int16_t d2 = dgd_avg[row * dgd_avg_stride + 2 + j];
+        int16_t d3 = dgd_avg[row * dgd_avg_stride + 3 + j];
+        int16_t d4 = dgd_avg[row * dgd_avg_stride + 4 + j];
+        int16_t d5 = dgd_avg[row * dgd_avg_stride + 5 + j];
+        int16_t d6 = dgd_avg[row * dgd_avg_stride + 6 + j];
+
+        M_trn[row * wiener_win + 0] += d0 * s * last_row_downsample_factor;
+        M_trn[row * wiener_win + 1] += d1 * s * last_row_downsample_factor;
+        M_trn[row * wiener_win + 2] += d2 * s * last_row_downsample_factor;
+        M_trn[row * wiener_win + 3] += d3 * s * last_row_downsample_factor;
+        M_trn[row * wiener_win + 4] += d4 * s * last_row_downsample_factor;
+        M_trn[row * wiener_win + 5] += d5 * s * last_row_downsample_factor;
+        M_trn[row * wiener_win + 6] += d6 * s * last_row_downsample_factor;
+
+        j++;
+      }
+    }
+
+    // Auto-covariance (H).
     int j = 0;
     while (j <= width - 8) {
-      int16x8_t dgd1 = vld1q_s16(dgd_avg + row * dgd_avg_stride + j + 8);
-      // Load src vector and scale based on downsampling factor.
-      int16x8_t s =
-          vmulq_n_s16(vld1q_s16(src_avg + j), last_row_downsample_factor);
+      int col0 = 0;
+      do {
+        // Load first column.
+        int16x8_t dgd0[7];
+        dgd0[0] = vld1q_s16(dgd_avg + 0 * dgd_avg_stride + j + col0);
+        dgd0[1] = vld1q_s16(dgd_avg + 1 * dgd_avg_stride + j + col0);
+        dgd0[2] = vld1q_s16(dgd_avg + 2 * dgd_avg_stride + j + col0);
+        dgd0[3] = vld1q_s16(dgd_avg + 3 * dgd_avg_stride + j + col0);
+        dgd0[4] = vld1q_s16(dgd_avg + 4 * dgd_avg_stride + j + col0);
+        dgd0[5] = vld1q_s16(dgd_avg + 5 * dgd_avg_stride + j + col0);
+        dgd0[6] = vld1q_s16(dgd_avg + 6 * dgd_avg_stride + j + col0);
 
-      // Compute all the elements of one row of M.
-      compute_M_one_row_win7(s, dgd0, dgd1, M_trn, wiener_win, row);
+        // Perform computation of the first column with itself (28 elements).
+        // For the first column this will fill the upper triangle of the 7x7
+        // matrix at the top left of the H matrix. For the next columns this
+        // will fill the upper triangle of the other 7x7 matrices around H's
+        // diagonal.
+        compute_H_one_col_last_row(dgd0, col0, H, wiener_win, wiener_win2,
+                                   last_row_downsample_factor);
 
-      dgd0 = dgd1;
+        // All computation next to the matrix diagonal has already been done.
+        for (int col1 = col0 + 1; col1 < wiener_win; col1++) {
+          // Load second column and scale based on downsampling factor.
+          int16x8_t dgd1[7];
+          dgd1[0] = vld1q_s16(dgd_avg + 0 * dgd_avg_stride + j + col1);
+          dgd1[0] = vmulq_n_s16(dgd1[0], last_row_downsample_factor);
+          dgd1[1] = vld1q_s16(dgd_avg + 1 * dgd_avg_stride + j + col1);
+          dgd1[1] = vmulq_n_s16(dgd1[1], last_row_downsample_factor);
+          dgd1[2] = vld1q_s16(dgd_avg + 2 * dgd_avg_stride + j + col1);
+          dgd1[2] = vmulq_n_s16(dgd1[2], last_row_downsample_factor);
+          dgd1[3] = vld1q_s16(dgd_avg + 3 * dgd_avg_stride + j + col1);
+          dgd1[3] = vmulq_n_s16(dgd1[3], last_row_downsample_factor);
+          dgd1[4] = vld1q_s16(dgd_avg + 4 * dgd_avg_stride + j + col1);
+          dgd1[4] = vmulq_n_s16(dgd1[4], last_row_downsample_factor);
+          dgd1[5] = vld1q_s16(dgd_avg + 5 * dgd_avg_stride + j + col1);
+          dgd1[5] = vmulq_n_s16(dgd1[5], last_row_downsample_factor);
+          dgd1[6] = vld1q_s16(dgd_avg + 6 * dgd_avg_stride + j + col1);
+          dgd1[6] = vmulq_n_s16(dgd1[6], last_row_downsample_factor);
+
+          // Compute all elements from the combination of both columns (49
+          // elements).
+          compute_H_two_cols(dgd0, dgd1, col0, col1, H, wiener_win,
+                             wiener_win2);
+        }
+      } while (++col0 < wiener_win);
       j += 8;
     }
-    // Process remaining elements without Neon.
-    while (j < width) {
-      int16_t s = src_avg[j];
-      int16_t d0 = dgd_avg[row * dgd_avg_stride + 0 + j];
-      int16_t d1 = dgd_avg[row * dgd_avg_stride + 1 + j];
-      int16_t d2 = dgd_avg[row * dgd_avg_stride + 2 + j];
-      int16_t d3 = dgd_avg[row * dgd_avg_stride + 3 + j];
-      int16_t d4 = dgd_avg[row * dgd_avg_stride + 4 + j];
-      int16_t d5 = dgd_avg[row * dgd_avg_stride + 5 + j];
-      int16_t d6 = dgd_avg[row * dgd_avg_stride + 6 + j];
 
-      M_trn[row * wiener_win + 0] += d0 * s * last_row_downsample_factor;
-      M_trn[row * wiener_win + 1] += d1 * s * last_row_downsample_factor;
-      M_trn[row * wiener_win + 2] += d2 * s * last_row_downsample_factor;
-      M_trn[row * wiener_win + 3] += d3 * s * last_row_downsample_factor;
-      M_trn[row * wiener_win + 4] += d4 * s * last_row_downsample_factor;
-      M_trn[row * wiener_win + 5] += d5 * s * last_row_downsample_factor;
-      M_trn[row * wiener_win + 6] += d6 * s * last_row_downsample_factor;
+    // Process remaining columns using a mask to discard excess elements.
+    if (j < width) {
+      int col0 = 0;
+      do {
+        // Load first column.
+        int16x8_t dgd0[7];
+        dgd0[0] = vld1q_s16(dgd_avg + 0 * dgd_avg_stride + j + col0);
+        dgd0[0] = vandq_s16(dgd0[0], mask);
+        dgd0[1] = vld1q_s16(dgd_avg + 1 * dgd_avg_stride + j + col0);
+        dgd0[1] = vandq_s16(dgd0[1], mask);
+        dgd0[2] = vld1q_s16(dgd_avg + 2 * dgd_avg_stride + j + col0);
+        dgd0[2] = vandq_s16(dgd0[2], mask);
+        dgd0[3] = vld1q_s16(dgd_avg + 3 * dgd_avg_stride + j + col0);
+        dgd0[3] = vandq_s16(dgd0[3], mask);
+        dgd0[4] = vld1q_s16(dgd_avg + 4 * dgd_avg_stride + j + col0);
+        dgd0[4] = vandq_s16(dgd0[4], mask);
+        dgd0[5] = vld1q_s16(dgd_avg + 5 * dgd_avg_stride + j + col0);
+        dgd0[5] = vandq_s16(dgd0[5], mask);
+        dgd0[6] = vld1q_s16(dgd_avg + 6 * dgd_avg_stride + j + col0);
+        dgd0[6] = vandq_s16(dgd0[6], mask);
 
-      j++;
+        // Perform computation of the first column with itself (15 elements).
+        // For the first column this will fill the upper triangle of the 7x7
+        // matrix at the top left of the H matrix. For the next columns this
+        // will fill the upper triangle of the other 7x7 matrices around H's
+        // diagonal.
+        compute_H_one_col_last_row(dgd0, col0, H, wiener_win, wiener_win2,
+                                   last_row_downsample_factor);
+
+        // All computation next to the matrix diagonal has already been done.
+        for (int col1 = col0 + 1; col1 < wiener_win; col1++) {
+          // Load second column and scale based on downsampling factor.
+          int16x8_t dgd1[7];
+          dgd1[0] = vld1q_s16(dgd_avg + 0 * dgd_avg_stride + j + col1);
+          dgd1[0] = vmulq_n_s16(dgd1[0], last_row_downsample_factor);
+          dgd1[1] = vld1q_s16(dgd_avg + 1 * dgd_avg_stride + j + col1);
+          dgd1[1] = vmulq_n_s16(dgd1[1], last_row_downsample_factor);
+          dgd1[2] = vld1q_s16(dgd_avg + 2 * dgd_avg_stride + j + col1);
+          dgd1[2] = vmulq_n_s16(dgd1[2], last_row_downsample_factor);
+          dgd1[3] = vld1q_s16(dgd_avg + 3 * dgd_avg_stride + j + col1);
+          dgd1[3] = vmulq_n_s16(dgd1[3], last_row_downsample_factor);
+          dgd1[4] = vld1q_s16(dgd_avg + 4 * dgd_avg_stride + j + col1);
+          dgd1[4] = vmulq_n_s16(dgd1[4], last_row_downsample_factor);
+          dgd1[5] = vld1q_s16(dgd_avg + 5 * dgd_avg_stride + j + col1);
+          dgd1[5] = vmulq_n_s16(dgd1[5], last_row_downsample_factor);
+          dgd1[6] = vld1q_s16(dgd_avg + 6 * dgd_avg_stride + j + col1);
+          dgd1[6] = vmulq_n_s16(dgd1[6], last_row_downsample_factor);
+
+          // Compute all elements from the combination of both columns (49
+          // elements).
+          compute_H_two_cols(dgd0, dgd1, col0, col1, H, wiener_win,
+                             wiener_win2);
+        }
+      } while (++col0 < wiener_win);
     }
-  }
-
-  // Auto-covariance (H).
-  int j = 0;
-  while (j <= width - 8) {
-    int col0 = 0;
-    do {
-      // Load first column.
-      int16x8_t dgd0[7];
-      dgd0[0] = vld1q_s16(dgd_avg + 0 * dgd_avg_stride + j + col0);
-      dgd0[1] = vld1q_s16(dgd_avg + 1 * dgd_avg_stride + j + col0);
-      dgd0[2] = vld1q_s16(dgd_avg + 2 * dgd_avg_stride + j + col0);
-      dgd0[3] = vld1q_s16(dgd_avg + 3 * dgd_avg_stride + j + col0);
-      dgd0[4] = vld1q_s16(dgd_avg + 4 * dgd_avg_stride + j + col0);
-      dgd0[5] = vld1q_s16(dgd_avg + 5 * dgd_avg_stride + j + col0);
-      dgd0[6] = vld1q_s16(dgd_avg + 6 * dgd_avg_stride + j + col0);
-
-      // Perform computation of the first column with itself (28 elements).
-      // For the first column this will fill the upper triangle of the 7x7
-      // matrix at the top left of the H matrix. For the next columns this will
-      // fill the upper triangle of the other 7x7 matrices around H's diagonal.
-      compute_H_one_col_last_row(dgd0, col0, H, wiener_win, wiener_win2,
-                                 last_row_downsample_factor);
-
-      // All computation next to the matrix diagonal has already been done.
-      for (int col1 = col0 + 1; col1 < wiener_win; col1++) {
-        // Load second column and scale based on downsampling factor.
-        int16x8_t dgd1[7];
-        dgd1[0] = vld1q_s16(dgd_avg + 0 * dgd_avg_stride + j + col1);
-        dgd1[0] = vmulq_n_s16(dgd1[0], last_row_downsample_factor);
-        dgd1[1] = vld1q_s16(dgd_avg + 1 * dgd_avg_stride + j + col1);
-        dgd1[1] = vmulq_n_s16(dgd1[1], last_row_downsample_factor);
-        dgd1[2] = vld1q_s16(dgd_avg + 2 * dgd_avg_stride + j + col1);
-        dgd1[2] = vmulq_n_s16(dgd1[2], last_row_downsample_factor);
-        dgd1[3] = vld1q_s16(dgd_avg + 3 * dgd_avg_stride + j + col1);
-        dgd1[3] = vmulq_n_s16(dgd1[3], last_row_downsample_factor);
-        dgd1[4] = vld1q_s16(dgd_avg + 4 * dgd_avg_stride + j + col1);
-        dgd1[4] = vmulq_n_s16(dgd1[4], last_row_downsample_factor);
-        dgd1[5] = vld1q_s16(dgd_avg + 5 * dgd_avg_stride + j + col1);
-        dgd1[5] = vmulq_n_s16(dgd1[5], last_row_downsample_factor);
-        dgd1[6] = vld1q_s16(dgd_avg + 6 * dgd_avg_stride + j + col1);
-        dgd1[6] = vmulq_n_s16(dgd1[6], last_row_downsample_factor);
-
-        // Compute all elements from the combination of both columns (49
-        // elements).
-        compute_H_two_cols(dgd0, dgd1, col0, col1, H, wiener_win, wiener_win2);
-      }
-    } while (++col0 < wiener_win);
-    j += 8;
-  }
-
-  // Process remaining columns using a mask to discard excess elements.
-  if (j < width) {
-    int col0 = 0;
-    do {
-      // Load first column.
-      int16x8_t dgd0[7];
-      dgd0[0] = vld1q_s16(dgd_avg + 0 * dgd_avg_stride + j + col0);
-      dgd0[0] = vandq_s16(dgd0[0], mask);
-      dgd0[1] = vld1q_s16(dgd_avg + 1 * dgd_avg_stride + j + col0);
-      dgd0[1] = vandq_s16(dgd0[1], mask);
-      dgd0[2] = vld1q_s16(dgd_avg + 2 * dgd_avg_stride + j + col0);
-      dgd0[2] = vandq_s16(dgd0[2], mask);
-      dgd0[3] = vld1q_s16(dgd_avg + 3 * dgd_avg_stride + j + col0);
-      dgd0[3] = vandq_s16(dgd0[3], mask);
-      dgd0[4] = vld1q_s16(dgd_avg + 4 * dgd_avg_stride + j + col0);
-      dgd0[4] = vandq_s16(dgd0[4], mask);
-      dgd0[5] = vld1q_s16(dgd_avg + 5 * dgd_avg_stride + j + col0);
-      dgd0[5] = vandq_s16(dgd0[5], mask);
-      dgd0[6] = vld1q_s16(dgd_avg + 6 * dgd_avg_stride + j + col0);
-      dgd0[6] = vandq_s16(dgd0[6], mask);
-
-      // Perform computation of the first column with itself (15 elements).
-      // For the first column this will fill the upper triangle of the 7x7
-      // matrix at the top left of the H matrix. For the next columns this will
-      // fill the upper triangle of the other 7x7 matrices around H's diagonal.
-      compute_H_one_col_last_row(dgd0, col0, H, wiener_win, wiener_win2,
-                                 last_row_downsample_factor);
-
-      // All computation next to the matrix diagonal has already been done.
-      for (int col1 = col0 + 1; col1 < wiener_win; col1++) {
-        // Load second column and scale based on downsampling factor.
-        int16x8_t dgd1[7];
-        dgd1[0] = vld1q_s16(dgd_avg + 0 * dgd_avg_stride + j + col1);
-        dgd1[0] = vmulq_n_s16(dgd1[0], last_row_downsample_factor);
-        dgd1[1] = vld1q_s16(dgd_avg + 1 * dgd_avg_stride + j + col1);
-        dgd1[1] = vmulq_n_s16(dgd1[1], last_row_downsample_factor);
-        dgd1[2] = vld1q_s16(dgd_avg + 2 * dgd_avg_stride + j + col1);
-        dgd1[2] = vmulq_n_s16(dgd1[2], last_row_downsample_factor);
-        dgd1[3] = vld1q_s16(dgd_avg + 3 * dgd_avg_stride + j + col1);
-        dgd1[3] = vmulq_n_s16(dgd1[3], last_row_downsample_factor);
-        dgd1[4] = vld1q_s16(dgd_avg + 4 * dgd_avg_stride + j + col1);
-        dgd1[4] = vmulq_n_s16(dgd1[4], last_row_downsample_factor);
-        dgd1[5] = vld1q_s16(dgd_avg + 5 * dgd_avg_stride + j + col1);
-        dgd1[5] = vmulq_n_s16(dgd1[5], last_row_downsample_factor);
-        dgd1[6] = vld1q_s16(dgd_avg + 6 * dgd_avg_stride + j + col1);
-        dgd1[6] = vmulq_n_s16(dgd1[6], last_row_downsample_factor);
-
-        // Compute all elements from the combination of both columns (49
-        // elements).
-        compute_H_two_cols(dgd0, dgd1, col0, col1, H, wiener_win, wiener_win2);
-      }
-    } while (++col0 < wiener_win);
   }
 
   // Transpose M_trn.
@@ -1083,130 +1089,136 @@ static INLINE void compute_stats_win5_neon(int16_t *dgd_avg, int dgd_avg_stride,
     dgd_avg += downsample_factor * dgd_avg_stride;
     src_avg += src_avg_stride;
     h += downsample_factor;
-  } while (h < v_end - downsample_factor);
+  } while (h <= v_end - downsample_factor);
 
-  // The last row is scaled by a different downsample factor, so process
-  // separately.
+  if (h < v_end) {
+    // The last row is scaled by a different downsample factor, so process
+    // separately.
 
-  // Cross-correlation (M).
-  for (int row = 0; row < wiener_win; row++) {
-    int16x8_t dgd0 = vld1q_s16(dgd_avg + row * dgd_avg_stride);
+    // Cross-correlation (M).
+    for (int row = 0; row < wiener_win; row++) {
+      int16x8_t dgd0 = vld1q_s16(dgd_avg + row * dgd_avg_stride);
+      int j = 0;
+      while (j <= width - 8) {
+        int16x8_t dgd1 = vld1q_s16(dgd_avg + row * dgd_avg_stride + j + 8);
+        // Load src vector and scale based on downsampling factor.
+        int16x8_t s =
+            vmulq_n_s16(vld1q_s16(src_avg + j), last_row_downsample_factor);
+
+        // Compute all the elements of one row of M.
+        compute_M_one_row_win5(s, dgd0, dgd1, M_trn, wiener_win, row);
+
+        dgd0 = dgd1;
+        j += 8;
+      }
+
+      // Process remaining elements without Neon.
+      while (j < width) {
+        int16_t s = src_avg[j];
+        int16_t d0 = dgd_avg[row * dgd_avg_stride + 0 + j];
+        int16_t d1 = dgd_avg[row * dgd_avg_stride + 1 + j];
+        int16_t d2 = dgd_avg[row * dgd_avg_stride + 2 + j];
+        int16_t d3 = dgd_avg[row * dgd_avg_stride + 3 + j];
+        int16_t d4 = dgd_avg[row * dgd_avg_stride + 4 + j];
+
+        M_trn[row * wiener_win + 0] += d0 * s * last_row_downsample_factor;
+        M_trn[row * wiener_win + 1] += d1 * s * last_row_downsample_factor;
+        M_trn[row * wiener_win + 2] += d2 * s * last_row_downsample_factor;
+        M_trn[row * wiener_win + 3] += d3 * s * last_row_downsample_factor;
+        M_trn[row * wiener_win + 4] += d4 * s * last_row_downsample_factor;
+
+        j++;
+      }
+    }
+
+    // Auto-covariance (H).
     int j = 0;
     while (j <= width - 8) {
-      int16x8_t dgd1 = vld1q_s16(dgd_avg + row * dgd_avg_stride + j + 8);
-      // Load src vector and scale based on downsampling factor.
-      int16x8_t s =
-          vmulq_n_s16(vld1q_s16(src_avg + j), last_row_downsample_factor);
+      for (int col0 = 0; col0 < wiener_win; col0++) {
+        // Load first column.
+        int16x8_t dgd0[5];
+        dgd0[0] = vld1q_s16(dgd_avg + 0 * dgd_avg_stride + j + col0);
+        dgd0[1] = vld1q_s16(dgd_avg + 1 * dgd_avg_stride + j + col0);
+        dgd0[2] = vld1q_s16(dgd_avg + 2 * dgd_avg_stride + j + col0);
+        dgd0[3] = vld1q_s16(dgd_avg + 3 * dgd_avg_stride + j + col0);
+        dgd0[4] = vld1q_s16(dgd_avg + 4 * dgd_avg_stride + j + col0);
 
-      // Compute all the elements of one row of M.
-      compute_M_one_row_win5(s, dgd0, dgd1, M_trn, wiener_win, row);
+        // Perform computation of the first column with itself (15 elements).
+        // For the first column this will fill the upper triangle of the 5x5
+        // matrix at the top left of the H matrix. For the next columns this
+        // will fill the upper triangle of the other 5x5 matrices around H's
+        // diagonal.
+        compute_H_one_col_last_row(dgd0, col0, H, wiener_win, wiener_win2,
+                                   last_row_downsample_factor);
 
-      dgd0 = dgd1;
+        // All computation next to the matrix diagonal has already been done.
+        for (int col1 = col0 + 1; col1 < wiener_win; col1++) {
+          // Load second column and scale based on downsampling factor.
+          int16x8_t dgd1[5];
+          dgd1[0] = vld1q_s16(dgd_avg + 0 * dgd_avg_stride + j + col1);
+          dgd1[0] = vmulq_n_s16(dgd1[0], last_row_downsample_factor);
+          dgd1[1] = vld1q_s16(dgd_avg + 1 * dgd_avg_stride + j + col1);
+          dgd1[1] = vmulq_n_s16(dgd1[1], last_row_downsample_factor);
+          dgd1[2] = vld1q_s16(dgd_avg + 2 * dgd_avg_stride + j + col1);
+          dgd1[2] = vmulq_n_s16(dgd1[2], last_row_downsample_factor);
+          dgd1[3] = vld1q_s16(dgd_avg + 3 * dgd_avg_stride + j + col1);
+          dgd1[3] = vmulq_n_s16(dgd1[3], last_row_downsample_factor);
+          dgd1[4] = vld1q_s16(dgd_avg + 4 * dgd_avg_stride + j + col1);
+          dgd1[4] = vmulq_n_s16(dgd1[4], last_row_downsample_factor);
+
+          // Compute all elements from the combination of both columns (25
+          // elements).
+          compute_H_two_cols(dgd0, dgd1, col0, col1, H, wiener_win,
+                             wiener_win2);
+        }
+      }
       j += 8;
     }
 
-    // Process remaining elements without Neon.
-    while (j < width) {
-      int16_t s = src_avg[j];
-      int16_t d0 = dgd_avg[row * dgd_avg_stride + 0 + j];
-      int16_t d1 = dgd_avg[row * dgd_avg_stride + 1 + j];
-      int16_t d2 = dgd_avg[row * dgd_avg_stride + 2 + j];
-      int16_t d3 = dgd_avg[row * dgd_avg_stride + 3 + j];
-      int16_t d4 = dgd_avg[row * dgd_avg_stride + 4 + j];
+    // Process remaining columns using a mask to discard excess elements.
+    if (j < width) {
+      for (int col0 = 0; col0 < wiener_win; col0++) {
+        // Load first column.
+        int16x8_t dgd0[5];
+        dgd0[0] = vld1q_s16(dgd_avg + 0 * dgd_avg_stride + j + col0);
+        dgd0[0] = vandq_s16(dgd0[0], mask);
+        dgd0[1] = vld1q_s16(dgd_avg + 1 * dgd_avg_stride + j + col0);
+        dgd0[1] = vandq_s16(dgd0[1], mask);
+        dgd0[2] = vld1q_s16(dgd_avg + 2 * dgd_avg_stride + j + col0);
+        dgd0[2] = vandq_s16(dgd0[2], mask);
+        dgd0[3] = vld1q_s16(dgd_avg + 3 * dgd_avg_stride + j + col0);
+        dgd0[3] = vandq_s16(dgd0[3], mask);
+        dgd0[4] = vld1q_s16(dgd_avg + 4 * dgd_avg_stride + j + col0);
+        dgd0[4] = vandq_s16(dgd0[4], mask);
 
-      M_trn[row * wiener_win + 0] += d0 * s * last_row_downsample_factor;
-      M_trn[row * wiener_win + 1] += d1 * s * last_row_downsample_factor;
-      M_trn[row * wiener_win + 2] += d2 * s * last_row_downsample_factor;
-      M_trn[row * wiener_win + 3] += d3 * s * last_row_downsample_factor;
-      M_trn[row * wiener_win + 4] += d4 * s * last_row_downsample_factor;
+        // Perform computation of the first column with itself (15 elements).
+        // For the first column this will fill the upper triangle of the 5x5
+        // matrix at the top left of the H matrix. For the next columns this
+        // will fill the upper triangle of the other 5x5 matrices around H's
+        // diagonal.
+        compute_H_one_col_last_row(dgd0, col0, H, wiener_win, wiener_win2,
+                                   last_row_downsample_factor);
 
-      j++;
-    }
-  }
+        // All computation next to the matrix diagonal has already been done.
+        for (int col1 = col0 + 1; col1 < wiener_win; col1++) {
+          // Load second column and scale based on downsampling factor.
+          int16x8_t dgd1[5];
+          dgd1[0] = vld1q_s16(dgd_avg + 0 * dgd_avg_stride + j + col1);
+          dgd1[0] = vmulq_n_s16(dgd1[0], last_row_downsample_factor);
+          dgd1[1] = vld1q_s16(dgd_avg + 1 * dgd_avg_stride + j + col1);
+          dgd1[1] = vmulq_n_s16(dgd1[1], last_row_downsample_factor);
+          dgd1[2] = vld1q_s16(dgd_avg + 2 * dgd_avg_stride + j + col1);
+          dgd1[2] = vmulq_n_s16(dgd1[2], last_row_downsample_factor);
+          dgd1[3] = vld1q_s16(dgd_avg + 3 * dgd_avg_stride + j + col1);
+          dgd1[3] = vmulq_n_s16(dgd1[3], last_row_downsample_factor);
+          dgd1[4] = vld1q_s16(dgd_avg + 4 * dgd_avg_stride + j + col1);
+          dgd1[4] = vmulq_n_s16(dgd1[4], last_row_downsample_factor);
 
-  // Auto-covariance (H).
-  int j = 0;
-  while (j <= width - 8) {
-    for (int col0 = 0; col0 < wiener_win; col0++) {
-      // Load first column.
-      int16x8_t dgd0[5];
-      dgd0[0] = vld1q_s16(dgd_avg + 0 * dgd_avg_stride + j + col0);
-      dgd0[1] = vld1q_s16(dgd_avg + 1 * dgd_avg_stride + j + col0);
-      dgd0[2] = vld1q_s16(dgd_avg + 2 * dgd_avg_stride + j + col0);
-      dgd0[3] = vld1q_s16(dgd_avg + 3 * dgd_avg_stride + j + col0);
-      dgd0[4] = vld1q_s16(dgd_avg + 4 * dgd_avg_stride + j + col0);
-
-      // Perform computation of the first column with itself (15 elements).
-      // For the first column this will fill the upper triangle of the 5x5
-      // matrix at the top left of the H matrix. For the next columns this will
-      // fill the upper triangle of the other 5x5 matrices around H's diagonal.
-      compute_H_one_col_last_row(dgd0, col0, H, wiener_win, wiener_win2,
-                                 last_row_downsample_factor);
-
-      // All computation next to the matrix diagonal has already been done.
-      for (int col1 = col0 + 1; col1 < wiener_win; col1++) {
-        // Load second column and scale based on downsampling factor.
-        int16x8_t dgd1[5];
-        dgd1[0] = vld1q_s16(dgd_avg + 0 * dgd_avg_stride + j + col1);
-        dgd1[0] = vmulq_n_s16(dgd1[0], last_row_downsample_factor);
-        dgd1[1] = vld1q_s16(dgd_avg + 1 * dgd_avg_stride + j + col1);
-        dgd1[1] = vmulq_n_s16(dgd1[1], last_row_downsample_factor);
-        dgd1[2] = vld1q_s16(dgd_avg + 2 * dgd_avg_stride + j + col1);
-        dgd1[2] = vmulq_n_s16(dgd1[2], last_row_downsample_factor);
-        dgd1[3] = vld1q_s16(dgd_avg + 3 * dgd_avg_stride + j + col1);
-        dgd1[3] = vmulq_n_s16(dgd1[3], last_row_downsample_factor);
-        dgd1[4] = vld1q_s16(dgd_avg + 4 * dgd_avg_stride + j + col1);
-        dgd1[4] = vmulq_n_s16(dgd1[4], last_row_downsample_factor);
-
-        // Compute all elements from the combination of both columns (25
-        // elements).
-        compute_H_two_cols(dgd0, dgd1, col0, col1, H, wiener_win, wiener_win2);
-      }
-    }
-    j += 8;
-  }
-
-  // Process remaining columns using a mask to discard excess elements.
-  if (j < width) {
-    for (int col0 = 0; col0 < wiener_win; col0++) {
-      // Load first column.
-      int16x8_t dgd0[5];
-      dgd0[0] = vld1q_s16(dgd_avg + 0 * dgd_avg_stride + j + col0);
-      dgd0[0] = vandq_s16(dgd0[0], mask);
-      dgd0[1] = vld1q_s16(dgd_avg + 1 * dgd_avg_stride + j + col0);
-      dgd0[1] = vandq_s16(dgd0[1], mask);
-      dgd0[2] = vld1q_s16(dgd_avg + 2 * dgd_avg_stride + j + col0);
-      dgd0[2] = vandq_s16(dgd0[2], mask);
-      dgd0[3] = vld1q_s16(dgd_avg + 3 * dgd_avg_stride + j + col0);
-      dgd0[3] = vandq_s16(dgd0[3], mask);
-      dgd0[4] = vld1q_s16(dgd_avg + 4 * dgd_avg_stride + j + col0);
-      dgd0[4] = vandq_s16(dgd0[4], mask);
-
-      // Perform computation of the first column with itself (15 elements).
-      // For the first column this will fill the upper triangle of the 5x5
-      // matrix at the top left of the H matrix. For the next columns this will
-      // fill the upper triangle of the other 5x5 matrices around H's diagonal.
-      compute_H_one_col_last_row(dgd0, col0, H, wiener_win, wiener_win2,
-                                 last_row_downsample_factor);
-
-      // All computation next to the matrix diagonal has already been done.
-      for (int col1 = col0 + 1; col1 < wiener_win; col1++) {
-        // Load second column and scale based on downsampling factor.
-        int16x8_t dgd1[5];
-        dgd1[0] = vld1q_s16(dgd_avg + 0 * dgd_avg_stride + j + col1);
-        dgd1[0] = vmulq_n_s16(dgd1[0], last_row_downsample_factor);
-        dgd1[1] = vld1q_s16(dgd_avg + 1 * dgd_avg_stride + j + col1);
-        dgd1[1] = vmulq_n_s16(dgd1[1], last_row_downsample_factor);
-        dgd1[2] = vld1q_s16(dgd_avg + 2 * dgd_avg_stride + j + col1);
-        dgd1[2] = vmulq_n_s16(dgd1[2], last_row_downsample_factor);
-        dgd1[3] = vld1q_s16(dgd_avg + 3 * dgd_avg_stride + j + col1);
-        dgd1[3] = vmulq_n_s16(dgd1[3], last_row_downsample_factor);
-        dgd1[4] = vld1q_s16(dgd_avg + 4 * dgd_avg_stride + j + col1);
-        dgd1[4] = vmulq_n_s16(dgd1[4], last_row_downsample_factor);
-
-        // Compute all elements from the combination of both columns (25
-        // elements).
-        compute_H_two_cols(dgd0, dgd1, col0, col1, H, wiener_win, wiener_win2);
+          // Compute all elements from the combination of both columns (25
+          // elements).
+          compute_H_two_cols(dgd0, dgd1, col0, col1, H, wiener_win,
+                             wiener_win2);
+        }
       }
     }
   }
@@ -1271,5 +1283,235 @@ void av1_compute_stats_neon(int wiener_win, const uint8_t *dgd,
     compute_stats_win5_neon(dgd_avg, dgd_avg_stride, src_avg, src_avg_stride,
                             width, v_start, v_end, M, H, downsample_factor,
                             last_row_downsample_factor);
+  }
+}
+
+static INLINE void calc_proj_params_r0_r1_neon(
+    const uint8_t *src8, int width, int height, int src_stride,
+    const uint8_t *dat8, int dat_stride, int32_t *flt0, int flt0_stride,
+    int32_t *flt1, int flt1_stride, int64_t H[2][2], int64_t C[2]) {
+  assert(width % 8 == 0);
+  const int size = width * height;
+
+  int64x2_t h00_lo = vdupq_n_s64(0);
+  int64x2_t h00_hi = vdupq_n_s64(0);
+  int64x2_t h11_lo = vdupq_n_s64(0);
+  int64x2_t h11_hi = vdupq_n_s64(0);
+  int64x2_t h01_lo = vdupq_n_s64(0);
+  int64x2_t h01_hi = vdupq_n_s64(0);
+  int64x2_t c0_lo = vdupq_n_s64(0);
+  int64x2_t c0_hi = vdupq_n_s64(0);
+  int64x2_t c1_lo = vdupq_n_s64(0);
+  int64x2_t c1_hi = vdupq_n_s64(0);
+
+  do {
+    const uint8_t *src_ptr = src8;
+    const uint8_t *dat_ptr = dat8;
+    int32_t *flt0_ptr = flt0;
+    int32_t *flt1_ptr = flt1;
+    int w = width;
+
+    do {
+      uint8x8_t s = vld1_u8(src_ptr);
+      uint8x8_t d = vld1_u8(dat_ptr);
+      int32x4_t f0_lo = vld1q_s32(flt0_ptr);
+      int32x4_t f0_hi = vld1q_s32(flt0_ptr + 4);
+      int32x4_t f1_lo = vld1q_s32(flt1_ptr);
+      int32x4_t f1_hi = vld1q_s32(flt1_ptr + 4);
+
+      int16x8_t u = vreinterpretq_s16_u16(vshll_n_u8(d, SGRPROJ_RST_BITS));
+      int16x8_t s_s16 = vreinterpretq_s16_u16(vshll_n_u8(s, SGRPROJ_RST_BITS));
+
+      int32x4_t s_lo = vsubl_s16(vget_low_s16(s_s16), vget_low_s16(u));
+      int32x4_t s_hi = vsubl_s16(vget_high_s16(s_s16), vget_high_s16(u));
+      f0_lo = vsubw_s16(f0_lo, vget_low_s16(u));
+      f0_hi = vsubw_s16(f0_hi, vget_high_s16(u));
+      f1_lo = vsubw_s16(f1_lo, vget_low_s16(u));
+      f1_hi = vsubw_s16(f1_hi, vget_high_s16(u));
+
+      h00_lo = vmlal_s32(h00_lo, vget_low_s32(f0_lo), vget_low_s32(f0_lo));
+      h00_lo = vmlal_s32(h00_lo, vget_high_s32(f0_lo), vget_high_s32(f0_lo));
+      h00_hi = vmlal_s32(h00_hi, vget_low_s32(f0_hi), vget_low_s32(f0_hi));
+      h00_hi = vmlal_s32(h00_hi, vget_high_s32(f0_hi), vget_high_s32(f0_hi));
+
+      h11_lo = vmlal_s32(h11_lo, vget_low_s32(f1_lo), vget_low_s32(f1_lo));
+      h11_lo = vmlal_s32(h11_lo, vget_high_s32(f1_lo), vget_high_s32(f1_lo));
+      h11_hi = vmlal_s32(h11_hi, vget_low_s32(f1_hi), vget_low_s32(f1_hi));
+      h11_hi = vmlal_s32(h11_hi, vget_high_s32(f1_hi), vget_high_s32(f1_hi));
+
+      h01_lo = vmlal_s32(h01_lo, vget_low_s32(f0_lo), vget_low_s32(f1_lo));
+      h01_lo = vmlal_s32(h01_lo, vget_high_s32(f0_lo), vget_high_s32(f1_lo));
+      h01_hi = vmlal_s32(h01_hi, vget_low_s32(f0_hi), vget_low_s32(f1_hi));
+      h01_hi = vmlal_s32(h01_hi, vget_high_s32(f0_hi), vget_high_s32(f1_hi));
+
+      c0_lo = vmlal_s32(c0_lo, vget_low_s32(f0_lo), vget_low_s32(s_lo));
+      c0_lo = vmlal_s32(c0_lo, vget_high_s32(f0_lo), vget_high_s32(s_lo));
+      c0_hi = vmlal_s32(c0_hi, vget_low_s32(f0_hi), vget_low_s32(s_hi));
+      c0_hi = vmlal_s32(c0_hi, vget_high_s32(f0_hi), vget_high_s32(s_hi));
+
+      c1_lo = vmlal_s32(c1_lo, vget_low_s32(f1_lo), vget_low_s32(s_lo));
+      c1_lo = vmlal_s32(c1_lo, vget_high_s32(f1_lo), vget_high_s32(s_lo));
+      c1_hi = vmlal_s32(c1_hi, vget_low_s32(f1_hi), vget_low_s32(s_hi));
+      c1_hi = vmlal_s32(c1_hi, vget_high_s32(f1_hi), vget_high_s32(s_hi));
+
+      src_ptr += 8;
+      dat_ptr += 8;
+      flt0_ptr += 8;
+      flt1_ptr += 8;
+      w -= 8;
+    } while (w != 0);
+
+    src8 += src_stride;
+    dat8 += dat_stride;
+    flt0 += flt0_stride;
+    flt1 += flt1_stride;
+  } while (--height != 0);
+
+  H[0][0] = horizontal_add_s64x2(vaddq_s64(h00_lo, h00_hi)) / size;
+  H[0][1] = horizontal_add_s64x2(vaddq_s64(h01_lo, h01_hi)) / size;
+  H[1][1] = horizontal_add_s64x2(vaddq_s64(h11_lo, h11_hi)) / size;
+  H[1][0] = H[0][1];
+  C[0] = horizontal_add_s64x2(vaddq_s64(c0_lo, c0_hi)) / size;
+  C[1] = horizontal_add_s64x2(vaddq_s64(c1_lo, c1_hi)) / size;
+}
+
+static INLINE void calc_proj_params_r0_neon(const uint8_t *src8, int width,
+                                            int height, int src_stride,
+                                            const uint8_t *dat8, int dat_stride,
+                                            int32_t *flt0, int flt0_stride,
+                                            int64_t H[2][2], int64_t C[2]) {
+  assert(width % 8 == 0);
+  const int size = width * height;
+
+  int64x2_t h00_lo = vdupq_n_s64(0);
+  int64x2_t h00_hi = vdupq_n_s64(0);
+  int64x2_t c0_lo = vdupq_n_s64(0);
+  int64x2_t c0_hi = vdupq_n_s64(0);
+
+  do {
+    const uint8_t *src_ptr = src8;
+    const uint8_t *dat_ptr = dat8;
+    int32_t *flt0_ptr = flt0;
+    int w = width;
+
+    do {
+      uint8x8_t s = vld1_u8(src_ptr);
+      uint8x8_t d = vld1_u8(dat_ptr);
+      int32x4_t f0_lo = vld1q_s32(flt0_ptr);
+      int32x4_t f0_hi = vld1q_s32(flt0_ptr + 4);
+
+      int16x8_t u = vreinterpretq_s16_u16(vshll_n_u8(d, SGRPROJ_RST_BITS));
+      int16x8_t s_s16 = vreinterpretq_s16_u16(vshll_n_u8(s, SGRPROJ_RST_BITS));
+
+      int32x4_t s_lo = vsubl_s16(vget_low_s16(s_s16), vget_low_s16(u));
+      int32x4_t s_hi = vsubl_s16(vget_high_s16(s_s16), vget_high_s16(u));
+      f0_lo = vsubw_s16(f0_lo, vget_low_s16(u));
+      f0_hi = vsubw_s16(f0_hi, vget_high_s16(u));
+
+      h00_lo = vmlal_s32(h00_lo, vget_low_s32(f0_lo), vget_low_s32(f0_lo));
+      h00_lo = vmlal_s32(h00_lo, vget_high_s32(f0_lo), vget_high_s32(f0_lo));
+      h00_hi = vmlal_s32(h00_hi, vget_low_s32(f0_hi), vget_low_s32(f0_hi));
+      h00_hi = vmlal_s32(h00_hi, vget_high_s32(f0_hi), vget_high_s32(f0_hi));
+
+      c0_lo = vmlal_s32(c0_lo, vget_low_s32(f0_lo), vget_low_s32(s_lo));
+      c0_lo = vmlal_s32(c0_lo, vget_high_s32(f0_lo), vget_high_s32(s_lo));
+      c0_hi = vmlal_s32(c0_hi, vget_low_s32(f0_hi), vget_low_s32(s_hi));
+      c0_hi = vmlal_s32(c0_hi, vget_high_s32(f0_hi), vget_high_s32(s_hi));
+
+      src_ptr += 8;
+      dat_ptr += 8;
+      flt0_ptr += 8;
+      w -= 8;
+    } while (w != 0);
+
+    src8 += src_stride;
+    dat8 += dat_stride;
+    flt0 += flt0_stride;
+  } while (--height != 0);
+
+  H[0][0] = horizontal_add_s64x2(vaddq_s64(h00_lo, h00_hi)) / size;
+  C[0] = horizontal_add_s64x2(vaddq_s64(c0_lo, c0_hi)) / size;
+}
+
+static INLINE void calc_proj_params_r1_neon(const uint8_t *src8, int width,
+                                            int height, int src_stride,
+                                            const uint8_t *dat8, int dat_stride,
+                                            int32_t *flt1, int flt1_stride,
+                                            int64_t H[2][2], int64_t C[2]) {
+  assert(width % 8 == 0);
+  const int size = width * height;
+
+  int64x2_t h11_lo = vdupq_n_s64(0);
+  int64x2_t h11_hi = vdupq_n_s64(0);
+  int64x2_t c1_lo = vdupq_n_s64(0);
+  int64x2_t c1_hi = vdupq_n_s64(0);
+
+  do {
+    const uint8_t *src_ptr = src8;
+    const uint8_t *dat_ptr = dat8;
+    int32_t *flt1_ptr = flt1;
+    int w = width;
+
+    do {
+      uint8x8_t s = vld1_u8(src_ptr);
+      uint8x8_t d = vld1_u8(dat_ptr);
+      int32x4_t f1_lo = vld1q_s32(flt1_ptr);
+      int32x4_t f1_hi = vld1q_s32(flt1_ptr + 4);
+
+      int16x8_t u = vreinterpretq_s16_u16(vshll_n_u8(d, SGRPROJ_RST_BITS));
+      int16x8_t s_s16 = vreinterpretq_s16_u16(vshll_n_u8(s, SGRPROJ_RST_BITS));
+
+      int32x4_t s_lo = vsubl_s16(vget_low_s16(s_s16), vget_low_s16(u));
+      int32x4_t s_hi = vsubl_s16(vget_high_s16(s_s16), vget_high_s16(u));
+      f1_lo = vsubw_s16(f1_lo, vget_low_s16(u));
+      f1_hi = vsubw_s16(f1_hi, vget_high_s16(u));
+
+      h11_lo = vmlal_s32(h11_lo, vget_low_s32(f1_lo), vget_low_s32(f1_lo));
+      h11_lo = vmlal_s32(h11_lo, vget_high_s32(f1_lo), vget_high_s32(f1_lo));
+      h11_hi = vmlal_s32(h11_hi, vget_low_s32(f1_hi), vget_low_s32(f1_hi));
+      h11_hi = vmlal_s32(h11_hi, vget_high_s32(f1_hi), vget_high_s32(f1_hi));
+
+      c1_lo = vmlal_s32(c1_lo, vget_low_s32(f1_lo), vget_low_s32(s_lo));
+      c1_lo = vmlal_s32(c1_lo, vget_high_s32(f1_lo), vget_high_s32(s_lo));
+      c1_hi = vmlal_s32(c1_hi, vget_low_s32(f1_hi), vget_low_s32(s_hi));
+      c1_hi = vmlal_s32(c1_hi, vget_high_s32(f1_hi), vget_high_s32(s_hi));
+
+      src_ptr += 8;
+      dat_ptr += 8;
+      flt1_ptr += 8;
+      w -= 8;
+    } while (w != 0);
+
+    src8 += src_stride;
+    dat8 += dat_stride;
+    flt1 += flt1_stride;
+  } while (--height != 0);
+
+  H[1][1] = horizontal_add_s64x2(vaddq_s64(h11_lo, h11_hi)) / size;
+  C[1] = horizontal_add_s64x2(vaddq_s64(c1_lo, c1_hi)) / size;
+}
+
+// The function calls 3 subfunctions for the following cases :
+// 1) When params->r[0] > 0 and params->r[1] > 0. In this case all elements
+//    of C and H need to be computed.
+// 2) When only params->r[0] > 0. In this case only H[0][0] and C[0] are
+//    non-zero and need to be computed.
+// 3) When only params->r[1] > 0. In this case only H[1][1] and C[1] are
+//    non-zero and need to be computed.
+void av1_calc_proj_params_neon(const uint8_t *src8, int width, int height,
+                               int src_stride, const uint8_t *dat8,
+                               int dat_stride, int32_t *flt0, int flt0_stride,
+                               int32_t *flt1, int flt1_stride, int64_t H[2][2],
+                               int64_t C[2], const sgr_params_type *params) {
+  if ((params->r[0] > 0) && (params->r[1] > 0)) {
+    calc_proj_params_r0_r1_neon(src8, width, height, src_stride, dat8,
+                                dat_stride, flt0, flt0_stride, flt1,
+                                flt1_stride, H, C);
+  } else if (params->r[0] > 0) {
+    calc_proj_params_r0_neon(src8, width, height, src_stride, dat8, dat_stride,
+                             flt0, flt0_stride, H, C);
+  } else if (params->r[1] > 0) {
+    calc_proj_params_r1_neon(src8, width, height, src_stride, dat8, dat_stride,
+                             flt1, flt1_stride, H, C);
   }
 }

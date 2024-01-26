@@ -9,15 +9,15 @@
 #include <stdint.h>
 #include <string.h>
 
-#include <fp16.h>
+#include <fp16/fp16.h>
 
 #include <xnnpack/math.h>
 #include <xnnpack/microparams-init.h>
 #include <xnnpack/unaligned.h>
 
 
-size_t xnn_init_qc8_conv_minmax_fp32_scalar_fmagic_params(
-  union xnn_qc8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
+size_t xnn_init_qs8_qc8w_conv_minmax_fp32_scalar_fmagic_params(
+  union xnn_qs8_qc8w_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
   int8_t output_zero_point,
   int8_t output_min,
   int8_t output_max)
@@ -29,8 +29,8 @@ size_t xnn_init_qc8_conv_minmax_fp32_scalar_fmagic_params(
   return sizeof(params->fp32_scalar_fmagic);
 }
 
-size_t xnn_init_qc8_conv_minmax_fp32_scalar_imagic_params(
-  union xnn_qc8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
+size_t xnn_init_qs8_qc8w_conv_minmax_fp32_scalar_imagic_params(
+  union xnn_qs8_qc8w_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
   int8_t output_zero_point,
   int8_t output_min,
   int8_t output_max)
@@ -44,8 +44,8 @@ size_t xnn_init_qc8_conv_minmax_fp32_scalar_imagic_params(
   return sizeof(params->fp32_scalar_imagic);
 }
 
-size_t xnn_init_qc8_conv_minmax_fp32_scalar_lrintf_params(
-  union xnn_qc8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
+size_t xnn_init_qs8_qc8w_conv_minmax_fp32_scalar_lrintf_params(
+  union xnn_qs8_qc8w_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
   int8_t output_zero_point,
   int8_t output_min,
   int8_t output_max)
@@ -57,8 +57,8 @@ size_t xnn_init_qc8_conv_minmax_fp32_scalar_lrintf_params(
 }
 
 #if XNN_ARCH_X86 || XNN_ARCH_X86_64
-size_t xnn_init_qc8_conv_minmax_fp32_sse2_params(
-  union xnn_qc8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
+size_t xnn_init_qs8_qc8w_conv_minmax_fp32_sse2_params(
+  union xnn_qs8_qc8w_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
   int8_t output_zero_point,
   int8_t output_min,
   int8_t output_max)
@@ -74,8 +74,8 @@ size_t xnn_init_qc8_conv_minmax_fp32_sse2_params(
   return sizeof(params->fp32_sse2);
 }
 
-size_t xnn_init_qc8_conv_minmax_fp32_sse4_params(
-  union xnn_qc8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
+size_t xnn_init_qs8_qc8w_conv_minmax_fp32_sse4_params(
+  union xnn_qs8_qc8w_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
   int8_t output_zero_point,
   int8_t output_min,
   int8_t output_max)
@@ -93,8 +93,8 @@ size_t xnn_init_qc8_conv_minmax_fp32_sse4_params(
   return sizeof(params->fp32_sse4);
 }
 
-size_t xnn_init_qc8_conv_minmax_fp32_avx2_params(
-  union xnn_qc8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
+size_t xnn_init_qs8_qc8w_conv_minmax_fp32_avx2_params(
+  union xnn_qs8_qc8w_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
   int8_t output_zero_point,
   int8_t output_min,
   int8_t output_max)
@@ -112,8 +112,8 @@ size_t xnn_init_qc8_conv_minmax_fp32_avx2_params(
   return sizeof(params->fp32_avx2);
 }
 
-size_t xnn_init_qc8_conv_minmax_fp32_avx512_params(
-  union xnn_qc8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
+size_t xnn_init_qs8_qc8w_conv_minmax_fp32_avx512_params(
+  union xnn_qs8_qc8w_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
   int8_t output_zero_point,
   int8_t output_min,
   int8_t output_max)
@@ -133,8 +133,8 @@ size_t xnn_init_qc8_conv_minmax_fp32_avx512_params(
 #endif  // XNN_ARCH_X86 || XNN_ARCH_X86_64
 
 #if XNN_ARCH_ARM
-size_t xnn_init_qc8_conv_minmax_fp32_armsimd32_params(
-  union xnn_qc8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
+size_t xnn_init_qs8_qc8w_conv_minmax_fp32_armsimd32_params(
+  union xnn_qs8_qc8w_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
   int8_t output_zero_point,
   int8_t output_min,
   int8_t output_max)
@@ -148,8 +148,8 @@ size_t xnn_init_qc8_conv_minmax_fp32_armsimd32_params(
 #endif  // XNN_ARCH_ARM
 
 #if XNN_ARCH_ARM || XNN_ARCH_ARM64
-size_t xnn_init_qc8_conv_minmax_fp32_neon_params(
-  union xnn_qc8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
+size_t xnn_init_qs8_qc8w_conv_minmax_fp32_neon_params(
+  union xnn_qs8_qc8w_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
   int8_t output_zero_point,
   int8_t output_min,
   int8_t output_max)
@@ -161,8 +161,8 @@ size_t xnn_init_qc8_conv_minmax_fp32_neon_params(
   return sizeof(params->fp32_neon);
 }
 
-size_t xnn_init_qc8_conv_minmax_fp32_neonv8_params(
-  union xnn_qc8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
+size_t xnn_init_qs8_qc8w_conv_minmax_fp32_neonv8_params(
+  union xnn_qs8_qc8w_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
   int8_t output_zero_point,
   int8_t output_min,
   int8_t output_max)
@@ -175,8 +175,8 @@ size_t xnn_init_qc8_conv_minmax_fp32_neonv8_params(
 #endif  // XNN_ARCH_ARM || XNN_ARCH_ARM64
 
 #if XNN_ARCH_WASMSIMD || XNN_ARCH_WASMRELAXEDSIMD
-size_t xnn_init_qc8_conv_minmax_fp32_wasmsimd_params(
-  union xnn_qc8_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
+size_t xnn_init_qs8_qc8w_conv_minmax_fp32_wasmsimd_params(
+  union xnn_qs8_qc8w_conv_minmax_params params[XNN_MIN_ELEMENTS(1)],
   int8_t output_zero_point,
   int8_t output_min,
   int8_t output_max)
@@ -823,7 +823,7 @@ size_t xnn_init_qu8_conv_minmax_fp32_wasmsimd_params(
 }
 #endif  // XNN_ARCH_WASMSIMD || XNN_ARCH_WASMRELAXEDSIMD
 
-void xnn_init_qc8_scale_fp32_params(
+void xnn_init_qs8_qc8w_scale_fp32_params(
   size_t channels,
   size_t channels_tile,
   size_t channels_subtile,
@@ -1564,8 +1564,66 @@ void xnn_update_qu8_avgpool_minmax_fp32_wasmsimd_params(
 }
 #endif  // XNN_ARCH_WASMSIMD || XNN_ARCH_WASMRELAXEDSIMD
 
+#if XNN_ARCH_ARM || XNN_ARCH_ARM64
+size_t xnn_init_f16_scale_fp16arith_params(
+  union xnn_f16_scale_params params[XNN_MIN_ELEMENTS(1)],
+  uint16_t scale)
+{
+  params->fp16arith.scale = scale;
+  return sizeof(params->fp16arith);
+}
+#endif  // XNN_ARCH_ARM || XNN_ARCH_ARM64
+
+size_t xnn_init_f16_f32acc_scale_scalar_params(
+  union xnn_f16_f32acc_scale_params params[XNN_MIN_ELEMENTS(1)],
+  float scale)
+{
+  params->scalar.scale = scale;
+  return sizeof(params->scalar);
+}
+
+#if XNN_ARCH_X86 || XNN_ARCH_X86_64
+size_t xnn_init_f16_f32acc_scale_avx_params(
+  union xnn_f16_f32acc_scale_params params[XNN_MIN_ELEMENTS(1)],
+  float scale)
+{
+  for (uint32_t i = 0; i < 7; i++) {
+    params->avx.mask_table[i] = -1;
+  }
+  for (uint32_t i = 7; i < 14; i++) {
+    params->avx.mask_table[i] = 0;
+  }
+  params->avx.scale = scale;
+  return sizeof(params->avx);
+}
+#endif  // XNN_ARCH_X86 || XNN_ARCH_X86_64
+
+size_t xnn_init_f32_scale_scalar_params(
+  union xnn_f32_scale_params params[XNN_MIN_ELEMENTS(1)],
+  float scale)
+{
+  params->scalar.scale = scale;
+  return sizeof(params->scalar);
+}
+
+#if XNN_ARCH_X86 || XNN_ARCH_X86_64
+size_t xnn_init_f32_scale_avx_params(
+  union xnn_f32_scale_params params[XNN_MIN_ELEMENTS(1)],
+  float scale)
+{
+  for (uint32_t i = 0; i < 7; i++) {
+    params->avx.mask_table[i] = -1;
+  }
+  for (uint32_t i = 7; i < 14; i++) {
+    params->avx.mask_table[i] = 0;
+  }
+  params->avx.scale = scale;
+  return sizeof(params->avx);
+}
+#endif  // XNN_ARCH_X86 || XNN_ARCH_X86_64
+
 void xnn_update_f32_scaleminmax_scalar_params(
-  union xnn_f32_scaleminmax_params* params,
+  union xnn_f32_scaleminmax_params params[XNN_MIN_ELEMENTS(1)],
   float scale)
 {
   params->scalar.scale = scale;
@@ -1573,7 +1631,7 @@ void xnn_update_f32_scaleminmax_scalar_params(
 
 #if XNN_ARCH_X86 || XNN_ARCH_X86_64
 void xnn_update_f32_scaleminmax_sse_params(
-  union xnn_f32_scaleminmax_params* params,
+  union xnn_f32_scaleminmax_params params[XNN_MIN_ELEMENTS(1)],
   float scale)
 {
   for (uint32_t i = 0; i < 4; i++) {
@@ -1735,7 +1793,7 @@ size_t xnn_init_f16_gavgpool_neonfp16arith_params(
 #endif  // XNN_ARCH_ARM || XNN_ARCH_ARM64
 
 void xnn_update_f32_gavgpool_params(
-  union xnn_f32_gavgpool_params* params,
+  union xnn_f32_gavgpool_params params[XNN_MIN_ELEMENTS(1)],
   float multiplier,
   uint32_t width)
 {
@@ -1770,7 +1828,7 @@ void xnn_update_f32_gavgpool_params(
 
 #if XNN_ARCH_ARM || XNN_ARCH_ARM64
 void xnn_update_f16_gavgpool_neonfp16arith_params(
-  union xnn_f16_gavgpool_params* params,
+  union xnn_f16_gavgpool_params params[XNN_MIN_ELEMENTS(1)],
   uint16_t multiplier,
   uint32_t width)
 {
@@ -1915,6 +1973,92 @@ size_t xnn_init_f32_minmax_scalar_params(
   return sizeof(params->scalar);
 }
 
+#if XNN_ARCH_X86 || XNN_ARCH_X86_64
+size_t xnn_init_f32_qc4w_minmax_sse_params(
+  union xnn_f32_qc4w_minmax_params params[XNN_MIN_ELEMENTS(1)],
+  float output_min,
+  float output_max,
+  uint8_t kernel_zero_point)
+{
+  assert(kernel_zero_point <= 15);
+  for (uint32_t i = 0; i < 4; i++) {
+    params->sse.min[i] = output_min;
+    params->sse.max[i] = output_max;
+    params->sse.magic_bias_c0[i] = 0x4B0000F0;
+    params->sse.magic_bias_c1[i] = 0x4900000F;
+    params->sse.magic_bias_plus_kernel_zero_point_c0[i] = 0x1.0001E0p+23f + (float) kernel_zero_point;
+    params->sse.magic_bias_plus_kernel_zero_point_c1[i] = 0x1.00001Ep+19f + (float) kernel_zero_point;
+  }
+  return sizeof(params->sse);
+}
+
+size_t xnn_init_f32_qc4w_minmax_avx_params(
+  union xnn_f32_qc4w_minmax_params params[XNN_MIN_ELEMENTS(1)],
+  float output_min,
+  float output_max,
+  uint8_t kernel_zero_point)
+{
+  assert(kernel_zero_point <= 15);
+  for (uint32_t i = 0; i < 8; i++) {
+    params->avx.min[i] = output_min;
+    params->avx.max[i] = output_max;
+    params->avx.magic_bias_c0[i] = 0x4B0000F0;
+    params->avx.magic_bias_c1[i] = 0x4900000F;
+    params->avx.magic_bias_plus_kernel_zero_point_c0[i] = 0x1.0001E0p+23f + (float) kernel_zero_point;
+    params->avx.magic_bias_plus_kernel_zero_point_c1[i] = 0x1.00001Ep+19f + (float) kernel_zero_point;
+  }
+  return sizeof(params->avx);
+}
+
+size_t xnn_init_f32_qc4w_minmax_avx512_params(
+  union xnn_f32_qc4w_minmax_params params[XNN_MIN_ELEMENTS(1)],
+  float output_min,
+  float output_max,
+  uint8_t kernel_zero_point)
+{
+  assert(kernel_zero_point <= 15);
+  params->avx512.min = output_min;
+  params->avx512.max = output_max;
+  params->avx512.magic_bias_c0 = 0x4B0000F0;
+  params->avx512.magic_bias_c1 = 0x4900000F;
+  params->avx512.magic_bias_plus_kernel_zero_point_c0 = 0x1.0001E0p+23f + (float) kernel_zero_point;
+  params->avx512.magic_bias_plus_kernel_zero_point_c1 = 0x1.00001Ep+19f + (float) kernel_zero_point;
+  return sizeof(params->avx512);
+}
+#endif  // XNN_ARCH_X86 || XNN_ARCH_X86_64
+
+#if XNN_ARCH_WASMSIMD || XNN_ARCH_WASMRELAXEDSIMD
+size_t xnn_init_f32_qc4w_minmax_wasmsimd_params(
+  union xnn_f32_qc4w_minmax_params params[XNN_MIN_ELEMENTS(1)],
+  float output_min,
+  float output_max,
+  uint8_t kernel_zero_point)
+{
+  assert(kernel_zero_point <= 15);
+  params->wasmsimd.min[0] = output_min;
+  params->wasmsimd.min[1] = output_min;
+  params->wasmsimd.max[0] = output_max;
+  params->wasmsimd.max[1] = output_max;
+  for (uint32_t i = 0; i < 4; i++) {
+    params->wasmsimd.minus_kernel_zero_point[i] = -(int32_t) kernel_zero_point;
+  }
+  return sizeof(params->wasmsimd);
+}
+#endif  // XNN_ARCH_WASMSIMD || XNN_ARCH_WASMRELAXEDSIMD
+
+size_t xnn_init_f32_qc4w_minmax_scalar_params(
+  union xnn_f32_qc4w_minmax_params params[XNN_MIN_ELEMENTS(1)],
+  float output_min,
+  float output_max,
+  uint8_t kernel_zero_point)
+{
+  assert(kernel_zero_point <= 15);
+  params->scalar.min = output_min;
+  params->scalar.max = output_max;
+  params->scalar.minus_kernel_zero_point = -(int32_t) kernel_zero_point;
+  return sizeof(params->scalar);
+}
+
 #if XNN_ARCH_ARM || XNN_ARCH_ARM64
 size_t xnn_init_f16_hswish_fp16arith_params(
   union xnn_f16_hswish_params params[XNN_MIN_ELEMENTS(1)])
@@ -1999,6 +2143,89 @@ size_t xnn_init_f32_hswish_wasmsimd_params(
   return sizeof(params->wasmsimd);
 }
 #endif  // XNN_ARCH_WASMSIMD || XNN_ARCH_WASMRELAXEDSIMD
+
+size_t xnn_init_qs8_hswish_scalar_params(
+  union xnn_qs8_hswish_params params[XNN_MIN_ELEMENTS(1)],
+  int16_t input_zero_point,
+  int16_t output_zero_point,
+  float input_scale,
+  float output_scale)
+{
+  params->scalar.input_zero_point = (int32_t) input_zero_point;
+  params->scalar.output_zero_point= (int32_t) output_zero_point;
+  const float divisor1 = 0x1.555556p-10f;
+  const uint32_t input_scale_div = float_as_uint32(input_scale * divisor1);
+  params->scalar.input_scale_div_exp = (int32_t) (input_scale_div >> 23) - 126;
+  params->scalar.input_scale_div_mantissa = (int32_t) ((input_scale_div << 9) >> 18 | UINT16_C(0x4000));
+  const float scale_ratio = input_scale / output_scale;
+  assert(scale_ratio >= 0x1.0p-8f);
+  assert(scale_ratio < 0x1.0p+7f);
+  params->scalar.scale_ratio = (int32_t) lrintf(scale_ratio * 256.0f);
+  return sizeof(params->scalar);
+}
+
+#if XNN_ARCH_ARM || XNN_ARCH_ARM64
+size_t xnn_init_qs8_hswish_neon_params(
+  union xnn_qs8_hswish_params params[XNN_MIN_ELEMENTS(1)],
+  int16_t input_zero_point,
+  int16_t output_zero_point,
+  float input_scale,
+  float output_scale)
+{
+  params->neon.input_zero_point = input_zero_point;
+  params->neon.output_zero_point= output_zero_point;
+  const float divisor1 = 0x1.555556p-10f;
+  const uint32_t input_scale_div = float_as_uint32(input_scale * divisor1);
+  params->neon.input_scale_div_exp = (int16_t) (input_scale_div >> 23) - 111;
+  params->neon.input_scale_div_mantissa = (int16_t) ((input_scale_div << 9) >> 18 | UINT16_C(0x4000));
+  const float scale_ratio = input_scale / output_scale;
+  assert(scale_ratio >= 0x1.0p-8f);
+  assert(scale_ratio < 0x1.0p+7f);
+  params->neon.scale_ratio = (int16_t) lrintf(scale_ratio * 256.0f);
+  return sizeof(params->neon);
+}
+#endif  // XNN_ARCH_ARM || XNN_ARCH_ARM64
+
+size_t xnn_init_qu8_hswish_scalar_params(
+  union xnn_qu8_hswish_params params[XNN_MIN_ELEMENTS(1)],
+  int16_t input_zero_point,
+  int16_t output_zero_point,
+  float input_scale,
+  float output_scale)
+{
+  params->scalar.input_zero_point = (int32_t) input_zero_point;
+  params->scalar.output_zero_point= (int32_t) output_zero_point;
+  const float divisor1 = 0x1.555556p-10f;
+  const uint32_t input_scale_div = float_as_uint32(input_scale * divisor1);
+  params->scalar.input_scale_div_exp = (int32_t) (input_scale_div >> 23) - 126;
+  params->scalar.input_scale_div_mantissa = (int32_t) ((input_scale_div << 9) >> 18 | UINT16_C(0x4000));
+  const float scale_ratio = input_scale / output_scale;
+  assert(scale_ratio >= 0x1.0p-8f);
+  assert(scale_ratio < 0x1.0p+7f);
+  params->scalar.scale_ratio = (int32_t) lrintf(scale_ratio * 256.0f);
+  return sizeof(params->scalar);
+}
+#if XNN_ARCH_ARM || XNN_ARCH_ARM64
+size_t xnn_init_qu8_hswish_neon_params(
+  union xnn_qu8_hswish_params params[XNN_MIN_ELEMENTS(1)],
+  int16_t input_zero_point,
+  int16_t output_zero_point,
+  float input_scale,
+  float output_scale)
+{
+  params->neon.input_zero_point = input_zero_point;
+  params->neon.output_zero_point= output_zero_point;
+  const float divisor1 = 0x1.555556p-10f;
+  const uint32_t input_scale_div = float_as_uint32(input_scale * divisor1);
+  params->neon.input_scale_div_exp = (int16_t) (input_scale_div >> 23) - 111;
+  params->neon.input_scale_div_mantissa = (int16_t) ((input_scale_div << 9) >> 18 | UINT16_C(0x4000));
+  const float scale_ratio = input_scale / output_scale;
+  assert(scale_ratio >= 0x1.0p-8f);
+  assert(scale_ratio < 0x1.0p+7f);
+  params->neon.scale_ratio = (int16_t) lrintf(scale_ratio * 256.0f);
+  return sizeof(params->neon);
+}
+#endif  // XNN_ARCH_ARM || XNN_ARCH_ARM64
 
 #if XNN_ARCH_ARM || XNN_ARCH_ARM64
 size_t xnn_init_f16_sigmoid_fp16arith_rr2_p2_params(
@@ -4557,7 +4784,7 @@ size_t xnn_init_f32_chw_wasmsimd_stride2_params(
 
 #if XNN_ARCH_ARM || XNN_ARCH_ARM64
 void xnn_update_f16_chw_neonfp16arith_stride1_params(
-  union xnn_f16_chw_params* params,
+  union xnn_f16_chw_params params[XNN_MIN_ELEMENTS(1)],
   uint32_t width)
 {
   const uint32_t w8 = (width - 1) & 7;
@@ -4572,7 +4799,7 @@ void xnn_update_f16_chw_neonfp16arith_stride1_params(
 }
 
 void xnn_update_f16_chw_neonfp16arith_stride2_params(
-  union xnn_f16_chw_params* params,
+  union xnn_f16_chw_params params[XNN_MIN_ELEMENTS(1)],
   uint32_t width)
 {
   const uint32_t w16 = (width - 1) & 15;
@@ -4597,7 +4824,7 @@ void xnn_update_f16_chw_neonfp16arith_stride2_params(
 
 #if XNN_ARCH_ARM || XNN_ARCH_ARM64
 void xnn_update_f32_chw_neon_stride1_params(
-  union xnn_f32_chw_params* params,
+  union xnn_f32_chw_params params[XNN_MIN_ELEMENTS(1)],
   uint32_t width)
 {
   const uint32_t w4 = (width - 1) & 3;
@@ -4608,7 +4835,7 @@ void xnn_update_f32_chw_neon_stride1_params(
 }
 
 void xnn_update_f32_chw_neon_stride2_params(
-  union xnn_f32_chw_params* params,
+  union xnn_f32_chw_params params[XNN_MIN_ELEMENTS(1)],
   uint32_t width)
 {
   const uint32_t w8 = (width - 1) & 7;
@@ -4625,7 +4852,7 @@ void xnn_update_f32_chw_neon_stride2_params(
 
 #if XNN_ARCH_X86 || XNN_ARCH_X86_64
 void xnn_update_f32_chw_sse_stride1_params(
-  union xnn_f32_chw_params* params,
+  union xnn_f32_chw_params params[XNN_MIN_ELEMENTS(1)],
   uint32_t width)
 {
   const uint32_t w4 = (width - 1) & 3;
@@ -4636,7 +4863,7 @@ void xnn_update_f32_chw_sse_stride1_params(
 }
 
 void xnn_update_f32_chw_sse_stride2_params(
-  union xnn_f32_chw_params* params,
+  union xnn_f32_chw_params params[XNN_MIN_ELEMENTS(1)],
   uint32_t width)
 {
   const uint32_t w8 = (width - 1) & 7;
@@ -4653,7 +4880,7 @@ void xnn_update_f32_chw_sse_stride2_params(
 
 #if XNN_ARCH_WASMSIMD || XNN_ARCH_WASMRELAXEDSIMD
 void xnn_update_f32_chw_wasmsimd_stride1_params(
-  union xnn_f32_chw_params* params,
+  union xnn_f32_chw_params params[XNN_MIN_ELEMENTS(1)],
   uint32_t width)
 {
   const uint32_t w4 = (width - 1) & 3;
@@ -4664,7 +4891,7 @@ void xnn_update_f32_chw_wasmsimd_stride1_params(
 }
 
 void xnn_update_f32_chw_wasmsimd_stride2_params(
-  union xnn_f32_chw_params* params,
+  union xnn_f32_chw_params params[XNN_MIN_ELEMENTS(1)],
   uint32_t width)
 {
   const uint32_t w8 = (width - 1) & 7;

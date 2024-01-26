@@ -34,6 +34,7 @@
 #ifndef EIGEN_QR_LAPACKE_H
 #define EIGEN_QR_LAPACKE_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen { 

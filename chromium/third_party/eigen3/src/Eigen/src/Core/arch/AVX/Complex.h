@@ -10,6 +10,7 @@
 #ifndef EIGEN_COMPLEX_AVX_H
 #define EIGEN_COMPLEX_AVX_H
 
+// IWYU pragma: private
 #include "../../InternalHeaderCheck.h"
 
 namespace Eigen {

@@ -43,9 +43,11 @@ devtools_svg_sources = [
   "align-self-end.svg",
   "align-self-start.svg",
   "align-self-stretch.svg",
+  "arrow-back.svg",
   "arrow-down.svg",
   "arrow-drop-down-dark.svg",
   "arrow-drop-down-light.svg",
+  "arrow-forward.svg",
   "arrow-up-down-circle.svg",
   "arrow-up-down.svg",
   "arrow-up.svg",
@@ -171,6 +173,7 @@ devtools_svg_sources = [
   "memory.svg",
   "minus.svg",
   "minus_icon.svg",
+  "mouse.svg",
   "network-settings.svg",
   "node_search_icon.svg",
   "open-externally.svg",
@@ -205,6 +208,7 @@ devtools_svg_sources = [
   "small-status-dot.svg",
   "smallIcons.svg",
   "snippet.svg",
+  "spark.svg",
   "star.svg",
   "step-into.svg",
   "step-out.svg",
@@ -218,6 +222,7 @@ devtools_svg_sources = [
   "thumb-up.svg",
   "top-panel-close.svg",
   "top-panel-open.svg",
+  "touch-app.svg",
   "triangle-bottom-right.svg",
   "triangle-down.svg",
   "triangle-left.svg",
@@ -229,6 +234,7 @@ devtools_svg_sources = [
   "warning_icon.svg",
   "watch.svg",
   "width.svg",
+  "zoom-in.svg",
 ]
 
 devtools_src_svg_files = []

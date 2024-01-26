@@ -31,6 +31,7 @@
 #define SPARSELU_COLUMN_DFS_H
 
 template <typename Scalar, typename StorageIndex> class SparseLUImpl;
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

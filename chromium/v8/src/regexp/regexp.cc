@@ -353,11 +353,11 @@ void SetAtomLastCapture(Isolate* isolate,
                         Handle<RegExpMatchInfo> last_match_info,
                         Tagged<String> subject, int from, int to) {
   SealHandleScope shs(isolate);
-  last_match_info->SetNumberOfCaptureRegisters(2);
-  last_match_info->SetLastSubject(subject);
-  last_match_info->SetLastInput(subject);
-  last_match_info->SetCapture(0, from);
-  last_match_info->SetCapture(1, to);
+  last_match_info->set_number_of_capture_registers(2);
+  last_match_info->set_last_subject(subject);
+  last_match_info->set_last_input(subject);
+  last_match_info->set_capture(0, from);
+  last_match_info->set_capture(1, to);
 }
 
 }  // namespace
@@ -612,7 +612,7 @@ bool RegExpImpl::CompileIrregexp(Isolate* isolate, Handle<JSRegExp> re,
            reinterpret_cast<void*>(re->ptr()),
            re->ShouldProduceBytecode() ? "bytecode" : "native code",
            re->ShouldProduceBytecode()
-               ? IrregexpByteCode(*data, is_one_byte)->Size()
+               ? IrregexpByteCode(*data, is_one_byte)->AllocatedSize()
                : IrregexpNativeCode(*data, is_one_byte)->Size());
   }
 
@@ -835,12 +835,12 @@ Handle<RegExpMatchInfo> RegExp::SetLastMatchInfo(
   DisallowGarbageCollection no_gc;
   if (match != nullptr) {
     for (int i = 0; i < capture_register_count; i += 2) {
-      result->SetCapture(i, match[i]);
-      result->SetCapture(i + 1, match[i + 1]);
+      result->set_capture(i, match[i]);
+      result->set_capture(i + 1, match[i + 1]);
     }
   }
-  result->SetLastSubject(*subject);
-  result->SetLastInput(*subject);
+  result->set_last_subject(*subject);
+  result->set_last_input(*subject);
   return result;
 }
 
@@ -1036,8 +1036,8 @@ bool RegExpImpl::Compile(Isolate* isolate, Zone* zone, RegExpCompileData* data,
         data->compilation_target == RegExpCompilationTarget::kBytecode) {
       Handle<ByteArray> bytecode = Handle<ByteArray>::cast(result.code);
       std::unique_ptr<char[]> pattern_cstring = pattern->ToCString();
-      RegExpBytecodeDisassemble(bytecode->GetDataStartAddress(),
-                                bytecode->length(), pattern_cstring.get());
+      RegExpBytecodeDisassemble(bytecode->begin(), bytecode->length(),
+                                pattern_cstring.get());
     }
   }
 
@@ -1223,7 +1223,7 @@ int32_t* RegExpGlobalCache::LastSuccessfulMatch() {
 
 Tagged<Object> RegExpResultsCache::Lookup(Heap* heap, Tagged<String> key_string,
                                           Tagged<Object> key_pattern,
-                                          FixedArray* last_match_cache,
+                                          Tagged<FixedArray>* last_match_cache,
                                           ResultsCacheType type) {
   Tagged<FixedArray> cache;
   if (!IsInternalizedString(key_string)) return Smi::zero();

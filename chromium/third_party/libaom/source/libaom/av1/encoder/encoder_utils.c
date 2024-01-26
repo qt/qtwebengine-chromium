@@ -761,19 +761,25 @@ void av1_scale_references(AV1_COMP *cpi, const InterpFilter filter,
           }
 #if CONFIG_AV1_HIGHBITDEPTH
           if (use_optimized_scaler && has_optimized_scaler &&
-              cm->seq_params->bit_depth == AOM_BITS_8)
+              cm->seq_params->bit_depth == AOM_BITS_8) {
             av1_resize_and_extend_frame(ref, &new_fb->buf, filter, phase,
                                         num_planes);
-          else
-            av1_resize_and_extend_frame_nonnormative(
-                ref, &new_fb->buf, (int)cm->seq_params->bit_depth, num_planes);
+          } else if (!av1_resize_and_extend_frame_nonnormative(
+                         ref, &new_fb->buf, (int)cm->seq_params->bit_depth,
+                         num_planes)) {
+            aom_internal_error(cm->error, AOM_CODEC_MEM_ERROR,
+                               "Failed to allocate buffer during resize");
+          }
 #else
-          if (use_optimized_scaler && has_optimized_scaler)
+          if (use_optimized_scaler && has_optimized_scaler) {
             av1_resize_and_extend_frame(ref, &new_fb->buf, filter, phase,
                                         num_planes);
-          else
-            av1_resize_and_extend_frame_nonnormative(
-                ref, &new_fb->buf, (int)cm->seq_params->bit_depth, num_planes);
+          } else if (!av1_resize_and_extend_frame_nonnormative(
+                         ref, &new_fb->buf, (int)cm->seq_params->bit_depth,
+                         num_planes)) {
+            aom_internal_error(cm->error, AOM_CODEC_MEM_ERROR,
+                               "Failed to allocate buffer during resize");
+          }
 #endif
           cpi->scaled_ref_buf[ref_frame - 1] = new_fb;
           alloc_frame_mvs(cm, new_fb);

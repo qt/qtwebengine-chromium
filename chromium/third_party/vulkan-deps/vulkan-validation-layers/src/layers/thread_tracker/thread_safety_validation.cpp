@@ -62,7 +62,7 @@ void ThreadSafety::PostCallRecordCreateDescriptorSetLayout(VkDevice device, cons
         // Check whether any binding uses read_only
         bool read_only = (pCreateInfo->flags & VK_DESCRIPTOR_SET_LAYOUT_CREATE_HOST_ONLY_POOL_BIT_EXT) != 0;
         if (!read_only) {
-            const auto* flags_create_info = LvlFindInChain<VkDescriptorSetLayoutBindingFlagsCreateInfo>(pCreateInfo->pNext);
+            const auto* flags_create_info = vku::FindStructInPNextChain<VkDescriptorSetLayoutBindingFlagsCreateInfo>(pCreateInfo->pNext);
             if (flags_create_info) {
                 for (uint32_t i = 0; i < flags_create_info->bindingCount; ++i) {
                     if (flags_create_info->pBindingFlags[i] & VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT) {
@@ -433,13 +433,13 @@ void ThreadSafety::PostCallRecordDestroyCommandPool(VkDevice device, VkCommandPo
 void ThreadSafety::PreCallRecordGetSwapchainImagesKHR(VkDevice device, VkSwapchainKHR swapchain, uint32_t* pSwapchainImageCount,
                                                       VkImage* pSwapchainImages) {
     StartReadObjectParentInstance(device, vvl::Func::vkGetSwapchainImagesKHR);
-    StartReadObjectParentInstance(swapchain, vvl::Func::vkGetSwapchainImagesKHR);
+    StartReadObject(swapchain, vvl::Func::vkGetSwapchainImagesKHR);
 }
 
 void ThreadSafety::PostCallRecordGetSwapchainImagesKHR(VkDevice device, VkSwapchainKHR swapchain, uint32_t* pSwapchainImageCount,
                                                        VkImage* pSwapchainImages, const RecordObject& record_obj) {
     FinishReadObjectParentInstance(device, record_obj.location.function);
-    FinishReadObjectParentInstance(swapchain, record_obj.location.function);
+    FinishReadObject(swapchain, record_obj.location.function);
     if (pSwapchainImages != nullptr) {
         auto lock = WriteLockGuard(thread_safety_lock);
         auto& wrapped_swapchain_image_handles = swapchain_wrapped_image_handle_map[swapchain];
@@ -453,7 +453,7 @@ void ThreadSafety::PostCallRecordGetSwapchainImagesKHR(VkDevice device, VkSwapch
 void ThreadSafety::PreCallRecordDestroySwapchainKHR(VkDevice device, VkSwapchainKHR swapchain,
                                                     const VkAllocationCallbacks* pAllocator) {
     StartReadObjectParentInstance(device, vvl::Func::vkDestroySwapchainKHR);
-    StartWriteObjectParentInstance(swapchain, vvl::Func::vkDestroySwapchainKHR);
+    StartWriteObject(swapchain, vvl::Func::vkDestroySwapchainKHR);
     // Host access to swapchain must be externally synchronized
     auto lock = ReadLockGuard(thread_safety_lock);
     for (auto& image_handle : swapchain_wrapped_image_handle_map[swapchain]) {
@@ -464,8 +464,8 @@ void ThreadSafety::PreCallRecordDestroySwapchainKHR(VkDevice device, VkSwapchain
 void ThreadSafety::PostCallRecordDestroySwapchainKHR(VkDevice device, VkSwapchainKHR swapchain,
                                                      const VkAllocationCallbacks* pAllocator, const RecordObject& record_obj) {
     FinishReadObjectParentInstance(device, record_obj.location.function);
-    FinishWriteObjectParentInstance(swapchain, record_obj.location.function);
-    DestroyObjectParentInstance(swapchain);
+    FinishWriteObject(swapchain, record_obj.location.function);
+    DestroyObject(swapchain);
     // Host access to swapchain must be externally synchronized
     auto lock = WriteLockGuard(thread_safety_lock);
     for (auto& image_handle : swapchain_wrapped_image_handle_map[swapchain]) {
@@ -737,6 +737,37 @@ void ThreadSafety::PostCallRecordCreateRayTracingPipelinesKHR(VkDevice device, V
                 if (!pPipelines[index]) continue;
                 CreateObject(pPipelines[index]);
             }
+        }
+    }
+}
+
+void ThreadSafety::PreCallRecordQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pPresentInfo) {
+    StartWriteObject(queue, vvl::Func::vkQueuePresentKHR);
+    uint32_t waitSemaphoreCount = pPresentInfo->waitSemaphoreCount;
+    if (pPresentInfo->pWaitSemaphores != nullptr) {
+        for (uint32_t index = 0; index < waitSemaphoreCount; index++) {
+            StartReadObject(pPresentInfo->pWaitSemaphores[index], vvl::Func::vkQueuePresentKHR);
+        }
+    }
+    if (pPresentInfo->pSwapchains != nullptr) {
+        for (uint32_t index = 0; index < pPresentInfo->swapchainCount; ++index) {
+            StartWriteObject(pPresentInfo->pSwapchains[index], vvl::Func::vkQueuePresentKHR);
+        }
+    }
+}
+
+void ThreadSafety::PostCallRecordQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pPresentInfo,
+                                                 const RecordObject& record_obj) {
+    FinishWriteObject(queue, record_obj.location.function);
+    uint32_t waitSemaphoreCount = pPresentInfo->waitSemaphoreCount;
+    if (pPresentInfo->pWaitSemaphores != nullptr) {
+        for (uint32_t index = 0; index < waitSemaphoreCount; index++) {
+            FinishReadObject(pPresentInfo->pWaitSemaphores[index], record_obj.location.function);
+        }
+    }
+    if (pPresentInfo->pSwapchains != nullptr) {
+        for (uint32_t index = 0; index < pPresentInfo->swapchainCount; ++index) {
+            FinishWriteObject(pPresentInfo->pSwapchains[index], record_obj.location.function);
         }
     }
 }

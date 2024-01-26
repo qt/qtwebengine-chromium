@@ -35,6 +35,7 @@
 #ifndef EIGEN_INVERSE_SIZE_4_H
 #define EIGEN_INVERSE_SIZE_4_H
 
+// IWYU pragma: private
 #include "../InternalHeaderCheck.h"
 
 #if EIGEN_COMP_GNUC_STRICT

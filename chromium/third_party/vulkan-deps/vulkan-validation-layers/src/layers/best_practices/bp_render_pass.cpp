@@ -80,19 +80,20 @@ bool BestPractices::PreCallValidateCreateRenderPass(VkDevice device, const VkRen
                                                     const ErrorObject& error_obj) const {
     bool skip = false;
 
+    const Location create_info_loc = error_obj.location.dot(Field::pCreateInfo);
     for (uint32_t i = 0; i < pCreateInfo->attachmentCount; ++i) {
         VkFormat format = pCreateInfo->pAttachments[i].format;
         if (pCreateInfo->pAttachments[i].initialLayout == VK_IMAGE_LAYOUT_UNDEFINED) {
-            if ((FormatIsColor(format) || FormatHasDepth(format)) &&
+            if ((vkuFormatIsColor(format) || vkuFormatHasDepth(format)) &&
                 pCreateInfo->pAttachments[i].loadOp == VK_ATTACHMENT_LOAD_OP_LOAD) {
-                skip |= LogWarning(device, kVUID_BestPractices_RenderPass_Attatchment,
+                skip |= LogWarning(kVUID_BestPractices_RenderPass_Attatchment, device, error_obj.location,
                                    "Render pass has an attachment with loadOp == VK_ATTACHMENT_LOAD_OP_LOAD and "
                                    "initialLayout == VK_IMAGE_LAYOUT_UNDEFINED.  This is probably not what you "
                                    "intended.  Consider using VK_ATTACHMENT_LOAD_OP_DONT_CARE instead if the "
                                    "image truely is undefined at the start of the render pass.");
             }
-            if (FormatHasStencil(format) && pCreateInfo->pAttachments[i].stencilLoadOp == VK_ATTACHMENT_LOAD_OP_LOAD) {
-                skip |= LogWarning(device, kVUID_BestPractices_RenderPass_Attatchment,
+            if (vkuFormatHasStencil(format) && pCreateInfo->pAttachments[i].stencilLoadOp == VK_ATTACHMENT_LOAD_OP_LOAD) {
+                skip |= LogWarning(kVUID_BestPractices_RenderPass_Attatchment, device, error_obj.location,
                                    "Render pass has an attachment with stencilLoadOp == VK_ATTACHMENT_LOAD_OP_LOAD "
                                    "and initialLayout == VK_IMAGE_LAYOUT_UNDEFINED.  This is probably not what you "
                                    "intended.  Consider using VK_ATTACHMENT_LOAD_OP_DONT_CARE instead if the "
@@ -105,14 +106,14 @@ bool BestPractices::PreCallValidateCreateRenderPass(VkDevice device, const VkRen
             bool access_requires_memory =
                 attachment.loadOp == VK_ATTACHMENT_LOAD_OP_LOAD || attachment.storeOp == VK_ATTACHMENT_STORE_OP_STORE;
 
-            if (FormatHasStencil(format)) {
+            if (vkuFormatHasStencil(format)) {
                 access_requires_memory |= attachment.stencilLoadOp == VK_ATTACHMENT_LOAD_OP_LOAD ||
                                           attachment.stencilStoreOp == VK_ATTACHMENT_STORE_OP_STORE;
             }
 
             if (access_requires_memory) {
                 skip |= LogPerformanceWarning(
-                    device, kVUID_BestPractices_CreateRenderPass_ImageRequiresMemory,
+                    kVUID_BestPractices_CreateRenderPass_ImageRequiresMemory, device, error_obj.location,
                     "Attachment %u in the VkRenderPass is a multisampled image with %u samples, but it uses loadOp/storeOp "
                     "which requires accessing data from memory. Multisampled images should always be loadOp = CLEAR or DONT_CARE, "
                     "storeOp = DONT_CARE. This allows the implementation to use lazily allocated memory effectively.",
@@ -121,15 +122,43 @@ bool BestPractices::PreCallValidateCreateRenderPass(VkDevice device, const VkRen
         }
     }
 
+    if (IsExtEnabled(device_extensions.vk_ext_multisampled_render_to_single_sampled)) {
+        for (uint32_t i = 0; i < pCreateInfo->subpassCount; ++i) {
+            if (pCreateInfo->pSubpasses[i].pResolveAttachments) {
+                for (uint32_t j = 0; j < pCreateInfo->pSubpasses[i].colorAttachmentCount; ++j) {
+                    const auto attachment = pCreateInfo->pSubpasses[i].pResolveAttachments[j].attachment;
+                    if (attachment != VK_ATTACHMENT_UNUSED) {
+                        const auto format = pCreateInfo->pAttachments[attachment].format;
+                        VkSubpassResolvePerformanceQueryEXT performance_query = vku::InitStructHelper();
+                        VkFormatProperties2 format_properties2 = vku::InitStructHelper(&performance_query);
+                        DispatchGetPhysicalDeviceFormatProperties2(physical_device, format, &format_properties2);
+                        if (performance_query.optimal == VK_FALSE) {
+                            skip |= LogPerformanceWarning(
+                                kVUID_BestPractices_SubpassResolve_NonOptimalFormat, device, error_obj.location,
+                                "Attachment %" PRIu32
+                                " in the VkRenderPass has the format %s and is used as a resolve attachment, "
+                                "but VkSubpassResolvePerformanceQueryEXT::optimal is VK_FALSE.",
+                                i, string_VkFormat(format));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     for (uint32_t dependency = 0; dependency < pCreateInfo->dependencyCount; dependency++) {
-        skip |= CheckPipelineStageFlags("vkCreateRenderPass", pCreateInfo->pDependencies[dependency].srcStageMask);
-        skip |= CheckPipelineStageFlags("vkCreateRenderPass", pCreateInfo->pDependencies[dependency].dstStageMask);
+        const Location dependency_loc = create_info_loc.dot(Field::pDependencies, dependency);
+        skip |=
+            CheckPipelineStageFlags(dependency_loc.dot(Field::srcStageMask), pCreateInfo->pDependencies[dependency].srcStageMask);
+        skip |=
+            CheckPipelineStageFlags(dependency_loc.dot(Field::dstStageMask), pCreateInfo->pDependencies[dependency].dstStageMask);
     }
 
     return skip;
 }
 
-bool BestPractices::ValidateCmdBeginRenderPass(VkCommandBuffer commandBuffer, const VkRenderPassBeginInfo* pRenderPassBegin) const {
+bool BestPractices::ValidateCmdBeginRenderPass(VkCommandBuffer commandBuffer, const VkRenderPassBeginInfo* pRenderPassBegin,
+                                               const Location& loc) const {
     bool skip = false;
 
     if (!pRenderPassBegin) {
@@ -137,7 +166,7 @@ bool BestPractices::ValidateCmdBeginRenderPass(VkCommandBuffer commandBuffer, co
     }
 
     if (pRenderPassBegin->renderArea.extent.width == 0 || pRenderPassBegin->renderArea.extent.height == 0) {
-        skip |= LogWarning(device, kVUID_BestPractices_BeginRenderPass_ZeroSizeRenderArea,
+        skip |= LogWarning(kVUID_BestPractices_BeginRenderPass_ZeroSizeRenderArea, device, loc,
                            "This render pass has a zero-size render area. It cannot write to any attachments, "
                            "and can only be used for side effects such as layout transitions.");
     }
@@ -145,9 +174,9 @@ bool BestPractices::ValidateCmdBeginRenderPass(VkCommandBuffer commandBuffer, co
     auto rp_state = Get<RENDER_PASS_STATE>(pRenderPassBegin->renderPass);
     if (rp_state) {
         if (rp_state->createInfo.flags & VK_FRAMEBUFFER_CREATE_IMAGELESS_BIT) {
-            const VkRenderPassAttachmentBeginInfo* rpabi = LvlFindInChain<VkRenderPassAttachmentBeginInfo>(pRenderPassBegin->pNext);
+            const VkRenderPassAttachmentBeginInfo* rpabi = vku::FindStructInPNextChain<VkRenderPassAttachmentBeginInfo>(pRenderPassBegin->pNext);
             if (rpabi) {
-                skip = ValidateAttachments(rp_state->createInfo.ptr(), rpabi->attachmentCount, rpabi->pAttachments);
+                skip = ValidateAttachments(rp_state->createInfo.ptr(), rpabi->attachmentCount, rpabi->pAttachments, loc);
             }
         }
         // Check if any attachments have LOAD operation on them
@@ -155,11 +184,11 @@ bool BestPractices::ValidateCmdBeginRenderPass(VkCommandBuffer commandBuffer, co
             const auto& attachment = rp_state->createInfo.pAttachments[att];
 
             bool attachment_has_readback = false;
-            if (!FormatIsStencilOnly(attachment.format) && attachment.loadOp == VK_ATTACHMENT_LOAD_OP_LOAD) {
+            if (!vkuFormatIsStencilOnly(attachment.format) && attachment.loadOp == VK_ATTACHMENT_LOAD_OP_LOAD) {
                 attachment_has_readback = true;
             }
 
-            if (FormatHasStencil(attachment.format) && attachment.stencilLoadOp == VK_ATTACHMENT_LOAD_OP_LOAD) {
+            if (vkuFormatHasStencil(attachment.format) && attachment.stencilLoadOp == VK_ATTACHMENT_LOAD_OP_LOAD) {
                 attachment_has_readback = true;
             }
 
@@ -173,7 +202,7 @@ bool BestPractices::ValidateCmdBeginRenderPass(VkCommandBuffer commandBuffer, co
             // Using LOAD_OP_LOAD is expensive on tiled GPUs, so flag it as a potential improvement
             if (attachment_needs_readback && (VendorCheckEnabled(kBPVendorArm) || VendorCheckEnabled(kBPVendorIMG))) {
                 skip |=
-                    LogPerformanceWarning(device, kVUID_BestPractices_BeginRenderPass_AttachmentNeedsReadback,
+                    LogPerformanceWarning(kVUID_BestPractices_BeginRenderPass_AttachmentNeedsReadback, device, loc,
                                           "%s %s: Attachment #%u in render pass has begun with VK_ATTACHMENT_LOAD_OP_LOAD.\n"
                                           "Submitting this renderpass will cause the driver to inject a readback of the attachment "
                                           "which will copy in total %u pixels (renderArea = "
@@ -202,7 +231,7 @@ bool BestPractices::ValidateCmdBeginRenderPass(VkCommandBuffer commandBuffer, co
         if (!clearing && pRenderPassBegin->clearValueCount > 0) {
             // Flag as warning because nothing will happen per spec, and pClearValues will be ignored
             skip |= LogWarning(
-                device, kVUID_BestPractices_ClearValueWithoutLoadOpClear,
+                kVUID_BestPractices_ClearValueWithoutLoadOpClear, device, loc,
                 "This render pass does not have VkRenderPassCreateInfo.pAttachments->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR "
                 "but VkRenderPassBeginInfo.clearValueCount > 0. VkRenderPassBeginInfo.pClearValues will be ignored and no "
                 "attachments will be cleared.");
@@ -213,7 +242,7 @@ bool BestPractices::ValidateCmdBeginRenderPass(VkCommandBuffer commandBuffer, co
             // Flag as warning because the overflowing clearValues will be ignored and could even be undefined on certain platforms.
             // This could signal a bug and there seems to be no reason for this to happen on purpose.
             skip |=
-                LogWarning(device, kVUID_BestPractices_ClearValueCountHigherThanAttachmentCount,
+                LogWarning(kVUID_BestPractices_ClearValueCountHigherThanAttachmentCount, device, loc,
                            "This render pass has VkRenderPassBeginInfo.clearValueCount > VkRenderPassCreateInfo.attachmentCount "
                            "(%" PRIu32 " > %" PRIu32
                            ") and as such the clearValues that do not have a corresponding attachment will be ignored.",
@@ -225,7 +254,7 @@ bool BestPractices::ValidateCmdBeginRenderPass(VkCommandBuffer commandBuffer, co
                 const auto& attachment = rp_state->createInfo.pAttachments[i];
                 if (attachment.loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) {
                     const auto& clear_color = pRenderPassBegin->pClearValues[i].color;
-                    skip |= ValidateClearColor(commandBuffer, attachment.format, clear_color);
+                    skip |= ValidateClearColor(commandBuffer, attachment.format, clear_color, loc);
                 }
             }
         }
@@ -234,7 +263,8 @@ bool BestPractices::ValidateCmdBeginRenderPass(VkCommandBuffer commandBuffer, co
     return skip;
 }
 
-bool BestPractices::ValidateCmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo* pRenderingInfo) const {
+bool BestPractices::ValidateCmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo* pRenderingInfo,
+                                              const Location& loc) const {
     bool skip = false;
 
     auto cmd_state = Get<bp_state::CommandBuffer>(commandBuffer);
@@ -245,7 +275,7 @@ bool BestPractices::ValidateCmdBeginRendering(VkCommandBuffer commandBuffer, con
             const auto& color_attachment = pRenderingInfo->pColorAttachments[i];
             if (color_attachment.loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) {
                 const VkFormat format = Get<IMAGE_VIEW_STATE>(color_attachment.imageView)->create_info.format;
-                skip |= ValidateClearColor(commandBuffer, format, color_attachment.clearValue.color);
+                skip |= ValidateClearColor(commandBuffer, format, color_attachment.clearValue.color, loc);
             }
         }
     }
@@ -274,13 +304,7 @@ void BestPractices::PreCallRecordCmdEndRenderPass2(VkCommandBuffer commandBuffer
 }
 
 void BestPractices::PreCallRecordCmdEndRenderPass2KHR(VkCommandBuffer commandBuffer, const VkSubpassEndInfoKHR* pSubpassInfo) {
-    RecordCmdEndRenderingCommon(commandBuffer);
-
-    ValidationStateTracker::PreCallRecordCmdEndRenderPass2KHR(commandBuffer, pSubpassInfo);
-    auto cb_node = GetWrite<bp_state::CommandBuffer>(commandBuffer);
-    if (cb_node) {
-        AddDeferredQueueOperations(*cb_node);
-    }
+    PreCallRecordCmdEndRenderPass2(commandBuffer, pSubpassInfo);
 }
 
 void BestPractices::PreCallRecordCmdEndRendering(VkCommandBuffer commandBuffer) {
@@ -289,11 +313,7 @@ void BestPractices::PreCallRecordCmdEndRendering(VkCommandBuffer commandBuffer) 
     ValidationStateTracker::PreCallRecordCmdEndRendering(commandBuffer);
 }
 
-void BestPractices::PreCallRecordCmdEndRenderingKHR(VkCommandBuffer commandBuffer) {
-    RecordCmdEndRenderingCommon(commandBuffer);
-
-    ValidationStateTracker::PreCallRecordCmdEndRenderingKHR(commandBuffer);
-}
+void BestPractices::PreCallRecordCmdEndRenderingKHR(VkCommandBuffer commandBuffer) { PreCallRecordCmdEndRendering(commandBuffer); }
 
 void BestPractices::PreCallRecordCmdBeginRenderPass(VkCommandBuffer commandBuffer, const VkRenderPassBeginInfo* pRenderPassBegin,
                                                     VkSubpassContents contents) {
@@ -312,9 +332,7 @@ void BestPractices::PreCallRecordCmdBeginRenderPass2(VkCommandBuffer commandBuff
 void BestPractices::PreCallRecordCmdBeginRenderPass2KHR(VkCommandBuffer commandBuffer,
                                                         const VkRenderPassBeginInfo* pRenderPassBegin,
                                                         const VkSubpassBeginInfo* pSubpassBeginInfo) {
-    ValidationStateTracker::PreCallRecordCmdBeginRenderPass2KHR(commandBuffer, pRenderPassBegin, pSubpassBeginInfo);
-    RecordCmdBeginRenderingCommon(commandBuffer);
-    RecordCmdBeginRenderPass(commandBuffer, pRenderPassBegin);
+    PreCallRecordCmdBeginRenderPass2(commandBuffer, pRenderPassBegin, pSubpassBeginInfo);
 }
 
 void BestPractices::PreCallRecordCmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo* pRenderingInfo) {
@@ -323,8 +341,7 @@ void BestPractices::PreCallRecordCmdBeginRendering(VkCommandBuffer commandBuffer
 }
 
 void BestPractices::PreCallRecordCmdBeginRenderingKHR(VkCommandBuffer commandBuffer, const VkRenderingInfo* pRenderingInfo) {
-    ValidationStateTracker::PreCallRecordCmdBeginRenderingKHR(commandBuffer, pRenderingInfo);
-    RecordCmdBeginRenderingCommon(commandBuffer);
+    PreCallRecordCmdBeginRendering(commandBuffer, pRenderingInfo);
 }
 
 void BestPractices::PostCallRecordCmdNextSubpass(VkCommandBuffer commandBuffer, VkSubpassContents contents,
@@ -374,18 +391,18 @@ void BestPractices::RecordCmdBeginRenderPass(VkCommandBuffer commandBuffer, cons
             }
 
             // If renderpass doesn't load attachment, no need to validate image in queue
-            if ((!FormatIsStencilOnly(attachment.format) && attachment.loadOp == VK_ATTACHMENT_LOAD_OP_NONE_EXT) ||
-                (FormatHasStencil(attachment.format) && attachment.stencilLoadOp == VK_ATTACHMENT_LOAD_OP_NONE_EXT)) {
+            if ((!vkuFormatIsStencilOnly(attachment.format) && attachment.loadOp == VK_ATTACHMENT_LOAD_OP_NONE_EXT) ||
+                (vkuFormatHasStencil(attachment.format) && attachment.stencilLoadOp == VK_ATTACHMENT_LOAD_OP_NONE_EXT)) {
                 continue;
             }
 
             IMAGE_SUBRESOURCE_USAGE_BP usage = IMAGE_SUBRESOURCE_USAGE_BP::UNDEFINED;
 
-            if ((!FormatIsStencilOnly(attachment.format) && attachment.loadOp == VK_ATTACHMENT_LOAD_OP_LOAD) ||
-                (FormatHasStencil(attachment.format) && attachment.stencilLoadOp == VK_ATTACHMENT_LOAD_OP_LOAD)) {
+            if ((!vkuFormatIsStencilOnly(attachment.format) && attachment.loadOp == VK_ATTACHMENT_LOAD_OP_LOAD) ||
+                (vkuFormatHasStencil(attachment.format) && attachment.stencilLoadOp == VK_ATTACHMENT_LOAD_OP_LOAD)) {
                 usage = IMAGE_SUBRESOURCE_USAGE_BP::RENDER_PASS_READ_TO_TILE;
-            } else if ((!FormatIsStencilOnly(attachment.format) && attachment.loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) ||
-                       (FormatHasStencil(attachment.format) && attachment.stencilLoadOp == VK_ATTACHMENT_LOAD_OP_CLEAR)) {
+            } else if ((!vkuFormatIsStencilOnly(attachment.format) && attachment.loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) ||
+                       (vkuFormatHasStencil(attachment.format) && attachment.stencilLoadOp == VK_ATTACHMENT_LOAD_OP_CLEAR)) {
                 usage = IMAGE_SUBRESOURCE_USAGE_BP::RENDER_PASS_CLEARED;
             } else if (RenderPassUsesAttachmentAsImageOnly(rp_state->createInfo, att)) {
                 usage = IMAGE_SUBRESOURCE_USAGE_BP::DESCRIPTOR_ACCESS;
@@ -396,7 +413,7 @@ void BestPractices::RecordCmdBeginRenderPass(VkCommandBuffer commandBuffer, cons
 
             if (framebuffer->createInfo.flags & VK_FRAMEBUFFER_CREATE_IMAGELESS_BIT) {
                 const VkRenderPassAttachmentBeginInfo* rpabi =
-                    LvlFindInChain<VkRenderPassAttachmentBeginInfo>(pRenderPassBegin->pNext);
+                    vku::FindStructInPNextChain<VkRenderPassAttachmentBeginInfo>(pRenderPassBegin->pNext);
                 if (rpabi) {
                     image_view = Get<IMAGE_VIEW_STATE>(rpabi->pAttachments[att]);
                 }
@@ -416,15 +433,15 @@ void BestPractices::RecordCmdBeginRenderPass(VkCommandBuffer commandBuffer, cons
             }
 
             // If renderpass doesn't store attachment, no need to validate image in queue
-            if ((!FormatIsStencilOnly(attachment.format) && attachment.storeOp == VK_ATTACHMENT_STORE_OP_NONE) ||
-                (FormatHasStencil(attachment.format) && attachment.stencilStoreOp == VK_ATTACHMENT_STORE_OP_NONE)) {
+            if ((!vkuFormatIsStencilOnly(attachment.format) && attachment.storeOp == VK_ATTACHMENT_STORE_OP_NONE) ||
+                (vkuFormatHasStencil(attachment.format) && attachment.stencilStoreOp == VK_ATTACHMENT_STORE_OP_NONE)) {
                 continue;
             }
 
             IMAGE_SUBRESOURCE_USAGE_BP usage = IMAGE_SUBRESOURCE_USAGE_BP::RENDER_PASS_DISCARDED;
 
-            if ((!FormatIsStencilOnly(attachment.format) && attachment.storeOp == VK_ATTACHMENT_STORE_OP_STORE) ||
-                (FormatHasStencil(attachment.format) && attachment.stencilStoreOp == VK_ATTACHMENT_STORE_OP_STORE)) {
+            if ((!vkuFormatIsStencilOnly(attachment.format) && attachment.storeOp == VK_ATTACHMENT_STORE_OP_STORE) ||
+                (vkuFormatHasStencil(attachment.format) && attachment.stencilStoreOp == VK_ATTACHMENT_STORE_OP_STORE)) {
                 usage = IMAGE_SUBRESOURCE_USAGE_BP::RENDER_PASS_STORED;
             }
 
@@ -433,7 +450,7 @@ void BestPractices::RecordCmdBeginRenderPass(VkCommandBuffer commandBuffer, cons
             std::shared_ptr<IMAGE_VIEW_STATE> image_view;
             if (framebuffer->createInfo.flags & VK_FRAMEBUFFER_CREATE_IMAGELESS_BIT) {
                 const VkRenderPassAttachmentBeginInfo* rpabi =
-                    LvlFindInChain<VkRenderPassAttachmentBeginInfo>(pRenderPassBegin->pNext);
+                    vku::FindStructInPNextChain<VkRenderPassAttachmentBeginInfo>(pRenderPassBegin->pNext);
                 if (rpabi) {
                     image_view = Get<IMAGE_VIEW_STATE>(rpabi->pAttachments[att]);
                 }
@@ -551,7 +568,7 @@ void BestPractices::RecordCmdEndRenderingCommon(VkCommandBuffer commandBuffer) {
 bool BestPractices::PreCallValidateCmdBeginRenderPass(VkCommandBuffer commandBuffer, const VkRenderPassBeginInfo* pRenderPassBegin,
                                                       VkSubpassContents contents, const ErrorObject& error_obj) const {
     bool skip = StateTracker::PreCallValidateCmdBeginRenderPass(commandBuffer, pRenderPassBegin, contents, error_obj);
-    skip |= ValidateCmdBeginRenderPass(commandBuffer, pRenderPassBegin);
+    skip |= ValidateCmdBeginRenderPass(commandBuffer, pRenderPassBegin, error_obj.location);
     return skip;
 }
 
@@ -559,31 +576,27 @@ bool BestPractices::PreCallValidateCmdBeginRenderPass2KHR(VkCommandBuffer comman
                                                           const VkRenderPassBeginInfo* pRenderPassBegin,
                                                           const VkSubpassBeginInfo* pSubpassBeginInfo,
                                                           const ErrorObject& error_obj) const {
-    bool skip = StateTracker::PreCallValidateCmdBeginRenderPass2KHR(commandBuffer, pRenderPassBegin, pSubpassBeginInfo, error_obj);
-    skip |= ValidateCmdBeginRenderPass(commandBuffer, pRenderPassBegin);
-    return skip;
+    return PreCallValidateCmdBeginRenderPass2(commandBuffer, pRenderPassBegin, pSubpassBeginInfo, error_obj);
 }
 
 bool BestPractices::PreCallValidateCmdBeginRenderPass2(VkCommandBuffer commandBuffer, const VkRenderPassBeginInfo* pRenderPassBegin,
                                                        const VkSubpassBeginInfo* pSubpassBeginInfo,
                                                        const ErrorObject& error_obj) const {
     bool skip = StateTracker::PreCallValidateCmdBeginRenderPass2(commandBuffer, pRenderPassBegin, pSubpassBeginInfo, error_obj);
-    skip |= ValidateCmdBeginRenderPass(commandBuffer, pRenderPassBegin);
+    skip |= ValidateCmdBeginRenderPass(commandBuffer, pRenderPassBegin, error_obj.location);
     return skip;
 }
 
 bool BestPractices::PreCallValidateCmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo* pRenderingInfo,
                                                      const ErrorObject& error_obj) const {
     bool skip = StateTracker::PreCallValidateCmdBeginRendering(commandBuffer, pRenderingInfo, error_obj);
-    skip |= ValidateCmdBeginRendering(commandBuffer, pRenderingInfo);
+    skip |= ValidateCmdBeginRendering(commandBuffer, pRenderingInfo, error_obj.location);
     return skip;
 }
 
 bool BestPractices::PreCallValidateCmdBeginRenderingKHR(VkCommandBuffer commandBuffer, const VkRenderingInfo* pRenderingInfo,
                                                         const ErrorObject& error_obj) const {
-    bool skip = StateTracker::PreCallValidateCmdBeginRenderingKHR(commandBuffer, pRenderingInfo, error_obj);
-    skip |= ValidateCmdBeginRendering(commandBuffer, pRenderingInfo);
-    return skip;
+    return PreCallValidateCmdBeginRendering(commandBuffer, pRenderingInfo, error_obj);
 }
 
 void BestPractices::PostRecordCmdBeginRenderPass(VkCommandBuffer commandBuffer, const VkRenderPassBeginInfo* pRenderPassBegin) {
@@ -632,44 +645,35 @@ void BestPractices::PostCallRecordCmdBeginRenderPass2KHR(VkCommandBuffer command
                                                          const VkRenderPassBeginInfo* pRenderPassBegin,
                                                          const VkSubpassBeginInfo* pSubpassBeginInfo,
                                                          const RecordObject& record_obj) {
-    StateTracker::PostCallRecordCmdBeginRenderPass2KHR(commandBuffer, pRenderPassBegin, pSubpassBeginInfo, record_obj);
-    PostRecordCmdBeginRenderPass(commandBuffer, pRenderPassBegin);
+    PostCallRecordCmdBeginRenderPass2(commandBuffer, pRenderPassBegin, pSubpassBeginInfo, record_obj);
 }
 
 bool BestPractices::PreCallValidateCmdEndRenderPass2(VkCommandBuffer commandBuffer, const VkSubpassEndInfo* pSubpassEndInfo,
                                                      const ErrorObject& error_obj) const {
     bool skip = false;
     skip |= StateTracker::PreCallValidateCmdEndRenderPass2(commandBuffer, pSubpassEndInfo, error_obj);
-    skip |= ValidateCmdEndRenderPass(commandBuffer);
+    skip |= ValidateCmdEndRenderPass(commandBuffer, error_obj.location);
     if (VendorCheckEnabled(kBPVendorNVIDIA)) {
         const auto cmd_state = GetRead<bp_state::CommandBuffer>(commandBuffer);
         assert(cmd_state);
-        skip |= ValidateZcullScope(*cmd_state);
+        skip |= ValidateZcullScope(*cmd_state, error_obj.location);
     }
     return skip;
 }
 
 bool BestPractices::PreCallValidateCmdEndRenderPass2KHR(VkCommandBuffer commandBuffer, const VkSubpassEndInfo* pSubpassEndInfo,
                                                         const ErrorObject& error_obj) const {
-    bool skip = false;
-    skip |= StateTracker::PreCallValidateCmdEndRenderPass2KHR(commandBuffer, pSubpassEndInfo, error_obj);
-    skip |= ValidateCmdEndRenderPass(commandBuffer);
-    if (VendorCheckEnabled(kBPVendorNVIDIA)) {
-        const auto cmd_state = GetRead<bp_state::CommandBuffer>(commandBuffer);
-        assert(cmd_state);
-        skip |= ValidateZcullScope(*cmd_state);
-    }
-    return skip;
+    return PreCallValidateCmdEndRenderPass2(commandBuffer, pSubpassEndInfo, error_obj);
 }
 
 bool BestPractices::PreCallValidateCmdEndRenderPass(VkCommandBuffer commandBuffer, const ErrorObject& error_obj) const {
     bool skip = false;
     skip |= StateTracker::PreCallValidateCmdEndRenderPass(commandBuffer, error_obj);
-    skip |= ValidateCmdEndRenderPass(commandBuffer);
+    skip |= ValidateCmdEndRenderPass(commandBuffer, error_obj.location);
     if (VendorCheckEnabled(kBPVendorNVIDIA)) {
         const auto cmd_state = GetRead<bp_state::CommandBuffer>(commandBuffer);
         assert(cmd_state);
-        skip |= ValidateZcullScope(*cmd_state);
+        skip |= ValidateZcullScope(*cmd_state, error_obj.location);
     }
     return skip;
 }
@@ -680,23 +684,16 @@ bool BestPractices::PreCallValidateCmdEndRendering(VkCommandBuffer commandBuffer
     if (VendorCheckEnabled(kBPVendorNVIDIA)) {
         const auto cmd_state = GetRead<bp_state::CommandBuffer>(commandBuffer);
         assert(cmd_state);
-        skip |= ValidateZcullScope(*cmd_state);
+        skip |= ValidateZcullScope(*cmd_state, error_obj.location);
     }
     return skip;
 }
 
 bool BestPractices::PreCallValidateCmdEndRenderingKHR(VkCommandBuffer commandBuffer, const ErrorObject& error_obj) const {
-    bool skip = false;
-    skip |= StateTracker::PreCallValidateCmdEndRenderingKHR(commandBuffer, error_obj);
-    if (VendorCheckEnabled(kBPVendorNVIDIA)) {
-        const auto cmd_state = GetRead<bp_state::CommandBuffer>(commandBuffer);
-        assert(cmd_state);
-        skip |= ValidateZcullScope(*cmd_state);
-    }
-    return skip;
+    return PreCallValidateCmdEndRendering(commandBuffer, error_obj);
 }
 
-bool BestPractices::ValidateCmdEndRenderPass(VkCommandBuffer commandBuffer) const {
+bool BestPractices::ValidateCmdEndRenderPass(VkCommandBuffer commandBuffer, const Location& loc) const {
     bool skip = false;
     const auto cmd = GetRead<bp_state::CommandBuffer>(commandBuffer);
 
@@ -716,7 +713,7 @@ bool BestPractices::ValidateCmdEndRenderPass(VkCommandBuffer commandBuffer) cons
 
     if (uses_depth) {
         skip |= LogPerformanceWarning(
-            device, kVUID_BestPractices_EndRenderPass_DepthPrePassUsage,
+            kVUID_BestPractices_EndRenderPass_DepthPrePassUsage, device, loc,
             "%s %s: Depth pre-passes may be in use. In general, this is not recommended in tile-based deferred "
             "renderering architectures; such as those in Arm Mali or PowerVR GPUs. Since they can remove geometry "
             "hidden by other opaque geometry. Mali has Forward Pixel Killing (FPK), PowerVR has Hiden Surface "
@@ -746,16 +743,16 @@ bool BestPractices::ValidateCmdEndRenderPass(VkCommandBuffer commandBuffer) cons
 
             VkImageAspectFlags bandwidth_aspects = 0;
 
-            if (!FormatIsStencilOnly(attachment.format) &&
+            if (!vkuFormatIsStencilOnly(attachment.format) &&
                 (attachment.loadOp == VK_ATTACHMENT_LOAD_OP_LOAD || attachment.storeOp == VK_ATTACHMENT_STORE_OP_STORE)) {
-                if (FormatHasDepth(attachment.format)) {
+                if (vkuFormatHasDepth(attachment.format)) {
                     bandwidth_aspects |= VK_IMAGE_ASPECT_DEPTH_BIT;
                 } else {
                     bandwidth_aspects |= VK_IMAGE_ASPECT_COLOR_BIT;
                 }
             }
 
-            if (FormatHasStencil(attachment.format) && (attachment.stencilLoadOp == VK_ATTACHMENT_LOAD_OP_LOAD ||
+            if (vkuFormatHasStencil(attachment.format) && (attachment.stencilLoadOp == VK_ATTACHMENT_LOAD_OP_LOAD ||
                                                         attachment.stencilStoreOp == VK_ATTACHMENT_STORE_OP_STORE)) {
                 bandwidth_aspects |= VK_IMAGE_ASPECT_STENCIL_BIT;
             }
@@ -773,7 +770,7 @@ bool BestPractices::ValidateCmdEndRenderPass(VkCommandBuffer commandBuffer) cons
 
             if (untouched_aspects) {
                 skip |= LogPerformanceWarning(
-                    device, kVUID_BestPractices_EndRenderPass_RedundantAttachmentOnTile,
+                    kVUID_BestPractices_EndRenderPass_RedundantAttachmentOnTile, device, loc,
                     "%s %s: Render pass was ended, but attachment #%u (format: %u, untouched aspects 0x%x) "
                     "was never accessed by a pipeline or clear command. "
                     "On tile-based architectures, LOAD_OP_LOAD and STORE_OP_STORE consume bandwidth and should not be part of the "

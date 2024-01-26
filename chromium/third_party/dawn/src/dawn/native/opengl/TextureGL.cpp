@@ -1,16 +1,29 @@
-// Copyright 2017 The Dawn Authors
+// Copyright 2017 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/opengl/TextureGL.h"
 
@@ -35,7 +48,7 @@ GLenum TargetForTexture(const TextureDescriptor* descriptor) {
         case wgpu::TextureDimension::e1D:
         case wgpu::TextureDimension::e2D:
             if (descriptor->size.depthOrArrayLayers > 1) {
-                ASSERT(descriptor->sampleCount == 1);
+                DAWN_ASSERT(descriptor->sampleCount == 1);
                 return GL_TEXTURE_2D_ARRAY;
             } else {
                 if (descriptor->sampleCount > 1) {
@@ -45,10 +58,10 @@ GLenum TargetForTexture(const TextureDescriptor* descriptor) {
                 }
             }
         case wgpu::TextureDimension::e3D:
-            ASSERT(descriptor->sampleCount == 1);
+            DAWN_ASSERT(descriptor->sampleCount == 1);
             return GL_TEXTURE_3D;
     }
-    UNREACHABLE();
+    DAWN_UNREACHABLE();
 }
 
 GLenum TargetForTextureViewDimension(wgpu::TextureViewDimension dimension,
@@ -60,18 +73,18 @@ GLenum TargetForTextureViewDimension(wgpu::TextureViewDimension dimension,
             return (sampleCount > 1) ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D;
         case wgpu::TextureViewDimension::e2DArray:
             if (sampleCount > 1) {
-                ASSERT(arrayLayerCount == 1);
+                DAWN_ASSERT(arrayLayerCount == 1);
                 return GL_TEXTURE_2D_MULTISAMPLE;
             }
-            ASSERT(sampleCount == 1);
+            DAWN_ASSERT(sampleCount == 1);
             return GL_TEXTURE_2D_ARRAY;
         case wgpu::TextureViewDimension::Cube:
-            ASSERT(sampleCount == 1);
-            ASSERT(arrayLayerCount == 6);
+            DAWN_ASSERT(sampleCount == 1);
+            DAWN_ASSERT(arrayLayerCount == 6);
             return GL_TEXTURE_CUBE_MAP;
         case wgpu::TextureViewDimension::CubeArray:
-            ASSERT(sampleCount == 1);
-            ASSERT(arrayLayerCount % 6 == 0);
+            DAWN_ASSERT(sampleCount == 1);
+            DAWN_ASSERT(arrayLayerCount % 6 == 0);
             return GL_TEXTURE_CUBE_MAP_ARRAY;
         case wgpu::TextureViewDimension::e3D:
             return GL_TEXTURE_3D;
@@ -79,7 +92,7 @@ GLenum TargetForTextureViewDimension(wgpu::TextureViewDimension dimension,
         case wgpu::TextureViewDimension::Undefined:
             break;
     }
-    UNREACHABLE();
+    DAWN_UNREACHABLE();
 }
 
 bool RequiresCreatingNewTextureView(const TextureBase* texture,
@@ -163,7 +176,7 @@ void AllocateTexture(const OpenGLFunctions& gl,
                                        true);
             break;
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -193,7 +206,7 @@ Texture::Texture(Device* device, const TextureDescriptor* descriptor)
 
     gl.BindTexture(mTarget, mHandle);
 
-    AllocateTexture(gl, mTarget, GetSampleCount(), levels, glFormat.internalFormat, GetSize());
+    AllocateTexture(gl, mTarget, GetSampleCount(), levels, glFormat.internalFormat, GetBaseSize());
 
     // The texture is not complete if it uses mipmapping and not all levels up to
     // MAX_LEVEL have been defined.
@@ -268,7 +281,7 @@ MaybeError Texture::ClearTexture(const SubresourceRange& range,
                 } else if (aspects == Aspect::Stencil) {
                     gl.ClearBufferiv(GL_STENCIL, 0, &stencil);
                 } else {
-                    UNREACHABLE();
+                    DAWN_UNREACHABLE();
                 }
             };
 
@@ -285,7 +298,7 @@ MaybeError Texture::ClearTexture(const SubresourceRange& range,
             } else if (range.aspects == Aspect::Stencil) {
                 attachment = GL_STENCIL_ATTACHMENT;
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
 
             for (uint32_t level = range.baseMipLevel; level < range.baseMipLevel + range.levelCount;
@@ -339,14 +352,14 @@ MaybeError Texture::ClearTexture(const SubresourceRange& range,
                         break;
 
                     case wgpu::TextureDimension::e3D:
-                        UNREACHABLE();
+                        DAWN_UNREACHABLE();
                 }
             }
 
             gl.Enable(GL_SCISSOR_TEST);
             gl.DeleteFramebuffers(1, &framebuffer);
         } else {
-            ASSERT(range.aspects == Aspect::Color);
+            DAWN_ASSERT(range.aspects == Aspect::Color);
 
             // For gl.ClearBufferiv/uiv calls
             constexpr std::array<GLuint, 4> kClearColorDataUint0 = {0u, 0u, 0u, 0u};
@@ -362,7 +375,7 @@ MaybeError Texture::ClearTexture(const SubresourceRange& range,
 
             static constexpr uint32_t MAX_TEXEL_SIZE = 16;
             const TexelBlockInfo& blockInfo = GetFormat().GetAspectInfo(Aspect::Color).block;
-            ASSERT(blockInfo.byteSize <= MAX_TEXEL_SIZE);
+            DAWN_ASSERT(blockInfo.byteSize <= MAX_TEXEL_SIZE);
 
             // For gl.ClearTexSubImage calls
             constexpr std::array<GLbyte, MAX_TEXEL_SIZE> kClearColorDataBytes0 = {
@@ -375,7 +388,7 @@ MaybeError Texture::ClearTexture(const SubresourceRange& range,
             const GLFormat& glFormat = GetGLFormat();
             for (uint32_t level = range.baseMipLevel; level < range.baseMipLevel + range.levelCount;
                  ++level) {
-                Extent3D mipSize = GetMipLevelSingleSubresourcePhysicalSize(level);
+                Extent3D mipSize = GetMipLevelSingleSubresourcePhysicalSize(level, Aspect::Color);
                 for (uint32_t layer = range.baseArrayLayer;
                      layer < range.baseArrayLayer + range.layerCount; ++layer) {
                     if (clearValue == TextureBase::ClearValue::Zero &&
@@ -441,8 +454,9 @@ MaybeError Texture::ClearTexture(const SubresourceRange& range,
                                 DoClear();
                                 break;
                             case wgpu::TextureDimension::e3D:
-                                uint32_t depth = GetMipLevelSingleSubresourceVirtualSize(level)
-                                                     .depthOrArrayLayers;
+                                uint32_t depth =
+                                    GetMipLevelSingleSubresourceVirtualSize(level, Aspect::Color)
+                                        .depthOrArrayLayers;
                                 for (GLint z = 0; z < static_cast<GLint>(depth); ++z) {
                                     gl.FramebufferTextureLayer(GL_DRAW_FRAMEBUFFER, attachment,
                                                                GetHandle(), level, z);
@@ -452,7 +466,7 @@ MaybeError Texture::ClearTexture(const SubresourceRange& range,
                         }
 
                     } else {
-                        ASSERT(GetDimension() == wgpu::TextureDimension::e2D);
+                        DAWN_ASSERT(GetDimension() == wgpu::TextureDimension::e2D);
                         gl.FramebufferTextureLayer(GL_DRAW_FRAMEBUFFER, attachment, GetHandle(),
                                                    level, layer);
                         DoClear();
@@ -465,19 +479,20 @@ MaybeError Texture::ClearTexture(const SubresourceRange& range,
             }
         }
     } else {
-        ASSERT(range.aspects == Aspect::Color);
+        DAWN_ASSERT(range.aspects == Aspect::Color);
 
         // create temp buffer with clear color to copy to the texture image
         const TexelBlockInfo& blockInfo = GetFormat().GetAspectInfo(Aspect::Color).block;
-        ASSERT(kTextureBytesPerRowAlignment % blockInfo.byteSize == 0);
+        DAWN_ASSERT(kTextureBytesPerRowAlignment % blockInfo.byteSize == 0);
 
-        Extent3D largestMipSize = GetMipLevelSingleSubresourcePhysicalSize(range.baseMipLevel);
+        Extent3D largestMipSize =
+            GetMipLevelSingleSubresourcePhysicalSize(range.baseMipLevel, Aspect::Color);
         uint32_t bytesPerRow =
             Align((largestMipSize.width / blockInfo.width) * blockInfo.byteSize, 4);
 
         // Make sure that we are not rounding
-        ASSERT(bytesPerRow % blockInfo.byteSize == 0);
-        ASSERT(largestMipSize.height % blockInfo.height == 0);
+        DAWN_ASSERT(bytesPerRow % blockInfo.byteSize == 0);
+        DAWN_ASSERT(largestMipSize.height % blockInfo.height == 0);
 
         uint64_t bufferSize64 = static_cast<uint64_t>(bytesPerRow) *
                                 (largestMipSize.height / blockInfo.height) *
@@ -515,7 +530,7 @@ MaybeError Texture::ClearTexture(const SubresourceRange& range,
             dataLayout.bytesPerRow = bytesPerRow;
             dataLayout.rowsPerImage = largestMipSize.height;
 
-            Extent3D mipSize = GetMipLevelSingleSubresourcePhysicalSize(level);
+            Extent3D mipSize = GetMipLevelSingleSubresourcePhysicalSize(level, Aspect::Color);
 
             for (uint32_t layer = range.baseArrayLayer;
                  layer < range.baseArrayLayer + range.layerCount; ++layer) {
@@ -592,7 +607,7 @@ void TextureView::DestroyImpl() {
 }
 
 GLuint TextureView::GetHandle() const {
-    ASSERT(mHandle != 0);
+    DAWN_ASSERT(mHandle != 0);
     return mHandle;
 }
 
@@ -624,7 +639,7 @@ void TextureView::BindToFramebuffer(GLenum target, GLenum attachment) {
         arrayLayer = GetBaseArrayLayer();
     }
 
-    ASSERT(handle != 0);
+    DAWN_ASSERT(handle != 0);
     if (textarget == GL_TEXTURE_2D_ARRAY || textarget == GL_TEXTURE_3D) {
         gl.FramebufferTextureLayer(target, attachment, handle, mipLevel, arrayLayer);
     } else {
@@ -647,8 +662,8 @@ void TextureView::CopyIfNeeded() {
     uint32_t srcLevel = GetBaseMipLevel();
     uint32_t numLevels = GetLevelCount();
 
-    uint32_t width = texture->GetWidth() >> srcLevel;
-    uint32_t height = texture->GetHeight() >> srcLevel;
+    uint32_t width = GetSingleSubresourceVirtualSize().width;
+    uint32_t height = GetSingleSubresourceVirtualSize().height;
     Extent3D size{width, height, GetLayerCount()};
 
     if (mHandle == 0) {

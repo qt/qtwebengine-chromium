@@ -12,6 +12,7 @@
 #ifndef EIGEN_PACKET_MATH_NEON_H
 #define EIGEN_PACKET_MATH_NEON_H
 
+// IWYU pragma: private
 #include "../../InternalHeaderCheck.h"
 
 namespace Eigen {
@@ -953,57 +954,6 @@ template<> EIGEN_STRONG_INLINE Packet2ul pmul<Packet2ul>(const Packet2ul& a, con
   return vcombine_u64(
     vdup_n_u64(vgetq_lane_u64(a, 0)*vgetq_lane_u64(b, 0)),
     vdup_n_u64(vgetq_lane_u64(a, 1)*vgetq_lane_u64(b, 1)));
-}
-
-template<> EIGEN_STRONG_INLINE Packet2f pdiv<Packet2f>(const Packet2f& a, const Packet2f& b)
-{
-#if EIGEN_ARCH_ARM64
-  return vdiv_f32(a,b);
-#else
-  Packet2f inv, restep, div;
-
-  // NEON does not offer a divide instruction, we have to do a reciprocal approximation
-  // However NEON in contrast to other SIMD engines (AltiVec/SSE), offers
-  // a reciprocal estimate AND a reciprocal step -which saves a few instructions
-  // vrecpeq_f32() returns an estimate to 1/b, which we will finetune with
-  // Newton-Raphson and vrecpsq_f32()
-  inv = vrecpe_f32(b);
-
-  // This returns a differential, by which we will have to multiply inv to get a better
-  // approximation of 1/b.
-  restep = vrecps_f32(b, inv);
-  inv = vmul_f32(restep, inv);
-
-  // Finally, multiply a by 1/b and get the wanted result of the division.
-  div = vmul_f32(a, inv);
-
-  return div;
-#endif
-}
-template<> EIGEN_STRONG_INLINE Packet4f pdiv<Packet4f>(const Packet4f& a, const Packet4f& b)
-{
-#if EIGEN_ARCH_ARM64
-  return vdivq_f32(a,b);
-#else
-  Packet4f inv, restep, div;
-
-  // NEON does not offer a divide instruction, we have to do a reciprocal approximation
-  // However NEON in contrast to other SIMD engines (AltiVec/SSE), offers
-  // a reciprocal estimate AND a reciprocal step -which saves a few instructions
-  // vrecpeq_f32() returns an estimate to 1/b, which we will finetune with
-  // Newton-Raphson and vrecpsq_f32()
-  inv = vrecpeq_f32(b);
-
-  // This returns a differential, by which we will have to multiply inv to get a better
-  // approximation of 1/b.
-  restep = vrecpsq_f32(b, inv);
-  inv = vmulq_f32(restep, inv);
-
-  // Finally, multiply a by 1/b and get the wanted result of the division.
-  div = vmulq_f32(a, inv);
-
-  return div;
-#endif
 }
 
 template<> EIGEN_STRONG_INLINE Packet4c pdiv<Packet4c>(const Packet4c& /*a*/, const Packet4c& /*b*/)
@@ -3361,26 +3311,115 @@ template<> EIGEN_STRONG_INLINE Packet4ui psqrt(const Packet4ui& a) {
   return res;
 }
 
+EIGEN_STRONG_INLINE Packet4f prsqrt_float_unsafe(const Packet4f& a) {
+  // Compute approximate reciprocal sqrt.
+  // Does not correctly handle +/- 0 or +inf
+  float32x4_t result = vrsqrteq_f32(a);
+  result = vmulq_f32(vrsqrtsq_f32(vmulq_f32(a, result), result), result);
+  result = vmulq_f32(vrsqrtsq_f32(vmulq_f32(a, result), result), result);
+  return result;
+}
+
+EIGEN_STRONG_INLINE Packet2f prsqrt_float_unsafe(const Packet2f& a) {
+  // Compute approximate reciprocal sqrt.
+  // Does not correctly handle +/- 0 or +inf
+  float32x2_t result = vrsqrte_f32(a);
+  result = vmul_f32(vrsqrts_f32(vmul_f32(a, result), result), result);
+  result = vmul_f32(vrsqrts_f32(vmul_f32(a, result), result), result);
+  return result;
+}
+
+template<typename Packet> Packet prsqrt_float_common(const Packet& a) {
+  const Packet cst_zero = pzero(a);
+  const Packet cst_inf = pset1<Packet>(NumTraits<float>::infinity());
+  Packet return_zero = pcmp_eq(a, cst_inf);
+  Packet return_inf = pcmp_eq(a, cst_zero);
+  Packet result = prsqrt_float_unsafe(a);
+  result = pselect(return_inf, por(cst_inf, a), result);
+  result = pandnot(result, return_zero);
+  return result;
+}
+
 template<> EIGEN_STRONG_INLINE Packet4f prsqrt(const Packet4f& a) {
-  // Do Newton iterations for 1/sqrt(x).
-  return generic_rsqrt_newton_step<Packet4f, /*Steps=*/2>::run(a, vrsqrteq_f32(a));
+  return prsqrt_float_common(a);
 }
 
 template<> EIGEN_STRONG_INLINE Packet2f prsqrt(const Packet2f& a) {
-  // Compute approximate reciprocal sqrt.
-  return generic_rsqrt_newton_step<Packet2f, /*Steps=*/2>::run(a, vrsqrte_f32(a));
+  return prsqrt_float_common(a);
+}
+
+template<> EIGEN_STRONG_INLINE Packet4f preciprocal<Packet4f>(const Packet4f& a)
+{
+  // Compute approximate reciprocal.
+  float32x4_t result = vrecpeq_f32(a);
+  result = vmulq_f32(vrecpsq_f32(a, result), result);
+  result = vmulq_f32(vrecpsq_f32(a, result), result);
+  return result;
+}
+
+template<> EIGEN_STRONG_INLINE Packet2f preciprocal<Packet2f>(const Packet2f& a)
+{
+  // Compute approximate reciprocal.
+  float32x2_t result = vrecpe_f32(a);
+  result = vmul_f32(vrecps_f32(a, result), result);
+  result = vmul_f32(vrecps_f32(a, result), result);
+  return result;
 }
 
 // Unfortunately vsqrt_f32 is only available for A64.
 #if EIGEN_ARCH_ARM64
-template<> EIGEN_STRONG_INLINE Packet4f psqrt(const Packet4f& _x){return vsqrtq_f32(_x);}
-template<> EIGEN_STRONG_INLINE Packet2f psqrt(const Packet2f& _x){return vsqrt_f32(_x); }
+template<> EIGEN_STRONG_INLINE Packet4f psqrt(const Packet4f& a) { return vsqrtq_f32(a); }
+
+template<> EIGEN_STRONG_INLINE Packet2f psqrt(const Packet2f& a) { return vsqrt_f32(a); }
+
+template<> EIGEN_STRONG_INLINE Packet4f pdiv(const Packet4f& a, const Packet4f& b) { return vdivq_f32(a, b); }
+
+template<> EIGEN_STRONG_INLINE Packet2f pdiv(const Packet2f& a, const Packet2f& b) { return vdiv_f32(a, b); }
 #else
-template<> EIGEN_STRONG_INLINE Packet4f psqrt(const Packet4f& a) {
-  return generic_sqrt_newton_step<Packet4f>::run(a, prsqrt(a));
+template<typename Packet>
+EIGEN_STRONG_INLINE Packet psqrt_float_common(const Packet& a) {
+  const Packet cst_zero = pzero(a);
+  const Packet cst_inf = pset1<Packet>(NumTraits<float>::infinity());
+  
+  Packet result = pmul(a, prsqrt_float_unsafe(a));  
+  Packet a_is_zero = pcmp_eq(a, cst_zero);
+  Packet a_is_inf = pcmp_eq(a, cst_inf);
+  Packet return_a = por(a_is_zero, a_is_inf);
+  
+  result = pselect(return_a, a, result);
+  return result;
 }
+
+template<> EIGEN_STRONG_INLINE Packet4f psqrt(const Packet4f& a) {
+  return psqrt_float_common(a);
+}
+
 template<> EIGEN_STRONG_INLINE Packet2f psqrt(const Packet2f& a) {
-  return generic_sqrt_newton_step<Packet2f>::run(a, prsqrt(a));
+  return psqrt_float_common(a);
+}
+
+template<typename Packet>
+EIGEN_STRONG_INLINE Packet pdiv_float_common(const Packet& a, const Packet& b) {
+  // if b is large, NEON intrinsics will flush preciprocal(b) to zero
+  // avoid underflow with the following manipulation:
+  // a / b = f * (a * reciprocal(f * b))
+
+  const Packet cst_one = pset1<Packet>(1.0f);
+  const Packet cst_quarter = pset1<Packet>(0.25f);
+  const Packet cst_thresh = pset1<Packet>(NumTraits<float>::highest() / 4.0f);
+  
+  Packet b_will_underflow = pcmp_le(cst_thresh, pabs(b));
+  Packet f = pselect(b_will_underflow, cst_quarter, cst_one);
+  Packet result = pmul(f, pmul(a, preciprocal(pmul(b, f))));
+  return result;
+}
+
+template<> EIGEN_STRONG_INLINE Packet4f pdiv<Packet4f>(const Packet4f& a, const Packet4f& b) {
+  return pdiv_float_common(a, b);
+}
+
+template<> EIGEN_STRONG_INLINE Packet2f pdiv<Packet2f>(const Packet2f& a, const Packet2f& b) {
+  return pdiv_float_common(a, b);
 }
 #endif
 

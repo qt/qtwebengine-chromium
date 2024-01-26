@@ -12,6 +12,7 @@
 #ifndef EIGEN_LMCOVAR_H
 #define EIGEN_LMCOVAR_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen { 

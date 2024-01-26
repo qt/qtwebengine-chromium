@@ -9,6 +9,8 @@
 #define skgpu_graphite_Caps_DEFINED
 
 #include <optional>
+#include <string>
+#include <string_view>
 
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkRefCnt.h"
@@ -18,6 +20,10 @@
 #include "src/gpu/Swizzle.h"
 #include "src/gpu/graphite/ResourceTypes.h"
 #include "src/text/gpu/SDFTControl.h"
+
+#if defined(GRAPHITE_TEST_UTILS)
+#include "include/private/gpu/graphite/ContextOptionsPriv.h"
+#endif
 
 enum class SkBlendMode;
 class SkCapabilities;
@@ -67,6 +73,14 @@ public:
     const SkSL::ShaderCaps* shaderCaps() const { return fShaderCaps.get(); }
 
     sk_sp<SkCapabilities> capabilities() const;
+
+#if defined(GRAPHITE_TEST_UTILS)
+    std::string_view deviceName() const { return fDeviceName; }
+
+    PathRendererStrategy requestedPathRendererStrategy() const {
+        return fRequestedPathRendererStrategy;
+    }
+#endif
 
     virtual TextureInfo getDefaultSampledTextureInfo(SkColorType,
                                                      Mipmapped mipmapped,
@@ -211,6 +225,10 @@ public:
     bool allowMultipleGlyphCacheTextures() const { return fAllowMultipleGlyphCacheTextures; }
     bool supportBilerpFromGlyphAtlas() const { return fSupportBilerpFromGlyphAtlas; }
 
+    bool disableCachedGlyphUploads() const { return fDisableCachedGlyphUploads; }
+
+    bool requireOrderedRecordings() const { return fRequireOrderedRecordings; }
+
     sktext::gpu::SDFTControl getSDFTControl(bool useSDFTForSmallText) const;
 
 protected:
@@ -219,6 +237,12 @@ protected:
     // Subclasses must call this at the end of their init method in order to do final processing on
     // the caps.
     void finishInitialization(const ContextOptions&);
+
+#if defined(GRAPHITE_TEST_UTILS)
+    void setDeviceName(const char* n) {
+        fDeviceName = n;
+    }
+#endif
 
     // There are only a few possible valid sample counts (1, 2, 4, 8, 16). So we can key on those 5
     // options instead of the actual sample value.
@@ -287,7 +311,9 @@ protected:
     ShaderErrorHandler* fShaderErrorHandler = nullptr;
 
 #if defined(GRAPHITE_TEST_UTILS)
-    int  fMaxTextureAtlasSize = 2048;
+    std::string fDeviceName;
+    int fMaxTextureAtlasSize = 2048;
+    PathRendererStrategy fRequestedPathRendererStrategy;
 #endif
     size_t fGlyphCacheTextureMaximumBytes = 2048 * 1024 * 4;
 
@@ -296,6 +322,10 @@ protected:
 
     bool fAllowMultipleGlyphCacheTextures = true;
     bool fSupportBilerpFromGlyphAtlas = false;
+    bool fDisableCachedGlyphUploads = false;
+
+    // Set based on client options
+    bool fRequireOrderedRecordings = false;
 
 private:
     virtual bool onIsTexturable(const TextureInfo&) const = 0;

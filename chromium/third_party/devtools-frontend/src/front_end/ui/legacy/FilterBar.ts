@@ -101,6 +101,12 @@ export class FilterBar extends Common.ObjectWrapper.eventMixin<FilterBarEventTyp
     return this.filterButtonInternal;
   }
 
+  addDivider(): void {
+    const element = document.createElement('div');
+    element.classList.add('filter-divider');
+    this.element.appendChild(element);
+  }
+
   addFilter(filter: FilterUI): void {
     this.filters.push(filter);
     this.element.appendChild(filter.element());
@@ -252,7 +258,7 @@ export class TextFilterUI extends Common.ObjectWrapper.ObjectWrapper<FilterUIEve
   }
 
   value(): string {
-    return this.prompt.textWithCurrentSuggestion();
+    return this.prompt.text();
   }
 
   setValue(value: string): void {
@@ -440,7 +446,13 @@ export class NamedBitSetFilterUI extends Common.ObjectWrapper.ObjectWrapper<Filt
       this.allowedTypes.delete(typeName);
     } else {
       this.allowedTypes.add(typeName);
+      Host.userMetrics.legacyResourceTypeFilterItemSelected(typeName);
     }
+
+    if (this.allowedTypes.size === 0) {
+      this.allowedTypes.add(NamedBitSetFilterUI.ALL_TYPES);
+    }
+    Host.userMetrics.legacyResourceTypeFilterNumberOfSelectedChanged(this.allowedTypes.size);
 
     if (this.setting) {
       // Settings do not support `Sets` so convert it back to the Map-like object.

@@ -345,7 +345,6 @@ static INLINE void warp_affine_vertical_step_4x1_f4_neon(
 
   sum0 = vaddq_s32(sum0, vdupq_n_s32(1 << offset_bits_vert));
 
-  uint16_t *p = &dst[i * dst_stride + j];
   uint16_t *dst16 = &pred[i * p_stride + j];
 
   if (!is_compound) {
@@ -360,6 +359,8 @@ static INLINE void warp_affine_vertical_step_4x1_f4_neon(
   }
 
   sum0 = vrshrq_n_s32(sum0, COMPOUND_ROUND1_BITS);
+
+  uint16_t *p = &dst[i * dst_stride + j];
 
   if (!do_average) {
     vst1_u16(p, vqmovun_s32(sum0));
@@ -404,7 +405,6 @@ static INLINE void warp_affine_vertical_step_8x1_f8_neon(
   sum0 = vaddq_s32(sum0, vdupq_n_s32(1 << offset_bits_vert));
   sum1 = vaddq_s32(sum1, vdupq_n_s32(1 << offset_bits_vert));
 
-  uint16_t *p = &dst[i * dst_stride + j];
   uint16_t *dst16 = &pred[i * p_stride + j];
 
   if (!is_compound) {
@@ -424,6 +424,8 @@ static INLINE void warp_affine_vertical_step_8x1_f8_neon(
 
   sum0 = vrshrq_n_s32(sum0, COMPOUND_ROUND1_BITS);
   sum1 = vrshrq_n_s32(sum1, COMPOUND_ROUND1_BITS);
+
+  uint16_t *p = &dst[i * dst_stride + j];
 
   if (!do_average) {
     vst1_u16(p, vqmovun_s32(sum0));

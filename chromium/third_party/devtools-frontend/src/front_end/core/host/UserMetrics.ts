@@ -371,6 +371,11 @@ export class UserMetrics {
         EnumeratedHistogram.LighthouseModeRun, type, LighthouseModeRun.MaxValue);
   }
 
+  lighthouseCategoryUsed(type: LighthouseCategoryUsed): void {
+    InspectorFrontendHostInstance.recordEnumeratedHistogram(
+        EnumeratedHistogram.LighthouseCategoryUsed, type, LighthouseCategoryUsed.MaxValue);
+  }
+
   colorConvertedFrom(type: ColorConvertedFrom): void {
     InspectorFrontendHostInstance.recordEnumeratedHistogram(
         EnumeratedHistogram.ColorConvertedFrom, type, ColorConvertedFrom.MaxValue);
@@ -447,6 +452,26 @@ export class UserMetrics {
   workspacesPopulated(wallClockTimeInMilliseconds: number): void {
     InspectorFrontendHostInstance.recordPerformanceHistogram(
         'DevTools.Workspaces.PopulateWallClocktime', wallClockTimeInMilliseconds);
+  }
+
+  visualLoggingProcessingDone(timeInMilliseconds: number): void {
+    InspectorFrontendHostInstance.recordPerformanceHistogram(
+        'DevTools.VisualLogging.ProcessingTime', timeInMilliseconds);
+  }
+
+  legacyResourceTypeFilterNumberOfSelectedChanged(itemCount: number): void {
+    const boundItemCount = Math.max(Math.min(itemCount, ResourceType.MaxValue - 1), 1);
+    InspectorFrontendHostInstance.recordEnumeratedHistogram(
+        EnumeratedHistogram.LegacyResourceTypeFilterNumberOfSelectedChanged, boundItemCount, ResourceType.MaxValue);
+  }
+
+  legacyResourceTypeFilterItemSelected(resourceTypeName: string): void {
+    const resourceType = ResourceType[resourceTypeName as keyof typeof ResourceType];
+    if (resourceType === undefined) {
+      return;
+    }
+    InspectorFrontendHostInstance.recordEnumeratedHistogram(
+        EnumeratedHistogram.LegacyResourceTypeFilterItemSelected, resourceType, ResourceType.MaxValue);
   }
 }
 
@@ -572,12 +597,13 @@ export enum Action {
   AnimationGroupScrubbed = 103,
   AnimationGroupReplayed = 104,
   OverrideTabDeleteFolderContextMenu = 105,
-  OverrideTabDeleteOverridesContextMenu = 106,
   WorkspaceDropFolder = 107,
   WorkspaceSelectFolder = 108,
   OverrideContentContextMenuSourceMappedWarning = 109,
   OverrideContentContextMenuRedirectToDeployed = 110,
-  MaxValue = 111,
+  NewStyleRuleAdded = 111,
+  TraceExpanded = 112,
+  MaxValue = 113,
 }
 
 /* eslint-disable @typescript-eslint/naming-convention */
@@ -893,8 +919,6 @@ export enum DevtoolsExperiments {
   'timelineShowAllEvents' = 27,
   'timelineV8RuntimeCallStats' = 28,
   'wasmDWARFDebugging' = 31,
-  'dualScreenSupport' = 32,
-  'keyboardShortcutEditor' = 35,
   'APCA' = 39,
   'cspViolationsView' = 40,
   'fontEditor' = 41,
@@ -915,7 +939,6 @@ export enum DevtoolsExperiments {
   'justMyCode' = 65,
   'timelineAsConsoleProfileResultPanel' = 67,
   'preloadingStatusPanel' = 68,
-  'disableColorFormatSetting' = 69,
   'outermostTargetSelector' = 71,
   'jsProfilerTemporarilyEnable' = 72,
   'highlightErrorsElementsPanel' = 73,
@@ -923,10 +946,12 @@ export enum DevtoolsExperiments {
   'selfXssWarning' = 75,
   'useSourceMapScopes' = 76,
   'storageBucketsTree' = 77,
-  'deleteOverridesTemporarilyEnable' = 78,
+  'networkPanelFilterBarRedesign' = 79,
+  'breadcrumbsPerformancePanel' = 80,
+  'trackContextMenu' = 81,
 
   // Increment this when new experiments are added.
-  'MaxValue' = 79,
+  'MaxValue' = 82,
 }
 /* eslint-enable @typescript-eslint/naming-convention */
 
@@ -1096,7 +1121,11 @@ export enum IssueCreated {
   'CorsIssue::PreflightMissingPrivateNetworkAccessName' = 79,
   'CorsIssue::PrivateNetworkAccessPermissionUnavailable' = 80,
   'CorsIssue::PrivateNetworkAccessPermissionDenied' = 81,
-  MaxValue = 82,
+  'CookieIssue::WarnThirdPartyPhaseout::ReadCookie' = 82,
+  'CookieIssue::WarnThirdPartyPhaseout::SetCookie' = 83,
+  'CookieIssue::ExcludeThirdPartyPhaseout::ReadCookie' = 84,
+  'CookieIssue::ExcludeThirdPartyPhaseout::SetCookie' = 85,
+  MaxValue = 86,
 }
 
 // TODO(crbug.com/1167717): Make this a const enum again
@@ -1126,6 +1155,26 @@ export enum DeveloperResourceScheme {
   SchemeFile = 7,
   SchemeBlob = 8,
   MaxValue = 9,
+}
+
+// TODO(crbug.com/1167717): Make this a const enum again
+// eslint-disable-next-line rulesdir/const_enum
+export enum ResourceType {
+  /* eslint-disable @typescript-eslint/naming-convention */
+  all = 0,
+  /* eslint-enable @typescript-eslint/naming-convention */
+  Documents = 1,
+  Scripts = 2,
+  'XHR and Fetch' = 3,
+  Stylesheets = 4,
+  Fonts = 5,
+  Images = 6,
+  Media = 7,
+  Manifest = 8,
+  WebSockets = 9,
+  WebAssembly = 10,
+  Other = 11,
+  MaxValue = 12,
 }
 
 // TODO(crbug.com/1167717): Make this a const enum again
@@ -1414,6 +1463,18 @@ export enum LighthouseModeRun {
   Snapshot = 2,
   LegacyNavigation = 3,
   MaxValue = 4,
+}
+
+// TODO(crbug.com/1167717): Make this a const enum again
+// eslint-disable-next-line rulesdir/const_enum
+export enum LighthouseCategoryUsed {
+  Performance = 0,
+  Accessibility = 1,
+  BestPractices = 2,
+  SEO = 3,
+  PWA = 4,
+  PubAds = 5,
+  MaxValue = 6,
 }
 
 /* eslint-enable @typescript-eslint/naming-convention */

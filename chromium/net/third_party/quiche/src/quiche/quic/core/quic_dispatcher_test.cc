@@ -64,11 +64,16 @@
 #include "quiche/common/test_tools/quiche_test_utils.h"
 
 using testing::_;
+using testing::AllOf;
 using testing::ByMove;
+using testing::ElementsAreArray;
 using testing::Eq;
+using testing::Field;
 using testing::InSequence;
 using testing::Invoke;
+using testing::IsEmpty;
 using testing::NiceMock;
+using testing::Not;
 using testing::Ref;
 using testing::Return;
 using testing::ReturnRef;
@@ -517,11 +522,17 @@ class QuicDispatcherTestBase : public QuicTestWithParam<ParsedQuicVersion> {
 
   std::string ExpectedAlpn() { return ExpectedAlpnForVersion(version_); }
 
-  ParsedClientHello ParsedClientHelloForTest() {
-    ParsedClientHello parsed_chlo;
-    parsed_chlo.alpns = {ExpectedAlpn()};
-    parsed_chlo.sni = TestHostname();
-    return parsed_chlo;
+  auto MatchParsedClientHello() {
+    if (version_.UsesQuicCrypto()) {
+      return AllOf(
+          Field(&ParsedClientHello::alpns, ElementsAreArray({ExpectedAlpn()})),
+          Field(&ParsedClientHello::sni, Eq(TestHostname())),
+          Field(&ParsedClientHello::supported_groups, IsEmpty()));
+    }
+    return AllOf(
+        Field(&ParsedClientHello::alpns, ElementsAreArray({ExpectedAlpn()})),
+        Field(&ParsedClientHello::sni, Eq(TestHostname())),
+        Field(&ParsedClientHello::supported_groups, Not(IsEmpty())));
   }
 
   void MarkSession1Deleted() { session1_ = nullptr; }
@@ -612,10 +623,10 @@ TEST_P(QuicDispatcherTestAllVersions, TlsClientHelloCreatesSession) {
 
   QuicSocketAddress client_address(QuicIpAddress::Loopback4(), 1);
 
-  EXPECT_CALL(*dispatcher_,
-              CreateQuicSession(TestConnectionId(1), _, client_address,
-                                Eq(ExpectedAlpn()), _,
-                                Eq(ParsedClientHelloForTest()), _))
+  EXPECT_CALL(
+      *dispatcher_,
+      CreateQuicSession(TestConnectionId(1), _, client_address,
+                        Eq(ExpectedAlpn()), _, MatchParsedClientHello(), _))
       .WillOnce(Return(ByMove(CreateSession(
           dispatcher_.get(), config_, TestConnectionId(1), client_address,
           &mock_helper_, &mock_alarm_factory_, &crypto_config_,
@@ -642,14 +653,18 @@ TEST_P(QuicDispatcherTestAllVersions,
       .WillRepeatedly(ReturnRef(mock_connection_id_generator));
   ConnectionIdGeneratorInterface& expected_generator =
       mock_connection_id_generator;
+  EXPECT_CALL(mock_connection_id_generator,
+              MaybeReplaceConnectionId(TestConnectionId(1), version_))
+      .WillOnce(Return(absl::nullopt));
   EXPECT_CALL(*dispatcher_,
-              CreateQuicSession(
-                  TestConnectionId(1), _, client_address, Eq(ExpectedAlpn()), _,
-                  Eq(ParsedClientHelloForTest()), Ref(expected_generator)))
+              CreateQuicSession(TestConnectionId(1), _, client_address,
+                                Eq(ExpectedAlpn()), _, MatchParsedClientHello(),
+                                Ref(expected_generator)))
       .WillOnce(Return(ByMove(CreateSession(
           dispatcher_.get(), config_, TestConnectionId(1), client_address,
           &mock_helper_, &mock_alarm_factory_, &crypto_config_,
           QuicDispatcherPeer::GetCache(dispatcher_.get()), &session1_))));
+  expect_generator_is_called_ = false;
   ProcessFirstFlight(client_address, TestConnectionId(1));
 }
 
@@ -667,7 +682,7 @@ TEST_P(QuicDispatcherTestAllVersions, VariableServerConnectionIdLength) {
   QuicSocketAddress client_address(QuicIpAddress::Loopback4(), 1);
   EXPECT_CALL(*dispatcher_,
               CreateQuicSession(new_id, _, client_address, Eq(ExpectedAlpn()),
-                                _, Eq(ParsedClientHelloForTest()), _))
+                                _, MatchParsedClientHello(), _))
       .WillOnce(Return(ByMove(CreateSession(
           dispatcher_.get(), config_, new_id, client_address, &mock_helper_,
           &mock_alarm_factory_, &crypto_config_,
@@ -732,10 +747,10 @@ void QuicDispatcherTestBase::TestTlsMultiPacketClientHello(
       << "No session should be created before the rest of the CHLO arrives.";
 
   // Processing the second packet should create the new session.
-  EXPECT_CALL(*dispatcher_,
-              CreateQuicSession(new_connection_id, _, client_address,
-                                Eq(ExpectedAlpn()), _,
-                                Eq(ParsedClientHelloForTest()), _))
+  EXPECT_CALL(
+      *dispatcher_,
+      CreateQuicSession(new_connection_id, _, client_address,
+                        Eq(ExpectedAlpn()), _, MatchParsedClientHello(), _))
       .WillOnce(Return(ByMove(CreateSession(
           dispatcher_.get(), config_, new_connection_id, client_address,
           &mock_helper_, &mock_alarm_factory_, &crypto_config_,
@@ -773,10 +788,10 @@ TEST_P(QuicDispatcherTestAllVersions,
 TEST_P(QuicDispatcherTestAllVersions, ProcessPackets) {
   QuicSocketAddress client_address(QuicIpAddress::Loopback4(), 1);
 
-  EXPECT_CALL(*dispatcher_,
-              CreateQuicSession(TestConnectionId(1), _, client_address,
-                                Eq(ExpectedAlpn()), _,
-                                Eq(ParsedClientHelloForTest()), _))
+  EXPECT_CALL(
+      *dispatcher_,
+      CreateQuicSession(TestConnectionId(1), _, client_address,
+                        Eq(ExpectedAlpn()), _, MatchParsedClientHello(), _))
       .WillOnce(Return(ByMove(CreateSession(
           dispatcher_.get(), config_, TestConnectionId(1), client_address,
           &mock_helper_, &mock_alarm_factory_, &crypto_config_,
@@ -788,10 +803,10 @@ TEST_P(QuicDispatcherTestAllVersions, ProcessPackets) {
       })));
   ProcessFirstFlight(client_address, TestConnectionId(1));
 
-  EXPECT_CALL(*dispatcher_,
-              CreateQuicSession(TestConnectionId(2), _, client_address,
-                                Eq(ExpectedAlpn()), _,
-                                Eq(ParsedClientHelloForTest()), _))
+  EXPECT_CALL(
+      *dispatcher_,
+      CreateQuicSession(TestConnectionId(2), _, client_address,
+                        Eq(ExpectedAlpn()), _, MatchParsedClientHello(), _))
       .WillOnce(Return(ByMove(CreateSession(
           dispatcher_.get(), config_, TestConnectionId(2), client_address,
           &mock_helper_, &mock_alarm_factory_, &crypto_config_,
@@ -2553,7 +2568,7 @@ TEST_P(BufferedPacketStoreTest, ProcessNonChloPacketBeforeChlo) {
       .WillOnce(Return(absl::nullopt));
   EXPECT_CALL(*dispatcher_,
               CreateQuicSession(conn_id, _, client_addr_, Eq(ExpectedAlpn()), _,
-                                Eq(ParsedClientHelloForTest()), _))
+                                MatchParsedClientHello(), _))
       .WillOnce(Return(ByMove(CreateSession(
           dispatcher_.get(), config_, conn_id, client_addr_, &mock_helper_,
           &mock_alarm_factory_, &crypto_config_,
@@ -2754,10 +2769,10 @@ TEST_P(BufferedPacketStoreTest, ProcessCHLOsUptoLimitAndBufferTheRest) {
       EXPECT_CALL(connection_id_generator_,
                   MaybeReplaceConnectionId(TestConnectionId(conn_id), version_))
           .WillOnce(Return(absl::nullopt));
-      EXPECT_CALL(*dispatcher_,
-                  CreateQuicSession(TestConnectionId(conn_id), _, client_addr_,
-                                    Eq(ExpectedAlpn()), _,
-                                    Eq(ParsedClientHelloForTest()), _))
+      EXPECT_CALL(
+          *dispatcher_,
+          CreateQuicSession(TestConnectionId(conn_id), _, client_addr_,
+                            Eq(ExpectedAlpn()), _, MatchParsedClientHello(), _))
           .WillOnce(Return(ByMove(CreateSession(
               dispatcher_.get(), config_, TestConnectionId(conn_id),
               client_addr_, &mock_helper_, &mock_alarm_factory_,
@@ -2786,7 +2801,7 @@ TEST_P(BufferedPacketStoreTest, ProcessCHLOsUptoLimitAndBufferTheRest) {
     }
   }
 
-  // Graduately consume buffered CHLOs. The buffered connections should be
+  // Gradually consume buffered CHLOs. The buffered connections should be
   // created but the dropped one shouldn't.
   for (uint64_t conn_id = kMaxNumSessionsToCreate + 1;
        conn_id <= kMaxNumSessionsToCreate + kDefaultMaxConnectionsInStore;
@@ -2794,10 +2809,10 @@ TEST_P(BufferedPacketStoreTest, ProcessCHLOsUptoLimitAndBufferTheRest) {
     EXPECT_CALL(connection_id_generator_,
                 MaybeReplaceConnectionId(TestConnectionId(conn_id), version_))
         .WillOnce(Return(absl::nullopt));
-    EXPECT_CALL(*dispatcher_,
-                CreateQuicSession(TestConnectionId(conn_id), _, client_addr_,
-                                  Eq(ExpectedAlpn()), _,
-                                  Eq(ParsedClientHelloForTest()), _))
+    EXPECT_CALL(
+        *dispatcher_,
+        CreateQuicSession(TestConnectionId(conn_id), _, client_addr_,
+                          Eq(ExpectedAlpn()), _, MatchParsedClientHello(), _))
         .WillOnce(Return(ByMove(CreateSession(
             dispatcher_.get(), config_, TestConnectionId(conn_id), client_addr_,
             &mock_helper_, &mock_alarm_factory_, &crypto_config_,
@@ -2826,6 +2841,70 @@ TEST_P(BufferedPacketStoreTest, ProcessCHLOsUptoLimitAndBufferTheRest) {
   EXPECT_EQ(TestConnectionId(static_cast<size_t>(kMaxNumSessionsToCreate) +
                              kDefaultMaxConnectionsInStore),
             session1_->connection_id());
+}
+
+TEST_P(BufferedPacketStoreTest,
+       ProcessCHLOsUptoLimitAndBufferWithDifferentConnectionIdGenerator) {
+  // Process (|kMaxNumSessionsToCreate| + 1) CHLOs,
+  // the first |kMaxNumSessionsToCreate| should create connections immediately,
+  // the last should be buffered.
+  QuicBufferedPacketStore* store =
+      QuicDispatcherPeer::GetBufferedPackets(dispatcher_.get());
+  const size_t kNumCHLOs = kMaxNumSessionsToCreate + 1;
+  MockConnectionIdGenerator generator2;
+  for (uint64_t conn_id = 1; conn_id < kNumCHLOs; ++conn_id) {
+    EXPECT_CALL(
+        *dispatcher_,
+        CreateQuicSession(TestConnectionId(conn_id), _, client_addr_,
+                          Eq(ExpectedAlpn()), _, MatchParsedClientHello(), _))
+        .WillOnce(Return(ByMove(CreateSession(
+            dispatcher_.get(), config_, TestConnectionId(conn_id), client_addr_,
+            &mock_helper_, &mock_alarm_factory_, &crypto_config_,
+            QuicDispatcherPeer::GetCache(dispatcher_.get()), &session1_))));
+    EXPECT_CALL(*reinterpret_cast<MockQuicConnection*>(session1_->connection()),
+                ProcessUdpPacket(_, _, _))
+        .WillOnce(WithArg<2>(
+            Invoke([this, conn_id](const QuicEncryptedPacket& packet) {
+              if (version_.UsesQuicCrypto()) {
+                ValidatePacket(TestConnectionId(conn_id), packet);
+              }
+            })));
+    ProcessFirstFlight(TestConnectionId(conn_id));
+  }
+  uint64_t conn_id = kNumCHLOs;
+  expect_generator_is_called_ = false;
+  EXPECT_CALL(*dispatcher_, ConnectionIdGenerator())
+      .WillRepeatedly(ReturnRef(generator2));
+  ProcessFirstFlight(TestConnectionId(conn_id));
+  EXPECT_TRUE(store->HasChloForConnection(TestConnectionId(conn_id)));
+  // Change the generator back so that the session can only access generator2
+  // by using the buffer entry.
+  EXPECT_CALL(*dispatcher_, ConnectionIdGenerator())
+      .WillRepeatedly(ReturnRef(connection_id_generator_));
+
+  // Consume the buffered CHLO. The buffered connection should be
+  // created using generator2.
+  EXPECT_CALL(generator2,
+              MaybeReplaceConnectionId(TestConnectionId(conn_id), version_))
+      .WillOnce(Return(absl::nullopt));
+  EXPECT_CALL(*dispatcher_, CreateQuicSession(TestConnectionId(conn_id), _,
+                                              client_addr_, Eq(ExpectedAlpn()),
+                                              _, MatchParsedClientHello(), _))
+      .WillOnce(Return(ByMove(CreateSession(
+          dispatcher_.get(), config_, TestConnectionId(conn_id), client_addr_,
+          &mock_helper_, &mock_alarm_factory_, &crypto_config_,
+          QuicDispatcherPeer::GetCache(dispatcher_.get()), &session1_))));
+  EXPECT_CALL(*reinterpret_cast<MockQuicConnection*>(session1_->connection()),
+              ProcessUdpPacket(_, _, _))
+      .WillOnce(
+          WithArg<2>(Invoke([this, conn_id](const QuicEncryptedPacket& packet) {
+            if (version_.UsesQuicCrypto()) {
+              ValidatePacket(TestConnectionId(conn_id), packet);
+            }
+          })));
+  while (store->HasChlosBuffered()) {
+    dispatcher_->ProcessBufferedChlos(kMaxNumSessionsToCreate);
+  }
 }
 
 // Duplicated CHLO shouldn't be buffered.

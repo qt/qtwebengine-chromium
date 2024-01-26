@@ -72,6 +72,8 @@ export class Checkbox extends LitElement {
       --md-checkbox-pressed-state-layer-color: var(--cros-sys-ripple_primary);
       --md-checkbox-pressed-state-layer-opacity: 100%;
 
+      --md-focus-ring-duration: 0s;
+
       --md-sys-color-secondary: var(--cros-sys-focus_ring);
     }
 
@@ -83,6 +85,7 @@ export class Checkbox extends LitElement {
   static override properties = {
     checked: {type: Boolean, reflect: true},
     disabled: {type: Boolean, reflect: true},
+    ariaLabel: {type: String, reflect: true, attribute: 'aria-label'},
   };
 
   /** @nocollapse */
@@ -118,7 +121,8 @@ export class Checkbox extends LitElement {
           ?disabled=${this.disabled}
           ?checked=${this.checked}
           @change=${this.onChange}
-          touch-target="wrapper">
+          touch-target="wrapper"
+          aria-label=${this.ariaLabel || ''}>
       </md-checkbox>
     `;
   }

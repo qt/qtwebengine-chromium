@@ -179,15 +179,14 @@ class ObjectVisitor {
                                   RelocInfo* rinfo) {}
 
   virtual void VisitExternalPointer(Tagged<HeapObject> host,
-                                    ExternalPointerSlot slot,
-                                    ExternalPointerTag tag) {}
+                                    ExternalPointerSlot slot) {}
 
   virtual void VisitIndirectPointer(Tagged<HeapObject> host,
                                     IndirectPointerSlot slot,
                                     IndirectPointerMode mode) {}
 
-  virtual void VisitIndirectPointerTableEntry(Tagged<HeapObject> host,
-                                              IndirectPointerSlot slot) {}
+  virtual void VisitTrustedPointerTableEntry(Tagged<HeapObject> host,
+                                             IndirectPointerSlot slot) {}
 
   virtual void VisitMapPointer(Tagged<HeapObject> host) { UNREACHABLE(); }
 };
@@ -244,7 +243,11 @@ class ClientRootVisitor final : public RootVisitor {
   void VisitRootPointers(Root root, const char* description,
                          FullObjectSlot start, FullObjectSlot end) final {
     for (FullObjectSlot p = start; p < end; ++p) {
-      if (!IsSharedHeapObject(*p)) continue;
+      Tagged<Object> object = *p;
+#ifdef V8_ENABLE_DIRECT_LOCAL
+      if (object.ptr() == ValueHelper::kTaggedNullAddress) continue;
+#endif
+      if (!IsSharedHeapObject(object)) continue;
       actual_visitor_->VisitRootPointer(root, description, p);
     }
   }

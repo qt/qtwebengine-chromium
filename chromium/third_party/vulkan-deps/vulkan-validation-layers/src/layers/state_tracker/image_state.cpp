@@ -27,18 +27,11 @@ static VkImageSubresourceRange MakeImageFullRange(const VkImageCreateInfo &creat
     const auto format = create_info.format;
     VkImageSubresourceRange init_range{0, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS};
 
-#ifdef VK_USE_PLATFORM_ANDROID_KHR
-    const VkExternalFormatANDROID *external_format_android = LvlFindInChain<VkExternalFormatANDROID>(&create_info);
-    const bool is_external_format_conversion = (external_format_android != nullptr && external_format_android->externalFormat != 0);
-#else
-    const bool is_external_format_conversion = false;
-#endif
-
-    if (FormatIsColor(format) || FormatIsMultiplane(format) || is_external_format_conversion) {
+    if (vkuFormatIsColor(format) || vkuFormatIsMultiplane(format) || GetExternalFormat(create_info.pNext) != 0) {
         init_range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;  // Normalization will expand this for multiplane
     } else {
         init_range.aspectMask =
-            (FormatHasDepth(format) ? VK_IMAGE_ASPECT_DEPTH_BIT : 0) | (FormatHasStencil(format) ? VK_IMAGE_ASPECT_STENCIL_BIT : 0);
+            (vkuFormatHasDepth(format) ? VK_IMAGE_ASPECT_DEPTH_BIT : 0) | (vkuFormatHasStencil(format) ? VK_IMAGE_ASPECT_STENCIL_BIT : 0);
     }
     return NormalizeSubresourceRange(create_info, init_range);
 }
@@ -50,11 +43,11 @@ VkImageSubresourceRange NormalizeSubresourceRange(const VkImageCreateInfo &image
     norm.layerCount = ResolveRemainingLayers(image_create_info, range);
 
     // For multiplanar formats, IMAGE_ASPECT_COLOR is equivalent to adding the aspect of the individual planes
-    if (FormatIsMultiplane(image_create_info.format)) {
+    if (vkuFormatIsMultiplane(image_create_info.format)) {
         if (norm.aspectMask & VK_IMAGE_ASPECT_COLOR_BIT) {
             norm.aspectMask &= ~VK_IMAGE_ASPECT_COLOR_BIT;
             norm.aspectMask |= (VK_IMAGE_ASPECT_PLANE_0_BIT | VK_IMAGE_ASPECT_PLANE_1_BIT);
-            if (FormatPlaneCount(image_create_info.format) > 2) {
+            if (vkuFormatPlaneCount(image_create_info.format) > 2) {
                 norm.aspectMask |= VK_IMAGE_ASPECT_PLANE_2_BIT;
             }
         }
@@ -91,23 +84,14 @@ VkImageSubresourceRange NormalizeSubresourceRange(const VkImageCreateInfo &image
 }
 
 static VkExternalMemoryHandleTypeFlags GetExternalHandleTypes(const VkImageCreateInfo *pCreateInfo) {
-    const auto *external_memory_info = LvlFindInChain<VkExternalMemoryImageCreateInfo>(pCreateInfo->pNext);
+    const auto *external_memory_info = vku::FindStructInPNextChain<VkExternalMemoryImageCreateInfo>(pCreateInfo->pNext);
     return external_memory_info ? external_memory_info->handleTypes : 0;
 }
 
 static VkSwapchainKHR GetSwapchain(const VkImageCreateInfo *pCreateInfo) {
-    const auto *swapchain_info = LvlFindInChain<VkImageSwapchainCreateInfoKHR>(pCreateInfo->pNext);
+    const auto *swapchain_info = vku::FindStructInPNextChain<VkImageSwapchainCreateInfoKHR>(pCreateInfo->pNext);
     return swapchain_info ? swapchain_info->swapchain : VK_NULL_HANDLE;
 }
-
-#ifdef VK_USE_PLATFORM_ANDROID_KHR
-static uint64_t GetExternalFormat(const VkImageCreateInfo *info) {
-    const VkExternalFormatANDROID *ext_format_android = LvlFindInChain<VkExternalFormatANDROID>(info->pNext);
-    return ext_format_android ? ext_format_android->externalFormat : 0;
-}
-#else
-static uint64_t GetExternalFormat(const VkImageCreateInfo *info) { return 0; }
-#endif  // VK_USE_PLATFORM_ANDROID_KHR
 
 static IMAGE_STATE::MemoryReqs GetMemoryRequirements(const ValidationStateTracker *dev_data, VkImage img,
                                                      const VkImageCreateInfo *create_info, bool disjoint, bool is_external_ahb) {
@@ -118,16 +102,16 @@ static IMAGE_STATE::MemoryReqs GetMemoryRequirements(const ValidationStateTracke
         if (disjoint == false) {
             DispatchGetImageMemoryRequirements(dev_data->device, img, &result[0]);
         } else {
-            uint32_t plane_count = FormatPlaneCount(create_info->format);
+            uint32_t plane_count = vkuFormatPlaneCount(create_info->format);
             static const std::array<VkImageAspectFlagBits, 3> aspects{VK_IMAGE_ASPECT_PLANE_0_BIT, VK_IMAGE_ASPECT_PLANE_1_BIT,
                                                                       VK_IMAGE_ASPECT_PLANE_2_BIT};
             assert(plane_count <= aspects.size());
-            auto image_plane_req = LvlInitStruct<VkImagePlaneMemoryRequirementsInfo>();
-            auto mem_req_info2 = LvlInitStruct<VkImageMemoryRequirementsInfo2>(&image_plane_req);
+            VkImagePlaneMemoryRequirementsInfo image_plane_req = vku::InitStructHelper();
+            VkImageMemoryRequirementsInfo2 mem_req_info2 = vku::InitStructHelper(&image_plane_req);
             mem_req_info2.image = img;
 
             for (uint32_t i = 0; i < plane_count; i++) {
-                auto mem_reqs2 = LvlInitStruct<VkMemoryRequirements2>();
+                VkMemoryRequirements2 mem_reqs2 = vku::InitStructHelper();
 
                 image_plane_req.planeAspect = aspects[i];
                 switch (dev_data->device_extensions.vk_khr_get_memory_requirements2) {
@@ -173,13 +157,13 @@ static bool SparseMetaDataRequired(const IMAGE_STATE::SparseReqs &sparse_reqs) {
 #ifdef VK_USE_PLATFORM_METAL_EXT
 static bool GetMetalExport(const VkImageCreateInfo *info, VkExportMetalObjectTypeFlagBitsEXT object_type_required) {
     bool retval = false;
-    auto export_metal_object_info = LvlFindInChain<VkExportMetalObjectCreateInfoEXT>(info->pNext);
+    auto export_metal_object_info = vku::FindStructInPNextChain<VkExportMetalObjectCreateInfoEXT>(info->pNext);
     while (export_metal_object_info) {
         if (export_metal_object_info->exportObjectType == object_type_required) {
             retval = true;
             break;
         }
-        export_metal_object_info = LvlFindInChain<VkExportMetalObjectCreateInfoEXT>(export_metal_object_info->pNext);
+        export_metal_object_info = vku::FindStructInPNextChain<VkExportMetalObjectCreateInfoEXT>(export_metal_object_info->pNext);
     }
     return retval;
 }
@@ -193,14 +177,14 @@ IMAGE_STATE::IMAGE_STATE(const ValidationStateTracker *dev_data, VkImage img, co
       createInfo(*safe_create_info.ptr()),
       shared_presentable(false),
       layout_locked(false),
-      ahb_format(GetExternalFormat(pCreateInfo)),
+      ahb_format(GetExternalFormat(pCreateInfo->pNext)),
       full_range{MakeImageFullRange(*pCreateInfo)},
       create_from_swapchain(GetSwapchain(pCreateInfo)),
       owned_by_swapchain(false),
       swapchain_image_index(0),
       format_features(ff),
       disjoint((pCreateInfo->flags & VK_IMAGE_CREATE_DISJOINT_BIT) != 0),
-      requirements(GetMemoryRequirements(dev_data, img, pCreateInfo, disjoint, IsExternalAHB())),
+      requirements(GetMemoryRequirements(dev_data, img, pCreateInfo, disjoint, IsExternalBuffer())),
       sparse_residency((pCreateInfo->flags & VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT) != 0),
       sparse_requirements(GetSparseRequirements(dev_data, img, sparse_residency)),
       sparse_metadata_required(SparseMetaDataRequired(sparse_requirements)),
@@ -213,14 +197,14 @@ IMAGE_STATE::IMAGE_STATE(const ValidationStateTracker *dev_data, VkImage img, co
       subresource_encoder(full_range),
       fragment_encoder(nullptr),
       store_device_as_workaround(dev_data->device),  // TODO REMOVE WHEN encoder can be const
-      supported_video_profiles(
-          dev_data->video_profile_cache_.Get(dev_data, LvlFindInChain<VkVideoProfileListInfoKHR>(pCreateInfo->pNext))) {
+      supported_video_profiles(dev_data->video_profile_cache_.Get(
+          dev_data, vku::FindStructInPNextChain<VkVideoProfileListInfoKHR>(pCreateInfo->pNext))) {
     if (pCreateInfo->flags & VK_IMAGE_CREATE_SPARSE_BINDING_BIT) {
         bool is_resident = (pCreateInfo->flags & VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT) != 0;
         tracker_.emplace<BindableSparseMemoryTracker>(requirements.data(), is_resident);
         SetMemoryTracker(&std::get<BindableSparseMemoryTracker>(tracker_));
     } else if (pCreateInfo->flags & VK_IMAGE_CREATE_DISJOINT_BIT) {
-        tracker_.emplace<BindableMultiplanarMemoryTracker>(requirements.data(), FormatPlaneCount(pCreateInfo->format));
+        tracker_.emplace<BindableMultiplanarMemoryTracker>(requirements.data(), vkuFormatPlaneCount(pCreateInfo->format));
         SetMemoryTracker(&std::get<BindableMultiplanarMemoryTracker>(tracker_));
     } else {
         tracker_.emplace<BindableLinearMemoryTracker>(requirements.data());
@@ -236,7 +220,7 @@ IMAGE_STATE::IMAGE_STATE(const ValidationStateTracker *dev_data, VkImage img, co
       createInfo(*safe_create_info.ptr()),
       shared_presentable(false),
       layout_locked(false),
-      ahb_format(GetExternalFormat(pCreateInfo)),
+      ahb_format(GetExternalFormat(pCreateInfo->pNext)),
       full_range{MakeImageFullRange(*pCreateInfo)},
       create_from_swapchain(swapchain),
       owned_by_swapchain(true),
@@ -256,8 +240,8 @@ IMAGE_STATE::IMAGE_STATE(const ValidationStateTracker *dev_data, VkImage img, co
       subresource_encoder(full_range),
       fragment_encoder(nullptr),
       store_device_as_workaround(dev_data->device),  // TODO REMOVE WHEN encoder can be const
-      supported_video_profiles(
-          dev_data->video_profile_cache_.Get(dev_data, LvlFindInChain<VkVideoProfileListInfoKHR>(pCreateInfo->pNext))) {
+      supported_video_profiles(dev_data->video_profile_cache_.Get(
+          dev_data, vku::FindStructInPNextChain<VkVideoProfileListInfoKHR>(pCreateInfo->pNext))) {
     fragment_encoder =
         std::unique_ptr<const subresource_adapter::ImageRangeEncoder>(new subresource_adapter::ImageRangeEncoder(*this));
 
@@ -386,30 +370,30 @@ void IMAGE_STATE::SetSwapchain(std::shared_ptr<SWAPCHAIN_NODE> &swapchain, uint3
 }
 
 static VkSamplerYcbcrConversion GetSamplerConversion(const VkImageViewCreateInfo *ci) {
-    auto *conversion_info = LvlFindInChain<VkSamplerYcbcrConversionInfo>(ci->pNext);
+    auto *conversion_info = vku::FindStructInPNextChain<VkSamplerYcbcrConversionInfo>(ci->pNext);
     return conversion_info ? conversion_info->conversion : VK_NULL_HANDLE;
 }
 
 static VkImageUsageFlags GetInheritedUsage(const VkImageViewCreateInfo *ci, const IMAGE_STATE &image_state) {
-    auto usage_create_info = LvlFindInChain<VkImageViewUsageCreateInfo>(ci->pNext);
+    auto usage_create_info = vku::FindStructInPNextChain<VkImageViewUsageCreateInfo>(ci->pNext);
     return (usage_create_info) ? usage_create_info->usage : image_state.createInfo.usage;
 }
 
 static float GetImageViewMinLod(const VkImageViewCreateInfo *ci) {
-    auto image_view_min_lod = LvlFindInChain<VkImageViewMinLodCreateInfoEXT>(ci->pNext);
+    auto image_view_min_lod = vku::FindStructInPNextChain<VkImageViewMinLodCreateInfoEXT>(ci->pNext);
     return (image_view_min_lod) ? image_view_min_lod->minLod : 0.0f;
 }
 
 #ifdef VK_USE_PLATFORM_METAL_EXT
 static bool GetMetalExport(const VkImageViewCreateInfo *info) {
     bool retval = false;
-    auto export_metal_object_info = LvlFindInChain<VkExportMetalObjectCreateInfoEXT>(info->pNext);
+    auto export_metal_object_info = vku::FindStructInPNextChain<VkExportMetalObjectCreateInfoEXT>(info->pNext);
     while (export_metal_object_info) {
         if (export_metal_object_info->exportObjectType == VK_EXPORT_METAL_OBJECT_TYPE_METAL_TEXTURE_BIT_EXT) {
             retval = true;
             break;
         }
-        export_metal_object_info = LvlFindInChain<VkExportMetalObjectCreateInfoEXT>(export_metal_object_info->pNext);
+        export_metal_object_info = vku::FindStructInPNextChain<VkExportMetalObjectCreateInfoEXT>(export_metal_object_info->pNext);
     }
     return retval;
 }
@@ -435,7 +419,8 @@ IMAGE_VIEW_STATE::IMAGE_VIEW_STATE(const std::shared_ptr<IMAGE_STATE> &im, VkIma
 #ifdef VK_USE_PLATFORM_METAL_EXT
       metal_imageview_export(GetMetalExport(ci)),
 #endif
-      image_state(im) {
+      image_state(im),
+      is_depth_sliced(::IsDepthSliced(im->createInfo, *ci)) {
 }
 
 void IMAGE_VIEW_STATE::Destroy() {
@@ -444,24 +429,6 @@ void IMAGE_VIEW_STATE::Destroy() {
         image_state = nullptr;
     }
     BASE_NODE::Destroy();
-}
-
-bool IMAGE_VIEW_STATE::IsDepthSliced() const { return ::IsDepthSliced(image_state->createInfo, create_info); }
-
-VkOffset3D IMAGE_VIEW_STATE::GetOffset() const {
-    VkOffset3D result = {0, 0, 0};
-    if (IsDepthSliced()) {
-        result.z = create_info.subresourceRange.baseArrayLayer;
-    }
-    return result;
-}
-
-VkExtent3D IMAGE_VIEW_STATE::GetExtent() const {
-    VkExtent3D result = image_state->createInfo.extent;
-    if (IsDepthSliced()) {
-        result.depth = create_info.subresourceRange.layerCount;
-    }
-    return result;
 }
 
 uint32_t IMAGE_VIEW_STATE::GetAttachmentLayerCount() const {
@@ -511,11 +478,11 @@ bool IMAGE_VIEW_STATE::OverlapSubresource(const IMAGE_VIEW_STATE &compare_view) 
 }
 
 static safe_VkImageCreateInfo GetImageCreateInfo(const VkSwapchainCreateInfoKHR *pCreateInfo) {
-    auto image_ci = LvlInitStruct<VkImageCreateInfo>();
+    VkImageCreateInfo image_ci = vku::InitStructHelper();
     // Pull out the format list only. This stack variable will get copied onto the heap
     // by the 'safe' constructor used to build the return value below.
     VkImageFormatListCreateInfo fmt_info;
-    auto chain_fmt_info = LvlFindInChain<VkImageFormatListCreateInfo>(pCreateInfo->pNext);
+    auto chain_fmt_info = vku::FindStructInPNextChain<VkImageFormatListCreateInfo>(pCreateInfo->pNext);
     if (chain_fmt_info) {
         fmt_info = *chain_fmt_info;
         fmt_info.pNext = nullptr;
@@ -745,7 +712,7 @@ vvl::span<const safe_VkSurfaceFormat2KHR> SURFACE_STATE::GetFormats(bool get_sur
             log_internal_error(err, phys_dev, surface_info2.surface);
             return result;
         }
-        std::vector<VkSurfaceFormat2KHR> formats2(count);
+        std::vector<VkSurfaceFormat2KHR> formats2(count, vku::InitStruct<VkSurfaceFormat2KHR>());
 
         if (const VkResult err = DispatchGetPhysicalDeviceSurfaceFormats2KHR(phys_dev, &surface_info2, &count, formats2.data());
             err != VK_SUCCESS) {
@@ -781,7 +748,7 @@ vvl::span<const safe_VkSurfaceFormat2KHR> SURFACE_STATE::GetFormats(bool get_sur
             result.clear();
         } else {
             result.reserve(count);
-            auto format2 = LvlInitStruct<VkSurfaceFormat2KHR>();
+            VkSurfaceFormat2KHR format2 = vku::InitStructHelper();
             for (const auto &format : formats) {
                 format2.surfaceFormat = format;
                 result.emplace_back(safe_VkSurfaceFormat2KHR(&format2));
@@ -815,7 +782,7 @@ safe_VkSurfaceCapabilities2KHR SURFACE_STATE::GetCapabilities(bool get_surface_c
         }
     };
 
-    auto surface_caps2 = LvlInitStruct<VkSurfaceCapabilities2KHR>();
+    VkSurfaceCapabilities2KHR surface_caps2 = vku::InitStructHelper();
     if (get_surface_capabilities2) {
         const auto surface_info2 = GetSurfaceInfo2(surface_info2_pnext);
         if (const VkResult err = DispatchGetPhysicalDeviceSurfaceCapabilities2KHR(phys_dev, &surface_info2, &surface_caps2);
@@ -870,13 +837,13 @@ std::vector<VkPresentModeKHR> SURFACE_STATE::GetCompatibleModes(VkPhysicalDevice
 
     // Compatible modes not in state tracker, call to get compatible modes
     std::vector<VkPresentModeKHR> result;
-    auto surface_info = LvlInitStruct<VkPhysicalDeviceSurfaceInfo2KHR>();
+    VkPhysicalDeviceSurfaceInfo2KHR surface_info = vku::InitStructHelper();
     surface_info.surface = surface();
-    auto surface_present_mode = LvlInitStruct<VkSurfacePresentModeEXT>();
+    VkSurfacePresentModeEXT surface_present_mode = vku::InitStructHelper();
     surface_present_mode.presentMode = present_mode;
     surface_info.pNext = &surface_present_mode;
-    auto present_mode_compatibility = LvlInitStruct<VkSurfacePresentModeCompatibilityEXT>();
-    auto surface_capabilities = LvlInitStruct<VkSurfaceCapabilities2KHR>();
+    VkSurfacePresentModeCompatibilityEXT present_mode_compatibility = vku::InitStructHelper();
+    VkSurfaceCapabilities2KHR surface_capabilities = vku::InitStructHelper();
     surface_capabilities.pNext = &present_mode_compatibility;
     DispatchGetPhysicalDeviceSurfaceCapabilities2KHR(phys_dev, &surface_info, &surface_capabilities);
     result.resize(present_mode_compatibility.presentModeCount);
@@ -912,12 +879,12 @@ VkSurfaceCapabilitiesKHR SURFACE_STATE::GetPresentModeSurfaceCapabilities(VkPhys
     }
 
     // Present mode surface capabilties not in state tracker, call to get surface capabilities
-    auto surface_info = LvlInitStruct<VkPhysicalDeviceSurfaceInfo2KHR>();
+    VkPhysicalDeviceSurfaceInfo2KHR surface_info = vku::InitStructHelper();
     surface_info.surface = surface();
-    auto surface_present_mode = LvlInitStruct<VkSurfacePresentModeEXT>();
+    VkSurfacePresentModeEXT surface_present_mode = vku::InitStructHelper();
     surface_present_mode.presentMode = present_mode;
     surface_info.pNext = &surface_present_mode;
-    auto surface_capabilities = LvlInitStruct<VkSurfaceCapabilities2KHR>();
+    VkSurfaceCapabilities2KHR surface_capabilities = vku::InitStructHelper();
     DispatchGetPhysicalDeviceSurfaceCapabilities2KHR(phys_dev, &surface_info, &surface_capabilities);
     return surface_capabilities.surfaceCapabilities;
 }
@@ -935,13 +902,13 @@ VkSurfacePresentScalingCapabilitiesEXT SURFACE_STATE::GetPresentModeScalingCapab
     }
 
     // Present mode scaling capabilties not in state tracker, call to get scaling capabilities
-    auto surface_info = LvlInitStruct<VkPhysicalDeviceSurfaceInfo2KHR>();
+    VkPhysicalDeviceSurfaceInfo2KHR surface_info = vku::InitStructHelper();
     surface_info.surface = surface();
-    auto surface_present_mode = LvlInitStruct<VkSurfacePresentModeEXT>();
+    VkSurfacePresentModeEXT surface_present_mode = vku::InitStructHelper();
     surface_present_mode.presentMode = present_mode;
     surface_info.pNext = &surface_present_mode;
-    auto scaling_caps = LvlInitStruct<VkSurfacePresentScalingCapabilitiesEXT>();
-    auto surface_capabilities = LvlInitStruct<VkSurfaceCapabilities2KHR>();
+    VkSurfacePresentScalingCapabilitiesEXT scaling_caps = vku::InitStructHelper();
+    VkSurfaceCapabilities2KHR surface_capabilities = vku::InitStructHelper();
     surface_capabilities.pNext = &scaling_caps;
     DispatchGetPhysicalDeviceSurfaceCapabilities2KHR(phys_dev, &surface_info, &surface_capabilities);
     return scaling_caps;

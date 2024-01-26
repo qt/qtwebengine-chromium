@@ -156,7 +156,7 @@ static const std::map<VkPipelineStageFlags2KHR, std::vector<Entry>> kStageMaskEr
          {Key(Func::vkCmdWaitEvents, Field::dstStageMask), "VUID-vkCmdWaitEvents-dstStageMask-04096"},
          {Key(Func::vkCmdWaitEvents, Field::srcStageMask), "VUID-vkCmdWaitEvents-srcStageMask-04096"},
          {Key(Func::vkCmdWriteTimestamp2, Field::stage), "VUID-vkCmdWriteTimestamp2-stage-03935"},
-         {Key(Func::vkCmdWriteTimestamp, Field::pipelineStage), "VUID-vkCmdWriteTimestamp-pipelineStage-04080"},
+         {Key(Func::vkCmdWriteTimestamp, Field::pipelineStage), "VUID-vkCmdWriteTimestamp-pipelineStage-07077"},
          {Key(Struct::VkImageMemoryBarrier2, Field::dstStageMask), "VUID-VkImageMemoryBarrier2-dstStageMask-03935"},
          {Key(Struct::VkImageMemoryBarrier2, Field::srcStageMask), "VUID-VkImageMemoryBarrier2-srcStageMask-03935"},
          {Key(Struct::VkMemoryBarrier2, Field::dstStageMask), "VUID-VkMemoryBarrier2-dstStageMask-03935"},
@@ -1004,10 +1004,15 @@ static const std::map<ImageError, std::vector<Entry>> kImageErrors{
          {Key(Struct::VkImageMemoryBarrier), "VUID-VkImageMemoryBarrier-synchronization2-07794"},
          {Key(Struct::VkImageMemoryBarrier2), "VUID-VkImageMemoryBarrier2-synchronization2-07794"},
      }},
-    {ImageError::kNotColorAspect,
+    {ImageError::kNotColorAspectSinglePlane,
      {
-         {Key(Struct::VkImageMemoryBarrier), "VUID-VkImageMemoryBarrier-image-01671"},
-         {Key(Struct::VkImageMemoryBarrier2), "VUID-VkImageMemoryBarrier2-image-01671"},
+         {Key(Struct::VkImageMemoryBarrier), "VUID-VkImageMemoryBarrier-image-09241"},
+         {Key(Struct::VkImageMemoryBarrier2), "VUID-VkImageMemoryBarrier2-image-09241"},
+     }},
+    {ImageError::kNotColorAspectNonDisjoint,
+     {
+         {Key(Struct::VkImageMemoryBarrier), "VUID-VkImageMemoryBarrier-image-09242"},
+         {Key(Struct::VkImageMemoryBarrier2), "VUID-VkImageMemoryBarrier2-image-09242"},
      }},
     {ImageError::kBadMultiplanarAspect,
      {
@@ -1161,8 +1166,15 @@ static const std::map<SubmitError, std::vector<Entry>> kSubmitErrors{
 
 const std::string &GetQueueSubmitVUID(const Location &loc, SubmitError error) {
     const auto &result = FindVUID(error, loc, kSubmitErrors);
-    assert(!result.empty());
     if (result.empty()) {
+        // TODO - Handle better way then Key::recursive to find certain VUs
+        // Can reproduce with NegativeSyncObject.Sync2QueueSubmitTimelineSemaphoreValue
+        if (loc.structure == Struct::VkSubmitInfo2) {
+            if (loc.prev->field == Field::pWaitSemaphoreInfos || loc.prev->field == Field::pSignalSemaphoreInfos) {
+                return FindVUID(error, *loc.prev, kSubmitErrors);
+            }
+        }
+
         static const std::string unhandled("UNASSIGNED-CoreChecks-unhandled-submit-error");
         return unhandled;
     }
@@ -1192,4 +1204,4 @@ const std::string &GetShaderTileImageVUID(const Location &loc, ShaderTileImageEr
     return result;
 }
 
-};  // namespace sync_vuid_maps
+}  // namespace sync_vuid_maps

@@ -1,16 +1,29 @@
-// Copyright 2022 The Tint Authors.
+// Copyright 2022 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef SRC_TINT_LANG_CORE_IR_BUILDER_H_
 #define SRC_TINT_LANG_CORE_IR_BUILDER_H_
@@ -38,7 +51,6 @@
 #include "src/tint/lang/core/ir/function_param.h"
 #include "src/tint/lang/core/ir/if.h"
 #include "src/tint/lang/core/ir/instruction_result.h"
-#include "src/tint/lang/core/ir/intrinsic_call.h"
 #include "src/tint/lang/core/ir/let.h"
 #include "src/tint/lang/core/ir/load.h"
 #include "src/tint/lang/core/ir/load_vector_element.h"
@@ -104,11 +116,56 @@ class Builder {
     using DisableIfVectorLike = tint::traits::EnableIf<
         !tint::IsVectorLike<tint::traits::Decay<tint::traits::NthTypeOf<0, TYPES..., void>>>>;
 
-    /// If set, any created instruction will be auto-appended to the block.
-    ir::Block* current_block_ = nullptr;
+    /// A namespace for the various instruction insertion method
+    struct InsertionPoints {
+        /// Insertion point method that does no insertion
+        struct NoInsertion {
+            /// The insertion point function
+            void operator()(ir::Instruction*) {}
+        };
+        /// Insertion point method that inserts the instruction to the end of #block
+        struct AppendToBlock {
+            /// The block to insert new instructions to the end of
+            ir::Block* block = nullptr;
+            /// The insertion point function
+            /// @param i the instruction to insert
+            void operator()(ir::Instruction* i) { block->Append(i); }
+        };
+        /// Insertion point method that inserts the instruction to the front of #block
+        struct PrependToBlock {
+            /// The block to insert new instructions to the front of
+            ir::Block* block = nullptr;
+            /// The insertion point function
+            /// @param i the instruction to insert
+            void operator()(ir::Instruction* i) { block->Prepend(i); }
+        };
+        /// Insertion point method that inserts the instruction after #after
+        struct InsertAfter {
+            /// The instruction to insert new instructions after
+            ir::Instruction* after = nullptr;
+            /// The insertion point function
+            /// @param i the instruction to insert
+            void operator()(ir::Instruction* i) { i->InsertAfter(after); }
+        };
+        /// Insertion point method that inserts the instruction before #before
+        struct InsertBefore {
+            /// The instruction to insert new instructions before
+            ir::Instruction* before = nullptr;
+            /// The insertion point function
+            /// @param i the instruction to insert
+            void operator()(ir::Instruction* i) { i->InsertBefore(before); }
+        };
+    };
 
-    /// If set, any created instruction will be auto-inserted before this instruction.
-    ir::Instruction* current_insertion_point_ = nullptr;
+    /// A variant of different instruction insertion methods
+    using InsertionPoint = std::variant<InsertionPoints::NoInsertion,
+                                        InsertionPoints::AppendToBlock,
+                                        InsertionPoints::PrependToBlock,
+                                        InsertionPoints::InsertAfter,
+                                        InsertionPoints::InsertBefore>;
+
+    /// The insertion method used for new instructions.
+    InsertionPoint insertion_point_{InsertionPoints::NoInsertion{}};
 
   public:
     /// Constructor
@@ -116,7 +173,7 @@ class Builder {
     explicit Builder(Module& mod);
     /// Constructor
     /// @param mod the ir::Module to wrap with this builder
-    /// @param block the block to insert too
+    /// @param block the block to append to
     Builder(Module& mod, ir::Block* block);
     /// Destructor
     ~Builder();
@@ -131,8 +188,25 @@ class Builder {
     /// @param cb the function to call with the builder appending to block @p b
     template <typename FUNCTION>
     void Append(ir::Block* b, FUNCTION&& cb) {
-        TINT_SCOPED_ASSIGNMENT(current_block_, b);
-        TINT_SCOPED_ASSIGNMENT(current_insertion_point_, nullptr);
+        TINT_SCOPED_ASSIGNMENT(insertion_point_, InsertionPoints::AppendToBlock{b});
+        cb();
+    }
+
+    /// Calls @p cb with the builder prepending to block @p b
+    /// @param b the block to set as the block to prepend to
+    /// @param cb the function to call with the builder prepending to block @p b
+    template <typename FUNCTION>
+    void Prepend(ir::Block* b, FUNCTION&& cb) {
+        TINT_SCOPED_ASSIGNMENT(insertion_point_, InsertionPoints::PrependToBlock{b});
+        cb();
+    }
+
+    /// Calls @p cb with the builder inserting after @p ip
+    /// @param ip the insertion point for new instructions
+    /// @param cb the function to call with the builder inserting new instructions after @p ip
+    template <typename FUNCTION>
+    void InsertAfter(ir::Instruction* ip, FUNCTION&& cb) {
+        TINT_SCOPED_ASSIGNMENT(insertion_point_, InsertionPoints::InsertAfter{ip});
         cb();
     }
 
@@ -141,23 +215,18 @@ class Builder {
     /// @param cb the function to call with the builder inserting new instructions before @p ip
     template <typename FUNCTION>
     void InsertBefore(ir::Instruction* ip, FUNCTION&& cb) {
-        TINT_SCOPED_ASSIGNMENT(current_block_, nullptr);
-        TINT_SCOPED_ASSIGNMENT(current_insertion_point_, ip);
+        TINT_SCOPED_ASSIGNMENT(insertion_point_, InsertionPoints::InsertBefore{ip});
         cb();
     }
 
-    /// Appends and returns the instruction @p val to the current insertion point. If there is no
-    /// current insertion point set, then @p val is just returned.
-    /// @param val the instruction to append
+    /// Adds and returns the instruction @p instruction to the current insertion point. If there
+    /// is no current insertion point set, then @p instruction is just returned.
+    /// @param instruction the instruction to append
     /// @returns the instruction
     template <typename T>
-    T* Append(T* val) {
-        if (current_insertion_point_) {
-            val->InsertBefore(current_insertion_point_);
-        } else if (current_block_) {
-            current_block_->Append(val);
-        }
-        return val;
+    T* Append(T* instruction) {
+        std::visit([instruction](auto&& mode) { mode(instruction); }, insertion_point_);
+        return instruction;
     }
 
     /// @returns a new block
@@ -300,6 +369,11 @@ class Builder {
             ir.constant_values.Composite(ty, Vector{ConstantValue(std::forward<ARGS>(values))...}));
     }
 
+    /// Creates a new zero-value ir::Constant
+    /// @param ty the constant type
+    /// @returns the new constant
+    ir::Constant* Zero(const core::type::Type* ty) { return Constant(ir.constant_values.Zero(ty)); }
+
     /// @param in the input value. One of: nullptr, ir::Value*, ir::Instruction* or a numeric value.
     /// @returns an ir::Value* from the given argument.
     template <typename T>
@@ -356,18 +430,18 @@ class Builder {
     }
 
     /// Creates an op for `lhs kind rhs`
-    /// @param kind the kind of operation
+    /// @param op the binary operator
     /// @param type the result type of the binary expression
     /// @param lhs the left-hand-side of the operation
     /// @param rhs the right-hand-side of the operation
     /// @returns the operation
     template <typename LHS, typename RHS>
-    ir::Binary* Binary(enum Binary::Kind kind, const core::type::Type* type, LHS&& lhs, RHS&& rhs) {
+    ir::Binary* Binary(BinaryOp op, const core::type::Type* type, LHS&& lhs, RHS&& rhs) {
         CheckForNonDeterministicEvaluation<LHS, RHS>();
         auto* lhs_val = Value(std::forward<LHS>(lhs));
         auto* rhs_val = Value(std::forward<RHS>(rhs));
         return Append(
-            ir.instructions.Create<ir::Binary>(InstructionResult(type), kind, lhs_val, rhs_val));
+            ir.instructions.Create<ir::Binary>(InstructionResult(type), op, lhs_val, rhs_val));
     }
 
     /// Creates an And operation
@@ -377,7 +451,7 @@ class Builder {
     /// @returns the operation
     template <typename LHS, typename RHS>
     ir::Binary* And(const core::type::Type* type, LHS&& lhs, RHS&& rhs) {
-        return Binary(ir::Binary::Kind::kAnd, type, std::forward<LHS>(lhs), std::forward<RHS>(rhs));
+        return Binary(BinaryOp::kAnd, type, std::forward<LHS>(lhs), std::forward<RHS>(rhs));
     }
 
     /// Creates an Or operation
@@ -387,7 +461,7 @@ class Builder {
     /// @returns the operation
     template <typename LHS, typename RHS>
     ir::Binary* Or(const core::type::Type* type, LHS&& lhs, RHS&& rhs) {
-        return Binary(ir::Binary::Kind::kOr, type, std::forward<LHS>(lhs), std::forward<RHS>(rhs));
+        return Binary(BinaryOp::kOr, type, std::forward<LHS>(lhs), std::forward<RHS>(rhs));
     }
 
     /// Creates an Xor operation
@@ -397,7 +471,7 @@ class Builder {
     /// @returns the operation
     template <typename LHS, typename RHS>
     ir::Binary* Xor(const core::type::Type* type, LHS&& lhs, RHS&& rhs) {
-        return Binary(ir::Binary::Kind::kXor, type, std::forward<LHS>(lhs), std::forward<RHS>(rhs));
+        return Binary(BinaryOp::kXor, type, std::forward<LHS>(lhs), std::forward<RHS>(rhs));
     }
 
     /// Creates an Equal operation
@@ -407,8 +481,7 @@ class Builder {
     /// @returns the operation
     template <typename LHS, typename RHS>
     ir::Binary* Equal(const core::type::Type* type, LHS&& lhs, RHS&& rhs) {
-        return Binary(ir::Binary::Kind::kEqual, type, std::forward<LHS>(lhs),
-                      std::forward<RHS>(rhs));
+        return Binary(BinaryOp::kEqual, type, std::forward<LHS>(lhs), std::forward<RHS>(rhs));
     }
 
     /// Creates an NotEqual operation
@@ -418,8 +491,7 @@ class Builder {
     /// @returns the operation
     template <typename LHS, typename RHS>
     ir::Binary* NotEqual(const core::type::Type* type, LHS&& lhs, RHS&& rhs) {
-        return Binary(ir::Binary::Kind::kNotEqual, type, std::forward<LHS>(lhs),
-                      std::forward<RHS>(rhs));
+        return Binary(BinaryOp::kNotEqual, type, std::forward<LHS>(lhs), std::forward<RHS>(rhs));
     }
 
     /// Creates an LessThan operation
@@ -429,8 +501,7 @@ class Builder {
     /// @returns the operation
     template <typename LHS, typename RHS>
     ir::Binary* LessThan(const core::type::Type* type, LHS&& lhs, RHS&& rhs) {
-        return Binary(ir::Binary::Kind::kLessThan, type, std::forward<LHS>(lhs),
-                      std::forward<RHS>(rhs));
+        return Binary(BinaryOp::kLessThan, type, std::forward<LHS>(lhs), std::forward<RHS>(rhs));
     }
 
     /// Creates an GreaterThan operation
@@ -440,8 +511,7 @@ class Builder {
     /// @returns the operation
     template <typename LHS, typename RHS>
     ir::Binary* GreaterThan(const core::type::Type* type, LHS&& lhs, RHS&& rhs) {
-        return Binary(ir::Binary::Kind::kGreaterThan, type, std::forward<LHS>(lhs),
-                      std::forward<RHS>(rhs));
+        return Binary(BinaryOp::kGreaterThan, type, std::forward<LHS>(lhs), std::forward<RHS>(rhs));
     }
 
     /// Creates an LessThanEqual operation
@@ -451,7 +521,7 @@ class Builder {
     /// @returns the operation
     template <typename LHS, typename RHS>
     ir::Binary* LessThanEqual(const core::type::Type* type, LHS&& lhs, RHS&& rhs) {
-        return Binary(ir::Binary::Kind::kLessThanEqual, type, std::forward<LHS>(lhs),
+        return Binary(BinaryOp::kLessThanEqual, type, std::forward<LHS>(lhs),
                       std::forward<RHS>(rhs));
     }
 
@@ -462,7 +532,7 @@ class Builder {
     /// @returns the operation
     template <typename LHS, typename RHS>
     ir::Binary* GreaterThanEqual(const core::type::Type* type, LHS&& lhs, RHS&& rhs) {
-        return Binary(ir::Binary::Kind::kGreaterThanEqual, type, std::forward<LHS>(lhs),
+        return Binary(BinaryOp::kGreaterThanEqual, type, std::forward<LHS>(lhs),
                       std::forward<RHS>(rhs));
     }
 
@@ -473,8 +543,7 @@ class Builder {
     /// @returns the operation
     template <typename LHS, typename RHS>
     ir::Binary* ShiftLeft(const core::type::Type* type, LHS&& lhs, RHS&& rhs) {
-        return Binary(ir::Binary::Kind::kShiftLeft, type, std::forward<LHS>(lhs),
-                      std::forward<RHS>(rhs));
+        return Binary(BinaryOp::kShiftLeft, type, std::forward<LHS>(lhs), std::forward<RHS>(rhs));
     }
 
     /// Creates an ShiftRight operation
@@ -484,8 +553,7 @@ class Builder {
     /// @returns the operation
     template <typename LHS, typename RHS>
     ir::Binary* ShiftRight(const core::type::Type* type, LHS&& lhs, RHS&& rhs) {
-        return Binary(ir::Binary::Kind::kShiftRight, type, std::forward<LHS>(lhs),
-                      std::forward<RHS>(rhs));
+        return Binary(BinaryOp::kShiftRight, type, std::forward<LHS>(lhs), std::forward<RHS>(rhs));
     }
 
     /// Creates an Add operation
@@ -495,7 +563,7 @@ class Builder {
     /// @returns the operation
     template <typename LHS, typename RHS>
     ir::Binary* Add(const core::type::Type* type, LHS&& lhs, RHS&& rhs) {
-        return Binary(ir::Binary::Kind::kAdd, type, std::forward<LHS>(lhs), std::forward<RHS>(rhs));
+        return Binary(BinaryOp::kAdd, type, std::forward<LHS>(lhs), std::forward<RHS>(rhs));
     }
 
     /// Creates an Subtract operation
@@ -505,8 +573,7 @@ class Builder {
     /// @returns the operation
     template <typename LHS, typename RHS>
     ir::Binary* Subtract(const core::type::Type* type, LHS&& lhs, RHS&& rhs) {
-        return Binary(ir::Binary::Kind::kSubtract, type, std::forward<LHS>(lhs),
-                      std::forward<RHS>(rhs));
+        return Binary(BinaryOp::kSubtract, type, std::forward<LHS>(lhs), std::forward<RHS>(rhs));
     }
 
     /// Creates an Multiply operation
@@ -516,8 +583,7 @@ class Builder {
     /// @returns the operation
     template <typename LHS, typename RHS>
     ir::Binary* Multiply(const core::type::Type* type, LHS&& lhs, RHS&& rhs) {
-        return Binary(ir::Binary::Kind::kMultiply, type, std::forward<LHS>(lhs),
-                      std::forward<RHS>(rhs));
+        return Binary(BinaryOp::kMultiply, type, std::forward<LHS>(lhs), std::forward<RHS>(rhs));
     }
 
     /// Creates an Divide operation
@@ -527,8 +593,7 @@ class Builder {
     /// @returns the operation
     template <typename LHS, typename RHS>
     ir::Binary* Divide(const core::type::Type* type, LHS&& lhs, RHS&& rhs) {
-        return Binary(ir::Binary::Kind::kDivide, type, std::forward<LHS>(lhs),
-                      std::forward<RHS>(rhs));
+        return Binary(BinaryOp::kDivide, type, std::forward<LHS>(lhs), std::forward<RHS>(rhs));
     }
 
     /// Creates an Modulo operation
@@ -538,19 +603,18 @@ class Builder {
     /// @returns the operation
     template <typename LHS, typename RHS>
     ir::Binary* Modulo(const core::type::Type* type, LHS&& lhs, RHS&& rhs) {
-        return Binary(ir::Binary::Kind::kModulo, type, std::forward<LHS>(lhs),
-                      std::forward<RHS>(rhs));
+        return Binary(BinaryOp::kModulo, type, std::forward<LHS>(lhs), std::forward<RHS>(rhs));
     }
 
-    /// Creates an op for `kind val`
-    /// @param kind the kind of operation
+    /// Creates an op for `op val`
+    /// @param op the unary operator
     /// @param type the result type of the binary expression
     /// @param val the value of the operation
     /// @returns the operation
     template <typename VAL>
-    ir::Unary* Unary(enum Unary::Kind kind, const core::type::Type* type, VAL&& val) {
+    ir::Unary* Unary(UnaryOp op, const core::type::Type* type, VAL&& val) {
         auto* value = Value(std::forward<VAL>(val));
-        return Append(ir.instructions.Create<ir::Unary>(InstructionResult(type), kind, value));
+        return Append(ir.instructions.Create<ir::Unary>(InstructionResult(type), op, value));
     }
 
     /// Creates a Complement operation
@@ -559,7 +623,7 @@ class Builder {
     /// @returns the operation
     template <typename VAL>
     ir::Unary* Complement(const core::type::Type* type, VAL&& val) {
-        return Unary(ir::Unary::Kind::kComplement, type, std::forward<VAL>(val));
+        return Unary(ir::UnaryOp::kComplement, type, std::forward<VAL>(val));
     }
 
     /// Creates a Negation operation
@@ -568,7 +632,7 @@ class Builder {
     /// @returns the operation
     template <typename VAL>
     ir::Unary* Negation(const core::type::Type* type, VAL&& val) {
-        return Unary(ir::Unary::Kind::kNegation, type, std::forward<VAL>(val));
+        return Unary(ir::UnaryOp::kNegation, type, std::forward<VAL>(val));
     }
 
     /// Creates a Not operation
@@ -599,6 +663,15 @@ class Builder {
     ir::Discard* Discard();
 
     /// Creates a user function call instruction
+    /// @param func the function to call
+    /// @param args the call arguments
+    /// @returns the instruction
+    template <typename... ARGS>
+    ir::UserCall* Call(ir::Function* func, ARGS&&... args) {
+        return Call(func->ReturnType(), func, std::forward<ARGS>(args)...);
+    }
+
+    /// Creates a user function call instruction
     /// @param type the return type of the call
     /// @param func the function to call
     /// @param args the call arguments
@@ -615,22 +688,30 @@ class Builder {
     /// @param args the call arguments
     /// @returns the instruction
     template <typename... ARGS>
-    ir::CoreBuiltinCall* Call(const core::type::Type* type, core::Function func, ARGS&&... args) {
+    ir::CoreBuiltinCall* Call(const core::type::Type* type, core::BuiltinFn func, ARGS&&... args) {
         return Append(ir.instructions.Create<ir::CoreBuiltinCall>(
             InstructionResult(type), func, Values(std::forward<ARGS>(args)...)));
     }
 
-    /// Creates an intrinsic call instruction
+    /// Creates a core builtin call instruction
     /// @param type the return type of the call
-    /// @param kind the intrinsic function to call
+    /// @param func the builtin function to call
     /// @param args the call arguments
-    /// @returns the intrinsic call instruction
-    template <typename... ARGS>
-    ir::IntrinsicCall* Call(const core::type::Type* type,
-                            enum IntrinsicCall::Kind kind,
-                            ARGS&&... args) {
-        return Append(ir.instructions.Create<ir::IntrinsicCall>(
-            InstructionResult(type), kind, Values(std::forward<ARGS>(args)...)));
+    /// @returns the instruction
+    template <typename KLASS, typename FUNC, typename... ARGS>
+    tint::traits::EnableIf<tint::traits::IsTypeOrDerived<KLASS, ir::BuiltinCall>, KLASS*>
+    Call(const core::type::Type* type, FUNC func, ARGS&&... args) {
+        return Append(ir.instructions.Create<KLASS>(InstructionResult(type), func,
+                                                    Values(std::forward<ARGS>(args)...)));
+    }
+
+    /// Creates a value conversion instruction to the template type T
+    /// @param val the value to be converted
+    /// @returns the instruction
+    template <typename T, typename VAL>
+    ir::Convert* Convert(VAL&& val) {
+        auto* type = ir.Types().Get<T>();
+        return Convert(type, std::forward<VAL>(val));
     }
 
     /// Creates a value conversion instruction
@@ -641,6 +722,15 @@ class Builder {
     ir::Convert* Convert(const core::type::Type* to, VAL&& val) {
         return Append(ir.instructions.Create<ir::Convert>(InstructionResult(to),
                                                           Value(std::forward<VAL>(val))));
+    }
+
+    /// Creates a value constructor instruction to the template type T
+    /// @param args the arguments to the constructor
+    /// @returns the instruction
+    template <typename T, typename... ARGS>
+    ir::Construct* Construct(ARGS&&... args) {
+        auto* type = ir.Types().Get<T>();
+        return Construct(type, std::forward<ARGS>(args)...);
     }
 
     /// Creates a value constructor instruction
@@ -713,6 +803,48 @@ class Builder {
     /// @returns the instruction
     ir::Var* Var(std::string_view name, const core::type::Pointer* type);
 
+    /// Creates a new `var` declaration with a name and initializer value
+    /// @tparam SPACE the var's address space
+    /// @tparam ACCESS the var's access mode
+    /// @param name the var name
+    /// @param init the var initializer
+    /// @returns the instruction
+    template <core::AddressSpace SPACE = core::AddressSpace::kFunction,
+              core::Access ACCESS = core::Access::kReadWrite,
+              typename VALUE = void>
+    ir::Var* Var(std::string_view name, VALUE&& init) {
+        auto* val = Value(std::forward<VALUE>(init));
+        if (TINT_UNLIKELY(!val)) {
+            TINT_ASSERT(val);
+            return nullptr;
+        }
+        auto* var = Var(name, ir.Types().ptr(SPACE, val->Type(), ACCESS));
+        var->SetInitializer(val);
+        ir.SetName(var->Result(), name);
+        return var;
+    }
+
+    /// Creates a new `var` declaration
+    /// @tparam SPACE the var's address space
+    /// @tparam T the storage pointer's element type
+    /// @tparam ACCESS the var's access mode
+    /// @returns the instruction
+    template <core::AddressSpace SPACE, typename T, core::Access ACCESS = core::Access::kReadWrite>
+    ir::Var* Var() {
+        return Var(ir.Types().ptr<SPACE, T, ACCESS>());
+    }
+
+    /// Creates a new `var` declaration with a name
+    /// @tparam SPACE the var's address space
+    /// @tparam T the storage pointer's element type
+    /// @tparam ACCESS the var's access mode
+    /// @param name the var name
+    /// @returns the instruction
+    template <core::AddressSpace SPACE, typename T, core::Access ACCESS = core::Access::kReadWrite>
+    ir::Var* Var(std::string_view name) {
+        return Var(name, ir.Types().ptr<SPACE, T, ACCESS>());
+    }
+
     /// Creates a new `let` declaration
     /// @param name the let name
     /// @param value the let value
@@ -725,7 +857,6 @@ class Builder {
             return nullptr;
         }
         auto* let = Append(ir.instructions.Create<ir::Let>(InstructionResult(val->Type()), val));
-        ir.SetName(let, name);
         ir.SetName(let->Result(), name);
         return let;
     }
@@ -895,10 +1026,6 @@ class Builder {
     /// Creates an unreachable instruction
     /// @returns the instruction
     ir::Unreachable* Unreachable();
-
-    /// Retrieves the root block for the module, creating if necessary
-    /// @returns the root block
-    ir::Block* RootBlock();
 
     /// Creates a new runtime value
     /// @param type the return type

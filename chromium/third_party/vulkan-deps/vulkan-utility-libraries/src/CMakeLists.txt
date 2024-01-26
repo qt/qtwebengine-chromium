@@ -19,27 +19,13 @@ set(CMAKE_CXX_VISIBILITY_PRESET "hidden")
 set(CMAKE_C_VISIBILITY_PRESET "hidden")
 set(CMAKE_VISIBILITY_INLINES_HIDDEN "YES")
 
+# This variable enables downstream users to customize the target API
+# variant (e.g. Vulkan SC)
+set(API_TYPE "vulkan")
+
 add_subdirectory(scripts)
 
 find_package(VulkanHeaders CONFIG QUIET)
-
-option(VUL_WERROR "Treat compiler warnings as errors")
-if (VUL_WERROR)
-    add_compile_options("$<IF:$<CXX_COMPILER_ID:MSVC>,/WX,-Werror>")
-    if (MSVC)
-        add_link_options(/WX)
-    endif()
-endif()
-
-if(${CMAKE_CXX_COMPILER_ID} MATCHES "(GNU|Clang)")
-    add_compile_options(
-        -Wall
-        -Wextra
-    )
-endif()
-
-add_library(VulkanUtilityHeaders INTERFACE)
-add_library(Vulkan::UtilityHeaders ALIAS VulkanUtilityHeaders)
 
 add_subdirectory(src)
 add_subdirectory(include)
@@ -53,10 +39,23 @@ if (VUL_IS_TOP_LEVEL)
 
     include(GNUInstallDirs)
 
-    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include/vulkan" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+    install(
+        DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include/${API_TYPE}/"
+        DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/vulkan"
+        PATTERN ".clang-format" EXCLUDE
+    )
 
     set_target_properties(VulkanLayerSettings PROPERTIES EXPORT_NAME "LayerSettings")
     set_target_properties(VulkanUtilityHeaders PROPERTIES EXPORT_NAME "UtilityHeaders")
-    install(TARGETS VulkanLayerSettings VulkanUtilityHeaders EXPORT VulkanUtilityLibrariesConfig INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-    install(EXPORT VulkanUtilityLibrariesConfig DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/VulkanUtilityLibraries NAMESPACE Vulkan::)
+    set_target_properties(VulkanCompilerConfiguration PROPERTIES EXPORT_NAME "CompilerConfiguration")
+    install(
+        TARGETS VulkanLayerSettings VulkanUtilityHeaders VulkanCompilerConfiguration
+        EXPORT VulkanUtilityLibrariesConfig
+        INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    )
+    install(
+        EXPORT VulkanUtilityLibrariesConfig
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/VulkanUtilityLibraries
+        NAMESPACE Vulkan::
+    )
 endif()

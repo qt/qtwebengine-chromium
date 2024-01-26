@@ -20,6 +20,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 #include <libxml/parser.h>
+#include <time.h>
 #include "libavutil/bprint.h"
 #include "libavutil/opt.h"
 #include "libavutil/time.h"
@@ -28,6 +29,7 @@
 #include "avio_internal.h"
 #include "dash.h"
 #include "demux.h"
+#include "url.h"
 
 #define INITIAL_BUFFER_SIZE 32768
 

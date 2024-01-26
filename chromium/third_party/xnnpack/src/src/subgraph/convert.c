@@ -11,6 +11,7 @@
 #include <xnnpack.h>
 #include <xnnpack/log.h>
 #include <xnnpack/operator.h>
+#include <xnnpack/operator-type.h>
 #include <xnnpack/params.h>
 #include <xnnpack/subgraph.h>
 #include <xnnpack/subgraph-validation.h>
@@ -22,7 +23,8 @@ static enum xnn_status create_convert_operator(
   const struct xnn_value* values,
   size_t num_values,
   struct xnn_operator_data* opdata,
-  const struct xnn_caches* caches)
+  struct xnn_code_cache* code_cache,
+  struct xnn_weights_cache* weights_cache)
 {
   assert(node->num_inputs == 1);
   const uint32_t input_id = node->inputs[0];
@@ -41,6 +43,12 @@ static enum xnn_status create_convert_operator(
   switch (node->compute_type) {
     case xnn_compute_type_fp32_to_fp16:
       status = xnn_create_convert_nc_f32_f16(
+        channel_dim /* channels */, channel_dim /* input stride */, channel_dim /* output stride */,
+        node->flags,
+        &opdata->operator_objects[0]);
+      break;
+    case xnn_compute_type_fp32_to_qd8:
+      status = xnn_create_convert_nc_f32_qd8(
         channel_dim /* channels */, channel_dim /* input stride */, channel_dim /* output stride */,
         node->flags,
         &opdata->operator_objects[0]);
@@ -108,93 +116,142 @@ static enum xnn_status create_convert_operator(
     default:
       XNN_UNREACHABLE;
   }
-  if (status == xnn_status_success) {
-    opdata->batch_size = xnn_shape_multiply_non_channel_dims(&values[input_id].shape);
-    opdata->inputs[0] = input_id;
-    opdata->outputs[0] = output_id;
-  }
   return status;
+}
+
+static enum xnn_status reshape_convert_operator(
+  struct xnn_operator_data* opdata,
+  const struct xnn_value* values,
+  size_t num_values,
+  pthreadpool_t threadpool)
+{
+  const uint32_t input_id = opdata->inputs[0];
+  assert(input_id < num_values);
+  const size_t batch_size = xnn_shape_multiply_non_channel_dims(&values[input_id].shape);
+  switch (opdata->operator_objects[0]->type) {
+    case xnn_operator_type_convert_nc_f32_f16:
+      return xnn_reshape_convert_nc_f32_f16(
+        opdata->operator_objects[0],
+        batch_size,
+        threadpool);
+    case xnn_operator_type_convert_nc_f32_qd8:
+      return xnn_reshape_convert_nc_f32_qd8(
+        opdata->operator_objects[0],
+        batch_size,
+        threadpool);
+    case xnn_operator_type_convert_nc_f32_qs8:
+      return xnn_reshape_convert_nc_f32_qs8(
+        opdata->operator_objects[0],
+        batch_size,
+        threadpool);
+    case xnn_operator_type_convert_nc_f32_qu8:
+      return xnn_reshape_convert_nc_f32_qu8(
+        opdata->operator_objects[0],
+        batch_size,
+        threadpool);
+    case xnn_operator_type_convert_nc_f16_f32:
+      return xnn_reshape_convert_nc_f16_f32(
+        opdata->operator_objects[0],
+        batch_size,
+        threadpool);
+    case xnn_operator_type_convert_nc_qs8:
+      return xnn_reshape_convert_nc_qs8(
+        opdata->operator_objects[0],
+        batch_size,
+        threadpool);
+    case xnn_operator_type_convert_nc_qs8_f32:
+      return xnn_reshape_convert_nc_qs8_f32(
+        opdata->operator_objects[0],
+        batch_size,
+        threadpool);
+    case xnn_operator_type_convert_nc_qu8:
+      return xnn_reshape_convert_nc_qu8(
+        opdata->operator_objects[0],
+        batch_size,
+        threadpool);
+    case xnn_operator_type_convert_nc_qu8_f32:
+      return xnn_reshape_convert_nc_qu8_f32(
+        opdata->operator_objects[0],
+        batch_size,
+        threadpool);
+    default:
+      XNN_UNREACHABLE;
+  }
 }
 
 static enum xnn_status setup_convert_operator(
   const struct xnn_operator_data* opdata,
-  const struct xnn_blob* blobs,
-  size_t num_blobs,
+  const struct xnn_value* values,
+  size_t num_values,
   pthreadpool_t threadpool)
 {
   const uint32_t input_id = opdata->inputs[0];
   assert(input_id != XNN_INVALID_VALUE_ID);
-  assert(input_id < num_blobs);
+  assert(input_id < num_values);
 
   const uint32_t output_id = opdata->outputs[0];
   assert(output_id != XNN_INVALID_VALUE_ID);
-  assert(output_id < num_blobs);
+  assert(output_id < num_values);
 
-  const struct xnn_blob* input_blob = blobs + input_id;
-  const void* input_data = input_blob->data;
+  const struct xnn_value* input_value = values + input_id;
+  const void* input_data = input_value->data;
   assert(input_data != NULL);
 
-  const struct xnn_blob* output_blob = blobs + output_id;
-  void* output_data = output_blob->data;
+  const struct xnn_value* output_value = values + output_id;
+  void* output_data = output_value->data;
   assert(output_data != NULL);
 
   switch (opdata->operator_objects[0]->type) {
     case xnn_operator_type_convert_nc_f32_f16:
       return xnn_setup_convert_nc_f32_f16(
         opdata->operator_objects[0],
-        opdata->batch_size,
+        input_data,
+        output_data);
+    case xnn_operator_type_convert_nc_f32_qd8:
+    {
+      void* quantization_params = output_value->quantization.dynamic_params;
+      assert(quantization_params != NULL);
+      return xnn_setup_convert_nc_f32_qd8(
+        opdata->operator_objects[0],
         input_data,
         output_data,
-        threadpool);
+        quantization_params);
+    }
     case xnn_operator_type_convert_nc_f32_qs8:
       return xnn_setup_convert_nc_f32_qs8(
         opdata->operator_objects[0],
-        opdata->batch_size,
         input_data,
-        output_data,
-        threadpool);
+        output_data);
     case xnn_operator_type_convert_nc_f32_qu8:
       return xnn_setup_convert_nc_f32_qu8(
         opdata->operator_objects[0],
-        opdata->batch_size,
         input_data,
-        output_data,
-        threadpool);
+        output_data);
     case xnn_operator_type_convert_nc_f16_f32:
       return xnn_setup_convert_nc_f16_f32(
         opdata->operator_objects[0],
-        opdata->batch_size,
         input_data,
-        output_data,
-        threadpool);
+        output_data);
     case xnn_operator_type_convert_nc_qs8:
       return xnn_setup_convert_nc_qs8(
         opdata->operator_objects[0],
-        opdata->batch_size,
         input_data,
-        output_data,
-        threadpool);
+        output_data);
     case xnn_operator_type_convert_nc_qs8_f32:
       return xnn_setup_convert_nc_qs8_f32(
         opdata->operator_objects[0],
-        opdata->batch_size,
         input_data,
-        output_data,
-        threadpool);
+        output_data);
     case xnn_operator_type_convert_nc_qu8:
       return xnn_setup_convert_nc_qu8(
         opdata->operator_objects[0],
-        opdata->batch_size,
         input_data,
-        output_data,
-        threadpool);
+        output_data);
     case xnn_operator_type_convert_nc_qu8_f32:
       return xnn_setup_convert_nc_qu8_f32(
         opdata->operator_objects[0],
-        opdata->batch_size,
         input_data,
-        output_data,
-        threadpool);
+        output_data);
     default:
       XNN_UNREACHABLE;
   }
@@ -209,6 +266,8 @@ static inline enum xnn_compute_type validate_datatypes(
       switch (output_datatype) {
         case xnn_datatype_fp16:
           return xnn_compute_type_fp32_to_fp16;
+        case xnn_datatype_qdint8:
+          return xnn_compute_type_fp32_to_qd8;
         case xnn_datatype_qint8:
           return xnn_compute_type_fp32_to_qs8;
         case xnn_datatype_quint8:
@@ -264,6 +323,7 @@ void xnn_init_convert_node(
   node->flags = flags;
 
   node->create = create_convert_operator;
+  node->reshape = reshape_convert_operator;
   node->setup = setup_convert_operator;
 }
 
@@ -322,6 +382,7 @@ enum xnn_status xnn_define_convert(
   switch (output_value->datatype) {
     case xnn_datatype_fp16:
     case xnn_datatype_fp32:
+    case xnn_datatype_qdint8:
     case xnn_datatype_qint8:
     case xnn_datatype_quint8:
       break;

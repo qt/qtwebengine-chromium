@@ -13,7 +13,13 @@ template <class Callback>
 class CallWithReduceArgsHelper {
  public:
   explicit CallWithReduceArgsHelper(Callback callback)
-      : callback_(std::move(callback)) {}
+      : callback_(std::move(callback)) {
+#define TEST(op) \
+  static_assert( \
+      std::is_same_v<decltype((*this)(std::declval<op##Op>())), OpIndex>);
+    TURBOSHAFT_OPERATION_LIST(TEST)
+#undef TEST
+  }
 
   OpIndex operator()(const GotoOp& op) { return callback_(op.destination); }
 
@@ -170,7 +176,8 @@ class CallWithReduceArgsHelper {
   OpIndex operator()(const StoreOp& op) {
     return callback_(op.base(), op.index(), op.value(), op.kind, op.stored_rep,
                      op.write_barrier, op.offset, op.element_size_log2,
-                     op.maybe_initializing_or_transitioning);
+                     op.maybe_initializing_or_transitioning,
+                     op.indirect_pointer_tag());
   }
 
   OpIndex operator()(const AllocateOp& op) {
@@ -208,9 +215,11 @@ class CallWithReduceArgsHelper {
                      op.parameters);
   }
 
+#if V8_ENABLE_WEBASSEMBLY
   OpIndex operator()(const TrapIfOp& op) {
     return callback_(op.condition(), op.frame_state(), op.negated, op.trap_id);
   }
+#endif
 
   OpIndex operator()(const ProjectionOp& op) {
     return callback_(op.input(), op.index, op.rep);
@@ -417,6 +426,25 @@ class CallWithReduceArgsHelper {
     return callback_(const_cast<TupleOp&>(tuple).inputs());
   }
 
+  OpIndex operator()(const AtomicRMWOp& op) {
+    return callback_(op.base(), op.index(), op.value(), op.expected(),
+                     op.bin_op, op.result_rep, op.input_rep,
+                     op.memory_access_kind);
+  }
+
+  OpIndex operator()(const AtomicWord32PairOp& op) {
+    return callback_(op.base(), op.index(), op.value_low(), op.value_high(),
+                     op.expected_low(), op.expected_high(), op.kind, op.offset);
+  }
+
+  OpIndex operator()(const MemoryBarrierOp& op) {
+    return callback_(op.memory_order);
+  }
+
+  OpIndex operator()(const StackCheckOp& op) {
+    return callback_(op.check_origin, op.check_kind);
+  }
+
 #ifdef V8_ENABLE_WEBASSEMBLY
   OpIndex operator()(const GlobalGetOp& op) {
     return callback_(op.instance(), op.global);
@@ -446,6 +474,110 @@ class CallWithReduceArgsHelper {
 
   OpIndex operator()(const WasmTypeCastOp& op) {
     return callback_(op.object(), op.rtt(), op.config);
+  }
+
+  OpIndex operator()(const StructGetOp& op) {
+    return callback_(op.object(), op.type, op.type_index, op.field_index,
+                     op.is_signed, op.null_check);
+  }
+
+  OpIndex operator()(const StructSetOp& op) {
+    return callback_(op.object(), op.value(), op.type, op.type_index,
+                     op.field_index, op.null_check);
+  }
+
+  OpIndex operator()(const ArrayGetOp& op) {
+    return callback_(op.array(), op.index(), op.element_type, op.is_signed);
+  }
+
+  OpIndex operator()(const ArraySetOp& op) {
+    return callback_(op.array(), op.index(), op.value(), op.element_type);
+  }
+
+  OpIndex operator()(const ArrayLengthOp& op) {
+    return callback_(op.array(), op.null_check);
+  }
+
+  OpIndex operator()(const WasmAllocateArrayOp& op) {
+    return callback_(op.rtt(), op.length(), op.array_type);
+  }
+
+  OpIndex operator()(const WasmAllocateStructOp& op) {
+    return callback_(op.rtt(), op.struct_type);
+  }
+
+  OpIndex operator()(const WasmRefFuncOp& op) {
+    return callback_(op.instance(), op.function_index);
+  }
+
+  OpIndex operator()(const Simd128ConstantOp& op) {
+    return callback_(op.value);
+  }
+
+  OpIndex operator()(const Simd128BinopOp& op) {
+    return callback_(op.left(), op.right(), op.kind);
+  }
+
+  OpIndex operator()(const Simd128UnaryOp& op) {
+    return callback_(op.input(), op.kind);
+  }
+
+  OpIndex operator()(const Simd128ShiftOp& op) {
+    return callback_(op.input(), op.shift(), op.kind);
+  }
+
+  OpIndex operator()(const Simd128TestOp& op) {
+    return callback_(op.input(), op.kind);
+  }
+
+  OpIndex operator()(const Simd128SplatOp& op) {
+    return callback_(op.input(), op.kind);
+  }
+
+  OpIndex operator()(const Simd128TernaryOp& op) {
+    return callback_(op.first(), op.second(), op.third(), op.kind);
+  }
+
+  OpIndex operator()(const Simd128ExtractLaneOp& op) {
+    return callback_(op.input(), op.kind, op.lane);
+  }
+
+  OpIndex operator()(const Simd128ReplaceLaneOp& op) {
+    return callback_(op.into(), op.new_lane(), op.kind, op.lane);
+  }
+
+  OpIndex operator()(const Simd128LaneMemoryOp& op) {
+    return callback_(op.base(), op.index(), op.value(), op.mode, op.kind,
+                     op.lane_kind, op.lane, op.offset);
+  }
+
+  OpIndex operator()(const Simd128LoadTransformOp& op) {
+    return callback_(op.base(), op.index(), op.load_kind, op.transform_kind,
+                     op.offset);
+  }
+
+  OpIndex operator()(const Simd128ShuffleOp& op) {
+    return callback_(op.left(), op.right(), op.shuffle);
+  }
+
+  OpIndex operator()(const StringAsWtf16Op& op) {
+    return callback_(op.string());
+  }
+
+  OpIndex operator()(const StringPrepareForGetCodeUnitOp& op) {
+    return callback_(op.string());
+  }
+
+  OpIndex operator()(const ExternConvertAnyOp& op) {
+    return callback_(op.object());
+  }
+
+  OpIndex operator()(const AnyConvertExternOp& op) {
+    return callback_(op.object());
+  }
+
+  OpIndex operator()(const WasmTypeAnnotationOp& op) {
+    return callback_(op.value(), op.type);
   }
 #endif
 

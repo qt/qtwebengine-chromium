@@ -13,21 +13,25 @@
 // limitations under the License.
 
 import m from 'mithril';
+import {v4 as uuidv4} from 'uuid';
 
-import {Actions, DEBUG_SLICE_TRACK_KIND} from '../../common/actions';
+import {Disposable} from '../../base/disposable';
+import {Actions} from '../../common/actions';
 import {EngineProxy} from '../../common/engine';
+import {SCROLLING_TRACK_GROUP} from '../../common/state';
 import {globals} from '../../frontend/globals';
 import {
   NamedSliceTrackTypes,
 } from '../../frontend/named_slice_track';
-import {NewTrackArgs} from '../../frontend/track';
-import {TrackButton, TrackButtonAttrs} from '../../frontend/track_panel';
+import {TrackButton} from '../../frontend/track_panel';
+import {PrimaryTrackSortKey, TrackContext} from '../../public';
 import {
   CustomSqlDetailsPanelConfig,
   CustomSqlTableDefConfig,
   CustomSqlTableSliceTrack,
 } from '../custom_sql_table_slices';
 
+import {DEBUG_SLICE_TRACK_URI} from '.';
 import {ARG_PREFIX} from './add_debug_track_menu';
 import {DebugSliceDetailsTab} from './details_tab';
 
@@ -48,14 +52,18 @@ interface DebugTrackV2Types extends NamedSliceTrackTypes {
 }
 
 export class DebugTrackV2 extends CustomSqlTableSliceTrack<DebugTrackV2Types> {
-  static readonly kind = DEBUG_SLICE_TRACK_KIND;
-
-  static create(args: NewTrackArgs) {
-    return new DebugTrackV2(args);
+  constructor(engine: EngineProxy, trackKey: string) {
+    super({
+      engine,
+      trackKey,
+    });
   }
 
-  constructor(args: NewTrackArgs) {
-    super(args);
+  onCreate(ctx: TrackContext): void {
+    // TODO(stevegolton): Validate params before type asserting.
+    // TODO(stevegolton): Avoid just pushing this config up for some base
+    // class to use. Be more explicit.
+    this.config = ctx.params as DebugTrackV2Config;
   }
 
   getSqlDataSource(): CustomSqlTableDefConfig {
@@ -74,19 +82,19 @@ export class DebugTrackV2 extends CustomSqlTableSliceTrack<DebugTrackV2Types> {
     };
   }
 
-  async initSqlTable(tableName: string): Promise<void> {
-    super.initSqlTable(tableName);
+  async onInit(): Promise<Disposable> {
+    return super.onInit();
   }
 
-  getTrackShellButtons(): Array<m.Vnode<TrackButtonAttrs>> {
-    return [m(TrackButton, {
+  getTrackShellButtons(): m.Children {
+    return m(TrackButton, {
       action: () => {
-        globals.dispatch(Actions.removeDebugTrack({trackId: this.trackId}));
+        globals.dispatch(Actions.removeTracks({trackKeys: [this.trackKey]}));
       },
       i: 'close',
       tooltip: 'Close',
       showButton: true,
-    })];
+    });
   }
 }
 
@@ -100,7 +108,7 @@ export interface SqlDataSource {
   columns: string[];
 }
 
-export async function addDebugTrack(
+export async function addDebugSliceTrack(
     engine: EngineProxy,
     data: SqlDataSource,
     trackName: string,
@@ -140,12 +148,19 @@ export async function addDebugTrack(
       from prepared_data
       order by ts;`);
 
-  globals.dispatch(Actions.addDebugTrack({
-    engineId: engine.engineId,
-    name: trackName.trim() || `Debug Track ${debugTrackId}`,
-    config: {
-      sqlTableName,
-      columns: sliceColumns,
-    },
-  }));
+  const trackKey = uuidv4();
+  globals.dispatchMultiple([
+    Actions.addTrack({
+      key: trackKey,
+      name: trackName.trim() || `Debug Track ${debugTrackId}`,
+      uri: DEBUG_SLICE_TRACK_URI,
+      trackSortKey: PrimaryTrackSortKey.DEBUG_TRACK,
+      trackGroup: SCROLLING_TRACK_GROUP,
+      params: {
+        sqlTableName,
+        columns: sliceColumns,
+      },
+    }),
+    Actions.toggleTrackPinned({trackKey}),
+  ]);
 }

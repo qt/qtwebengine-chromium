@@ -20,8 +20,8 @@
 #include <xnnpack/intrinsics-polyfill.h>
 #include <xnnpack/math.h>
 #include <xnnpack/maxpool.h>
-#include <xnnpack/packx.h>
 #include <xnnpack/pavgpool.h>
+#include <xnnpack/reduce.h>
 #include <xnnpack/rmax.h>
 #include <xnnpack/spmm.h>
 #include <xnnpack/transpose.h>
@@ -5479,10 +5479,10 @@ void xnn_f32_gemm_minmax_ukernel_1x8__sse_load1(
     size_t mr,
     size_t nc,
     size_t kc,
-    const float*restrict a,
+    const float* restrict a,
     size_t a_stride,
-    const float*restrict w,
-    float*restrict c,
+    const float* restrict w,
+    float* restrict c,
     size_t cm_stride,
     size_t cn_stride,
     const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
@@ -5710,10 +5710,10 @@ void xnn_f32_gemm_minmax_ukernel_4x8__sse_load1(
     size_t mr,
     size_t nc,
     size_t kc,
-    const float*restrict a,
+    const float* restrict a,
     size_t a_stride,
-    const float*restrict w,
-    float*restrict c,
+    const float* restrict w,
+    float* restrict c,
     size_t cm_stride,
     size_t cn_stride,
     const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
@@ -5874,10 +5874,10 @@ void xnn_f32_gemm_minmax_ukernel_4x8__sse_load1(
 void xnn_f32_ibilinear_chw_ukernel__sse_p8(
     size_t output_pixels,
     size_t channels,
-    const float**restrict input,
+    const float** restrict input,
     size_t input_offset,
-    const float*restrict weights,
-    float*restrict output,
+    const float* restrict weights,
+    float* restrict output,
     size_t input_increment) XNN_OOB_READS
 {
   assert(output_pixels != 0);
@@ -6093,10 +6093,10 @@ void xnn_f32_ibilinear_chw_ukernel__sse_p8(
 void xnn_f32_ibilinear_ukernel__sse_c8(
     size_t output_pixels,
     size_t channels,
-    const float**restrict input,
+    const float** restrict input,
     size_t input_offset,
-    const float*restrict weights,
-    float*restrict output,
+    const float* restrict weights,
+    float* restrict output,
     size_t output_increment) XNN_OOB_READS
 {
   assert(output_pixels != 0);
@@ -6210,9 +6210,9 @@ void xnn_f32_igemm_minmax_ukernel_1x8__sse_load1(
     size_t nc,
     size_t kc,
     size_t ks,
-    const float**restrict a,
-    const float*restrict w,
-    float*restrict c,
+    const float** restrict a,
+    const float* restrict w,
+    float* restrict c,
     size_t cm_stride,
     size_t cn_stride,
     size_t a_offset,
@@ -6307,9 +6307,9 @@ void xnn_f32_igemm_minmax_ukernel_4x2c4__sse(
     size_t nc,
     size_t kc,
     size_t ks,
-    const float**restrict a,
-    const float*restrict w,
-    float*restrict c,
+    const float** restrict a,
+    const float* restrict w,
+    float* restrict c,
     size_t cm_stride,
     size_t cn_stride,
     size_t a_offset,
@@ -6471,9 +6471,9 @@ void xnn_f32_igemm_minmax_ukernel_4x8__sse_load1(
     size_t nc,
     size_t kc,
     size_t ks,
-    const float**restrict a,
-    const float*restrict w,
-    float*restrict c,
+    const float** restrict a,
+    const float* restrict w,
+    float* restrict c,
     size_t cm_stride,
     size_t cn_stride,
     size_t a_offset,
@@ -7399,7 +7399,8 @@ void xnn_f32_pavgpool_minmax_ukernel_9x__sse_c4(
 void xnn_f32_rmax_ukernel__sse(
     size_t batch,
     const float* input,
-    float* output)
+    float* output,
+    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -7439,6 +7440,122 @@ void xnn_f32_rmax_ukernel__sse(
     } while (batch != 0);
   }
   _mm_store_ss(output, vmax_lo);
+}
+
+void xnn_f32_rminmax_ukernel__sse_u16_acc4(
+    size_t batch,
+    const float* input,
+    float* output,
+    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+{
+  assert(batch != 0);
+  assert(batch % sizeof(float) == 0);
+  assert(input != NULL);
+  assert(output != NULL);
+
+  __m128 vmin0 = _mm_load_ss(input);
+  vmin0 = _mm_shuffle_ps(vmin0, vmin0, _MM_SHUFFLE(0, 0, 0, 0));
+  __m128 vmax0 = vmin0;
+  __m128 vmin1 = vmin0;
+  __m128 vmax1 = vmax0;
+  __m128 vmin2 = vmin0;
+  __m128 vmax2 = vmax0;
+  __m128 vmin3 = vmin0;
+  __m128 vmax3 = vmax0;
+  for (; batch >= 16 * sizeof(float); batch -= 16 * sizeof(float)) {
+    const __m128 vt0 = _mm_loadu_ps(input);
+    const __m128 vt1 = _mm_loadu_ps(input + 4);
+    const __m128 vt2 = _mm_loadu_ps(input + 8);
+    const __m128 vt3 = _mm_loadu_ps(input + 12);
+    input += 16;
+
+    vmin0 = _mm_min_ps(vmin0, vt0);
+    vmax0 = _mm_max_ps(vmax0, vt0);
+    vmin1 = _mm_min_ps(vmin1, vt1);
+    vmax1 = _mm_max_ps(vmax1, vt1);
+    vmin2 = _mm_min_ps(vmin2, vt2);
+    vmax2 = _mm_max_ps(vmax2, vt2);
+    vmin3 = _mm_min_ps(vmin3, vt3);
+    vmax3 = _mm_max_ps(vmax3, vt3);
+  }
+  vmin0 = _mm_min_ps(vmin0, vmin1);
+  vmax0 = _mm_max_ps(vmax0, vmax1);
+  vmin2 = _mm_min_ps(vmin2, vmin3);
+  vmax2 = _mm_max_ps(vmax2, vmax3);
+  vmin0 = _mm_min_ps(vmin0, vmin2);
+  vmax0 = _mm_max_ps(vmax0, vmax2);
+  for (; batch >= 4 * sizeof(float); batch -= 4 * sizeof(float)) {
+    const __m128 vt = _mm_loadu_ps(input);
+    input += 4;
+
+    vmin0 = _mm_min_ps(vmin0, vt);
+    vmax0 = _mm_max_ps(vmax0, vt);
+  }
+  if XNN_UNLIKELY(batch != 0) {
+    do {
+      const __m128 vt = _mm_load_ss(input);
+      input += 1;
+      vmin0 = _mm_min_ss(vmin0, vt);
+      vmax0 = _mm_max_ss(vmax0, vt);
+      batch -= sizeof(float);
+    } while (batch != 0);
+  }
+  vmin0 = _mm_min_ps(vmin0, _mm_movehl_ps(vmin0, vmin0));
+  vmax0 = _mm_max_ps(vmax0, _mm_movehl_ps(vmax0, vmax0));
+  vmin0 = _mm_min_ss(vmin0, _mm_shuffle_ps(vmin0, vmin0, _MM_SHUFFLE(1, 1, 1, 1)));
+  vmax0 = _mm_max_ss(vmax0, _mm_shuffle_ps(vmax0, vmax0, _MM_SHUFFLE(1, 1, 1, 1)));
+  _mm_store_ss(output, vmin0);
+  _mm_store_ss(output + 1, vmax0);
+}
+
+void xnn_f32_rsum_ukernel__sse_u16_acc4(
+    size_t batch,
+    const float* input,
+    float* output,
+    const union xnn_f32_scale_params params[restrict XNN_MIN_ELEMENTS(1)])
+{
+  assert(batch != 0);
+  assert(batch % sizeof(float) == 0);
+  assert(input != NULL);
+  assert(output != NULL);
+
+  __m128 vacc0 = _mm_setzero_ps();
+  __m128 vacc1 = _mm_setzero_ps();
+  __m128 vacc2 = _mm_setzero_ps();
+  __m128 vacc3 = _mm_setzero_ps();
+  for (; batch >= 16 * sizeof(float); batch -= 16 * sizeof(float)) {
+    const __m128 vt0 = _mm_loadu_ps(input);
+    const __m128 vt1 = _mm_loadu_ps(input + 4);
+    const __m128 vt2 = _mm_loadu_ps(input + 8);
+    const __m128 vt3 = _mm_loadu_ps(input + 12);
+    input += 16;
+
+    vacc0 = _mm_add_ps(vacc0, vt0);
+    vacc1 = _mm_add_ps(vacc1, vt1);
+    vacc2 = _mm_add_ps(vacc2, vt2);
+    vacc3 = _mm_add_ps(vacc3, vt3);
+  }
+  vacc0 = _mm_add_ps(vacc0, vacc1);
+  vacc2 = _mm_add_ps(vacc2, vacc3);
+  vacc0 = _mm_add_ps(vacc0, vacc2);
+  for (; batch >= 4 * sizeof(float); batch -= 4 * sizeof(float)) {
+    const __m128 vt = _mm_loadu_ps(input);
+    input += 4;
+
+    vacc0 = _mm_add_ps(vacc0, vt);
+  }
+  vacc0 = _mm_add_ps(vacc0, _mm_movehl_ps(vacc0, vacc0));
+  if XNN_UNLIKELY(batch != 0) {
+    do {
+      const __m128 vt = _mm_load_ss(input);
+      input += 1;
+      vacc0 = _mm_add_ss(vacc0, vt);
+      batch -= sizeof(float);
+    } while (batch != 0);
+  }
+  vacc0 = _mm_add_ss(vacc0, _mm_shuffle_ps(vacc0, vacc0, _MM_SHUFFLE(1, 1, 1, 1)));
+  vacc0 = _mm_mul_ss(vacc0, _mm_load_ss(&params->scalar.scale));
+  _mm_store_ss(output, vacc0);
 }
 
 void xnn_f32_spmm_minmax_ukernel_32x1__sse(
@@ -7687,7 +7804,7 @@ void xnn_f32_spmm_minmax_ukernel_32x1__sse(
   }
 }
 
-void xnn_f32_vadd_minmax_ukernel__sse_x8(
+void xnn_f32_vadd_minmax_ukernel__sse_u8(
     size_t batch,
     const float* input_a,
     const float* input_b,
@@ -7759,7 +7876,7 @@ void xnn_f32_vadd_minmax_ukernel__sse_x8(
   }
 }
 
-void xnn_f32_vaddc_minmax_ukernel__sse_x8(
+void xnn_f32_vaddc_minmax_ukernel__sse_u8(
     size_t batch,
     const float* input_a,
     const float* input_b,
@@ -7823,7 +7940,7 @@ void xnn_f32_vaddc_minmax_ukernel__sse_x8(
   }
 }
 
-void xnn_f32_vdiv_minmax_ukernel__sse_x8(
+void xnn_f32_vdiv_minmax_ukernel__sse_u8(
     size_t batch,
     const float* input_a,
     const float* input_b,
@@ -7895,7 +8012,7 @@ void xnn_f32_vdiv_minmax_ukernel__sse_x8(
   }
 }
 
-void xnn_f32_vdivc_minmax_ukernel__sse_x8(
+void xnn_f32_vdivc_minmax_ukernel__sse_u8(
     size_t batch,
     const float* input_a,
     const float* input_b,
@@ -7959,7 +8076,7 @@ void xnn_f32_vdivc_minmax_ukernel__sse_x8(
   }
 }
 
-void xnn_f32_vmax_ukernel__sse_x8(
+void xnn_f32_vmax_ukernel__sse_u8(
     size_t batch,
     const float* input_a,
     const float* input_b,
@@ -8020,7 +8137,7 @@ void xnn_f32_vmax_ukernel__sse_x8(
   }
 }
 
-void xnn_f32_vmaxc_ukernel__sse_x8(
+void xnn_f32_vmaxc_ukernel__sse_u8(
     size_t batch,
     const float* input_a,
     const float* input_b,
@@ -8073,7 +8190,7 @@ void xnn_f32_vmaxc_ukernel__sse_x8(
   }
 }
 
-void xnn_f32_vmin_ukernel__sse_x8(
+void xnn_f32_vmin_ukernel__sse_u8(
     size_t batch,
     const float* input_a,
     const float* input_b,
@@ -8134,7 +8251,7 @@ void xnn_f32_vmin_ukernel__sse_x8(
   }
 }
 
-void xnn_f32_vminc_ukernel__sse_x8(
+void xnn_f32_vminc_ukernel__sse_u8(
     size_t batch,
     const float* input_a,
     const float* input_b,
@@ -8187,7 +8304,7 @@ void xnn_f32_vminc_ukernel__sse_x8(
   }
 }
 
-void xnn_f32_vmul_minmax_ukernel__sse_x8(
+void xnn_f32_vmul_minmax_ukernel__sse_u8(
     size_t batch,
     const float* input_a,
     const float* input_b,
@@ -8259,7 +8376,7 @@ void xnn_f32_vmul_minmax_ukernel__sse_x8(
   }
 }
 
-void xnn_f32_vmulc_minmax_ukernel__sse_x8(
+void xnn_f32_vmulc_minmax_ukernel__sse_u8(
     size_t batch,
     const float* input_a,
     const float* input_b,
@@ -8323,7 +8440,7 @@ void xnn_f32_vmulc_minmax_ukernel__sse_x8(
   }
 }
 
-void xnn_f32_vrdivc_minmax_ukernel__sse_x8(
+void xnn_f32_vrdivc_minmax_ukernel__sse_u8(
     size_t batch,
     const float* input_a,
     const float* input_b,
@@ -8387,7 +8504,7 @@ void xnn_f32_vrdivc_minmax_ukernel__sse_x8(
   }
 }
 
-void xnn_f32_vrsubc_minmax_ukernel__sse_x8(
+void xnn_f32_vrsubc_minmax_ukernel__sse_u8(
     size_t batch,
     const float* input_a,
     const float* input_b,
@@ -8451,7 +8568,7 @@ void xnn_f32_vrsubc_minmax_ukernel__sse_x8(
   }
 }
 
-void xnn_f32_vsqrdiff_ukernel__sse_x8(
+void xnn_f32_vsqrdiff_ukernel__sse_u8(
     size_t batch,
     const float* input_a,
     const float* input_b,
@@ -8516,7 +8633,7 @@ void xnn_f32_vsqrdiff_ukernel__sse_x8(
   }
 }
 
-void xnn_f32_vsqrdiffc_ukernel__sse_x8(
+void xnn_f32_vsqrdiffc_ukernel__sse_u8(
     size_t batch,
     const float* input_a,
     const float* input_b,
@@ -8573,7 +8690,7 @@ void xnn_f32_vsqrdiffc_ukernel__sse_x8(
   }
 }
 
-void xnn_f32_vsub_minmax_ukernel__sse_x8(
+void xnn_f32_vsub_minmax_ukernel__sse_u8(
     size_t batch,
     const float* input_a,
     const float* input_b,
@@ -8645,7 +8762,7 @@ void xnn_f32_vsub_minmax_ukernel__sse_x8(
   }
 }
 
-void xnn_f32_vsubc_minmax_ukernel__sse_x8(
+void xnn_f32_vsubc_minmax_ukernel__sse_u8(
     size_t batch,
     const float* input_a,
     const float* input_b,
@@ -8709,7 +8826,7 @@ void xnn_f32_vsubc_minmax_ukernel__sse_x8(
   }
 }
 
-void xnn_f32_vclamp_ukernel__sse_x8(
+void xnn_f32_vclamp_ukernel__sse_u8(
     size_t batch,
     const float* input,
     float* output,
@@ -8764,7 +8881,109 @@ void xnn_f32_vclamp_ukernel__sse_x8(
   }
 }
 
-void xnn_f32_vhswish_ukernel__sse_x8(
+void xnn_f32_vcmul_ukernel__sse_u8(
+    size_t batch,
+    const float* input_a,
+    const float* input_b,
+    float* output,
+    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+{
+  assert(batch != 0);
+  assert(batch % sizeof(float) == 0);
+  assert(input_a != NULL);
+  assert(input_b != NULL);
+  assert(output != NULL);
+
+  const float* ar = input_a;
+  const float* ai = (const float*) ((uintptr_t) input_a + batch);
+  const float* br = input_b;
+  const float* bi = (const float*) ((uintptr_t) input_b + batch);
+  float* or = output;
+  float* oi = (float*) ((uintptr_t) output + batch);
+  for (; batch >= 8 * sizeof(float); batch -= 8 * sizeof(float)) {
+    const __m128 va0r = _mm_loadu_ps(ar);
+    const __m128 va0i = _mm_loadu_ps(ai);
+    const __m128 vb0r = _mm_loadu_ps(br);
+    const __m128 vb0i = _mm_loadu_ps(bi);
+    const __m128 va1r = _mm_loadu_ps(ar + 4);
+    const __m128 va1i = _mm_loadu_ps(ai + 4);
+    const __m128 vb1r = _mm_loadu_ps(br + 4);
+    const __m128 vb1i = _mm_loadu_ps(bi + 4);
+    ar += 8;
+    ai += 8;
+    br += 8;
+    bi += 8;
+
+    __m128 vacc0r = _mm_mul_ps(va0r, vb0r);
+    __m128 vacc0i = _mm_mul_ps(va0r, vb0i);
+    __m128 vacc1r = _mm_mul_ps(va1r, vb1r);
+    __m128 vacc1i = _mm_mul_ps(va1r, vb1i);
+
+    vacc0r = _mm_sub_ps(vacc0r, _mm_mul_ps(va0i, vb0i));
+    vacc0i = _mm_add_ps(vacc0i, _mm_mul_ps(va0i, vb0r));
+    vacc1r = _mm_sub_ps(vacc1r, _mm_mul_ps(va1i, vb1i));
+    vacc1i = _mm_add_ps(vacc1i, _mm_mul_ps(va1i, vb1r));
+
+    _mm_storeu_ps(or, vacc0r);
+    _mm_storeu_ps(oi, vacc0i);
+    _mm_storeu_ps(or + 4, vacc1r);
+    _mm_storeu_ps(oi + 4, vacc1i);
+    or += 8;
+    oi += 8;
+  }
+  for (; batch >= 4 * sizeof(float); batch -= 4 * sizeof(float)) {
+    const __m128 var = _mm_loadu_ps(ar);
+    ar += 4;
+    const __m128 vai = _mm_loadu_ps(ai);
+    ai += 4;
+    const __m128 vbr = _mm_loadu_ps(br);
+    br += 4;
+    const __m128 vbi = _mm_loadu_ps(bi);
+    bi += 4;
+
+    __m128 vaccr = _mm_mul_ps(var, vbr);
+    __m128 vacci = _mm_mul_ps(var, vbi);
+
+    vaccr = _mm_sub_ps(vaccr, _mm_mul_ps(vai, vbi));
+    vacci = _mm_add_ps(vacci, _mm_mul_ps(vai, vbr));
+
+    _mm_storeu_ps(or, vaccr);
+    or += 4;
+    _mm_storeu_ps(oi, vacci);
+    oi += 4;
+  }
+  if XNN_UNLIKELY(batch != 0) {
+    const __m128 var = _mm_loadu_ps(ar);
+    ar += 4;
+    const __m128 vai = _mm_loadu_ps(ai);
+    ai += 4;
+    const __m128 vbr = _mm_loadu_ps(br);
+    br += 4;
+    const __m128 vbi = _mm_loadu_ps(bi);
+    bi += 4;
+
+    __m128 vaccr = _mm_mul_ps(var, vbr);
+    __m128 vacci = _mm_mul_ps(var, vbi);
+
+    vaccr = _mm_sub_ps(vaccr, _mm_mul_ps(vai, vbi));
+    vacci = _mm_add_ps(vacci, _mm_mul_ps(vai, vbr));
+
+    if (batch & (2 * sizeof(float))) {
+      _mm_storel_pi((__m64*) or, vaccr);
+      or += 2;
+      _mm_storel_pi((__m64*) oi, vacci);
+      oi += 2;
+      vaccr = _mm_movehl_ps(vaccr, vaccr);
+      vacci = _mm_movehl_ps(vacci, vacci);
+    }
+    if (batch & (1 * sizeof(float))) {
+      _mm_store_ss(or, vaccr);
+      _mm_store_ss(oi, vacci);
+    }
+  }
+}
+
+void xnn_f32_vhswish_ukernel__sse_u8(
     size_t batch,
     const float* input,
     float* output,
@@ -8834,7 +9053,7 @@ void xnn_f32_vhswish_ukernel__sse_x8(
   }
 }
 
-void xnn_f32_vlrelu_ukernel__sse_x8(
+void xnn_f32_vlrelu_ukernel__sse_u8(
     size_t batch,
     const float* input,
     float* output,
@@ -8896,10 +9115,10 @@ void xnn_f32_vlrelu_ukernel__sse_x8(
 void xnn_f32_vmulcaddc_minmax_ukernel_c4__sse_2x(
     size_t rows,
     size_t channels,
-    const float*restrict input,
+    const float* restrict input,
     size_t input_stride,
-    const float*restrict weights,
-    float*restrict output,
+    const float* restrict weights,
+    float* restrict output,
     size_t output_stride,
     const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
@@ -9002,7 +9221,7 @@ void xnn_f32_vmulcaddc_minmax_ukernel_c4__sse_2x(
   } while (rows != 0);
 }
 
-void xnn_f32_vsqrt_ukernel__sse_sqrt_x4(
+void xnn_f32_vsqrt_ukernel__sse_sqrt_u4(
     size_t batch,
     const float* input,
     float* output,
@@ -9034,7 +9253,7 @@ void xnn_f32_vsqrt_ukernel__sse_sqrt_x4(
   }
 }
 
-void xnn_f32_vabs_ukernel__sse_x8(
+void xnn_f32_vabs_ukernel__sse_u8(
     size_t batch,
     const float* input,
     float* output,
@@ -9079,7 +9298,7 @@ void xnn_f32_vabs_ukernel__sse_x8(
   }
 }
 
-void xnn_f32_vneg_ukernel__sse_x8(
+void xnn_f32_vneg_ukernel__sse_u8(
     size_t batch,
     const float* input,
     float* output,
@@ -9124,7 +9343,7 @@ void xnn_f32_vneg_ukernel__sse_x8(
   }
 }
 
-void xnn_f32_vsqr_ukernel__sse_x8(
+void xnn_f32_vsqr_ukernel__sse_u8(
     size_t batch,
     const float* input,
     float* output,
@@ -9165,82 +9384,6 @@ void xnn_f32_vsqr_ukernel__sse_x8(
     if (batch & (1 * sizeof(float))) {
       _mm_store_ss(output, vy);
     }
-  }
-}
-
-void xnn_x32_packx_ukernel_4x__sse(
-    size_t m,
-    size_t k,
-    const uint32_t* restrict x,
-    size_t x_stride,
-    uint32_t* restrict y)
-{
-  assert(m != 0);
-  assert(k != 0);
-
-  const float* x0 = (const float*) x;
-  const float* x1 = (const float*) ((uintptr_t) x0 + x_stride);
-  if (m < 2) {
-    x1 = x0;
-  }
-  const float* x2 = (const float*) ((uintptr_t) x1 + x_stride);
-  if (m <= 2) {
-    x2 = x1;
-  }
-  const float* x3 = (const float*) ((uintptr_t) x2 + x_stride);
-  if (m != 4) {
-    x3 = x2;
-  }
-
-  float*restrict y_f32 = (float*) y;
-
-  for (; k >= 4; k -= 4) {
-    const __m128 vx0 = _mm_loadu_ps(x0);
-    x0 += 4;
-    const __m128 vx1 = _mm_loadu_ps(x1);
-    x1 += 4;
-    const __m128 vx2 = _mm_loadu_ps(x2);
-    x2 += 4;
-    const __m128 vx3 = _mm_loadu_ps(x3);
-    x3 += 4;
-
-    const __m128 vt0 = _mm_unpacklo_ps(vx0, vx1);
-    const __m128 vt1 = _mm_unpackhi_ps(vx0, vx1);
-    const __m128 vt2 = _mm_unpacklo_ps(vx2, vx3);
-    const __m128 vt3 = _mm_unpackhi_ps(vx2, vx3);
-
-    const __m128 vy0 = _mm_movelh_ps(vt0, vt2);
-    _mm_store_ps(y_f32, vy0);
-
-    const __m128 vy1 = _mm_movehl_ps(vt2, vt0);
-    _mm_store_ps(y_f32 + 4, vy1);
-
-    const __m128 vy2 = _mm_movelh_ps(vt1, vt3);
-    _mm_store_ps(y_f32 + 8, vy2);
-
-    const __m128 vy3 = _mm_movehl_ps(vt3, vt1);
-    _mm_store_ps(y_f32 + 12, vy3);
-
-    y_f32 += 16;
-  }
-  if XNN_UNLIKELY(k != 0) {
-    do {
-      const __m128 vx0 = _mm_load_ss(x0);
-      x0 += 1;
-      const __m128 vx1 = _mm_load_ss(x1);
-      x1 += 1;
-      const __m128 vx2 = _mm_load_ss(x2);
-      x2 += 1;
-      const __m128 vx3 = _mm_load_ss(x3);
-      x3 += 1;
-
-      const __m128 vx01 = _mm_unpacklo_ps(vx0, vx1);
-      const __m128 vx23 = _mm_unpacklo_ps(vx2, vx3);
-      const __m128 vy = _mm_movelh_ps(vx01, vx23);
-
-      _mm_store_ps(y_f32, vy);
-      y_f32 += 4;
-    } while (--k != 0);
   }
 }
 

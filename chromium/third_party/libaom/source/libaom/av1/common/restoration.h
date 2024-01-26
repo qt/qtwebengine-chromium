@@ -451,7 +451,9 @@ void av1_foreach_rest_unit_in_row(
     rest_unit_visitor_t on_rest_unit, int row_number, int unit_size,
     int hnum_rest_units, int vnum_rest_units, int plane, void *priv,
     int32_t *tmpbuf, RestorationLineBuffers *rlbs, sync_read_fn_t on_sync_read,
-    sync_write_fn_t on_sync_write, struct AV1LrSyncData *const lr_sync);
+    sync_write_fn_t on_sync_write, struct AV1LrSyncData *const lr_sync,
+    struct aom_internal_error_info *error_info);
+
 void av1_get_upsampled_plane_size(const struct AV1Common *cm, int is_uv,
                                   int *plane_w, int *plane_h);
 int av1_lr_count_units(int unit_size, int plane_size);

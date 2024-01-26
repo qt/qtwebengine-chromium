@@ -27,7 +27,7 @@ struct SHADER_MODULE_STATE;
 
 template <typename CreateInfoType>
 static inline VkGraphicsPipelineLibraryFlagsEXT GetGraphicsLibType(const CreateInfoType &create_info) {
-    const auto lib_ci = LvlFindInChain<VkGraphicsPipelineLibraryCreateInfoEXT>(create_info.pNext);
+    const auto lib_ci = vku::FindStructInPNextChain<VkGraphicsPipelineLibraryCreateInfoEXT>(create_info.pNext);
     if (lib_ci) {
         return lib_ci->flags;
     }
@@ -80,6 +80,8 @@ struct PreRasterState : public PipelineSubState {
 
     std::shared_ptr<const RENDER_PASS_STATE> rp_state;
     uint32_t subpass = 0;
+
+    VkShaderStageFlagBits last_stage = VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM;
 
     std::shared_ptr<const SHADER_MODULE_STATE> tessc_shader, tesse_shader;
     const safe_VkPipelineShaderStageCreateInfo *tessc_shader_ci = nullptr, *tesse_shader_ci = nullptr;
@@ -146,7 +148,7 @@ static bool IsSampleLocationEnabled(const CreateInfo &create_info) {
     bool result = false;
     if (create_info.pMultisampleState) {
         const auto *sample_location_state =
-            LvlFindInChain<VkPipelineSampleLocationsStateCreateInfoEXT>(create_info.pMultisampleState->pNext);
+            vku::FindStructInPNextChain<VkPipelineSampleLocationsStateCreateInfoEXT>(create_info.pMultisampleState->pNext);
         if (sample_location_state != nullptr) {
             result = (sample_location_state->sampleLocationsEnable != 0);
         }
@@ -184,7 +186,7 @@ struct FragmentOutputState : public PipelineSubState {
         }
 
         // TODO
-        // auto format_ci = LvlFindInChain<VkPipelineRenderingFormatCreateInfoKHR>(gpci->pNext);
+        // auto format_ci = vku::FindStructInPNextChain<VkPipelineRenderingFormatCreateInfoKHR>(gpci->pNext);
     }
 
     static bool IsBlendConstantsEnabled(const AttachmentVector &attachments);

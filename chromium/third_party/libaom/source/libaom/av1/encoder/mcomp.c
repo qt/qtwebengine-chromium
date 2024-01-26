@@ -1807,10 +1807,7 @@ int av1_full_pixel_search(const FULLPEL_MV start_mv,
   }
 
   assert(ms_params->ms_buffers.ref->stride == ms_params->search_sites->stride);
-  // TODO(chiyotsai@google.com) Re-enable this after yet another failure is
-  // addressed.
-  // assert(ms_params->ms_buffers.ref->width ==
-  // ms_params->ms_buffers.src->width);
+  assert(ms_params->ms_buffers.ref->width == ms_params->ms_buffers.src->width);
 
   switch (search_method) {
     case FAST_BIGDIA:

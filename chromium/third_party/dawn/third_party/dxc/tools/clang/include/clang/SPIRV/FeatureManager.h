@@ -43,6 +43,7 @@ enum class Extension {
   EXT_descriptor_indexing,
   EXT_fragment_fully_covered,
   EXT_fragment_invocation_density,
+  EXT_fragment_shader_interlock,
   EXT_mesh_shader,
   EXT_shader_stencil_export,
   EXT_shader_viewport_index_layer,
@@ -57,6 +58,7 @@ enum class Extension {
   EXT_shader_image_int64,
   KHR_physical_storage_buffer,
   KHR_vulkan_memory_model,
+  NV_compute_shader_derivatives,
   Unknown,
 };
 

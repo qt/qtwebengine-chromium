@@ -16,12 +16,11 @@
 #define FUZZTEST_FUZZTEST_INTERNAL_REGISTRY_H_
 
 #include <memory>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 
 #include "absl/functional/function_ref.h"
-
+#include "absl/strings/string_view.h"
 #ifdef FUZZTEST_USE_CENTIPEDE
 #include "./fuzztest/internal/centipede_adaptor.h"
 #endif
@@ -41,27 +40,28 @@ void ForEachTest(absl::FunctionRef<void(FuzzTest&)> func);
 using SetUpTearDownTestSuiteFunction = void (*)();
 
 void RegisterSetUpTearDownTestSuiteFunctions(
-    std::string_view suite_name,
+    absl::string_view suite_name,
     SetUpTearDownTestSuiteFunction set_up_test_suite,
     SetUpTearDownTestSuiteFunction tear_down_test_suite);
 
-SetUpTearDownTestSuiteFunction GetSetUpTestSuite(std::string_view suite_name);
+SetUpTearDownTestSuiteFunction GetSetUpTestSuite(absl::string_view suite_name);
 
 SetUpTearDownTestSuiteFunction GetTearDownTestSuite(
-    std::string_view suite_name);
+    absl::string_view suite_name);
 
 struct RegistrationToken {
   template <typename RegBase, typename Fixture, typename TargetFunction,
             typename SeedProvider>
   RegistrationToken& operator=(
       Registration<Fixture, TargetFunction, RegBase, SeedProvider>&& reg) {
-    const BasicTestInfo test_info = reg.test_info_;
-    RegisterImpl(test_info, GetFuzzTestFuzzerFactory(std::move(reg)));
     if constexpr (std::is_base_of_v<FixtureWithExplicitSetUp, Fixture>) {
-      RegisterSetUpTearDownTestSuiteFunctions(test_info.suite_name,
+      RegisterSetUpTearDownTestSuiteFunctions(reg.test_info_.suite_name,
                                               &Fixture::SetUpTestSuite,
                                               &Fixture::TearDownTestSuite);
     }
+    BasicTestInfo test_info = reg.test_info_;
+    RegisterImpl(std::move(test_info),
+                 GetFuzzTestFuzzerFactory(std::move(reg)));
     return *this;
   }
 
@@ -80,16 +80,15 @@ struct RegistrationToken {
     using FuzzerImpl = FuzzTestFuzzerImpl;
 #endif
 
-    return
-        [target_function = reg.target_function_, domain = reg.GetDomains(),
-         seeds = reg.seeds(), seed_provider = reg.seed_provider()](
-            const FuzzTest& test) mutable -> std::unique_ptr<FuzzTestFuzzer> {
-          return std::make_unique<FuzzerImpl>(
-              test,
-              std::make_unique<FixtureDriverImpl<decltype(domain), Fixture,
-                                                 TargetFunction, SeedProvider>>(
-                  target_function, domain, seeds, std::move(seed_provider)));
-        };
+    return [target_function = reg.target_function_, domain = reg.GetDomains(),
+            seeds = reg.seeds(), seed_provider = reg.seed_provider()](
+               const FuzzTest& test) -> std::unique_ptr<FuzzTestFuzzer> {
+      return std::make_unique<FuzzerImpl>(
+          test,
+          std::make_unique<FixtureDriverImpl<decltype(domain), Fixture,
+                                             TargetFunction, SeedProvider>>(
+              target_function, domain, seeds, seed_provider));
+    };
   }
 };
 

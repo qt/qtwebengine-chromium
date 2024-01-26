@@ -16,6 +16,7 @@ limitations under the License.
 #ifndef EIGEN_BFLOAT16_H
 #define EIGEN_BFLOAT16_H
 
+// IWYU pragma: private
 #include "../../InternalHeaderCheck.h"
 
 #if defined(EIGEN_HAS_HIP_BF16)

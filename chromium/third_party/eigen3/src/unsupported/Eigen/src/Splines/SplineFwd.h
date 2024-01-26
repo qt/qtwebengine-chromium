@@ -10,6 +10,7 @@
 #ifndef EIGEN_SPLINES_FWD_H
 #define EIGEN_SPLINES_FWD_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 #include "../../../../Eigen/Core"
 

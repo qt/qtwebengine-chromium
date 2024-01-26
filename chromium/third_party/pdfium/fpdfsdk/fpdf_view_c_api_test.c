@@ -262,6 +262,7 @@ int CheckPDFiumCApi() {
     CHK(FPDFText_SetCharcodes);
     CHK(FPDFText_SetText);
     CHK(FPDF_CreateNewDocument);
+    CHK(FPDF_MovePages);
 
     // fpdf_ext.h
     CHK(FPDFDoc_GetPageMode);
@@ -374,6 +375,7 @@ int CheckPDFiumCApi() {
     CHK(FPDF_StructElement_GetAttributeAtIndex);
     CHK(FPDF_StructElement_GetAttributeCount);
     CHK(FPDF_StructElement_GetChildAtIndex);
+    CHK(FPDF_StructElement_GetChildMarkedContentID);
     CHK(FPDF_StructElement_GetID);
     CHK(FPDF_StructElement_GetLang);
     CHK(FPDF_StructElement_GetMarkedContentID);
@@ -485,6 +487,7 @@ int CheckPDFiumCApi() {
     CHK(FPDF_GetArrayBufferAllocatorSharedInstance);
 #endif
     CHK(FPDF_GetDocPermissions);
+    CHK(FPDF_GetDocUserPermissions);
     CHK(FPDF_GetFileVersion);
     CHK(FPDF_GetLastError);
     CHK(FPDF_GetNamedDest);

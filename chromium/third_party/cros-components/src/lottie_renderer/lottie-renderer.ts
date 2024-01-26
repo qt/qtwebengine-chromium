@@ -6,12 +6,12 @@
 
 import {css, CSSResultGroup, html, LitElement, PropertyValues} from 'lit';
 
-// TODO(b/295990177): Make these absolute.
+// TODO: b/295990177 - Make these absolute.
 import {waitForEvent} from '../async_helpers/async_helpers';
 import {assertExists, hexToRgb} from '../helpers/helpers';
 
 import {addColorSchemeChangeListener, removeColorSchemeChangeListener} from './event_binders';
-import {getWorker} from './worker';
+import {defaultGetWorker} from './worker';
 
 /**
  * The list of tokens that are used to identify shapes and colors in Lottie
@@ -52,7 +52,7 @@ const CROS_TOKENS = new Set<string>([
   'cros.sys.illo.card.on_color1',
 ]);
 
-interface MessageData {
+declare interface MessageData {
   animationData: JSON;
   drawSize: {width: number, height: number};
   params: {loop: boolean, autoplay: boolean};
@@ -63,7 +63,7 @@ interface MessageData {
  * This definition of this type is taken from
  * https://lottiefiles.github.io/lottie-docs/concepts/#colors
  */
-interface LottieShape {
+declare interface LottieShape {
   /**
    * The name of a shape. For Material3 compliant animations, this will be the
    * token name of the color to apply.
@@ -87,7 +87,7 @@ const LOTTIE_NAME_KEY = 'nm';
  * will be one of these structures per token in CROS_TOKENS that appears in the
  * animation data.
  */
-interface TokenColor {
+declare interface TokenColor {
   cssVar: string;
   locations: LottieShape[];
 }
@@ -201,6 +201,20 @@ export class LottieRenderer extends LitElement {
    */
   dynamic: boolean;
 
+  /**
+   * Function which returns a web worker loaded up with lottie worker js.
+   * If unspecified in chromium defaults to a standard web worker pulling from
+   * "chrome://resources/cros_components/lottie_renderer/lottie_worker.js". If
+   * unspecified in google3 defaults to a standard web worker pulling from
+   * "/js/lottie_worker.js".
+   * Must be set before attaching lottieRenderer to the DOM:
+   *   const renderer = new LottieRenderer();
+   *   renderer.getWorker = myCustomGetWorker();
+   *   document.body.append(renderer);
+   * @export
+   */
+  getWorker: () => Worker = defaultGetWorker;
+
   /** The onscreen canvas controlled by lottie_worker.js. */
   get onscreenCanvas(): HTMLCanvasElement|null {
     return this.renderRoot.querySelector('#onscreen-canvas');
@@ -208,7 +222,7 @@ export class LottieRenderer extends LitElement {
 
   /**
    * Temporary public API to ensure component color resolution works.
-   * TODO(b/290864323): Remove legacy usages of this function and then make
+   * TODO: b/274998765 - Remove legacy usages of this function and then make
    * private.
    */
   onColorSchemeChanged = () => {
@@ -296,7 +310,7 @@ export class LottieRenderer extends LitElement {
   override connectedCallback() {
     super.connectedCallback();
     if (!this.worker) {
-      this.worker = getWorker();
+      this.worker = this.getWorker();
       this.worker.onmessage = (e) => void this.onMessage(e);
     }
 
@@ -329,7 +343,7 @@ export class LottieRenderer extends LitElement {
   override updated(changedProperties: PropertyValues<LottieRenderer>) {
     super.updated(changedProperties);
     const prop = changedProperties.get('assetUrl');
-    if (prop && prop !== undefined && this.worker) {
+    if (this.assetUrl && prop !== undefined && this.worker) {
       this.assetUrlChanged();
     }
   }
@@ -372,7 +386,7 @@ export class LottieRenderer extends LitElement {
   private async refreshAnimationColors() {
     // We must await update here to ensure the computed style will be up to date
     // with the new color scheme.
-    // TODO(b/276079531): Investigate if this can be removed when using events.
+    // TODO: b/274998765 - Investigate if this can be removed when using events.
     this.requestUpdate();
     await this.updateComplete;
     if (!this.animationData) {
@@ -406,8 +420,6 @@ export class LottieRenderer extends LitElement {
     // once, when we first initialize an animation. On subsequent
     // initializations (such as when the asset URL has changed), we avoid
     // re-transferring the canvas and just send across the animation data.
-    // TODO(b/268419751): Add hooks for updating when the animation URL has
-    // changed.
     if (this.hasTransferredCanvas) {
       this.worker.postMessage(animationConfig);
       return;

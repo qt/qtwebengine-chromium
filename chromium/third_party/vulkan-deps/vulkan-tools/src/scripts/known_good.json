@@ -7,7 +7,7 @@
             "sub_dir": "Vulkan-Headers",
             "build_dir": "Vulkan-Headers/build",
             "install_dir": "Vulkan-Headers/build/install",
-            "commit": "v1.3.262"
+            "commit": "v1.3.268"
         },
         {
             "name": "MoltenVK",
@@ -32,7 +32,15 @@
             "sub_dir": "Vulkan-Loader",
             "build_dir": "Vulkan-Loader/build",
             "install_dir": "Vulkan-Loader/build/install",
-            "commit": "v1.3.262",
+            "cmake_options": [
+                "-DLOADER_USE_UNSAFE_FILE_SEARCH=ON"
+            ],
+            "commit": "v1.3.268",
+            "build_platforms": [
+                "windows",
+                "linux",
+                "darwin"
+            ],
             "deps": [
                 {
                     "var_name": "VULKAN_HEADERS_INSTALL_DIR",
@@ -51,7 +59,7 @@
                 "-Dgtest_force_shared_crt=ON",
                 "-DBUILD_SHARED_LIBS=OFF"
             ],
-            "commit": "v1.13.0",
+            "commit": "v1.14.0",
             "optional": [
                 "tests"
             ]

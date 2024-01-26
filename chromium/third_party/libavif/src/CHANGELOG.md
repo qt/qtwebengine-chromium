@@ -6,6 +6,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+* Add experimental API for reading and writing gain maps in AVIF files.
+  If enabled at compile time, add `gainMap` field to `avifImage`,
+  add `qualityGainMap` field to `avifEncoder`, add `gainMapPresent`,
+  `enableDecodingGainMap`, `enableParsingGainMapMetadata` and 
+  `ignoreColorAndAlpha` to `avifDecoder`.
+  Gain maps allow readers that support them to display HDR images that look
+  good on both HDR and SDR displays.
+  This feature is highly experimental. The API might change or be removed
+  in the future. Files created now might not decode in a future version.
+  This feature is off by default and must be enabled with the
+  AVIF_ENABLE_EXPERIMENTAL_GAIN_MAP compilation flag.
+* Add experimental support for converting jpeg files with gain maps to AVIF
+  files with gain maps. Requires libxml2, and the AVIF_ENABLE_EXPERIMENTAL_GAIN_MAP
+  compilation flag.
+* Add the headerFormat member of new type avifHeaderFormat to avifEncoder.
+* Add experimental API for reading and writing "avir"-branded AVIF files
+  behind the compilation flag AVIF_ENABLE_EXPERIMENTAL_AVIR.
+* Implement avifImageScale() fallback when libyuv is not available.
+* Partial import of libyuv to third_party/libyuv (new LICENSE).
+* Add avifenc flag suffixes ":update" and ":u". Quality-relative,
+  tiling-relative and codec-specific flags can now be positional, relative to
+  input files.
+* Add experimental support for layered AVIF encoding in avifenc.
+  Use the --layered flag to enable layered AVIF encoding.
+  Layered AVIF has multiple layers, which works like frame of animated AVIF, 
+  and layers can be rendered in progressive manner on supported viewers
+  (e.g. Chrome 94 or newer).
+  Only aom supports layered AVIF encoding at the time of writing.
+  Add --scaling-mode flag to set scaling mode of each layer.
+  This part of AV1 encoder is not as thoroughly tested, so there are higher
+  possibility encoder may crash when given certain configuration or input.
+* Add imageSequenceTrackPresent flag to the avifDecoder struct.
+
+### Changed
+* Update aom.cmd: v3.7.0
+* Update svt.cmd/svt.sh: v1.7.0
+* Update zlibpng.cmd: zlib 1.3 and libpng 1.6.40
+
 ## [1.0.1] - 2023-08-29
 
 ### Changed

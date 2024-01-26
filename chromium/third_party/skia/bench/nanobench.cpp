@@ -32,11 +32,11 @@
 #include "include/core/SkPictureRecorder.h"
 #include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
-#include "include/core/SkTime.h"
 #include "include/encode/SkPngEncoder.h"
 #include "include/private/base/SkMacros.h"
 #include "src/base/SkAutoMalloc.h"
 #include "src/base/SkLeanWindows.h"
+#include "src/base/SkTime.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkOSFile.h"
 #include "src/core/SkTaskGroup.h"
@@ -71,6 +71,7 @@
 #include "include/gpu/graphite/Recorder.h"
 #include "include/gpu/graphite/Recording.h"
 #include "include/gpu/graphite/Surface.h"
+#include "tools/GpuToolUtils.h"
 #include "tools/graphite/ContextFactory.h"
 #include "tools/graphite/GraphiteTestContext.h"
 #endif
@@ -350,12 +351,13 @@ struct GraphiteTarget : public Target {
         // context options when we make the factory here.
         this->factory = std::make_unique<ContextFactory>();
 
-        auto [testCtx, ctx] = this->factory->getContextInfo(this->config.ctxType);
-        if (!ctx) {
+        skiatest::graphite::ContextInfo ctxInfo =
+                this->factory->getContextInfo(this->config.ctxType);
+        if (!ctxInfo.fContext) {
             return false;
         }
-        this->testContext = testCtx;
-        this->context = ctx;
+        this->testContext = ctxInfo.fTestContext;
+        this->context = ctxInfo.fContext;
 
         this->recorder = this->context->makeRecorder(ToolUtils::CreateTestingRecorderOptions());
         if (!this->recorder) {
@@ -466,7 +468,7 @@ static int setup_cpu_bench(const double overhead, Target* target, Benchmark* ben
     // First figure out approximately how many loops of bench it takes to make overhead negligible.
     double bench_plus_overhead = 0.0;
     int round = 0;
-    int loops = bench->calculateLoops(FLAGS_loops);
+    int loops = bench->shouldLoop() ? FLAGS_loops : 1;
     if (kAutoTuneLoops == loops) {
         while (bench_plus_overhead < overhead) {
             if (round++ == FLAGS_maxCalibrationAttempts) {
@@ -508,7 +510,7 @@ static int setup_cpu_bench(const double overhead, Target* target, Benchmark* ben
 
 static int setup_gpu_bench(Target* target, Benchmark* bench, int maxGpuFrameLag) {
     // First, figure out how many loops it'll take to get a frame up to FLAGS_gpuMs.
-    int loops = bench->calculateLoops(FLAGS_loops);
+    int loops = bench->shouldLoop() ? FLAGS_loops : 1;
     if (kAutoTuneLoops == loops) {
         loops = 1;
         double elapsed = 0;
@@ -602,8 +604,9 @@ static std::optional<Config> create_config(const SkCommandLineConfig* config) {
 
         using ContextFactory = skiatest::graphite::ContextFactory;
 
-        ContextFactory factory{};
-        auto [testContext, ctx] = factory.getContextInfo(graphiteCtxType);
+        ContextFactory factory;
+        skiatest::graphite::ContextInfo ctxInfo = factory.getContextInfo(graphiteCtxType);
+        skgpu::graphite::Context* ctx = ctxInfo.fContext;
         if (ctx) {
             // TODO: Add graphite ctx queries for supported sample count by color type.
 #if 0

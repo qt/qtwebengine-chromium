@@ -223,24 +223,8 @@ consts_misc = [
         'value': 'Oddball::kNull'
     },
     {
-        'name': 'OddballArgumentsMarker',
-        'value': 'Oddball::kArgumentsMarker'
-    },
-    {
         'name': 'OddballUndefined',
         'value': 'Oddball::kUndefined'
-    },
-    {
-        'name': 'OddballUninitialized',
-        'value': 'Oddball::kUninitialized'
-    },
-    {
-        'name': 'OddballOther',
-        'value': 'Oddball::kOther'
-    },
-    {
-        'name': 'OddballException',
-        'value': 'Oddball::kException'
     },
     {
         'name': 'ContextRegister',
@@ -424,13 +408,11 @@ consts_misc = [
     },
     {
         'name': 'off_fp_bytecode_array',
-        'value': 'UnoptimizedFrameConstants::kBytecodeArrayFromFp'
+        'value': 'InterpreterFrameConstants::kBytecodeArrayFromFp'
     },
     {
-        'name':
-            'off_fp_bytecode_offset',
-        'value':
-            'UnoptimizedFrameConstants::kBytecodeOffsetOrFeedbackVectorFromFp'
+        'name': 'off_fp_bytecode_offset',
+        'value': 'InterpreterFrameConstants::kBytecodeOffsetFromFp'
     },
     {
         'name': 'scopeinfo_idx_nparams',

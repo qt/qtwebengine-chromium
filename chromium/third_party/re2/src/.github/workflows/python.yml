@@ -19,11 +19,14 @@ jobs:
           - { name: X64,   python-name: x86_64,  runs-on: [ubuntu-latest]             }
           - { name: ARM64, python-name: aarch64, runs-on: [self-hosted, linux, arm64] }
         os: [manylinux2014, manylinux_2_28]
-        ver: ['3.8', '3.9', '3.10', '3.11']
+        ver: ['3.8', '3.9', '3.10', '3.11', '3.12']
     env:
       BAZELISK_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v3
+      # Stash the timestamp for the commit SHA that triggered the workflow.
+      - run: echo "timestamp=$(git log -1 --pretty=%ct)" >> "${GITHUB_ENV}"
+        shell: bash
       # TODO(junyer): Use `v2` whenever a new release is tagged.
       - uses: bazelbuild/setup-bazelisk@6244971d4f7ba9aca943c2f3ede2bbd813fcca51
       - name: Prepare Python ${{ matrix.ver }} environment
@@ -35,6 +38,8 @@ jobs:
           python -m pip install --upgrade absl-py
         shell: bash
       - name: Build wheel
+        env:
+          SOURCE_DATE_EPOCH: ${{ env.timestamp }}
         run: |
           # TODO(junyer): Get rid of this hack whenever @rules_python no longer
           # fails due to Bazel running as root. (It sounds more likely than the
@@ -67,15 +72,19 @@ jobs:
           - { name: X64,   bazel-name: x86_64, python-name: x86_64 }
           - { name: ARM64, bazel-name: arm64,  python-name: arm64  }
         os: [11, 12, 13]
-        ver: ['3.8', '3.9', '3.10', '3.11']
+        ver: ['3.8', '3.9', '3.10', '3.11', '3.12']
     env:
       BAZELISK_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       BAZEL_CPU: darwin_${{ matrix.arch.bazel-name }}
+      PLAT_NAME: macosx-${{ matrix.os }}.0-${{ matrix.arch.python-name }}
       # Stop macOS from reporting the system version as 10.x.
       # Otherwise, Python refuses to install the built wheel!
       SYSTEM_VERSION_COMPAT: 0
     steps:
       - uses: actions/checkout@v3
+      # Stash the timestamp for the commit SHA that triggered the workflow.
+      - run: echo "timestamp=$(git log -1 --pretty=%ct)" >> "${GITHUB_ENV}"
+        shell: bash
       # TODO(junyer): Use `v2` whenever a new release is tagged.
       - uses: bazelbuild/setup-bazelisk@6244971d4f7ba9aca943c2f3ede2bbd813fcca51
       - uses: actions/setup-python@v4
@@ -88,12 +97,10 @@ jobs:
           python -m pip install --upgrade absl-py
         shell: bash
       - name: Build wheel
+        env:
+          SOURCE_DATE_EPOCH: ${{ env.timestamp }}
         run: |
-          # TODO(junyer): Get rid of this hack whenever there's a better way
-          # to plumb the platform name all the way down to the wheel builder.
-          python -m build --wheel \
-            --config-setting=--build-option=--plat-name \
-            --config-setting=--build-option=macosx-${{ matrix.os }}.0-${{ matrix.arch.python-name }}
+          python -m build --wheel
           python -m delocate.cmd.delocate_wheel --wheel-dir=. dist/*
         shell: bash
         working-directory: python
@@ -118,12 +125,16 @@ jobs:
         arch:
           - { name: X86, bazel-name: x64_x86, python-name: win32     }
           - { name: X64, bazel-name: x64,     python-name: win_amd64 }
-        ver: ['3.8', '3.9', '3.10', '3.11']
+        ver: ['3.8', '3.9', '3.10', '3.11', '3.12']
     env:
       BAZELISK_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       BAZEL_CPU: ${{ matrix.arch.bazel-name }}_windows
+      PLAT_NAME: ${{ matrix.arch.python-name }}
     steps:
       - uses: actions/checkout@v3
+      # Stash the timestamp for the commit SHA that triggered the workflow.
+      - run: echo "timestamp=$(git log -1 --pretty=%ct)" >> "${GITHUB_ENV}"
+        shell: bash
       # Avoid the Chocolatey install of Bazel getting in the way;
       # `bazelbuild/setup-bazelisk` doesn't work for some reason.
       - run: |
@@ -146,12 +157,10 @@ jobs:
           python -m pip install --upgrade absl-py
         shell: bash
       - name: Build wheel
+        env:
+          SOURCE_DATE_EPOCH: ${{ env.timestamp }}
         run: |
-          # TODO(junyer): Get rid of this hack whenever there's a better way
-          # to plumb the platform name all the way down to the wheel builder.
-          python -m build --wheel \
-            --config-setting=--build-option=--plat-name \
-            --config-setting=--build-option=${{ matrix.arch.python-name }}
+          python -m build --wheel
           python -m delvewheel repair --wheel-dir=. dist/*
         shell: bash
         working-directory: python
@@ -174,6 +183,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+      # Stash the timestamp for the commit SHA that triggered the workflow.
+      - run: echo "timestamp=$(git log -1 --pretty=%ct)" >> "${GITHUB_ENV}"
+        shell: bash
       - uses: actions/setup-python@v4
         with:
           python-version: '3.x'
@@ -184,6 +196,8 @@ jobs:
         shell: bash
       - if: inputs.build == 1
         name: Build source
+        env:
+          SOURCE_DATE_EPOCH: ${{ env.timestamp }}
         run: |
           python -m build --sdist
         shell: bash
@@ -192,6 +206,8 @@ jobs:
         with:
           path: python
       - name: Set build number to ${{ inputs.build }}
+        env:
+          SOURCE_DATE_EPOCH: ${{ env.timestamp }}
         run: |
           mkdir -p dist
           for WHL in */google_re2-*.whl; do
@@ -201,7 +217,8 @@ jobs:
           done
         shell: bash
         working-directory: python
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      - if: inputs.build >= 1
+        uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
           packages_dir: python/dist

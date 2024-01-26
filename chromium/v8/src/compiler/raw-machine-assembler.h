@@ -193,12 +193,26 @@ class V8_EXPORT_PRIVATE RawMachineAssembler {
   void OptimizedStoreField(MachineRepresentation rep, Node* object, int offset,
                            Node* value, WriteBarrierKind write_barrier) {
     DCHECK(!IsMapOffsetConstantMinusTag(offset));
+    DCHECK_NE(rep, MachineRepresentation::kIndirectPointer);
     AddNode(simplified()->StoreField(
                 FieldAccess(BaseTaggedness::kTaggedBase, offset,
                             MaybeHandle<Name>(), OptionalMapRef(), Type::Any(),
                             MachineType::TypeForRepresentation(rep),
                             write_barrier, "OptimizedStoreField")),
             object, value);
+  }
+  void OptimizedStoreIndirectPointerField(Node* object, int offset,
+                                          IndirectPointerTag tag, Node* value,
+                                          WriteBarrierKind write_barrier) {
+    DCHECK(!IsMapOffsetConstantMinusTag(offset));
+    DCHECK(write_barrier == WriteBarrierKind::kNoWriteBarrier ||
+           write_barrier == WriteBarrierKind::kIndirectPointerWriteBarrier);
+    FieldAccess access(BaseTaggedness::kTaggedBase, offset, MaybeHandle<Name>(),
+                       OptionalMapRef(), Type::Any(),
+                       MachineType::IndirectPointer(), write_barrier,
+                       "OptimizedStoreIndirectPointerField");
+    access.indirect_pointer_tag = tag;
+    AddNode(simplified()->StoreField(access), object, value);
   }
   void OptimizedStoreMap(Node* object, Node* value,
                          WriteBarrierKind write_barrier = kMapWriteBarrier) {
@@ -811,6 +825,9 @@ class V8_EXPORT_PRIVATE RawMachineAssembler {
   }
   Node* TruncateFloat32ToUint32(Node* a, TruncateKind kind) {
     return AddNode(machine()->TruncateFloat32ToUint32(kind), a);
+  }
+  Node* TruncateFloat64ToInt64(Node* a, TruncateKind kind) {
+    return AddNode(machine()->TruncateFloat64ToInt64(kind), a);
   }
   Node* TryTruncateFloat32ToInt64(Node* a) {
     return AddNode(machine()->TryTruncateFloat32ToInt64(), a);

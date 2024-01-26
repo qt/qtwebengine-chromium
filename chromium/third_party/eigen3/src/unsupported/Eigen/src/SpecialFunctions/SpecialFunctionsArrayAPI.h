@@ -11,6 +11,7 @@
 #ifndef EIGEN_SPECIALFUNCTIONS_ARRAYAPI_H
 #define EIGEN_SPECIALFUNCTIONS_ARRAYAPI_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

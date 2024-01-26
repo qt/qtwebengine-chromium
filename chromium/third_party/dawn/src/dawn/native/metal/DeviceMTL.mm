@@ -1,16 +1,29 @@
-// Copyright 2018 The Dawn Authors
+// Copyright 2018 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/metal/DeviceMTL.h"
 
@@ -135,8 +148,8 @@ Device::Device(AdapterBase* adapter,
         mCounterSamplingAtStageBoundary = false;
     }
 
-    mIsTimestampQueryEnabled =
-        HasFeature(Feature::TimestampQuery) || HasFeature(Feature::TimestampQueryInsidePasses);
+    mIsTimestampQueryEnabled = HasFeature(Feature::TimestampQuery) ||
+                               HasFeature(Feature::ChromiumExperimentalTimestampQueryInsidePasses);
 }
 
 Device::~Device() {
@@ -274,7 +287,7 @@ ResultOrError<Ref<SharedFenceBase>> Device::ImportSharedFenceImpl(
     if (@available(macOS 10.14, ios 12.0, *)) {
         return SharedFence::Create(this, baseDescriptor->label, descriptor);
     }
-    UNREACHABLE();
+    DAWN_UNREACHABLE();
 }
 
 MaybeError Device::TickImpl() {
@@ -307,7 +320,7 @@ MaybeError Device::CopyFromStagingToBufferImpl(BufferBase* source,
                                                uint64_t size) {
     // Metal validation layers forbid  0-sized copies, assert it is skipped prior to calling
     // this function.
-    ASSERT(size != 0);
+    DAWN_ASSERT(size != 0);
 
     ToBackend(destination)
         ->EnsureDataInitializedAsDestination(
@@ -359,6 +372,7 @@ Ref<Texture> Device::CreateTextureWrappingIOSurface(
     if (ConsumedError(ValidateIOSurfaceCanBeWrapped(this, textureDescriptor, ioSurface))) {
         return nullptr;
     }
+    // TODO(dawn:1337): Allow creating uninitialized texture for rendering.
     if (GetValidInternalFormat(textureDescriptor->format).IsMultiPlanar() &&
         !descriptor->isInitialized) {
         bool consumed = ConsumedError(DAWN_VALIDATION_ERROR(
@@ -377,11 +391,18 @@ Ref<Texture> Device::CreateTextureWrappingIOSurface(
 }
 
 void Device::DestroyImpl() {
-    ASSERT(GetState() == State::Disconnected);
-
-    GetQueue()->Destroy();
+    DAWN_ASSERT(GetState() == State::Disconnected);
+    // TODO(crbug.com/dawn/831): DestroyImpl is called from two places.
+    // - It may be called if the device is explicitly destroyed with APIDestroy.
+    //   This case is NOT thread-safe and needs proper synchronization with other
+    //   simultaneous uses of the device.
+    // - It may be called when the last ref to the device is dropped and the device
+    //   is implicitly destroyed. This case is thread-safe because there are no
+    //   other threads using the device since there are no other live refs.
     mMtlDevice = nullptr;
     mMockBlitMtlBuffer = nullptr;
+
+    GetQueue()->Destroy();
 }
 
 uint32_t Device::GetOptimalBytesPerRowAlignment() const {

@@ -27,10 +27,12 @@ enum InstanceType : uint16_t;
 class JSGlobalObject;
 class JSGlobalProxy;
 class LookupIterator;
+class PropertyDescriptor;
 class PropertyKey;
 class NativeContext;
 class IsCompiledScope;
 class SwissNameDictionary;
+class ElementsAccessor;
 
 #include "torque-generated/src/objects/js-objects-tq.inc"
 
@@ -248,7 +250,8 @@ class JSReceiver : public TorqueGeneratedJSReceiver<JSReceiver, HeapObject> {
   static Handle<String> GetConstructorName(Isolate* isolate,
                                            Handle<JSReceiver> receiver);
 
-  V8_EXPORT_PRIVATE base::Optional<NativeContext> GetCreationContextRaw();
+  V8_EXPORT_PRIVATE base::Optional<Tagged<NativeContext>>
+  GetCreationContextRaw();
   V8_EXPORT_PRIVATE MaybeHandle<NativeContext> GetCreationContext();
 
   V8_WARN_UNUSED_RESULT static inline Maybe<PropertyAttributes>
@@ -635,6 +638,7 @@ class JSObject : public TorqueGeneratedJSObject<JSObject, JSReceiver> {
 
   // Returns true if this object is an Api object which can, if unmodified, be
   // dropped during minor GC because the embedder can recreate it again later.
+  static inline bool IsDroppableApiObject(Tagged<Map>);
   inline bool IsDroppableApiObject() const;
 
   // Returns a new map with all transitions dropped from the object's current

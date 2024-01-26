@@ -25,7 +25,7 @@ const UIStrings = {
   /**
    *@description Header for preloading status.
    */
-  preloadingStatus: 'Preloading status',
+  preloadingStatus: 'Speculative loading status',
   /**
    *@description Label for failure reason of preloeading
    */
@@ -56,7 +56,7 @@ const UIStrings = {
   /**
    *@description Message that tells this page was not preloaded.
    */
-  noPreloads: 'The initiating page did not attempt to preload this page\'s URL.',
+  noPreloads: 'The initiating page did not attempt to speculatively load this page\'s URL.',
   /**
    *@description Header for current URL.
    */
@@ -64,11 +64,11 @@ const UIStrings = {
   /**
    *@description Header for mismatched preloads.
    */
-  preloadedURLs: 'URLs being preloaded by the initiating page',
+  preloadedURLs: 'URLs being speculatively loaded by the initiating page',
   /**
    *@description Link to learn more about Preloading
    */
-  learnMore: 'Learn more: Preloading on developer.chrome.com',
+  learnMore: 'Learn more: Speculative loading on developer.chrome.com',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/application/preloading/components/UsedPreloadingView.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -193,13 +193,11 @@ export class UsedPreloadingView extends LegacyWrapper.LegacyWrapper.WrappableCom
       // Disabled until https://crbug.com/1079231 is fixed.
       // clang-format off
       maybeFailureReason = LitHtml.html`
-        <${ReportView.ReportView.ReportSection.litTagName}>
-          <${ReportView.ReportView.ReportKey.litTagName}>${i18nString(UIStrings.detailsFailureReason)}</${
-            ReportView.ReportView.ReportKey.litTagName}>
-          <${ReportView.ReportView.ReportValue.litTagName}>
-            ${maybeFailureReasonMessage}
-          </${ReportView.ReportView.ReportValue.litTagName}>
-        </${ReportView.ReportView.ReportSection.litTagName}>
+      <${ReportView.ReportView.ReportSectionHeader.litTagName}>${i18nString(UIStrings.detailsFailureReason)}</${
+        ReportView.ReportView.ReportSectionHeader.litTagName}>
+      <${ReportView.ReportView.ReportSection.litTagName}>
+        ${maybeFailureReasonMessage}
+      </${ReportView.ReportView.ReportSection.litTagName}>
       `;
       // clang-format on
     }

@@ -17,74 +17,88 @@ import re
 from typing import Dict, List
 
 NAME = r'[a-zA-Z_\d\{\}]+'
+ARGS = '[^\)]*'
 ANY_WORDS = r'[^\s].*'
 ANY_NON_QUOTE = r'[^\']*.*'
 TYPE = r'[A-Z]+'
 SQL = r'[\s\S]*?'
 WS = r'\s*'
+COMMENT = r'--[^\n]*'
+NEW_STYLE_ARG = rf'((?: {COMMENT})*) ({NAME}) ({TYPE})'
 
-CREATE_TABLE_VIEW_PATTERN = (
+
+# Make the pattern more readable by allowing the use of spaces
+# and replace then with a wildcard in a separate step.
+def update_pattern(pattern):
+  return pattern.replace(' ', WS)
+
+
+CREATE_TABLE_VIEW_PATTERN = update_pattern(
     # Match create table/view and catch type
-    fr'^CREATE{WS}(?:VIRTUAL|PERFETTO)?{WS}(TABLE|VIEW){WS}(?:IF NOT EXISTS)?'
-    # Catch the name
-    fr'{WS}({NAME}){WS}(?:AS|USING)?{WS}.*')
+    fr'^CREATE (OR REPLACE)? (?:VIRTUAL|PERFETTO)?'
+    fr' (TABLE|VIEW) (?:IF NOT EXISTS)?'
+    # Catch the name and optional schema.
+    fr' ({NAME}) (?: \( ({ARGS}) \) )? (?:AS|USING)? .*')
 
-CREATE_TABLE_AS_PATTERN = (fr'^CREATE{WS}TABLE{WS}({NAME}){WS}AS')
+CREATE_TABLE_AS_PATTERN = update_pattern(fr'^CREATE TABLE ({NAME}) AS')
 
-DROP_TABLE_VIEW_PATTERN = (fr'^DROP{WS}(TABLE|VIEW){WS}IF{WS}EXISTS{WS}'
-                           fr'({NAME});$')
+DROP_TABLE_VIEW_PATTERN = update_pattern(fr'^DROP (TABLE|VIEW) IF EXISTS '
+                                         fr'({NAME});$')
 
-CREATE_PERFETTO_TABLE_PATTERN = (
-    # Match `CREATE PERFETTO TABLE {name} AS` string
-    fr'^CREATE{WS}PERFETTO{WS}TABLE{WS}({NAME}){WS}AS{WS}.*')
-
-CREATE_FUNCTION_PATTERN = (
+CREATE_FUNCTION_PATTERN = update_pattern(
     # Function name.
-    fr"CREATE{WS}PERFETTO{WS}FUNCTION{WS}({NAME}){WS}"
+    fr"CREATE (OR REPLACE)? PERFETTO FUNCTION ({NAME}) "
     # Args: anything in the brackets.
-    fr"{WS}\({WS}({ANY_WORDS}){WS}\){WS}"
+    fr" \( ({ARGS}) \) "
     # Type: word after RETURNS.
-    fr"{WS}RETURNS{WS}({TYPE}){WS}AS{WS}"
-    # Sql: Anything between ' and ');. We are catching \'.
-    fr"{WS}({SQL});")
+    fr" RETURNS ({TYPE}) AS ")
 
-CREATE_VIEW_FUNCTION_PATTERN = (
-    fr"SELECT{WS}CREATE_VIEW_FUNCTION\({WS}"
-    # Function name: we are matching everything [A-Z]* between ' and ).
-    fr"{WS}'{WS}({NAME}){WS}\({WS}"
-    # Args: anything before closing bracket with '.
-    fr"{WS}({ANY_WORDS}){WS}\){WS}'{WS},{WS}"
-    # Return columns: anything between two '.
-    fr"'{WS}({ANY_NON_QUOTE}){WS}',{WS}"
-    # Sql: Anything between ' and ');. We are catching \'.
-    fr"{WS}'{WS}({SQL}){WS}'{WS}\){WS};")
+CREATE_TABLE_FUNCTION_PATTERN = update_pattern(
+    fr"CREATE (OR REPLACE)? PERFETTO FUNCTION ({NAME}) "
+    # Args: anything in the brackets.
+    fr" \( ({ARGS}) \) "
+    # Type: word after RETURNS.
+    fr" RETURNS TABLE\( ({ANY_WORDS}) \) AS ")
 
-COLUMN_ANNOTATION_PATTERN = fr'^\s*({NAME})\s*({ANY_WORDS})'
+CREATE_MACRO_PATTERN = update_pattern(
+    fr"CREATE (OR REPLACE)? PERFETTO MACRO ({NAME}) "
+    # Args: anything in the brackets.
+    fr" \( ({ARGS}) \) "
+    # Type: word after RETURNS.
+    fr" RETURNS")
 
-NAME_AND_TYPE_PATTERN = fr'\s*({NAME})\s+({TYPE})\s*'
+COLUMN_ANNOTATION_PATTERN = update_pattern(fr'^ ({NAME}) ({ANY_WORDS})')
+
+NAME_AND_TYPE_PATTERN = update_pattern(fr' ({NAME})\s+({TYPE}) ')
 
 ARG_ANNOTATION_PATTERN = fr'\s*{NAME_AND_TYPE_PATTERN}\s+({ANY_WORDS})'
 
-FUNCTION_RETURN_PATTERN = fr'^\s*({TYPE})\s+({ANY_WORDS})'
+ARG_DEFINITION_PATTERN = update_pattern(NEW_STYLE_ARG)
+
+FUNCTION_RETURN_PATTERN = update_pattern(fr'^ ({TYPE})\s+({ANY_WORDS})')
+
+ANY_PATTERN = r'(?:\s|.)*'
 
 
 class ObjKind(str, Enum):
   table_view = 'table_view'
   function = 'function'
-  view_function = 'view_function'
+  table_function = 'table_function'
 
 
 PATTERN_BY_KIND = {
     ObjKind.table_view: CREATE_TABLE_VIEW_PATTERN,
     ObjKind.function: CREATE_FUNCTION_PATTERN,
-    ObjKind.view_function: CREATE_VIEW_FUNCTION_PATTERN,
+    ObjKind.table_function: CREATE_TABLE_FUNCTION_PATTERN,
 }
 
 
 # Given a regex pattern and a string to match against, returns all the
 # matching positions. Specifically, it returns a dictionary from the line
 # number of the match to the regex match object.
-def match_pattern(pattern: str, file_str: str) -> Dict[int, re.Match]:
+# Note: this resuts a dict[int, re.Match], but re.Match exists only in later
+# versions of python3, prior to that it was _sre.SRE_Match.
+def match_pattern(pattern: str, file_str: str) -> Dict[int, object]:
   line_number_to_matches = {}
   for match in re.finditer(pattern, file_str, re.MULTILINE):
     line_id = file_str[:match.start()].count('\n')
@@ -129,6 +143,12 @@ def check_banned_words(sql: str, path: str) -> List[str]:
       errors.append('CREATE_FUNCTION is deprecated in trace processor. '
                     'Use CREATE PERFETTO FUNCTION instead.\n'
                     f'Offending file: {path}')
+
+    if 'create_view_function' in line.casefold():
+      errors.append(
+          'CREATE_VIEW_FUNCTION is deprecated in trace processor. '
+          'Use CREATE PERFETTO FUNCTION $name RETURNS TABLE instead.\n'
+          f'Offending file: {path}')
 
     if 'import(' in line.casefold():
       errors.append('SELECT IMPORT is deprecated in trace processor. '

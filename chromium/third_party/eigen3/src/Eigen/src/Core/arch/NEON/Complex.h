@@ -11,6 +11,7 @@
 #ifndef EIGEN_COMPLEX_NEON_H
 #define EIGEN_COMPLEX_NEON_H
 
+// IWYU pragma: private
 #include "../../InternalHeaderCheck.h"
 
 namespace Eigen {

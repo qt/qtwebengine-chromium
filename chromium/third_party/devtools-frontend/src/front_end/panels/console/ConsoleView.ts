@@ -50,12 +50,11 @@ import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
 import {ConsoleContextSelector} from './ConsoleContextSelector.js';
-import consoleViewStyles from './consoleView.css.js';
-
 import {ConsoleFilter, FilterType, type LevelsMask} from './ConsoleFilter.js';
 import {ConsolePinPane} from './ConsolePinPane.js';
 import {ConsolePrompt, Events as ConsolePromptEvents} from './ConsolePrompt.js';
 import {ConsoleSidebar, Events} from './ConsoleSidebar.js';
+import consoleViewStyles from './consoleView.css.js';
 import {
   ConsoleCommand,
   ConsoleCommandResult,
@@ -65,7 +64,6 @@ import {
   getMessageForElement,
   MaxLengthForLinks,
 } from './ConsoleViewMessage.js';
-
 import {ConsoleViewport, type ConsoleViewportElement, type ConsoleViewportProvider} from './ConsoleViewport.js';
 
 const UIStrings = {
@@ -862,8 +860,13 @@ export class ConsoleView extends UI.Widget.VBox implements
     const insertedInMiddle = insertAt < this.consoleMessages.length;
     this.consoleMessages.splice(insertAt, 0, viewMessage);
 
-    if (message.type !== SDK.ConsoleModel.FrontendMessageType.Command &&
-        message.type !== SDK.ConsoleModel.FrontendMessageType.Result) {
+    if (message.type === SDK.ConsoleModel.FrontendMessageType.Command) {
+      this.prompt.history().pushHistoryItem(message.messageText);
+      if (this.prompt.history().length() >= MIN_HISTORY_LENGTH_FOR_DISABLING_SELF_XSS_WARNING &&
+          !this.selfXssWarningDisabledSetting.get()) {
+        this.selfXssWarningDisabledSetting.set(true);
+      }
+    } else if (message.type !== SDK.ConsoleModel.FrontendMessageType.Result) {
       // Maintain group tree.
       // Find parent group.
       const consoleGroupStartIndex =
@@ -1104,6 +1107,10 @@ export class ConsoleView extends UI.Widget.VBox implements
     const consoleViewMessage = sourceElement && getMessageForElement(sourceElement);
     const consoleMessage = consoleViewMessage ? consoleViewMessage.consoleMessage() : null;
 
+    if (consoleMessage) {
+      contextMenu.headerSection().appendAction('explain.consoleMessage', undefined, /* optional=*/ true);
+    }
+
     if (consoleMessage && consoleMessage.url) {
       const menuTitle = i18nString(
           UIStrings.hideMessagesFromS, {PH1: new Common.ParsedURL.ParsedURL(consoleMessage.url).displayName});
@@ -1125,11 +1132,6 @@ export class ConsoleView extends UI.Widget.VBox implements
         contextMenu.debugSection().appendItem(
             i18nString(UIStrings.replayXhr), SDK.NetworkManager.NetworkManager.replayRequest.bind(null, request));
       }
-    }
-
-    if (consoleViewMessage) {
-      UI.Context.Context.instance().setFlavor(ConsoleViewMessage, consoleViewMessage);
-      contextMenu.appendApplicableItems(consoleViewMessage);
     }
 
     void contextMenu.show();
@@ -1333,7 +1335,7 @@ export class ConsoleView extends UI.Widget.VBox implements
 
   private messagesPasted(event: Event): void {
     if (Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.SELF_XSS_WARNING) &&
-        !this.selfXssWarningDisabledSetting.get()) {
+        !Root.Runtime.Runtime.queryParam('isChromeForTesting') && !this.selfXssWarningDisabledSetting.get()) {
       event.preventDefault();
       this.prompt.showSelfXssWarning();
     }
@@ -1391,11 +1393,6 @@ export class ConsoleView extends UI.Widget.VBox implements
 
   private commandEvaluated(event: Common.EventTarget.EventTargetEvent<SDK.ConsoleModel.CommandEvaluatedEvent>): void {
     const {data} = event;
-    this.prompt.history().pushHistoryItem(data.commandMessage.messageText);
-    if (this.prompt.history().length() >= MIN_HISTORY_LENGTH_FOR_DISABLING_SELF_XSS_WARNING &&
-        !this.selfXssWarningDisabledSetting.get()) {
-      this.selfXssWarningDisabledSetting.set(true);
-    }
     this.printResult(data.result, data.commandMessage, data.exceptionDetails);
   }
 

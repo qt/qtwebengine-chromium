@@ -215,15 +215,16 @@ AND child.ts BETWEEN parent.ts AND parent.ts + parent.dur;
 -- Monitor contention slices that are neither blocking nor blocked by another monitor contention
 -- slice. They neither have |parent_id| nor |child_id| fields.
 CREATE TABLE internal_isolated AS
-WITH
-  x AS (
+WITH parents_and_children AS (
+ SELECT id FROM internal_children
+ UNION ALL
+ SELECT id FROM internal_parents
+), isolated AS (
     SELECT id FROM android_monitor_contention
     EXCEPT
-    SELECT id FROM internal_children
-    UNION ALL
-    SELECT id FROM internal_parents
+    SELECT id FROM parents_and_children
   )
-SELECT * FROM android_monitor_contention JOIN x USING (id);
+SELECT * FROM android_monitor_contention JOIN isolated USING (id);
 
 -- Contains parsed monitor contention slices with the parent-child relationships.
 --
@@ -374,8 +375,8 @@ GROUP BY id, blocked_function;
 -- The weights of each node represent the cumulative wall time the node blocked
 -- other nodes connected to it.
 --
--- @arg upid INT      Upid of process to generate a lock graph for.
--- @ret pprof BYTES   Pprof of lock graph.
+-- @arg upid INT         Upid of process to generate a lock graph for.
+-- @column pprof BYTES   Pprof of lock graph.
 CREATE PERFETTO FUNCTION android_monitor_contention_graph(upid INT)
 RETURNS TABLE(pprof BYTES) AS
 WITH contention_chain AS (

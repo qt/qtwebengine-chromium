@@ -10,6 +10,7 @@
 #ifndef EIGEN_SKYLINEINPLACELU_H
 #define EIGEN_SKYLINEINPLACELU_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen { 

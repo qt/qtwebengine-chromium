@@ -1,29 +1,42 @@
-// Copyright 2020 The Tint Authors.
+// Copyright 2020 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/spirv/reader/ast_parser/parse.h"
 
 #include <utility>
 
+#include "src/tint/lang/spirv/reader/ast_lower/atomics.h"
+#include "src/tint/lang/spirv/reader/ast_lower/decompose_strided_array.h"
+#include "src/tint/lang/spirv/reader/ast_lower/decompose_strided_matrix.h"
+#include "src/tint/lang/spirv/reader/ast_lower/fold_trivial_lets.h"
 #include "src/tint/lang/spirv/reader/ast_parser/ast_parser.h"
-#include "src/tint/lang/wgsl/ast/transform/decompose_strided_array.h"
-#include "src/tint/lang/wgsl/ast/transform/decompose_strided_matrix.h"
-#include "src/tint/lang/wgsl/ast/transform/fold_trivial_lets.h"
 #include "src/tint/lang/wgsl/ast/transform/manager.h"
 #include "src/tint/lang/wgsl/ast/transform/remove_unreachable_statements.h"
 #include "src/tint/lang/wgsl/ast/transform/simplify_pointers.h"
-#include "src/tint/lang/wgsl/ast/transform/spirv_atomic.h"
 #include "src/tint/lang/wgsl/ast/transform/unshadow.h"
 #include "src/tint/lang/wgsl/program/clone_context.h"
 #include "src/tint/lang/wgsl/resolver/resolve.h"
@@ -44,7 +57,7 @@ Program Parse(const std::vector<uint32_t>& input, const Options& options) {
     if (options.allow_non_uniform_derivatives) {
         // Suppress errors regarding non-uniform derivative operations if requested, by adding a
         // diagnostic directive to the module.
-        builder.DiagnosticDirective(core::DiagnosticSeverity::kOff, "derivative_uniformity");
+        builder.DiagnosticDirective(wgsl::DiagnosticSeverity::kOff, "derivative_uniformity");
     }
 
     if (!options.allow_chromium_extensions) {
@@ -52,22 +65,23 @@ Program Parse(const std::vector<uint32_t>& input, const Options& options) {
         for (auto* enable : builder.AST().Enables()) {
             for (auto* extension : enable->extensions) {
                 switch (extension->name) {
-                    case core::Extension::kUndefined:
-                    case core::Extension::kChromiumDisableUniformityAnalysis:
-                    case core::Extension::kChromiumExperimentalDp4A:
-                    case core::Extension::kChromiumExperimentalFullPtrParameters:
-                    case core::Extension::kChromiumExperimentalPushConstant:
-                    case core::Extension::kChromiumExperimentalReadWriteStorageTexture:
-                    case core::Extension::kChromiumExperimentalSubgroups:
-                    case core::Extension::kChromiumInternalDualSourceBlending:
-                    case core::Extension::kChromiumInternalRelaxedUniformLayout: {
+                    case wgsl::Extension::kUndefined:
+                    case wgsl::Extension::kChromiumDisableUniformityAnalysis:
+                    case wgsl::Extension::kChromiumExperimentalDp4A:
+                    case wgsl::Extension::kChromiumExperimentalFullPtrParameters:
+                    case wgsl::Extension::kChromiumExperimentalPixelLocal:
+                    case wgsl::Extension::kChromiumExperimentalPushConstant:
+                    case wgsl::Extension::kChromiumExperimentalReadWriteStorageTexture:
+                    case wgsl::Extension::kChromiumExperimentalSubgroups:
+                    case wgsl::Extension::kChromiumInternalDualSourceBlending:
+                    case wgsl::Extension::kChromiumInternalRelaxedUniformLayout: {
                         StringStream ss;
                         ss << "module requires " << ToString(extension->name)
                            << ", but 'allow-chromium-extensions' was not passed";
                         builder.Diagnostics().add_error(diag::System::Reader, ss.str());
                         return Program(std::move(builder));
                     }
-                    case core::Extension::kF16:
+                    case wgsl::Extension::kF16:
                         break;
                 }
             }
@@ -89,12 +103,12 @@ Program Parse(const std::vector<uint32_t>& input, const Options& options) {
     ast::transform::DataMap outputs;
     manager.Add<ast::transform::Unshadow>();
     manager.Add<ast::transform::SimplifyPointers>();
-    manager.Add<ast::transform::FoldTrivialLets>();
-    manager.Add<ast::transform::DecomposeStridedMatrix>();
-    manager.Add<ast::transform::DecomposeStridedArray>();
+    manager.Add<FoldTrivialLets>();
+    manager.Add<DecomposeStridedMatrix>();
+    manager.Add<DecomposeStridedArray>();
     manager.Add<ast::transform::RemoveUnreachableStatements>();
-    manager.Add<ast::transform::SpirvAtomic>();
-    return manager.Run(&program, {}, outputs);
+    manager.Add<Atomics>();
+    return manager.Run(program, {}, outputs);
 }
 
 }  // namespace tint::spirv::reader::ast_parser

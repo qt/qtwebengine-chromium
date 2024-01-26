@@ -13,18 +13,27 @@
 // limitations under the License.
 
 import {searchSegment} from '../../base/binary_search';
+import {duration, Time, time} from '../../base/time';
 import {Actions} from '../../common/actions';
-import {LONG, STR} from '../../common/query_result';
+import {LONG, NUM, STR} from '../../common/query_result';
 import {ProfileType} from '../../common/state';
-import {duration, Time, time} from '../../common/time';
+import {
+  TrackAdapter,
+  TrackControllerAdapter,
+  TrackWithControllerAdapter,
+} from '../../common/track_adapter';
 import {TrackData} from '../../common/track_data';
 import {profileType} from '../../controller/flamegraph_controller';
-import {TrackController} from '../../controller/track_controller';
 import {FLAMEGRAPH_HOVERED_COLOR} from '../../frontend/flamegraph';
 import {globals} from '../../frontend/globals';
 import {TimeScale} from '../../frontend/time_scale';
-import {NewTrackArgs, Track} from '../../frontend/track';
-import {Plugin, PluginContext, PluginInfo} from '../../public';
+import {NewTrackArgs} from '../../frontend/track';
+import {
+  Plugin,
+  PluginContext,
+  PluginContextTrace,
+  PluginDescriptor,
+} from '../../public';
 
 export const HEAP_PROFILE_TRACK_KIND = 'HeapProfileTrack';
 
@@ -37,8 +46,7 @@ export interface Config {
   upid: number;
 }
 
-class HeapProfileTrackController extends TrackController<Config, Data> {
-  static readonly kind = HEAP_PROFILE_TRACK_KIND;
+class HeapProfileTrackController extends TrackControllerAdapter<Config, Data> {
   async onBoundsChange(start: time, end: time, resolution: duration):
       Promise<Data> {
     if (this.config.upid === undefined) {
@@ -88,8 +96,7 @@ const HEAP_PROFILE_COLOR = 'hsl(224, 45%, 70%)';
 const MARGIN_TOP = 4.5;
 const RECT_HEIGHT = 30.5;
 
-class HeapProfileTrack extends Track<Config, Data> {
-  static readonly kind = HEAP_PROFILE_TRACK_KIND;
+class HeapProfileTrack extends TrackAdapter<Config, Data> {
   static create(args: NewTrackArgs): HeapProfileTrack {
     return new HeapProfileTrack(args);
   }
@@ -216,13 +223,34 @@ class HeapProfileTrack extends Track<Config, Data> {
 }
 
 class HeapProfilePlugin implements Plugin {
-  onActivate(ctx: PluginContext): void {
-    ctx.registerTrackController(HeapProfileTrackController);
-    ctx.registerTrack(HeapProfileTrack);
+  onActivate(_ctx: PluginContext): void {}
+  async onTraceLoad(ctx: PluginContextTrace): Promise<void> {
+    const result = await ctx.engine.query(`
+    select distinct(upid) from heap_profile_allocation
+    union
+    select distinct(upid) from heap_graph_object
+  `);
+    for (const it = result.iter({upid: NUM}); it.valid(); it.next()) {
+      const upid = it.upid;
+      ctx.registerStaticTrack({
+        uri: `perfetto.HeapProfile#${upid}`,
+        displayName: 'Heap Profile',
+        kind: HEAP_PROFILE_TRACK_KIND,
+        upid,
+        track: ({trackKey}) => {
+          return new TrackWithControllerAdapter(
+              ctx.engine,
+              trackKey,
+              {upid},
+              HeapProfileTrack,
+              HeapProfileTrackController);
+        },
+      });
+    }
   }
 }
 
-export const plugin: PluginInfo = {
+export const plugin: PluginDescriptor = {
   pluginId: 'perfetto.HeapProfile',
   plugin: HeapProfilePlugin,
 };

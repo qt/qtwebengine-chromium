@@ -14,40 +14,42 @@
 
 import m from 'mithril';
 
+import {copyToClipboard} from '../base/clipboard';
 import {Trash} from '../base/disposable';
 import {findRef} from '../base/dom_utils';
 import {FuzzyFinder} from '../base/fuzzy';
 import {assertExists} from '../base/logging';
 import {undoCommonChatAppReplacements} from '../base/string_utils';
-import {Actions} from '../common/actions';
 import {
   duration,
-  setTimestampFormat,
   Span,
   Time,
   time,
   TimeSpan,
-  TimestampFormat,
-} from '../common/time';
+} from '../base/time';
+import {Actions} from '../common/actions';
+import {pluginManager} from '../common/plugins';
+import {setTimestampFormat, TimestampFormat} from '../common/timestamp_format';
 import {raf} from '../core/raf_scheduler';
 import {Command} from '../public';
+import {HotkeyConfig, HotkeyContext} from '../widgets/hotkey_context';
+import {HotkeyGlyphs} from '../widgets/hotkey_glyphs';
 
 import {addTab} from './bottom_tab';
-import {copyToClipboard, onClickCopy} from './clipboard';
+import {onClickCopy} from './clipboard';
 import {CookieConsent} from './cookie_consent';
 import {globals} from './globals';
 import {toggleHelp} from './help_modal';
 import {fullscreenModalContainer} from './modal';
 import {Omnibox, OmniboxOption} from './omnibox';
 import {runQueryInNewTab} from './query_result_tab';
+import {verticalScrollToTrack} from './scroll_helper';
 import {executeSearch} from './search_handler';
 import {Sidebar} from './sidebar';
 import {SqlTableTab} from './sql_table/tab';
 import {SqlTables} from './sql_table/well_known_tables';
 import {Topbar} from './topbar';
 import {shareTrace} from './trace_attrs';
-import {HotkeyConfig, HotkeyContext} from './widgets/hotkey_context';
-import {HotkeyGlyphs} from './widgets/hotkey_glyphs';
 
 function renderPermalink(): m.Children {
   const permalink = globals.state.permalink;
@@ -191,6 +193,7 @@ export class App implements m.ClassComponent {
           async () => {
             const options: PromptOption[] = [
               {key: TimestampFormat.Timecode, displayName: 'Timecode'},
+              {key: TimestampFormat.UTC, displayName: 'Realtime (UTC)'},
               {key: TimestampFormat.Seconds, displayName: 'Seconds'},
               {key: TimestampFormat.Raw, displayName: 'Raw'},
               {
@@ -301,6 +304,54 @@ export class App implements m.ClassComponent {
             if (window) {
               const query = `ts >= ${window.start} and ts < ${window.end}`;
               copyToClipboard(query);
+            }
+          },
+    },
+    {
+      // Selects & reveals the first track on the timeline with a given URI.
+      id: 'perfetto.FindTrack',
+      name: 'Find track by URI',
+      callback:
+          async () => {
+            const tracks = Array.from(pluginManager.trackRegistry.values());
+            const options = tracks.map(({uri}): PromptOption => {
+              return {key: uri, displayName: uri};
+            });
+
+            // Sort tracks in a natural sort order
+            const collator = new Intl.Collator('en', {
+              numeric: true,
+              sensitivity: 'base',
+            });
+            const sortedOptions = options.sort((a, b) => {
+              return collator.compare(a.displayName, b.displayName);
+            });
+
+            try {
+              const selectedUri =
+                  await this.prompt('Choose a track...', sortedOptions);
+
+              // Find the first track with this URI
+              const firstTrack = Object.values(globals.state.tracks)
+                                     .find(({uri}) => uri === selectedUri);
+              if (firstTrack) {
+                console.log(firstTrack);
+                verticalScrollToTrack(firstTrack.key, true);
+                const traceTime = globals.stateTraceTimeTP();
+                globals.makeSelection(
+                    Actions.selectArea({
+                      area: {
+                        start: traceTime.start,
+                        end: traceTime.end,
+                        tracks: [firstTrack.key],
+                      },
+                    }),
+                );
+              } else {
+                alert(`No tracks with uri ${selectedUri} on the timeline`);
+              }
+            } catch {
+              // Prompt was probably cancelled - do nothing.
             }
           },
     },

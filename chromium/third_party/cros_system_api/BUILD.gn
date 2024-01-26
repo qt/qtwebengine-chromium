@@ -61,6 +61,8 @@ group("all") {
     ":system_api-privacy_screen-protos",
     ":system_api-private_computing-protos",
     ":system_api-protos",
+    ":system_api-resource_manager-goprotos",
+    ":system_api-resource_manager-protos",
     ":system_api-rmad-protos",
     ":system_api-runtime_probe-goprotos",
     ":system_api-runtime_probe-protos",
@@ -70,6 +72,8 @@ group("all") {
     ":system_api-shadercached-protos",
     ":system_api-smbprovider-protos",
     ":system_api-spaced-protos",
+    ":system_api-stack_sampled_metrics_status-goprotos",
+    ":system_api-stack_sampled_metrics_status-protos",
     ":system_api-system_proxy-protos",
     ":system_api-tpm_manager-goprotos",
     ":system_api-tpm_manager-protos",
@@ -77,12 +81,12 @@ group("all") {
     ":system_api-u2f-protos",
     ":system_api-update_engine-goprotos",
     ":system_api-update_engine-protos",
+    ":system_api-vm_applications-goprotos",
     ":system_api-vm_applications-protos",
     ":system_api-vm_cicerone-goprotos",
     ":system_api-vm_cicerone-protos",
     ":system_api-vm_concierge-goprotos",
     ":system_api-vm_concierge-protos",
-    ":system_api-vm_disk_management-protos",
     ":system_api-vm_launch-protos",
     ":system_api-vm_memory_management-protos",
     ":system_api-vm_permission_service-protos",
@@ -463,6 +467,12 @@ proto_library("system_api-vm_applications-protos") {
   install_package = true
 }
 
+goproto_library("system_api-vm_applications-goprotos") {
+  proto_in_dir = "dbus"
+  proto_out_dir = "go/src/"
+  sources = [ "${proto_in_dir}/vm_applications/apps.proto" ]
+}
+
 proto_library("system_api-vm_sk_forwarding-protos") {
   proto_in_dir = "dbus"
   proto_out_dir = "include"
@@ -475,14 +485,6 @@ proto_library("system_api-vm_launch-protos") {
   proto_in_dir = "dbus"
   proto_out_dir = "include"
   sources = [ "${proto_in_dir}/vm_launch/launch.proto" ]
-  standalone = true
-  install_package = true
-}
-
-proto_library("system_api-vm_disk_management-protos") {
-  proto_in_dir = "dbus"
-  proto_out_dir = "include"
-  sources = [ "${proto_in_dir}/vm_disk_management/disk_management.proto" ]
   standalone = true
   install_package = true
 }
@@ -720,6 +722,20 @@ goproto_library("system_api-hps-goprotos") {
   sources = [ "${proto_in_dir}/hps_service.proto" ]
 }
 
+proto_library("system_api-resource_manager-protos") {
+  proto_in_dir = "dbus/resource_manager"
+  proto_out_dir = "include/resource_manager/proto_bindings"
+  sources = [ "${proto_in_dir}/resource_manager.proto" ]
+  standalone = true
+  install_package = true
+}
+
+goproto_library("system_api-resource_manager-goprotos") {
+  proto_in_dir = "dbus/resource_manager"
+  proto_out_dir = "go/src/"
+  sources = [ "${proto_in_dir}/resource_manager.proto" ]
+}
+
 proto_library("system_api-rmad-protos") {
   proto_in_dir = "dbus/rmad"
   proto_out_dir = "include/rmad/proto_bindings"
@@ -849,4 +865,18 @@ goproto_library("system_api-printscanmgr-goprotos") {
   proto_in_dir = "dbus/printscanmgr"
   proto_out_dir = "go/src/"
   sources = [ "${proto_in_dir}/printscanmgr_service.proto" ]
+}
+
+proto_library("system_api-stack_sampled_metrics_status-protos") {
+  proto_in_dir = "proto/stack_sampled_metrics_status"
+  proto_out_dir = "include/stack_sampled_metrics_status/proto_bindings"
+  sources = [ "${proto_in_dir}/stack_sampled_metrics_status.proto" ]
+  standalone = true
+  install_package = true
+}
+
+goproto_library("system_api-stack_sampled_metrics_status-goprotos") {
+  proto_in_dir = "proto/stack_sampled_metrics_status"
+  proto_out_dir = "go/src/"
+  sources = [ "${proto_in_dir}/stack_sampled_metrics_status.proto" ]
 }

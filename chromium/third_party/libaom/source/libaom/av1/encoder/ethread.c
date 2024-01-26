@@ -479,8 +479,7 @@ static int fp_enc_row_mt_worker_hook(void *arg1, void *unused) {
 #endif
     // When firstpass_mt_exit is set to true, other workers need not pursue any
     // further jobs.
-    if (firstpass_mt_exit) return 1;
-    if (end_of_frame == 1) break;
+    if (firstpass_mt_exit || end_of_frame) break;
 
     TileDataEnc *const this_tile = &cpi->tile_data[cur_tile_id];
     AV1EncRowMultiThreadSync *const row_mt_sync = &this_tile->row_mt_sync;
@@ -539,8 +538,8 @@ static void launch_loop_filter_rows(AV1_COMMON *cm, EncWorkerData *thread_data,
     av1_thread_loop_filter_rows(
         lf_data->frame_buffer, lf_data->cm, lf_data->planes, lf_data->xd,
         cur_job_info->mi_row, cur_job_info->plane, cur_job_info->dir,
-        lpf_opt_level, lf_sync, lf_data->params_buf, lf_data->tx_buf,
-        mib_size_log2);
+        lpf_opt_level, lf_sync, &thread_data->error_info, lf_data->params_buf,
+        lf_data->tx_buf, mib_size_log2);
   }
 }
 
@@ -584,6 +583,7 @@ static int enc_row_mt_worker_hook(void *arg1, void *unused) {
   (void)unused;
 
   struct aom_internal_error_info *const error_info = &thread_data->error_info;
+  AV1LfSync *const lf_sync = thread_data->lf_sync;
   MACROBLOCKD *const xd = &thread_data->td->mb.e_mbd;
   xd->error_info = error_info;
 
@@ -601,6 +601,16 @@ static int enc_row_mt_worker_hook(void *arg1, void *unused) {
     pthread_mutex_unlock(enc_row_mt_mutex_);
 #endif
     set_encoding_done(cpi);
+
+    if (cpi->mt_info.pipeline_lpf_mt_with_enc) {
+#if CONFIG_MULTITHREAD
+      pthread_mutex_lock(lf_sync->job_mutex);
+      lf_sync->lf_mt_exit = true;
+      pthread_mutex_unlock(lf_sync->job_mutex);
+#endif
+      av1_set_vert_loop_filter_done(&cpi->common, lf_sync,
+                                    cpi->common.seq_params->mib_size_log2);
+    }
     return 0;
   }
   error_info->setjmp = 1;
@@ -651,7 +661,10 @@ static int enc_row_mt_worker_hook(void *arg1, void *unused) {
 #endif
     // When row_mt_exit is set to true, other workers need not pursue any
     // further jobs.
-    if (row_mt_exit) return 1;
+    if (row_mt_exit) {
+      error_info->setjmp = 0;
+      return 1;
+    }
 
     if (end_of_frame) break;
 
@@ -883,7 +896,7 @@ void av1_init_mt_sync(AV1_COMP *cpi, int is_first_pass) {
       if (!lr_sync->sync_range || num_rows_lr > lr_sync->rows ||
           num_lr_workers > lr_sync->num_workers ||
           MAX_MB_PLANE > lr_sync->num_planes) {
-        av1_loop_restoration_dealloc(lr_sync, num_lr_workers);
+        av1_loop_restoration_dealloc(lr_sync);
         av1_loop_restoration_alloc(lr_sync, cm, num_lr_workers, num_rows_lr,
                                    MAX_MB_PLANE, cm->width);
       }
@@ -903,7 +916,7 @@ void av1_init_mt_sync(AV1_COMP *cpi, int is_first_pass) {
 
 // Computes the number of workers to be considered while allocating memory for a
 // multi-threaded module under FPMT.
-int av1_get_num_mod_workers_for_alloc(PrimaryMultiThreadInfo *const p_mt_info,
+int av1_get_num_mod_workers_for_alloc(const PrimaryMultiThreadInfo *p_mt_info,
                                       MULTI_THREADED_MODULES mod_name) {
   int num_mod_workers = p_mt_info->num_mod_workers[mod_name];
   if (p_mt_info->num_mod_workers[MOD_FRAME_ENC] > 1) {
@@ -947,6 +960,9 @@ void av1_init_tile_thread_data(AV1_PRIMARY *ppi, int is_first_pass) {
         // Set up firstpass PICK_MODE_CONTEXT.
         thread_data->td->firstpass_ctx = av1_alloc_pmc(
             ppi->cpi, BLOCK_16X16, &thread_data->td->shared_coeff_buf);
+        if (!thread_data->td->firstpass_ctx)
+          aom_internal_error(&ppi->error, AOM_CODEC_MEM_ERROR,
+                             "Failed to allocate PICK_MODE_CONTEXT");
       }
 
       if (!is_first_pass && i < num_enc_workers) {
@@ -1405,6 +1421,7 @@ static AOM_INLINE void launch_workers(MultiThreadInfo *const mt_info,
   const AVxWorkerInterface *const winterface = aom_get_worker_interface();
   for (int i = num_workers - 1; i >= 0; i--) {
     AVxWorker *const worker = &mt_info->workers[i];
+    worker->had_error = 0;
     if (i == 0)
       winterface->execute(worker);
     else
@@ -1453,13 +1470,15 @@ static AOM_INLINE void accumulate_counters_enc_workers(AV1_COMP *cpi,
       // Keep these conditional expressions in sync with the corresponding ones
       // in prepare_enc_workers().
       if (cpi->sf.inter_sf.mv_cost_upd_level != INTERNAL_COST_UPD_OFF) {
-        aom_free(thread_data->td->mb.mv_costs);
+        aom_free(thread_data->td->mv_costs_alloc);
+        thread_data->td->mv_costs_alloc = NULL;
       }
       if (cpi->sf.intra_sf.dv_cost_upd_level != INTERNAL_COST_UPD_OFF) {
-        aom_free(thread_data->td->mb.dv_costs);
+        aom_free(thread_data->td->dv_costs_alloc);
+        thread_data->td->dv_costs_alloc = NULL;
       }
     }
-    av1_dealloc_mb_data(&cpi->common, &thread_data->td->mb);
+    av1_dealloc_mb_data(&thread_data->td->mb, av1_num_planes(&cpi->common));
 
     // Accumulate counters.
     if (i > 0) {
@@ -1523,8 +1542,10 @@ static AOM_INLINE void prepare_enc_workers(AV1_COMP *cpi, AVxWorkerHook hook,
       // Keep these conditional expressions in sync with the corresponding ones
       // in accumulate_counters_enc_workers().
       if (cpi->sf.inter_sf.mv_cost_upd_level != INTERNAL_COST_UPD_OFF) {
-        CHECK_MEM_ERROR(cm, thread_data->td->mb.mv_costs,
-                        (MvCosts *)aom_malloc(sizeof(MvCosts)));
+        CHECK_MEM_ERROR(
+            cm, thread_data->td->mv_costs_alloc,
+            (MvCosts *)aom_malloc(sizeof(*thread_data->td->mv_costs_alloc)));
+        thread_data->td->mb.mv_costs = thread_data->td->mv_costs_alloc;
         memcpy(thread_data->td->mb.mv_costs, cpi->td.mb.mv_costs,
                sizeof(MvCosts));
       }
@@ -1534,8 +1555,10 @@ static AOM_INLINE void prepare_enc_workers(AV1_COMP *cpi, AVxWorkerHook hook,
         // aom_free() call for the same.
         thread_data->td->mb.dv_costs = NULL;
         if (av1_need_dv_costs(cpi)) {
-          CHECK_MEM_ERROR(cm, thread_data->td->mb.dv_costs,
-                          (IntraBCMVCosts *)aom_malloc(sizeof(IntraBCMVCosts)));
+          CHECK_MEM_ERROR(cm, thread_data->td->dv_costs_alloc,
+                          (IntraBCMVCosts *)aom_malloc(
+                              sizeof(*thread_data->td->dv_costs_alloc)));
+          thread_data->td->mb.dv_costs = thread_data->td->dv_costs_alloc;
           memcpy(thread_data->td->mb.dv_costs, cpi->td.mb.dv_costs,
                  sizeof(IntraBCMVCosts));
         }
@@ -1609,7 +1632,7 @@ static AOM_INLINE void fp_prepare_enc_workers(AV1_COMP *cpi, AVxWorkerHook hook,
 #endif
 
 // Computes the number of workers for row multi-threading of encoding stage
-static AOM_INLINE int compute_num_enc_row_mt_workers(AV1_COMMON *const cm,
+static AOM_INLINE int compute_num_enc_row_mt_workers(const AV1_COMMON *cm,
                                                      int max_threads) {
   TileInfo tile_info;
   const int tile_cols = cm->tiles.cols;
@@ -1628,7 +1651,7 @@ static AOM_INLINE int compute_num_enc_row_mt_workers(AV1_COMMON *const cm,
 }
 
 // Computes the number of workers for tile multi-threading of encoding stage
-static AOM_INLINE int compute_num_enc_tile_mt_workers(AV1_COMMON *const cm,
+static AOM_INLINE int compute_num_enc_tile_mt_workers(const AV1_COMMON *cm,
                                                       int max_threads) {
   const int tile_cols = cm->tiles.cols;
   const int tile_rows = cm->tiles.rows;
@@ -1646,7 +1669,7 @@ int av1_get_max_num_workers(const AV1_COMP *cpi) {
 }
 
 // Computes the number of workers for encoding stage (row/tile multi-threading)
-int av1_compute_num_enc_workers(AV1_COMP *cpi, int max_workers) {
+int av1_compute_num_enc_workers(const AV1_COMP *cpi, int max_workers) {
   if (max_workers <= 1) return 1;
   if (cpi->oxcf.row_mt)
     return compute_num_enc_row_mt_workers(&cpi->common, max_workers);
@@ -2516,15 +2539,13 @@ static int gm_mt_worker_hook(void *arg1, void *unused) {
 
     // When gm_mt_exit is set to true, other workers need not pursue any
     // further jobs.
-    if (gm_mt_exit) return 1;
-
-    if (ref_buf_idx == -1) break;
+    if (gm_mt_exit || ref_buf_idx == -1) break;
 
     // Compute global motion for the given ref_buf_idx.
     av1_compute_gm_for_valid_ref_frames(
-        cpi, gm_info->ref_buf, ref_buf_idx, gm_thread_data->motion_models,
-        gm_thread_data->segment_map, gm_info->segment_map_w,
-        gm_info->segment_map_h);
+        cpi, error_info, gm_info->ref_buf, ref_buf_idx,
+        gm_thread_data->motion_models, gm_thread_data->segment_map,
+        gm_info->segment_map_w, gm_info->segment_map_h);
 
 #if CONFIG_MULTITHREAD
     pthread_mutex_lock(gm_mt_mutex_);
@@ -2917,14 +2938,40 @@ static int pack_bs_worker_hook(void *arg1, void *arg2) {
   const CommonTileParams *const tiles = &cm->tiles;
   const int num_tiles = tiles->cols * tiles->rows;
 
+#if CONFIG_MULTITHREAD
+  pthread_mutex_t *const pack_bs_mutex = pack_bs_sync->mutex_;
+#endif
+  MACROBLOCKD *const xd = &thread_data->td->mb.e_mbd;
+  struct aom_internal_error_info *const error_info = &thread_data->error_info;
+  xd->error_info = error_info;
+
+  // The jmp_buf is valid only for the duration of the function that calls
+  // setjmp(). Therefore, this function must reset the 'setjmp' field to 0
+  // before it returns.
+  if (setjmp(error_info->jmp)) {
+    error_info->setjmp = 0;
+#if CONFIG_MULTITHREAD
+    pthread_mutex_lock(pack_bs_mutex);
+    pack_bs_sync->pack_bs_mt_exit = true;
+    pthread_mutex_unlock(pack_bs_mutex);
+#endif
+    return 0;
+  }
+  error_info->setjmp = 1;
+
   while (1) {
 #if CONFIG_MULTITHREAD
-    pthread_mutex_lock(pack_bs_sync->mutex_);
+    pthread_mutex_lock(pack_bs_mutex);
 #endif
-    const int tile_idx = get_next_pack_bs_tile_idx(pack_bs_sync, num_tiles);
+    const int tile_idx =
+        pack_bs_sync->pack_bs_mt_exit
+            ? -1
+            : get_next_pack_bs_tile_idx(pack_bs_sync, num_tiles);
 #if CONFIG_MULTITHREAD
-    pthread_mutex_unlock(pack_bs_sync->mutex_);
+    pthread_mutex_unlock(pack_bs_mutex);
 #endif
+    // When pack_bs_mt_exit is set to true, other workers need not pursue any
+    // further jobs.
     if (tile_idx == -1) break;
     TileDataEnc *this_tile = &cpi->tile_data[tile_idx];
     thread_data->td->mb.e_mbd.tile_ctx = &this_tile->tctx;
@@ -2932,6 +2979,7 @@ static int pack_bs_worker_hook(void *arg1, void *arg2) {
     av1_pack_tile_info(cpi, thread_data->td, &pack_bs_params[tile_idx]);
   }
 
+  error_info->setjmp = 0;
   return 1;
 }
 
@@ -3106,8 +3154,9 @@ static AOM_INLINE void cdef_reset_job_info(AV1CdefSync *cdef_sync) {
 // populates next job information and returns 1, else returns 0.
 static AOM_INLINE int cdef_get_next_job(AV1CdefSync *cdef_sync,
                                         CdefSearchCtx *cdef_search_ctx,
-                                        int *cur_fbr, int *cur_fbc,
-                                        int *sb_count) {
+                                        volatile int *cur_fbr,
+                                        volatile int *cur_fbc,
+                                        volatile int *sb_count) {
 #if CONFIG_MULTITHREAD
   pthread_mutex_lock(cdef_sync->mutex_);
 #endif  // CONFIG_MULTITHREAD
@@ -3117,15 +3166,15 @@ static AOM_INLINE int cdef_get_next_job(AV1CdefSync *cdef_sync,
 
   // If a block is skip, do not process the block and
   // check the skip condition for the next block.
-  while ((!cdef_sync->end_of_frame) &&
-         (cdef_sb_skip(cdef_search_ctx->mi_params, cdef_sync->fbr,
-                       cdef_sync->fbc))) {
+  while (!cdef_sync->cdef_mt_exit && !cdef_sync->end_of_frame &&
+         cdef_sb_skip(cdef_search_ctx->mi_params, cdef_sync->fbr,
+                      cdef_sync->fbc)) {
     update_next_job_info(cdef_sync, nvfb, nhfb);
   }
 
   // Populates information needed for current job and update the row,
   // column indices of the next block to be processed.
-  if (cdef_sync->end_of_frame == 0) {
+  if (!cdef_sync->cdef_mt_exit && cdef_sync->end_of_frame == 0) {
     do_next_block = 1;
     *cur_fbr = cdef_sync->fbr;
     *cur_fbc = cdef_sync->fbc;
@@ -3141,43 +3190,68 @@ static AOM_INLINE int cdef_get_next_job(AV1CdefSync *cdef_sync,
 
 // Hook function for each thread in CDEF search multi-threading.
 static int cdef_filter_block_worker_hook(void *arg1, void *arg2) {
-  AV1CdefSync *const cdef_sync = (AV1CdefSync *)arg1;
-  CdefSearchCtx *cdef_search_ctx = (CdefSearchCtx *)arg2;
-  int cur_fbr, cur_fbc, sb_count;
+  EncWorkerData *thread_data = (EncWorkerData *)arg1;
+  AV1CdefSync *const cdef_sync = (AV1CdefSync *)arg2;
+
+#if CONFIG_MULTITHREAD
+  pthread_mutex_t *cdef_mutex_ = cdef_sync->mutex_;
+#endif
+  struct aom_internal_error_info *const error_info = &thread_data->error_info;
+  CdefSearchCtx *cdef_search_ctx = thread_data->cpi->cdef_search_ctx;
+
+  // The jmp_buf is valid only for the duration of the function that calls
+  // setjmp(). Therefore, this function must reset the 'setjmp' field to 0
+  // before it returns.
+  if (setjmp(error_info->jmp)) {
+    error_info->setjmp = 0;
+#if CONFIG_MULTITHREAD
+    pthread_mutex_lock(cdef_mutex_);
+    cdef_sync->cdef_mt_exit = true;
+    pthread_mutex_unlock(cdef_mutex_);
+#endif
+    return 0;
+  }
+  error_info->setjmp = 1;
+
+  volatile int cur_fbr, cur_fbc, sb_count;
   while (cdef_get_next_job(cdef_sync, cdef_search_ctx, &cur_fbr, &cur_fbc,
                            &sb_count)) {
-    av1_cdef_mse_calc_block(cdef_search_ctx, cur_fbr, cur_fbc, sb_count);
+    av1_cdef_mse_calc_block(cdef_search_ctx, error_info, cur_fbr, cur_fbc,
+                            sb_count);
   }
+  error_info->setjmp = 0;
   return 1;
 }
 
 // Assigns CDEF search hook function and thread data to each worker.
-static void prepare_cdef_workers(MultiThreadInfo *mt_info,
-                                 CdefSearchCtx *cdef_search_ctx,
-                                 AVxWorkerHook hook, int num_workers) {
+static void prepare_cdef_workers(AV1_COMP *cpi, AVxWorkerHook hook,
+                                 int num_workers) {
+  MultiThreadInfo *mt_info = &cpi->mt_info;
   for (int i = num_workers - 1; i >= 0; i--) {
     AVxWorker *worker = &mt_info->workers[i];
+    EncWorkerData *thread_data = &mt_info->tile_thr_data[i];
+
+    thread_data->cpi = cpi;
     worker->hook = hook;
-    worker->data1 = &mt_info->cdef_sync;
-    worker->data2 = cdef_search_ctx;
+    worker->data1 = thread_data;
+    worker->data2 = &mt_info->cdef_sync;
   }
 }
 
 // Implements multi-threading for CDEF search.
-void av1_cdef_mse_calc_frame_mt(AV1_COMMON *cm, MultiThreadInfo *mt_info,
-                                CdefSearchCtx *cdef_search_ctx) {
+void av1_cdef_mse_calc_frame_mt(AV1_COMP *cpi) {
+  MultiThreadInfo *mt_info = &cpi->mt_info;
   AV1CdefSync *cdef_sync = &mt_info->cdef_sync;
   const int num_workers = mt_info->num_mod_workers[MOD_CDEF_SEARCH];
 
   cdef_reset_job_info(cdef_sync);
-  prepare_cdef_workers(mt_info, cdef_search_ctx, cdef_filter_block_worker_hook,
-                       num_workers);
+  prepare_cdef_workers(cpi, cdef_filter_block_worker_hook, num_workers);
   launch_workers(mt_info, num_workers);
-  sync_enc_workers(mt_info, cm, num_workers);
+  sync_enc_workers(mt_info, &cpi->common, num_workers);
 }
 
 // Computes num_workers for temporal filter multi-threading.
-static AOM_INLINE int compute_num_tf_workers(AV1_COMP *cpi) {
+static AOM_INLINE int compute_num_tf_workers(const AV1_COMP *cpi) {
   // For single-pass encode, using no. of workers as per tf block size was not
   // found to improve speed. Hence the thread assignment for single-pass encode
   // is kept based on compute_num_enc_workers().
@@ -3232,7 +3306,8 @@ static AOM_INLINE int compute_num_ai_workers(AV1_COMP *cpi) {
   return AOMMIN(num_mb_rows, cpi->oxcf.max_threads);
 }
 
-int compute_num_mod_workers(AV1_COMP *cpi, MULTI_THREADED_MODULES mod_name) {
+static int compute_num_mod_workers(AV1_COMP *cpi,
+                                   MULTI_THREADED_MODULES mod_name) {
   int num_mod_workers = 0;
   switch (mod_name) {
     case MOD_FP:
@@ -3261,18 +3336,18 @@ int compute_num_mod_workers(AV1_COMP *cpi, MULTI_THREADED_MODULES mod_name) {
     case MOD_AI:
       if (cpi->oxcf.pass == AOM_RC_ONE_PASS) {
         num_mod_workers = compute_num_ai_workers(cpi);
-        break;
       } else {
         num_mod_workers = 0;
-        break;
       }
+      break;
     default: assert(0); break;
   }
   return (num_mod_workers);
 }
 // Computes the number of workers for each MT modules in the encoder
 void av1_compute_num_workers_for_mt(AV1_COMP *cpi) {
-  for (int i = MOD_FP; i < NUM_MT_MODULES; i++)
+  for (int i = MOD_FP; i < NUM_MT_MODULES; i++) {
     cpi->ppi->p_mt_info.num_mod_workers[i] =
         compute_num_mod_workers(cpi, (MULTI_THREADED_MODULES)i);
+  }
 }

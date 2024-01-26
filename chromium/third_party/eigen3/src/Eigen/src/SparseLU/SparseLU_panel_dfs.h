@@ -30,6 +30,7 @@
 #ifndef SPARSELU_PANEL_DFS_H
 #define SPARSELU_PANEL_DFS_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

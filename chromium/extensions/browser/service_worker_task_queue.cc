@@ -273,6 +273,10 @@ void ServiceWorkerTaskQueue::DidInitializeServiceWorkerContext(
                                service_worker_version_id, thread_id});
   RendererStartupHelperFactory::GetForBrowserContext(browser_context_)
       ->ActivateExtensionInProcess(*extension, process_host);
+
+  if (g_test_observer) {
+    g_test_observer->DidInitializeServiceWorkerContext(extension_id);
+  }
 }
 
 void ServiceWorkerTaskQueue::DidStartServiceWorkerContext(
@@ -490,7 +494,12 @@ void ServiceWorkerTaskQueue::DeactivateExtension(const Extension* extension) {
   content::ServiceWorkerContext* service_worker_context =
       GetServiceWorkerContext(extension->id());
 
-  service_worker_context->UnregisterServiceWorker(
+  // Note: It's important that the unregistration happen immediately (rather
+  // waiting for any controllees to be closed). Otherwise, we can get into a
+  // state where the old registration is not cleared by the time we re-register
+  // the worker if the extension is being reloaded, e.g. for an update.
+  // See https://crbug.com/1501930.
+  service_worker_context->UnregisterServiceWorkerImmediately(
       extension->url(),
       blink::StorageKey::CreateFirstParty(extension->origin()),
       base::BindOnce(&ServiceWorkerTaskQueue::DidUnregisterServiceWorker,
@@ -560,8 +569,7 @@ void ServiceWorkerTaskQueue::DidRegisterServiceWorker(
         "Service worker registration failed. Status code: %d",
         static_cast<int>(status_code));
     auto error = std::make_unique<ManifestError>(
-        extension_id, base::UTF8ToUTF16(msg),
-        base::UTF8ToUTF16(manifest_keys::kBackground),
+        extension_id, base::UTF8ToUTF16(msg), manifest_keys::kBackground,
         base::UTF8ToUTF16(
             BackgroundInfo::GetBackgroundServiceWorkerScript(extension)));
 

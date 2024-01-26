@@ -233,9 +233,16 @@ class ProtoPolicy {
     if (optional_policy == OptionalPolicy::kAlwaysNull) {
       max_repeated_fields_sizes_.push_back(
           {.filter = And(IsRepeated<FieldDescriptor>(), filter), .value = 0});
+      min_repeated_fields_sizes_.push_back(
+          {.filter = And(IsRepeated<FieldDescriptor>(), filter), .value = 0});
     } else if (optional_policy == OptionalPolicy::kWithoutNull) {
+      // TODO(b/298168054): Ideally, min/max should get updated only if the
+      // fields are not already always set.
       min_repeated_fields_sizes_.push_back(
           {.filter = And(IsRepeated<FieldDescriptor>(), filter), .value = 1});
+      max_repeated_fields_sizes_.push_back(
+          {.filter = And(IsRepeated<FieldDescriptor>(), filter),
+           .value = fuzztest::internal::kDefaultContainerMaxSize});
     }
     optional_policies_.push_back(
         {.filter = std::move(filter), .value = optional_policy});
@@ -274,7 +281,13 @@ class ProtoPolicy {
     FUZZTEST_INTERNAL_CHECK(
         field->is_repeated(),
         "GetMinRepeatedFieldSize should apply to repeated fields only!");
-    return GetPolicyValue(min_repeated_fields_sizes_, field);
+    auto min = GetPolicyValue(min_repeated_fields_sizes_, field);
+    auto max = GetPolicyValue(max_repeated_fields_sizes_, field);
+    if (min.has_value() && max.has_value()) {
+      FUZZTEST_INTERNAL_CHECK(*min <= *max, "Repeated field ",
+                              field->full_name(), " size range is not valid!");
+    }
+    return min;
   }
 
   std::optional<int64_t> GetMaxRepeatedFieldSize(
@@ -282,7 +295,13 @@ class ProtoPolicy {
     FUZZTEST_INTERNAL_CHECK(
         field->is_repeated(),
         "GetMaxRepeatedFieldSize should apply to repeated fields only!");
-    return GetPolicyValue(max_repeated_fields_sizes_, field);
+    auto min = GetPolicyValue(min_repeated_fields_sizes_, field);
+    auto max = GetPolicyValue(max_repeated_fields_sizes_, field);
+    if (min.has_value() && max.has_value()) {
+      FUZZTEST_INTERNAL_CHECK(*min <= *max, "Repeated field ",
+                              field->full_name(), " size range is not valid!");
+    }
+    return max;
   }
 
  private:
@@ -830,7 +849,7 @@ class ProtobufDomainUntypedImpl
         field = GetField(*number);
       } else if (auto name = (*pair_subs)[0].GetScalar<std::string>();
                  name.has_value()) {
-        field = GetField(std::string(*name));
+        field = GetFieldWithoutCheck(std::string(*name));
       }
       if (!field) return std::nullopt;
       present_fields.insert(field->number());
@@ -1011,13 +1030,18 @@ class ProtobufDomainUntypedImpl
     customized_fields_.insert(field->index());
   }
 
-  auto GetField(absl::string_view field_name) const {
+  auto GetFieldWithoutCheck(absl::string_view field_name) const {
     auto* field = prototype_.Get()->GetDescriptor()->FindFieldByName(
         std::string(field_name));
     if (field == nullptr) {
       field = prototype_.Get()->GetReflection()->FindKnownExtensionByName(
           std::string(field_name));
     }
+    return field;
+  }
+
+  auto GetField(absl::string_view field_name) const {
+    auto* field = GetFieldWithoutCheck(field_name);
     FUZZTEST_INTERNAL_CHECK_PRECONDITION(field != nullptr,
                                          "Invalid field name '",
                                          std::string(field_name), "'.");
@@ -1899,7 +1923,7 @@ class ProtobufDomainImpl
   template <typename Inner>
   Domain<std::unique_ptr<typename T::Message>> ToUntypedProtoDomain(
       Inner inner_domain) {
-    return BidiMap(
+    return ReversibleMap(
         [](value_type_t<Inner> proto_message)
             -> std::unique_ptr<typename T::Message> {
           return {std::make_unique<value_type_t<Inner>>(proto_message)};
@@ -1915,7 +1939,7 @@ class ProtobufDomainImpl
   template <typename Inner>
   Domain<std::optional<std::unique_ptr<typename T::Message>>>
   ToOptionalUntypedProtoDomain(Inner inner_domain) {
-    return BidiMap(
+    return ReversibleMap(
         [](value_type_t<Inner> proto_message)
             -> std::optional<std::unique_ptr<typename T::Message>> {
           if (!proto_message.has_value()) return std::nullopt;
@@ -1937,7 +1961,7 @@ class ProtobufDomainImpl
   template <typename Inner>
   Domain<std::vector<std::unique_ptr<typename T::Message>>>
   ToRepeatedUntypedProtoDomain(Inner inner_domain) {
-    return BidiMap(
+    return ReversibleMap(
         [](value_type_t<Inner> proto_message)
             -> std::vector<std::unique_ptr<typename T::Message>> {
           std::vector<std::unique_ptr<typename T::Message>> result;

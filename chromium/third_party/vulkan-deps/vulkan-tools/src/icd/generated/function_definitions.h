@@ -1836,7 +1836,12 @@ static VKAPI_ATTR void VKAPI_CALL GetPhysicalDeviceExternalBufferProperties(
     VkExternalBufferProperties*                 pExternalBufferProperties)
 {
     constexpr VkExternalMemoryHandleTypeFlags supported_flags = 0x1FF;
-    if (pExternalBufferInfo->handleType & supported_flags) {
+    if (pExternalBufferInfo->handleType & VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID) {
+        // Can't have dedicated memory with AHB
+        pExternalBufferProperties->externalMemoryProperties.externalMemoryFeatures = VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT | VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT;
+        pExternalBufferProperties->externalMemoryProperties.exportFromImportedHandleTypes = pExternalBufferInfo->handleType;
+        pExternalBufferProperties->externalMemoryProperties.compatibleHandleTypes = pExternalBufferInfo->handleType;
+    } else if (pExternalBufferInfo->handleType & supported_flags) {
         pExternalBufferProperties->externalMemoryProperties.externalMemoryFeatures = 0x7;
         pExternalBufferProperties->externalMemoryProperties.exportFromImportedHandleTypes = supported_flags;
         pExternalBufferProperties->externalMemoryProperties.compatibleHandleTypes = supported_flags;
@@ -3008,7 +3013,7 @@ static VKAPI_ATTR void VKAPI_CALL GetPhysicalDeviceProperties2KHR(
        VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
     };
 
-    auto *host_image_copy_props = lvl_find_mod_in_chain< VkPhysicalDeviceHostImageCopyPropertiesEXT>(pProperties->pNext);
+    auto *host_image_copy_props = lvl_find_mod_in_chain<VkPhysicalDeviceHostImageCopyPropertiesEXT>(pProperties->pNext);
     if (host_image_copy_props){
         if (host_image_copy_props->pCopyDstLayouts == nullptr) host_image_copy_props->copyDstLayoutCount = num_copy_layouts;
         else {
@@ -3024,6 +3029,16 @@ static VKAPI_ATTR void VKAPI_CALL GetPhysicalDeviceProperties2KHR(
                 host_image_copy_props->pCopySrcLayouts[i] = HostCopyLayouts[i];
             }
         }
+    }
+
+    auto *driver_properties = lvl_find_mod_in_chain<VkPhysicalDeviceDriverProperties>(pProperties->pNext);
+    if (driver_properties) {
+        std::strncpy(driver_properties->driverName, "Vulkan Mock Device", VK_MAX_DRIVER_NAME_SIZE);
+#if defined(GIT_BRANCH_NAME) && defined(GIT_TAG_INFO)
+        std::strncpy(driver_properties->driverInfo, "Branch: " GIT_BRANCH_NAME " Tag Info: " GIT_TAG_INFO, VK_MAX_DRIVER_INFO_SIZE);
+#else
+        std::strncpy(driver_properties->driverInfo, "Branch: --unknown-- Tag Info: --unknown--", VK_MAX_DRIVER_INFO_SIZE);
+#endif
     }
 }
 
@@ -3047,6 +3062,14 @@ static VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceImageFormatProperties2KHR
     const VkPhysicalDeviceImageFormatInfo2*     pImageFormatInfo,
     VkImageFormatProperties2*                   pImageFormatProperties)
 {
+    auto *external_image_prop = lvl_find_mod_in_chain<VkExternalImageFormatProperties>(pImageFormatProperties->pNext);
+    auto *external_image_format = lvl_find_in_chain<VkPhysicalDeviceExternalImageFormatInfo>(pImageFormatInfo->pNext);
+    if (external_image_prop && external_image_format && external_image_format->handleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID) {
+        external_image_prop->externalMemoryProperties.externalMemoryFeatures = VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT | VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT;
+        external_image_prop->externalMemoryProperties.compatibleHandleTypes = external_image_format->handleType;
+        external_image_prop->externalMemoryProperties.compatibleHandleTypes = external_image_format->handleType;
+    }
+
     GetPhysicalDeviceImageFormatProperties(physicalDevice, pImageFormatInfo->format, pImageFormatInfo->type, pImageFormatInfo->tiling, pImageFormatInfo->usage, pImageFormatInfo->flags, &pImageFormatProperties->imageFormatProperties);
     return VK_SUCCESS;
 }
@@ -4073,7 +4096,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceCooperativeMatrixProperti
     VkCooperativeMatrixPropertiesKHR*           pProperties)
 {
     if (!pProperties) {
-        *pPropertyCount = 1;
+        *pPropertyCount = 2;
     } else {
         // arbitrary
         pProperties[0].MSize = 16;
@@ -4084,7 +4107,10 @@ static VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceCooperativeMatrixProperti
         pProperties[0].CType = VK_COMPONENT_TYPE_UINT32_KHR;
         pProperties[0].ResultType = VK_COMPONENT_TYPE_UINT32_KHR;
         pProperties[0].saturatingAccumulation = VK_FALSE;
-        pProperties[0].scope = VK_SCOPE_DEVICE_KHR;
+        pProperties[0].scope = VK_SCOPE_SUBGROUP_KHR;
+
+        pProperties[1] = pProperties[0];
+        pProperties[1].scope = VK_SCOPE_DEVICE_KHR;
     }
     return VK_SUCCESS;
 }
@@ -4701,7 +4727,20 @@ static VKAPI_ATTR VkResult VKAPI_CALL GetAndroidHardwareBufferPropertiesANDROID(
     const struct AHardwareBuffer*               buffer,
     VkAndroidHardwareBufferPropertiesANDROID*   pProperties)
 {
-//Not a CREATE or DESTROY function
+    pProperties->allocationSize = 65536;
+    pProperties->memoryTypeBits = 1 << 5; // DEVICE_LOCAL only type
+
+    auto *format_prop = lvl_find_mod_in_chain<VkAndroidHardwareBufferFormatPropertiesANDROID>(pProperties->pNext);
+    if (format_prop) {
+        // Likley using this format
+        format_prop->format = VK_FORMAT_R8G8B8A8_UNORM;
+        format_prop->externalFormat = 37;
+    }
+
+    auto *format_resolve_prop = lvl_find_mod_in_chain<VkAndroidHardwareBufferFormatResolvePropertiesANDROID>(pProperties->pNext);
+    if (format_resolve_prop) {
+        format_resolve_prop->colorAttachmentFormat = VK_FORMAT_R8G8B8A8_UNORM;
+    }
     return VK_SUCCESS;
 }
 
@@ -6036,6 +6075,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL GetPipelinePropertiesEXT(
 
 
 
+
 static VKAPI_ATTR void VKAPI_CALL CmdSetPatchControlPointsEXT(
     VkCommandBuffer                             commandBuffer,
     uint32_t                                    patchControlPoints)
@@ -6384,6 +6424,7 @@ static VKAPI_ATTR VkDeviceAddress VKAPI_CALL GetPipelineIndirectDeviceAddressNV(
 
 
 
+
 static VKAPI_ATTR void VKAPI_CALL CmdSetTessellationDomainOriginEXT(
     VkCommandBuffer                             commandBuffer,
     VkTessellationDomainOrigin                  domainOrigin)
@@ -6688,6 +6729,9 @@ static VKAPI_ATTR void VKAPI_CALL CmdOpticalFlowExecuteNV(
 
 
 
+#ifdef VK_USE_PLATFORM_ANDROID_KHR
+#endif /* VK_USE_PLATFORM_ANDROID_KHR */
+
 
 static VKAPI_ATTR VkResult VKAPI_CALL CreateShadersEXT(
     VkDevice                                    device,
@@ -6759,6 +6803,50 @@ static VKAPI_ATTR VkResult VKAPI_CALL GetDynamicRenderingTilePropertiesQCOM(
 
 
 
+static VKAPI_ATTR VkResult VKAPI_CALL SetLatencySleepModeNV(
+    VkDevice                                    device,
+    VkSwapchainKHR                              swapchain,
+    const VkLatencySleepModeInfoNV*             pSleepModeInfo)
+{
+//Not a CREATE or DESTROY function
+    return VK_SUCCESS;
+}
+
+static VKAPI_ATTR VkResult VKAPI_CALL LatencySleepNV(
+    VkDevice                                    device,
+    VkSwapchainKHR                              swapchain,
+    const VkLatencySleepInfoNV*                 pSleepInfo)
+{
+//Not a CREATE or DESTROY function
+    return VK_SUCCESS;
+}
+
+static VKAPI_ATTR void VKAPI_CALL SetLatencyMarkerNV(
+    VkDevice                                    device,
+    VkSwapchainKHR                              swapchain,
+    const VkSetLatencyMarkerInfoNV*             pLatencyMarkerInfo)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL GetLatencyTimingsNV(
+    VkDevice                                    device,
+    VkSwapchainKHR                              swapchain,
+    uint32_t*                                   pTimingCount,
+    VkGetLatencyMarkerInfoNV*                   pLatencyMarkerInfo)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL QueueNotifyOutOfBandNV(
+    VkQueue                                     queue,
+    const VkOutOfBandQueueTypeInfoNV*           pQueueTypeInfo)
+{
+//Not a CREATE or DESTROY function
+}
+
+
+
 
 
 
@@ -6781,6 +6869,8 @@ static VKAPI_ATTR VkResult VKAPI_CALL GetScreenBufferPropertiesQNX(
     return VK_SUCCESS;
 }
 #endif /* VK_USE_PLATFORM_SCREEN_QNX */
+
+
 
 
 static VKAPI_ATTR VkResult VKAPI_CALL CreateAccelerationStructureKHR(

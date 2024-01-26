@@ -407,7 +407,8 @@ static bool ValidateES3CompressedFormatForTexture2DArray(const Context *context,
                                                          angle::EntryPoint entryPoint,
                                                          GLenum format)
 {
-    if (IsETC1Format(format) || IsPVRTC1Format(format))
+    if ((IsETC1Format(format) && !context->getExtensions().compressedETC1RGB8SubTextureEXT) ||
+        IsPVRTC1Format(format))
     {
         ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kInternalFormatRequiresTexture2D);
         return false;
@@ -4304,7 +4305,8 @@ bool ValidateGetTransformFeedbackVarying(const Context *context,
         return false;
     }
 
-    if (index >= static_cast<GLuint>(programObject->getTransformFeedbackVaryingCount()))
+    if (index >= static_cast<GLuint>(
+                     programObject->getExecutable().getLinkedTransformFeedbackVaryings().size()))
     {
         ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kTransformFeedbackVaryingIndexOutOfRange);
         return false;
@@ -4598,7 +4600,8 @@ bool ValidateGetActiveUniformsiv(const Context *context,
             return false;
     }
 
-    if (uniformCount > programObject->getActiveUniformCount())
+    const size_t programUniformCount = programObject->getExecutable().getUniforms().size();
+    if (uniformCount > static_cast<GLsizei>(programUniformCount))
     {
         ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kIndexExceedsMaxActiveUniform);
         return false;
@@ -4608,7 +4611,7 @@ bool ValidateGetActiveUniformsiv(const Context *context,
     {
         const GLuint index = uniformIndices[uniformId];
 
-        if (index >= static_cast<GLuint>(programObject->getActiveUniformCount()))
+        if (index >= programUniformCount)
         {
             ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kIndexExceedsMaxActiveUniform);
             return false;
@@ -4669,7 +4672,7 @@ bool ValidateGetActiveUniformBlockName(const Context *context,
         return false;
     }
 
-    if (uniformBlockIndex.value >= programObject->getActiveUniformBlockCount())
+    if (uniformBlockIndex.value >= programObject->getExecutable().getUniformBlocks().size())
     {
         ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kIndexExceedsMaxActiveUniformBlock);
         return false;
@@ -4703,7 +4706,7 @@ bool ValidateUniformBlockBinding(const Context *context,
     }
 
     // if never linked, there won't be any uniform blocks
-    if (uniformBlockIndex.value >= programObject->getActiveUniformBlockCount())
+    if (uniformBlockIndex.value >= programObject->getExecutable().getUniformBlocks().size())
     {
         ANGLE_VALIDATION_ERROR(GL_INVALID_VALUE, kIndexExceedsMaxUniformBufferBindings);
         return false;

@@ -14,6 +14,7 @@
 
 #if defined(EIGEN_USE_GPU) && defined(EIGEN_GPUCC)
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

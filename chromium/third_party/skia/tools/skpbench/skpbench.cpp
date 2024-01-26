@@ -23,12 +23,12 @@
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/SkGr.h"
 #include "src/gpu/ganesh/image/GrImageUtils.h"
-#include "src/utils/SkMultiPictureDocument.h"
+#include "include/docs/SkMultiPictureDocument.h"
 #include "src/utils/SkOSPath.h"
 #include "tools/DDLPromiseImageHelper.h"
 #include "tools/DDLTileHelper.h"
+#include "tools/EncodeUtils.h"
 #include "tools/SkSharingProc.h"
-#include "tools/ToolUtils.h"
 #include "tools/flags/CommandLineFlags.h"
 #include "tools/flags/CommonFlags.h"
 #include "tools/flags/CommonFlagsConfig.h"
@@ -181,12 +181,12 @@ public:
 
         // The outer format of multi-frame skps is the multi-picture document, which is a
         // skp file containing subpictures separated by annotations.
-        int page_count = SkMultiPictureDocumentReadPageCount(stream.get());
+        int page_count = SkMultiPictureDocument::ReadPageCount(stream.get());
         if (!page_count) {
             return nullptr;
         }
         std::vector<SkDocumentPage> frames(page_count); // can't call reserve, why?
-        if (!SkMultiPictureDocumentRead(stream.get(), frames.data(), page_count, &procs)) {
+        if (!SkMultiPictureDocument::Read(stream.get(), frames.data(), page_count, &procs)) {
             return nullptr;
         }
 
@@ -329,7 +329,7 @@ static void run_ddl_benchmark(sk_gpu_test::TestContext* testContext,
     if (!FLAGS_png.isEmpty()) {
         // The user wants to see the final result
         skgpu::ganesh::DrawDDL(dstSurface, tiles.composeDDL());
-        dContext->flushAndSubmit(dstSurface);
+        dContext->flushAndSubmit(dstSurface.get(), GrSyncCpu::kNo);
     }
 
     tiles.resetAllTiles();
@@ -337,7 +337,7 @@ static void run_ddl_benchmark(sk_gpu_test::TestContext* testContext,
     // Make sure the gpu has finished all its work before we exit this function and delete the
     // fence.
     dContext->flush();
-    dContext->submit(true);
+    dContext->submit(GrSyncCpu::kYes);
 
     promiseImageHelper.deleteAllFromGPU(nullptr, dContext);
 
@@ -375,8 +375,8 @@ static void run_benchmark(GrDirectContext* context,
 
     // Make sure the gpu has finished all its work before we exit this function and delete the
     // fence.
-    context->flush(surface);
-    context->submit(true);
+    context->flush(surface.get());
+    context->submit(GrSyncCpu::kYes);
 }
 
 static void run_gpu_time_benchmark(sk_gpu_test::GpuTimer* gpuTimer,
@@ -445,8 +445,8 @@ static void run_gpu_time_benchmark(sk_gpu_test::GpuTimer* gpuTimer,
 
     // Make sure the gpu has finished all its work before we exit this function and delete the
     // fence.
-    context->flush(surface);
-    context->submit(true);
+    context->flush(surface.get());
+    context->submit(GrSyncCpu::kYes);
 }
 
 void print_result(const std::vector<Sample>& samples, const char* config, const char* bench)  {

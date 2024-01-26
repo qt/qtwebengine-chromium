@@ -8,7 +8,7 @@
 #ifndef SKSL_BLOCK
 #define SKSL_BLOCK
 
-#include "include/private/SkSLDefines.h"
+#include "src/sksl/SkSLDefines.h"
 #include "src/sksl/SkSLPosition.h"
 #include "src/sksl/ir/SkSLIRNode.h"
 #include "src/sksl/ir/SkSLStatement.h"
@@ -42,7 +42,7 @@ public:
     Block(Position pos,
           StatementArray statements,
           Kind kind = Kind::kBracedScope,
-          const std::shared_ptr<SymbolTable> symbols = nullptr)
+          std::shared_ptr<SymbolTable> symbols = nullptr)
             : INHERITED(pos, kIRNodeKind)
             , fChildren(std::move(statements))
             , fBlockKind(kind)

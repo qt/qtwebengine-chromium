@@ -4,14 +4,14 @@
 import * as Platform from '../../core/platform/platform.js';
 
 import type * as Handlers from './handlers/handlers.js';
+import type * as Helpers from './helpers/helpers.js';
 import type * as Types from './types/types.js';
 
-type EntryToNodeMap =
-    Map<Handlers.ModelHandlers.Renderer.RendererEntry, Handlers.ModelHandlers.Renderer.RendererEntryNode>;
+type EntryToNodeMap = Map<Types.TraceEvents.TraceEntry, Helpers.TreeHelpers.TraceEntryNode>;
 
 export interface UserTreeAction {
   type: 'MERGE_FUNCTION'|'COLLAPSE_FUNCTION';
-  entry: Handlers.ModelHandlers.Renderer.RendererEntry;
+  entry: Types.TraceEvents.TraceEntry;
 }
 
 /**
@@ -34,7 +34,7 @@ export class TreeManipulator {
   // Track the last calculated set of visible entries. This means we can avoid
   // re-generating this if the set of actions that have been applied has not
   // changed.
-  #lastVisibleEntries: readonly Handlers.ModelHandlers.Renderer.RendererEntry[]|null = null;
+  #lastVisibleEntries: readonly Types.TraceEvents.TraceEntry[]|null = null;
   #activeActions: UserTreeAction[] = [];
 
   constructor(
@@ -128,7 +128,7 @@ export class TreeManipulator {
     // array, but doing this would be a mutation of the arry for every hidden
     // event. Instead, we add entries to this set, and at the very end loop
     // through the entries array once to filter out any that should be hidden.
-    const entriesToHide = new Set<Handlers.ModelHandlers.Renderer.RendererEntry>();
+    const entriesToHide = new Set<Types.TraceEvents.TraceEntry>();
 
     const entries = [...this.#thread.entries];
     for (const action of this.#activeActions) {
@@ -148,7 +148,7 @@ export class TreeManipulator {
             // Invalid node was given, just ignore and move on.
             continue;
           }
-          const allAncestors = this.#findAllAncestorsOfNode(this.#thread.tree, entryNode);
+          const allAncestors = this.#findAllAncestorsOfNode(entryNode);
           allAncestors.forEach(ancestor => entriesToHide.add(ancestor));
           break;
         }
@@ -170,23 +170,17 @@ export class TreeManipulator {
     return this.#lastVisibleEntries;
   }
 
-  #findAllAncestorsOfNode(
-      tree: Handlers.ModelHandlers.Renderer.RendererTree,
-      root: Handlers.ModelHandlers.Renderer.RendererEntryNode): Handlers.ModelHandlers.Renderer.RendererEntry[] {
-    const ancestors: Handlers.ModelHandlers.Renderer.RendererEntry[] = [];
+  #findAllAncestorsOfNode(root: Helpers.TreeHelpers.TraceEntryNode): Types.TraceEvents.TraceEntry[] {
+    const ancestors: Types.TraceEvents.TraceEntry[] = [];
 
     // Walk through all the ancestors, starting at the root node.
-    const childIds: Handlers.ModelHandlers.Renderer.RendererEntryNodeId[] = Array.from(root.childrenIds);
-    while (childIds.length > 0) {
-      const id = childIds.shift();
-      if (!id) {
-        break;
-      }
-      const childNode = tree.nodes.get(id);
+    const children: Helpers.TreeHelpers.TraceEntryNode[] = Array.from(root.children);
+    while (children.length > 0) {
+      const childNode = children.shift();
       if (childNode) {
         ancestors.push(childNode.entry);
-        const newChildIds = Array.from(childNode.childrenIds);
-        childIds.push(...newChildIds);
+        const newChildIds = Array.from(childNode.children);
+        children.push(...newChildIds);
       }
     }
 

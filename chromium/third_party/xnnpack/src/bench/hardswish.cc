@@ -8,10 +8,11 @@
 #include <cmath>
 #include <functional>
 #include <limits>
+#include <memory>
 #include <random>
 #include <vector>
 
-#include <fp16.h>
+#include <fp16/fp16.h>
 
 #include <xnnpack.h>
 
@@ -54,17 +55,20 @@ static void xnnpack_hardswish_f32(benchmark::State& state) {
     return;
   }
 
-  status = xnn_setup_hardswish_nc_f32(
-    hardswish_op, batch_size,
-    input.data(), output.data(),
-    nullptr /* thread pool */);
+  status = xnn_reshape_hardswish_nc_f32(hardswish_op, batch_size, /*threadpool=*/nullptr);
+  if (status != xnn_status_success) {
+    state.SkipWithError("failed to reshape HardSwish operator");
+    return;
+  }
+
+  status = xnn_setup_hardswish_nc_f32(hardswish_op, input.data(), output.data());
   if (status != xnn_status_success) {
     state.SkipWithError("failed to setup HardSwish operator");
     return;
   }
 
   for (auto _ : state) {
-    status = xnn_run_operator(hardswish_op, nullptr /* thread pool */);
+    status = xnn_run_operator(hardswish_op, /*threadpool=*/nullptr);
     if (status != xnn_status_success) {
       state.SkipWithError("failed to run HardSwish operator");
       return;
@@ -118,17 +122,20 @@ static void xnnpack_hardswish_f16(benchmark::State& state) {
     return;
   }
 
-  status = xnn_setup_hardswish_nc_f16(
-    hardswish_op, batch_size,
-    input.data(), output.data(),
-    nullptr /* thread pool */);
+  status = xnn_reshape_hardswish_nc_f16(hardswish_op, batch_size, /*threadpool=*/nullptr);
+  if (status != xnn_status_success) {
+    state.SkipWithError("failed to reshape HardSwish operator");
+    return;
+  }
+
+  status = xnn_setup_hardswish_nc_f16(hardswish_op, input.data(), output.data());
   if (status != xnn_status_success) {
     state.SkipWithError("failed to setup HardSwish operator");
     return;
   }
 
   for (auto _ : state) {
-    status = xnn_run_operator(hardswish_op, nullptr /* thread pool */);
+    status = xnn_run_operator(hardswish_op, /*threadpool=*/nullptr);
     if (status != xnn_status_success) {
       state.SkipWithError("failed to run HardSwish operator");
       return;

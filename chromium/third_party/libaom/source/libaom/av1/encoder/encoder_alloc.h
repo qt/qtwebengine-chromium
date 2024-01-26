@@ -19,6 +19,7 @@
 #include "av1/encoder/ethread.h"
 #include "av1/encoder/global_motion_facade.h"
 #include "av1/encoder/intra_mode_search_utils.h"
+#include "av1/encoder/pickcdef.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -26,11 +27,9 @@ extern "C" {
 
 static AOM_INLINE void dealloc_context_buffers_ext(
     MBMIExtFrameBufferInfo *mbmi_ext_info) {
-  if (mbmi_ext_info->frame_base) {
-    aom_free(mbmi_ext_info->frame_base);
-    mbmi_ext_info->frame_base = NULL;
-    mbmi_ext_info->alloc_size = 0;
-  }
+  aom_free(mbmi_ext_info->frame_base);
+  mbmi_ext_info->frame_base = NULL;
+  mbmi_ext_info->alloc_size = 0;
 }
 
 static AOM_INLINE void alloc_context_buffers_ext(
@@ -66,14 +65,14 @@ static AOM_INLINE void alloc_compressor_data(AV1_COMP *cpi) {
 
   if (!is_stat_generation_stage(cpi)) av1_alloc_txb_buf(cpi);
 
-  if (cpi->td.mb.mv_costs) {
-    aom_free(cpi->td.mb.mv_costs);
-    cpi->td.mb.mv_costs = NULL;
-  }
-  // Avoid the memory allocation of 'mv_costs' for allintra encoding mode.
+  aom_free(cpi->td.mv_costs_alloc);
+  cpi->td.mv_costs_alloc = NULL;
+  // Avoid the memory allocation of 'mv_costs_alloc' for allintra encoding
+  // mode.
   if (cpi->oxcf.kf_cfg.key_freq_max != 0) {
-    CHECK_MEM_ERROR(cm, cpi->td.mb.mv_costs,
-                    (MvCosts *)aom_calloc(1, sizeof(MvCosts)));
+    CHECK_MEM_ERROR(cm, cpi->td.mv_costs_alloc,
+                    (MvCosts *)aom_calloc(1, sizeof(*cpi->td.mv_costs_alloc)));
+    cpi->td.mb.mv_costs = cpi->td.mv_costs_alloc;
   }
 
   av1_setup_shared_coeff_buffer(cm->seq_params, &cpi->td.shared_coeff_buf,
@@ -81,6 +80,9 @@ static AOM_INLINE void alloc_compressor_data(AV1_COMP *cpi) {
   av1_setup_sms_tree(cpi, &cpi->td);
   cpi->td.firstpass_ctx =
       av1_alloc_pmc(cpi, BLOCK_16X16, &cpi->td.shared_coeff_buf);
+  if (!cpi->td.firstpass_ctx)
+    aom_internal_error(cm->error, AOM_CODEC_MEM_ERROR,
+                       "Failed to allocate PICK_MODE_CONTEXT");
 }
 
 // Allocate mbmi buffers which are used to store mode information at block
@@ -222,15 +224,16 @@ static AOM_INLINE void dealloc_compressor_data(AV1_COMP *cpi) {
 
   release_obmc_buffers(&cpi->td.mb.obmc_buffer);
 
-  if (cpi->td.mb.mv_costs) {
-    aom_free(cpi->td.mb.mv_costs);
-    cpi->td.mb.mv_costs = NULL;
-  }
+  aom_free(cpi->td.mv_costs_alloc);
+  cpi->td.mv_costs_alloc = NULL;
+  aom_free(cpi->td.dv_costs_alloc);
+  cpi->td.dv_costs_alloc = NULL;
 
-  if (cpi->td.mb.dv_costs) {
-    aom_free(cpi->td.mb.dv_costs);
-    cpi->td.mb.dv_costs = NULL;
-  }
+  aom_free(cpi->td.mb.sb_stats_cache);
+  cpi->td.mb.sb_stats_cache = NULL;
+
+  aom_free(cpi->td.mb.sb_fp_stats);
+  cpi->td.mb.sb_fp_stats = NULL;
 
   for (int i = 0; i < 2; i++)
     for (int j = 0; j < 2; j++) {
@@ -238,23 +241,19 @@ static AOM_INLINE void dealloc_compressor_data(AV1_COMP *cpi) {
       cpi->td.mb.intrabc_hash_info.hash_value_buffer[i][j] = NULL;
     }
 
+  av1_hash_table_destroy(&cpi->td.mb.intrabc_hash_info.intrabc_hash_table);
+
   aom_free(cm->tpl_mvs);
   cm->tpl_mvs = NULL;
 
-  if (cpi->td.pixel_gradient_info) {
-    aom_free(cpi->td.pixel_gradient_info);
-    cpi->td.pixel_gradient_info = NULL;
-  }
+  aom_free(cpi->td.pixel_gradient_info);
+  cpi->td.pixel_gradient_info = NULL;
 
-  if (cpi->td.src_var_info_of_4x4_sub_blocks) {
-    aom_free(cpi->td.src_var_info_of_4x4_sub_blocks);
-    cpi->td.src_var_info_of_4x4_sub_blocks = NULL;
-  }
+  aom_free(cpi->td.src_var_info_of_4x4_sub_blocks);
+  cpi->td.src_var_info_of_4x4_sub_blocks = NULL;
 
-  if (cpi->td.vt64x64) {
-    aom_free(cpi->td.vt64x64);
-    cpi->td.vt64x64 = NULL;
-  }
+  aom_free(cpi->td.vt64x64);
+  cpi->td.vt64x64 = NULL;
 
   av1_free_pmc(cpi->td.firstpass_ctx, av1_num_planes(cm));
   cpi->td.firstpass_ctx = NULL;
@@ -274,7 +273,13 @@ static AOM_INLINE void dealloc_compressor_data(AV1_COMP *cpi) {
   // single-threaded encode are freed in case of an error during gm.
   gm_dealloc_data(&cpi->td.gm_data);
 
-  av1_dealloc_src_diff_buf(&cpi->td.mb, av1_num_planes(cm));
+  // This call ensures that CDEF search context buffers are deallocated in case
+  // of an error during cdef search.
+  av1_cdef_dealloc_data(cpi->cdef_search_ctx);
+  aom_free(cpi->cdef_search_ctx);
+  cpi->cdef_search_ctx = NULL;
+
+  av1_dealloc_mb_data(&cpi->td.mb, av1_num_planes(cm));
 
   av1_free_txb_buf(cpi);
   av1_free_context_buffers(cm);
@@ -324,15 +329,12 @@ static AOM_INLINE void dealloc_compressor_data(AV1_COMP *cpi) {
   aom_free(cpi->svc.layer_context);
   cpi->svc.layer_context = NULL;
 
-  if (cpi->consec_zero_mv) {
-    aom_free(cpi->consec_zero_mv);
-    cpi->consec_zero_mv = NULL;
-  }
+  aom_free(cpi->consec_zero_mv);
+  cpi->consec_zero_mv = NULL;
+  cpi->consec_zero_mv_alloc_size = 0;
 
-  if (cpi->src_sad_blk_64x64) {
-    aom_free(cpi->src_sad_blk_64x64);
-    cpi->src_sad_blk_64x64 = NULL;
-  }
+  aom_free(cpi->src_sad_blk_64x64);
+  cpi->src_sad_blk_64x64 = NULL;
 
   aom_free(cpi->mb_weber_stats);
   cpi->mb_weber_stats = NULL;
@@ -418,9 +420,11 @@ static AOM_INLINE YV12_BUFFER_CONFIG *realloc_and_scale_source(
                        "Failed to reallocate scaled source buffer");
   assert(cpi->scaled_source.y_crop_width == scaled_width);
   assert(cpi->scaled_source.y_crop_height == scaled_height);
-  av1_resize_and_extend_frame_nonnormative(
-      cpi->unscaled_source, &cpi->scaled_source, (int)cm->seq_params->bit_depth,
-      num_planes);
+  if (!av1_resize_and_extend_frame_nonnormative(
+          cpi->unscaled_source, &cpi->scaled_source,
+          (int)cm->seq_params->bit_depth, num_planes))
+    aom_internal_error(cm->error, AOM_CODEC_MEM_ERROR,
+                       "Failed to reallocate buffers during resize");
   return &cpi->scaled_source;
 }
 
@@ -454,6 +458,10 @@ static AOM_INLINE void free_thread_data(AV1_PRIMARY *ppi) {
         thread_data->td->hash_value_buffer[x][y] = NULL;
       }
     }
+    aom_free(thread_data->td->mv_costs_alloc);
+    thread_data->td->mv_costs_alloc = NULL;
+    aom_free(thread_data->td->dv_costs_alloc);
+    thread_data->td->dv_costs_alloc = NULL;
     aom_free(thread_data->td->counts);
     av1_free_pmc(thread_data->td->firstpass_ctx, num_planes);
     thread_data->td->firstpass_ctx = NULL;
@@ -473,7 +481,11 @@ static AOM_INLINE void free_thread_data(AV1_PRIMARY *ppi) {
     // This call ensures that the buffers in gm_data for MT encode are freed in
     // case of an error during gm.
     gm_dealloc_data(&thread_data->td->gm_data);
-    av1_dealloc_src_diff_buf(&thread_data->td->mb, num_planes);
+    av1_dealloc_mb_data(&thread_data->td->mb, num_planes);
+    aom_free(thread_data->td->mb.sb_stats_cache);
+    thread_data->td->mb.sb_stats_cache = NULL;
+    aom_free(thread_data->td->mb.sb_fp_stats);
+    thread_data->td->mb.sb_fp_stats = NULL;
     aom_free(thread_data->td);
   }
 }

@@ -13,6 +13,7 @@
 #include "SkylineStorage.h"
 #include "SkylineMatrixBase.h"
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen { 

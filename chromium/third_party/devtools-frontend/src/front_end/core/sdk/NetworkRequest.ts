@@ -86,6 +86,10 @@ const UIStrings = {
   /**
    *@description Tooltip to explain why a cookie was blocked
    */
+  thirdPartyPhaseout: 'This cookie was blocked due to third-party cookie phaseout. Learn more in the Issues tab.',
+  /**
+   *@description Tooltip to explain why a cookie was blocked
+   */
   unknownError: 'An unknown error was encountered when trying to send this cookie.',
   /**
    *@description Tooltip to explain why a cookie was blocked due to Schemeful Same-Site
@@ -111,6 +115,10 @@ const UIStrings = {
    *@description Tooltip to explain why an attempt to set a cookie via `Set-Cookie` HTTP header on a request's response was blocked.
    */
   thisSetcookieWasBlockedDueToUser: 'This attempt to set a cookie via a `Set-Cookie` header was blocked due to user preferences.',
+  /**
+   *@description Tooltip to explain why an attempt to set a cookie via `Set-Cookie` HTTP header on a request's response was blocked.
+   */
+   thisSetcookieWasBlockedDueThirdPartyPhaseout: 'Setting this cookie was blocked due to third-party cookie phaseout. Learn more in the Issues tab.',
   /**
    *@description Tooltip to explain why an attempt to set a cookie via `Set-Cookie` HTTP header on a request's response was blocked.
    */
@@ -224,7 +232,7 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
   #blockedReasonInternal: Protocol.Network.BlockedReason|undefined;
   #corsErrorStatusInternal: Protocol.Network.CorsErrorStatus|undefined;
   statusCode: number;
-  #statusText: string;
+  statusText: string;
   requestMethod: string;
   requestTime: number;
   protocol: string;
@@ -336,7 +344,7 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
     this.#corsErrorStatusInternal = undefined;
 
     this.statusCode = 0;
-    this.#statusText = '';
+    this.statusText = '';
     this.requestMethod = '';
     this.requestTime = 0;
     this.protocol = '';
@@ -855,15 +863,8 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
     return this.#parsedURLInternal.scheme;
   }
 
-  get statusText(): string {
-    if (!this.#statusText) {
-      this.#statusText = HttpReasonPhraseStrings.getStatusText(this.statusCode);
-    }
-    return this.#statusText;
-  }
-
-  set statusText(statusText: string) {
-    this.#statusText = statusText;
+  getInferredStatusText(): string {
+    return this.statusText || HttpReasonPhraseStrings.getStatusText(this.statusCode);
   }
 
   redirectSource(): NetworkRequest|null {
@@ -1013,8 +1014,7 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
 
     this.#sortedResponseHeadersInternal = this.responseHeaders.slice();
     return this.#sortedResponseHeadersInternal.sort(function(a, b) {
-      return Platform.StringUtilities.compare(a.name.toLowerCase(), b.name.toLowerCase()) ||
-          Platform.StringUtilities.compare(a.value, b.value);
+      return Platform.StringUtilities.compare(a.name.toLowerCase(), b.name.toLowerCase());
     });
   }
 
@@ -1547,7 +1547,7 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
         this.setRequestHeadersText(requestHeadersText);
       }
 
-      this.#statusText = NetworkRequest.parseStatusTextFromResponseHeadersText(extraResponseInfo.responseHeadersText);
+      this.statusText = NetworkRequest.parseStatusTextFromResponseHeadersText(extraResponseInfo.responseHeadersText);
     }
     this.#remoteAddressSpaceInternal = extraResponseInfo.resourceIPAddressSpace;
 
@@ -1578,6 +1578,22 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
 
   blockedResponseCookies(): BlockedSetCookieWithReason[] {
     return this.#blockedResponseCookiesInternal;
+  }
+
+  nonBlockedResponseCookies(): Cookie[] {
+    const blockedCookieLines: (string|null)[] =
+        this.blockedResponseCookies().map(blockedCookie => blockedCookie.cookieLine);
+    // Use array and remove 1 by 1 to handle the (potential) case of multiple
+    // identical cookies, only some of which are blocked.
+    const responseCookies = this.responseCookies.filter(cookie => {
+      const index = blockedCookieLines.indexOf(cookie.getCookieLine());
+      if (index !== -1) {
+        blockedCookieLines[index] = null;
+        return false;
+      }
+      return true;
+    });
+    return responseCookies;
   }
 
   responseCookiesPartitionKey(): string|null {
@@ -1710,6 +1726,8 @@ export const cookieBlockedReasonToUiString = function(blockedReason: Protocol.Ne
       return i18nString(UIStrings.samePartyFromCrossPartyContext);
     case Protocol.Network.CookieBlockedReason.NameValuePairExceedsMaxSize:
       return i18nString(UIStrings.nameValuePairExceedsMaxSize);
+    case Protocol.Network.CookieBlockedReason.ThirdPartyPhaseout:
+      return i18nString(UIStrings.thirdPartyPhaseout);
   }
   return '';
 };
@@ -1755,6 +1773,8 @@ export const setCookieBlockedReasonToUiString = function(
       return i18nString(UIStrings.thisSetcookieWasBlockedBecauseTheNameValuePairExceedsMaxSize);
     case Protocol.Network.SetCookieBlockedReason.DisallowedCharacter:
       return i18nString(UIStrings.thisSetcookieHadADisallowedCharacter);
+    case Protocol.Network.SetCookieBlockedReason.ThirdPartyPhaseout:
+      return i18nString(UIStrings.thisSetcookieWasBlockedDueThirdPartyPhaseout);
   }
   return '';
 };
@@ -1779,6 +1799,7 @@ export const cookieBlockedReasonToAttribute = function(blockedReason: Protocol.N
         case Protocol.Network.CookieBlockedReason.SamePartyFromCrossPartyContext:
         case Protocol.Network.CookieBlockedReason.NameValuePairExceedsMaxSize:
         case Protocol.Network.CookieBlockedReason.UserPreferences:
+        case Protocol.Network.CookieBlockedReason.ThirdPartyPhaseout:
         case Protocol.Network.CookieBlockedReason.UnknownError:
           return null;
       }
@@ -1807,6 +1828,7 @@ export const setCookieBlockedReasonToAttribute = function(blockedReason: Protoco
         case Protocol.Network.SetCookieBlockedReason.SamePartyFromCrossPartyContext:
         case Protocol.Network.SetCookieBlockedReason.NameValuePairExceedsMaxSize:
         case Protocol.Network.SetCookieBlockedReason.UserPreferences:
+        case Protocol.Network.SetCookieBlockedReason.ThirdPartyPhaseout:
         case Protocol.Network.SetCookieBlockedReason.SyntaxError:
         case Protocol.Network.SetCookieBlockedReason.SchemeNotSupported:
         case Protocol.Network.SetCookieBlockedReason.UnknownError:

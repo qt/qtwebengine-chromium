@@ -13,6 +13,7 @@
 #ifndef EIGEN_PRODUCTEVALUATORS_H
 #define EIGEN_PRODUCTEVALUATORS_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

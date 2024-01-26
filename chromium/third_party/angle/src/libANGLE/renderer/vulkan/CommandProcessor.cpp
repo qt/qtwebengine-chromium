@@ -545,6 +545,7 @@ void CommandProcessor::handleError(VkResult errorCode,
 
 CommandProcessor::CommandProcessor(RendererVk *renderer, CommandQueue *commandQueue)
     : Context(renderer),
+      mTaskQueue(kMaxCommandProcessorTasksLimit),
       mCommandQueue(commandQueue),
       mTaskThreadShouldExit(false),
       mNeedCommandsAndGarbageCleanup(false)
@@ -1045,7 +1046,11 @@ angle::Result CommandProcessor::waitForPresentToBeSubmitted(SwapchainStatus *swa
 
 // CommandQueue public API implementation. These must be thread safe and never called from
 // CommandQueue class itself.
-CommandQueue::CommandQueue() : mPerfCounters{} {}
+CommandQueue::CommandQueue()
+    : mInFlightCommands(kInFlightCommandsLimit),
+      mFinishedCommandBatches(kMaxFinishedCommandsLimit),
+      mPerfCounters{}
+{}
 
 CommandQueue::~CommandQueue() = default;
 
@@ -1249,6 +1254,7 @@ angle::Result CommandQueue::waitForResourceUseToFinishWithUserTimeout(Context *c
     size_t finishedCount = 0;
     {
         std::unique_lock<std::mutex> lock(mMutex);
+        *result = hasResourceUseFinished(use) ? VK_SUCCESS : VK_NOT_READY;
         while (!mInFlightCommands.empty() && !hasResourceUseFinished(use))
         {
             bool finished;
@@ -1265,6 +1271,10 @@ angle::Result CommandQueue::waitForResourceUseToFinishWithUserTimeout(Context *c
                 {
                     ANGLE_VK_TRY(context, *result);
                 }
+            }
+            else
+            {
+                *result = hasResourceUseFinished(use) ? VK_SUCCESS : VK_NOT_READY;
             }
         }
         // Do one more check in case more commands also finished.

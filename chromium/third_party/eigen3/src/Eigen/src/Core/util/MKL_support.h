@@ -120,6 +120,7 @@
 #include "../../misc/blas.h"
 #endif
 
+// IWYU pragma: private
 #include "../InternalHeaderCheck.h"
 
 namespace Eigen {

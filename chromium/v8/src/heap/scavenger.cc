@@ -200,6 +200,10 @@ ScavengerCollector::JobTask::JobTask(
 
 void ScavengerCollector::JobTask::Run(JobDelegate* delegate) {
   DCHECK_LT(delegate->GetTaskId(), scavengers_->size());
+  // In case multi-cage pointer compression mode is enabled ensure that
+  // current thread's cage base values are properly initialized.
+  PtrComprCageAccessScope ptr_compr_cage_access_scope(outer_->heap_->isolate());
+
   Scavenger* scavenger = (*scavengers_)[delegate->GetTaskId()].get();
   if (delegate->IsJoiningThread()) {
     TRACE_GC_WITH_FLOW(outer_->heap_->tracer(),
@@ -321,6 +325,8 @@ class V8_NODISCARD ScopedFullHeapCrashKey {
 
 void ScavengerCollector::CollectGarbage() {
   ScopedFullHeapCrashKey collect_full_heap_dump_if_crash(isolate_);
+
+  DCHECK(!heap_->allocator()->new_space_allocator()->IsLabValid());
 
   DCHECK(surviving_new_large_objects_.empty());
   std::vector<std::unique_ptr<Scavenger>> scavengers;
@@ -458,8 +464,10 @@ void ScavengerCollector::CollectGarbage() {
 
   ProcessWeakReferences(&ephemeron_table_list);
 
-  // Set age mark.
-  semi_space_new_space->set_age_mark(semi_space_new_space->top());
+  // Need to free new space LAB that was allocated during scavenge.
+  heap_->allocator()->new_space_allocator()->FreeLinearAllocationArea();
+  // Now that the LAB was freed, set age mark.
+  semi_space_new_space->set_age_mark_to_top();
 
   // Since we promote all surviving large objects immediately, all remaining
   // large objects must be dead.

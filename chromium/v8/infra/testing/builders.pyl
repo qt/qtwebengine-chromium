@@ -34,7 +34,7 @@
   # Android
   'v8_android_arm64_n5x_rel': {
     'swarming_dimensions' : {
-      'device_os': 'MMB29Q',
+      'device_os': 'OPR4.170623.020',
       'device_type': 'bullhead',
       'os': 'Android',
     },
@@ -489,6 +489,7 @@
       {'name': 'webkit', 'variant': 'stress_sampling'},
       # Stress snapshot.
       {'name': 'mjsunit', 'variant': 'stress_snapshot'},
+      {'name': 'mjsunit', 'variant': 'rehash_snapshot'},
       # Experimental regexp engine.
       {'name': 'mjsunit', 'variant': 'experimental_regexp'},
       # Variants for maglev.
@@ -554,11 +555,6 @@
       {'name': 'mozilla', 'variant': 'minor_ms'},
       {'name': 'test262', 'variant': 'minor_ms', 'shards': 2},
       {'name': 'mjsunit', 'variant': 'minor_ms'},
-      {'name': 'v8testing', 'variant': 'concurrent_minor_ms'},
-      {'name': 'benchmarks', 'variant': 'concurrent_minor_ms'},
-      {'name': 'mozilla', 'variant': 'concurrent_minor_ms'},
-      {'name': 'test262', 'variant': 'concurrent_minor_ms', 'shards': 2},
-      {'name': 'mjsunit', 'variant': 'concurrent_minor_ms'},
     ],
   },
   'v8_linux64_msan_rel': {
@@ -767,7 +763,10 @@
       'os': 'Ubuntu-22.04',
     },
     'tests': [
+      {'name': 'mozilla'},
+      {'name': 'test262', 'variant': 'default', 'shards': 2},
       {'name': 'v8testing', 'shards': 2},
+      {'name': 'v8testing', 'variant': 'extra', 'shards': 2},
     ],
   },
   'v8_linux64_verify_csa_rel': {
@@ -1534,11 +1533,6 @@
       {'name': 'mozilla', 'variant': 'minor_ms'},
       {'name': 'test262', 'variant': 'minor_ms', 'shards': 2},
       {'name': 'mjsunit', 'variant': 'minor_ms'},
-      {'name': 'v8testing', 'variant': 'concurrent_minor_ms'},
-      {'name': 'benchmarks', 'variant': 'concurrent_minor_ms'},
-      {'name': 'mozilla', 'variant': 'concurrent_minor_ms'},
-      {'name': 'test262', 'variant': 'concurrent_minor_ms', 'shards': 2},
-      {'name': 'mjsunit', 'variant': 'concurrent_minor_ms'},
     ],
   },
   'V8 Linux64 - disable runtime call stats': {
@@ -1561,6 +1555,7 @@
       {'name': 'webkit', 'variant': 'stress_sampling'},
       # Stress snapshot.
       {'name': 'mjsunit', 'variant': 'stress_snapshot'},
+      {'name': 'mjsunit', 'variant': 'rehash_snapshot'},
       # Experimental regexp engine.
       {'name': 'mjsunit', 'variant': 'experimental_regexp'},
       # Variants for maglev.
@@ -1624,6 +1619,7 @@
       {'name': 'webkit', 'variant': 'stress_sampling'},
       # Stress snapshot.
       {'name': 'mjsunit', 'variant': 'stress_snapshot'},
+      {'name': 'mjsunit', 'variant': 'rehash_snapshot'},
       # Experimental regexp engine.
       {'name': 'mjsunit', 'variant': 'experimental_regexp'},
       # Variants for maglev.
@@ -2084,7 +2080,7 @@
   # Ports.
   'V8 Android Arm64 - N5X': {
     'swarming_dimensions': {
-      'device_os': 'MMB29Q',
+      'device_os': 'OPR4.170623.020',
       'device_type': 'bullhead',
       'os': 'Android',
     },

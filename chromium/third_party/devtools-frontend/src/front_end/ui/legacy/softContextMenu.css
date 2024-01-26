@@ -19,19 +19,6 @@
   border: none;
 }
 
-:host:host-context(.platform-mac):host-context(html:not(.-theme-with-dark-background)) .soft-context-menu {
-  --override-mac-specific-border-color: rgb(196 196 196 / 90%);
-  --override-mac-specific-border-top-color: rgb(196 196 196 / 50%);
-  --override-mac-specific-background-color: rgb(240 240 240);
-  --override-mac-specific-box-shadow: 0 5px 10px rgb(0 0 0 25%);
-
-  border: 1px solid var(--override-mac-specific-border-color);
-  border-top: 1px solid var(--override-mac-specific-border-top-color);
-  border-radius: 4px;
-  background-color: var(--override-mac-specific-background-color);
-  box-shadow: var(--override-mac-specific-box-shadow);
-}
-
 .dockside-title {
   padding-right: 13px;
 }
@@ -44,7 +31,7 @@
   white-space: nowrap;
   align-items: center;
 
-  &:hover {
+  &.soft-context-menu-item-mouse-over {
     background-color: var(--sys-color-state-hover-on-subtle);
 
     [is="ui-icon"] {
@@ -58,7 +45,7 @@
 }
 
 .soft-context-menu-disabled {
-  color: var(--color-text-disabled);
+  color: var(--sys-color-state-disabled);
   pointer-events: none;
 }
 
@@ -72,16 +59,6 @@
   height: 5px;
   border-bottom: 1px solid var(--sys-color-divider);
   pointer-events: none;
-}
-
-:host:host-context(.platform-mac):host-context(html:not(.-theme-with-dark-background)) .soft-context-menu-item-mouse-over {
-  --override-mac-specific-dark-background: linear-gradient(to right, hsl(214deg 81% 60%), hsl(214deg 100% 56%));
-
-  background-image: var(--override-mac-specific-dark-background);
-}
-
-:host:host-context(.platform-mac):host-context(html:not(.-theme-with-dark-background)) .separator-line {
-  border-width: 2px;
 }
 
 .soft-context-menu-item-submenu-arrow {
@@ -100,7 +77,7 @@
 }
 
 .soft-context-menu-shortcut {
-  color: var(--color-text-secondary);
+  color: var(--sys-color-token-subtle);
   pointer-events: none;
   flex: 1 1 auto;
   text-align: right;
@@ -116,13 +93,12 @@
   margin: -1px 5px -1px 0;
 }
 
-.soft-context-menu-item-mouse-over .checkmark {
-  opacity: 100%;
-  filter: none;
+.soft-context-menu-item .checkmark {
+  opacity: 0%;
 }
 
-:host-context(.-theme-with-dark-background) .checkmark {
-  filter: invert(80%);
+.soft-context-menu-item[checked] .checkmark {
+  opacity: 100%;
 }
 
 @media (forced-colors: active) {
@@ -130,9 +106,9 @@
     color: canvastext;
   }
 
-  .soft-context-menu-item-mouse-over,
-  .-theme-with-dark-background .soft-context-menu-item-mouse-over,
-  :host-context(.-theme-with-dark-background) .soft-context-menu-item-mouse-over {
+  .soft-context-menu-item.soft-context-menu-item-mouse-over,
+  .-theme-with-dark-background .soft-context-menu-item.soft-context-menu-item-mouse-over,
+  :host-context(.-theme-with-dark-background) .soft-context-menu-item.soft-context-menu-item-mouse-over {
     background-color: Highlight;
     color: HighlightText;
     forced-color-adjust: none;
@@ -142,7 +118,7 @@
     --icon-color: ButtonText;
   }
 
-  .soft-context-menu .soft-context-menu-item-mouse-over devtools-icon {
+  .soft-context-menu .soft-context-menu-item.soft-context-menu-item-mouse-over devtools-icon {
     --icon-color: HighlightText;
   }
 
@@ -150,7 +126,7 @@
     color: ButtonText;
   }
 
-  .soft-context-menu-item-mouse-over .soft-context-menu-shortcut {
+  .soft-context-menu-item.soft-context-menu-item-mouse-over .soft-context-menu-shortcut {
     color: HighlightText;
   }
 
@@ -172,7 +148,7 @@
     filter: invert(100%);
   }
 
-  .soft-context-menu-item-mouse-over .spritesheet-smallicons:not(.icon-mask) {
+  .soft-context-menu-item.soft-context-menu-item-mouse-over .spritesheet-smallicons:not(.icon-mask) {
     filter: invert(0);
   }
 }

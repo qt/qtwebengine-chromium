@@ -75,10 +75,12 @@ class alignas(kObjectUserDataAlignment) ObjectUseData {
     }
     WriteReadCount RemoveWriter() {
         int64_t prev = writer_reader_count.fetch_add(-(1LL << 32));
+        assert(prev > 0);
         return WriteReadCount(prev);
     }
     WriteReadCount RemoveReader() {
         int64_t prev = writer_reader_count.fetch_add(-1LL);
+        assert(prev > 0);
         return WriteReadCount(prev);
     }
     WriteReadCount GetCount() { return WriteReadCount(writer_reader_count); }
@@ -131,62 +133,36 @@ class counter {
         if (object == VK_NULL_HANDLE) {
             return;
         }
-        bool skip = false;
-        std::thread::id tid = std::this_thread::get_id();
-
         auto use_data = FindObject(object);
         if (!use_data) {
             return;
         }
-        const ObjectUseData::WriteReadCount prevCount = use_data->AddWriter();
 
-        if (prevCount.GetReadCount() == 0 && prevCount.GetWriteCount() == 0) {
-            // There is no current use of the object.  Record writer thread.
+        const std::thread::id tid = std::this_thread::get_id();
+        const ObjectUseData::WriteReadCount prev_count = use_data->AddWriter();
+        const bool prev_read = prev_count.GetReadCount() != 0;
+        const bool prev_write = prev_count.GetWriteCount() != 0;
+
+        if (!prev_read && !prev_write) {
+            // There is no current use of the object. Record writer thread.
             use_data->thread = tid;
-        } else {
-            if (prevCount.GetReadCount() == 0) {
-                assert(prevCount.GetWriteCount() != 0);
-                // There are no readers.  Two writers just collided.
-                if (use_data->thread != tid) {
-                    std::stringstream err_str;
-                    err_str << "THREADING ERROR : " << vvl::String(command) << "(): object of type " << object_string[object_type]
-                            << " is simultaneously used in thread " << use_data->thread.load(std::memory_order_relaxed)
-                            << " and thread " << tid;
-                    skip |= object_data->LogError(object, kVUID_Threading_MultipleThreads, "%s", err_str.str().c_str());
-                    if (skip) {
-                        // Wait for thread-safe access to object instead of skipping call.
-                        use_data->WaitForObjectIdle(true);
-                        // There is now no current use of the object.  Record writer thread.
-                        use_data->thread = tid;
-                    } else {
-                        // There is now no current use of the object.  Record writer thread.
-                        use_data->thread = tid;
-                    }
-                } else {
-                    // This is either safe multiple use in one call, or recursive use.
-                    // There is no way to make recursion safe.  Just forge ahead.
-                }
+        } else if (!prev_read) {
+            assert(prev_write);
+            // There are no other readers but there is another writer. Two writers just collided.
+            if (use_data->thread != tid) {
+                HandleErrorOnWrite(use_data, object, command);
             } else {
-                // There are readers.  This writer collided with them.
-                if (use_data->thread != tid) {
-                    std::stringstream err_str;
-                    err_str << "THREADING ERROR : " << vvl::String(command) << "(): object of type " << object_string[object_type]
-                            << " is simultaneously used in thread " << use_data->thread.load(std::memory_order_relaxed)
-                            << " and thread " << tid;
-                    skip |= object_data->LogError(object, kVUID_Threading_MultipleThreads, "%s", err_str.str().c_str());
-                    if (skip) {
-                        // Wait for thread-safe access to object instead of skipping call.
-                        use_data->WaitForObjectIdle(true);
-                        // There is now no current use of the object.  Record writer thread.
-                        use_data->thread = tid;
-                    } else {
-                        // Continue with an unsafe use of the object.
-                        use_data->thread = tid;
-                    }
-                } else {
-                    // This is either safe multiple use in one call, or recursive use.
-                    // There is no way to make recursion safe.  Just forge ahead.
-                }
+                // This is either safe multiple use in one call, or recursive use.
+                // There is no way to make recursion safe. Just forge ahead.
+            }
+        } else {
+            assert(prev_read);
+            // There are other readers. This writer collided with them.
+            if (use_data->thread != tid) {
+                HandleErrorOnWrite(use_data, object, command);
+            } else {
+                // This is either safe multiple use in one call, or recursive use.
+                // There is no way to make recursion safe. Just forge ahead.
             }
         }
     }
@@ -195,7 +171,6 @@ class counter {
         if (object == VK_NULL_HANDLE) {
             return;
         }
-        // Object is no longer in use
         auto use_data = FindObject(object);
         if (!use_data) {
             return;
@@ -207,51 +182,76 @@ class counter {
         if (object == VK_NULL_HANDLE) {
             return;
         }
-        bool skip = false;
-        std::thread::id tid = std::this_thread::get_id();
-
         auto use_data = FindObject(object);
         if (!use_data) {
             return;
         }
-        const ObjectUseData::WriteReadCount prevCount = use_data->AddReader();
 
-        if (prevCount.GetReadCount() == 0 && prevCount.GetWriteCount() == 0) {
-            // There is no current use of the object.
+        const std::thread::id tid = std::this_thread::get_id();
+        const ObjectUseData::WriteReadCount prev_count = use_data->AddReader();
+        const bool prev_read = prev_count.GetReadCount() != 0;
+        const bool prev_write = prev_count.GetWriteCount() != 0;
+
+        if (!prev_read && !prev_write) {
+            // There is no current use of the object. Record reader thread.
             use_data->thread = tid;
-        } else if (prevCount.GetWriteCount() > 0 && use_data->thread != tid) {
-            // There is a writer of the object.
-            std::stringstream err_str;
-            err_str << "THREADING ERROR : " << vvl::String(command) << "(): object of type " << object_string[object_type]
-                    << " is simultaneously used in thread " << use_data->thread.load(std::memory_order_relaxed) << " and thread "
-                    << tid;
-            skip |= object_data->LogError(object, kVUID_Threading_MultipleThreads, "%s", err_str.str().c_str());
-            if (skip) {
-                // Wait for thread-safe access to object instead of skipping call.
-                use_data->WaitForObjectIdle(false);
-                use_data->thread = tid;
-            }
+        } else if (prev_write && use_data->thread != tid) {
+            HandleErrorOnRead(use_data, object, command);
         } else {
             // There are other readers of the object.
         }
     }
+
     void FinishRead(T object, vvl::Func command) {
         if (object == VK_NULL_HANDLE) {
             return;
         }
-
         auto use_data = FindObject(object);
         if (!use_data) {
             return;
         }
         use_data->RemoveReader();
     }
+
     counter(VulkanObjectType type = kVulkanObjectTypeUnknown, ValidationObject *val_obj = nullptr) {
         object_type = type;
         object_data = val_obj;
     }
 
   private:
+    std::string GetErrorMessage(std::thread::id tid, vvl::Func command, std::thread::id other_tid) const {
+        std::stringstream err_str;
+        err_str << "THREADING ERROR : " << vvl::String(command) << "(): object of type " << object_string[object_type]
+                << " is simultaneously used in current thread " << tid << " and thread " << other_tid;
+        return err_str.str();
+    }
+
+    void HandleErrorOnWrite(const std::shared_ptr<ObjectUseData> &use_data, T object, vvl::Func command) {
+        const std::thread::id tid = std::this_thread::get_id();
+        const std::string error_message = GetErrorMessage(tid, command, use_data->thread.load(std::memory_order_relaxed));
+        const bool skip = object_data->LogError(object, kVUID_Threading_MultipleThreads, "%s", error_message.c_str());
+        if (skip) {
+            // Wait for thread-safe access to object instead of skipping call.
+            use_data->WaitForObjectIdle(true);
+            // There is now no current use of the object. Record writer thread.
+            use_data->thread = tid;
+        } else {
+            // There is now no current use of the object. Record writer thread.
+            use_data->thread = tid;
+        }
+    }
+
+    void HandleErrorOnRead(const std::shared_ptr<ObjectUseData> &use_data, T object, vvl::Func command) {
+        const std::thread::id tid = std::this_thread::get_id();
+        // There is a writer of the object.
+        const auto error_message = GetErrorMessage(tid, command, use_data->thread.load(std::memory_order_relaxed));
+        const bool skip = object_data->LogError(object, kVUID_Threading_MultipleThreads, "%s", error_message.c_str());
+        if (skip) {
+            // Wait for thread-safe access to object instead of skipping call.
+            use_data->WaitForObjectIdle(false);
+            use_data->thread = tid;
+        }
+    }
 };
 
 class ThreadSafety : public ValidationObject {
@@ -327,10 +327,7 @@ class ThreadSafety : public ValidationObject {
     void StartReadObject(type object, vvl::Func command) { c_##type.StartRead(object, command); }     \
     void FinishReadObject(type object, vvl::Func command) { c_##type.FinishRead(object, command); }   \
     void CreateObject(type object) { c_##type.CreateObject(object); }                                 \
-    void DestroyObject(type object) {                                                                 \
-        c_##type.DestroyObject(object);                                                               \
-        c_##type.DestroyObject(object);                                                               \
-    }
+    void DestroyObject(type object) { c_##type.DestroyObject(object); }
 
 #define WRAPPER_PARENT_INSTANCE(type)                                                                                           \
     void StartWriteObjectParentInstance(type object, vvl::Func command) {                                                       \

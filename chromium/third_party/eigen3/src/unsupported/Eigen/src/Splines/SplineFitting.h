@@ -15,6 +15,7 @@
 #include <numeric>
 #include <vector>
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 #include "SplineFwd.h"

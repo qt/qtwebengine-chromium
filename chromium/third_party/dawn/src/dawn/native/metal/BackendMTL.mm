@@ -1,16 +1,29 @@
-// Copyright 2019 The Dawn Authors
+// Copyright 2019 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/metal/BackendMTL.h"
 
@@ -31,6 +44,7 @@
 #include "dawn/common/IOKitRef.h"
 #endif
 
+#include <string>
 #include <vector>
 
 namespace dawn::native::metal {
@@ -118,10 +132,18 @@ MaybeError API_AVAILABLE(macos(10.13))
         return DAWN_INTERNAL_ERROR("Failed to create the matching dict for the device");
     }
 
+    // Work around a breaking deprecation of kIOMasterPortDefault to kIOMainPortDefault. Both values
+    // are equivalent with NULL (given mach_port_t is an unsigned int they probably mean 0) as noted
+    // by the IOKitLib.h comments so use that directly.
+    // TODO(chromium:1400252): Use kIOMainPortDefault once the minimum supported version includes
+    // macOS 12.0
+    constexpr mach_port_t kIOMainPort = 0;
+
     // IOServiceGetMatchingService will consume the reference on the matching dictionary,
     // so we don't need to release the dictionary.
     IORef<io_registry_entry_t> acceleratorEntry =
-        AcquireIORef(IOServiceGetMatchingService(kIOMasterPortDefault, matchingDict.Detach()));
+        AcquireIORef(IOServiceGetMatchingService(kIOMainPort, matchingDict.Detach()));
+
     if (acceleratorEntry == IO_OBJECT_NULL) {
         return DAWN_INTERNAL_ERROR("Failed to get the IO registry entry for the accelerator");
     }
@@ -133,7 +155,7 @@ MaybeError API_AVAILABLE(macos(10.13))
         return DAWN_INTERNAL_ERROR("Failed to get the IO registry entry for the device");
     }
 
-    ASSERT(deviceEntry != IO_OBJECT_NULL);
+    DAWN_ASSERT(deviceEntry != IO_OBJECT_NULL);
 
     uint32_t vendorId = GetEntryProperty(deviceEntry.Get(), CFSTR("vendor-id"));
     uint32_t deviceId = GetEntryProperty(deviceEntry.Get(), CFSTR("device-id"));
@@ -218,14 +240,33 @@ bool IsGPUCounterSupported(id<MTLDevice> device,
     return true;
 }
 
+bool CheckMetalValidationEnabled(InstanceBase* instance) {
+    if (instance->IsBackendValidationEnabled()) {
+        return true;
+    }
+
+    // Sometime validation layer can be enabled eternally via xcode or command line.
+    if (GetEnvironmentVar("METAL_DEVICE_WRAPPER_TYPE").first == "1" ||
+        GetEnvironmentVar("MTL_DEBUG_LAYER").first == "1") {
+        return true;
+    }
+
+    return false;
+}
+
 }  // anonymous namespace
 
 // The Metal backend's PhysicalDevice.
+// TODO(dawn:2155): move this PhysicalDevice class to PhysicalDeviceMTL.mm
 
 class PhysicalDevice : public PhysicalDeviceBase {
   public:
-    PhysicalDevice(InstanceBase* instance, NSPRef<id<MTLDevice>> device)
-        : PhysicalDeviceBase(instance, wgpu::BackendType::Metal), mDevice(std::move(device)) {
+    PhysicalDevice(InstanceBase* instance,
+                   NSPRef<id<MTLDevice>> device,
+                   bool metalValidationEnabled)
+        : PhysicalDeviceBase(instance, wgpu::BackendType::Metal),
+          mDevice(std::move(device)),
+          mMetalValidationEnabled(metalValidationEnabled) {
         mName = std::string([[*mDevice name] UTF8String]);
 
         PCIIDs ids;
@@ -238,7 +279,7 @@ class PhysicalDevice : public PhysicalDeviceBase {
         mAdapterType = wgpu::AdapterType::IntegratedGPU;
         const char* systemName = "iOS ";
 #elif DAWN_PLATFORM_IS(MACOS)
-        if ([*mDevice isLowPower]) {
+        if ([*mDevice hasUnifiedMemory]) {
             mAdapterType = wgpu::AdapterType::IntegratedGPU;
         } else {
             mAdapterType = wgpu::AdapterType::DiscreteGPU;
@@ -251,6 +292,8 @@ class PhysicalDevice : public PhysicalDeviceBase {
         NSString* osVersion = [[NSProcessInfo processInfo] operatingSystemVersionString];
         mDriverDescription = "Metal driver on " + std::string(systemName) + [osVersion UTF8String];
     }
+
+    bool IsMetalValidationEnabled() const { return mMetalValidationEnabled; }
 
     // PhysicalDeviceBase Implementation
     bool SupportsExternalImages() const override {
@@ -445,8 +488,8 @@ class PhysicalDevice : public PhysicalDeviceBase {
                 // Intentionally leak counterSets to workaround an issue where the driver
                 // over-releases the handle if it is accessed more than once. It becomes a zombie.
                 // For more information, see crbug.com/1443658.
-                // Appears to occur on Intel prior to MacOS 11, and continuing on Intel Gen 7 after
-                // that OS version.
+                // Appears to occur on non-Apple prior to MacOS 11, and continuing on Intel Gen 7
+                // and Intel Gen 11 after that OS version.
                 uint32_t vendorId = GetVendorId();
                 uint32_t deviceId = GetDeviceId();
                 if (gpu_info::IsIntelGen7(vendorId, deviceId)) {
@@ -456,7 +499,7 @@ class PhysicalDevice : public PhysicalDeviceBase {
                     return true;
                 }
 #if DAWN_PLATFORM_IS(MACOS)
-                if (gpu_info::IsIntel(vendorId) && !IsMacOSVersionAtLeast(11)) {
+                if (!gpu_info::IsApple(vendorId) && !IsMacOSVersionAtLeast(11)) {
                     return true;
                 }
 #endif
@@ -464,13 +507,6 @@ class PhysicalDevice : public PhysicalDeviceBase {
             };
             if (ShouldLeakCounterSets()) {
                 [[*mDevice counterSets] retain];
-            }
-            if (IsGPUCounterSupported(
-                    *mDevice, MTLCommonCounterSetStatistic,
-                    {MTLCommonCounterVertexInvocations, MTLCommonCounterClipperInvocations,
-                     MTLCommonCounterClipperPrimitivesOut, MTLCommonCounterFragmentInvocations,
-                     MTLCommonCounterComputeKernelInvocations})) {
-                EnableFeature(Feature::PipelineStatisticsQuery);
             }
 
             if (IsGPUCounterSupported(*mDevice, MTLCommonCounterSetTimestamp,
@@ -498,7 +534,7 @@ class PhysicalDevice : public PhysicalDeviceBase {
                 }
 
                 if (enableTimestampQueryInsidePasses) {
-                    EnableFeature(Feature::TimestampQueryInsidePasses);
+                    EnableFeature(Feature::ChromiumExperimentalTimestampQueryInsidePasses);
                 }
             }
         }
@@ -515,6 +551,9 @@ class PhysicalDevice : public PhysicalDeviceBase {
         // on ios 11.0+ and macOS 11.0+
         if (@available(macOS 10.11, iOS 11.0, *)) {
             EnableFeature(Feature::DawnMultiPlanarFormats);
+            EnableFeature(Feature::MultiPlanarFormatP010);
+            EnableFeature(Feature::MultiPlanarRenderTargets);
+            EnableFeature(Feature::MultiPlanarFormatExtendedUsages);
         }
 
         if (@available(macOS 11.0, iOS 10.0, *)) {
@@ -555,6 +594,8 @@ class PhysicalDevice : public PhysicalDeviceBase {
         }
 
         EnableFeature(Feature::Norm16TextureFormats);
+
+        EnableFeature(Feature::HostMappedPointer);
     }
 
     void InitializeVendorArchitectureImpl() override {
@@ -671,6 +712,7 @@ class PhysicalDevice : public PhysicalDeviceBase {
             uint32_t maxSamplerStateArgumentEntriesPerFunc;
             uint32_t maxThreadsPerThreadgroup;
             uint32_t maxTotalThreadgroupMemory;
+            uint32_t maxFragmentInputs;
             uint32_t maxFragmentInputComponents;
             uint32_t max1DTextureSize;
             uint32_t max2DTextureSize;
@@ -678,6 +720,7 @@ class PhysicalDevice : public PhysicalDeviceBase {
             uint32_t maxTextureArrayLayers;
             uint32_t minBufferOffsetAlignment;
             uint32_t maxColorRenderTargets;
+            uint32_t maxTotalRenderTargetSize;
         };
 
         struct LimitsForFamily {
@@ -689,13 +732,14 @@ class PhysicalDevice : public PhysicalDeviceBase {
             // https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf
             //                                                               Apple                                                      Mac
             //                                                                   1,      2,      3,      4,      5,      6,      7,       1,      2
-            constexpr LimitsForFamily kMTLLimits[13] = {
+            constexpr LimitsForFamily kMTLLimits[15] = {
                 {&MTLDeviceLimits::maxVertexAttribsPerDescriptor,         {    31u,    31u,    31u,    31u,    31u,    31u,    31u,     31u,    31u }},
                 {&MTLDeviceLimits::maxBufferArgumentEntriesPerFunc,       {    31u,    31u,    31u,    31u,    31u,    31u,    31u,     31u,    31u }},
                 {&MTLDeviceLimits::maxTextureArgumentEntriesPerFunc,      {    31u,    31u,    31u,    96u,    96u,   128u,   128u,    128u,   128u }},
                 {&MTLDeviceLimits::maxSamplerStateArgumentEntriesPerFunc, {    16u,    16u,    16u,    16u,    16u,    16u,    16u,     16u,    16u }},
                 {&MTLDeviceLimits::maxThreadsPerThreadgroup,              {   512u,   512u,   512u,  1024u,  1024u,  1024u,  1024u,   1024u,  1024u }},
                 {&MTLDeviceLimits::maxTotalThreadgroupMemory,             { 16352u, 16352u, 16384u, 32768u, 32768u, 32768u, 32768u,  32768u, 32768u }},
+                {&MTLDeviceLimits::maxFragmentInputs,                     {    60u,    60u,    60u,   124u,   124u,   124u,   124u,     32u,    32u }},
                 {&MTLDeviceLimits::maxFragmentInputComponents,            {    60u,    60u,    60u,   124u,   124u,   124u,   124u,    124u,   124u }},
                 {&MTLDeviceLimits::max1DTextureSize,                      {  8192u,  8192u, 16384u, 16384u, 16384u, 16384u, 16384u,  16384u, 16384u }},
                 {&MTLDeviceLimits::max2DTextureSize,                      {  8192u,  8192u, 16384u, 16384u, 16384u, 16384u, 16384u,  16384u, 16384u }},
@@ -703,6 +747,9 @@ class PhysicalDevice : public PhysicalDeviceBase {
                 {&MTLDeviceLimits::maxTextureArrayLayers,                 {  2048u,  2048u,  2048u,  2048u,  2048u,  2048u,  2048u,   2048u,  2048u }},
                 {&MTLDeviceLimits::minBufferOffsetAlignment,              {     4u,     4u,     4u,     4u,     4u,     4u,     4u,    256u,   256u }},
                 {&MTLDeviceLimits::maxColorRenderTargets,                 {     4u,     8u,     8u,     8u,     8u,     8u,     8u,      8u,     8u }},
+                // Note: the feature set tables list No Limit for Mac 1 and Mac 2.
+                // For these, we use maxColorRenderTargets * 16. 16 is the largest cost of any color format.
+                {&MTLDeviceLimits::maxTotalRenderTargetSize,              {    16u,    32u,    32u,    64u,    64u,    64u,    64u,    128u,   128u }},
             };
         // clang-format on
 
@@ -714,13 +761,14 @@ class PhysicalDevice : public PhysicalDeviceBase {
             mtlLimits.*limitsForFamily.limit = limitsForFamily.values[mtlGPUFamily];
         }
 
-        GetDefaultLimits(&limits->v1);
+        GetDefaultLimitsForSupportedFeatureLevel(&limits->v1);
 
         limits->v1.maxTextureDimension1D = mtlLimits.max1DTextureSize;
         limits->v1.maxTextureDimension2D = mtlLimits.max2DTextureSize;
         limits->v1.maxTextureDimension3D = mtlLimits.max3DTextureSize;
         limits->v1.maxTextureArrayLayers = mtlLimits.maxTextureArrayLayers;
         limits->v1.maxColorAttachments = mtlLimits.maxColorRenderTargets;
+        limits->v1.maxColorAttachmentBytesPerSample = mtlLimits.maxTotalRenderTargetSize;
 
         uint32_t maxBuffersPerStage = mtlLimits.maxBufferArgumentEntriesPerFunc;
         maxBuffersPerStage -= 1;  // One slot is reserved to store buffer lengths.
@@ -729,18 +777,19 @@ class PhysicalDevice : public PhysicalDeviceBase {
                                           limits->v1.maxUniformBuffersPerShaderStage +
                                           limits->v1.maxVertexBuffers;
 
-        ASSERT(maxBuffersPerStage >= baseMaxBuffersPerStage);
+        DAWN_ASSERT(maxBuffersPerStage >= baseMaxBuffersPerStage);
         {
+            // Allocate all remaining buffers to maxStorageBuffersPerShaderStage.
+            // TODO(crbug.com/2158): We can have more of all types of buffers when
+            // using Metal argument buffers.
             uint32_t additional = maxBuffersPerStage - baseMaxBuffersPerStage;
-            limits->v1.maxStorageBuffersPerShaderStage += additional / 3;
-            limits->v1.maxUniformBuffersPerShaderStage += additional / 3;
-            limits->v1.maxVertexBuffers += (additional - 2 * (additional / 3));
+            limits->v1.maxStorageBuffersPerShaderStage += additional;
         }
 
         uint32_t baseMaxTexturesPerStage = limits->v1.maxSampledTexturesPerShaderStage +
                                            limits->v1.maxStorageTexturesPerShaderStage;
 
-        ASSERT(mtlLimits.maxTextureArgumentEntriesPerFunc >= baseMaxTexturesPerStage);
+        DAWN_ASSERT(mtlLimits.maxTextureArgumentEntriesPerFunc >= baseMaxTexturesPerStage);
         {
             uint32_t additional =
                 mtlLimits.maxTextureArgumentEntriesPerFunc - baseMaxTexturesPerStage;
@@ -767,7 +816,16 @@ class PhysicalDevice : public PhysicalDeviceBase {
         limits->v1.maxVertexAttributes =
             limits->v1.maxVertexBuffers * mtlLimits.maxVertexAttribsPerDescriptor;
 
-        limits->v1.maxInterStageShaderComponents = mtlLimits.maxFragmentInputComponents;
+        // See https://github.com/gpuweb/gpuweb/issues/1962 for more details.
+        uint32_t vendorId = GetVendorId();
+        if (gpu_info::IsApple(vendorId)) {
+            limits->v1.maxInterStageShaderComponents = mtlLimits.maxFragmentInputComponents;
+            limits->v1.maxInterStageShaderVariables = mtlLimits.maxFragmentInputs;
+        } else {
+            // On non-Apple macOS each built-in consumes one individual inter-stage shader variable.
+            limits->v1.maxInterStageShaderVariables = mtlLimits.maxFragmentInputs - 4;
+            limits->v1.maxInterStageShaderComponents = limits->v1.maxInterStageShaderVariables * 4;
+        }
 
         limits->v1.maxComputeWorkgroupStorageSize = mtlLimits.maxTotalThreadgroupMemory;
         limits->v1.maxComputeInvocationsPerWorkgroup = mtlLimits.maxThreadsPerThreadgroup;
@@ -791,8 +849,9 @@ class PhysicalDevice : public PhysicalDeviceBase {
         // - maxBindGroups
         // - maxVertexBufferArrayStride
 
-        // TODO(crbug.com/dawn/1448):
-        // - maxInterStageShaderVariables
+        // Experimental limits for subgroups
+        limits->experimentalSubgroupLimits.minSubgroupSize = 4;
+        limits->experimentalSubgroupLimits.maxSubgroupSize = 64;
 
         return {};
     }
@@ -803,7 +862,12 @@ class PhysicalDevice : public PhysicalDeviceBase {
     }
 
     NSPRef<id<MTLDevice>> mDevice;
+    const bool mMetalValidationEnabled;
 };
+
+bool IsMetalValidationEnabled(PhysicalDeviceBase* physicalDevice) {
+    return ToBackend(physicalDevice)->IsMetalValidationEnabled();
+}
 
 // Implementation of the Metal backend's BackendConnection
 
@@ -824,11 +888,13 @@ std::vector<Ref<PhysicalDeviceBase>> Backend::DiscoverPhysicalDevices(
         // Devices already discovered.
         return std::vector<Ref<PhysicalDeviceBase>>{mPhysicalDevices};
     }
+
+    bool metalValidationEnabled = CheckMetalValidationEnabled(GetInstance());
     @autoreleasepool {
 #if DAWN_PLATFORM_IS(MACOS)
         for (id<MTLDevice> device in MTLCopyAllDevices()) {
-            Ref<PhysicalDevice> physicalDevice =
-                AcquireRef(new PhysicalDevice(GetInstance(), AcquireNSPRef(device)));
+            Ref<PhysicalDevice> physicalDevice = AcquireRef(
+                new PhysicalDevice(GetInstance(), AcquireNSPRef(device), metalValidationEnabled));
             if (!GetInstance()->ConsumedErrorAndWarnOnce(physicalDevice->Initialize())) {
                 mPhysicalDevices.push_back(std::move(physicalDevice));
             }
@@ -837,8 +903,8 @@ std::vector<Ref<PhysicalDeviceBase>> Backend::DiscoverPhysicalDevices(
 
         // iOS only has a single device so MTLCopyAllDevices doesn't exist there.
 #if DAWN_PLATFORM_IS(IOS)
-        Ref<PhysicalDevice> physicalDevice = AcquireRef(
-            new PhysicalDevice(GetInstance(), AcquireNSPRef(MTLCreateSystemDefaultDevice())));
+        Ref<PhysicalDevice> physicalDevice = AcquireRef(new PhysicalDevice(
+            GetInstance(), AcquireNSPRef(MTLCreateSystemDefaultDevice()), metalValidationEnabled));
         if (!GetInstance()->ConsumedErrorAndWarnOnce(physicalDevice->Initialize())) {
             mPhysicalDevices.push_back(std::move(physicalDevice));
         }

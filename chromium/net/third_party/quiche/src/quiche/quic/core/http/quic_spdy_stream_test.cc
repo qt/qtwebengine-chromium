@@ -231,7 +231,9 @@ class TestStream : public QuicSpdyStream {
   ~TestStream() override = default;
 
   using QuicSpdyStream::set_ack_listener;
+  using QuicSpdyStream::ValidateReceivedHeaders;
   using QuicStream::CloseWriteSide;
+  using QuicStream::sequencer;
   using QuicStream::WriteOrBufferData;
 
   void OnBodyAvailable() override {
@@ -265,11 +267,6 @@ class TestStream : public QuicSpdyStream {
 
   const std::string& data() const { return data_; }
   const spdy::Http2HeaderBlock& saved_headers() const { return saved_headers_; }
-
-  // Expose protected accessor.
-  const QuicStreamSequencer* sequencer() const {
-    return QuicStream::sequencer();
-  }
 
   void OnStreamHeaderList(bool fin, size_t frame_len,
                           const QuicHeaderList& header_list) override {
@@ -748,7 +745,7 @@ TEST_P(QuicSpdyStreamTest, Http3FrameError) {
 
   Initialize(kShouldProcessData);
 
-  // PUSH_PROMISE frame with empty payload is considered invalid.
+  // PUSH_PROMISE frame is considered invalid.
   std::string invalid_http3_frame = absl::HexStringToBytes("0500");
   QuicStreamFrame stream_frame(stream_->id(), /* fin = */ false,
                                /* offset = */ 0, invalid_http3_frame);
@@ -3393,8 +3390,6 @@ TEST_P(QuicSpdyStreamTest, ReadAfterReset) {
     return;
   }
 
-  SetQuicReloadableFlag(quic_clear_body_manager, true);
-
   Initialize(!kShouldProcessData);
 
   ProcessHeaders(false, headers_);
@@ -3424,6 +3419,32 @@ TEST_P(QuicSpdyStreamTest, ReadAfterReset) {
 
   size_t bytes_read = stream_->Readv(&vec, 1);
   EXPECT_EQ(0u, bytes_read);
+}
+
+TEST_P(QuicSpdyStreamTest, ColonAllowedInHeaderName) {
+  if (!UsesHttp3()) {
+    return;
+  }
+
+  SetQuicReloadableFlag(quic_colon_invalid_in_header_name, false);
+  Initialize(kShouldProcessData);
+
+  headers_["foo:bar"] = "invalid";
+  EXPECT_TRUE(stream_->ValidateReceivedHeaders(AsHeaderList(headers_)));
+}
+
+TEST_P(QuicSpdyStreamTest, ColonDisallowedInHeaderName) {
+  if (!UsesHttp3()) {
+    return;
+  }
+
+  SetQuicReloadableFlag(quic_colon_invalid_in_header_name, true);
+  Initialize(kShouldProcessData);
+
+  headers_["foo:bar"] = "invalid";
+  EXPECT_FALSE(stream_->ValidateReceivedHeaders(AsHeaderList(headers_)));
+  EXPECT_EQ("Invalid character in header name foo:bar",
+            stream_->invalid_request_details());
 }
 
 }  // namespace

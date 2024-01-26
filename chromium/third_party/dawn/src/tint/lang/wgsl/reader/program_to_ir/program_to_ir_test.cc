@@ -1,16 +1,29 @@
-// Copyright 2023 The Tint Authors.
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "gmock/gmock.h"
 #include "src/tint/lang/core/constant/scalar.h"
@@ -60,7 +73,7 @@ TEST_F(IR_FromProgramTest, Func) {
     Func("f", tint::Empty, ty.void_(), tint::Empty);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     ASSERT_EQ(1u, m->functions.Length());
 
@@ -81,7 +94,7 @@ TEST_F(IR_FromProgramTest, Func_WithParam) {
     Func("f", Vector{Param("a", ty.u32())}, ty.u32(), Vector{Return("a")});
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     ASSERT_EQ(1u, m->functions.Length());
 
@@ -103,7 +116,7 @@ TEST_F(IR_FromProgramTest, Func_WithMultipleParam) {
          ty.void_(), tint::Empty);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     ASSERT_EQ(1u, m->functions.Length());
 
@@ -124,7 +137,7 @@ TEST_F(IR_FromProgramTest, EntryPoint) {
     Func("f", tint::Empty, ty.void_(), tint::Empty, Vector{Stage(ast::PipelineStage::kFragment)});
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(m->functions[0]->Stage(), core::ir::Function::PipelineStage::kFragment);
 }
@@ -134,7 +147,7 @@ TEST_F(IR_FromProgramTest, IfStatement) {
     WrapInFunction(ast_if);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : "");
+    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
 
     auto m = res.Move();
 
@@ -162,7 +175,7 @@ TEST_F(IR_FromProgramTest, IfStatement_TrueReturns) {
     WrapInFunction(ast_if);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : "");
+    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
 
     auto m = res.Move();
 
@@ -187,7 +200,7 @@ TEST_F(IR_FromProgramTest, IfStatement_FalseReturns) {
     WrapInFunction(ast_if);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : "");
+    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
 
     auto m = res.Move();
 
@@ -215,7 +228,7 @@ TEST_F(IR_FromProgramTest, IfStatement_BothReturn) {
     WrapInFunction(ast_if);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : "");
+    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
 
     auto m = res.Move();
 
@@ -244,7 +257,7 @@ TEST_F(IR_FromProgramTest, IfStatement_JumpChainToMerge) {
     WrapInFunction(ast_if);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : "");
+    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
 
     auto m = res.Move();
 
@@ -275,7 +288,7 @@ TEST_F(IR_FromProgramTest, Loop_WithBreak) {
     WrapInFunction(ast_loop);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : "");
+    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
 
     auto m = res.Move();
     auto* loop = FindSingleInstruction<core::ir::Loop>(m);
@@ -308,7 +321,7 @@ TEST_F(IR_FromProgramTest, Loop_WithContinue) {
     WrapInFunction(ast_loop);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : "");
+    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
 
     auto m = res.Move();
     auto* loop = FindSingleInstruction<core::ir::Loop>(m);
@@ -346,7 +359,7 @@ TEST_F(IR_FromProgramTest, Loop_WithContinuing_BreakIf) {
     WrapInFunction(ast_loop);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : "");
+    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
 
     auto m = res.Move();
     auto* loop = FindSingleInstruction<core::ir::Loop>(m);
@@ -380,7 +393,7 @@ TEST_F(IR_FromProgramTest, Loop_Continuing_Body_Scope) {
     WrapInFunction(ast_loop);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : "");
+    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
 
     auto m = res.Move();
     EXPECT_EQ(Disassemble(m),
@@ -407,7 +420,7 @@ TEST_F(IR_FromProgramTest, Loop_WithReturn) {
     WrapInFunction(ast_loop);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : "");
+    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
 
     auto m = res.Move();
     auto* loop = FindSingleInstruction<core::ir::Loop>(m);
@@ -444,7 +457,7 @@ TEST_F(IR_FromProgramTest, Loop_WithOnlyReturn) {
     WrapInFunction(ast_loop, If(true, Block(Return())));
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : "");
+    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
 
     auto m = res.Move();
     auto* loop = FindSingleInstruction<core::ir::Loop>(m);
@@ -485,7 +498,7 @@ TEST_F(IR_FromProgramTest, Loop_WithOnlyReturn_ContinuingBreakIf) {
     WrapInFunction(Block(ast_loop, ast_if));
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : "");
+    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
 
     auto m = res.Move();
     auto* loop = FindSingleInstruction<core::ir::Loop>(m);
@@ -523,7 +536,7 @@ TEST_F(IR_FromProgramTest, Loop_WithIf_BothBranchesBreak) {
     WrapInFunction(ast_loop);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : "");
+    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
 
     auto m = res.Move();
     auto* loop = FindSingleInstruction<core::ir::Loop>(m);
@@ -573,7 +586,7 @@ TEST_F(IR_FromProgramTest, Loop_Nested) {
     WrapInFunction(ast_loop_a);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()),
               R"(%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b1 {
@@ -636,7 +649,7 @@ TEST_F(IR_FromProgramTest, While) {
     WrapInFunction(ast_while);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : "");
+    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
 
     auto m = res.Move();
     auto* loop = FindSingleInstruction<core::ir::Loop>(m);
@@ -676,7 +689,7 @@ TEST_F(IR_FromProgramTest, While_Return) {
     WrapInFunction(ast_while);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : "");
+    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
 
     auto m = res.Move();
     auto* loop = FindSingleInstruction<core::ir::Loop>(m);
@@ -716,7 +729,7 @@ TEST_F(IR_FromProgramTest, For) {
     WrapInFunction(ast_for);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : "");
+    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
 
     auto m = res.Move();
     auto* loop = FindSingleInstruction<core::ir::Loop>(m);
@@ -765,7 +778,7 @@ TEST_F(IR_FromProgramTest, For_Init_NoCondOrContinuing) {
     WrapInFunction(ast_for);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : "");
+    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
 
     auto m = res.Move();
     auto* loop = FindSingleInstruction<core::ir::Loop>(m);
@@ -798,7 +811,7 @@ TEST_F(IR_FromProgramTest, For_NoInitCondOrContinuing) {
     WrapInFunction(ast_for);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : "");
+    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
 
     auto m = res.Move();
     auto* loop = FindSingleInstruction<core::ir::Loop>(m);
@@ -830,7 +843,7 @@ TEST_F(IR_FromProgramTest, Switch) {
     WrapInFunction(ast_switch);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : "");
+    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
 
     auto m = res.Move();
     auto* swtch = FindSingleInstruction<core::ir::Switch>(m);
@@ -881,7 +894,7 @@ TEST_F(IR_FromProgramTest, Switch_MultiSelector) {
     WrapInFunction(ast_switch);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : "");
+    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
 
     auto m = res.Move();
     auto* swtch = FindSingleInstruction<core::ir::Switch>(m);
@@ -920,7 +933,7 @@ TEST_F(IR_FromProgramTest, Switch_OnlyDefault) {
     WrapInFunction(ast_switch);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : "");
+    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
 
     auto m = res.Move();
     auto* swtch = FindSingleInstruction<core::ir::Switch>(m);
@@ -953,7 +966,7 @@ TEST_F(IR_FromProgramTest, Switch_WithBreak) {
     WrapInFunction(ast_switch);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : "");
+    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
 
     auto m = res.Move();
     auto* swtch = FindSingleInstruction<core::ir::Switch>(m);
@@ -996,7 +1009,7 @@ TEST_F(IR_FromProgramTest, Switch_AllReturn) {
     WrapInFunction(ast_switch, ast_if);
 
     auto res = Build();
-    ASSERT_TRUE(res) << (!res ? res.Failure() : "");
+    ASSERT_TRUE(res) << (!res ? res.Failure() : Failure{});
 
     auto m = res.Move();
 
@@ -1036,7 +1049,7 @@ TEST_F(IR_FromProgramTest, Emit_Phony) {
     WrapInFunction(Ignore(Call("b")));
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()),
               R"(%b = func():i32 -> %b1 {
@@ -1060,7 +1073,7 @@ TEST_F(IR_FromProgramTest, Func_WithParam_WithAttribute_Invariant) {
          ty.vec4<f32>(), Vector{Return("a")}, Vector{Stage(ast::PipelineStage::kFragment)},
          Vector{Location(1_i)});
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(
         Disassemble(m.Get()),
@@ -1077,7 +1090,7 @@ TEST_F(IR_FromProgramTest, Func_WithParam_WithAttribute_Location) {
          Vector{Stage(ast::PipelineStage::kFragment)}, Vector{Location(1_i)});
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()),
               R"(%f = @fragment func(%a:f32 [@location(2)]):f32 [@location(1)] -> %b1 {
@@ -1097,7 +1110,7 @@ TEST_F(IR_FromProgramTest, Func_WithParam_WithAttribute_Location_WithInterpolati
          Vector{Location(1_i)});
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(
         Disassemble(m.Get()),
@@ -1117,7 +1130,7 @@ TEST_F(IR_FromProgramTest, Func_WithParam_WithAttribute_Location_WithInterpolati
          Vector{Location(1_i)});
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(
         Disassemble(m.Get()),

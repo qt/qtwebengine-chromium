@@ -45,6 +45,7 @@
 #include "src/runtime/runtime.h"
 #include "src/sandbox/code-pointer-table.h"
 #include "src/sandbox/external-pointer-table.h"
+#include "src/sandbox/trusted-pointer-table.h"
 #include "src/utils/allocation.h"
 
 #ifdef DEBUG
@@ -140,6 +141,7 @@ class RootVisitor;
 class SetupIsolateDelegate;
 class Simulator;
 class SnapshotData;
+class StackFrame;
 class StringForwardingTable;
 class StringTable;
 class StubCache;
@@ -519,7 +521,7 @@ using DebugObjectCache = std::vector<Handle<HeapObject>>;
   /* State for Relocatable. */                                                \
   V(Relocatable*, relocatable_top, nullptr)                                   \
   V(DebugObjectCache*, string_stream_debug_object_cache, nullptr)             \
-  V(Object, string_stream_current_security_token, Object())                   \
+  V(Tagged<Object>, string_stream_current_security_token, Tagged<Object>())   \
   V(const intptr_t*, api_external_references, nullptr)                        \
   V(AddressToIndexHashMap*, external_reference_map, nullptr)                  \
   V(HeapObjectToIndexHashMap*, root_index_map, nullptr)                       \
@@ -622,6 +624,12 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
     friend class Isolate;
     friend class ThreadDataTable;
     friend class EntryStackItem;
+  };
+
+  // Used for walking the promise tree for catch prediction.
+  struct PromiseHandler {
+    Handle<JSReceiver> receiver;
+    bool catches;
   };
 
   static void InitializeOncePerProcess();
@@ -763,7 +771,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   // Access to top context (where the current function object was created).
   Tagged<Context> context() const { return thread_local_top()->context_; }
   inline void set_context(Tagged<Context> context);
-  Context* context_address() { return &thread_local_top()->context_; }
+  Tagged<Context>* context_address() { return &thread_local_top()->context_; }
 
   // Access to current thread id.
   inline void set_thread_id(ThreadId id) {
@@ -785,7 +793,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
 
   bool IsCompileHintsMagicEnabled(Handle<NativeContext> context);
 
-  THREAD_LOCAL_TOP_ADDRESS(Context, pending_handler_context)
+  THREAD_LOCAL_TOP_ADDRESS(Tagged<Context>, pending_handler_context)
   THREAD_LOCAL_TOP_ADDRESS(Address, pending_handler_entrypoint)
   THREAD_LOCAL_TOP_ADDRESS(Address, pending_handler_constant_pool)
   THREAD_LOCAL_TOP_ADDRESS(Address, pending_handler_fp)
@@ -801,19 +809,19 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   THREAD_LOCAL_TOP_ADDRESS(bool, external_caught_exception)
 
   // Interface to pending exception.
-  THREAD_LOCAL_TOP_ADDRESS(Object, pending_exception)
+  THREAD_LOCAL_TOP_ADDRESS(Tagged<Object>, pending_exception)
   inline Tagged<Object> pending_exception();
   inline void set_pending_exception(Tagged<Object> exception_obj);
   inline void clear_pending_exception();
   inline bool has_pending_exception();
 
-  THREAD_LOCAL_TOP_ADDRESS(Object, pending_message)
+  THREAD_LOCAL_TOP_ADDRESS(Tagged<Object>, pending_message)
   inline void clear_pending_message();
   inline Tagged<Object> pending_message();
   inline bool has_pending_message();
   inline void set_pending_message(Tagged<Object> message_obj);
 
-  THREAD_LOCAL_TOP_ADDRESS(Object, scheduled_exception)
+  THREAD_LOCAL_TOP_ADDRESS(Tagged<Object>, scheduled_exception)
   inline Tagged<Object> scheduled_exception();
   inline bool has_scheduled_exception();
   inline void clear_scheduled_exception();
@@ -916,6 +924,12 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
 
   // Heuristically guess whether a Promise is handled by user catch handler
   bool PromiseHasUserDefinedRejectHandler(Handle<JSPromise> promise);
+
+  // Walks the promise tree and calls a callback on every handler an exception
+  // is likely to hit. Used in catch prediction. Will end the walk and return
+  // true if a callback returns true, otherwise returns false.
+  bool WalkPromiseTree(Handle<JSPromise> promise,
+                       std::function<bool(PromiseHandler)> callback);
 
   class V8_NODISCARD ExceptionScope {
    public:
@@ -1041,6 +1055,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
     CAUGHT_BY_ASYNC_AWAIT
   };
   CatchType PredictExceptionCatcher();
+  CatchType PredictExceptionCatchAtFrame(v8::internal::StackFrame* frame);
 
   void ScheduleThrow(Tagged<Object> exception);
   // Re-set pending message, script and positions reported to the TryCatch
@@ -1139,7 +1154,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
 
 #define NATIVE_CONTEXT_FIELD_ACCESSOR(index, type, name) \
   inline Handle<type> name();                            \
-  inline bool is_##name(type value);
+  inline bool is_##name(Tagged<type> value);
   NATIVE_CONTEXT_FIELDS(NATIVE_CONTEXT_FIELD_ACCESSOR)
 #undef NATIVE_CONTEXT_FIELD_ACCESSOR
 
@@ -1232,7 +1247,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   }
 
   Tagged<Object> root(RootIndex index) const {
-    return Object(roots_table()[index]);
+    return Tagged<Object>(roots_table()[index]);
   }
 
   Handle<Object> root_handle(RootIndex index) {
@@ -1570,10 +1585,12 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   bool IsDeferredHandle(Address* location);
 #endif  // DEBUG
 
+#ifdef V8_ENABLE_SPARKPLUG
   baseline::BaselineBatchCompiler* baseline_batch_compiler() const {
     DCHECK_NOT_NULL(baseline_batch_compiler_);
     return baseline_batch_compiler_;
   }
+#endif  // V8_ENABLE_SPARKPLUG
 
 #ifdef V8_ENABLE_MAGLEV
   maglev::MaglevConcurrentDispatcher* maglev_concurrent_dispatcher() {
@@ -1679,7 +1696,9 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
 
   void SetUseCounterCallback(v8::Isolate::UseCounterCallback callback);
   void CountUsage(v8::Isolate::UseCounterFeature feature);
-  void CountUsage(v8::Isolate::UseCounterFeature feature, int count);
+  // Count multiple usages at once; cheaper than calling the {CountUsage}
+  // separately for each feature.
+  void CountUsage(base::Vector<const v8::Isolate::UseCounterFeature> features);
 
   static std::string GetTurboCfgFileName(Isolate* isolate);
 
@@ -1751,12 +1770,14 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   // Detach the environment from its outer global object.
   void DetachGlobal(Handle<Context> env);
 
-  std::vector<Object>* startup_object_cache() { return &startup_object_cache_; }
+  std::vector<Tagged<Object>>* startup_object_cache() {
+    return &startup_object_cache_;
+  }
 
   // When there is a shared space (i.e. when this is a client Isolate), the
   // shared heap object cache holds objects in shared among Isolates. Otherwise
   // this object cache is per-Isolate like the startup object cache.
-  std::vector<Object>* shared_heap_object_cache() {
+  std::vector<Tagged<Object>>* shared_heap_object_cache() {
     if (has_shared_space()) {
       return &shared_space_isolate()->shared_heap_object_cache_;
     }
@@ -2026,6 +2047,18 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   }
 
   ExternalPointerHandle GetOrCreateWaiterQueueNodeExternalPointer();
+
+  TrustedPointerTable& trusted_pointer_table() {
+    return isolate_data_.trusted_pointer_table_;
+  }
+
+  const TrustedPointerTable& trusted_pointer_table() const {
+    return isolate_data_.trusted_pointer_table_;
+  }
+
+  Address trusted_pointer_table_base_address() const {
+    return isolate_data_.trusted_pointer_table_.base_address();
+  }
 #endif  // V8_COMPRESS_POINTERS
 
   struct PromiseHookFields {
@@ -2233,7 +2266,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   std::shared_ptr<StringForwardingTable> string_forwarding_table_;
 
   const int id_;
-  EntryStackItem* entry_stack_ = nullptr;
+  std::atomic<EntryStackItem*> entry_stack_ = nullptr;
   int stack_trace_nesting_level_ = 0;
   std::atomic<bool> was_locker_ever_used_{false};
   StringStream* incomplete_message_ = nullptr;
@@ -2385,7 +2418,9 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   Zone* compiler_zone_ = nullptr;
 
   std::unique_ptr<LazyCompileDispatcher> lazy_compile_dispatcher_;
+#ifdef V8_ENABLE_SPARKPLUG
   baseline::BaselineBatchCompiler* baseline_batch_compiler_ = nullptr;
+#endif  // V8_ENABLE_SPARKPLUG
 #ifdef V8_ENABLE_MAGLEV
   maglev::MaglevConcurrentDispatcher* maglev_concurrent_dispatcher_ = nullptr;
 #endif  // V8_ENABLE_MAGLEV
@@ -2461,13 +2496,13 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   size_t last_long_task_stats_counter_ = 0;
   v8::metrics::LongTaskStats long_task_stats_;
 
-  std::vector<Object> startup_object_cache_;
+  std::vector<Tagged<Object>> startup_object_cache_;
 
   // When sharing data among Isolates (e.g. v8_flags.shared_string_table), only
   // the shared Isolate populates this and client Isolates reference that copy.
   //
   // Otherwise this is populated for all Isolates.
-  std::vector<Object> shared_heap_object_cache_;
+  std::vector<Tagged<Object>> shared_heap_object_cache_;
 
   // Used during builtins compilation to build the builtins constants table,
   // which is stored on the root list prior to serialization.

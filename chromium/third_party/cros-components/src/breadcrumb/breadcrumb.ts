@@ -26,6 +26,7 @@ export class Breadcrumb extends LitElement {
     super();
     this.size = 'default';
   }
+  /** @nocollapse */
   static override styles: CSSResultGroup = css`
     :host {
       display: flex;
@@ -35,7 +36,10 @@ export class Breadcrumb extends LitElement {
       --breadcrumb-size: 32px;
       --icon-size: 32px;
       --chevron-size: 16px;
-      --font-type: var(--cros-button-1-font);
+      --font-family: var(--cros-button-1-font-family);
+      --font-size: var(--cros-button-1-font-size);
+      --line-height: var(--cros-button-1-line-height);
+      --font-weight: var(--cros-button-1-font-weight);
       --padding-between: 0px;
     }
   `;

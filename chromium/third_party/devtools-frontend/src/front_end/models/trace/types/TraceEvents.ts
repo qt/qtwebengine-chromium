@@ -118,6 +118,19 @@ export interface TraceEventSample extends TraceEventData {
   ph: Phase.SAMPLE;
 }
 
+/**
+ * A fake trace event created to support CDP.Profiler.Profiles in the
+ * trace engine.
+ */
+export interface SyntheticTraceEventCpuProfile extends TraceEventInstant {
+  name: 'CpuProfile';
+  args: TraceEventArgs&{
+    data: TraceEventArgsData & {
+      cpuProfile: Protocol.Profiler.Profile,
+    },
+  };
+}
+
 export interface TraceEventProfile extends TraceEventSample {
   name: 'Profile';
   id: ProfileID;
@@ -414,7 +427,7 @@ export interface TraceEventSnapshot extends TraceEventData {
   };
   name: 'Screenshot';
   cat: 'disabled-by-default-devtools.screenshot';
-  ph: Phase.OBJECT_SNAPSHOT;
+  ph: Phase.OBJECT_SNAPSHOT|Phase.INSTANT;  // In Oct 2023, the phase was changed to Instant. crbug.com/798755
 }
 
 // Animation events.
@@ -1010,7 +1023,6 @@ export interface SyntheticEventWithSelfTime extends TraceEventData {
 export interface TraceEventSyntheticProfileCall extends SyntheticEventWithSelfTime {
   callFrame: Protocol.Runtime.CallFrame;
   nodeId: Protocol.integer;
-  children?: TraceEventSyntheticProfileCall[];
 }
 
 /**
@@ -1019,9 +1031,15 @@ export interface TraceEventSyntheticProfileCall extends SyntheticEventWithSelfTi
  */
 export type SyntheticRendererEvent = TraceEventRendererEvent&SyntheticEventWithSelfTime;
 
+export type TraceEntry = SyntheticRendererEvent|TraceEventSyntheticProfileCall;
+
 export function isSyntheticInteractionEvent(event: TraceEventData): event is SyntheticInteractionEvent {
   return Boolean(
       'interactionId' in event && event.args?.data && 'beginEvent' in event.args.data && 'endEvent' in event.args.data);
+}
+
+export function isRendererEvent(event: TraceEventData): event is TraceEntry {
+  return isTraceEventRendererEvent(event) || isProfileCall(event);
 }
 
 class ProfileIdTag {
@@ -1214,6 +1232,11 @@ export function isTraceEventGPUTask(traceEventData: TraceEventData): traceEventD
 
 export function isTraceEventProfile(traceEventData: TraceEventData): traceEventData is TraceEventProfile {
   return traceEventData.name === 'Profile';
+}
+
+export function isSyntheticTraceEventCpuProfile(traceEventData: TraceEventData):
+    traceEventData is SyntheticTraceEventCpuProfile {
+  return traceEventData.name === 'CpuProfile';
 }
 
 export function isTraceEventProfileChunk(traceEventData: TraceEventData): traceEventData is TraceEventProfileChunk {

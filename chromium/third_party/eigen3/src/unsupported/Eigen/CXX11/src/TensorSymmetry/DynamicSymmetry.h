@@ -10,6 +10,7 @@
 #ifndef EIGEN_CXX11_TENSORSYMMETRY_DYNAMICSYMMETRY_H
 #define EIGEN_CXX11_TENSORSYMMETRY_DYNAMICSYMMETRY_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

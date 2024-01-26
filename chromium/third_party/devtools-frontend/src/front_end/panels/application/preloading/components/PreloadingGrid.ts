@@ -134,13 +134,13 @@ export class PreloadingGrid extends LegacyWrapper.LegacyWrapper.WrappableCompone
       return LitHtml.html`
         <div
           style=${LitHtml.Directives.styleMap({
-            color: 'var(--color-error)',
+            color: 'var(--sys-color-error)',
           })}
         >
           <${IconButton.Icon.Icon.litTagName}
             .data=${{
               iconName: 'cross-circle-filled',
-              color: 'var(--color-error)',
+              color: 'var(--sys-color-error)',
               width: '16px',
               height: '16px',
             } as IconButton.Icon.IconData}
@@ -168,7 +168,7 @@ export class PreloadingGrid extends LegacyWrapper.LegacyWrapper.WrappableCompone
               value: this.#urlShort(row, securityOrigin),
               title: row.attempt.key.url,
             },
-            {columnId: 'action', value: PreloadingString.action(row.attempt)},
+            {columnId: 'action', value: PreloadingString.capitalizedAction(row.attempt.action)},
             {
               columnId: 'ruleSet',
               value: row.ruleSets.length === 0 ? '' : PreloadingString.ruleSetLocationShort(row.ruleSets[0], pageURL),

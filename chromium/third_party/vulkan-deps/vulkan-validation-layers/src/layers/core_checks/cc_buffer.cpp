@@ -51,7 +51,7 @@ bool CoreChecks::ValidateBufferViewRange(const BUFFER_STATE &buffer_state, const
 
     const VkDeviceSize &range = pCreateInfo->range;
     const VkFormat format = pCreateInfo->format;
-    const uint32_t format_size = FormatElementSize(format);
+    const uint32_t format_size = vkuFormatElementSize(format);
     if (range != VK_WHOLE_SIZE) {
         // Range must be greater than 0
         if (range <= 0) {
@@ -106,7 +106,7 @@ bool CoreChecks::ValidateBufferViewBuffer(const BUFFER_STATE &buffer_state, cons
     const VkBufferUsageFlags2KHR usage = buffer_state.usage;
     if ((usage & VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT) &&
         !(format_properties.bufferFeatures & VK_FORMAT_FEATURE_2_UNIFORM_TEXEL_BUFFER_BIT_KHR)) {
-        skip |= LogError("VUID-VkBufferViewCreateInfo-buffer-00933", buffer_state.buffer(), loc.dot(Field::buffer),
+        skip |= LogError("VUID-VkBufferViewCreateInfo-format-08778", buffer_state.buffer(), loc.dot(Field::buffer),
                          "was created with usage (%s) containing VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT, format "
                          "(%s) must be supported for uniform texel buffers. (supported bufferFeatures: %s)",
                          string_VkBufferUsageFlags2KHR(usage).c_str(), string_VkFormat(format),
@@ -114,7 +114,7 @@ bool CoreChecks::ValidateBufferViewBuffer(const BUFFER_STATE &buffer_state, cons
     }
     if ((usage & VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT) &&
         !(format_properties.bufferFeatures & VK_FORMAT_FEATURE_2_STORAGE_TEXEL_BUFFER_BIT_KHR)) {
-        skip |= LogError("VUID-VkBufferViewCreateInfo-buffer-00934", buffer_state.buffer(), loc.dot(Field::buffer),
+        skip |= LogError("VUID-VkBufferViewCreateInfo-format-08779", buffer_state.buffer(), loc.dot(Field::buffer),
                          "was created with usage (%s) containing VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT, format "
                          "(%s) must be supported for storage texel buffers. (supported bufferFeatures: %s)",
                          string_VkBufferUsageFlags2KHR(usage).c_str(), string_VkFormat(format),
@@ -128,7 +128,7 @@ bool CoreChecks::PreCallValidateCreateBuffer(VkDevice device, const VkBufferCrea
                                              const ErrorObject &error_obj) const {
     bool skip = false;
     const Location create_info_loc = error_obj.location.dot(Field::pCreateInfo);
-    auto chained_devaddr_struct = LvlFindInChain<VkBufferDeviceAddressCreateInfoEXT>(pCreateInfo->pNext);
+    auto chained_devaddr_struct = vku::FindStructInPNextChain<VkBufferDeviceAddressCreateInfoEXT>(pCreateInfo->pNext);
     if (chained_devaddr_struct) {
         if (!(pCreateInfo->flags & VK_BUFFER_CREATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT) &&
             chained_devaddr_struct->deviceAddress != 0) {
@@ -139,7 +139,7 @@ bool CoreChecks::PreCallValidateCreateBuffer(VkDevice device, const VkBufferCrea
         }
     }
 
-    auto chained_opaqueaddr_struct = LvlFindInChain<VkBufferOpaqueCaptureAddressCreateInfo>(pCreateInfo->pNext);
+    auto chained_opaqueaddr_struct = vku::FindStructInPNextChain<VkBufferOpaqueCaptureAddressCreateInfo>(pCreateInfo->pNext);
     if (chained_opaqueaddr_struct) {
         if (!(pCreateInfo->flags & VK_BUFFER_CREATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT) &&
             chained_opaqueaddr_struct->opaqueCaptureAddress != 0) {
@@ -150,7 +150,7 @@ bool CoreChecks::PreCallValidateCreateBuffer(VkDevice device, const VkBufferCrea
         }
     }
 
-    auto dedicated_allocation_buffer = LvlFindInChain<VkDedicatedAllocationBufferCreateInfoNV>(pCreateInfo->pNext);
+    auto dedicated_allocation_buffer = vku::FindStructInPNextChain<VkDedicatedAllocationBufferCreateInfoNV>(pCreateInfo->pNext);
     if (dedicated_allocation_buffer && dedicated_allocation_buffer->dedicatedAllocation == VK_TRUE) {
         if (pCreateInfo->flags &
             (VK_BUFFER_CREATE_SPARSE_BINDING_BIT | VK_BUFFER_CREATE_SPARSE_RESIDENCY_BIT | VK_BUFFER_CREATE_SPARSE_ALIASED_BIT)) {
@@ -161,8 +161,7 @@ bool CoreChecks::PreCallValidateCreateBuffer(VkDevice device, const VkBufferCrea
     }
 
     if ((pCreateInfo->flags & VK_BUFFER_CREATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT) &&
-        !enabled_features.core12.bufferDeviceAddressCaptureReplay &&
-        !enabled_features.buffer_device_address_ext_features.bufferDeviceAddressCaptureReplay) {
+        !enabled_features.bufferDeviceAddressCaptureReplay && !enabled_features.bufferDeviceAddressCaptureReplayEXT) {
         skip |= LogError("VUID-VkBufferCreateInfo-flags-03338", device, create_info_loc.dot(Field::flags),
                          "has VK_BUFFER_CREATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT set but the bufferDeviceAddressCaptureReplay "
                          "device feature is not enabled.");
@@ -174,7 +173,7 @@ bool CoreChecks::PreCallValidateCreateBuffer(VkDevice device, const VkBufferCrea
     }
 
     if ((pCreateInfo->flags & VK_BUFFER_CREATE_PROTECTED_BIT) != 0) {
-        if (enabled_features.core11.protectedMemory == VK_FALSE) {
+        if (enabled_features.protectedMemory == VK_FALSE) {
             skip |= LogError("VUID-VkBufferCreateInfo-flags-01887", device, create_info_loc.dot(Field::flags),
                              "has VK_BUFFER_CREATE_PROTECTED_BIT set but the protectedMemory device feature is not enabled.");
         }
@@ -187,13 +186,13 @@ bool CoreChecks::PreCallValidateCreateBuffer(VkDevice device, const VkBufferCrea
         }
     }
 
-    const auto *usage_flags2 = LvlFindInChain<VkBufferUsageFlags2CreateInfoKHR>(pCreateInfo->pNext);
+    const auto *usage_flags2 = vku::FindStructInPNextChain<VkBufferUsageFlags2CreateInfoKHR>(pCreateInfo->pNext);
     const VkBufferUsageFlags2KHR usage = usage_flags2 ? usage_flags2->usage : pCreateInfo->usage;
 
     bool has_decode_usage = usage & (VK_BUFFER_USAGE_VIDEO_DECODE_SRC_BIT_KHR | VK_BUFFER_USAGE_VIDEO_DECODE_DST_BIT_KHR);
     bool has_encode_usage = usage & (VK_BUFFER_USAGE_VIDEO_ENCODE_SRC_BIT_KHR | VK_BUFFER_USAGE_VIDEO_ENCODE_DST_BIT_KHR);
     if (has_decode_usage || has_encode_usage) {
-        const auto *video_profiles = LvlFindInChain<VkVideoProfileListInfoKHR>(pCreateInfo->pNext);
+        const auto *video_profiles = vku::FindStructInPNextChain<VkVideoProfileListInfoKHR>(pCreateInfo->pNext);
         skip |= ValidateVideoProfileListInfo(video_profiles, device, "vkCreateBuffer", has_decode_usage,
                                              "VUID-VkBufferCreateInfo-usage-04813", has_encode_usage,
                                              "VUID-VkBufferCreateInfo-usage-04814");
@@ -238,13 +237,13 @@ bool CoreChecks::PreCallValidateCreateBuffer(VkDevice device, const VkBufferCrea
     }
 
     if ((pCreateInfo->flags & VK_BUFFER_CREATE_DESCRIPTOR_BUFFER_CAPTURE_REPLAY_BIT_EXT) &&
-        !enabled_features.descriptor_buffer_features.descriptorBufferCaptureReplay) {
+        !enabled_features.descriptorBufferCaptureReplay) {
         skip |= LogError("VUID-VkBufferCreateInfo-flags-08099", device, create_info_loc.dot(Field::flags),
                          "has VK_BUFFER_CREATE_DESCRIPTOR_BUFFER_CAPTURE_REPLAY_BIT_EXT set but the descriptorBufferCaptureReplay "
                          "device feature is not enabled.");
     }
 
-    auto opaque_capture_descriptor_buffer = LvlFindInChain<VkOpaqueCaptureDescriptorDataCreateInfoEXT>(pCreateInfo->pNext);
+    auto opaque_capture_descriptor_buffer = vku::FindStructInPNextChain<VkOpaqueCaptureDescriptorDataCreateInfoEXT>(pCreateInfo->pNext);
     if (opaque_capture_descriptor_buffer && !(pCreateInfo->flags & VK_BUFFER_CREATE_DESCRIPTOR_BUFFER_CAPTURE_REPLAY_BIT_EXT)) {
         skip |= LogError("VUID-VkBufferCreateInfo-pNext-08100", device, create_info_loc.dot(Field::flags),
                          "(%s) is missing VK_BUFFER_CREATE_DESCRIPTOR_BUFFER_CAPTURE_REPLAY_BIT_EXT but "
@@ -253,7 +252,7 @@ bool CoreChecks::PreCallValidateCreateBuffer(VkDevice device, const VkBufferCrea
     }
 
     if (usage & VK_BUFFER_USAGE_PUSH_DESCRIPTORS_DESCRIPTOR_BUFFER_BIT_EXT) {
-        if (!enabled_features.descriptor_buffer_features.descriptorBufferPushDescriptors) {
+        if (!enabled_features.descriptorBufferPushDescriptors) {
             skip |= LogError("VUID-VkBufferCreateInfo-usage-08101", device, create_info_loc.dot(Field::usage),
                              "has VK_BUFFER_USAGE_PUSH_DESCRIPTORS_DESCRIPTOR_BUFFER_BIT_EXT set but the "
                              "descriptorBufferPushDescriptors device feature is not enabled.");
@@ -271,15 +270,15 @@ bool CoreChecks::PreCallValidateCreateBuffer(VkDevice device, const VkBufferCrea
         }
     }
 
-    auto external_memory_info = LvlFindInChain<VkExternalMemoryBufferCreateInfo>(pCreateInfo->pNext);
+    auto external_memory_info = vku::FindStructInPNextChain<VkExternalMemoryBufferCreateInfo>(pCreateInfo->pNext);
     if (external_memory_info && external_memory_info->handleTypes) {
         const uint32_t any_type = 1u << MostSignificantBit(external_memory_info->handleTypes);
-        auto external_buffer_info = LvlInitStruct<VkPhysicalDeviceExternalBufferInfo>();
+        VkPhysicalDeviceExternalBufferInfo external_buffer_info = vku::InitStructHelper();
         external_buffer_info.flags = pCreateInfo->flags;
         // for now no VkBufferUsageFlags2KHR flag can be used, so safe to pass in as 32-bit version
         external_buffer_info.usage = VkBufferUsageFlags(pCreateInfo->usage);
         external_buffer_info.handleType = static_cast<VkExternalMemoryHandleTypeFlagBits>(any_type);
-        auto external_buffer_properties = LvlInitStruct<VkExternalBufferProperties>();
+        VkExternalBufferProperties external_buffer_properties = vku::InitStructHelper();
         DispatchGetPhysicalDeviceExternalBufferProperties(physical_device, &external_buffer_info, &external_buffer_properties);
         const auto compatible_types = external_buffer_properties.externalMemoryProperties.compatibleHandleTypes;
 
@@ -307,7 +306,7 @@ bool CoreChecks::PreCallValidateCreateBufferView(VkDevice device, const VkBuffer
     const auto &buffer_state = *buffer_state_ptr;
     const LogObjectList objlist(device, pCreateInfo->buffer);
 
-    if (FormatIsDepthOrStencil(pCreateInfo->format)) {
+    if (vkuFormatIsDepthOrStencil(pCreateInfo->format)) {
         // Should never hopefully get here, but there are known driver advertising the wrong feature flags
         // see https://gitlab.khronos.org/vulkan/vulkan/-/merge_requests/4849
         skip |= LogError(kVUID_Core_invalidDepthStencilFormat, device, create_info_loc.dot(Field::format),
@@ -333,16 +332,15 @@ bool CoreChecks::PreCallValidateCreateBufferView(VkDevice device, const VkBuffer
 
     const VkPhysicalDeviceLimits *device_limits = &phys_dev_props.limits;
     // Buffer view offset must be a multiple of VkPhysicalDeviceLimits::minTexelBufferOffsetAlignment
-    if ((pCreateInfo->offset % device_limits->minTexelBufferOffsetAlignment) != 0 &&
-        !enabled_features.texel_buffer_alignment_features.texelBufferAlignment) {
+    if ((pCreateInfo->offset % device_limits->minTexelBufferOffsetAlignment) != 0 && !enabled_features.texelBufferAlignment) {
         skip |= LogError("VUID-VkBufferViewCreateInfo-offset-02749", objlist, create_info_loc.dot(Field::offset),
                          "(%" PRIuLEAST64
                          ") must be a multiple of VkPhysicalDeviceLimits::minTexelBufferOffsetAlignment (%" PRIuLEAST64 ").",
                          pCreateInfo->offset, device_limits->minTexelBufferOffsetAlignment);
     }
 
-    if (enabled_features.texel_buffer_alignment_features.texelBufferAlignment) {
-        VkDeviceSize element_size = FormatElementSize(pCreateInfo->format);
+    if (enabled_features.texelBufferAlignment) {
+        VkDeviceSize element_size = vkuFormatElementSize(pCreateInfo->format);
         if ((element_size % 3) == 0) {
             element_size /= 3;
         }
@@ -394,7 +392,7 @@ bool CoreChecks::PreCallValidateCreateBufferView(VkDevice device, const VkBuffer
         }
     }
 
-    if (auto buffer_usage_flags2 = LvlFindInChain<VkBufferUsageFlags2CreateInfoKHR>(pCreateInfo->pNext)) {
+    if (auto buffer_usage_flags2 = vku::FindStructInPNextChain<VkBufferUsageFlags2CreateInfoKHR>(pCreateInfo->pNext)) {
         const VkBufferUsageFlags2KHR usage = buffer_usage_flags2->usage;
         if ((usage & ~(VK_BUFFER_USAGE_2_UNIFORM_TEXEL_BUFFER_BIT_KHR | VK_BUFFER_USAGE_2_STORAGE_TEXEL_BUFFER_BIT_KHR)) != 0) {
             skip |= LogError("VUID-VkBufferViewCreateInfo-pNext-08780", objlist,
@@ -445,27 +443,26 @@ bool CoreChecks::PreCallValidateCmdFillBuffer(VkCommandBuffer commandBuffer, VkB
     }
     const LogObjectList objlist(commandBuffer, dstBuffer);
     const CMD_BUFFER_STATE &cb_state = *cb_state_ptr;
-    skip |= ValidateMemoryIsBoundToBuffer(commandBuffer, *buffer_state, error_obj.location.dot(Field::dstBuffer),
-                                          "VUID-vkCmdFillBuffer-dstBuffer-00031");
+    const Location buffer_loc = error_obj.location.dot(Field::dstBuffer);
+    skip |= ValidateMemoryIsBoundToBuffer(commandBuffer, *buffer_state, buffer_loc, "VUID-vkCmdFillBuffer-dstBuffer-00031");
     skip |= ValidateCmd(cb_state, error_obj.location);
     // Validate that DST buffer has correct usage flags set
     skip |= ValidateBufferUsageFlags(objlist, *buffer_state, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true,
-                                     "VUID-vkCmdFillBuffer-dstBuffer-00029", error_obj.location.dot(Field::dstBuffer));
+                                     "VUID-vkCmdFillBuffer-dstBuffer-00029", buffer_loc);
 
-    skip |= ValidateProtectedBuffer(cb_state, *buffer_state, error_obj.location, "VUID-vkCmdFillBuffer-commandBuffer-01811");
-    skip |= ValidateUnprotectedBuffer(cb_state, *buffer_state, error_obj.location, "VUID-vkCmdFillBuffer-commandBuffer-01812");
+    skip |= ValidateProtectedBuffer(cb_state, *buffer_state, buffer_loc, "VUID-vkCmdFillBuffer-commandBuffer-01811");
+    skip |= ValidateUnprotectedBuffer(cb_state, *buffer_state, buffer_loc, "VUID-vkCmdFillBuffer-commandBuffer-01812");
 
     if (dstOffset >= buffer_state->createInfo.size) {
         skip |= LogError("VUID-vkCmdFillBuffer-dstOffset-00024", objlist, error_obj.location.dot(Field::dstOffset),
-                         "(0x%" PRIxLEAST64 ") is not less than destination buffer (%s) size (0x%" PRIxLEAST64 ").", dstOffset,
+                         "(%" PRIu64 ") is not less than destination buffer (%s) size (%" PRIu64 ").", dstOffset,
                          FormatHandle(dstBuffer).c_str(), buffer_state->createInfo.size);
     }
 
     if ((size != VK_WHOLE_SIZE) && (size > (buffer_state->createInfo.size - dstOffset))) {
         skip |= LogError("VUID-vkCmdFillBuffer-size-00027", objlist, error_obj.location.dot(Field::size),
-                         "(0x%" PRIxLEAST64 ") is greater than dstBuffer (%s) size (0x%" PRIxLEAST64
-                         ") minus dstOffset (0x%" PRIxLEAST64 ").",
-                         size, FormatHandle(dstBuffer).c_str(), buffer_state->createInfo.size, dstOffset);
+                         "(%" PRIu64 ") is greater than dstBuffer (%s) size (%" PRIu64 ") minus dstOffset (%" PRIu64 ").", size,
+                         FormatHandle(dstBuffer).c_str(), buffer_state->createInfo.size, dstOffset);
     }
 
     if (!IsExtEnabled(device_extensions.vk_khr_maintenance1)) {
@@ -477,29 +474,29 @@ bool CoreChecks::PreCallValidateCmdFillBuffer(VkCommandBuffer commandBuffer, VkB
 }
 
 // Validates the buffer is allowed to be protected
-bool CoreChecks::ValidateProtectedBuffer(const CMD_BUFFER_STATE &cb_state, const BUFFER_STATE &buffer_state, const Location &loc,
-                                         const char *vuid, const char *more_message) const {
+bool CoreChecks::ValidateProtectedBuffer(const CMD_BUFFER_STATE &cb_state, const BUFFER_STATE &buffer_state,
+                                         const Location &buffer_loc, const char *vuid, const char *more_message) const {
     bool skip = false;
 
     // if driver supports protectedNoFault the operation is valid, just has undefined values
     if ((!phys_dev_props_core11.protectedNoFault) && (cb_state.unprotected == true) && (buffer_state.unprotected == false)) {
         const LogObjectList objlist(cb_state.Handle(), buffer_state.Handle());
-        skip |= LogError(vuid, objlist, loc, "command buffer (%s) is unprotected while buffer (%s) is a protected buffer.%s",
-                         FormatHandle(cb_state).c_str(), FormatHandle(buffer_state).c_str(), more_message);
+        skip |= LogError(vuid, objlist, buffer_loc, "(%s) is a protected buffer, but command buffer (%s) is unprotected.%s",
+                         FormatHandle(buffer_state).c_str(), FormatHandle(cb_state).c_str(), more_message);
     }
     return skip;
 }
 
 // Validates the buffer is allowed to be unprotected
-bool CoreChecks::ValidateUnprotectedBuffer(const CMD_BUFFER_STATE &cb_state, const BUFFER_STATE &buffer_state, const Location &loc,
-                                           const char *vuid, const char *more_message) const {
+bool CoreChecks::ValidateUnprotectedBuffer(const CMD_BUFFER_STATE &cb_state, const BUFFER_STATE &buffer_state,
+                                           const Location &buffer_loc, const char *vuid, const char *more_message) const {
     bool skip = false;
 
     // if driver supports protectedNoFault the operation is valid, just has undefined values
     if ((!phys_dev_props_core11.protectedNoFault) && (cb_state.unprotected == false) && (buffer_state.unprotected == true)) {
         const LogObjectList objlist(cb_state.Handle(), buffer_state.Handle());
-        skip |= LogError(vuid, objlist, loc, "command buffer (%s) is protected while buffer (%s) is an unprotected buffer.%s",
-                         FormatHandle(cb_state).c_str(), FormatHandle(buffer_state).c_str(), more_message);
+        skip |= LogError(vuid, objlist, buffer_loc, "(%s) is an unprotected buffer, but command buffer (%s) is protected.%s",
+                         FormatHandle(buffer_state).c_str(), FormatHandle(cb_state).c_str(), more_message);
     }
     return skip;
 }

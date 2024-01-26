@@ -52,8 +52,20 @@ struct code_pair_t
   hb_codepoint_t glyph;
 };
 
+
 using str_buff_t = hb_vector_t<unsigned char>;
 using str_buff_vec_t = hb_vector_t<str_buff_t>;
+using glyph_to_sid_map_t = hb_vector_t<code_pair_t>;
+
+struct length_f_t
+{
+  template <typename Iterable,
+	    hb_requires (hb_is_iterable (Iterable))>
+  unsigned operator () (const Iterable &_) const { return hb_len (hb_iter (_)); }
+
+  unsigned operator () (unsigned _) const { return _; }
+}
+HB_FUNCOBJ (length_f);
 
 /* CFF INDEX */
 template <typename COUNT>
@@ -65,20 +77,27 @@ struct CFFIndex
   template <typename Iterable,
 	    hb_requires (hb_is_iterable (Iterable))>
   bool serialize (hb_serialize_context_t *c,
-		  const Iterable &iterable)
+		  const Iterable &iterable,
+		  const unsigned *p_data_size = nullptr)
   {
     TRACE_SERIALIZE (this);
+    unsigned data_size;
+    if (p_data_size)
+      data_size = *p_data_size;
+    else
+      total_size (iterable, &data_size);
+
     auto it = hb_iter (iterable);
-    unsigned size = serialize_header(c, + it | hb_map (hb_iter) | hb_map (hb_len));
-    unsigned char *ret = c->allocate_size<unsigned char> (size, false);
+    if (unlikely (!serialize_header (c, +it, data_size))) return_trace (false);
+    unsigned char *ret = c->allocate_size<unsigned char> (data_size, false);
     if (unlikely (!ret)) return_trace (false);
     for (const auto &_ : +it)
     {
       unsigned len = _.length;
+      if (!len)
+	continue;
       if (len <= 1)
       {
-        if (!len)
-	  continue;
 	*ret++ = *_.arrayZ;
 	continue;
       }
@@ -90,98 +109,107 @@ struct CFFIndex
 
   template <typename Iterator,
 	    hb_requires (hb_is_iterator (Iterator))>
-  unsigned serialize_header (hb_serialize_context_t *c,
-			     Iterator it)
+  bool serialize_header (hb_serialize_context_t *c,
+			 Iterator it,
+			 unsigned data_size)
   {
     TRACE_SERIALIZE (this);
 
-    unsigned total = + it | hb_reduce (hb_add, 0);
-    unsigned off_size = (hb_bit_storage (total + 1) + 7) / 8;
+    unsigned off_size = (hb_bit_storage (data_size + 1) + 7) / 8;
 
     /* serialize CFFIndex header */
-    if (unlikely (!c->extend_min (this))) return_trace (0);
+    if (unlikely (!c->extend_min (this))) return_trace (false);
     this->count = hb_len (it);
-    if (!this->count) return_trace (0);
-    if (unlikely (!c->extend (this->offSize))) return_trace (0);
+    if (!this->count) return_trace (true);
+    if (unlikely (!c->extend (this->offSize))) return_trace (false);
     this->offSize = off_size;
     if (unlikely (!c->allocate_size<HBUINT8> (off_size * (this->count + 1), false)))
-      return_trace (0);
+      return_trace (false);
 
     /* serialize indices */
     unsigned int offset = 1;
-#ifdef HB_OPTIMIZE_SIZE
-    unsigned int i = 0;
-    for (unsigned _ : +it)
+    if (HB_OPTIMIZE_SIZE_VAL)
     {
-      set_offset_at (i++, offset);
-      offset += _;
+      unsigned int i = 0;
+      for (const auto &_ : +it)
+      {
+	set_offset_at (i++, offset);
+	offset += length_f (_);
+      }
+      set_offset_at (i, offset);
     }
-    set_offset_at (i, offset);
-#else
-    switch (off_size)
-    {
-      case 1:
+    else
+      switch (off_size)
       {
-	HBUINT8 *p = (HBUINT8 *) offsets;
-	for (unsigned _ : +it)
+	case 1:
 	{
-	  *p++ = offset;
-	  offset += _;
+	  HBUINT8 *p = (HBUINT8 *) offsets;
+	  for (const auto &_ : +it)
+	  {
+	    *p++ = offset;
+	    offset += length_f (_);
+	  }
+	  *p = offset;
 	}
-	*p = offset;
-      }
-      break;
-      case 2:
-      {
-	HBUINT16 *p = (HBUINT16 *) offsets;
-	for (unsigned _ : +it)
+	break;
+	case 2:
 	{
-	  *p++ = offset;
-	  offset += _;
+	  HBUINT16 *p = (HBUINT16 *) offsets;
+	  for (const auto &_ : +it)
+	  {
+	    *p++ = offset;
+	    offset += length_f (_);
+	  }
+	  *p = offset;
 	}
-	*p = offset;
-      }
-      break;
-      case 3:
-      {
-	HBUINT24 *p = (HBUINT24 *) offsets;
-	for (unsigned _ : +it)
+	break;
+	case 3:
 	{
-	  *p++ = offset;
-	  offset += _;
+	  HBUINT24 *p = (HBUINT24 *) offsets;
+	  for (const auto &_ : +it)
+	  {
+	    *p++ = offset;
+	    offset += length_f (_);
+	  }
+	  *p = offset;
 	}
-	*p = offset;
-      }
-      break;
-      case 4:
-      {
-	HBUINT32 *p = (HBUINT32 *) offsets;
-	for (unsigned _ : +it)
+	break;
+	case 4:
 	{
-	  *p++ = offset;
-	  offset += _;
+	  HBUINT32 *p = (HBUINT32 *) offsets;
+	  for (const auto &_ : +it)
+	  {
+	    *p++ = offset;
+	    offset += length_f (_);
+	  }
+	  *p = offset;
 	}
-	*p = offset;
+	break;
+	default:
+	break;
       }
-      break;
-      default:
-      break;
-    }
-#endif
 
-    return_trace (total);
+    assert (offset == data_size + 1);
+    return_trace (true);
   }
 
   template <typename Iterable,
 	    hb_requires (hb_is_iterable (Iterable))>
-  static unsigned total_size (const Iterable &iterable)
+  static unsigned total_size (const Iterable &iterable, unsigned *data_size = nullptr)
   {
-    auto it = + hb_iter (iterable) | hb_map (hb_iter) | hb_map (hb_len);
-    // The following should return min_size IMO. But that crashes a few
-    // tests. I have not investigated why.
-    if (!it) return 0; //min_size;
+    auto it = + hb_iter (iterable);
+    if (!it)
+    {
+      if (data_size) *data_size = 0;
+      return min_size;
+    }
 
-    unsigned total = + it | hb_reduce (hb_add, 0);
+    unsigned total = 0;
+    for (const auto &_ : +it)
+      total += length_f (_);
+
+    if (data_size) *data_size = total;
+
     unsigned off_size = (hb_bit_storage (total + 1) + 7) / 8;
 
     return min_size + HBUINT8::static_size + (hb_len (it) + 1) * off_size + total;
@@ -350,7 +378,11 @@ struct FDArray : CFFIndex<COUNT>
 
     /* serialize INDEX data */
     hb_vector_t<unsigned> sizes;
+    if (it.is_random_access_iterator)
+      sizes.alloc (hb_len (it));
+
     c->push ();
+    char *data_base = c->head;
     + it
     | hb_map ([&] (const hb_pair_t<const DICTVAL&, const INFO&> &_)
     {
@@ -360,13 +392,16 @@ struct FDArray : CFFIndex<COUNT>
 	      })
     | hb_sink (sizes)
     ;
+    unsigned data_size = c->head - data_base;
     c->pop_pack (false);
+
+    if (unlikely (sizes.in_error ())) return_trace (false);
 
     /* It just happens that the above is packed right after the header below.
      * Such a hack. */
 
     /* serialize INDEX header */
-    return_trace (CFFIndex<COUNT>::serialize_header (c, hb_iter (sizes)));
+    return_trace (CFFIndex<COUNT>::serialize_header (c, hb_iter (sizes), data_size));
   }
 };
 
@@ -455,7 +490,7 @@ struct FDSelect3_4
   {
     auto *range = hb_bsearch (glyph, &ranges[0], nRanges () - 1, sizeof (ranges[0]), _cmp_range);
     unsigned fd = range ? range->fd : ranges[nRanges () - 1].fd;
-    hb_codepoint_t end = range ? range[1].first : 0;
+    hb_codepoint_t end = range ? range[1].first : ranges[nRanges () - 1].first;
     return {fd, end};
   }
 
@@ -509,13 +544,13 @@ struct FDSelect
   /* Returns pair of fd and one after last glyph in range. */
   hb_pair_t<unsigned, hb_codepoint_t> get_fd_range (hb_codepoint_t glyph) const
   {
-    if (this == &Null (FDSelect)) return {0, 0};
+    if (this == &Null (FDSelect)) return {0, 1};
 
     switch (format)
     {
     case 0: return u.format0.get_fd_range (glyph);
     case 3: return u.format3.get_fd_range (glyph);
-    default:return {0, 0};
+    default:return {0, 1};
     }
   }
 

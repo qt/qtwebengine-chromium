@@ -10,6 +10,7 @@
 #ifndef EIGEN_CXX11_THREADPOOL_THREAD_POOL_INTERFACE_H
 #define EIGEN_CXX11_THREADPOOL_THREAD_POOL_INTERFACE_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

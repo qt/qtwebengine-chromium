@@ -18,6 +18,7 @@
 #include "core/fxcrt/observed_ptr.h"
 #include "core/fxcrt/retain_ptr.h"
 #include "core/fxcrt/unowned_ptr.h"
+#include "third_party/base/containers/span.h"
 
 class CPDF_ReadValidator;
 class CPDF_StreamAcc;
@@ -99,12 +100,16 @@ class CPDF_Document : public Observable,
   RetainPtr<const CPDF_Array> GetFileIdentifier() const;
 
   void DeletePage(int iPage);
+  bool MovePages(pdfium::span<const int> page_indices, int dest_page_index);
+
   int GetPageCount() const;
   bool IsPageLoaded(int iPage) const;
   RetainPtr<const CPDF_Dictionary> GetPageDictionary(int iPage);
   RetainPtr<CPDF_Dictionary> GetMutablePageDictionary(int iPage);
   int GetPageIndex(uint32_t objnum);
-  uint32_t GetUserPermissions() const;
+  // When `get_owner_perms` is true, returns full permissions if unlocked by
+  // owner.
+  uint32_t GetUserPermissions(bool get_owner_perms) const;
 
   // PageDataIface wrappers, try to avoid explicit getter calls.
   RetainPtr<CPDF_StreamAcc> GetFontFileStreamAcc(

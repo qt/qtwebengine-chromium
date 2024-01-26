@@ -27,12 +27,13 @@
 #include "state_tracker/ray_tracing_state.h"
 #include "state_tracker/video_session_state.h"
 #include "generated/layer_chassis_dispatch.h"
+#include "generated/state_tracker_helper.h"
 #include "error_message/logging.h"
 #include "vulkan/vk_layer.h"
-#include "generated/vk_typemap_helper.h"
 #include "containers/custom_containers.h"
 #include "utils/android_ndk_types.h"
 #include "containers/range_vector.h"
+#include <vulkan/utility/vk_struct_helper.hpp>
 #include <atomic>
 #include <functional>
 #include <memory>
@@ -80,7 +81,27 @@ struct create_shader_module_api_state {
 
     // Pass the instrumented SPIR-V info from PreCallRecord to Dispatch (so GPU-AV logic can run with it)
     VkShaderModuleCreateInfo instrumented_create_info;
-    std::vector<uint32_t> instrumented_pgm;
+    std::vector<uint32_t> instrumented_spirv;
+};
+
+// same idea as create_shader_module_api_state but for VkShaderEXT (VK_EXT_shader_object)
+struct create_shader_object_api_state {
+    std::vector<std::shared_ptr<SPIRV_MODULE_STATE>> module_states;  // contains SPIR-V to validate
+    std::vector<uint32_t> unique_shader_ids;
+    bool valid_spirv = true;
+
+    // Pass the instrumented SPIR-V info from PreCallRecord to Dispatch (so GPU-AV logic can run with it)
+    VkShaderCreateInfoEXT* instrumented_create_info;
+    std::vector<std::vector<uint32_t>> instrumented_spirv;
+
+    std::vector<VkDescriptorSetLayout> new_layouts;
+
+    create_shader_object_api_state(uint32_t createInfoCount, const VkShaderCreateInfoEXT* pCreateInfos) {
+        instrumented_create_info = const_cast<VkShaderCreateInfoEXT*>(pCreateInfos);
+        module_states.resize(createInfoCount);
+        unique_shader_ids.resize(createInfoCount);
+        instrumented_spirv.resize(createInfoCount);
+    }
 };
 
 // This structure is used to save data across the CreateGraphicsPipelines down-chain API call
@@ -180,13 +201,13 @@ struct TraitsBase {
 // Destination image texel extents must be adjusted by block size for the dest validation checks
 static inline VkExtent3D GetAdjustedDestImageExtent(VkFormat src_format, VkFormat dst_format, VkExtent3D extent) {
     VkExtent3D adjusted_extent = extent;
-    if (FormatIsBlockedImage(src_format) && !FormatIsBlockedImage(dst_format)) {
-        VkExtent3D block_size = FormatTexelBlockExtent(src_format);
+    if (vkuFormatIsBlockedImage(src_format) && !vkuFormatIsBlockedImage(dst_format)) {
+        VkExtent3D block_size = vkuFormatTexelBlockExtent(src_format);
         adjusted_extent.width /= block_size.width;
         adjusted_extent.height /= block_size.height;
         adjusted_extent.depth /= block_size.depth;
-    } else if (!FormatIsBlockedImage(src_format) && FormatIsBlockedImage(dst_format)) {
-        VkExtent3D block_size = FormatTexelBlockExtent(dst_format);
+    } else if (!vkuFormatIsBlockedImage(src_format) && vkuFormatIsBlockedImage(dst_format)) {
+        VkExtent3D block_size = vkuFormatTexelBlockExtent(dst_format);
         adjusted_extent.width *= block_size.width;
         adjusted_extent.height *= block_size.height;
         adjusted_extent.depth *= block_size.depth;
@@ -196,14 +217,17 @@ static inline VkExtent3D GetAdjustedDestImageExtent(VkFormat src_format, VkForma
 
 // Get buffer size from VkBufferImageCopy / VkBufferImageCopy2KHR structure, for a given format
 template <typename RegionType>
-static inline VkDeviceSize GetBufferSizeFromCopyImage(const RegionType& region, VkFormat image_format) {
+static inline VkDeviceSize GetBufferSizeFromCopyImage(const RegionType& region, VkFormat image_format, uint32_t image_layout_count) {
     VkDeviceSize buffer_size = 0;
     VkExtent3D copy_extent = region.imageExtent;
     VkDeviceSize buffer_width = (0 == region.bufferRowLength ? copy_extent.width : region.bufferRowLength);
     VkDeviceSize buffer_height = (0 == region.bufferImageHeight ? copy_extent.height : region.bufferImageHeight);
+    uint32_t layer_count = region.imageSubresource.layerCount != VK_REMAINING_ARRAY_LAYERS
+                               ? region.imageSubresource.layerCount
+                               : image_layout_count - region.imageSubresource.baseArrayLayer;
     // VUID-VkImageCreateInfo-imageType-00961 prevents having both depth and layerCount ever both be greater than 1 together. Take
     // max to logic simple. This is the number of 'slices' to copy.
-    const uint32_t z_copies = std::max(copy_extent.depth, region.imageSubresource.layerCount);
+    const uint32_t z_copies = std::max(copy_extent.depth, layer_count);
 
     // Invalid if copy size is 0 and other validation checks will catch it. Returns zero as the caller should have fallback already
     // to ignore.
@@ -237,12 +261,12 @@ static inline VkDeviceSize GetBufferSizeFromCopyImage(const RegionType& region, 
         }
     } else {
         // size (bytes) of texel or block
-        unit_size = FormatElementSize(image_format, region.imageSubresource.aspectMask);
+        unit_size = vkuFormatElementSizeWithAspect(image_format, static_cast<VkImageAspectFlagBits>(region.imageSubresource.aspectMask));
     }
 
-    if (FormatIsBlockedImage(image_format)) {
+    if (vkuFormatIsBlockedImage(image_format)) {
         // Switch to texel block units, rounding up for any partially-used blocks
-        auto block_dim = FormatTexelBlockExtent(image_format);
+        auto block_dim = vkuFormatTexelBlockExtent(image_format);
         buffer_width = (buffer_width + block_dim.width - 1) / block_dim.width;
         buffer_height = (buffer_height + block_dim.height - 1) / block_dim.height;
 
@@ -259,7 +283,7 @@ static inline VkDeviceSize GetBufferSizeFromCopyImage(const RegionType& region, 
 }
 
 VALSTATETRACK_STATE_OBJECT(VkQueue, QUEUE_STATE)
-VALSTATETRACK_STATE_OBJECT(VkAccelerationStructureNV, ACCELERATION_STRUCTURE_STATE)
+VALSTATETRACK_STATE_OBJECT(VkAccelerationStructureNV, ACCELERATION_STRUCTURE_STATE_NV)
 VALSTATETRACK_STATE_OBJECT(VkRenderPass, RENDER_PASS_STATE)
 VALSTATETRACK_STATE_OBJECT(VkDescriptorSetLayout, cvdescriptorset::DescriptorSetLayout)
 VALSTATETRACK_STATE_OBJECT(VkSampler, SAMPLER_STATE)
@@ -649,7 +673,8 @@ class ValidationStateTracker : public ValidationObject {
 
     void PreCallRecordDestroyDevice(VkDevice device, const VkAllocationCallbacks* pAllocator) override;
 
-    virtual std::shared_ptr<ACCELERATION_STRUCTURE_STATE> CreateAccelerationStructureState(VkAccelerationStructureNV as, const VkAccelerationStructureCreateInfoNV* pCreateInfo);
+    virtual std::shared_ptr<ACCELERATION_STRUCTURE_STATE_NV> CreateAccelerationStructureState(
+        VkAccelerationStructureNV as, const VkAccelerationStructureCreateInfoNV* pCreateInfo);
     void PostCallRecordCreateAccelerationStructureNV(VkDevice device, const VkAccelerationStructureCreateInfoNV* pCreateInfo,
                                                      const VkAllocationCallbacks* pAllocator,
                                                      VkAccelerationStructureNV* pAccelerationStructure,
@@ -727,7 +752,6 @@ class ValidationStateTracker : public ValidationObject {
                                         const RecordObject& record_obj) override;
 
     virtual std::shared_ptr<PIPELINE_STATE> CreateComputePipelineState(const VkComputePipelineCreateInfo* pCreateInfo,
-                                                                       uint32_t create_index,
                                                                        std::shared_ptr<const PIPELINE_LAYOUT_STATE>&& layout) const;
     bool PreCallValidateCreateComputePipelines(VkDevice device, VkPipelineCache pipelineCache, uint32_t count,
                                                const VkComputePipelineCreateInfo* pCreateInfos,
@@ -776,7 +800,6 @@ class ValidationStateTracker : public ValidationObject {
                                            const VkAllocationCallbacks* pAllocator) override;
 
     virtual std::shared_ptr<PIPELINE_STATE> CreateGraphicsPipelineState(const VkGraphicsPipelineCreateInfo* pCreateInfo,
-                                                                        uint32_t create_index,
                                                                         std::shared_ptr<const RENDER_PASS_STATE>&& render_pass,
                                                                         std::shared_ptr<const PIPELINE_LAYOUT_STATE>&& layout,
                                                                         CreateShaderModuleStates* csm_states) const;
@@ -809,7 +832,7 @@ class ValidationStateTracker : public ValidationObject {
     void PreCallRecordDestroyPipeline(VkDevice device, VkPipeline pipeline, const VkAllocationCallbacks* pAllocator) override;
     void PostCallRecordCreateShadersEXT(VkDevice device, uint32_t createInfoCount, const VkShaderCreateInfoEXT* pCreateInfos,
                                         const VkAllocationCallbacks* pAllocator, VkShaderEXT* pShaders,
-                                        const RecordObject& record_obj) override;
+                                        const RecordObject& record_obj, void* csm_state_data) override;
     void PreCallRecordDestroyShaderEXT(VkDevice device, VkShaderEXT shader, const VkAllocationCallbacks* pAllocator) override;
     void PostCallRecordCmdBindShadersEXT(VkCommandBuffer commandBuffer, uint32_t stageCount, const VkShaderStageFlagBits* pStages,
                                          const VkShaderEXT* pShaders, const RecordObject& record_obj) override;
@@ -829,8 +852,7 @@ class ValidationStateTracker : public ValidationObject {
                                       const RecordObject& record_obj) override;
 
     virtual std::shared_ptr<PIPELINE_STATE> CreateRayTracingPipelineState(
-        const VkRayTracingPipelineCreateInfoNV* pCreateInfo, uint32_t create_index,
-        std::shared_ptr<const PIPELINE_LAYOUT_STATE>&& layout) const;
+        const VkRayTracingPipelineCreateInfoNV* pCreateInfo, std::shared_ptr<const PIPELINE_LAYOUT_STATE>&& layout) const;
     bool PreCallValidateCreateRayTracingPipelinesNV(VkDevice device, VkPipelineCache pipelineCache, uint32_t count,
                                                     const VkRayTracingPipelineCreateInfoNV* pCreateInfos,
                                                     const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
@@ -840,8 +862,7 @@ class ValidationStateTracker : public ValidationObject {
                                                    const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
                                                    const RecordObject& record_obj, void* pipe_state) override;
     virtual std::shared_ptr<PIPELINE_STATE> CreateRayTracingPipelineState(
-        const VkRayTracingPipelineCreateInfoKHR* pCreateInfo, uint32_t create_index,
-        std::shared_ptr<const PIPELINE_LAYOUT_STATE>&& layout) const;
+        const VkRayTracingPipelineCreateInfoKHR* pCreateInfo, std::shared_ptr<const PIPELINE_LAYOUT_STATE>&& layout) const;
     bool PreCallValidateCreateRayTracingPipelinesKHR(VkDevice device, VkDeferredOperationKHR deferredOperation,
                                                      VkPipelineCache pipelineCache, uint32_t count,
                                                      const VkRayTracingPipelineCreateInfoKHR* pCreateInfos,
@@ -910,7 +931,7 @@ class ValidationStateTracker : public ValidationObject {
 
     void PostCallRecordCreateShaderModule(VkDevice device, const VkShaderModuleCreateInfo* pCreateInfo,
                                           const VkAllocationCallbacks* pAllocator, VkShaderModule* pShaderModule,
-                                          const RecordObject& record_obj, void* csm_state) override;
+                                          const RecordObject& record_obj, void* csm_state_data) override;
     void PreCallRecordDestroyShaderModule(VkDevice device, VkShaderModule shaderModule,
                                           const VkAllocationCallbacks* pAllocator) override;
     void PreCallRecordDestroySurfaceKHR(VkInstance instance, VkSurfaceKHR surface,
@@ -1626,13 +1647,13 @@ class ValidationStateTracker : public ValidationObject {
         if (IsExtEnabled(enabled)) {
             // Extensions that use two calls to get properties don't want to init on the second call
             if constexpr (init) {
-                *ext_prop = LvlInitStruct<ExtProp>();
+                *ext_prop = vku::InitStructHelper();
             }
             if (api_version < VK_API_VERSION_1_1) {
-                auto prop2 = LvlInitStruct<VkPhysicalDeviceProperties2>(ext_prop);
+                VkPhysicalDeviceProperties2 prop2 = vku::InitStructHelper(ext_prop);
                 DispatchGetPhysicalDeviceProperties2KHR(gpu, &prop2);
             } else {
-                auto prop2 = LvlInitStruct<VkPhysicalDeviceProperties2>(ext_prop);
+                VkPhysicalDeviceProperties2 prop2 = vku::InitStructHelper(ext_prop);
                 DispatchGetPhysicalDeviceProperties2(gpu, &prop2);
             }
         }
@@ -1641,12 +1662,12 @@ class ValidationStateTracker : public ValidationObject {
     template <typename ExtProp>
     void GetPhysicalDeviceExtProperties(VkPhysicalDevice gpu, ExtProp* ext_prop) {
         assert(ext_prop);
-        *ext_prop = LvlInitStruct<ExtProp>();
+        *ext_prop = vku::InitStructHelper();
         if (api_version < VK_API_VERSION_1_1) {
-            auto prop2 = LvlInitStruct<VkPhysicalDeviceProperties2>(ext_prop);
+            VkPhysicalDeviceProperties2 prop2 = vku::InitStructHelper(ext_prop);
             DispatchGetPhysicalDeviceProperties2KHR(gpu, &prop2);
         } else {
-            auto prop2 = LvlInitStruct<VkPhysicalDeviceProperties2>(ext_prop);
+            VkPhysicalDeviceProperties2 prop2 = vku::InitStructHelper(ext_prop);
             DispatchGetPhysicalDeviceProperties2(gpu, &prop2);
         }
     }
@@ -1662,7 +1683,7 @@ class ValidationStateTracker : public ValidationObject {
     inline std::shared_ptr<SHADER_MODULE_STATE> GetShaderModuleStateFromIdentifier(
         const VkPipelineShaderStageModuleIdentifierCreateInfoEXT& shader_stage_id) const {
         if (shader_stage_id.pIdentifier) {
-            auto shader_id = LvlInitStruct<VkShaderModuleIdentifierEXT>();
+            VkShaderModuleIdentifierEXT shader_id = vku::InitStructHelper();
             shader_id.identifierSize = shader_stage_id.identifierSize;
             const uint32_t copy_size = std::min(VK_MAX_SHADER_MODULE_IDENTIFIER_SIZE_EXT, shader_stage_id.identifierSize);
             std::copy(shader_stage_id.pIdentifier, shader_stage_id.pIdentifier + copy_size, shader_id.identifier);
@@ -1769,6 +1790,10 @@ class ValidationStateTracker : public ValidationObject {
     std::vector<VkImageLayout> host_image_copy_src_layouts;
     std::vector<VkImageLayout> host_image_copy_dst_layouts;
 
+    // Features and properties that depend on platforms being defined
+    // They will be false if platform is not defined
+    bool android_external_format_resolve_null_color_attachment_prop = false;  // VK_ANDROID_external_format_resolve
+
     // Queue family extension properties -- storing queue family properties gathered from
     // VkQueueFamilyProperties2::pNext chain
     struct QueueFamilyExtensionProperties {
@@ -1821,7 +1846,7 @@ class ValidationStateTracker : public ValidationObject {
 
   private:
     VALSTATETRACK_MAP_AND_TRAITS(VkQueue, QUEUE_STATE, queue_map_)
-    VALSTATETRACK_MAP_AND_TRAITS(VkAccelerationStructureNV, ACCELERATION_STRUCTURE_STATE, acceleration_structure_nv_map_)
+    VALSTATETRACK_MAP_AND_TRAITS(VkAccelerationStructureNV, ACCELERATION_STRUCTURE_STATE_NV, acceleration_structure_nv_map_)
     VALSTATETRACK_MAP_AND_TRAITS(VkRenderPass, RENDER_PASS_STATE, render_pass_map_)
     VALSTATETRACK_MAP_AND_TRAITS(VkDescriptorSetLayout, cvdescriptorset::DescriptorSetLayout, descriptor_set_layout_map_)
     VALSTATETRACK_MAP_AND_TRAITS(VkSampler, SAMPLER_STATE, sampler_map_)

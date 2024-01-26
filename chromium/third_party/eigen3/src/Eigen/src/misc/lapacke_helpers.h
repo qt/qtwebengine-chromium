@@ -10,6 +10,7 @@
 #ifndef EIGEN_LAPACKE_HELPERS_H
 #define EIGEN_LAPACKE_HELPERS_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 #ifdef EIGEN_USE_MKL

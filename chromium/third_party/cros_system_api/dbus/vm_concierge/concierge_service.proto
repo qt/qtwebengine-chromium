@@ -195,7 +195,7 @@ message StartVmRequest {
   // physical TPM on the host device. TPM state does not persist across VM
   // launches. In order for the VM to see the virtual TPM, the guest kernel must
   // contain a virtio TPM driver.
-  bool software_tpm = 9;
+  bool software_tpm = 9 [deprecated = true];
 
   // This flag is only respected in developer mode and offers two things -
   // - It can treat a trusted VM as untrusted and run it on insecure host
@@ -1211,6 +1211,54 @@ message ListUsbDeviceResponse {
   repeated UsbDeviceMessage usb_devices = 2;
 }
 
+// Request to vm_concierge to attach an additional net tap device as a PCI
+// device to a VM.
+message AttachNetDeviceRequest {
+  // Name of the VM associated with vm_id
+  string vm_name = 1;
+
+  // The owner of the VM.
+  string owner_id = 2;
+
+  // The host interface name of the tap device.
+  string tap_name = 3;
+}
+
+// Response sent back by vm_concierge after it receives an
+// AttachNetDeviceRequest call.
+message AttachNetDeviceResponse {
+  // Was the device successfully attached?
+  bool success = 1;
+
+  // The PCI bus allocated to the PCI network device on the guest. Fits in u8.
+  uint32 guest_bus = 2;
+
+  // The reason for failure, if success is false.
+  string failure_reason = 3;
+}
+
+// Request sent to remove a hotplugged net tap PCI device from a VM.
+message DetachNetDeviceRequest {
+  // Name of the VM associated with vm_id
+  string vm_name = 1;
+
+  // The owner of the VM.
+  string owner_id = 2;
+
+  // The PCI bus num for the device to remove. Fits in u8.
+  uint32 guest_bus = 3;
+}
+
+// Response sent back by vm_concierge after it receives a
+// DetachNetDeviceRequest call.
+message DetachNetDeviceResponse {
+  // Was the device successfully detached?
+  bool success = 1;
+
+  // The reason for failure, if success is false.
+  string failure_reason = 2;
+}
+
 // Response sent back by vm_concierge after it receives a GetDnsSettings call.
 // Also being broadcast via DnsSettingsChanged signal.
 message DnsSettings {
@@ -1488,6 +1536,23 @@ message AggressiveBalloonRequest {
 message AggressiveBalloonResponse {
   // Whether inflating balloon succeeds or not.
   bool success = 1;
+
+  // The reason for failure.
+  string failure_reason = 2;
+}
+
+// Request to get an open FD to the VM Memory Management kills server.
+message GetVmMemoryManagementKillsConnectionRequest {}
+
+// Response to an GetVmMemoryManagementKillsConnection request.
+// A successful response must be accompanied with the fd that was opened to the
+// server.
+message GetVmMemoryManagementKillsConnectionResponse {
+  // Whether the request was successful.
+  bool success = 1;
+
+  // The timeout the client should use for kill requests.
+  uint32 host_kill_request_timeout_ms = 3;
 
   // The reason for failure.
   string failure_reason = 2;

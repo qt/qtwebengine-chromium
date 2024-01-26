@@ -11,6 +11,7 @@
 #ifndef EIGEN_IO_H
 #define EIGEN_IO_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen { 

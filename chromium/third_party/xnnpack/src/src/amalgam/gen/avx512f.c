@@ -18,6 +18,7 @@
 #include <xnnpack/packw.h>
 #include <xnnpack/prefetch.h>
 #include <xnnpack/prelu.h>
+#include <xnnpack/reduce.h>
 #include <xnnpack/vbinary.h>
 #include <xnnpack/vunary.h>
 
@@ -1437,10 +1438,10 @@ void xnn_f32_gemm_minmax_ukernel_1x16__avx512f_broadcast(
     size_t mr,
     size_t nc,
     size_t kc,
-    const float*restrict a,
+    const float* restrict a,
     size_t a_stride,
-    const float*restrict w,
-    float*restrict c,
+    const float* restrict w,
+    float* restrict c,
     size_t cm_stride,
     size_t cn_stride,
     const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
@@ -1488,13 +1489,11 @@ void xnn_f32_gemm_minmax_ukernel_1x16__avx512f_broadcast(
 
       nc -= 16;
     } else {
-      if (nc & 15) {
-        // Prepare mask for valid 32-bit elements (depends on nc).
-        const __mmask16 vmask = _cvtu32_mask16((uint16_t) ((uint32_t) (UINT32_C(1) << nc) - UINT32_C(1)));
-
-        _mm512_mask_storeu_ps(c0, vmask, vacc0x0123456789ABCDEF);
-      }
-
+      assert(nc != 0);
+      assert(nc < 16);
+      // Prepare mask for valid 32-bit elements (depends on nc).
+      const __mmask16 vmask = _cvtu32_mask16((uint16_t) ((uint32_t) (UINT32_C(1) << nc) - UINT32_C(1)));
+      _mm512_mask_storeu_ps(c0, vmask, vacc0x0123456789ABCDEF);
       nc = 0;
     }
   } while (nc != 0);
@@ -1504,10 +1503,10 @@ void xnn_f32_gemm_minmax_ukernel_7x16__avx512f_broadcast(
     size_t mr,
     size_t nc,
     size_t kc,
-    const float*restrict a,
+    const float* restrict a,
     size_t a_stride,
-    const float*restrict w,
-    float*restrict c,
+    const float* restrict w,
+    float* restrict c,
     size_t cm_stride,
     size_t cn_stride,
     const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
@@ -1645,19 +1644,17 @@ void xnn_f32_gemm_minmax_ukernel_7x16__avx512f_broadcast(
 
       nc -= 16;
     } else {
-      if (nc & 15) {
-        // Prepare mask for valid 32-bit elements (depends on nc).
-        const __mmask16 vmask = _cvtu32_mask16((uint16_t) ((uint32_t) (UINT32_C(1) << nc) - UINT32_C(1)));
-
-        _mm512_mask_storeu_ps(c6, vmask, vacc6x0123456789ABCDEF);
-        _mm512_mask_storeu_ps(c5, vmask, vacc5x0123456789ABCDEF);
-        _mm512_mask_storeu_ps(c4, vmask, vacc4x0123456789ABCDEF);
-        _mm512_mask_storeu_ps(c3, vmask, vacc3x0123456789ABCDEF);
-        _mm512_mask_storeu_ps(c2, vmask, vacc2x0123456789ABCDEF);
-        _mm512_mask_storeu_ps(c1, vmask, vacc1x0123456789ABCDEF);
-        _mm512_mask_storeu_ps(c0, vmask, vacc0x0123456789ABCDEF);
-      }
-
+      assert(nc != 0);
+      assert(nc < 16);
+      // Prepare mask for valid 32-bit elements (depends on nc).
+      const __mmask16 vmask = _cvtu32_mask16((uint16_t) ((uint32_t) (UINT32_C(1) << nc) - UINT32_C(1)));
+      _mm512_mask_storeu_ps(c6, vmask, vacc6x0123456789ABCDEF);
+      _mm512_mask_storeu_ps(c5, vmask, vacc5x0123456789ABCDEF);
+      _mm512_mask_storeu_ps(c4, vmask, vacc4x0123456789ABCDEF);
+      _mm512_mask_storeu_ps(c3, vmask, vacc3x0123456789ABCDEF);
+      _mm512_mask_storeu_ps(c2, vmask, vacc2x0123456789ABCDEF);
+      _mm512_mask_storeu_ps(c1, vmask, vacc1x0123456789ABCDEF);
+      _mm512_mask_storeu_ps(c0, vmask, vacc0x0123456789ABCDEF);
       nc = 0;
     }
   } while (nc != 0);
@@ -1668,9 +1665,9 @@ void xnn_f32_igemm_minmax_ukernel_1x16__avx512f_broadcast(
     size_t nc,
     size_t kc,
     size_t ks,
-    const float**restrict a,
-    const float*restrict w,
-    float*restrict c,
+    const float** restrict a,
+    const float* restrict w,
+    float* restrict c,
     size_t cm_stride,
     size_t cn_stride,
     size_t a_offset,
@@ -1749,9 +1746,9 @@ void xnn_f32_igemm_minmax_ukernel_7x16__avx512f_broadcast(
     size_t nc,
     size_t kc,
     size_t ks,
-    const float**restrict a,
-    const float*restrict w,
-    float*restrict c,
+    const float** restrict a,
+    const float* restrict w,
+    float* restrict c,
     size_t cm_stride,
     size_t cn_stride,
     size_t a_offset,
@@ -1936,10 +1933,10 @@ void xnn_f32_igemm_minmax_ukernel_7x16__avx512f_broadcast(
 void xnn_f32_prelu_ukernel__avx512f_2x16(
     size_t rows,
     size_t channels,
-    const float*restrict input,
+    const float* restrict input,
     size_t input_stride,
-    const float*restrict weights,
-    float*restrict output,
+    const float* restrict weights,
+    float* restrict output,
     size_t output_stride)
 {
   assert(rows != 0);
@@ -2013,7 +2010,80 @@ void xnn_f32_prelu_ukernel__avx512f_2x16(
   } while (rows != 0);
 }
 
-void xnn_f32_vadd_minmax_ukernel__avx512f_x32(
+void xnn_f32_rminmax_ukernel__avx512f_u64_acc4(
+    size_t batch,
+    const float* input,
+    float* output,
+    const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+{
+  assert(batch != 0);
+  assert(batch % sizeof(float) == 0);
+  assert(input != NULL);
+  assert(output != NULL);
+
+  __m512 vmin0 = _mm512_set1_ps(*input);
+  __m512 vmax0 = vmin0;
+  __m512 vmin1 = vmin0;
+  __m512 vmax1 = vmax0;
+  __m512 vmin2 = vmin0;
+  __m512 vmax2 = vmax0;
+  __m512 vmin3 = vmin0;
+  __m512 vmax3 = vmax0;
+  for (; batch >= 64 * sizeof(float); batch -= 64 * sizeof(float)) {
+    const __m512 vt0 = _mm512_loadu_ps(input);
+    const __m512 vt1 = _mm512_loadu_ps(input + 16);
+    const __m512 vt2 = _mm512_loadu_ps(input + 32);
+    const __m512 vt3 = _mm512_loadu_ps(input + 48);
+    input += 64;
+
+    vmin0 = _mm512_min_ps(vmin0, vt0);
+    vmax0 = _mm512_max_ps(vmax0, vt0);
+    vmin1 = _mm512_min_ps(vmin1, vt1);
+    vmax1 = _mm512_max_ps(vmax1, vt1);
+    vmin2 = _mm512_min_ps(vmin2, vt2);
+    vmax2 = _mm512_max_ps(vmax2, vt2);
+    vmin3 = _mm512_min_ps(vmin3, vt3);
+    vmax3 = _mm512_max_ps(vmax3, vt3);
+  }
+  vmin0 = _mm512_min_ps(vmin0, vmin1);
+  vmax0 = _mm512_max_ps(vmax0, vmax1);
+  vmin2 = _mm512_min_ps(vmin2, vmin3);
+  vmax2 = _mm512_max_ps(vmax2, vmax3);
+  vmin0 = _mm512_min_ps(vmin0, vmin2);
+  vmax0 = _mm512_max_ps(vmax0, vmax2);
+  for (; batch >= 16 * sizeof(float); batch -= 16 * sizeof(float)) {
+    const __m512 vt = _mm512_loadu_ps(input);
+    input += 16;
+
+    vmin0 = _mm512_min_ps(vmin0, vt);
+    vmax0 = _mm512_max_ps(vmax0, vt);
+  }
+  if XNN_UNLIKELY(batch != 0) {
+    assert(batch >= 1 * sizeof(float));
+    assert(batch <= 15 * sizeof(float));
+
+    // Prepare mask for valid elements (depends on batch).
+    batch >>= XNN_LOG2_SIZEOF_FLOAT;
+    const __mmask16 vmask = _cvtu32_mask16((uint16_t) ((uint32_t) (UINT32_C(1) << batch) - UINT32_C(1)));
+
+    const __m512 vt = _mm512_maskz_loadu_ps(vmask, input);
+
+    vmin0 = _mm512_mask_min_ps(vmin0, vmask, vmin0, vt);
+    vmax0 = _mm512_mask_max_ps(vmax0, vmask, vmax0, vt);
+  }
+  __m256 vmin256 = _mm256_min_ps(_mm512_castps512_ps256(vmin0), _mm256_castpd_ps(_mm512_extractf64x4_pd(_mm512_castps_pd(vmin0), 1)));
+  __m256 vmax256 = _mm256_max_ps(_mm512_castps512_ps256(vmax0), _mm256_castpd_ps(_mm512_extractf64x4_pd(_mm512_castps_pd(vmax0), 1)));
+  __m128 vmin = _mm_min_ps(_mm256_castps256_ps128(vmin256), _mm256_extractf128_ps(vmin256, 1));
+  __m128 vmax = _mm_max_ps(_mm256_castps256_ps128(vmax256), _mm256_extractf128_ps(vmax256, 1));
+  vmin = _mm_min_ps(vmin, _mm_movehl_ps(vmin, vmin));
+  vmax = _mm_max_ps(vmax, _mm_movehl_ps(vmax, vmax));
+  vmin = _mm_min_ss(vmin, _mm_movehdup_ps(vmin));
+  vmax = _mm_max_ss(vmax, _mm_movehdup_ps(vmax));
+  _mm_store_ss(output, vmin);
+  _mm_store_ss(output + 1, vmax);
+}
+
+void xnn_f32_vadd_minmax_ukernel__avx512f_u32(
     size_t batch,
     const float* input_a,
     const float* input_b,
@@ -2077,7 +2147,7 @@ void xnn_f32_vadd_minmax_ukernel__avx512f_x32(
   }
 }
 
-void xnn_f32_vaddc_minmax_ukernel__avx512f_x32(
+void xnn_f32_vaddc_minmax_ukernel__avx512f_u32(
     size_t batch,
     const float* input_a,
     const float* input_b,
@@ -2139,7 +2209,7 @@ void xnn_f32_vaddc_minmax_ukernel__avx512f_x32(
   }
 }
 
-void xnn_f32_vdiv_minmax_ukernel__avx512f_x32(
+void xnn_f32_vdiv_minmax_ukernel__avx512f_u32(
     size_t batch,
     const float* input_a,
     const float* input_b,
@@ -2203,7 +2273,7 @@ void xnn_f32_vdiv_minmax_ukernel__avx512f_x32(
   }
 }
 
-void xnn_f32_vdivc_minmax_ukernel__avx512f_x32(
+void xnn_f32_vdivc_minmax_ukernel__avx512f_u32(
     size_t batch,
     const float* input_a,
     const float* input_b,
@@ -2265,7 +2335,7 @@ void xnn_f32_vdivc_minmax_ukernel__avx512f_x32(
   }
 }
 
-void xnn_f32_vmax_ukernel__avx512f_x32(
+void xnn_f32_vmax_ukernel__avx512f_u32(
     size_t batch,
     const float* input_a,
     const float* input_b,
@@ -2318,7 +2388,7 @@ void xnn_f32_vmax_ukernel__avx512f_x32(
   }
 }
 
-void xnn_f32_vmaxc_ukernel__avx512f_x32(
+void xnn_f32_vmaxc_ukernel__avx512f_u32(
     size_t batch,
     const float* input_a,
     const float* input_b,
@@ -2369,7 +2439,7 @@ void xnn_f32_vmaxc_ukernel__avx512f_x32(
   }
 }
 
-void xnn_f32_vmin_ukernel__avx512f_x32(
+void xnn_f32_vmin_ukernel__avx512f_u32(
     size_t batch,
     const float* input_a,
     const float* input_b,
@@ -2422,7 +2492,7 @@ void xnn_f32_vmin_ukernel__avx512f_x32(
   }
 }
 
-void xnn_f32_vminc_ukernel__avx512f_x32(
+void xnn_f32_vminc_ukernel__avx512f_u32(
     size_t batch,
     const float* input_a,
     const float* input_b,
@@ -2473,7 +2543,7 @@ void xnn_f32_vminc_ukernel__avx512f_x32(
   }
 }
 
-void xnn_f32_vmul_minmax_ukernel__avx512f_x32(
+void xnn_f32_vmul_minmax_ukernel__avx512f_u32(
     size_t batch,
     const float* input_a,
     const float* input_b,
@@ -2537,7 +2607,7 @@ void xnn_f32_vmul_minmax_ukernel__avx512f_x32(
   }
 }
 
-void xnn_f32_vmulc_minmax_ukernel__avx512f_x32(
+void xnn_f32_vmulc_minmax_ukernel__avx512f_u32(
     size_t batch,
     const float* input_a,
     const float* input_b,
@@ -2599,7 +2669,7 @@ void xnn_f32_vmulc_minmax_ukernel__avx512f_x32(
   }
 }
 
-void xnn_f32_vrdivc_minmax_ukernel__avx512f_x32(
+void xnn_f32_vrdivc_minmax_ukernel__avx512f_u32(
     size_t batch,
     const float* input_a,
     const float* input_b,
@@ -2661,7 +2731,7 @@ void xnn_f32_vrdivc_minmax_ukernel__avx512f_x32(
   }
 }
 
-void xnn_f32_vrsubc_minmax_ukernel__avx512f_x32(
+void xnn_f32_vrsubc_minmax_ukernel__avx512f_u32(
     size_t batch,
     const float* input_a,
     const float* input_b,
@@ -2723,7 +2793,7 @@ void xnn_f32_vrsubc_minmax_ukernel__avx512f_x32(
   }
 }
 
-void xnn_f32_vsqrdiff_ukernel__avx512f_x32(
+void xnn_f32_vsqrdiff_ukernel__avx512f_u32(
     size_t batch,
     const float* input_a,
     const float* input_b,
@@ -2780,7 +2850,7 @@ void xnn_f32_vsqrdiff_ukernel__avx512f_x32(
   }
 }
 
-void xnn_f32_vsqrdiffc_ukernel__avx512f_x32(
+void xnn_f32_vsqrdiffc_ukernel__avx512f_u32(
     size_t batch,
     const float* input_a,
     const float* input_b,
@@ -2835,7 +2905,7 @@ void xnn_f32_vsqrdiffc_ukernel__avx512f_x32(
   }
 }
 
-void xnn_f32_vsub_minmax_ukernel__avx512f_x32(
+void xnn_f32_vsub_minmax_ukernel__avx512f_u32(
     size_t batch,
     const float* input_a,
     const float* input_b,
@@ -2899,7 +2969,7 @@ void xnn_f32_vsub_minmax_ukernel__avx512f_x32(
   }
 }
 
-void xnn_f32_vsubc_minmax_ukernel__avx512f_x32(
+void xnn_f32_vsubc_minmax_ukernel__avx512f_u32(
     size_t batch,
     const float* input_a,
     const float* input_b,
@@ -2961,7 +3031,7 @@ void xnn_f32_vsubc_minmax_ukernel__avx512f_x32(
   }
 }
 
-void xnn_f32_vclamp_ukernel__avx512f_x16(
+void xnn_f32_vclamp_ukernel__avx512f_u16(
     size_t batch,
     const float* input,
     float* output,
@@ -3000,7 +3070,7 @@ void xnn_f32_vclamp_ukernel__avx512f_x16(
   }
 }
 
-void xnn_f32_velu_ukernel__avx512f_rr1_lut16_p3_perm_x64(
+void xnn_f32_velu_ukernel__avx512f_rr1_lut16_p3_perm_u64(
     size_t batch,
     const float* input,
     float* output,
@@ -3169,7 +3239,7 @@ void xnn_f32_velu_ukernel__avx512f_rr1_lut16_p3_perm_x64(
   }
 }
 
-void xnn_f32_vhswish_ukernel__avx512f_x16(
+void xnn_f32_vhswish_ukernel__avx512f_u16(
     size_t batch,
     const float* input,
     float* output,
@@ -3211,7 +3281,7 @@ void xnn_f32_vhswish_ukernel__avx512f_x16(
   }
 }
 
-void xnn_f32_vlrelu_ukernel__avx512f_x16(
+void xnn_f32_vlrelu_ukernel__avx512f_u16(
     size_t batch,
     const float* input,
     float* output,
@@ -3250,7 +3320,7 @@ void xnn_f32_vlrelu_ukernel__avx512f_x16(
   }
 }
 
-void xnn_f32_vrndd_ukernel__avx512f_x16(
+void xnn_f32_vrndd_ukernel__avx512f_u16(
     size_t batch,
     const float* input,
     float* output,
@@ -3283,7 +3353,7 @@ void xnn_f32_vrndd_ukernel__avx512f_x16(
   }
 }
 
-void xnn_f32_vrndne_ukernel__avx512f_x16(
+void xnn_f32_vrndne_ukernel__avx512f_u16(
     size_t batch,
     const float* input,
     float* output,
@@ -3316,7 +3386,7 @@ void xnn_f32_vrndne_ukernel__avx512f_x16(
   }
 }
 
-void xnn_f32_vrndu_ukernel__avx512f_x16(
+void xnn_f32_vrndu_ukernel__avx512f_u16(
     size_t batch,
     const float* input,
     float* output,
@@ -3349,7 +3419,7 @@ void xnn_f32_vrndu_ukernel__avx512f_x16(
   }
 }
 
-void xnn_f32_vrndz_ukernel__avx512f_x16(
+void xnn_f32_vrndz_ukernel__avx512f_u16(
     size_t batch,
     const float* input,
     float* output,
@@ -3382,7 +3452,7 @@ void xnn_f32_vrndz_ukernel__avx512f_x16(
   }
 }
 
-void xnn_f32_vsigmoid_ukernel__avx512f_rr2_lut32_p2_perm2_scalef_div_x64(
+void xnn_f32_vsigmoid_ukernel__avx512f_rr2_lut32_p2_perm2_scalef_div_u64(
     size_t batch,
     const float* input,
     float* output,
@@ -3542,7 +3612,7 @@ void xnn_f32_vsigmoid_ukernel__avx512f_rr2_lut32_p2_perm2_scalef_div_x64(
   }
 }
 
-void xnn_f32_vabs_ukernel__avx512f_x16(
+void xnn_f32_vabs_ukernel__avx512f_u16(
     size_t batch,
     const float* input,
     float* output,
@@ -3576,7 +3646,7 @@ void xnn_f32_vabs_ukernel__avx512f_x16(
   }
 }
 
-void xnn_f32_vneg_ukernel__avx512f_x16(
+void xnn_f32_vneg_ukernel__avx512f_u16(
     size_t batch,
     const float* input,
     float* output,
@@ -3610,7 +3680,7 @@ void xnn_f32_vneg_ukernel__avx512f_x16(
   }
 }
 
-void xnn_f32_vsqr_ukernel__avx512f_x16(
+void xnn_f32_vsqr_ukernel__avx512f_u16(
     size_t batch,
     const float* input,
     float* output,
@@ -3643,7 +3713,7 @@ void xnn_f32_vsqr_ukernel__avx512f_x16(
   }
 }
 
-void xnn_x32_packw_gemm_goi_ukernel_x16__avx512f_prfm_x4(
+void xnn_x32_packw_gemm_goi_ukernel_x16__avx512f_u4_prfm(
   size_t g,
   size_t nc,
   size_t kc,
@@ -3652,6 +3722,7 @@ void xnn_x32_packw_gemm_goi_ukernel_x16__avx512f_prfm_x4(
   size_t sr,
   const uint32_t* weights,
   const uint32_t* bias,
+  const void* scale,
   uint32_t* packed_weights,
   size_t extra_bytes,
   const void* params)
@@ -3698,6 +3769,38 @@ void xnn_x32_packw_gemm_goi_ukernel_x16__avx512f_prfm_x4(
       const float* w13 = w12 + kc;
       const float* w14 = w13 + kc;
       const float* w15 = w14 + kc;
+      xnn_prefetch_to_l1((const int8_t*) w0);
+      xnn_prefetch_to_l1((const int8_t*) w0 + 64);
+      xnn_prefetch_to_l1((const int8_t*) w1);
+      xnn_prefetch_to_l1((const int8_t*) w1 + 64);
+      xnn_prefetch_to_l1((const int8_t*) w2);
+      xnn_prefetch_to_l1((const int8_t*) w2 + 64);
+      xnn_prefetch_to_l1((const int8_t*) w3);
+      xnn_prefetch_to_l1((const int8_t*) w3 + 64);
+      xnn_prefetch_to_l1((const int8_t*) w4);
+      xnn_prefetch_to_l1((const int8_t*) w4 + 64);
+      xnn_prefetch_to_l1((const int8_t*) w5);
+      xnn_prefetch_to_l1((const int8_t*) w5 + 64);
+      xnn_prefetch_to_l1((const int8_t*) w6);
+      xnn_prefetch_to_l1((const int8_t*) w6 + 64);
+      xnn_prefetch_to_l1((const int8_t*) w7);
+      xnn_prefetch_to_l1((const int8_t*) w7 + 64);
+      xnn_prefetch_to_l1((const int8_t*) w8);
+      xnn_prefetch_to_l1((const int8_t*) w8 + 64);
+      xnn_prefetch_to_l1((const int8_t*) w9);
+      xnn_prefetch_to_l1((const int8_t*) w9 + 64);
+      xnn_prefetch_to_l1((const int8_t*) w10);
+      xnn_prefetch_to_l1((const int8_t*) w10 + 64);
+      xnn_prefetch_to_l1((const int8_t*) w11);
+      xnn_prefetch_to_l1((const int8_t*) w11 + 64);
+      xnn_prefetch_to_l1((const int8_t*) w12);
+      xnn_prefetch_to_l1((const int8_t*) w12 + 64);
+      xnn_prefetch_to_l1((const int8_t*) w13);
+      xnn_prefetch_to_l1((const int8_t*) w13 + 64);
+      xnn_prefetch_to_l1((const int8_t*) w14);
+      xnn_prefetch_to_l1((const int8_t*) w14 + 64);
+      xnn_prefetch_to_l1((const int8_t*) w15);
+      xnn_prefetch_to_l1((const int8_t*) w15 + 64);
 
       // KC main loop multiple of 4
       size_t k = kc;
@@ -3776,7 +3879,7 @@ void xnn_x32_packw_gemm_goi_ukernel_x16__avx512f_prfm_x4(
         packed_w += 64;
       }
 
-      // KC remainder
+      // KC remainder (1..3)
       if XNN_UNLIKELY(k != 0) {
         assert(k >= 1);
         assert(k <= 3);
@@ -4015,7 +4118,8 @@ void xnn_x32_packw_gemm_goi_ukernel_x16__avx512f_prfm_x4(
         w1 += 4;
         __m512 v2x0123 = _mm512_castps128_ps512(_mm_loadu_ps(w2));
         w2 += 4;
-        __m512 v3x0123 = _mm512_castps128_ps512(_mm_loadu_ps(w3));
+        // castps leaves upper 128 bits undefined, so zero them.
+        __m512 v3x0123 = _mm512_zextps128_ps512(_mm_loadu_ps(w3));
         w3 += 4;
         // Load next 4 rows of N into the high part of each register
         v0x0123 = _mm512_insertf32x4(v0x0123, _mm_loadu_ps(w4), 1);
@@ -4074,7 +4178,7 @@ void xnn_x32_packw_gemm_goi_ukernel_x16__avx512f_prfm_x4(
         packed_w += 64;
       }
 
-      // KC remainder
+      // KC remainder (1..3)
       if XNN_UNLIKELY(k != 0) {
         assert(k >= 1);
         assert(k <= 3);

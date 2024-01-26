@@ -1,21 +1,38 @@
-// Copyright 2023 The Tint Authors.
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+// GEN_BUILD:CONDITION(tint_build_wgsl_writer)
 
 #include <sstream>
 #include <string>
 
 #include "src/tint/lang/core/ir/disassembler.h"
+#include "src/tint/lang/core/type/storage_texture.h"
+#include "src/tint/lang/wgsl/ir/builtin_call.h"
 #include "src/tint/lang/wgsl/writer/ir_to_program/ir_to_program.h"
 #include "src/tint/lang/wgsl/writer/ir_to_program/ir_to_program_test.h"
 #include "src/tint/lang/wgsl/writer/writer.h"
@@ -29,17 +46,16 @@ using namespace tint::core::fluent_types;     // NOLINT
 IRToProgramTest::Result IRToProgramTest::Run() {
     Result result;
 
-    tint::core::ir::Disassembler d{mod};
-    result.ir = d.Disassemble();
+    result.ir = tint::core::ir::Disassemble(mod);
 
     auto output_program = IRToProgram(mod);
     if (!output_program.IsValid()) {
         result.err = output_program.Diagnostics().str();
-        result.ast = Program::printer(&output_program);
+        result.ast = Program::printer(output_program);
         return result;
     }
 
-    auto output = wgsl::writer::Generate(&output_program, {});
+    auto output = wgsl::writer::Generate(output_program, {});
     if (!output) {
         std::stringstream ss;
         ss << "wgsl::Generate() errored: " << output.Failure();
@@ -383,6 +399,377 @@ TEST_F(IRToProgramTest, BinaryOp_ShiftRight) {
     EXPECT_WGSL(R"(
 fn f(a : i32, b : u32) -> i32 {
   return (a >> b);
+}
+)");
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Type Construct
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(IRToProgramTest, TypeConstruct_i32) {
+    auto* fn = b.Function("f", ty.void_());
+    auto* i = b.FunctionParam("i", ty.i32());
+    fn->SetParams({i});
+
+    b.Append(fn->Block(), [&] {
+        b.Var("v", b.Construct<i32>(i));
+        b.Return(fn);
+    });
+
+    EXPECT_WGSL(R"(
+fn f(i : i32) {
+  var v : i32 = i32(i);
+}
+)");
+}
+
+TEST_F(IRToProgramTest, TypeConstruct_u32) {
+    auto* fn = b.Function("f", ty.void_());
+    auto* i = b.FunctionParam("i", ty.i32());
+    fn->SetParams({i});
+
+    b.Append(fn->Block(), [&] {
+        b.Var("v", b.Construct<u32>(i));
+        b.Return(fn);
+    });
+
+    EXPECT_WGSL(R"(
+fn f(i : i32) {
+  var v : u32 = u32(i);
+}
+)");
+}
+
+TEST_F(IRToProgramTest, TypeConstruct_f32) {
+    auto* fn = b.Function("f", ty.void_());
+    auto* i = b.FunctionParam("i", ty.i32());
+    fn->SetParams({i});
+
+    b.Append(fn->Block(), [&] {
+        b.Var("v", b.Construct<f32>(i));
+        b.Return(fn);
+    });
+
+    EXPECT_WGSL(R"(
+fn f(i : i32) {
+  var v : f32 = f32(i);
+}
+)");
+}
+
+TEST_F(IRToProgramTest, TypeConstruct_bool) {
+    auto* fn = b.Function("f", ty.void_());
+    auto* i = b.FunctionParam("i", ty.i32());
+    fn->SetParams({i});
+
+    b.Append(fn->Block(), [&] {
+        b.Var("v", b.Construct<bool>(i));
+        b.Return(fn);
+    });
+
+    EXPECT_WGSL(R"(
+fn f(i : i32) {
+  var v : bool = bool(i);
+}
+)");
+}
+
+TEST_F(IRToProgramTest, TypeConstruct_struct) {
+    auto* S = ty.Struct(mod.symbols.New("S"), {
+                                                  {mod.symbols.New("a"), ty.i32()},
+                                                  {mod.symbols.New("b"), ty.u32()},
+                                                  {mod.symbols.New("c"), ty.f32()},
+                                              });
+
+    auto* fn = b.Function("f", ty.void_());
+    auto* x = b.FunctionParam("x", ty.i32());
+    auto* y = b.FunctionParam("y", ty.u32());
+    auto* z = b.FunctionParam("z", ty.f32());
+    fn->SetParams({x, y, z});
+
+    b.Append(fn->Block(), [&] {
+        b.Var("v", b.Construct(S, x, y, z));
+        b.Return(fn);
+    });
+
+    EXPECT_WGSL(R"(
+struct S {
+  a : i32,
+  b : u32,
+  c : f32,
+}
+
+fn f(x : i32, y : u32, z : f32) {
+  var v : S = S(x, y, z);
+}
+)");
+}
+
+TEST_F(IRToProgramTest, TypeConstruct_array) {
+    auto* fn = b.Function("f", ty.void_());
+    auto* i = b.FunctionParam("i", ty.i32());
+    fn->SetParams({i});
+
+    b.Append(fn->Block(), [&] {
+        b.Var("v", b.Construct<array<i32, 3u>>(i, i, i));
+        b.Return(fn);
+    });
+
+    EXPECT_WGSL(R"(
+fn f(i : i32) {
+  var v : array<i32, 3u> = array<i32, 3u>(i, i, i);
+}
+)");
+}
+
+TEST_F(IRToProgramTest, TypeConstruct_vec3i_Splat) {
+    auto* fn = b.Function("f", ty.void_());
+    auto* i = b.FunctionParam("i", ty.i32());
+    fn->SetParams({i});
+
+    b.Append(fn->Block(), [&] {
+        b.Var("v", b.Construct<vec3<i32>>(i));
+        b.Return(fn);
+    });
+
+    EXPECT_WGSL(R"(
+fn f(i : i32) {
+  var v : vec3<i32> = vec3<i32>(i);
+}
+)");
+}
+
+TEST_F(IRToProgramTest, TypeConstruct_vec3i_Scalars) {
+    auto* fn = b.Function("f", ty.void_());
+    auto* i = b.FunctionParam("i", ty.i32());
+    fn->SetParams({i});
+
+    b.Append(fn->Block(), [&] {
+        b.Var("v", b.Construct<vec3<i32>>(i, i, i));
+        b.Return(fn);
+    });
+
+    EXPECT_WGSL(R"(
+fn f(i : i32) {
+  var v : vec3<i32> = vec3<i32>(i, i, i);
+}
+)");
+}
+
+TEST_F(IRToProgramTest, TypeConstruct_mat2x3f_Scalars) {
+    auto* fn = b.Function("f", ty.void_());
+    auto* i = b.FunctionParam("i", ty.f32());
+    fn->SetParams({i});
+
+    b.Append(fn->Block(), [&] {
+        b.Var("v", b.Construct<mat2x3<f32>>(i, i, i, i, i, i));
+        b.Return(fn);
+    });
+
+    EXPECT_WGSL(R"(
+fn f(i : f32) {
+  var v : mat2x3<f32> = mat2x3<f32>(i, i, i, i, i, i);
+}
+)");
+}
+
+TEST_F(IRToProgramTest, TypeConstruct_mat2x3f_Columns) {
+    auto* fn = b.Function("f", ty.void_());
+    auto* i = b.FunctionParam("i", ty.f32());
+    fn->SetParams({i});
+
+    b.Append(fn->Block(), [&] {
+        auto* col_0 = b.Construct<vec3<f32>>(i, i, i);
+        auto* col_1 = b.Construct<vec3<f32>>(i, i, i);
+        b.Var("v", b.Construct<mat2x3<f32>>(col_0, col_1));
+        b.Return(fn);
+    });
+
+    EXPECT_WGSL(R"(
+fn f(i : f32) {
+  var v : mat2x3<f32> = mat2x3<f32>(vec3<f32>(i, i, i), vec3<f32>(i, i, i));
+}
+)");
+}
+
+TEST_F(IRToProgramTest, TypeConstruct_Inlining) {
+    auto* fn = b.Function("f", ty.void_());
+    auto* i0 = b.FunctionParam("i0", ty.i32());
+    auto* i1 = b.FunctionParam("i1", ty.i32());
+    auto* i2 = b.FunctionParam("i2", ty.i32());
+    auto* i3 = b.FunctionParam("i3", ty.i32());
+    auto* i4 = b.FunctionParam("i4", ty.i32());
+    auto* i5 = b.FunctionParam("i5", ty.i32());
+    fn->SetParams({i0, i1, i2, i3, i4, i5});
+
+    b.Append(fn->Block(), [&] {
+        auto* f3 = b.Construct<f32>(i3);
+        auto* f4 = b.Construct<f32>(i4);
+        auto* f5 = b.Construct<f32>(i5);
+        auto* f0 = b.Construct<f32>(i0);
+        auto* f2 = b.Construct<f32>(i2);
+        auto* f1 = b.Construct<f32>(i1);
+        b.Var("v", b.Construct<mat2x3<f32>>(f0, f1, f2, f3, f4, f5));
+        b.Return(fn);
+    });
+
+    EXPECT_WGSL(R"(
+fn f(i0 : i32, i1 : i32, i2 : i32, i3 : i32, i4 : i32, i5 : i32) {
+  var v : mat2x3<f32> = mat2x3<f32>(f32(i0), f32(i1), f32(i2), f32(i3), f32(i4), f32(i5));
+}
+)");
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Type Convert
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(IRToProgramTest, TypeConvert_i32_to_u32) {
+    auto* fn = b.Function("f", ty.void_());
+    auto* i = b.FunctionParam("i", ty.i32());
+    fn->SetParams({i});
+
+    b.Append(fn->Block(), [&] {
+        b.Var("v", b.Convert<u32>(i));
+        b.Return(fn);
+    });
+
+    EXPECT_WGSL(R"(
+fn f(i : i32) {
+  var v : u32 = u32(i);
+}
+)");
+}
+
+TEST_F(IRToProgramTest, TypeConvert_u32_to_f32) {
+    auto* fn = b.Function("f", ty.void_());
+    auto* i = b.FunctionParam("i", ty.u32());
+    fn->SetParams({i});
+
+    b.Append(fn->Block(), [&] {
+        b.Var("v", b.Convert<f32>(i));
+        b.Return(fn);
+    });
+
+    EXPECT_WGSL(R"(
+fn f(i : u32) {
+  var v : f32 = f32(i);
+}
+)");
+}
+
+TEST_F(IRToProgramTest, TypeConvert_f32_to_i32) {
+    auto* fn = b.Function("f", ty.void_());
+    auto* i = b.FunctionParam("i", ty.f32());
+    fn->SetParams({i});
+
+    b.Append(fn->Block(), [&] {
+        b.Var("v", b.Convert<i32>(i));
+        b.Return(fn);
+    });
+
+    EXPECT_WGSL(R"(
+fn f(i : f32) {
+  var v : i32 = i32(i);
+}
+)");
+}
+
+TEST_F(IRToProgramTest, TypeConvert_bool_to_u32) {
+    auto* fn = b.Function("f", ty.void_());
+    auto* i = b.FunctionParam("i", ty.bool_());
+    fn->SetParams({i});
+
+    b.Append(fn->Block(), [&] {
+        b.Var("v", b.Convert<u32>(i));
+        b.Return(fn);
+    });
+
+    EXPECT_WGSL(R"(
+fn f(i : bool) {
+  var v : u32 = u32(i);
+}
+)");
+}
+
+TEST_F(IRToProgramTest, TypeConvert_vec3i_to_vec3u) {
+    auto* fn = b.Function("f", ty.void_());
+    auto* i = b.FunctionParam("i", ty.vec3<i32>());
+    fn->SetParams({i});
+
+    b.Append(fn->Block(), [&] {
+        b.Var("v", b.Convert<vec3<u32>>(i));
+        b.Return(fn);
+    });
+
+    EXPECT_WGSL(R"(
+fn f(i : vec3<i32>) {
+  var v : vec3<u32> = vec3<u32>(i);
+}
+)");
+}
+
+TEST_F(IRToProgramTest, TypeConvert_vec3u_to_vec3f) {
+    auto* fn = b.Function("f", ty.void_());
+    auto* i = b.FunctionParam("i", ty.vec3<u32>());
+    fn->SetParams({i});
+
+    b.Append(fn->Block(), [&] {
+        b.Var("v", b.Convert<vec3<f32>>(i));
+        b.Return(fn);
+    });
+
+    EXPECT_WGSL(R"(
+fn f(i : vec3<u32>) {
+  var v : vec3<f32> = vec3<f32>(i);
+}
+)");
+}
+
+TEST_F(IRToProgramTest, TypeConvert_mat2x3f_to_mat2x3h) {
+    auto* fn = b.Function("f", ty.void_());
+    auto* i = b.FunctionParam("i", ty.mat2x3<f32>());
+    fn->SetParams({i});
+
+    b.Append(fn->Block(), [&] {
+        b.Var("v", b.Convert<mat2x3<f16>>(i));
+        b.Return(fn);
+    });
+
+    EXPECT_WGSL(R"(
+enable f16;
+
+fn f(i : mat2x3<f32>) {
+  var v : mat2x3<f16> = mat2x3<f16>(i);
+}
+)");
+}
+
+TEST_F(IRToProgramTest, TypeConvert_Inlining) {
+    auto* fn_g = b.Function("g", ty.void_());
+    fn_g->SetParams({
+        b.FunctionParam("a", ty.i32()),
+        b.FunctionParam("b", ty.u32()),
+        b.FunctionParam("c", ty.f32()),
+    });
+    b.Append(fn_g->Block(), [&] { b.Return(fn_g); });
+
+    auto* fn_f = b.Function("f", ty.void_());
+    auto* v = b.FunctionParam("v", ty.i32());
+    fn_f->SetParams({v});
+    b.Append(fn_f->Block(), [&] {
+        auto* u = b.Convert<u32>(v);
+        auto* f = b.Convert<f32>(v);
+        auto* i = b.Convert<i32>(v);
+        b.Call(fn_g, i, u, f);
+        b.Return(fn_f);
+    });
+
+    EXPECT_WGSL(R"(
+fn g(a : i32, b : u32, c : f32) {
+}
+
+fn f(v : i32) {
+  g(i32(v), u32(v), f32(v));
 }
 )");
 }
@@ -2375,7 +2762,7 @@ TEST_F(IRToProgramTest, For_IncInInit_Cmp) {
     //   }
     // }
 
-    b.Append(b.RootBlock(), [&] {
+    b.Append(mod.root_block, [&] {
         auto* i = b.Var(ty.ptr<storage, u32, read_write>());
         i->SetBindingPoint(0, 0);
 
@@ -2386,7 +2773,7 @@ TEST_F(IRToProgramTest, For_IncInInit_Cmp) {
 
             b.Append(loop->Initializer(), [&] {
                 auto* load_i = b.Load(i);
-                auto* inc_i = b.Add(ty.i32(), load_i, 1_u);
+                auto* inc_i = b.Add(ty.u32(), load_i, 1_u);
                 b.Store(i, inc_i);
                 b.NextIteration(loop);
             });
@@ -2721,6 +3108,242 @@ fn f() {
       b = (a + b);
     }
   }
+}
+)");
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// chromium_experimental_full_ptr_parameters
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(IRToProgramTest, Enable_ChromiumExperimentalFullPtrParameters_StoragePtrParameter) {
+    auto* fn = b.Function("f", ty.void_());
+    fn->SetParams({b.FunctionParam("p", ty.ptr<storage, i32>())});
+
+    b.Append(fn->Block(), [&] { b.Return(fn); });
+
+    EXPECT_WGSL(R"(
+enable chromium_experimental_full_ptr_parameters;
+
+fn f(p : ptr<storage, i32, read_write>) {
+}
+)");
+}
+
+TEST_F(IRToProgramTest, Enable_ChromiumExperimentalFullPtrParameters_UniformPtrParameter) {
+    auto* fn = b.Function("f", ty.void_());
+    fn->SetParams({b.FunctionParam("p", ty.ptr<uniform, i32>())});
+
+    b.Append(fn->Block(), [&] { b.Return(fn); });
+
+    EXPECT_WGSL(R"(
+enable chromium_experimental_full_ptr_parameters;
+
+fn f(p : ptr<uniform, i32>) {
+}
+)");
+}
+
+TEST_F(IRToProgramTest, Enable_ChromiumExperimentalFullPtrParameters_WorkgroupPtrParameter) {
+    auto* fn = b.Function("f", ty.void_());
+    fn->SetParams({b.FunctionParam("p", ty.ptr<workgroup, i32>())});
+
+    b.Append(fn->Block(), [&] { b.Return(fn); });
+
+    EXPECT_WGSL(R"(
+enable chromium_experimental_full_ptr_parameters;
+
+fn f(p : ptr<workgroup, i32>) {
+}
+)");
+}
+
+TEST_F(IRToProgramTest, Enable_ChromiumExperimentalFullPtrParameters_SubObjectPtrArg) {
+    auto* x = b.Function("x", ty.void_());
+    x->SetParams({b.FunctionParam("p", ty.ptr<function, vec3<f32>>())});
+    b.Append(x->Block(), [&] { b.Return(x); });
+
+    auto* y = b.Function("y", ty.void_());
+    b.Append(y->Block(), [&] {
+        auto* m = b.Var<function, mat3x3<f32>>();
+        auto* v = b.Access(ty.ptr<function, vec3<f32>>(), m, 1_i);
+        b.Call(ty.void_(), x, v);
+        b.Return(y);
+    });
+
+    EXPECT_WGSL(R"(
+enable chromium_experimental_full_ptr_parameters;
+
+fn x(p : ptr<function, vec3<f32>>) {
+}
+
+fn y() {
+  var v : mat3x3<f32>;
+  x(&(v[1i]));
+}
+)");
+}
+
+TEST_F(IRToProgramTest, Enable_ChromiumExperimentalFullPtrParameters_SubObjectPtrArg_ViaLet) {
+    auto* x = b.Function("x", ty.void_());
+    x->SetParams({b.FunctionParam("p", ty.ptr<function, vec3<f32>>())});
+    b.Append(x->Block(), [&] { b.Return(x); });
+
+    auto* y = b.Function("y", ty.void_());
+    b.Append(y->Block(), [&] {
+        auto* m = b.Var<function, mat3x3<f32>>();
+        auto* v = b.Access(ty.ptr<function, vec3<f32>>(), m, 1_i);
+        auto* l = b.Let("l", v);
+        b.Call(ty.void_(), x, l);
+        b.Return(y);
+    });
+
+    EXPECT_WGSL(R"(
+enable chromium_experimental_full_ptr_parameters;
+
+fn x(p : ptr<function, vec3<f32>>) {
+}
+
+fn y() {
+  var v : mat3x3<f32>;
+  let l = &(v[1i]);
+  x(l);
+}
+)");
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// chromium_experimental_read_write_storage_texture
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(IRToProgramTest, Enable_ChromiumExperimentalReadWriteStorageTexture_TextureBarrier) {
+    auto* fn = b.Function("f", ty.void_());
+    b.Append(fn->Block(), [&] {
+        b.Append(mod.instructions.Create<wgsl::ir::BuiltinCall>(
+            b.InstructionResult(ty.void_()), wgsl::BuiltinFn::kTextureBarrier, Empty));
+        b.Return(fn);
+    });
+
+    EXPECT_WGSL(R"(
+enable chromium_experimental_read_write_storage_texture;
+
+fn f() {
+  textureBarrier();
+}
+)");
+}
+
+TEST_F(IRToProgramTest, Enable_ChromiumExperimentalReadWriteStorageTexture_ReadOnlyStorageTexture) {
+    auto* T = b.Var("T", ty.ptr<handle>(ty.Get<core::type::StorageTexture>(
+                             core::type::TextureDimension::k2d, core::TexelFormat::kR32Float,
+                             core::Access::kRead, ty.f32())));
+    T->SetBindingPoint(0, 0);
+    b.ir.root_block->Append(T);
+
+    EXPECT_WGSL(R"(
+enable chromium_experimental_read_write_storage_texture;
+
+@group(0) @binding(0) var T : texture_storage_2d<r32float, read>;
+)");
+}
+
+TEST_F(IRToProgramTest,
+       Enable_ChromiumExperimentalReadWriteStorageTexture_ReadWriteOnlyStorageTexture) {
+    auto* T = b.Var("T", ty.ptr<handle>(ty.Get<core::type::StorageTexture>(
+                             core::type::TextureDimension::k2d, core::TexelFormat::kR32Float,
+                             core::Access::kReadWrite, ty.f32())));
+    T->SetBindingPoint(0, 0);
+    b.ir.root_block->Append(T);
+
+    EXPECT_WGSL(R"(
+enable chromium_experimental_read_write_storage_texture;
+
+@group(0) @binding(0) var T : texture_storage_2d<r32float, read_write>;
+)");
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// chromium_experimental_subgroups
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(IRToProgramTest, Enable_ChromiumExperimentalSubgroups_SubgroupBallot) {
+    auto* fn = b.Function("f", ty.void_());
+    b.Append(fn->Block(), [&] {
+        b.Append(mod.instructions.Create<wgsl::ir::BuiltinCall>(
+            b.InstructionResult(ty.vec4<u32>()), wgsl::BuiltinFn::kSubgroupBallot, Empty));
+        b.Return(fn);
+    });
+
+    EXPECT_WGSL(R"(
+enable chromium_experimental_subgroups;
+
+fn f() {
+  _ = subgroupBallot();
+}
+)");
+}
+
+TEST_F(IRToProgramTest, Enable_ChromiumExperimentalSubgroups_SubgroupBroadcast) {
+    auto* fn = b.Function("f", ty.void_());
+    b.Append(fn->Block(), [&] {
+        auto* one = b.Value(1_u);
+        b.Append(mod.instructions.Create<wgsl::ir::BuiltinCall>(
+            b.InstructionResult(ty.u32()), wgsl::BuiltinFn::kSubgroupBroadcast, Vector{one, one}));
+        b.Return(fn);
+    });
+
+    EXPECT_WGSL(R"(
+enable chromium_experimental_subgroups;
+
+fn f() {
+  _ = subgroupBroadcast(1u, 1u);
+}
+)");
+}
+
+TEST_F(IRToProgramTest, Enable_ChromiumExperimentalSubgroups_StructBuiltin_SubgroupInvocationId) {
+    core::type::Manager::StructMemberDesc member;
+    member.name = mod.symbols.New("a");
+    member.type = ty.u32();
+    member.attributes.builtin = core::BuiltinValue::kSubgroupInvocationId;
+
+    auto* S = ty.Struct(mod.symbols.New("S"), {member});
+
+    auto* fn = b.Function("f", ty.void_());
+    fn->SetParams({b.FunctionParam(S)});
+    b.Append(fn->Block(), [&] { b.Return(fn); });
+
+    EXPECT_WGSL(R"(
+enable chromium_experimental_subgroups;
+
+struct S {
+  @builtin(subgroup_invocation_id)
+  a : u32,
+}
+
+fn f(v : S) {
+}
+)");
+}
+
+TEST_F(IRToProgramTest, Enable_ChromiumExperimentalSubgroups_StructBuiltin_SubgroupSize) {
+    core::type::Manager::StructMemberDesc member;
+    member.name = mod.symbols.New("a");
+    member.type = ty.u32();
+    member.attributes.builtin = core::BuiltinValue::kSubgroupSize;
+
+    auto* S = ty.Struct(mod.symbols.New("S"), {member});
+
+    auto* fn = b.Function("f", ty.void_());
+    fn->SetParams({b.FunctionParam(S)});
+    b.Append(fn->Block(), [&] { b.Return(fn); });
+
+    EXPECT_WGSL(R"(
+enable chromium_experimental_subgroups;
+
+struct S {
+  @builtin(subgroup_size)
+  a : u32,
+}
+
+fn f(v : S) {
 }
 )");
 }

@@ -6,25 +6,6 @@ import("//build_overrides/build.gni")
 import("../../pdfium.gni")
 import("../../testing/test.gni")
 
-source_set("unowned_ptr") {
-  sources = [ "unowned_ptr.h" ]
-  deps = [ "../../third_party:pdfium_compiler_specific" ]
-  configs += [ "../../:pdfium_strict_config" ]
-  if (pdf_use_partition_alloc) {
-    if (pdf_use_partition_alloc_new_location) {
-      public_deps = [
-        "//base/allocator/partition_allocator/src/partition_alloc:partition_alloc_buildflags",
-        "//base/allocator/partition_allocator/src/partition_alloc:raw_ptr",
-      ]
-    } else {
-      public_deps = [
-        "//base/allocator/partition_allocator:partition_alloc_buildflags",
-        "//base/allocator/partition_allocator:raw_ptr",
-      ]
-    }
-  }
-}
-
 source_set("fxcrt") {
   sources = [
     "autonuller.h",
@@ -93,7 +74,6 @@ source_set("fxcrt") {
     "retain_ptr.h",
     "scoped_set_insertion.h",
     "shared_copy_on_write.h",
-    "small_buffer.h",
     "span_util.h",
     "stl_util.h",
     "string_data_template.cpp",
@@ -101,6 +81,7 @@ source_set("fxcrt") {
     "string_pool_template.h",
     "string_view_template.h",
     "tree_node.h",
+    "unowned_ptr.h",
     "utf16.h",
     "weak_ptr.h",
     "widestring.cpp",
@@ -140,28 +121,22 @@ source_set("fxcrt") {
     "../../third_party:fx_tiff",
     "../../xfa/*",
   ]
-  deps = [ "../../third_party:pdfium_base" ]
+  deps = [
+    "../../third_party:pdfium_base",
+    "../../third_party:pdfium_compiler_specific",
+  ]
   public_deps = [
-    ":unowned_ptr",
     "../../:freetype_common",
     "../../third_party:pdfium_base",
     "//third_party/icu:icuuc",
   ]
   if (pdf_use_partition_alloc) {
     sources += [ "fx_memory_pa.cpp" ]
-    if (pdf_use_partition_alloc_new_location) {
-      deps += [
-        "//base/allocator/partition_allocator/src/partition_alloc",
-        "//base/allocator/partition_allocator/src/partition_alloc:partition_alloc_buildflags",
-        "//base/allocator/partition_allocator/src/partition_alloc:raw_ptr",
-      ]
-    } else {
-      deps += [
-        "//base/allocator/partition_allocator:partition_alloc",
-        "//base/allocator/partition_allocator:partition_alloc_buildflags",
-        "//base/allocator/partition_allocator:raw_ptr",
-      ]
-    }
+    deps += [ "//base/allocator/partition_allocator/src/partition_alloc" ]
+    public_deps += [
+      "//base/allocator/partition_allocator/src/partition_alloc:partition_alloc_buildflags",
+      "//base/allocator/partition_allocator/src/partition_alloc:raw_ptr",
+    ]
   } else {
     sources += [ "fx_memory_malloc.cpp" ]
   }
@@ -242,7 +217,6 @@ pdfium_unittest_source_set("unittests") {
     "retain_ptr_unittest.cpp",
     "scoped_set_insertion_unittest.cpp",
     "shared_copy_on_write_unittest.cpp",
-    "small_buffer_unittest.cpp",
     "span_util_unittest.cpp",
     "string_pool_template_unittest.cpp",
     "tree_node_unittest.cpp",
@@ -262,11 +236,7 @@ pdfium_unittest_source_set("unittests") {
   deps = [ ":unit_test_support" ]
   pdfium_root_dir = "../../"
   if (pdf_use_partition_alloc) {
-    if (pdf_use_partition_alloc_new_location) {
-      deps += [ "//base/allocator/partition_allocator/src/partition_alloc" ]
-    } else {
-      deps += [ "//base/allocator/partition_allocator:partition_alloc" ]
-    }
+    deps += [ "//base/allocator/partition_allocator/src/partition_alloc" ]
   }
   if (pdf_enable_xfa) {
     sources += [ "cfx_memorystream_unittest.cpp" ]

@@ -8,7 +8,7 @@
 #ifndef skgpu_graphite_DawnAsyncWait_DEFINED
 #define skgpu_graphite_DawnAsyncWait_DEFINED
 
-#include "webgpu/webgpu_cpp.h"
+#include "webgpu/webgpu_cpp.h"  // NO_G3_REWRITE
 
 #include <atomic>
 #include <functional>
@@ -30,14 +30,35 @@ public:
 
     // Marks this wait as resolved. Once called, all calls to `yieldAndCheck` and `busyWait` will
     // return true immediately.
-    void signal() { fSignaled.store(true); }
+    void signal() { fSignaled.store(true, std::memory_order_release); }
 
     // Resets this object into its unsignaled state.
-    void reset() { fSignaled.store(false); }
+    void reset() { fSignaled.store(false, std::memory_order_release); }
 
 private:
     wgpu::Device fDevice;
     std::atomic_bool fSignaled;
+};
+
+template <typename T> class DawnAsyncResult {
+public:
+    DawnAsyncResult(const wgpu::Device& device) : fSync(device) {}
+    ~DawnAsyncResult() { fSync.busyWait(); }
+
+    void set(const T& result) {
+        fResult = result;
+        fSync.signal();
+    }
+
+    const T& waitAndGet() const {
+        // If fSync is already signaled, the wait will return immediately.
+        fSync.busyWait();
+        return fResult;
+    }
+
+private:
+    DawnAsyncWait fSync;
+    T fResult;
 };
 
 } // namespace skgpu::graphite

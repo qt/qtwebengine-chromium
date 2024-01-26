@@ -11,6 +11,7 @@
 #include <limits>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <utility>
 
 #include "absl/base/attributes.h"
@@ -5521,7 +5522,7 @@ int64_t QuicFramer::FrameAckTimestampRanges(
                       << ", effective_prev_time:" << *effective_prev_time
                       << ", recv_time:" << receive_timestamp;
         time_delta = time_delta >> receive_timestamps_exponent_;
-        effective_prev_time = effective_prev_time.value() -
+        effective_prev_time = *effective_prev_time -
                               QuicTime::Delta::FromMicroseconds(
                                   time_delta << receive_timestamps_exponent_);
       } else {
@@ -6806,7 +6807,10 @@ void MaybeExtractQuicErrorCode(QuicConnectionCloseFrame* frame) {
   std::vector<absl::string_view> ed = absl::StrSplit(frame->error_details, ':');
   uint64_t extracted_error_code;
   if (ed.size() < 2 || !quiche::QuicheTextUtils::IsAllDigits(ed[0]) ||
-      !absl::SimpleAtoi(ed[0], &extracted_error_code)) {
+      !absl::SimpleAtoi(ed[0], &extracted_error_code) ||
+      extracted_error_code >
+          std::numeric_limits<
+              std::underlying_type<QuicErrorCode>::type>::max()) {
     if (frame->close_type == IETF_QUIC_TRANSPORT_CONNECTION_CLOSE &&
         frame->wire_error_code == NO_IETF_QUIC_ERROR) {
       frame->quic_error_code = QUIC_NO_ERROR;

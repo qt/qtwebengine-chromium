@@ -22,9 +22,10 @@
 #include <utility>
 #include <variant>
 
+#include <vulkan/utility/vk_format_utils.h>
+
 #include "state_tracker/device_memory_state.h"
 #include "state_tracker/image_layout_map.h"
-#include "generated/vk_format_utils.h"
 #include "utils/vk_layer_utils.h"
 
 class ValidationStateTracker;
@@ -285,6 +286,7 @@ class IMAGE_VIEW_STATE : public BASE_NODE {
     const bool metal_imageview_export;
 #endif  // VK_USE_PLATFORM_METAL_EXT
     std::shared_ptr<IMAGE_STATE> image_state;
+    const bool is_depth_sliced;
 
     IMAGE_VIEW_STATE(const std::shared_ptr<IMAGE_STATE> &image_state, VkImageView iv, const VkImageViewCreateInfo *ci,
                      VkFormatFeatureFlags2KHR ff, const VkFilterCubicImageViewImageFormatPropertiesEXT &cubic_props);
@@ -306,10 +308,8 @@ class IMAGE_VIEW_STATE : public BASE_NODE {
 
     void Destroy() override;
 
-    bool IsDepthSliced() const;
+    bool IsDepthSliced() const { return is_depth_sliced; }
 
-    VkOffset3D GetOffset() const;
-    VkExtent3D GetExtent() const;
     uint32_t GetAttachmentLayerCount() const;
 
     bool Invalid() const override { return Destroyed() || !image_state || image_state->Invalid(); }
@@ -405,7 +405,7 @@ class SURFACE_STATE : public BASE_NODE {
 
     VkSurfaceKHR surface() const { return handle_.Cast<VkSurfaceKHR>(); }
     VkPhysicalDeviceSurfaceInfo2KHR GetSurfaceInfo2(const void *surface_info2_pnext = nullptr) const {
-        auto surface_info2 = LvlInitStruct<VkPhysicalDeviceSurfaceInfo2KHR>();
+        VkPhysicalDeviceSurfaceInfo2KHR surface_info2 = vku::InitStructHelper();
         surface_info2.pNext = surface_info2_pnext;
         surface_info2.surface = surface();
         return surface_info2;

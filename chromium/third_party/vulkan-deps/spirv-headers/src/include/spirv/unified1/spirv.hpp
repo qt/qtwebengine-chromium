@@ -72,6 +72,7 @@ enum SourceLanguage {
     SourceLanguageHERO_C = 8,
     SourceLanguageNZSL = 9,
     SourceLanguageWGSL = 10,
+    SourceLanguageSlang = 11,
     SourceLanguageMax = 0x7fffffff,
 };
 
@@ -582,6 +583,9 @@ enum Decoration {
     DecorationMergeINTEL = 5834,
     DecorationBankBitsINTEL = 5835,
     DecorationForcePow2DepthINTEL = 5836,
+    DecorationStridesizeINTEL = 5883,
+    DecorationWordsizeINTEL = 5884,
+    DecorationTrueDualPortINTEL = 5885,
     DecorationBurstCoalesceINTEL = 5899,
     DecorationCacheSizeINTEL = 5900,
     DecorationDontStaticallyCoalesceINTEL = 5901,
@@ -615,6 +619,8 @@ enum Decoration {
     DecorationMMHostInterfaceMaxBurstINTEL = 6181,
     DecorationMMHostInterfaceWaitRequestINTEL = 6182,
     DecorationStableKernelArgumentINTEL = 6183,
+    DecorationCacheControlLoadINTEL = 6442,
+    DecorationCacheControlStoreINTEL = 6443,
     DecorationMax = 0x7fffffff,
 };
 
@@ -745,6 +751,8 @@ enum BuiltIn {
     BuiltInHitKindNV = 5333,
     BuiltInCurrentRayTimeNV = 5334,
     BuiltInHitTriangleVertexPositionsKHR = 5335,
+    BuiltInHitMicroTriangleVertexPositionsNV = 5337,
+    BuiltInHitMicroTriangleVertexBarycentricsNV = 5344,
     BuiltInIncomingRayFlagsKHR = 5351,
     BuiltInIncomingRayFlagsNV = 5351,
     BuiltInRayGeometryIndexKHR = 5352,
@@ -752,6 +760,8 @@ enum BuiltIn {
     BuiltInSMCountNV = 5375,
     BuiltInWarpIDNV = 5376,
     BuiltInSMIDNV = 5377,
+    BuiltInHitKindFrontFacingMicroTriangleNV = 5405,
+    BuiltInHitKindBackFacingMicroTriangleNV = 5406,
     BuiltInCullMaskKHR = 6021,
     BuiltInMax = 0x7fffffff,
 };
@@ -1120,10 +1130,12 @@ enum Capability {
     CapabilityFragmentShaderPixelInterlockEXT = 5378,
     CapabilityDemoteToHelperInvocation = 5379,
     CapabilityDemoteToHelperInvocationEXT = 5379,
+    CapabilityDisplacementMicromapNV = 5380,
     CapabilityRayTracingOpacityMicromapEXT = 5381,
     CapabilityShaderInvocationReorderNV = 5383,
     CapabilityBindlessTextureNV = 5390,
     CapabilityRayQueryPositionFetchKHR = 5391,
+    CapabilityRayTracingDisplacementMicromapNV = 5409,
     CapabilitySubgroupShuffleINTEL = 5568,
     CapabilitySubgroupBufferBlockIOINTEL = 5569,
     CapabilitySubgroupImageBlockIOINTEL = 5570,
@@ -1193,6 +1205,7 @@ enum Capability {
     CapabilityFPGALatencyControlINTEL = 6171,
     CapabilityFPGAArgumentInterfacesINTEL = 6174,
     CapabilityGroupUniformArithmeticKHR = 6400,
+    CapabilityCacheControlsINTEL = 6441,
     CapabilityMax = 0x7fffffff,
 };
 
@@ -1342,6 +1355,23 @@ enum HostAccessQualifier {
     HostAccessQualifierWriteINTEL = 2,
     HostAccessQualifierReadWriteINTEL = 3,
     HostAccessQualifierMax = 0x7fffffff,
+};
+
+enum LoadCacheControl {
+    LoadCacheControlUncachedINTEL = 0,
+    LoadCacheControlCachedINTEL = 1,
+    LoadCacheControlStreamingINTEL = 2,
+    LoadCacheControlInvalidateAfterReadINTEL = 3,
+    LoadCacheControlConstCachedINTEL = 4,
+    LoadCacheControlMax = 0x7fffffff,
+};
+
+enum StoreCacheControl {
+    StoreCacheControlUncachedINTEL = 0,
+    StoreCacheControlWriteThroughINTEL = 1,
+    StoreCacheControlWriteBackINTEL = 2,
+    StoreCacheControlStreamingINTEL = 3,
+    StoreCacheControlMax = 0x7fffffff,
 };
 
 enum Op {
@@ -1785,6 +1815,8 @@ enum Op {
     OpSetMeshOutputsEXT = 5295,
     OpGroupNonUniformPartitionNV = 5296,
     OpWritePackedPrimitiveIndices4x8NV = 5299,
+    OpFetchMicroTriangleVertexPositionNV = 5300,
+    OpFetchMicroTriangleVertexBarycentricNV = 5301,
     OpReportIntersectionKHR = 5334,
     OpReportIntersectionNV = 5334,
     OpIgnoreIntersectionNV = 5335,
@@ -2511,6 +2543,8 @@ inline void HasResultAndType(Op opcode, bool *hasResult, bool *hasResultType) {
     case OpSetMeshOutputsEXT: *hasResult = false; *hasResultType = false; break;
     case OpGroupNonUniformPartitionNV: *hasResult = true; *hasResultType = true; break;
     case OpWritePackedPrimitiveIndices4x8NV: *hasResult = false; *hasResultType = false; break;
+    case OpFetchMicroTriangleVertexPositionNV: *hasResult = true; *hasResultType = true; break;
+    case OpFetchMicroTriangleVertexBarycentricNV: *hasResult = true; *hasResultType = true; break;
     case OpReportIntersectionNV: *hasResult = true; *hasResultType = true; break;
     case OpIgnoreIntersectionNV: *hasResult = false; *hasResultType = false; break;
     case OpTerminateRayNV: *hasResult = false; *hasResultType = false; break;

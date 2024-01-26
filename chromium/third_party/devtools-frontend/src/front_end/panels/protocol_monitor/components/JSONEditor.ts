@@ -65,7 +65,7 @@ interface BaseParameter {
 
 interface ArrayParameter extends BaseParameter {
   type: ParameterType.Array;
-  value: Parameter[];
+  value?: Parameter[];
 }
 
 interface NumberParameter extends BaseParameter {
@@ -224,7 +224,7 @@ export class JSONEditor extends LitElement {
           for (const subParameter of parameter.value) {
             nestedArrayParameters.push(formatParameterValue(subParameter));
           }
-          return nestedArrayParameters.length === 0 ? undefined : nestedArrayParameters;
+          return nestedArrayParameters.length === 0 ? [] : nestedArrayParameters;
         }
         default: {
           return parameter.value;
@@ -498,7 +498,8 @@ export class JSONEditor extends LitElement {
     if (parameter.type === ParameterType.Array) {
       return {
         ...parameter,
-        value: parameter.value?.map(param => this.#populateParameterDefaults(param)) || [],
+        value: parameter?.optional ? undefined :
+                                     parameter.value?.map(param => this.#populateParameterDefaults(param)) || [],
         isCorrectType: true,
       };
     }
@@ -662,7 +663,7 @@ export class JSONEditor extends LitElement {
       optional: type.optional,
       isCorrectType: true,
       typeRef: type.typeRef,
-      value: defaultValueByType.get(type.type),
+      value: type.optional ? undefined : defaultValueByType.get(type.type),
       description: type.description,
     } as Parameter;
   }
@@ -692,7 +693,11 @@ export class JSONEditor extends LitElement {
             type = ParameterType.String;
           }
         }
-
+        // In case the parameter is an optional array, its value will be undefined so before pushing new value inside,
+        // we reset it to empty array
+        if (!parameter.value) {
+          parameter.value = [];
+        }
         parameter.value.push({
           type: type,
           name: String(parameter.value.length),
@@ -744,7 +749,6 @@ export class JSONEditor extends LitElement {
         } else {
           parameter.value = nestedParameters;
         }
-
         break;
       }
       default:
@@ -774,7 +778,7 @@ export class JSONEditor extends LitElement {
         break;
 
       case ParameterType.Array:
-        parameter.value = [];
+        parameter.value = parameter.optional ? undefined : [];
         break;
 
       default:
@@ -926,7 +930,7 @@ export class JSONEditor extends LitElement {
           const hasNoKeys = parameter.isKeyEditable;
           const isCustomEditorDisplayed = isObject && !hasTypeRef;
           const hasOptions = parameter.type === ParameterType.String || parameter.type === ParameterType.Boolean;
-          const canClearParameter = (isArray && !isParamValueUndefined && parameter.value.length !== 0) || (isObject && !isParamValueUndefined);
+          const canClearParameter = (isArray && !isParamValueUndefined && parameter.value?.length !== 0) || (isObject && !isParamValueUndefined);
           const parametersClasses = {
             'optional-parameter': parameter.optional,
             'parameter': true,
@@ -1048,7 +1052,7 @@ export class JSONEditor extends LitElement {
                         title: i18nString(UIStrings.addCustomProperty),
                         iconName: 'plus',
                         onClick: () => this.#handleAddParameter(parameterId),
-                        classMap: { deleteButton: true },
+                        classMap: { 'add-button': true },
                       })}
                     ` : nothing}
 

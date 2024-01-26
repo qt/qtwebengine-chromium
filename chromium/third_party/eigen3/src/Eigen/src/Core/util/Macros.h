@@ -10,6 +10,7 @@
 
 #ifndef EIGEN_MACROS_H
 #define EIGEN_MACROS_H
+// IWYU pragma: private
 #include "../InternalHeaderCheck.h"
 
 //------------------------------------------------------------------------------------------

@@ -20,7 +20,6 @@ import os
 import sys
 import subprocess
 import platform
-import shutil
 import argparse
 
 # Use Ninja for all platforms for performance/simplicity
@@ -74,7 +73,7 @@ def IsWindows(): return 'windows' == platform.system().lower()
 
 #
 # Prepare the Validation Layers for testing
-def BuildVVL(config, cmake_args, build_tests):
+def BuildVVL(config, cmake_args, build_tests, mock_android):
     print("Log CMake version")
     cmake_ver_cmd = 'cmake --version'
     RunShellCmd(cmake_ver_cmd)
@@ -92,6 +91,9 @@ def BuildVVL(config, cmake_args, build_tests):
     if cmake_args:
          cmake_cmd += f' {cmake_args}'
 
+    if mock_android:
+         cmake_cmd += ' -DVVL_MOCK_ANDROID=ON'
+
     RunShellCmd(cmake_cmd)
 
     print("Build VVL")
@@ -101,29 +103,6 @@ def BuildVVL(config, cmake_args, build_tests):
     print("Install VVL")
     install_cmd = f'cmake --install {BUILD_DIR} --prefix {CI_INSTALL_DIR}'
     RunShellCmd(install_cmd)
-
-#
-# Run VVL scripts
-def CheckVVL():
-    vulkan_registry = f'{CI_EXTERNAL_DIR}/Vulkan-Headers/build/install/share/vulkan/registry'
-    if not os.path.exists(vulkan_registry):
-        print(f'Unable to find Vulkan Registry: {vulkan_registry}')
-        sys.exit(1)
-
-    spirv_unified = f'{CI_EXTERNAL_DIR}/SPIRV-Headers/build/install/include/spirv/unified1/'
-    if not os.path.exists(spirv_unified):
-        print(f'Unable to find Spirv Unified: {spirv_unified}')
-        sys.exit(1)
-
-    print("Check Generated Source Code Consistency")
-    gen_check_cmd = f'python scripts/generate_source.py --verify {vulkan_registry} {spirv_unified}'
-    RunShellCmd(gen_check_cmd)
-
-    print('Run vk_validation_stats.py')
-    valid_usage_json = f'{vulkan_registry}/validusage.json'
-    text_file = f'{CI_BUILD_DIR}/vuid_coverage_database.txt'
-    gen_check_cmd = f'python scripts/vk_validation_stats.py {valid_usage_json} -text {text_file}'
-    RunShellCmd(gen_check_cmd)
 
 #
 # Prepare Loader for executing Layer Validation Tests
@@ -156,7 +135,7 @@ def BuildLoader():
 
 #
 # Prepare Mock ICD for use with Layer Validation Tests
-def BuildMockICD():
+def BuildMockICD(mockAndroid):
     SRC_DIR = f'{CI_EXTERNAL_DIR}/Vulkan-Tools'
     BUILD_DIR = f'{SRC_DIR}/build'
 
@@ -168,10 +147,12 @@ def BuildMockICD():
     print("Configure Mock ICD")
     cmake_cmd = f'cmake -S {SRC_DIR} -B {BUILD_DIR} -D CMAKE_BUILD_TYPE=Release '
     cmake_cmd += '-DBUILD_CUBE=NO -DBUILD_VULKANINFO=NO -D INSTALL_ICD=ON -D UPDATE_DEPS=ON'
+    if mockAndroid:
+        cmake_cmd += ' -DBUILD_MOCK_ANDROID_SUPPORT=ON'
     RunShellCmd(cmake_cmd)
 
     print("Build Mock ICD")
-    build_cmd = f'cmake --build {BUILD_DIR}'
+    build_cmd = f'cmake --build {BUILD_DIR} --target VkICD_mock_icd'
     RunShellCmd(build_cmd)
 
     print("Install Mock ICD")
@@ -180,7 +161,7 @@ def BuildMockICD():
 
 #
 # Prepare Profile Layer for use with Layer Validation Tests
-def BuildProfileLayer():
+def BuildProfileLayer(mockAndroid):
     RunShellCmd('pip3 install jsonschema')
 
     SRC_DIR = f'{CI_EXTERNAL_DIR}/Vulkan-Profiles'
@@ -195,6 +176,8 @@ def BuildProfileLayer():
     cmake_cmd = f'cmake -S {SRC_DIR} -B {BUILD_DIR}'
     cmake_cmd += ' -D CMAKE_BUILD_TYPE=Release'
     cmake_cmd += ' -D UPDATE_DEPS=ON'
+    if mockAndroid:
+        cmake_cmd += ' -DBUILD_MOCK_ANDROID_SUPPORT=ON'
     RunShellCmd(cmake_cmd)
 
     print("Build Profile Layer")
@@ -207,7 +190,7 @@ def BuildProfileLayer():
 
 #
 # Run the Layer Validation Tests
-def RunVVLTests():
+def RunVVLTests(args):
     print("Run VVL Tests using Mock ICD")
 
     lvt_env = dict(os.environ)
@@ -255,6 +238,12 @@ def RunVVLTests():
     # These need extra care to prevent a regression in the future.
     failing_tsan_tests += ':PositiveSyncObject.WaitTimelineSemThreadRace'
     failing_tsan_tests += ':PositiveQuery.ResetQueryPoolFromDifferentCB'
+
+    if args.mockAndroid:
+        # TODO - only reason running this subset, is mockAndoid fails any test that does
+        # a manual vkCreateDevice call and need to investigate more why
+        RunShellCmd(lvt_cmd + " --gtest_filter=*AndroidHardwareBuffer.*:*AndroidExternalResolve.*", env=lvt_env)
+        return
 
     RunShellCmd(lvt_cmd + f" --gtest_filter={failing_tsan_tests}", env=lvt_env)
 

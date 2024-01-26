@@ -11,6 +11,7 @@
 #ifndef EIGEN_GEOMETRY_SIMD_H
 #define EIGEN_GEOMETRY_SIMD_H
 
+// IWYU pragma: private
 #include "../InternalHeaderCheck.h"
 
 namespace Eigen { 

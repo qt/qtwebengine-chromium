@@ -39,16 +39,27 @@ GROUP BY
   slice_name;
 
 CREATE PERFETTO TABLE internal_binder_txn_merged AS
-WITH
+WITH maybe_broken_binder_txn AS (
   -- Fetch the broken binder txns first, i.e, the txns that have children slices
-  -- They are definietly broken because synchronous txns are blocked sleeping while
+  -- They may be broken because synchronous txns are typically blocked sleeping while
   -- waiting for a response.
   -- These broken txns will be excluded below in the binder_txn CTE
-  broken_binder_txn AS (
-    SELECT ancestor.id FROM slice
-    JOIN slice ancestor ON ancestor.id = slice.parent_id
+    SELECT ancestor.id
+    FROM slice
+    JOIN slice ancestor
+      ON ancestor.id = slice.parent_id
     WHERE ancestor.name = 'binder transaction'
     GROUP BY ancestor.id
+), nested_binder_txn AS (
+  -- Detect the non-broken cases which are just nested binder txns
+    SELECT slice_out AS id
+    FROM maybe_broken_binder_txn
+    JOIN following_flow(maybe_broken_binder_txn.id)
+  ), broken_binder_txn AS (
+  -- Exclude the nested txns from the 'maybe broken' set
+    SELECT * FROM maybe_broken_binder_txn
+    EXCEPT
+    SELECT * FROM nested_binder_txn
   ),
   -- Adding MATERIALIZED here matters in cases where there are few/no binder
   -- transactions in the trace. Our cost estimation is not good enough to allow
@@ -423,9 +434,9 @@ SELECT *, 0 AS is_sync FROM android_async_binder_metrics_by_txn;
 -- thread -> server_process -> AIDL interface -> AIDL method.
 -- The weights of each node represent the wall execution time in the server_process.
 --
--- @arg upid STRING   Upid of process to generate an outgoing graph for.
--- @ret pprof BYTES   Pprof of outgoing binder txns.
-CREATE PERFETTO FUNCTION ANDROID_BINDER_OUTGOING_GRAPH(upid INT)
+-- @arg upid STRING      Upid of process to generate an outgoing graph for.
+-- @column pprof BYTES   Pprof of outgoing binder txns.
+CREATE PERFETTO FUNCTION android_binder_outgoing_graph(upid INT)
 RETURNS TABLE(pprof BYTES) AS
 WITH threads AS (
   SELECT binder_txn_id, CAT_STACKS(client_thread) AS stack
@@ -453,9 +464,9 @@ WITH threads AS (
 -- client_process -> AIDL interface -> AIDL method.
 -- The weights of each node represent the wall execution time in the server_process.
 --
--- @arg upid STRING   Upid of process to generate an outgoing graph for.
--- @ret pprof BYTES   Pprof of outgoing binder txns.
-CREATE PERFETTO FUNCTION ANDROID_BINDER_INCOMING_GRAPH(upid INT)
+-- @arg upid STRING      Upid of process to generate an outgoing graph for.
+-- @column pprof BYTES   Pprof of outgoing binder txns.
+CREATE PERFETTO FUNCTION android_binder_incoming_graph(upid INT)
 RETURNS TABLE(pprof BYTES) AS
 WITH client_process AS (
   SELECT binder_txn_id, CAT_STACKS(client_process) AS stack
@@ -482,8 +493,8 @@ WITH client_process AS (
 -- @arg max_client_oom_score INT   Matches txns from client_processes less than or equal to the OOM score.
 -- @arg min_server_oom_score INT   Matches txns to server_processes greater than or equal to the OOM score.
 -- @arg max_server_oom_score INT   Matches txns to server_processes less than or equal to the OOM score.
--- @ret pprof BYTES                Pprof of binder txns.
-CREATE PERFETTO FUNCTION ANDROID_BINDER_GRAPH(min_client_oom_score INT, max_client_oom_score INT, min_server_oom_score INT, max_server_oom_score INT)
+-- @column pprof BYTES             Pprof of binder txns.
+CREATE PERFETTO FUNCTION android_binder_graph(min_client_oom_score INT, max_client_oom_score INT, min_server_oom_score INT, max_server_oom_score INT)
 RETURNS TABLE(pprof BYTES) AS
 WITH clients AS (
   SELECT binder_txn_id, CAT_STACKS(client_process) AS stack

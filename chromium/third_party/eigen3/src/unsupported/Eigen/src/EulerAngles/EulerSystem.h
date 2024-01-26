@@ -10,6 +10,7 @@
 #ifndef EIGEN_EULERSYSTEM_H
 #define EIGEN_EULERSYSTEM_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen

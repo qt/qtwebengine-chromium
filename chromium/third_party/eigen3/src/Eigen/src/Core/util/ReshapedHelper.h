@@ -11,6 +11,7 @@
 #ifndef EIGEN_RESHAPED_HELPER_H
 #define EIGEN_RESHAPED_HELPER_H
 
+// IWYU pragma: private
 #include "../InternalHeaderCheck.h"
 
 namespace Eigen {

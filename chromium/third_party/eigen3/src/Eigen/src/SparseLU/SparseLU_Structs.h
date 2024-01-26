@@ -68,6 +68,7 @@
 
 #ifndef EIGEN_LU_STRUCTS
 #define EIGEN_LU_STRUCTS
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

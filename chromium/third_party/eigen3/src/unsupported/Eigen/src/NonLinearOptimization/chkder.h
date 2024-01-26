@@ -1,6 +1,7 @@
 #define chkder_log10e 0.43429448190325182765
 #define chkder_factor 100.
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen { 

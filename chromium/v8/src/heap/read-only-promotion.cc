@@ -18,8 +18,8 @@ namespace internal {
 namespace {
 
 // Convenience aliases:
-using HeapObjectSet =
-    std::unordered_set<HeapObject, Object::Hasher, Object::KeyEqualSafe>;
+using HeapObjectSet = std::unordered_set<Tagged<HeapObject>, Object::Hasher,
+                                         Object::KeyEqualSafe>;
 using HeapObjectMap = std::unordered_map<Tagged<HeapObject>, Tagged<HeapObject>,
                                          Object::Hasher, Object::KeyEqualSafe>;
 bool Contains(const HeapObjectSet& s, Tagged<HeapObject> o) {
@@ -31,7 +31,7 @@ bool Contains(const HeapObjectMap& s, Tagged<HeapObject> o) {
 
 class Committee final {
  public:
-  static std::vector<HeapObject> DeterminePromotees(
+  static std::vector<Tagged<HeapObject>> DeterminePromotees(
       Isolate* isolate, const DisallowGarbageCollection& no_gc,
       const SafepointScope& safepoint_scope) {
     return Committee(isolate).DeterminePromotees(safepoint_scope);
@@ -40,7 +40,7 @@ class Committee final {
  private:
   explicit Committee(Isolate* isolate) : isolate_(isolate) {}
 
-  std::vector<HeapObject> DeterminePromotees(
+  std::vector<Tagged<HeapObject>> DeterminePromotees(
       const SafepointScope& safepoint_scope) {
     DCHECK(promo_accepted_.empty());
     DCHECK(promo_rejected_.empty());
@@ -71,8 +71,8 @@ class Committee final {
     // Return promotees as a sorted list. Note that sorting uses object
     // addresses; the list order is deterministic only if heap layout
     // itself is deterministic (see v8_flags.predictable).
-    std::vector<HeapObject> promotees{promo_accepted_.begin(),
-                                      promo_accepted_.end()};
+    std::vector<Tagged<HeapObject>> promotees{promo_accepted_.begin(),
+                                              promo_accepted_.end()};
     std::sort(promotees.begin(), promotees.end(), Object::Comparer());
 
     return promotees;
@@ -139,8 +139,10 @@ class Committee final {
   }
 #undef PROMO_CANDIDATE_TYPE_LIST
 
-#define DEF_PROMO_CANDIDATE(Type) \
-  static bool IsPromoCandidate##Type(Isolate* isolate, Type o) { return true; }
+#define DEF_PROMO_CANDIDATE(Type)                                        \
+  static bool IsPromoCandidate##Type(Isolate* isolate, Tagged<Type> o) { \
+    return true;                                                         \
+  }
 
   DEF_PROMO_CANDIDATE(AccessCheckInfo)
   DEF_PROMO_CANDIDATE(AccessorInfo)
@@ -262,9 +264,9 @@ class Committee final {
 
 class ReadOnlyPromotionImpl final : public AllStatic {
  public:
-  static void CopyToReadOnlyHeap(Isolate* isolate,
-                                 const std::vector<HeapObject>& promotees,
-                                 HeapObjectMap* moves) {
+  static void CopyToReadOnlyHeap(
+      Isolate* isolate, const std::vector<Tagged<HeapObject>>& promotees,
+      HeapObjectMap* moves) {
     ReadOnlySpace* rospace = isolate->heap()->read_only_space();
     for (Tagged<HeapObject> src : promotees) {
       const int size = src->Size(isolate);
@@ -361,8 +363,8 @@ class ReadOnlyPromotionImpl final : public AllStatic {
     void VisitMapPointer(Tagged<HeapObject> host) final {
       ProcessSlot(host, host->RawMaybeWeakField(HeapObject::kMapOffset));
     }
-    void VisitExternalPointer(Tagged<HeapObject> host, ExternalPointerSlot slot,
-                              ExternalPointerTag tag) final {
+    void VisitExternalPointer(Tagged<HeapObject> host,
+                              ExternalPointerSlot slot) final {
 #ifdef V8_ENABLE_SANDBOX
       auto it = moves_reverse_lookup_.find(host);
       if (it == moves_reverse_lookup_.end()) return;
@@ -372,8 +374,8 @@ class ReadOnlyPromotionImpl final : public AllStatic {
       // table entries, allocate a new entry (in
       // read_only_external_pointer_space) now.
       RecordProcessedSlotIfDebug(slot.address());
-      Address slot_value = slot.load(isolate_, tag);
-      slot.init(isolate_, slot_value, tag);
+      Address slot_value = slot.load(isolate_);
+      slot.init(isolate_, slot_value);
 
       if (V8_UNLIKELY(v8_flags.trace_read_only_promotion_verbose)) {
         LogUpdatedExternalPointerTableEntry(host, slot, slot_value);
@@ -382,45 +384,56 @@ class ReadOnlyPromotionImpl final : public AllStatic {
     }
     void VisitIndirectPointer(Tagged<HeapObject> host, IndirectPointerSlot slot,
                               IndirectPointerMode mode) final {}
-    void VisitIndirectPointerTableEntry(Tagged<HeapObject> host,
-                                        IndirectPointerSlot slot) final {
-#ifdef V8_CODE_POINTER_SANDBOXING
-      // When an object owning an indirect pointer table entry is relocated, it
-      // needs to update the entry to point to its new location. Currently, only
-      // Code objects are referenced through indirect pointers, and they use the
-      // code pointer table.
-      CHECK(IsCode(host));
+    void VisitTrustedPointerTableEntry(Tagged<HeapObject> host,
+                                       IndirectPointerSlot slot) final {
+#ifdef V8_ENABLE_SANDBOX
+      // When an object owning an pointer table entry is relocated, it
+      // needs to update the entry to point to its new location.
 
-      // Due to the way we handle baseline code during serialization (we
-      // manually skip over them), we may encounter such live Code objects in
-      // mutable space during iteration. Do a lookup to make sure we only
-      // update CPT entries for moved objects.
+      // Check if the host object was promoted and moved to RO space. Due to
+      // the way we handle baseline code during serialization (we manually skip
+      // over them), we may for example encounter live Code objects in mutable
+      // space during iteration, which will also be ignored here.
       auto it = moves_reverse_lookup_.find(host);
       if (it == moves_reverse_lookup_.end()) return;
 
-      // If we reach here, `host` is a moved Code object located in RO space.
+      // If we reach here, `host` is a moved object located in RO space.
       CHECK(host.InReadOnlySpace());
       RecordProcessedSlotIfDebug(slot.address());
 
-      Tagged<Code> dead_code = Code::cast(it->second);
-      CHECK(IsCode(dead_code));
-      CHECK(!dead_code.InReadOnlySpace());
+      Tagged<ExposedTrustedObject> dead_object =
+          ExposedTrustedObject::cast(it->second);
+      CHECK(IsExposedTrustedObject(dead_object));
+      CHECK(!dead_object.InReadOnlySpace());
 
-      IndirectPointerHandle handle = slot.Relaxed_LoadHandle();
-      CodePointerTable* cpt = GetProcessWideCodePointerTable();
-      CHECK_EQ(dead_code, Object(cpt->GetCodeObject(handle)));
+      // Currently, only Code objects are RO promotion candidates and are
+      // referenced through indirect pointers. Code objects always use the code
+      // pointer table.
+      if (slot.tag() == kCodeIndirectPointerTag) {
+        CHECK(IsCode(host));
+        CHECK(IsCode(dead_object));
 
-      // The old Code object (in mutable space) is dead. To preserve the 1:1
-      // relation between Code objects and CPT entries, overwrite it immediately
-      // with the filler object.
-      isolate_->heap()->CreateFillerObjectAt(dead_code.address(), Code::kSize);
+        IndirectPointerHandle handle = slot.Relaxed_LoadHandle();
+        CodePointerTable* cpt = GetProcessWideCodePointerTable();
+        CHECK_EQ(dead_object, Tagged<Object>(cpt->GetCodeObject(handle)));
 
-      // Update the CPT entry to point at the moved RO Code object.
-      cpt->SetCodeObject(handle, host.ptr());
+        // Update the table entry to point at the moved RO object.
+        cpt->SetCodeObject(handle, host.ptr());
 
-      if (V8_UNLIKELY(v8_flags.trace_read_only_promotion_verbose)) {
-        LogUpdatedCodePointerTableEntry(host, slot, dead_code);
+        if (V8_UNLIKELY(v8_flags.trace_read_only_promotion_verbose)) {
+          LogUpdatedCodePointerTableEntry(host, slot, Code::cast(dead_object));
+        }
+      } else {
+        // If we ever need to handle objects other than Code here, we would
+        // simply need to use the trusted pointer table for them instead.
+        UNREACHABLE();
       }
+
+      // The old object (in mutable space) is dead. To preserve the 1:1
+      // relation between ExposedTrusted objects and their pointer table
+      // entries, overwrite it immediately with the filler object.
+      isolate_->heap()->CreateFillerObjectAt(dead_object.address(),
+                                             dead_object->Size(isolate_));
 #else
       UNREACHABLE();
 #endif
@@ -431,7 +444,7 @@ class ReadOnlyPromotionImpl final : public AllStatic {
       // We shouldn't have moved any string table contents (which is what
       // OffHeapObjectSlot currently refers to).
       for (OffHeapObjectSlot slot = start; slot < end; slot++) {
-        Object o = slot.load(isolate_);
+        Tagged<Object> o = slot.load(isolate_);
         if (!IsHeapObject(o)) continue;
         CHECK(!Contains(*moves_, HeapObject::cast(o)));
       }
@@ -440,6 +453,9 @@ class ReadOnlyPromotionImpl final : public AllStatic {
    private:
     void ProcessSlot(Root root, FullObjectSlot slot) {
       Tagged<Object> old_slot_value_obj = slot.load(isolate_);
+#ifdef V8_ENABLE_DIRECT_LOCAL
+      if (old_slot_value_obj.ptr() == kTaggedNullAddress) return;
+#endif
       if (!IsHeapObject(old_slot_value_obj)) return;
       Tagged<HeapObject> old_slot_value = HeapObject::cast(old_slot_value_obj);
       auto it = moves_->find(old_slot_value);
@@ -522,7 +538,7 @@ void ReadOnlyPromotion::Promote(Isolate* isolate,
                                 const DisallowGarbageCollection& no_gc) {
   // Visit the mutable heap and determine the set of objects that can be
   // promoted to RO space.
-  std::vector<HeapObject> promotees =
+  std::vector<Tagged<HeapObject>> promotees =
       Committee::DeterminePromotees(isolate, no_gc, safepoint_scope);
   // Physically copy promotee objects to RO space and track all object moves.
   HeapObjectMap moves;

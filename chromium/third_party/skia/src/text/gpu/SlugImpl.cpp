@@ -10,6 +10,7 @@
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
+#include "include/core/SkSerialProcs.h"
 #include "include/private/base/SkAssert.h"
 #include "include/private/chromium/Slug.h"
 #include "src/core/SkDevice.h"
@@ -85,20 +86,19 @@ sk_sp<SlugImpl> SlugImpl::Make(const SkMatrix& viewMatrix,
     const SkMatrix positionMatrix = position_matrix(viewMatrix, glyphRunList.origin());
 
     auto subRuns = gpu::SubRunContainer::MakeInAlloc(glyphRunList,
-                                                positionMatrix,
-                                                drawingPaint,
-                                                strikeDeviceInfo,
-                                                strikeCache,
-                                                &alloc,
-                                                gpu::SubRunContainer::kAddSubRuns,
-                                                "Make Slug");
+                                                     positionMatrix,
+                                                     drawingPaint,
+                                                     strikeDeviceInfo,
+                                                     strikeCache,
+                                                     &alloc,
+                                                     gpu::SubRunContainer::kAddSubRuns,
+                                                     "Make Slug");
 
-    sk_sp<SlugImpl> slug = sk_sp<SlugImpl>(initializer.initialize(
-            std::move(alloc),
-            std::move(subRuns),
-            glyphRunList.sourceBounds(),
-            initialPaint,
-            glyphRunList.origin()));
+    sk_sp<SlugImpl> slug = sk_sp<SlugImpl>(initializer.initialize(std::move(alloc),
+                                                                  std::move(subRuns),
+                                                                  glyphRunList.sourceBounds(),
+                                                                  initialPaint,
+                                                                  glyphRunList.origin()));
 
     // There is nothing to draw here. This is particularly a problem with RSX form blobs where a
     // single space becomes a run with no glyphs.
@@ -107,8 +107,19 @@ sk_sp<SlugImpl> SlugImpl::Make(const SkMatrix& viewMatrix,
     return slug;
 }
 
+void Slug::AddDeserialProcs(SkDeserialProcs* procs, const SkStrikeClient* client) {
+    SkASSERT(procs);
+    procs->fSlugCtx = const_cast<SkStrikeClient*>(client);
+    procs->fSlugProc = [](SkReadBuffer& buffer, void* ctx) -> sk_sp<Slug> {
+        auto client = static_cast<const SkStrikeClient*>(ctx);
+        return SlugImpl::MakeFromBuffer(buffer, client);
+    };
+}
+
+#if !defined(SK_SLUG_DISABLE_LEGACY_DESERIALIZE)
 sk_sp<Slug> SkMakeSlugFromBuffer(SkReadBuffer& buffer, const SkStrikeClient* client) {
     return SlugImpl::MakeFromBuffer(buffer, client);
 }
+#endif
 
 }  // namespace sktext::gpu

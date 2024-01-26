@@ -10,6 +10,7 @@
 #ifndef EIGEN_MATRIX_POWER
 #define EIGEN_MATRIX_POWER
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

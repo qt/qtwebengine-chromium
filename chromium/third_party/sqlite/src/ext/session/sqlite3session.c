@@ -891,6 +891,7 @@ static int sessionPreupdateEqual(
         rc = pSession->hook.xOld(pSession->hook.pCtx, iCol, &pVal);
       }
       assert( rc==SQLITE_OK );
+      (void)rc;                   /* Suppress warning about unused variable */
       if( sqlite3_value_type(pVal)!=eType ) return 0;
 
       /* A SessionChange object never has a NULL value in a PK column */
@@ -3235,15 +3236,19 @@ static int sessionReadRecord(
         }
       }
       if( eType==SQLITE_INTEGER || eType==SQLITE_FLOAT ){
-        sqlite3_int64 v = sessionGetI64(aVal);
-        if( eType==SQLITE_INTEGER ){
-          sqlite3VdbeMemSetInt64(apOut[i], v);
+        if( (pIn->nData-pIn->iNext)<8 ){
+          rc = SQLITE_CORRUPT_BKPT;
         }else{
-          double d;
-          memcpy(&d, &v, 8);
-          sqlite3VdbeMemSetDouble(apOut[i], d);
+          sqlite3_int64 v = sessionGetI64(aVal);
+          if( eType==SQLITE_INTEGER ){
+            sqlite3VdbeMemSetInt64(apOut[i], v);
+          }else{
+            double d;
+            memcpy(&d, &v, 8);
+            sqlite3VdbeMemSetDouble(apOut[i], d);
+          }
+          pIn->iNext += 8;
         }
-        pIn->iNext += 8;
       }
     }
   }

@@ -408,6 +408,9 @@ void HTMLTreeBuilder::ConstructTree(AtomicHTMLToken* token) {
   parser_->tokenizer().SetForceNullCharacterReplacement(
       GetInsertionMode() == kTextMode || in_foreign_content);
   parser_->tokenizer().SetShouldAllowCDATA(in_foreign_content);
+  if (RuntimeEnabledFeatures::DOMPartsAPIEnabled()) {
+    parser_->tokenizer().SetShouldAllowDOMParts(tree_.InParsePartsScope());
+  }
 
   tree_.ExecuteQueuedTasks();
   // We might be detached now.
@@ -444,6 +447,9 @@ void HTMLTreeBuilder::ProcessToken(AtomicHTMLToken* token) {
       break;
     case HTMLToken::kEndOfFile:
       ProcessEndOfFile(token);
+      break;
+    case HTMLToken::kDOMPart:
+      ProcessDOMPart(token);
       break;
   }
 }
@@ -966,6 +972,14 @@ void HTMLTreeBuilder::ProcessStartTagForInBody(AtomicHTMLToken* token) {
     case HTMLTag::kTr:
       ParseError(token);
       break;
+    case HTMLTag::kPermission:
+      if (RuntimeEnabledFeatures::PermissionElementEnabled()) {
+        tree_.ReconstructTheActiveFormattingElements();
+        tree_.InsertSelfClosingHTMLElementDestroyingToken(token);
+        frameset_ok_ = false;
+        break;
+      }
+      [[fallthrough]];
     default:
       if (token->GetName() == mathml_names::kMathTag.LocalName()) {
         tree_.ReconstructTheActiveFormattingElements();
@@ -1564,6 +1578,21 @@ void HTMLTreeBuilder::ProcessStartTag(AtomicHTMLToken* token) {
             ProcessEndTag(&end_optgroup);
           }
           tree_.InsertHTMLElement(token);
+          return;
+        case HTMLTag::kHr:
+          if (!RuntimeEnabledFeatures::SelectHrEnabled()) {
+            break;
+          }
+          if (tree_.CurrentStackItem()->MatchesHTMLTag(HTMLTag::kOption)) {
+            AtomicHTMLToken end_option(HTMLToken::kEndTag, HTMLTag::kOption);
+            ProcessEndTag(&end_option);
+          }
+          if (tree_.CurrentStackItem()->MatchesHTMLTag(HTMLTag::kOptgroup)) {
+            AtomicHTMLToken end_optgroup(HTMLToken::kEndTag,
+                                         HTMLTag::kOptgroup);
+            ProcessEndTag(&end_optgroup);
+          }
+          tree_.InsertSelfClosingHTMLElementDestroyingToken(token);
           return;
         case HTMLTag::kSelect: {
           ParseError(token);
@@ -2506,6 +2535,12 @@ void HTMLTreeBuilder::ProcessComment(AtomicHTMLToken* token) {
   tree_.InsertComment(token);
 }
 
+void HTMLTreeBuilder::ProcessDOMPart(AtomicHTMLToken* token) {
+  DCHECK_EQ(token->GetType(), HTMLToken::kDOMPart);
+  DCHECK(tree_.InParsePartsScope());
+  tree_.InsertDOMPart(token);
+}
+
 void HTMLTreeBuilder::ProcessCharacter(AtomicHTMLToken* token) {
   DCHECK_EQ(token->GetType(), HTMLToken::kCharacter);
   CharacterTokenBuffer buffer(token);
@@ -2957,6 +2992,9 @@ void HTMLTreeBuilder::ProcessTokenInForeignContent(AtomicHTMLToken* token) {
       NOTREACHED();
       break;
     case HTMLToken::DOCTYPE:
+    // TODO(crbug.com/1453291) This needs to be expanded to properly handle
+    // foreign content (e.g. <svg>) inside an element with `parseparts`.
+    case HTMLToken::kDOMPart:
       ParseError(token);
       break;
     case HTMLToken::kStartTag: {

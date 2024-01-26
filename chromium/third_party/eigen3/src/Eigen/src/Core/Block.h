@@ -11,53 +11,55 @@
 #ifndef EIGEN_BLOCK_H
 #define EIGEN_BLOCK_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {
 
 namespace internal {
-template<typename XprType, int BlockRows, int BlockCols, bool InnerPanel>
-struct traits<Block<XprType, BlockRows, BlockCols, InnerPanel> > : traits<XprType>
+template<typename XprType_, int BlockRows, int BlockCols, bool InnerPanel_>
+struct traits<Block<XprType_, BlockRows, BlockCols, InnerPanel_> > : traits<XprType_>
 {
-  typedef typename traits<XprType>::Scalar Scalar;
-  typedef typename traits<XprType>::StorageKind StorageKind;
-  typedef typename traits<XprType>::XprKind XprKind;
-  typedef typename ref_selector<XprType>::type XprTypeNested;
+  typedef typename traits<XprType_>::Scalar Scalar;
+  typedef typename traits<XprType_>::StorageKind StorageKind;
+  typedef typename traits<XprType_>::XprKind XprKind;
+  typedef typename ref_selector<XprType_>::type XprTypeNested;
   typedef std::remove_reference_t<XprTypeNested> XprTypeNested_;
   enum{
-    MatrixRows = traits<XprType>::RowsAtCompileTime,
-    MatrixCols = traits<XprType>::ColsAtCompileTime,
+    MatrixRows = traits<XprType_>::RowsAtCompileTime,
+    MatrixCols = traits<XprType_>::ColsAtCompileTime,
     RowsAtCompileTime = MatrixRows == 0 ? 0 : BlockRows,
     ColsAtCompileTime = MatrixCols == 0 ? 0 : BlockCols,
     MaxRowsAtCompileTime = BlockRows==0 ? 0
                          : RowsAtCompileTime != Dynamic ? int(RowsAtCompileTime)
-                         : int(traits<XprType>::MaxRowsAtCompileTime),
+                         : int(traits<XprType_>::MaxRowsAtCompileTime),
     MaxColsAtCompileTime = BlockCols==0 ? 0
                          : ColsAtCompileTime != Dynamic ? int(ColsAtCompileTime)
-                         : int(traits<XprType>::MaxColsAtCompileTime),
+                         : int(traits<XprType_>::MaxColsAtCompileTime),
 
-    XprTypeIsRowMajor = (int(traits<XprType>::Flags)&RowMajorBit) != 0,
+    XprTypeIsRowMajor = (int(traits<XprType_>::Flags)&RowMajorBit) != 0,
     IsRowMajor = (MaxRowsAtCompileTime==1&&MaxColsAtCompileTime!=1) ? 1
                : (MaxColsAtCompileTime==1&&MaxRowsAtCompileTime!=1) ? 0
                : XprTypeIsRowMajor,
     HasSameStorageOrderAsXprType = (IsRowMajor == XprTypeIsRowMajor),
     InnerSize = IsRowMajor ? int(ColsAtCompileTime) : int(RowsAtCompileTime),
     InnerStrideAtCompileTime = HasSameStorageOrderAsXprType
-                             ? int(inner_stride_at_compile_time<XprType>::ret)
-                             : int(outer_stride_at_compile_time<XprType>::ret),
+                             ? int(inner_stride_at_compile_time<XprType_>::ret)
+                             : int(outer_stride_at_compile_time<XprType_>::ret),
     OuterStrideAtCompileTime = HasSameStorageOrderAsXprType
-                             ? int(outer_stride_at_compile_time<XprType>::ret)
-                             : int(inner_stride_at_compile_time<XprType>::ret),
+                             ? int(outer_stride_at_compile_time<XprType_>::ret)
+                             : int(inner_stride_at_compile_time<XprType_>::ret),
 
     // FIXME, this traits is rather specialized for dense object and it needs to be cleaned further
-    FlagsLvalueBit = is_lvalue<XprType>::value ? LvalueBit : 0,
+    FlagsLvalueBit = is_lvalue<XprType_>::value ? LvalueBit : 0,
     FlagsRowMajorBit = IsRowMajor ? RowMajorBit : 0,
-    Flags = (traits<XprType>::Flags & (DirectAccessBit | (InnerPanel?CompressedAccessBit:0))) | FlagsLvalueBit | FlagsRowMajorBit,
+    Flags = (traits<XprType_>::Flags & (DirectAccessBit | (InnerPanel_?CompressedAccessBit:0))) | FlagsLvalueBit | FlagsRowMajorBit,
     // FIXME DirectAccessBit should not be handled by expressions
     //
     // Alignment is needed by MapBase's assertions
     // We can sefely set it to false here. Internal alignment errors will be detected by an eigen_internal_assert in the respective evaluator
-    Alignment = 0
+    Alignment = 0,
+    InnerPanel = InnerPanel_ ? 1 : 0
   };
 };
 
@@ -84,7 +86,7 @@ template<typename XprType, int BlockRows, int BlockCols, bool InnerPanel, typena
   * type of DenseBase::block(Index,Index,Index,Index) and DenseBase::block<int,int>(Index,Index) and
   * most of the time this is the only way it is used.
   *
-  * However, if you want to directly maniputate block expressions,
+  * However, if you want to directly manipulate block expressions,
   * for instance if you want to write a function returning such an expression, you
   * will need to use this class.
   *
@@ -106,6 +108,7 @@ template<typename XprType, int BlockRows, int BlockCols, bool InnerPanel> class 
   : public BlockImpl<XprType, BlockRows, BlockCols, InnerPanel, typename internal::traits<XprType>::StorageKind>
 {
     typedef BlockImpl<XprType, BlockRows, BlockCols, InnerPanel, typename internal::traits<XprType>::StorageKind> Impl;
+    using BlockHelper = internal::block_xpr_helper<Block>;
   public:
     //typedef typename Impl::Base Base;
     typedef Impl Base;
@@ -148,9 +151,25 @@ template<typename XprType, int BlockRows, int BlockCols, bool InnerPanel> class 
       eigen_assert(startRow >= 0 && blockRows >= 0 && startRow  <= xpr.rows() - blockRows
           && startCol >= 0 && blockCols >= 0 && startCol <= xpr.cols() - blockCols);
     }
+
+    // convert nested blocks (e.g. Block<Block<MatrixType>>) to a simple block expression (Block<MatrixType>)
+
+    using ConstUnwindReturnType = Block<const typename BlockHelper::BaseType, BlockRows, BlockCols, InnerPanel>;
+    using UnwindReturnType = Block<typename BlockHelper::BaseType, BlockRows, BlockCols, InnerPanel>;
+
+    EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE ConstUnwindReturnType unwind() const {
+      return ConstUnwindReturnType(BlockHelper::base(*this), BlockHelper::row(*this, 0), BlockHelper::col(*this, 0),
+                                   this->rows(), this->cols());
+    }
+
+    template <typename T = Block, typename EnableIf = std::enable_if_t<!std::is_const<T>::value>>
+    EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE UnwindReturnType unwind() {
+      return UnwindReturnType(BlockHelper::base(*this), BlockHelper::row(*this, 0), BlockHelper::col(*this, 0),
+                              this->rows(), this->cols());
+    }
 };
 
-// The generic default implementation for dense block simplu forward to the internal::BlockImpl_dense
+// The generic default implementation for dense block simply forward to the internal::BlockImpl_dense
 // that must be specialized for direct and non-direct access...
 template<typename XprType, int BlockRows, int BlockCols, bool InnerPanel>
 class BlockImpl<XprType, BlockRows, BlockCols, InnerPanel, Dense>

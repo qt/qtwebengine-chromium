@@ -89,6 +89,10 @@ const nodeUIsByNode = new WeakMap<SDK.DOMModel.DOMNode, NodeUI>();
 
 const playbackRates = new WeakMap<HTMLElement, number>();
 
+const MIN_TIMELINE_CONTROLS_WIDTH = 120;
+const DEFAULT_TIMELINE_CONTROLS_WIDTH = 150;
+const MAX_TIMELINE_CONTROLS_WIDTH = 720;
+
 let animationTimelineInstance: AnimationTimeline;
 
 export class AnimationTimeline extends UI.Widget.VBox implements SDK.TargetManager.SDKModelObserver<AnimationModel> {
@@ -119,22 +123,26 @@ export class AnimationTimeline extends UI.Widget.VBox implements SDK.TargetManag
   #controlState?: ControlState;
   #redrawing?: boolean;
   #cachedTimelineWidth?: number;
-  #cachedTimelineHeight?: number;
   #scrubberPlayer?: Animation;
   #gridOffsetLeft?: number;
   #originalScrubberTime?: number|null;
+  #animationGroupPausedBeforeScrub: boolean;
   #originalMousePosition?: number;
+  #timelineControlsResizer: HTMLElement;
+  #gridHeader!: HTMLElement;
 
   private constructor() {
     super(true);
 
     this.element.classList.add('animations-timeline');
 
+    this.#timelineControlsResizer = this.contentElement.createChild('div', 'timeline-controls-resizer');
     this.#gridWrapper = this.contentElement.createChild('div', 'grid-overflow-wrapper');
     this.#grid = UI.UIUtils.createSVGChild(this.#gridWrapper, 'svg', 'animation-timeline-grid');
 
     this.#playbackRate = 1;
     this.#allPaused = false;
+    this.#animationGroupPausedBeforeScrub = false;
     this.createHeader();
     this.#animationsContainer = this.contentElement.createChild('div', 'animation-timeline-rows');
     const timelineHint = this.contentElement.createChild('div', 'animation-timeline-rows-hint');
@@ -142,16 +150,21 @@ export class AnimationTimeline extends UI.Widget.VBox implements SDK.TargetManag
 
     /** @const */ this.#defaultDuration = 100;
     this.#durationInternal = this.#defaultDuration;
-    /** @const */ this.#timelineControlsWidth = 150;
     this.#nodesMap = new Map();
     this.#uiAnimations = [];
     this.#groupBuffer = [];
     this.#previewMap = new Map();
     this.#animationsMap = new Map();
+
+    this.#timelineControlsWidth = DEFAULT_TIMELINE_CONTROLS_WIDTH;
+    this.element.style.setProperty('--timeline-controls-width', `${this.#timelineControlsWidth}px`);
+
     SDK.TargetManager.TargetManager.instance().addModelListener(
         SDK.DOMModel.DOMModel, SDK.DOMModel.Events.NodeRemoved, this.nodeRemoved, this, {scoped: true});
     SDK.TargetManager.TargetManager.instance().observeModels(AnimationModel, this, {scoped: true});
     UI.Context.Context.instance().addFlavorChangeListener(SDK.DOMModel.DOMNode, this.nodeChanged, this);
+
+    this.#setupTimelineControlsResizer();
   }
 
   static instance(opts?: {forceNew: boolean}): AnimationTimeline {
@@ -159,6 +172,32 @@ export class AnimationTimeline extends UI.Widget.VBox implements SDK.TargetManag
       animationTimelineInstance = new AnimationTimeline();
     }
     return animationTimelineInstance;
+  }
+
+  #setupTimelineControlsResizer(): void {
+    let resizeOriginX: number|undefined = undefined;
+    UI.UIUtils.installDragHandle(
+        this.#timelineControlsResizer,
+        (ev: MouseEvent) => {
+          resizeOriginX = ev.clientX;
+          return true;
+        },
+        (ev: MouseEvent) => {
+          if (resizeOriginX === undefined) {
+            return;
+          }
+
+          const newWidth = this.#timelineControlsWidth + ev.clientX - resizeOriginX;
+          this.#timelineControlsWidth =
+              Math.min(Math.max(newWidth, MIN_TIMELINE_CONTROLS_WIDTH), MAX_TIMELINE_CONTROLS_WIDTH);
+          resizeOriginX = ev.clientX;
+          this.element.style.setProperty('--timeline-controls-width', this.#timelineControlsWidth + 'px');
+          this.onResize();
+        },
+        () => {
+          resizeOriginX = undefined;
+        },
+        'ew-resize');
   }
 
   get previewMap(): Map<AnimationGroup, AnimationGroupPreviewUI> {
@@ -281,17 +320,12 @@ export class AnimationTimeline extends UI.Widget.VBox implements SDK.TargetManag
     this.#controlButton.addEventListener(UI.Toolbar.ToolbarButton.Events.Click, this.controlButtonToggle.bind(this));
     toolbar.appendToolbarItem(this.#controlButton);
 
-    const gridHeader = container.createChild('div', 'animation-grid-header');
+    this.#gridHeader = container.createChild('div', 'animation-grid-header');
     UI.UIUtils.installDragHandle(
-        gridHeader, this.repositionScrubber.bind(this), this.scrubberDragMove.bind(this),
-        this.scrubberDragEnd.bind(this), 'text');
+        this.#gridHeader, this.repositionScrubber.bind(this), this.scrubberDragMove.bind(this),
+        this.scrubberDragEnd.bind(this), null);
     this.#gridWrapper.appendChild(this.createScrubber());
 
-    if (this.#timelineScrubberLine) {
-      UI.UIUtils.installDragHandle(
-          this.#timelineScrubberLine, this.scrubberDragStart.bind(this), this.scrubberDragMove.bind(this),
-          this.scrubberDragEnd.bind(this), 'col-resize');
-    }
     this.#currentTime.textContent = '';
 
     return container;
@@ -493,6 +527,7 @@ export class AnimationTimeline extends UI.Widget.VBox implements SDK.TargetManag
     this.#animationsContainer.removeChildren();
     this.#durationInternal = this.#defaultDuration;
     this.#timelineScrubber.classList.add('hidden');
+    this.#gridHeader.classList.remove('has-selected-group');
     this.#selectedGroup = null;
     if (this.#scrubberPlayer) {
       this.#scrubberPlayer.cancel();
@@ -662,6 +697,7 @@ export class AnimationTimeline extends UI.Widget.VBox implements SDK.TargetManag
     }
     this.scheduleRedraw();
     this.#timelineScrubber.classList.remove('hidden');
+    this.#gridHeader.classList.add('has-selected-group');
     this.togglePause(false);
     this.replay();
   }
@@ -699,14 +735,6 @@ export class AnimationTimeline extends UI.Widget.VBox implements SDK.TargetManag
 
   private renderGrid(): void {
     /** @const */ const gridSize = 250;
-    const gridWidth = (this.width() + 10).toString();
-    const gridHeight = ((this.#cachedTimelineHeight || 0) + 30).toString();
-
-    this.#gridWrapper.style.width = gridWidth + 'px';
-    this.#gridWrapper.style.height = gridHeight.toString() + 'px';
-    this.#grid.setAttribute('width', gridWidth);
-    this.#grid.setAttribute('height', gridHeight.toString());
-    this.#grid.setAttribute('shape-rendering', 'crispEdges');
     this.#grid.removeChildren();
     let lastDraw: number|undefined = undefined;
     for (let time = 0; time < this.duration(); time += gridSize) {
@@ -757,7 +785,6 @@ export class AnimationTimeline extends UI.Widget.VBox implements SDK.TargetManag
 
   override onResize(): void {
     this.#cachedTimelineWidth = Math.max(0, this.#animationsContainer.offsetWidth - this.#timelineControlsWidth) || 0;
-    this.#cachedTimelineHeight = this.#animationsContainer.offsetHeight;
     this.scheduleRedraw();
     if (this.#scrubberPlayer) {
       this.syncScrubber();
@@ -767,19 +794,6 @@ export class AnimationTimeline extends UI.Widget.VBox implements SDK.TargetManag
 
   width(): number {
     return this.#cachedTimelineWidth || 0;
-  }
-
-  private resizeWindow(animation: AnimationImpl): boolean {
-    let resized = false;
-
-    // This shows at most 3 iterations
-    const duration = animation.source().duration() * Math.min(2, animation.source().iterations());
-    const requiredDuration = animation.source().delay() + duration + animation.source().endDelay();
-    if (requiredDuration > this.#durationInternal) {
-      resized = true;
-      this.#durationInternal = requiredDuration + 200;
-    }
-    return resized;
   }
 
   private syncScrubber(): void {
@@ -831,6 +845,10 @@ export class AnimationTimeline extends UI.Widget.VBox implements SDK.TargetManag
       this.#gridOffsetLeft = this.#grid.getBoundingClientRect().left + 10;
     }
 
+    const currentTime = this.#scrubberPlayer?.currentTime;
+    this.#animationGroupPausedBeforeScrub =
+        this.#selectedGroup.paused() || typeof currentTime === 'number' && currentTime >= this.duration();
+
     const {x} = (event as any);  // eslint-disable-line @typescript-eslint/no-explicit-any
     const seekTime = Math.max(0, x - this.#gridOffsetLeft) / this.pixelMsRatio();
     this.#selectedGroup.seekTo(seekTime);
@@ -840,23 +858,6 @@ export class AnimationTimeline extends UI.Widget.VBox implements SDK.TargetManag
     // Interface with scrubber drag.
     this.#originalScrubberTime = seekTime;
     this.#originalMousePosition = x;
-    return true;
-  }
-
-  private scrubberDragStart(event: Event): boolean {
-    if (!this.#scrubberPlayer || !this.#selectedGroup) {
-      return false;
-    }
-
-    this.#originalScrubberTime =
-        typeof this.#scrubberPlayer.currentTime === 'number' ? this.#scrubberPlayer.currentTime : null;
-    this.#timelineScrubber.classList.remove('animation-timeline-end');
-    this.#scrubberPlayer.pause();
-
-    const {x} = (event as any);  // eslint-disable-line @typescript-eslint/no-explicit-any
-    this.#originalMousePosition = x;
-
-    this.togglePause(true);
     return true;
   }
 
@@ -887,6 +888,10 @@ export class AnimationTimeline extends UI.Widget.VBox implements SDK.TargetManag
     }
     Host.userMetrics.actionTaken(Host.UserMetrics.Action.AnimationGroupScrubbed);
     this.#currentTime.window().requestAnimationFrame(this.updateScrubber.bind(this));
+
+    if (!this.#animationGroupPausedBeforeScrub) {
+      this.togglePause(false);
+    }
   }
 }
 

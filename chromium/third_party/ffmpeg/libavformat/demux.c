@@ -36,6 +36,7 @@
 
 #include "libavcodec/avcodec.h"
 #include "libavcodec/bsf.h"
+#include "libavcodec/codec_desc.h"
 #include "libavcodec/internal.h"
 #include "libavcodec/packet_internal.h"
 #include "libavcodec/raw.h"
@@ -1199,7 +1200,7 @@ static int parse_packet(AVFormatContext *s, AVPacket *pkt,
                                      st->time_base,
                                      AV_ROUND_DOWN);
             }
-        } else if ((s->iformat->flags & AVFMT_NOTIMESTAMPS) && st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+        } else if (st->codecpar->codec_id == AV_CODEC_ID_GIF) {
             if (st->time_base.num > 0 && st->time_base.den > 0 &&
                 sti->parser->duration) {
                 out_pkt->duration = sti->parser->duration;
@@ -2532,7 +2533,7 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
             if (codec && !avctx->codec)
                 if (avcodec_open2(avctx, codec, options ? &options[i] : &thread_opt) < 0)
                     av_log(ic, AV_LOG_WARNING,
-                           "Failed to open codec in %s\n",__FUNCTION__);
+                           "Failed to open codec in %s\n", __func__);
         }
         if (!options)
             av_dict_free(&thread_opt);
@@ -2789,7 +2790,7 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
                         av_dict_set(&opts, "codec_whitelist", ic->codec_whitelist, 0);
                     if (avcodec_open2(avctx, codec, (options && stream_index < orig_nb_streams) ? &options[stream_index] : &opts) < 0)
                         av_log(ic, AV_LOG_WARNING,
-                               "Failed to open codec in %s\n",__FUNCTION__);
+                               "Failed to open codec in %s\n", __func__);
                     av_dict_free(&opts);
                 }
             }
@@ -2973,6 +2974,23 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
             ret = add_coded_side_data(st, sti->avctx);
             if (ret < 0)
                 goto find_stream_info_err;
+
+            if (sti->avctx->rc_buffer_size > 0 || sti->avctx->rc_max_rate > 0 ||
+                sti->avctx->rc_min_rate) {
+                size_t cpb_size;
+                AVCPBProperties *props = av_cpb_properties_alloc(&cpb_size);
+                if (props) {
+                    if (sti->avctx->rc_buffer_size > 0)
+                        props->buffer_size = sti->avctx->rc_buffer_size;
+                    if (sti->avctx->rc_min_rate > 0)
+                        props->min_bitrate = sti->avctx->rc_min_rate;
+                    if (sti->avctx->rc_max_rate > 0)
+                        props->max_bitrate = sti->avctx->rc_max_rate;
+                    if (av_stream_add_side_data(st, AV_PKT_DATA_CPB_PROPERTIES,
+                                                (uint8_t *)props, cpb_size))
+                        av_free(props);
+                }
+            }
         }
 
         sti->avctx_inited = 0;

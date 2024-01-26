@@ -10,6 +10,7 @@
 #ifndef EIGEN_PASTIXSUPPORT_H
 #define EIGEN_PASTIXSUPPORT_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen { 

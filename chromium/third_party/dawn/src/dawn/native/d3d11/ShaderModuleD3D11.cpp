@@ -1,16 +1,29 @@
-// Copyright 2023 The Dawn Authors
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/d3d11/ShaderModuleD3D11.h"
 
@@ -64,10 +77,11 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     SingleShaderStage stage,
     const PipelineLayout* layout,
     uint32_t compileFlags,
-    const std::bitset<kMaxInterStageShaderVariables>* usedInterstageVariables) {
+    const std::optional<dawn::native::d3d::InterStageShaderVariablesMask>&
+        usedInterstageVariables) {
     Device* device = ToBackend(GetDevice());
     TRACE_EVENT0(device->GetPlatform(), General, "ShaderModuleD3D11::Compile");
-    ASSERT(!IsError());
+    DAWN_ASSERT(!IsError());
 
     ScopedTintICEHandler scopedICEHandler(device);
     const EntryPointMetadata& entryPoint = GetEntryPoint(programmableStage.entryPoint);
@@ -80,7 +94,7 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     req.hlsl.disableWorkgroupInit = device->IsToggleEnabled(Toggle::DisableWorkgroupInit);
     req.hlsl.dumpShaders = device->IsToggleEnabled(Toggle::DumpShaders);
 
-    if (usedInterstageVariables) {
+    if (usedInterstageVariables.has_value()) {
         req.hlsl.interstageLocations = *usedInterstageVariables;
     }
 
@@ -91,7 +105,7 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     req.bytecode.compiler = d3d::Compiler::FXC;
     req.bytecode.d3dCompile = device->GetFunctions()->d3dCompile;
     req.bytecode.compilerVersion = D3D_COMPILER_VERSION;
-    ASSERT(device->GetDeviceInfo().shaderModel == 50);
+    DAWN_ASSERT(device->GetDeviceInfo().shaderModel == 50);
     switch (stage) {
         case SingleShaderStage::Vertex:
             req.bytecode.fxcShaderProfile = "vs_5_0";
@@ -105,10 +119,6 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     }
 
     tint::BindingRemapperOptions bindingRemapper;
-    // D3D11 registers like `t3` and `c3` have the same bindingOffset number in
-    // the remapping but should not be considered a collision because they have
-    // different types.
-    bindingRemapper.allow_collisions = true;
 
     const BindingInfoArray& moduleBindingInfo = entryPoint.bindings;
 
@@ -196,7 +206,7 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     }();
 
     if (device->IsToggleEnabled(Toggle::DumpShaders)) {
-        d3d::DumpCompiledShader(device, *compiledShader, compileFlags);
+        d3d::DumpFXCCompiledShader(device, *compiledShader, compileFlags);
     }
 
     if (compileError.IsError()) {

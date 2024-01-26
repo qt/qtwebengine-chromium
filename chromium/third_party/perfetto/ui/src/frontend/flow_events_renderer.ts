@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {time} from '../common/time';
+import {time} from '../base/time';
+import {pluginManager} from '../common/plugins';
+import {TrackState} from '../common/state';
 
 import {TRACK_SHELL_WIDTH} from './css_constants';
 import {ALL_CATEGORIES, getFlowCategories} from './flow_events_panel';
@@ -51,20 +53,17 @@ interface TrackGroupPanelInfo {
   height: number;
 }
 
-function hasTrackId(obj: {}): obj is {trackId: number} {
-  return (obj as {trackId?: number}).trackId !== undefined;
-}
-
-function hasManyTrackIds(obj: {}): obj is {trackIds: number[]} {
-  return (obj as {trackIds?: number}).trackIds !== undefined;
-}
-
-function hasId(obj: {}): obj is {id: number} {
-  return (obj as {id?: number}).id !== undefined;
+function hasTrackKey(obj: {}): obj is {trackKey: number} {
+  return (obj as {trackKey?: number}).trackKey !== undefined;
 }
 
 function hasTrackGroupId(obj: {}): obj is {trackGroupId: string} {
   return (obj as {trackGroupId?: string}).trackGroupId !== undefined;
+}
+
+function getTrackIds(track: TrackState): number[] {
+  const trackDesc = pluginManager.resolveTrackInfo(track.uri);
+  return trackDesc?.trackIds ?? [];
 }
 
 export class FlowEventsRendererArgs {
@@ -77,15 +76,20 @@ export class FlowEventsRendererArgs {
   }
 
   registerPanel(panel: PanelVNode, yStart: number, height: number) {
-    if (panel.state instanceof TrackPanel && hasId(panel.attrs)) {
-      const config = globals.state.tracks[panel.attrs.id].config;
-      if (hasTrackId(config)) {
-        this.trackIdToTrackPanel.set(
-            config.trackId, {panel: panel.state, yStart});
+    if (panel.state instanceof TrackPanel && hasTrackKey(panel.attrs)) {
+      const track = globals.state.tracks[panel.attrs.trackKey];
+      for (const trackId of getTrackIds(track)) {
+        this.trackIdToTrackPanel.set(trackId, {panel: panel.state, yStart});
       }
-      if (hasManyTrackIds(config)) {
-        for (const trackId of config.trackIds) {
-          this.trackIdToTrackPanel.set(trackId, {panel: panel.state, yStart});
+
+      // Register new "plugin track" ids
+      const trackState = globals.state.tracks[panel.attrs.trackKey];
+      if (trackState.uri) {
+        const trackInfo = pluginManager.resolveTrackInfo(trackState.uri);
+        if (trackInfo?.trackIds) {
+          for (const trackId of trackInfo.trackIds) {
+            this.trackIdToTrackPanel.set(trackId, {panel: panel.state, yStart});
+          }
         }
       }
     } else if (
@@ -99,8 +103,8 @@ export class FlowEventsRendererArgs {
 
 export class FlowEventsRenderer {
   private getTrackGroupIdByTrackId(trackId: number): string|undefined {
-    const uiTrackId = globals.state.uiTrackIdByTraceTrackId[trackId];
-    return uiTrackId ? globals.state.tracks[uiTrackId].trackGroup : undefined;
+    const trackKey = globals.state.trackKeyByTrackId[trackId];
+    return trackKey ? globals.state.tracks[trackKey].trackGroup : undefined;
   }
 
   private getTrackGroupYCoordinate(

@@ -48,21 +48,20 @@ static ShaderInfo compile_shader_module(const DawnSharedContext* sharedContext,
         }
         info.fEntryPoint = std::move(nativeShader.fEntryPoint);
     } else {
-        // TODO(skia:40044196) Compile to WGSL when SkSL supports it
-        std::string spirv;
+        std::string wgsl;
         SkSL::Program::Interface interface;
         SkSL::ProgramSettings settings;
 
         SkSL::Compiler compiler(caps->shaderCaps());
         std::string sksl = BuildComputeSkSL(caps, step);
-        if (SkSLToSPIRV(&compiler,
-                        sksl,
-                        SkSL::ProgramKind::kCompute,
-                        settings,
-                        &spirv,
-                        &interface,
-                        errorHandler)) {
-            if (!DawnCompileSPIRVShaderModule(sharedContext, spirv, &info.fModule, errorHandler)) {
+        if (SkSLToWGSL(&compiler,
+                       sksl,
+                       SkSL::ProgramKind::kCompute,
+                       settings,
+                       &wgsl,
+                       &interface,
+                       errorHandler)) {
+            if (!DawnCompileWGSLShaderModule(sharedContext, wgsl, &info.fModule, errorHandler)) {
                 return {};
             }
             info.fEntryPoint = "main";
@@ -180,12 +179,16 @@ sk_sp<DawnComputePipeline> DawnComputePipeline::Make(const DawnSharedContext* sh
         return nullptr;
     }
 
-    return sk_sp<DawnComputePipeline>(new DawnComputePipeline(sharedContext, std::move(pipeline)));
+    return sk_sp<DawnComputePipeline>(new DawnComputePipeline(
+            sharedContext, std::move(pipeline), std::move(bindGroupLayout)));
 }
 
 DawnComputePipeline::DawnComputePipeline(const SharedContext* sharedContext,
-                                         wgpu::ComputePipeline pso)
-        : ComputePipeline(sharedContext), fPipeline(std::move(pso)) {}
+                                         wgpu::ComputePipeline pso,
+                                         wgpu::BindGroupLayout groupLayout)
+        : ComputePipeline(sharedContext)
+        , fPipeline(std::move(pso))
+        , fGroupLayout(std::move(groupLayout)) {}
 
 void DawnComputePipeline::freeGpuData() { fPipeline = nullptr; }
 

@@ -10,6 +10,7 @@
 #ifndef EIGEN_MISC_IMAGE_H
 #define EIGEN_MISC_IMAGE_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen { 

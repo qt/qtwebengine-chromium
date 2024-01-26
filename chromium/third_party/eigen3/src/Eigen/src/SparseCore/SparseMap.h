@@ -10,6 +10,7 @@
 #ifndef EIGEN_SPARSE_MAP_H
 #define EIGEN_SPARSE_MAP_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

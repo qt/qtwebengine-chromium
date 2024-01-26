@@ -22,6 +22,7 @@
 #endif
 
 #ifdef SK_VULKAN
+#include "include/gpu/vk/VulkanTypes.h"
 #include "include/private/gpu/vk/SkiaVulkan.h"
 #endif
 
@@ -60,9 +61,9 @@ public:
                    WGPUTextureView textureView);
 #endif
 #ifdef SK_METAL
-    // The BackendTexture will not call retain or release on the passed in MtlHandle. Thus the
-    // client must keep the MtlHandle valid until they are no longer using the BackendTexture.
-    BackendTexture(SkISize dimensions, MtlHandle mtlTexture);
+    // The BackendTexture will not call retain or release on the passed in CFTypeRef. Thus the
+    // client must keep the CFTypeRef valid until they are no longer using the BackendTexture.
+    BackendTexture(SkISize dimensions, CFTypeRef mtlTexture);
 #endif
 
 #ifdef SK_VULKAN
@@ -70,7 +71,8 @@ public:
                    const VulkanTextureInfo&,
                    VkImageLayout,
                    uint32_t queueFamilyIndex,
-                   VkImage);
+                   VkImage,
+                   VulkanAlloc);
 #endif
 
     BackendTexture(const BackendTexture&);
@@ -101,13 +103,14 @@ public:
     WGPUTextureView getDawnTextureViewPtr() const;
 #endif
 #ifdef SK_METAL
-    MtlHandle getMtlTexture() const;
+    CFTypeRef getMtlTexture() const;
 #endif
 
 #ifdef SK_VULKAN
     VkImage getVkImage() const;
     VkImageLayout getVkImageLayout() const;
     uint32_t getVkQueueFamilyIndex() const;
+    const VulkanAlloc* getMemoryAlloc() const;
 #endif
 
 private:
@@ -119,6 +122,13 @@ private:
 
     sk_sp<MutableTextureStateRef> fMutableState;
 
+#ifdef SK_VULKAN
+    // fMemoryAlloc == VulkanAlloc() if the client has already created their own VkImage and
+    // will destroy it themselves as opposed to having Skia create/destroy it via
+    // Recorder::createBackendTexture and Context::deleteBackendTexture.
+    VulkanAlloc fMemoryAlloc = VulkanAlloc();
+#endif
+
     union {
 #ifdef SK_DAWN
         struct {
@@ -127,10 +137,10 @@ private:
         };
 #endif
 #ifdef SK_METAL
-        MtlHandle fMtlTexture;
+        CFTypeRef fMtlTexture;
 #endif
 #ifdef SK_VULKAN
-        VkImage fVkImage;
+        VkImage fVkImage = VK_NULL_HANDLE;
 #endif
         void* fEnsureUnionNonEmpty;
     };

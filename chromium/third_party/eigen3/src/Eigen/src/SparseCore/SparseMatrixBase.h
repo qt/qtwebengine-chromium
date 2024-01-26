@@ -10,6 +10,7 @@
 #ifndef EIGEN_SPARSEMATRIXBASE_H
 #define EIGEN_SPARSEMATRIXBASE_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen { 
@@ -159,11 +160,11 @@ template<typename Derived> class SparseMatrixBase
 #define EIGEN_DOC_BLOCK_ADDONS_NOT_INNER_PANEL
 #define EIGEN_DOC_BLOCK_ADDONS_INNER_PANEL_IF(COND)
 #endif
-#   include "../plugins/CommonCwiseUnaryOps.h"
-#   include "../plugins/CommonCwiseBinaryOps.h"
-#   include "../plugins/MatrixCwiseUnaryOps.h"
-#   include "../plugins/MatrixCwiseBinaryOps.h"
-#   include "../plugins/BlockMethods.h"
+#   include "../plugins/CommonCwiseUnaryOps.inc"
+#   include "../plugins/CommonCwiseBinaryOps.inc"
+#   include "../plugins/MatrixCwiseUnaryOps.inc"
+#   include "../plugins/MatrixCwiseBinaryOps.inc"
+#   include "../plugins/BlockMethods.inc"
 #   ifdef EIGEN_SPARSEMATRIXBASE_PLUGIN
 #     include EIGEN_SPARSEMATRIXBASE_PLUGIN
 #   endif

@@ -22,6 +22,7 @@ skia_filegroup(
 skia_filegroup(
     name = "empty_fontmgr_hdrs",
     srcs = ["SkFontMgr_empty.h"],
+    visibility = ["//src/ports:__pkg__"],
 )
 
 skia_filegroup(
@@ -74,4 +75,10 @@ skia_filegroup(
         "//conditions:default": [],
     }),
     visibility = ["//include:__pkg__"],
+)
+
+skia_filegroup(
+    name = "core_hdrs",
+    srcs = ["SkImageGeneratorCG.h"],
+    visibility = ["//src/core:__pkg__"],
 )

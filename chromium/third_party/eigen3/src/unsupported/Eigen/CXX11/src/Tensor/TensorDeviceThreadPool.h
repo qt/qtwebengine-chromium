@@ -10,6 +10,7 @@
 #if defined(EIGEN_USE_THREADS) && !defined(EIGEN_CXX11_TENSOR_TENSOR_DEVICE_THREAD_POOL_H)
 #define EIGEN_CXX11_TENSOR_TENSOR_DEVICE_THREAD_POOL_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {
@@ -222,7 +223,7 @@ struct ThreadPoolDevice {
                                                   Index lastIdx) {
       while (lastIdx - firstIdx > block.size) {
         // Split into halves and schedule the second half on a different thread.
-        const Index midIdx = firstIdx + divup((lastIdx - firstIdx) / 2, block.size) * block.size;
+        const Index midIdx = firstIdx + numext::div_ceil((lastIdx - firstIdx) / 2, block.size) * block.size;
         pool_->Schedule([=, &handleRange]() { handleRange(midIdx, lastIdx); });
         lastIdx = midIdx;
       }
@@ -281,7 +282,7 @@ struct ThreadPoolDevice {
     ctx->handle_range = [this, ctx, block](Index firstIdx, Index lastIdx) {
       while (lastIdx - firstIdx > block.size) {
         // Split into halves and schedule the second half on a different thread.
-        const Index midIdx = firstIdx + divup((lastIdx - firstIdx) / 2, block.size) * block.size;
+        const Index midIdx = firstIdx + numext::div_ceil((lastIdx - firstIdx) / 2, block.size) * block.size;
         pool_->Schedule(
             [ctx, midIdx, lastIdx]() { ctx->handle_range(midIdx, lastIdx); });
         lastIdx = midIdx;
@@ -356,7 +357,7 @@ struct ThreadPoolDevice {
     const Index max_oversharding_factor = 4;
     Index block_size = numext::mini(
         n, numext::maxi<Index>(
-               divup<Index>(n, max_oversharding_factor * numThreads()),
+               numext::div_ceil<Index>(n, max_oversharding_factor * numThreads()),
                block_size_f));
     const Index max_block_size = numext::mini(n, 2 * block_size);
 
@@ -366,13 +367,13 @@ struct ThreadPoolDevice {
       block_size = numext::mini(n, new_block_size);
     }
 
-    Index block_count = divup(n, block_size);
+    Index block_count = numext::div_ceil(n, block_size);
 
     // Calculate parallel efficiency as fraction of total CPU time used for
     // computations:
     double max_efficiency =
         static_cast<double>(block_count) /
-        (divup<int>(block_count, numThreads()) * numThreads());
+        (numext::div_ceil<int>(block_count, numThreads()) * numThreads());
 
     // Now try to increase block size up to max_block_size as long as it
     // doesn't decrease parallel efficiency.
@@ -380,7 +381,7 @@ struct ThreadPoolDevice {
          max_efficiency < 1.0 && prev_block_count > 1;) {
       // This is the next block size that divides size into a smaller number
       // of blocks than the current block_size.
-      Index coarser_block_size = divup(n, prev_block_count - 1);
+      Index coarser_block_size = numext::div_ceil(n, prev_block_count - 1);
       if (block_align) {
         Index new_block_size = block_align(coarser_block_size);
         eigen_assert(new_block_size >= coarser_block_size);
@@ -390,12 +391,12 @@ struct ThreadPoolDevice {
         break;  // Reached max block size. Stop.
       }
       // Recalculate parallel efficiency.
-      const Index coarser_block_count = divup(n, coarser_block_size);
+      const Index coarser_block_count = numext::div_ceil(n, coarser_block_size);
       eigen_assert(coarser_block_count < prev_block_count);
       prev_block_count = coarser_block_count;
       const double coarser_efficiency =
           static_cast<double>(coarser_block_count) /
-          (divup<int>(coarser_block_count, numThreads()) * numThreads());
+          (numext::div_ceil<int>(coarser_block_count, numThreads()) * numThreads());
       if (coarser_efficiency + 0.01 >= max_efficiency) {
         // Taking it.
         block_size = coarser_block_size;

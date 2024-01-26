@@ -10,6 +10,7 @@
 #ifndef EIGEN_SOLVERBASE_H
 #define EIGEN_SOLVERBASE_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

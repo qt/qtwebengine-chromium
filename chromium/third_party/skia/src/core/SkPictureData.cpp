@@ -8,6 +8,7 @@
 #include "src/core/SkPictureData.h"
 
 #include "include/core/SkFlattenable.h"
+#include "include/core/SkFontMgr.h"
 #include "include/core/SkSerialProcs.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkString.h"
@@ -232,9 +233,8 @@ void SkPictureData::serialize(SkWStream* stream, const SkSerialProcs& procs,
     // We delay serializing the bulk of our data until after we've serialized
     // factories and typefaces by first serializing to an in-memory write buffer.
     SkFactorySet factSet;  // buffer refs factSet, so factSet must come first.
-    SkBinaryWriteBuffer buffer;
+    SkBinaryWriteBuffer buffer(skip_typeface_proc(procs));
     buffer.setFactoryRecorder(sk_ref_sp(&factSet));
-    buffer.setSerialProcs(skip_typeface_proc(procs));
     buffer.setTypefaceRecorder(sk_ref_sp(typefaceSet));
     this->flattenToBuffer(buffer, textBlobsOnly);
 
@@ -346,12 +346,16 @@ bool SkPictureData::parseStreamTag(SkStream* stream,
                 if (procs.fTypefaceProc) {
                     tf = procs.fTypefaceProc(&stream, sizeof(stream), procs.fTypefaceCtx);
                 } else {
-                    tf = SkTypeface::MakeDeserialize(stream);
+                    tf = SkTypeface::MakeDeserialize(stream, SkFontMgr::RefDefault());
                 }
                 if (!tf) {    // failed to deserialize
                     // fTFPlayback asserts it never has a null, so we plop in
-                    // the default here.
+                    // a default here.
+#if !defined(SK_DISABLE_LEGACY_DEFAULT_TYPEFACE)
                     tf = SkTypeface::MakeDefault();
+#else
+                    tf = SkTypeface::MakeEmpty();
+#endif
                 }
                 fTFPlayback[i] = std::move(tf);
             }

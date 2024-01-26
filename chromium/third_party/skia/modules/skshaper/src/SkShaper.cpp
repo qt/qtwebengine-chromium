@@ -13,8 +13,9 @@
 #include "include/core/SkTypeface.h"
 #include "include/private/base/SkTFitsIn.h"
 #include "modules/skshaper/include/SkShaper.h"
+#include "src/core/SkFontPriv.h"
 
-#ifdef SK_UNICODE_AVAILABLE
+#ifdef SK_SHAPER_UNICODE_AVAILABLE
 #include "modules/skunicode/include/SkUnicode.h"
 #endif
 #include "src/base/SkUTF.h"
@@ -48,18 +49,16 @@ void SkShaper::PurgeCaches() {
 
 std::unique_ptr<SkShaper::BiDiRunIterator>
 SkShaper::MakeBiDiRunIterator(const char* utf8, size_t utf8Bytes, uint8_t bidiLevel) {
-#ifdef SK_UNICODE_AVAILABLE
-    auto unicode = SkUnicode::Make();
-    if (!unicode) {
-        return nullptr;
-    }
-    std::unique_ptr<SkShaper::BiDiRunIterator> bidi =
-        SkShaper::MakeSkUnicodeBidiRunIterator(unicode.get(),
-                                               utf8,
-                                               utf8Bytes,
-                                               bidiLevel);
-    if (bidi) {
-        return bidi;
+#ifdef SK_SHAPER_UNICODE_AVAILABLE
+    if (const auto unicode = SkUnicode::Make()) {
+        std::unique_ptr<SkShaper::BiDiRunIterator> bidi =
+            SkShaper::MakeSkUnicodeBidiRunIterator(unicode.get(),
+                                                   utf8,
+                                                   utf8Bytes,
+                                                   bidiLevel);
+        if (bidi) {
+            return bidi;
+        }
     }
 #endif
     return std::make_unique<SkShaper::TrivialBiDiRunIterator>(bidiLevel, utf8Bytes);
@@ -67,11 +66,7 @@ SkShaper::MakeBiDiRunIterator(const char* utf8, size_t utf8Bytes, uint8_t bidiLe
 
 std::unique_ptr<SkShaper::ScriptRunIterator>
 SkShaper::MakeScriptRunIterator(const char* utf8, size_t utf8Bytes, SkFourByteTag scriptTag) {
-#if defined(SK_SHAPER_HARFBUZZ_AVAILABLE) && defined(SK_UNICODE_AVAILABLE)
-    auto unicode = SkUnicode::Make();
-    if (!unicode) {
-        return nullptr;
-    }
+#if defined(SK_SHAPER_HARFBUZZ_AVAILABLE)
     std::unique_ptr<SkShaper::ScriptRunIterator> script =
         SkShaper::MakeSkUnicodeHbScriptRunIterator(utf8, utf8Bytes, scriptTag);
     if (script) {
@@ -105,13 +100,13 @@ public:
         , fRequestStyle(requestStyle)
         , fLanguage(lang)
     {
-        fFont.setTypeface(font.refTypefaceOrDefault());
+        fFont.setTypeface(SkFontPriv::RefTypefaceOrDefault(font));
         fFallbackFont.setTypeface(nullptr);
     }
     FontMgrRunIterator(const char* utf8, size_t utf8Bytes,
                        const SkFont& font, sk_sp<SkFontMgr> fallbackMgr)
         : FontMgrRunIterator(utf8, utf8Bytes, font, std::move(fallbackMgr),
-                             nullptr, font.refTypefaceOrDefault()->fontStyle(), nullptr)
+                             nullptr, SkFontPriv::RefTypefaceOrDefault(font)->fontStyle(), nullptr)
     {}
 
     void consume() override {

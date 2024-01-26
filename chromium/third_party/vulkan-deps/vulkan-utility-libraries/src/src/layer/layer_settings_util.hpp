@@ -31,7 +31,7 @@ namespace vl {
         TRIM_LAST = TRIM_NAMESPACE,
     };
 
-    std::string GetEnvSettingName(const char *layer_key, const char *setting_key, TrimMode trim_mode);
+    std::string GetEnvSettingName(const char *layer_key, const char* prefix, const char *setting_key, TrimMode trim_mode);
 
     std::string GetFileSettingName(const char *layer_key, const char *setting_key);
 
@@ -62,9 +62,9 @@ namespace vl {
 
     bool IsFrameSets(const std::string &s);
 
-    VlFrameset ToFrameSet(const std::string &s);
+    VkuFrameset ToFrameSet(const std::string &s);
 
-    std::vector<VlFrameset> ToFrameSets(const std::string &s);
+    std::vector<VkuFrameset> ToFrameSets(const std::string &s);
 
     bool IsInteger(const std::string &s);
 

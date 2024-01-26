@@ -442,7 +442,7 @@ size_t Isolate::HashIsolateForEmbeddedBlob() {
   // Hash data sections of builtin code objects.
   for (Builtin builtin = Builtins::kFirst; builtin <= Builtins::kLast;
        ++builtin) {
-    Code code = builtins()->code(builtin);
+    Tagged<Code> code = builtins()->code(builtin);
 
     DCHECK(Internals::HasHeapObjectTag(code.ptr()));
     uint8_t* const code_ptr = reinterpret_cast<uint8_t*>(code.address());
@@ -451,10 +451,7 @@ size_t Isolate::HashIsolateForEmbeddedBlob() {
     // instruction_start, but other data fields must remain the same.
     static_assert(Code::kEndOfStrongFieldsOffset ==
                   Code::kInstructionStartOffset);
-#ifdef V8_CODE_POINTER_SANDBOXING
-    static_assert(Code::kCodePointerTableEntryOffsetEnd + 1 ==
-                  Code::kFlagsOffset);
-#else
+#ifndef V8_ENABLE_SANDBOX
     static_assert(Code::kInstructionStartOffsetEnd + 1 == Code::kFlagsOffset);
 #endif
     static_assert(Code::kFlagsOffsetEnd + 1 == Code::kInstructionSizeOffset);
@@ -712,6 +709,50 @@ bool NoExtension(const v8::FunctionCallbackInfo<v8::Value>&) { return false; }
 
 namespace {
 
+bool IsBuiltinFunction(Isolate* isolate, Tagged<HeapObject> object,
+                       Builtin builtin) {
+  if (!IsJSFunction(object)) return false;
+  Tagged<JSFunction> const function = JSFunction::cast(object);
+  return function->code() == isolate->builtins()->code(builtin);
+}
+
+// Check if the function is one of the known async function or
+// async generator fulfill handlers.
+bool IsBuiltinAsyncFulfillHandler(Isolate* isolate, Tagged<HeapObject> object) {
+  return IsBuiltinFunction(isolate, object,
+                           Builtin::kAsyncFunctionAwaitResolveClosure) ||
+         IsBuiltinFunction(isolate, object,
+                           Builtin::kAsyncGeneratorAwaitResolveClosure) ||
+         IsBuiltinFunction(
+             isolate, object,
+             Builtin::kAsyncGeneratorYieldWithAwaitResolveClosure);
+}
+
+// Check if the function is one of the known async function or
+// async generator fulfill handlers.
+bool IsBuiltinAsyncRejectHandler(Isolate* isolate, Tagged<HeapObject> object) {
+  return IsBuiltinFunction(isolate, object,
+                           Builtin::kAsyncFunctionAwaitRejectClosure) ||
+         IsBuiltinFunction(isolate, object,
+                           Builtin::kAsyncGeneratorAwaitRejectClosure);
+}
+
+Handle<JSGeneratorObject> ToAsyncGenerator(Isolate* isolate,
+                                           Handle<PromiseReaction> reaction) {
+  // Check if the {reaction} has one of the known async function or
+  // async generator continuations as its fulfill handler.
+  if (IsBuiltinAsyncFulfillHandler(isolate, reaction->fulfill_handler())) {
+    // Now peek into the handlers' AwaitContext to get to
+    // the JSGeneratorObject for the async function.
+    Handle<Context> context(
+        JSFunction::cast(reaction->fulfill_handler())->context(), isolate);
+    Handle<JSGeneratorObject> generator_object(
+        JSGeneratorObject::cast(context->extension()), isolate);
+    return generator_object;
+  }
+  return Handle<JSGeneratorObject>();
+}
+
 class CallSiteBuilder {
  public:
   CallSiteBuilder(Isolate* isolate, FrameSkipMode mode, int limit,
@@ -852,7 +893,7 @@ class CallSiteBuilder {
   bool Full() { return index_ >= limit_; }
 
   Handle<FixedArray> Build() {
-    return FixedArray::ShrinkOrEmpty(isolate_, elements_, index_);
+    return FixedArray::RightTrimOrEmpty(isolate_, elements_, index_);
   }
 
  private:
@@ -957,13 +998,6 @@ bool GetStackTraceLimit(Isolate* isolate, int* result) {
   return true;
 }
 
-bool IsBuiltinFunction(Isolate* isolate, Tagged<HeapObject> object,
-                       Builtin builtin) {
-  if (!IsJSFunction(object)) return false;
-  JSFunction const function = JSFunction::cast(object);
-  return function->code() == isolate->builtins()->code(builtin);
-}
-
 void CaptureAsyncStackTrace(Isolate* isolate, Handle<JSPromise> promise,
                             CallSiteBuilder* builder) {
   while (!builder->Full()) {
@@ -976,21 +1010,10 @@ void CaptureAsyncStackTrace(Isolate* isolate, Handle<JSPromise> promise,
         PromiseReaction::cast(promise->reactions()), isolate);
     if (!IsSmi(reaction->next())) return;
 
-    // Check if the {reaction} has one of the known async function or
-    // async generator continuations as its fulfill handler.
-    if (IsBuiltinFunction(isolate, reaction->fulfill_handler(),
-                          Builtin::kAsyncFunctionAwaitResolveClosure) ||
-        IsBuiltinFunction(isolate, reaction->fulfill_handler(),
-                          Builtin::kAsyncGeneratorAwaitResolveClosure) ||
-        IsBuiltinFunction(
-            isolate, reaction->fulfill_handler(),
-            Builtin::kAsyncGeneratorYieldWithAwaitResolveClosure)) {
-      // Now peek into the handlers' AwaitContext to get to
-      // the JSGeneratorObject for the async function.
-      Handle<Context> context(
-          JSFunction::cast(reaction->fulfill_handler())->context(), isolate);
-      Handle<JSGeneratorObject> generator_object(
-          JSGeneratorObject::cast(context->extension()), isolate);
+    Handle<JSGeneratorObject> generator_object =
+        ToAsyncGenerator(isolate, reaction);
+
+    if (!generator_object.is_null()) {
       CHECK(generator_object->is_suspended());
 
       // Append async frame corresponding to the {generator_object}.
@@ -1020,7 +1043,13 @@ void CaptureAsyncStackTrace(Isolate* isolate, Handle<JSPromise> promise,
                                     isolate);
       builder->AppendPromiseCombinatorFrame(function, combinator);
 
-      // Now peak into the Promise.all() resolve element context to
+      if (IsNativeContext(*context)) {
+        // NativeContext is used as a marker that the closure was already
+        // called. We can't access the reject element context any more.
+        return;
+      }
+
+      // Now peek into the Promise.all() resolve element context to
       // find the promise capability that's being resolved when all
       // the concurrent promises resolve.
       int const index =
@@ -1039,7 +1068,13 @@ void CaptureAsyncStackTrace(Isolate* isolate, Handle<JSPromise> promise,
           context->native_context()->promise_all_settled(), isolate);
       builder->AppendPromiseCombinatorFrame(function, combinator);
 
-      // Now peak into the Promise.allSettled() resolve element context to
+      if (IsNativeContext(*context)) {
+        // NativeContext is used as a marker that the closure was already
+        // called. We can't access the reject element context any more.
+        return;
+      }
+
+      // Now peek into the Promise.allSettled() resolve element context to
       // find the promise capability that's being resolved when all
       // the concurrent promises resolve.
       int const index =
@@ -1057,7 +1092,13 @@ void CaptureAsyncStackTrace(Isolate* isolate, Handle<JSPromise> promise,
                                     isolate);
       builder->AppendPromiseCombinatorFrame(function, combinator);
 
-      // Now peak into the Promise.any() reject element context to
+      if (IsNativeContext(*context)) {
+        // NativeContext is used as a marker that the closure was already
+        // called. We can't access the reject element context any more.
+        return;
+      }
+
+      // Now peek into the Promise.any() reject element context to
       // find the promise capability that's being resolved when any of
       // the concurrent promises resolve.
       int const index = PromiseBuiltins::kPromiseAnyRejectElementCapabilitySlot;
@@ -1102,17 +1143,10 @@ void CaptureAsyncStackTrace(Isolate* isolate, CallSiteBuilder* builder) {
         Handle<PromiseReactionJobTask>::cast(current_microtask);
     // Check if the {reaction} has one of the known async function or
     // async generator continuations as its fulfill handler.
-    if (IsBuiltinFunction(isolate, promise_reaction_job_task->handler(),
-                          Builtin::kAsyncFunctionAwaitResolveClosure) ||
-        IsBuiltinFunction(isolate, promise_reaction_job_task->handler(),
-                          Builtin::kAsyncGeneratorAwaitResolveClosure) ||
-        IsBuiltinFunction(
-            isolate, promise_reaction_job_task->handler(),
-            Builtin::kAsyncGeneratorYieldWithAwaitResolveClosure) ||
-        IsBuiltinFunction(isolate, promise_reaction_job_task->handler(),
-                          Builtin::kAsyncFunctionAwaitRejectClosure) ||
-        IsBuiltinFunction(isolate, promise_reaction_job_task->handler(),
-                          Builtin::kAsyncGeneratorAwaitRejectClosure)) {
+    if (IsBuiltinAsyncFulfillHandler(isolate,
+                                     promise_reaction_job_task->handler()) ||
+        IsBuiltinAsyncRejectHandler(isolate,
+                                    promise_reaction_job_task->handler())) {
       // Now peek into the handlers' AwaitContext to get to
       // the JSGeneratorObject for the async function.
       Handle<Context> context(
@@ -1284,9 +1318,9 @@ MaybeHandle<JSObject> Isolate::CaptureAndSetErrorStack(
 
   RETURN_ON_EXCEPTION(
       this,
-      JSObject::SetProperty(this, error_object, factory()->error_stack_symbol(),
-                            error_stack, StoreOrigin::kMaybeKeyed,
-                            Just(ShouldThrow::kThrowOnError)),
+      Object::SetProperty(this, error_object, factory()->error_stack_symbol(),
+                          error_stack, StoreOrigin::kMaybeKeyed,
+                          Just(ShouldThrow::kThrowOnError)),
       JSObject);
   return error_object;
 }
@@ -1384,7 +1418,7 @@ class StackFrameBuilder {
   }
 
   Handle<FixedArray> Build() {
-    return FixedArray::ShrinkOrEmpty(isolate_, frames_, index_);
+    return FixedArray::RightTrimOrEmpty(isolate_, frames_, index_);
   }
 
  private:
@@ -1518,7 +1552,8 @@ MaybeHandle<Object> Isolate::ReportFailedAccessCheck(
   Handle<Object> data;
   {
     DisallowGarbageCollection no_gc;
-    AccessCheckInfo access_check_info = AccessCheckInfo::Get(this, receiver);
+    Tagged<AccessCheckInfo> access_check_info =
+        AccessCheckInfo::Get(this, receiver);
     if (access_check_info.is_null()) {
       no_gc.Release();
       THROW_NEW_ERROR(this, NewTypeError(MessageTemplate::kNoAccess), Object);
@@ -1567,7 +1602,8 @@ bool Isolate::MayAccess(Handle<NativeContext> accessing_context,
   v8::AccessCheckCallback callback = nullptr;
   {
     DisallowGarbageCollection no_gc;
-    AccessCheckInfo access_check_info = AccessCheckInfo::Get(this, receiver);
+    Tagged<AccessCheckInfo> access_check_info =
+        AccessCheckInfo::Get(this, receiver);
     if (access_check_info.is_null()) return false;
     Tagged<Object> fun_obj = access_check_info->callback();
     callback = v8::ToCData<v8::AccessCheckCallback>(fun_obj);
@@ -1593,7 +1629,7 @@ Tagged<Object> Isolate::StackOverflow() {
 #if defined(V8_USE_ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER)
   // Allow for a bit more overflow in sanitizer builds, because C++ frames take
   // significantly more space there.
-  DCHECK_GE(GetCurrentStackPosition(), stack_guard()->real_climit() - 32 * KB);
+  DCHECK_GE(GetCurrentStackPosition(), stack_guard()->real_climit() - 64 * KB);
 #else
   DCHECK_GE(GetCurrentStackPosition(), stack_guard()->real_climit() - 8 * KB);
 #endif
@@ -1950,7 +1986,7 @@ Tagged<Object> Isolate::UnwindAndFindHandler() {
 #endif  // V8_ENABLE_WEBASSEMBLY
   Tagged<Object> exception = pending_exception();
 
-  auto FoundHandler = [&](Context context, Address instruction_start,
+  auto FoundHandler = [&](Tagged<Context> context, Address instruction_start,
                           intptr_t handler_offset,
                           Address constant_pool_address, Address handler_sp,
                           Address handler_fp, int num_frames_above_handler) {
@@ -2003,7 +2039,8 @@ Tagged<Object> Isolate::UnwindAndFindHandler() {
 #if V8_ENABLE_WEBASSEMBLY
     if (v8_flags.experimental_wasm_stack_switching &&
         iter.frame()->type() == StackFrame::STACK_SWITCH) {
-      Code code = builtins()->code(Builtin::kWasmReturnPromiseOnSuspendAsm);
+      Tagged<Code> code =
+          builtins()->code(Builtin::kWasmReturnPromiseOnSuspendAsm);
       HandlerTable table(code);
       Address instruction_start =
           code->InstructionStart(this, iter.frame()->pc());
@@ -2029,7 +2066,7 @@ Tagged<Object> Isolate::UnwindAndFindHandler() {
       CHECK(frame->is_java_script());
 
       if (frame->is_optimized()) {
-        Code code = frame->LookupCode();
+        Tagged<Code> code = frame->LookupCode();
         // The debugger triggers lazy deopt for the "to-be-restarted" frame
         // immediately when the CDP event arrives while paused.
         CHECK(code->marked_for_deoptimization());
@@ -2052,7 +2089,7 @@ Tagged<Object> Isolate::UnwindAndFindHandler() {
       }
 
       debug()->clear_restart_frame();
-      Code code = *BUILTIN_CODE(this, RestartFrameTrampoline);
+      Tagged<Code> code = *BUILTIN_CODE(this, RestartFrameTrampoline);
       return FoundHandler(Context(), code->instruction_start(), 0,
                           code->constant_pool(), kNullAddress, frame->fp(),
                           visited_frames);
@@ -2068,7 +2105,7 @@ Tagged<Object> Isolate::UnwindAndFindHandler() {
         thread_local_top()->handler_ = handler->next_address();
 
         // Gather information from the handler.
-        Code code = frame->LookupCode();
+        Tagged<Code> code = frame->LookupCode();
         HandlerTable table(code);
         return FoundHandler(Context(),
                             code->InstructionStart(this, frame->pc()),
@@ -2081,7 +2118,7 @@ Tagged<Object> Isolate::UnwindAndFindHandler() {
       case StackFrame::C_WASM_ENTRY: {
         StackHandler* handler = frame->top_handler();
         thread_local_top()->handler_ = handler->next_address();
-        Code code = frame->LookupCode();
+        Tagged<Code> code = frame->LookupCode();
         HandlerTable table(code);
         Address instruction_start = code->instruction_start();
         int return_offset = static_cast<int>(frame->pc() - instruction_start);
@@ -2154,7 +2191,7 @@ Tagged<Object> Isolate::UnwindAndFindHandler() {
         int offset = opt_frame->LookupExceptionHandlerInTable(nullptr, nullptr);
         if (offset < 0) break;
         // The code might be an optimized code or a turbofanned builtin.
-        Code code = frame->LookupCode();
+        Tagged<Code> code = frame->LookupCode();
         // Compute the stack pointer from the frame pointer. This ensures
         // that argument slots on the stack are dropped as returning would.
         Address return_sp = frame->fp() +
@@ -2188,7 +2225,7 @@ Tagged<Object> Isolate::UnwindAndFindHandler() {
 
         // The code might be a dynamically generated stub or a turbofanned
         // embedded builtin.
-        Code code = stub_frame->LookupCode();
+        Tagged<Code> code = stub_frame->LookupCode();
         if (!code->is_turbofanned() || !code->has_handler_table()) {
           break;
         }
@@ -2231,13 +2268,13 @@ Tagged<Object> Isolate::UnwindAndFindHandler() {
         // position of the exception handler. The special builtin below will
         // take care of continuing to dispatch at that position. Also restore
         // the correct context for the handler from the interpreter register.
-        Context context =
+        Tagged<Context> context =
             Context::cast(js_frame->ReadInterpreterRegister(context_reg));
         DCHECK(IsContext(context));
 
         if (frame->is_baseline()) {
           BaselineFrame* sp_frame = BaselineFrame::cast(js_frame);
-          Code code = sp_frame->LookupCode();
+          Tagged<Code> code = sp_frame->LookupCode();
           intptr_t pc_offset = sp_frame->GetPCForBytecodeOffset(offset);
           // Patch the context register directly on the frame, so that we don't
           // need to have a context read + write in the baseline code.
@@ -2249,7 +2286,7 @@ Tagged<Object> Isolate::UnwindAndFindHandler() {
           InterpretedFrame::cast(js_frame)->PatchBytecodeOffset(
               static_cast<int>(offset));
 
-          Code code = *BUILTIN_CODE(this, InterpreterEnterAtBytecode);
+          Tagged<Code> code = *BUILTIN_CODE(this, InterpreterEnterAtBytecode);
           // We subtract a frame from visited_frames because otherwise the
           // shadow stack will drop the underlying interpreter entry trampoline
           // in which the handler runs.
@@ -2281,7 +2318,7 @@ Tagged<Object> Isolate::UnwindAndFindHandler() {
 
         // Reconstruct the stack pointer from the frame pointer.
         Address return_sp = js_frame->fp() - js_frame->GetSPToFPDelta();
-        Code code = js_frame->LookupCode();
+        Tagged<Code> code = js_frame->LookupCode();
         return FoundHandler(Context(), code->instruction_start(), 0,
                             code->constant_pool(), return_sp, frame->fp(),
                             visited_frames);
@@ -2372,8 +2409,7 @@ Isolate::CatchType ToCatchType(HandlerTable::CatchPrediction prediction) {
 }  // anonymous namespace
 
 Isolate::CatchType Isolate::PredictExceptionCatcher() {
-  Address external_handler = thread_local_top()->try_catch_handler_address();
-  if (TopExceptionHandlerType(Object()) ==
+  if (TopExceptionHandlerType(Tagged<Object>()) ==
       ExceptionHandlerType::kExternalTryCatch) {
     return CAUGHT_BY_EXTERNAL;
   }
@@ -2381,60 +2417,60 @@ Isolate::CatchType Isolate::PredictExceptionCatcher() {
   // Search for an exception handler by performing a full walk over the stack.
   for (StackFrameIterator iter(this); !iter.done(); iter.Advance()) {
     StackFrame* frame = iter.frame();
-
-    switch (frame->type()) {
-      case StackFrame::ENTRY:
-      case StackFrame::CONSTRUCT_ENTRY: {
-        Address entry_handler = frame->top_handler()->next_address();
-        // The exception has been externally caught if and only if there is an
-        // external handler which is on top of the top-most JS_ENTRY handler.
-        if (external_handler != kNullAddress &&
-            !try_catch_handler()->is_verbose_) {
-          if (entry_handler == kNullAddress ||
-              entry_handler > external_handler) {
-            return CAUGHT_BY_EXTERNAL;
-          }
-        }
-      } break;
-
-      // For JavaScript frames we perform a lookup in the handler table.
-      case StackFrame::INTERPRETED:
-      case StackFrame::BASELINE:
-      case StackFrame::TURBOFAN:
-      case StackFrame::MAGLEV:
-      case StackFrame::BUILTIN: {
-        JavaScriptFrame* js_frame = JavaScriptFrame::cast(frame);
-        Isolate::CatchType prediction = ToCatchType(PredictException(js_frame));
-        if (prediction == NOT_CAUGHT) break;
-        return prediction;
-      }
-
-      case StackFrame::STUB: {
-        base::Optional<Code> code = frame->LookupCode();
-        if (code->kind() != CodeKind::BUILTIN || !code->has_handler_table() ||
-            !code->is_turbofanned()) {
-          break;
-        }
-
-        auto prediction = ToCatchType(CatchPredictionFor(code->builtin_id()));
-        if (prediction != NOT_CAUGHT) return prediction;
-        break;
-      }
-
-      case StackFrame::JAVA_SCRIPT_BUILTIN_CONTINUATION_WITH_CATCH: {
-        base::Optional<Code> code = frame->LookupCode();
-        auto prediction = ToCatchType(CatchPredictionFor(code->builtin_id()));
-        if (prediction != NOT_CAUGHT) return prediction;
-        break;
-      }
-
-      default:
-        // All other types can not handle exception.
-        break;
-    }
+    Isolate::CatchType prediction = PredictExceptionCatchAtFrame(frame);
+    if (prediction != NOT_CAUGHT) return prediction;
   }
 
   // Handler not found.
+  return NOT_CAUGHT;
+}
+
+Isolate::CatchType Isolate::PredictExceptionCatchAtFrame(StackFrame* frame) {
+  switch (frame->type()) {
+    case StackFrame::ENTRY:
+    case StackFrame::CONSTRUCT_ENTRY: {
+      Address external_handler =
+          thread_local_top()->try_catch_handler_address();
+      Address entry_handler = frame->top_handler()->next_address();
+      // The exception has been externally caught if and only if there is an
+      // external handler which is on top of the top-most JS_ENTRY handler.
+      if (external_handler != kNullAddress &&
+          !try_catch_handler()->is_verbose_) {
+        if (entry_handler == kNullAddress || entry_handler > external_handler) {
+          return CAUGHT_BY_EXTERNAL;
+        }
+      }
+    } break;
+
+    // For JavaScript frames we perform a lookup in the handler table.
+    case StackFrame::INTERPRETED:
+    case StackFrame::BASELINE:
+    case StackFrame::TURBOFAN:
+    case StackFrame::MAGLEV:
+    case StackFrame::BUILTIN: {
+      JavaScriptFrame* js_frame = JavaScriptFrame::cast(frame);
+      return ToCatchType(PredictException(js_frame));
+    }
+
+    case StackFrame::STUB: {
+      Tagged<Code> code = *frame->LookupCode();
+      if (code->kind() != CodeKind::BUILTIN || !code->has_handler_table() ||
+          !code->is_turbofanned()) {
+        break;
+      }
+
+      return ToCatchType(CatchPredictionFor(code->builtin_id()));
+    }
+
+    case StackFrame::JAVA_SCRIPT_BUILTIN_CONTINUATION_WITH_CATCH: {
+      Tagged<Code> code = *frame->LookupCode();
+      return ToCatchType(CatchPredictionFor(code->builtin_id()));
+    }
+
+    default:
+      // All other types can not handle exception.
+      break;
+  }
   return NOT_CAUGHT;
 }
 
@@ -2503,6 +2539,7 @@ void Isolate::PrintCurrentStackTrace(std::ostream& out) {
   for (int i = 0; i < frames->length(); ++i) {
     Handle<CallSiteInfo> frame(CallSiteInfo::cast(frames->get(i)), this);
     SerializeCallSiteInfo(this, frame, &builder);
+    if (i != frames->length() - 1) builder.AppendCharacter('\n');
   }
 
   Handle<String> stack_trace = builder.Finish().ToHandleChecked();
@@ -2806,7 +2843,7 @@ bool Isolate::IsPromiseStackEmpty() const {
 }
 
 namespace {
-bool PromiseIsRejectHandler(Isolate* isolate, Handle<JSReceiver> handler) {
+bool ReceiverIsForwardingHandler(Isolate* isolate, Handle<JSReceiver> handler) {
   // Recurse to the forwarding Promise (e.g. return false) due to
   //  - await reaction forwarding to the throwaway Promise, which has
   //    a dependency edge to the outer Promise.
@@ -2817,11 +2854,12 @@ bool PromiseIsRejectHandler(Isolate* isolate, Handle<JSReceiver> handler) {
   Handle<Symbol> key = isolate->factory()->promise_forwarding_handler_symbol();
   Handle<Object> forwarding_handler =
       JSReceiver::GetDataProperty(isolate, handler, key);
-  return IsUndefined(*forwarding_handler, isolate);
+  return !IsUndefined(*forwarding_handler, isolate);
 }
 
-bool PromiseHasUserDefinedRejectHandlerInternal(Isolate* isolate,
-                                                Handle<JSPromise> promise) {
+bool WalkPromiseTreeInternal(
+    Isolate* isolate, Handle<JSPromise> promise,
+    std::function<bool(Isolate::PromiseHandler)> callback) {
   Handle<Object> current(promise->reactions(), isolate);
   while (!IsSmi(*current)) {
     Handle<PromiseReaction> reaction = Handle<PromiseReaction>::cast(current);
@@ -2835,12 +2873,63 @@ bool PromiseHasUserDefinedRejectHandlerInternal(Isolate* isolate,
       }
       if (IsJSPromise(*promise_or_capability)) {
         promise = Handle<JSPromise>::cast(promise_or_capability);
+        bool caught = false;
+        Handle<JSReceiver> reject_handler;
         if (!IsUndefined(reaction->reject_handler(), isolate)) {
-          Handle<JSReceiver> reject_handler(
-              JSReceiver::cast(reaction->reject_handler()), isolate);
-          if (PromiseIsRejectHandler(isolate, reject_handler)) return true;
+          reject_handler =
+              handle(JSReceiver::cast(reaction->reject_handler()), isolate);
+          if (!ReceiverIsForwardingHandler(isolate, reject_handler) &&
+              !IsBuiltinFunction(isolate, reaction->reject_handler(),
+                                 Builtin::kPromiseCatchFinally)) {
+            caught = true;
+            // If there is no callback, just return true if anything catches
+            if (!callback) return true;
+          }
         }
-        if (isolate->PromiseHasUserDefinedRejectHandler(promise)) return true;
+        if (callback) {
+          // Pass each handler to the callback
+          Handle<JSGeneratorObject> async_function =
+              ToAsyncGenerator(isolate, reaction);
+          if (!async_function.is_null()) {
+            // Look at the async function, not the individual handlers
+            if (callback(
+                    {handle(async_function->function(), isolate), caught})) {
+              return true;
+            }
+          } else {
+            // Not an async function, look at individual handlers
+            if (callback &&
+                !IsUndefined(reaction->fulfill_handler(), isolate)) {
+              Handle<JSReceiver> fulfill_handler(
+                  JSReceiver::cast(reaction->fulfill_handler()), isolate);
+              if (!ReceiverIsForwardingHandler(isolate, fulfill_handler)) {
+                if (IsBuiltinFunction(isolate, reaction->fulfill_handler(),
+                                      Builtin::kPromiseThenFinally)) {
+                  // If this is the finally handler, get the wrapped callback
+                  // from the context to use instead
+                  Handle<Context> context(
+                      JSFunction::cast(reaction->fulfill_handler())->context(),
+                      isolate);
+                  int const index = PromiseBuiltins::PromiseFinallyContextSlot::
+                      kOnFinallySlot;
+                  fulfill_handler =
+                      handle(JSReceiver::cast(context->get(index)), isolate);
+                }
+                if (callback({fulfill_handler, false})) {
+                  return true;
+                }
+              }
+            }
+            if (caught) {
+              // We've already checked that this isn't undefined or
+              // a forwarding handler
+              if (callback({reject_handler, true})) {
+                return true;
+              }
+            }
+          }
+        }
+        if (!caught && isolate->WalkPromiseTree(promise, callback)) return true;
       }
     }
     current = handle(reaction->next(), isolate);
@@ -2850,7 +2939,8 @@ bool PromiseHasUserDefinedRejectHandlerInternal(Isolate* isolate,
 
 }  // namespace
 
-bool Isolate::PromiseHasUserDefinedRejectHandler(Handle<JSPromise> promise) {
+bool Isolate::WalkPromiseTree(Handle<JSPromise> promise,
+                              std::function<bool(PromiseHandler)> callback) {
   Handle<Symbol> key = factory()->promise_handled_by_symbol();
   std::stack<Handle<JSPromise>> promises;
   // First descend into the outermost promise and collect the stack of
@@ -2858,7 +2948,11 @@ bool Isolate::PromiseHasUserDefinedRejectHandler(Handle<JSPromise> promise) {
   while (true) {
     // If this promise was marked as being handled by a catch block
     // in an async function, then it has a user-defined reject handler.
-    if (promise->handled_hint()) return true;
+    // Because it will catch there is no reason to continue to outer promises.
+    // However the handled_hint may have been set by GetPromiseOnStackOnThrow,
+    // and if we have a callback we don't want that to stop us from walking
+    // the promise tree.
+    if (!callback && promise->handled_hint()) return true;
     if (promise->status() == Promise::kPending) {
       promises.push(promise);
     }
@@ -2870,10 +2964,14 @@ bool Isolate::PromiseHasUserDefinedRejectHandler(Handle<JSPromise> promise) {
 
   while (!promises.empty()) {
     promise = promises.top();
-    if (PromiseHasUserDefinedRejectHandlerInternal(this, promise)) return true;
+    if (WalkPromiseTreeInternal(this, promise, callback)) return true;
     promises.pop();
   }
   return false;
+}
+
+bool Isolate::PromiseHasUserDefinedRejectHandler(Handle<JSPromise> promise) {
+  return WalkPromiseTree(promise, nullptr);
 }
 
 Handle<Object> Isolate::GetPromiseOnStackOnThrow() {
@@ -2888,24 +2986,13 @@ Handle<Object> Isolate::GetPromiseOnStackOnThrow() {
   Handle<Object> promise_stack(debug()->thread_local_.promise_stack_, this);
   for (StackFrameIterator it(this); !it.done(); it.Advance()) {
     StackFrame* frame = it.frame();
-    HandlerTable::CatchPrediction catch_prediction;
-    if (frame->is_java_script()) {
-      catch_prediction = PredictException(JavaScriptFrame::cast(frame));
-    } else if (frame->type() == StackFrame::STUB) {
-      base::Optional<Code> code = frame->LookupCode();
-      if (code->kind() != CodeKind::BUILTIN || !code->has_handler_table() ||
-          !code->is_turbofanned()) {
-        continue;
-      }
-      catch_prediction = CatchPredictionFor(code->builtin_id());
-    } else {
-      continue;
-    }
+    prediction = PredictExceptionCatchAtFrame(frame);
 
-    switch (catch_prediction) {
-      case HandlerTable::UNCAUGHT:
+    switch (prediction) {
+      case NOT_CAUGHT:
+      case CAUGHT_BY_EXTERNAL:
         continue;
-      case HandlerTable::CAUGHT:
+      case CAUGHT_BY_JAVASCRIPT:
         if (IsJSPromise(*retval)) {
           // Caught the result of an inner async/await invocation.
           // Mark the inner promise as caught in the "synchronous case" so
@@ -2917,7 +3004,7 @@ Handle<Object> Isolate::GetPromiseOnStackOnThrow() {
           Handle<JSPromise>::cast(retval)->set_handled_hint(true);
         }
         return retval;
-      case HandlerTable::PROMISE: {
+      case CAUGHT_BY_PROMISE: {
         Handle<JSObject> promise;
         if (IsPromiseOnStack(*promise_stack) &&
             PromiseOnStack::GetPromise(
@@ -2927,8 +3014,7 @@ Handle<Object> Isolate::GetPromiseOnStackOnThrow() {
         }
         return undefined;
       }
-      case HandlerTable::UNCAUGHT_ASYNC_AWAIT:
-      case HandlerTable::ASYNC_AWAIT: {
+      case CAUGHT_BY_ASYNC_AWAIT: {
         // If in the initial portion of async/await, continue the loop to pop up
         // successive async/await stack frames until an asynchronous one with
         // dependents is found, or a non-async stack frame is encountered, in
@@ -3036,13 +3122,22 @@ bool Isolate::IsCompileHintsMagicEnabled(Handle<NativeContext> context) {
 }
 
 bool Isolate::IsWasmStringRefEnabled(Handle<NativeContext> context) {
-  // If Wasm GC is explicitly enabled via a callback, also enable stringref.
 #ifdef V8_ENABLE_WEBASSEMBLY
-  v8::WasmGCEnabledCallback callback = wasm_gc_enabled_callback();
-  if (callback) {
+  // If Wasm GC is explicitly enabled via a callback, also enable stringref.
+  v8::WasmGCEnabledCallback callback_gc = wasm_gc_enabled_callback();
+  if (callback_gc) {
     v8::Local<v8::Context> api_context = v8::Utils::ToLocal(context);
-    if (callback(api_context)) return true;
+    if (callback_gc(api_context)) return true;
   }
+  // If Wasm imported strings are explicitly enabled via a callback, also enable
+  // stringref.
+  v8::WasmImportedStringsEnabledCallback callback_imported_strings =
+      wasm_imported_strings_enabled_callback();
+  if (callback_imported_strings) {
+    v8::Local<v8::Context> api_context = v8::Utils::ToLocal(context);
+    if (callback_imported_strings(api_context)) return true;
+  }
+  // Otherwise use the runtime flag.
   return v8_flags.experimental_wasm_stringref;
 #else
   return false;
@@ -3104,7 +3199,7 @@ Handle<NativeContext> Isolate::GetIncumbentContext() {
           : 0;
   if (!it.done() &&
       (!top_backup_incumbent || it.frame()->sp() < top_backup_incumbent)) {
-    Context context = Context::cast(it.frame()->context());
+    Tagged<Context> context = Context::cast(it.frame()->context());
     return Handle<NativeContext>(context->native_context(), this);
   }
 
@@ -3214,6 +3309,21 @@ void Isolate::SyncStackLimit() {
   RecordStackSwitchForScanning();
 }
 
+namespace {
+bool IsOnCentralStack(Isolate* isolate, Address addr) {
+#ifdef USE_SIMULATOR
+  auto simulator_stack = Simulator::current(isolate)->GetCurrentStackView();
+  uint8_t* addr_ptr = reinterpret_cast<uint8_t*>(addr);
+  return simulator_stack.begin() < addr_ptr &&
+         addr_ptr <= simulator_stack.end();
+#else
+  uintptr_t upper_bound = base::Stack::GetStackStart();
+  uintptr_t lower_bound = upper_bound - v8_flags.stack_size * KB;
+  return lower_bound < addr && addr <= upper_bound;
+#endif
+}
+}  // namespace
+
 void Isolate::RecordStackSwitchForScanning() {
   Tagged<Object> current = root(RootIndex::kActiveContinuation);
   DCHECK(!IsUndefined(current));
@@ -3226,6 +3336,8 @@ void Isolate::RecordStackSwitchForScanning() {
   current = WasmContinuationObject::cast(current)->parent();
   heap()->SetStackStart(reinterpret_cast<void*>(wasm_stack->base()));
   thread_local_top()->is_on_central_stack_flag_ = IsUndefined(current);
+  // Update the central stack info on switch. Only consider the innermost stack
+  bool updated_central_stack = false;
   // We don't need to add all inactive stacks. Only the ones in the active chain
   // may contain cpp heap pointers.
   while (!IsUndefined(current)) {
@@ -3236,12 +3348,15 @@ void Isolate::RecordStackSwitchForScanning() {
         reinterpret_cast<const void*>(wasm_stack->base()),
         reinterpret_cast<const void*>(wasm_stack->jmpbuf()->sp));
     current = cont->parent();
-    // If the parent is undefined, wasm_stack is the central stack.
-    // Update the central stack SP for switching in CEntry.
-    if (IsUndefined(current)) {
+    if (!updated_central_stack &&
+        IsOnCentralStack(this, wasm_stack->jmpbuf()->sp)) {
+      // This is the most recent use of the central stack in the call chain.
+      // Switch to this SP if we need to switch to the central stack in the
+      // future.
       thread_local_top()->central_stack_sp_ = wasm_stack->jmpbuf()->sp;
       thread_local_top()->central_stack_limit_ =
           reinterpret_cast<Address>(wasm_stack->jmpbuf()->stack_limit);
+      updated_central_stack = true;
     }
   }
 }
@@ -3541,6 +3656,25 @@ Isolate::Isolate(std::unique_ptr<i::IsolateAllocator> isolate_allocator)
 
   InitializeDefaultEmbeddedBlob();
 
+#if V8_ENABLE_WEBASSEMBLY
+  // If we are in production V8 and not in mksnapshot we have to pass the
+  // landing pad builtin to the WebAssembly TrapHandler.
+  // TODO(ahaas): Isolate creation is the earliest point in time when builtins
+  // are available, so we cannot set the landing pad earlier at the moment.
+  // However, if builtins ever get loaded during process initialization time,
+  // then the initialization of the trap handler landing pad should also go
+  // there.
+  // TODO(ahaas): The code of the landing pad does not have to be a builtin,
+  // we could also just move it to the trap handler, and implement it e.g. with
+  // inline assembly. It's not clear if that's worth it.
+  if (Isolate::CurrentEmbeddedBlobCodeSize()) {
+    EmbeddedData embedded_data = EmbeddedData::FromBlob();
+    Address landing_pad =
+        embedded_data.InstructionStartOf(Builtin::kWasmTrapHandlerLandingPad);
+    i::trap_handler::SetLandingPad(landing_pad);
+  }
+#endif  // V8_ENABLE_WEBASSEMBLY
+
   MicrotaskQueue::SetUpDefaultMicrotaskQueue(this);
 }
 
@@ -3548,10 +3682,16 @@ void Isolate::CheckIsolateLayout() {
 #ifdef V8_ENABLE_SANDBOX
   CHECK_EQ(static_cast<int>(OFFSET_OF(ExternalPointerTable, base_)),
            Internals::kExternalPointerTableBasePointerOffset);
+  CHECK_EQ(static_cast<int>(OFFSET_OF(TrustedPointerTable, base_)),
+           Internals::kTrustedPointerTableBasePointerOffset);
   CHECK_EQ(static_cast<int>(sizeof(ExternalPointerTable)),
            Internals::kExternalPointerTableSize);
   CHECK_EQ(static_cast<int>(sizeof(ExternalPointerTable)),
            ExternalPointerTable::kSize);
+  CHECK_EQ(static_cast<int>(sizeof(TrustedPointerTable)),
+           Internals::kTrustedPointerTableSize);
+  CHECK_EQ(static_cast<int>(sizeof(TrustedPointerTable)),
+           TrustedPointerTable::kSize);
 #endif
 
   CHECK_EQ(OFFSET_OF(Isolate, isolate_data_), 0);
@@ -3597,6 +3737,9 @@ void Isolate::CheckIsolateLayout() {
   CHECK_EQ(static_cast<int>(
                OFFSET_OF(Isolate, isolate_data_.external_pointer_table_)),
            Internals::kIsolateExternalPointerTableOffset);
+  CHECK_EQ(static_cast<int>(
+               OFFSET_OF(Isolate, isolate_data_.trusted_pointer_table_)),
+           Internals::kIsolateTrustedPointerTableOffset);
 #endif
   CHECK_EQ(static_cast<int>(
                OFFSET_OF(Isolate, isolate_data_.api_callback_thunk_argument_)),
@@ -3690,8 +3833,10 @@ void Isolate::Deinit() {
   cancelable_task_manager()->CancelAndWait();
 
   // Cancel all compiler tasks.
+#ifdef V8_ENABLE_SPARKPLUG
   delete baseline_batch_compiler_;
   baseline_batch_compiler_ = nullptr;
+#endif  // V8_ENABLE_SPARKPLUG
 
 #ifdef V8_ENABLE_MAGLEV
   delete maglev_concurrent_dispatcher_;
@@ -3809,9 +3954,11 @@ void Isolate::Deinit() {
     delete shared_external_pointer_space_;
     shared_external_pointer_space_ = nullptr;
   }
+  trusted_pointer_table().TearDownSpace(heap()->trusted_pointer_space());
+  trusted_pointer_table().TearDown();
 #endif  // V8_COMPRESS_POINTERS
 
-#ifdef V8_CODE_POINTER_SANDBOXING
+#ifdef V8_ENABLE_SANDBOX
   GetProcessWideCodePointerTable()->TearDownSpace(heap()->code_pointer_space());
 #endif
 
@@ -3852,7 +3999,8 @@ Isolate::~Isolate() {
   TRACE_ISOLATE(destructor);
 
   // The entry stack must be empty when we get here.
-  DCHECK(entry_stack_ == nullptr || entry_stack_->previous_item == nullptr);
+  DCHECK(entry_stack_ == nullptr ||
+         entry_stack_.load()->previous_item == nullptr);
 
   delete entry_stack_;
   entry_stack_ = nullptr;
@@ -3932,6 +4080,14 @@ Isolate::~Isolate() {
 
 void Isolate::InitializeThreadLocal() {
   thread_local_top()->Initialize(this);
+#ifdef DEBUG
+  // This method might be called on a thread that's not bound to any Isolate
+  // and thus pointer compression schemes might have cage base value unset.
+  // Read-only roots accessors contain type DCHECKs which require access to
+  // V8 heap in order to check the object type. So, allow heap access here
+  // to let the checks work.
+  i::PtrComprCageAccessScope ptr_compr_cage_access_scope(this);
+#endif  // DEBUG
   clear_pending_exception();
   clear_pending_message();
   clear_scheduled_exception();
@@ -4310,7 +4466,7 @@ void Isolate::VerifyStaticRoots() {
   for (auto idx = RootIndex::kFirstRoot; idx <= RootIndex::kLastRoot; ++idx) {
     Tagged<Object> obj = roots_table().slot(idx).load(this);
     if (obj.ptr() == kNullAddress || !IsMap(obj)) continue;
-    Map map = Map::cast(obj);
+    Tagged<Map> map = Map::cast(obj);
 
 #define INSTANCE_TYPE_CHECKER_SINGLE(type, _)  \
   CHECK_EQ(InstanceTypeChecker::Is##type(map), \
@@ -4434,7 +4590,9 @@ bool Isolate::Init(SnapshotData* startup_snapshot_data,
     lazy_compile_dispatcher_ = std::make_unique<LazyCompileDispatcher>(
         this, V8::GetCurrentPlatform(), v8_flags.stack_size);
   }
+#ifdef V8_ENABLE_SPARKPLUG
   baseline_batch_compiler_ = new baseline::BaselineBatchCompiler(this);
+#endif  // V8_ENABLE_SPARKPLUG
 #ifdef V8_ENABLE_MAGLEV
   maglev_concurrent_dispatcher_ = new maglev::MaglevConcurrentDispatcher(this);
 #endif  // V8_ENABLE_MAGLEV
@@ -4510,6 +4668,9 @@ bool Isolate::Init(SnapshotData* startup_snapshot_data,
     external_pointer_table().AttachSpaceToReadOnlySegment(
         heap()->read_only_external_pointer_space());
     external_pointer_table().InitializeSpace(heap()->external_pointer_space());
+
+    trusted_pointer_table().Initialize();
+    trusted_pointer_table().InitializeSpace(heap()->trusted_pointer_space());
 #endif  // V8_COMPRESS_POINTERS
   }
   ReadOnlyHeap::SetUp(this, read_only_snapshot_data, can_rehash);
@@ -4581,7 +4742,7 @@ bool Isolate::Init(SnapshotData* startup_snapshot_data,
   }
 #endif  // V8_COMPRESS_POINTERS
 
-#ifdef V8_CODE_POINTER_SANDBOXING
+#ifdef V8_ENABLE_SANDBOX
   GetProcessWideCodePointerTable()->InitializeSpace(
       heap()->code_pointer_space());
 #endif
@@ -4785,12 +4946,13 @@ void Isolate::Enter() {
     DCHECK_NOT_NULL(current_isolate);
     if (current_isolate == this) {
       DCHECK(Current() == this);
-      DCHECK_NOT_NULL(entry_stack_);
-      DCHECK(entry_stack_->previous_thread_data == nullptr ||
-             entry_stack_->previous_thread_data->thread_id() ==
+      auto entry_stack = entry_stack_.load();
+      DCHECK_NOT_NULL(entry_stack);
+      DCHECK(entry_stack->previous_thread_data == nullptr ||
+             entry_stack->previous_thread_data->thread_id() ==
                  ThreadId::Current());
       // Same thread re-enters the isolate, no need to re-init anything.
-      entry_stack_->entry_count++;
+      entry_stack->entry_count++;
       return;
     }
   }
@@ -4810,24 +4972,25 @@ void Isolate::Enter() {
 }
 
 void Isolate::Exit() {
-  DCHECK_NOT_NULL(entry_stack_);
-  DCHECK(entry_stack_->previous_thread_data == nullptr ||
-         entry_stack_->previous_thread_data->thread_id() ==
+  auto current_entry_stack = entry_stack_.load();
+  DCHECK_NOT_NULL(current_entry_stack);
+  DCHECK(current_entry_stack->previous_thread_data == nullptr ||
+         current_entry_stack->previous_thread_data->thread_id() ==
              ThreadId::Current());
 
-  if (--entry_stack_->entry_count > 0) return;
+  if (--current_entry_stack->entry_count > 0) return;
 
   DCHECK_NOT_NULL(CurrentPerIsolateThreadData());
   DCHECK(CurrentPerIsolateThreadData()->isolate_ == this);
 
   // Pop the stack.
-  EntryStackItem* item = entry_stack_;
-  entry_stack_ = item->previous_item;
+  entry_stack_ = current_entry_stack->previous_item;
 
-  PerIsolateThreadData* previous_thread_data = item->previous_thread_data;
-  Isolate* previous_isolate = item->previous_isolate;
+  PerIsolateThreadData* previous_thread_data =
+      current_entry_stack->previous_thread_data;
+  Isolate* previous_isolate = current_entry_stack->previous_isolate;
 
-  delete item;
+  delete current_entry_stack;
 
   // Reinit the current thread for the isolate it was running before this one.
   SetIsolateThreadLocals(previous_isolate, previous_thread_data);
@@ -4999,6 +5162,7 @@ bool Isolate::NeedsSourcePositions() const {
       v8_flags.trace_turbo_graph || v8_flags.turbo_profiling ||
       v8_flags.print_maglev_code || v8_flags.perf_prof || v8_flags.log_maps ||
       v8_flags.log_ic || v8_flags.log_function_events ||
+      v8_flags.heap_snapshot_on_oom ||
       // Dynamic conditions; changing any of these conditions triggers source
       // position collection for the entire heap
       // (CollectSourcePositionsForAllBytecodeArrays).
@@ -5026,8 +5190,8 @@ void Isolate::MaybeInitializeVectorListFromHeap() {
          !current_obj.is_null(); current_obj = heap_iterator.Next()) {
       if (!IsFeedbackVector(current_obj)) continue;
 
-      FeedbackVector vector = FeedbackVector::cast(current_obj);
-      SharedFunctionInfo shared = vector->shared_function_info();
+      Tagged<FeedbackVector> vector = FeedbackVector::cast(current_obj);
+      Tagged<SharedFunctionInfo> shared = vector->shared_function_info();
 
       // No need to preserve the feedback vector for non-user-visible functions.
       if (!shared->IsSubjectToDebugging()) continue;
@@ -5054,7 +5218,7 @@ Isolate::KnownPrototype Isolate::IsArrayOrObjectOrStringPrototype(
     Tagged<Object> object) {
   Tagged<Object> context = heap()->native_contexts_list();
   while (!IsUndefined(context, this)) {
-    Context current_context = Context::cast(context);
+    Tagged<Context> current_context = Context::cast(context);
     if (current_context->initial_object_prototype() == object) {
       return KnownPrototype::kObject;
     } else if (current_context->initial_array_prototype() == object) {
@@ -5071,7 +5235,7 @@ bool Isolate::IsInAnyContext(Tagged<Object> object, uint32_t index) {
   DisallowGarbageCollection no_gc;
   Tagged<Object> context = heap()->native_contexts_list();
   while (!IsUndefined(context, this)) {
-    Context current_context = Context::cast(context);
+    Tagged<Context> current_context = Context::cast(context);
     if (current_context->get(index) == object) {
       return true;
     }
@@ -5820,6 +5984,11 @@ void Isolate::SetUseCounterCallback(v8::Isolate::UseCounterCallback callback) {
 }
 
 void Isolate::CountUsage(v8::Isolate::UseCounterFeature feature) {
+  CountUsage(base::VectorOf({feature}));
+}
+
+void Isolate::CountUsage(
+    base::Vector<const v8::Isolate::UseCounterFeature> features) {
   // The counter callback
   // - may cause the embedder to call into V8, which is not generally possible
   //   during GC.
@@ -5831,16 +6000,12 @@ void Isolate::CountUsage(v8::Isolate::UseCounterFeature feature) {
     DCHECK(IsNativeContext(context()->native_context()));
     if (use_counter_callback_) {
       HandleScope handle_scope(this);
-      use_counter_callback_(reinterpret_cast<v8::Isolate*>(this), feature);
+      for (auto feature : features) {
+        use_counter_callback_(reinterpret_cast<v8::Isolate*>(this), feature);
+      }
     }
   } else {
-    heap_.IncrementDeferredCount(feature);
-  }
-}
-
-void Isolate::CountUsage(v8::Isolate::UseCounterFeature feature, int count) {
-  for (int i = 0; i < count; ++i) {
-    CountUsage(feature);
+    heap_.IncrementDeferredCounts(features);
   }
 }
 
@@ -5996,7 +6161,7 @@ void Isolate::CollectSourcePositionsForAllBytecodeArrays() {
     for (Tagged<HeapObject> obj = iterator.Next(); !obj.is_null();
          obj = iterator.Next()) {
       if (!IsSharedFunctionInfo(obj)) continue;
-      SharedFunctionInfo sfi = SharedFunctionInfo::cast(obj);
+      Tagged<SharedFunctionInfo> sfi = SharedFunctionInfo::cast(obj);
       // If the script is a Smi, then the SharedFunctionInfo is in
       // the process of being deserialized.
       Tagged<Object> script = sfi->raw_script(kAcquireLoad);
@@ -6223,7 +6388,7 @@ bool Isolate::RequiresCodeRange() const {
 v8::metrics::Recorder::ContextId Isolate::GetOrRegisterRecorderContextId(
     Handle<NativeContext> context) {
   if (serializer_enabled_) return v8::metrics::Recorder::ContextId::Empty();
-  i::Object id = context->recorder_context_id();
+  i::Tagged<i::Object> id = context->recorder_context_id();
   if (IsNullOrUndefined(id)) {
     CHECK_LT(last_recorder_context_id_, i::Smi::kMaxValue);
     context->set_recorder_context_id(

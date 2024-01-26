@@ -15,41 +15,7 @@
 # limitations under the License.
 # ~~~
 
-set(CUBE_INCLUDE_DIRS ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_BINARY_DIR}/..)
-
-set(SCRIPTS_DIR "${PROJECT_SOURCE_DIR}/scripts")
-
-if (NOT GLSLANG_INSTALL_DIR AND DEFINED ENV{GLSLANG_INSTALL_DIR})
-    set(GLSLANG_INSTALL_DIR $ENV{GLSLANG_INSTALL_DIR})
-endif()
-
-if(GLSLANG_INSTALL_DIR)
-    message(STATUS "Using GLSLANG_INSTALL_DIR to look for glslangValidator")
-    find_program(GLSLANG_VALIDATOR names glslangValidator HINTS "${GLSLANG_INSTALL_DIR}/bin")
-else()
-    find_package(Python3 REQUIRED QUIET)
-    set(GLSLANG_VALIDATOR_NAME "glslangValidator")
-    message(STATUS "Using cmake find_program to look for glslangValidator")
-    if(WIN32)
-        execute_process(
-            COMMAND ${Python3_EXECUTABLE} ${SCRIPTS_DIR}/fetch_glslangvalidator.py glslang-master-windows-x64-Release.zip)
-        set(GLSLANG_VALIDATOR_NAME "glslangValidator.exe")
-    elseif(APPLE)
-        execute_process(COMMAND ${Python3_EXECUTABLE} ${SCRIPTS_DIR}/fetch_glslangvalidator.py glslang-master-osx-Release.zip)
-    elseif(UNIX AND NOT APPLE) # i.e. Linux
-        execute_process(COMMAND ${Python3_EXECUTABLE} ${SCRIPTS_DIR}/fetch_glslangvalidator.py glslang-master-linux-Release.zip)
-    endif()
-    if (WIN32)
-        set(PLATFORM_DIR "${PROJECT_SOURCE_DIR}/glslang/windows/bin")
-    elseif(APPLE)
-        set(PLATFORM_DIR "${PROJECT_SOURCE_DIR}/glslang/darwin/bin")
-    else()
-        set(PLATFORM_DIR "${PROJECT_SOURCE_DIR}/glslang/linux/bin")
-    endif()
-    find_program(GLSLANG_VALIDATOR NAMES ${GLSLANG_VALIDATOR_NAME} HINTS ${PLATFORM_DIR})
-endif()
-
-if(UNIX AND NOT APPLE) # i.e. Linux
+if (CMAKE_SYSTEM_NAME MATCHES "Linux|BSD")
     option(BUILD_WSI_XCB_SUPPORT "Build XCB WSI support" ON)
     option(BUILD_WSI_XLIB_SUPPORT "Build Xlib WSI support" ON)
     option(BUILD_WSI_WAYLAND_SUPPORT "Build Wayland WSI support" ON)
@@ -67,10 +33,13 @@ if(UNIX AND NOT APPLE) # i.e. Linux
     endif()
 
     if(BUILD_WSI_WAYLAND_SUPPORT)
-        find_package(Wayland REQUIRED)
-        find_package(WaylandScanner REQUIRED)
-        find_package(WaylandProtocols REQUIRED)
-        include_directories(${WAYLAND_CLIENT_INCLUDE_DIR})
+        pkg_check_modules(WAYLAND_CLIENT REQUIRED IMPORTED_TARGET wayland-client)
+
+        pkg_get_variable(WAYLAND_SCANNER_EXECUTABLE wayland-scanner wayland_scanner)
+        message(STATUS "WAYLAND_SCANNER_EXECUTABLE = ${WAYLAND_SCANNER_EXECUTABLE}")
+
+        pkg_get_variable(WAYLAND_PROTOCOLS_PATH wayland-protocols pkgdatadir)
+        message(STATUS "WAYLAND_PROTOCOLS_PATH = ${WAYLAND_PROTOCOLS_PATH}")
         set(XDG_SHELL_PROTOCOL ${WAYLAND_PROTOCOLS_PATH}/stable/xdg-shell/xdg-shell.xml)
         add_custom_command(COMMENT "Generating xdg-shell protocol dispatch data"
                            OUTPUT xdg-shell-code.c
@@ -126,7 +95,7 @@ elseif(ANDROID)
     add_definitions(-DVK_USE_PLATFORM_ANDROID_KHR)
 elseif(APPLE)
     add_definitions(-DVK_USE_PLATFORM_METAL_EXT)
-elseif(UNIX AND NOT APPLE) # i.e. Linux
+elseif(CMAKE_SYSTEM_NAME MATCHES "Linux|BSD")
     if(NOT CUBE_WSI_SELECTION)
         set(CUBE_WSI_SELECTION "XCB")
     endif()
@@ -147,8 +116,7 @@ elseif(UNIX AND NOT APPLE) # i.e. Linux
         if(NOT BUILD_WSI_WAYLAND_SUPPORT)
             message(FATAL_ERROR "Selected Wayland for vkcube build but not building Wayland support")
         endif()
-        set(CUBE_INCLUDE_DIRS ${WAYLAND_CLIENT_INCLUDE_DIR} ${CUBE_INCLUDE_DIRS})
-        link_libraries(${WAYLAND_CLIENT_LIBRARIES})
+        link_libraries(PkgConfig::WAYLAND_CLIENT)
         set(CUBE_PLATFORM VK_USE_PLATFORM_WAYLAND_KHR)
         set(XDG_SHELL_PROTOCOL ${WAYLAND_PROTOCOLS_PATH}/stable/xdg-shell/xdg-shell.xml)
         set(OPTIONAL_WAYLAND_DATA_FILES
@@ -174,73 +142,84 @@ else()
     message(FATAL_ERROR "Unsupported Platform!")
 endif()
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+if (COMPILE_CUBE_SHADERS)
+    # Try to find glslang in system paths or in an SDK if the VULKAN_SDK env-var is set
+    find_program(GLSLANG_VALIDATOR names glslang glslangValidator HINTS $ENV{GLSLANG_INSTALL_DIR} $ENV{VULKAN_SDK}/bin $ENV{VULKAN_SDK}/Bin)
 
-add_custom_command(COMMENT "Compiling cube vertex shader"
-                   OUTPUT cube.vert.inc
-                   COMMAND ${GLSLANG_VALIDATOR} -V -x -o ${CMAKE_CURRENT_BINARY_DIR}/cube.vert.inc
-                           ${PROJECT_SOURCE_DIR}/cube/cube.vert
-                   MAIN_DEPENDENCY ${PROJECT_SOURCE_DIR}/cube/cube.vert
-                   DEPENDS ${PROJECT_SOURCE_DIR}/cube/cube.vert ${GLSLANG_VALIDATOR})
-add_custom_command(COMMENT "Compiling cube fragment shader"
-                   OUTPUT cube.frag.inc
-                   COMMAND ${GLSLANG_VALIDATOR} -V -x -o ${CMAKE_CURRENT_BINARY_DIR}/cube.frag.inc
-                           ${PROJECT_SOURCE_DIR}/cube/cube.frag
-                   MAIN_DEPENDENCY ${PROJECT_SOURCE_DIR}/cube/cube.frag
-                   DEPENDS ${PROJECT_SOURCE_DIR}/cube/cube.frag ${GLSLANG_VALIDATOR})
-include_directories(${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR})
-
-if(WIN32)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_CRT_SECURE_NO_WARNINGS -D_USE_MATH_DEFINES")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_CRT_SECURE_NO_WARNINGS -D_USE_MATH_DEFINES")
+    add_custom_command(COMMENT "Compiling cube vertex shader"
+                    OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/cube.vert.inc
+                    COMMAND ${GLSLANG_VALIDATOR} -V -x -o ${CMAKE_CURRENT_SOURCE_DIR}/cube.vert.inc
+                            ${PROJECT_SOURCE_DIR}/cube/cube.vert
+                    MAIN_DEPENDENCY ${PROJECT_SOURCE_DIR}/cube/cube.vert
+                    DEPENDS ${PROJECT_SOURCE_DIR}/cube/cube.vert ${GLSLANG_VALIDATOR})
+    add_custom_command(COMMENT "Compiling cube fragment shader"
+                    OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/cube.frag.inc
+                    COMMAND ${GLSLANG_VALIDATOR} -V -x -o ${CMAKE_CURRENT_SOURCE_DIR}/cube.frag.inc
+                            ${PROJECT_SOURCE_DIR}/cube/cube.frag
+                    MAIN_DEPENDENCY ${PROJECT_SOURCE_DIR}/cube/cube.frag
+                    DEPENDS ${PROJECT_SOURCE_DIR}/cube/cube.frag ${GLSLANG_VALIDATOR})
 endif()
 
-include_directories(${CUBE_INCLUDE_DIRS})
+if(WIN32)
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
+    # vkcube / vkcube make use of M_PI and various other math defines.
+    add_compile_definitions(_USE_MATH_DEFINES)
+endif()
 
 # ----------------------------------------------------------------------------
 # vkcube
 
 if(APPLE)
     include(macOS/cube/cube.cmake)
-elseif(NOT WIN32)
-    add_executable(vkcube
-                   cube.c
-                   ${PROJECT_SOURCE_DIR}/cube/cube.vert
-                   ${PROJECT_SOURCE_DIR}/cube/cube.frag
-                   cube.vert.inc
-                   cube.frag.inc
-                   ${OPTIONAL_WAYLAND_DATA_FILES})
-    target_link_libraries(vkcube Vulkan::Vulkan)
+elseif (ANDROID)
+    add_library(vkcube MODULE)
+
+    target_sources(vkcube PRIVATE cube.c)
+
+    add_subdirectory(android)
+
+    target_link_libraries(vkcube PRIVATE Vulkan::Headers)
+elseif(CMAKE_SYSTEM_NAME MATCHES "Linux|BSD")
+    add_executable(vkcube)
+    target_sources(vkcube PRIVATE
+        cube.c
+        ${PROJECT_SOURCE_DIR}/cube/cube.vert
+        ${PROJECT_SOURCE_DIR}/cube/cube.frag
+        cube.vert.inc
+        cube.frag.inc
+        ${OPTIONAL_WAYLAND_DATA_FILES}
+    )
     target_compile_definitions(vkcube PUBLIC ${CUBE_PLATFORM})
     include(CheckLibraryExists)
     CHECK_LIBRARY_EXISTS("rt" clock_gettime "" NEED_RT)
     if (NEED_RT)
-        target_link_libraries(vkcube rt)
+        target_link_libraries(vkcube PRIVATE rt)
     endif()
-
-    if (ENABLE_ADDRESS_SANITIZER)
-        target_compile_options(vkcube PUBLIC -fsanitize=address)
-        target_link_options(vkcube PUBLIC -fsanitize=address)
-    endif ()
+    target_link_libraries(vkcube PRIVATE Vulkan::Headers Vulkan::Loader)
+elseif(WIN32)
+    add_executable(vkcube WIN32)
+    target_sources(vkcube PRIVATE
+        cube.c
+        ${PROJECT_SOURCE_DIR}/cube/cube.vert
+        ${PROJECT_SOURCE_DIR}/cube/cube.frag
+        cube.vert.inc
+        cube.frag.inc
+    )
+    target_link_libraries(vkcube PRIVATE Vulkan::Headers Vulkan::Loader)
 else()
-    if(CMAKE_CL_64)
-        set(LIB_DIR "Win64")
-    else()
-        set(LIB_DIR "Win32")
-    endif()
-
-    add_executable(vkcube
-                   WIN32
-                   cube.c
-                   ${PROJECT_SOURCE_DIR}/cube/cube.vert
-                   ${PROJECT_SOURCE_DIR}/cube/cube.frag
-                   cube.vert.inc
-                   cube.frag.inc)
-    target_link_libraries(vkcube Vulkan::Vulkan)
+    message(FATAL_ERROR "Unsupported Platform!")
 endif()
 
-if(APPLE)
+if (ENABLE_ADDRESS_SANITIZER)
+    target_compile_options(vkcube PUBLIC -fsanitize=address)
+    target_link_options(vkcube PUBLIC -fsanitize=address)
+endif()
+
+target_include_directories(vkcube PRIVATE .)
+
+if (ANDROID)
+    install(TARGETS vkcube DESTINATION ${CMAKE_INSTALL_LIBDIR})    
+elseif(APPLE)
     # Keep RPATH so fixup_bundle can use it to find libraries
     set_target_properties(vkcube PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
     install(TARGETS vkcube BUNDLE DESTINATION "cube")
@@ -250,7 +229,11 @@ if(APPLE)
         fixup_bundle(\${CMAKE_INSTALL_PREFIX}/cube/vkcube.app \"\" \"${Vulkan_LIBRARY_DIR}\")
         ")
 else()
-    install(TARGETS vkcube RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    install(TARGETS vkcube)
+endif()
+
+if (ANDROID)
+    return()
 endif()
 
 # ----------------------------------------------------------------------------
@@ -258,7 +241,7 @@ endif()
 
 if(APPLE)
     include(macOS/cubepp/cubepp.cmake)
-elseif(NOT WIN32)
+elseif(CMAKE_SYSTEM_NAME MATCHES "Linux|BSD")
     add_executable(vkcubepp
                    cube.cpp
                    ${PROJECT_SOURCE_DIR}/cube/cube.vert
@@ -266,7 +249,7 @@ elseif(NOT WIN32)
                    cube.vert.inc
                    cube.frag.inc
                    ${OPTIONAL_WAYLAND_DATA_FILES})
-    target_link_libraries(vkcubepp Vulkan::Vulkan)
+    target_link_libraries(vkcubepp Vulkan::Headers Vulkan::Loader)
     target_compile_definitions(vkcubepp PUBLIC ${CUBE_PLATFORM})
 
     if (ENABLE_ADDRESS_SANITIZER)
@@ -274,12 +257,6 @@ elseif(NOT WIN32)
         target_link_options(vkcubepp PUBLIC -fsanitize=address)
     endif ()
 else()
-    if(CMAKE_CL_64)
-        set(LIB_DIR "Win64")
-    else()
-        set(LIB_DIR "Win32")
-    endif()
-
     add_executable(vkcubepp
                    WIN32
                    cube.cpp
@@ -287,8 +264,9 @@ else()
                    ${PROJECT_SOURCE_DIR}/cube/cube.frag
                    cube.vert.inc
                    cube.frag.inc)
-    target_link_libraries(vkcubepp Vulkan::Vulkan)
+    target_link_libraries(vkcubepp Vulkan::Headers Vulkan::Loader)
 endif()
+target_include_directories(vkcubepp PRIVATE .)
 
 if(APPLE)
     # Keep RPATH so fixup_bundle can use it to find libraries
@@ -300,37 +278,43 @@ if(APPLE)
         fixup_bundle(\${CMAKE_INSTALL_PREFIX}/cube/vkcubepp.app \"\" \"${Vulkan_LIBRARY_DIR}\")
         ")
 else()
-    install(TARGETS vkcubepp RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    install(TARGETS vkcubepp)
 endif()
 
 # ----------------------------------------------------------------------------
 # vkcube-wayland
 
-if(UNIX AND NOT APPLE) # i.e. Linux
+if (CMAKE_SYSTEM_NAME MATCHES "Linux|BSD")
     if(BUILD_WSI_WAYLAND_SUPPORT AND EXISTS ${WAYLAND_PROTOCOLS_PATH}/unstable/xdg-decoration/xdg-decoration-unstable-v1.xml)
-        set(CUBE_INCLUDE_DIRS ${WAYLAND_CLIENT_INCLUDE_DIR} ${CUBE_INCLUDE_DIRS})
-        link_libraries(${WAYLAND_CLIENT_LIBRARIES})
-        set(OPTIONAL_WAYLAND_DATA_FILES
+        add_executable(vkcube-wayland)
+
+        target_sources(vkcube-wayland PRIVATE
+            cube.c
+            ${PROJECT_SOURCE_DIR}/cube/cube.vert
+            ${PROJECT_SOURCE_DIR}/cube/cube.frag
+            cube.vert.inc
+            cube.frag.inc
             ${CMAKE_CURRENT_BINARY_DIR}/xdg-shell-code.c
             ${CMAKE_CURRENT_BINARY_DIR}/xdg-shell-client-header.h
             ${CMAKE_CURRENT_BINARY_DIR}/xdg-decoration-code.c
-            ${CMAKE_CURRENT_BINARY_DIR}/xdg-decoration-client-header.h)
-        include_directories(${CMAKE_CURRENT_BINARY_DIR})
-        add_executable(vkcube-wayland
-                       cube.c
-                       ${PROJECT_SOURCE_DIR}/cube/cube.vert
-                       ${PROJECT_SOURCE_DIR}/cube/cube.frag
-                       cube.vert.inc
-                       cube.frag.inc
-                       ${OPTIONAL_WAYLAND_DATA_FILES})
-        target_link_libraries(vkcube-wayland Vulkan::Vulkan)
-        target_compile_definitions(vkcube-wayland PUBLIC VK_USE_PLATFORM_WAYLAND_KHR)
+            ${CMAKE_CURRENT_BINARY_DIR}/xdg-decoration-client-header.h
+        )
+        target_include_directories(vkcube-wayland PRIVATE
+            ${CMAKE_CURRENT_BINARY_DIR}
+            .
+        )
+        target_link_libraries(vkcube-wayland PRIVATE
+            Vulkan::Headers
+            Vulkan::Loader
+            PkgConfig::WAYLAND_CLIENT
+        )
+        target_compile_definitions(vkcube-wayland PRIVATE VK_USE_PLATFORM_WAYLAND_KHR)
         include(CheckLibraryExists)
         CHECK_LIBRARY_EXISTS("rt" clock_gettime "" NEED_RT)
         if (NEED_RT)
-            target_link_libraries(vkcube-wayland rt)
+            target_link_libraries(vkcube-wayland PRIVATE rt)
         endif()
-        install(TARGETS vkcube-wayland RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+        install(TARGETS vkcube-wayland)
 
         if (ENABLE_ADDRESS_SANITIZER)
             target_compile_options(vkcube-wayland PUBLIC -fsanitize=address)

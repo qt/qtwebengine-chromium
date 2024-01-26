@@ -63,11 +63,8 @@ export class HeapSnapshotWorkerProxy extends Common.ObjectWrapper.ObjectWrapper<
     this.nextCallId = 1;
     this.callbacks = new Map();
     this.previousCallbacks = new Set();
-    // We use the legacy file here, as below we postMessage and expect certain objects to be
-    // defined on the global scope. Ideally we use some sort of import-export mechanism across
-    // worker boundaries, but that requires a partial rewrite of the heap_snapshot_worker.
     this.worker = Common.Worker.WorkerWrapper.fromURL(
-        new URL('../../entrypoints/heap_snapshot_worker/heap_snapshot_worker-legacy.js', import.meta.url));
+        new URL('../../entrypoints/heap_snapshot_worker/heap_snapshot_worker-entrypoint.js', import.meta.url));
     this.worker.onmessage = this.messageReceived.bind(this);
   }
 
@@ -77,9 +74,8 @@ export class HeapSnapshotWorkerProxy extends Common.ObjectWrapper.ObjectWrapper<
     const proxy = new HeapSnapshotLoaderProxy(this, objectId, profileUid, snapshotReceivedCallback);
     this.postMessage({
       callId: this.nextCallId++,
-      disposition: 'create',
+      disposition: 'createLoader',
       objectId: objectId,
-      methodName: 'HeapSnapshotWorker.HeapSnapshotLoader',
     });
     return proxy;
   }

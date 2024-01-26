@@ -10,6 +10,7 @@
 #ifndef EIGEN_RANDOM_H
 #define EIGEN_RANDOM_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen { 

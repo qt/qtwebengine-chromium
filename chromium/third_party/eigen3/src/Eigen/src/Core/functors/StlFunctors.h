@@ -10,6 +10,7 @@
 #ifndef EIGEN_STL_FUNCTORS_H
 #define EIGEN_STL_FUNCTORS_H
 
+// IWYU pragma: private
 #include "../InternalHeaderCheck.h"
 
 namespace Eigen {

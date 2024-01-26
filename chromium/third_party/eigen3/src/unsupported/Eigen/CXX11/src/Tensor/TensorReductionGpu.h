@@ -10,6 +10,7 @@
 #ifndef EIGEN_CXX11_TENSOR_TENSOR_REDUCTION_GPU_H
 #define EIGEN_CXX11_TENSOR_TENSOR_REDUCTION_GPU_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {
@@ -413,7 +414,7 @@ struct FullReductionLauncher<
     typedef typename Self::Index Index;
     const int block_size = 256;
     const int num_per_thread = 128;
-    const int num_blocks = divup<int>(num_coeffs, block_size * num_per_thread);
+    const int num_blocks = numext::div_ceil<int>(num_coeffs, block_size * num_per_thread);
 
     unsigned int* semaphore = NULL;
     if (num_blocks > 1) {
@@ -440,7 +441,7 @@ struct FullReductionLauncher<Self, Op, Eigen::half, true> {
 
     const int block_size = 256;
     const int num_per_thread = 128;
-    const int num_blocks = divup<int>(num_coeffs, block_size * num_per_thread);
+    const int num_blocks = numext::div_ceil<int>(num_coeffs, block_size * num_per_thread);
     half* scratch = static_cast<half*>(device.scratchpad());
 
     if (num_blocks > 1) {
@@ -506,7 +507,7 @@ __global__ EIGEN_HIP_LAUNCH_BOUNDS_1024 void InnerReductionKernel(Reducer reduce
   const int unroll_times = 16;
   eigen_assert(NumPerThread % unroll_times == 0);
 
-  const Index input_col_blocks = divup<Index>(num_coeffs_to_reduce, blockDim.x * NumPerThread);
+  const Index input_col_blocks = numext::div_ceil<Index>(num_coeffs_to_reduce, blockDim.x * NumPerThread);
   const Index num_input_blocks = input_col_blocks * num_preserved_coeffs;
 
   const Index num_threads = blockDim.x * gridDim.x;
@@ -592,8 +593,8 @@ __global__ EIGEN_HIP_LAUNCH_BOUNDS_1024 void InnerReductionKernelHalfFloat(Reduc
   eigen_assert(NumPerThread % unroll_times == 0);
   eigen_assert(unroll_times % 2 == 0);
 
-  const Index input_col_blocks = divup<Index>(num_coeffs_to_reduce, blockDim.x * NumPerThread * 2);
-  const Index num_input_blocks = divup<Index>(input_col_blocks * num_preserved_coeffs, 2);
+  const Index input_col_blocks = numext::div_ceil<Index>(num_coeffs_to_reduce, blockDim.x * NumPerThread * 2);
+  const Index num_input_blocks = numext::div_ceil<Index>(input_col_blocks * num_preserved_coeffs, 2);
 
   const Index num_threads = blockDim.x * gridDim.x;
   const Index thread_id = blockIdx.x * blockDim.x + threadIdx.x;
@@ -784,7 +785,7 @@ struct InnerReductionLauncher<
     const Index num_coeffs = num_coeffs_to_reduce * num_preserved_vals;
     const int block_size = 256;
     const int num_per_thread = 128;
-    const int dyn_blocks = divup<int>(num_coeffs, block_size * num_per_thread);
+    const int dyn_blocks = numext::div_ceil<int>(num_coeffs, block_size * num_per_thread);
     const int max_blocks = device.getNumGpuMultiProcessors() *
                            device.maxGpuThreadsPerMultiProcessor() / block_size;
     const int num_blocks = numext::mini<int>(max_blocks, dyn_blocks);
@@ -792,7 +793,7 @@ struct InnerReductionLauncher<
     if (num_blocks > 1) {
       // We initialize the outputs outside the reduction kernel when we can't be sure that there
       // won't be a race conditions between multiple thread blocks.
-      const int dyn_blocks2 = divup<int>(num_preserved_vals, 1024);
+      const int dyn_blocks2 = numext::div_ceil<int>(num_preserved_vals, 1024);
       const int max_blocks2 = device.getNumGpuMultiProcessors() *
                            device.maxGpuThreadsPerMultiProcessor() / 1024;
       const int num_blocks2 = numext::mini<int>(max_blocks2, dyn_blocks2);
@@ -830,7 +831,7 @@ struct InnerReductionLauncher<Self, Op, Eigen::half, true> {
     const Index num_coeffs = num_coeffs_to_reduce * num_preserved_vals;
     const int block_size = /*256*/128;
     const int num_per_thread = /*128*/64;
-    const int dyn_blocks = divup<int>(num_coeffs, block_size * num_per_thread);
+    const int dyn_blocks = numext::div_ceil<int>(num_coeffs, block_size * num_per_thread);
     const int max_blocks = device.getNumGpuMultiProcessors() *
                            device.maxGpuThreadsPerMultiProcessor() / block_size;
     const int num_blocks = numext::mini<int>(max_blocks, dyn_blocks);
@@ -899,7 +900,7 @@ __global__ EIGEN_HIP_LAUNCH_BOUNDS_1024 void OuterReductionKernel(Reducer reduce
   }
 
   // Do the reduction.
-  const Index max_iter = num_preserved_coeffs * divup<Index>(num_coeffs_to_reduce, NumPerThread);
+  const Index max_iter = num_preserved_coeffs * numext::div_ceil<Index>(num_coeffs_to_reduce, NumPerThread);
   for (Index i = thread_id; i < max_iter; i += num_threads) {
     const Index input_col = i % num_preserved_coeffs;
     const Index input_row = (i / num_preserved_coeffs) * NumPerThread;
@@ -952,7 +953,7 @@ struct OuterReducer<Self, Op, GpuDevice> {
     const Index num_coeffs = num_coeffs_to_reduce * num_preserved_vals;
     const int block_size = 256;
     const int num_per_thread = 16;
-    const int dyn_blocks = divup<int>(num_coeffs, block_size * num_per_thread);
+    const int dyn_blocks = numext::div_ceil<int>(num_coeffs, block_size * num_per_thread);
     const int max_blocks = device.getNumGpuMultiProcessors() *
                            device.maxGpuThreadsPerMultiProcessor() / block_size;
     const int num_blocks = numext::mini<int>(max_blocks, dyn_blocks);
@@ -960,7 +961,7 @@ struct OuterReducer<Self, Op, GpuDevice> {
     if (num_blocks > 1) {
       // We initialize the outputs in the reduction kernel itself when we don't have to worry
       // about race conditions between multiple thread blocks.
-      const int dyn_blocks2 = divup<int>(num_preserved_vals, 1024);
+      const int dyn_blocks2 = numext::div_ceil<int>(num_preserved_vals, 1024);
       const int max_blocks2 = device.getNumGpuMultiProcessors() *
                              device.maxGpuThreadsPerMultiProcessor() / 1024;
       const int num_blocks2 = numext::mini<int>(max_blocks2, dyn_blocks2);

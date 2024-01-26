@@ -10,6 +10,7 @@
 #ifndef EIGEN_BINARY_FUNCTORS_H
 #define EIGEN_BINARY_FUNCTORS_H
 
+// IWYU pragma: private
 #include "../InternalHeaderCheck.h"
 
 namespace Eigen {

@@ -2,22 +2,22 @@
 // See error_location_helper_generator.py for modifications
 
 /***************************************************************************
-*
-* Copyright (c) 2023 The Khronos Group Inc.
-* Copyright (c) 2023 Valve Corporation
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*     http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
-****************************************************************************/
+ *
+ * Copyright (c) 2023 The Khronos Group Inc.
+ * Copyright (c) 2023 Valve Corporation
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ ****************************************************************************/
 
 // NOLINTBEGIN
 
@@ -25,6 +25,7 @@
 #include "containers/custom_containers.h"
 #include <assert.h>
 
+// clang-format off
 namespace vvl {
 
 const char* String(Func func) {
@@ -514,6 +515,7 @@ const char* String(Func func) {
     {"vkGetImageViewHandleNVX", 24},
     {"vkGetImageViewOpaqueCaptureDescriptorDataEXT", 45},
     {"vkGetInstanceProcAddr", 22},
+    {"vkGetLatencyTimingsNV", 22},
     {"vkGetMemoryAndroidHardwareBufferANDROID", 40},
     {"vkGetMemoryFdKHR", 17},
     {"vkGetMemoryFdPropertiesKHR", 27},
@@ -631,6 +633,7 @@ const char* String(Func func) {
     {"vkImportSemaphoreZirconHandleFUCHSIA", 37},
     {"vkInitializePerformanceApiINTEL", 32},
     {"vkInvalidateMappedMemoryRanges", 31},
+    {"vkLatencySleepNV", 17},
     {"vkMapMemory", 12},
     {"vkMapMemory2KHR", 16},
     {"vkMergePipelineCaches", 22},
@@ -639,6 +642,7 @@ const char* String(Func func) {
     {"vkQueueBindSparse", 18},
     {"vkQueueEndDebugUtilsLabelEXT", 29},
     {"vkQueueInsertDebugUtilsLabelEXT", 32},
+    {"vkQueueNotifyOutOfBandNV", 25},
     {"vkQueuePresentKHR", 18},
     {"vkQueueSetPerformanceConfigurationINTEL", 40},
     {"vkQueueSubmit", 14},
@@ -666,6 +670,8 @@ const char* String(Func func) {
     {"vkSetDeviceMemoryPriorityEXT", 29},
     {"vkSetEvent", 11},
     {"vkSetHdrMetadataEXT", 20},
+    {"vkSetLatencyMarkerNV", 21},
+    {"vkSetLatencySleepModeNV", 24},
     {"vkSetLocalDimmingAMD", 21},
     {"vkSetPrivateData", 17},
     {"vkSetPrivateDataEXT", 20},
@@ -726,6 +732,7 @@ const char* String(Struct structure) {
     {"VkAmigoProfilingSubmitInfoSEC", 30},
     {"VkAndroidHardwareBufferFormatProperties2ANDROID", 48},
     {"VkAndroidHardwareBufferFormatPropertiesANDROID", 47},
+    {"VkAndroidHardwareBufferFormatResolvePropertiesANDROID", 54},
     {"VkAndroidHardwareBufferPropertiesANDROID", 41},
     {"VkAndroidHardwareBufferUsageANDROID", 36},
     {"VkAndroidSurfaceCreateInfoKHR", 30},
@@ -964,6 +971,7 @@ const char* String(Struct structure) {
     {"VkFormatProperties2", 20},
     {"VkFormatProperties3", 20},
     {"VkFragmentShadingRateAttachmentInfoKHR", 39},
+    {"VkFrameBoundaryEXT", 19},
     {"VkFramebufferAttachmentImageInfo", 33},
     {"VkFramebufferAttachmentsCreateInfo", 35},
     {"VkFramebufferCreateInfo", 24},
@@ -974,6 +982,7 @@ const char* String(Struct structure) {
     {"VkGeometryDataNV", 17},
     {"VkGeometryNV", 13},
     {"VkGeometryTrianglesNV", 22},
+    {"VkGetLatencyMarkerInfoNV", 25},
     {"VkGraphicsPipelineCreateInfo", 29},
     {"VkGraphicsPipelineLibraryCreateInfoEXT", 39},
     {"VkGraphicsPipelineShaderGroupsCreateInfoNV", 43},
@@ -1046,6 +1055,11 @@ const char* String(Struct structure) {
     {"VkInitializePerformanceApiInfoINTEL", 36},
     {"VkInputAttachmentAspectReference", 33},
     {"VkInstanceCreateInfo", 21},
+    {"VkLatencySleepInfoNV", 21},
+    {"VkLatencySleepModeInfoNV", 25},
+    {"VkLatencySubmissionPresentIdNV", 31},
+    {"VkLatencySurfaceCapabilitiesNV", 31},
+    {"VkLatencyTimingsFrameReportNV", 30},
     {"VkLayerProperties", 18},
     {"VkMacOSSurfaceCreateInfoMVK", 28},
     {"VkMappedMemoryRange", 20},
@@ -1096,6 +1110,7 @@ const char* String(Struct structure) {
     {"VkOpticalFlowImageFormatPropertiesNV", 37},
     {"VkOpticalFlowSessionCreateInfoNV", 33},
     {"VkOpticalFlowSessionCreatePrivateDataInfoNV", 44},
+    {"VkOutOfBandQueueTypeInfoNV", 27},
     {"VkPastPresentationTimingGOOGLE", 31},
     {"VkPerformanceConfigurationAcquireInfoINTEL", 43},
     {"VkPerformanceCounterDescriptionKHR", 35},
@@ -1152,6 +1167,7 @@ const char* String(Struct structure) {
     {"VkPhysicalDeviceDescriptorBufferPropertiesEXT", 46},
     {"VkPhysicalDeviceDescriptorIndexingFeatures", 43},
     {"VkPhysicalDeviceDescriptorIndexingProperties", 45},
+    {"VkPhysicalDeviceDescriptorPoolOverallocationFeaturesNV", 55},
     {"VkPhysicalDeviceDescriptorSetHostMappingFeaturesVALVE", 54},
     {"VkPhysicalDeviceDeviceGeneratedCommandsComputeFeaturesNV", 57},
     {"VkPhysicalDeviceDeviceGeneratedCommandsFeaturesNV", 50},
@@ -1170,8 +1186,12 @@ const char* String(Struct structure) {
     {"VkPhysicalDeviceExtendedDynamicState3FeaturesEXT", 49},
     {"VkPhysicalDeviceExtendedDynamicState3PropertiesEXT", 51},
     {"VkPhysicalDeviceExtendedDynamicStateFeaturesEXT", 48},
+    {"VkPhysicalDeviceExtendedSparseAddressSpaceFeaturesNV", 53},
+    {"VkPhysicalDeviceExtendedSparseAddressSpacePropertiesNV", 55},
     {"VkPhysicalDeviceExternalBufferInfo", 35},
     {"VkPhysicalDeviceExternalFenceInfo", 34},
+    {"VkPhysicalDeviceExternalFormatResolveFeaturesANDROID", 53},
+    {"VkPhysicalDeviceExternalFormatResolvePropertiesANDROID", 55},
     {"VkPhysicalDeviceExternalImageFormatInfo", 40},
     {"VkPhysicalDeviceExternalMemoryHostPropertiesEXT", 48},
     {"VkPhysicalDeviceExternalMemoryRDMAFeaturesNV", 45},
@@ -1195,6 +1215,7 @@ const char* String(Struct structure) {
     {"VkPhysicalDeviceFragmentShadingRateFeaturesKHR", 47},
     {"VkPhysicalDeviceFragmentShadingRateKHR", 39},
     {"VkPhysicalDeviceFragmentShadingRatePropertiesKHR", 49},
+    {"VkPhysicalDeviceFrameBoundaryFeaturesEXT", 41},
     {"VkPhysicalDeviceGlobalPriorityQueryFeaturesKHR", 47},
     {"VkPhysicalDeviceGraphicsPipelineLibraryFeaturesEXT", 51},
     {"VkPhysicalDeviceGraphicsPipelineLibraryPropertiesEXT", 53},
@@ -1222,6 +1243,7 @@ const char* String(Struct structure) {
     {"VkPhysicalDeviceInlineUniformBlockFeatures", 43},
     {"VkPhysicalDeviceInlineUniformBlockProperties", 45},
     {"VkPhysicalDeviceInvocationMaskFeaturesHUAWEI", 45},
+    {"VkPhysicalDeviceLayeredDriverPropertiesMSFT", 44},
     {"VkPhysicalDeviceLegacyDitheringFeaturesEXT", 43},
     {"VkPhysicalDeviceLimits", 23},
     {"VkPhysicalDeviceLineRasterizationFeaturesEXT", 45},
@@ -1251,6 +1273,8 @@ const char* String(Struct structure) {
     {"VkPhysicalDeviceMultiviewPerViewViewportsFeaturesQCOM", 54},
     {"VkPhysicalDeviceMultiviewProperties", 36},
     {"VkPhysicalDeviceMutableDescriptorTypeFeaturesEXT", 49},
+    {"VkPhysicalDeviceNestedCommandBufferFeaturesEXT", 47},
+    {"VkPhysicalDeviceNestedCommandBufferPropertiesEXT", 49},
     {"VkPhysicalDeviceNonSeamlessCubeMapFeaturesEXT", 46},
     {"VkPhysicalDeviceOpacityMicromapFeaturesEXT", 43},
     {"VkPhysicalDeviceOpacityMicromapPropertiesEXT", 45},
@@ -1506,6 +1530,7 @@ const char* String(Struct structure) {
     {"VkSemaphoreSubmitInfo", 22},
     {"VkSemaphoreTypeCreateInfo", 26},
     {"VkSemaphoreWaitInfo", 20},
+    {"VkSetLatencyMarkerInfoNV", 25},
     {"VkSetStateFlagsIndirectCommandNV", 33},
     {"VkShaderCreateInfoEXT", 22},
     {"VkShaderModuleCreateInfo", 25},
@@ -1561,6 +1586,7 @@ const char* String(Struct structure) {
     {"VkSwapchainCounterCreateInfoEXT", 32},
     {"VkSwapchainCreateInfoKHR", 25},
     {"VkSwapchainDisplayNativeHdrCreateInfoAMD", 41},
+    {"VkSwapchainLatencyCreateInfoNV", 31},
     {"VkSwapchainPresentBarrierCreateInfoNV", 38},
     {"VkSwapchainPresentFenceInfoEXT", 31},
     {"VkSwapchainPresentModeInfoEXT", 30},
@@ -1823,6 +1849,7 @@ const char* String(Field field) {
     {"color", 6},
     {"colorAttachment", 16},
     {"colorAttachmentCount", 21},
+    {"colorAttachmentFormat", 22},
     {"colorBlendOp", 13},
     {"colorSamples", 13},
     {"colorSpace", 11},
@@ -1985,6 +2012,7 @@ const char* String(Field field) {
     {"descriptorIndexing", 19},
     {"descriptorOffset", 17},
     {"descriptorPool", 15},
+    {"descriptorPoolOverallocation", 29},
     {"descriptorSet", 14},
     {"descriptorSetCount", 19},
     {"descriptorSetHostMapping", 25},
@@ -2055,9 +2083,11 @@ const char* String(Field field) {
     {"drawIndirectCount", 18},
     {"drawIndirectFirstInstance", 26},
     {"driverCount", 12},
+    {"driverEndTimeUs", 16},
     {"driverID", 9},
     {"driverInfo", 11},
     {"driverName", 11},
+    {"driverStartTimeUs", 18},
     {"driverUUID", 11},
     {"driverVersion", 14},
     {"drmFd", 6},
@@ -2158,10 +2188,17 @@ const char* String(Field field) {
     {"extendedDynamicState3TessellationDomainOrigin", 46},
     {"extendedDynamicState3ViewportSwizzle", 37},
     {"extendedDynamicState3ViewportWScalingEnable", 44},
+    {"extendedSparseAddressSpace", 27},
+    {"extendedSparseAddressSpaceSize", 31},
+    {"extendedSparseBufferUsageFlags", 31},
+    {"extendedSparseImageUsageFlags", 30},
     {"extensionName", 14},
     {"extent", 7},
     {"externalFenceFeatures", 22},
     {"externalFormat", 15},
+    {"externalFormatResolve", 22},
+    {"externalFormatResolveChromaOffsetX", 35},
+    {"externalFormatResolveChromaOffsetY", 35},
     {"externalHandleType", 19},
     {"externalMemoryFeatures", 23},
     {"externalMemoryProperties", 25},
@@ -2241,6 +2278,8 @@ const char* String(Field field) {
     {"fragmentSize", 13},
     {"fragmentStoresAndAtomics", 25},
     {"frameBSize", 11},
+    {"frameBoundary", 14},
+    {"frameID", 8},
     {"frameISize", 11},
     {"framePSize", 11},
     {"frameRateDenominator", 21},
@@ -2275,6 +2314,8 @@ const char* String(Field field) {
     {"gopRemainingB", 14},
     {"gopRemainingI", 14},
     {"gopRemainingP", 14},
+    {"gpuRenderEndTimeUs", 19},
+    {"gpuRenderStartTimeUs", 21},
     {"graphicsPipelineLibrary", 24},
     {"graphicsPipelineLibraryFastLinking", 35},
     {"graphicsPipelineLibraryIndependentInterpolationDecoration", 58},
@@ -2334,6 +2375,7 @@ const char* String(Field field) {
     {"imageCompressionControlSwapchain", 33},
     {"imageCompressionFixedRateFlags", 31},
     {"imageCompressionFlags", 22},
+    {"imageCount", 11},
     {"imageCreateFlags", 17},
     {"imageCreateInfo", 16},
     {"imageCubeArray", 15},
@@ -2405,6 +2447,7 @@ const char* String(Field field) {
     {"inputAttachmentDescriptorSize", 30},
     {"inputAttachmentIndex", 21},
     {"inputRate", 10},
+    {"inputSampleTimeUs", 18},
     {"instance", 9},
     {"instanceCount", 14},
     {"instanceCustomIndex", 20},
@@ -2450,6 +2493,7 @@ const char* String(Field field) {
     {"isPreprocessed", 15},
     {"isText", 7},
     {"largePoints", 12},
+    {"latencyModeEnable", 18},
     {"layer", 6},
     {"layerCount", 11},
     {"layerName", 10},
@@ -2480,6 +2524,8 @@ const char* String(Field field) {
     {"location", 9},
     {"logicOp", 8},
     {"logicOpEnable", 14},
+    {"lowLatencyBoost", 16},
+    {"lowLatencyMode", 15},
     {"lumaBitDepth", 13},
     {"magFilter", 10},
     {"maintenance4", 13},
@@ -2505,6 +2551,7 @@ const char* String(Field field) {
     {"maxCodedExtent", 15},
     {"maxColorAttachments", 20},
     {"maxCombinedClipAndCullDistances", 32},
+    {"maxCommandBufferNestingLevel", 29},
     {"maxComputeSharedMemorySize", 27},
     {"maxComputeWorkGroupCount", 25},
     {"maxComputeWorkGroupInvocations", 31},
@@ -2819,6 +2866,7 @@ const char* String(Field field) {
     {"minX", 5},
     {"minY", 5},
     {"minZ", 5},
+    {"minimumIntervalUs", 18},
     {"minor", 6},
     {"mipLevel", 9},
     {"mipLevels", 10},
@@ -2859,6 +2907,9 @@ const char* String(Field field) {
     {"naluSliceSegmentEntryCount", 27},
     {"name", 5},
     {"negativeOneToOne", 17},
+    {"nestedCommandBuffer", 20},
+    {"nestedCommandBufferRendering", 29},
+    {"nestedCommandBufferSimultaneousUse", 35},
     {"newLayout", 10},
     {"nextStage", 10},
     {"noInvocationFragmentShadingRates", 33},
@@ -2867,6 +2918,7 @@ const char* String(Field field) {
     {"nonSeamlessCubeMap", 19},
     {"nonStrictSinglePixelWideLinesUseParallelogram", 46},
     {"nonStrictWideLinesUseParallelogram", 35},
+    {"nullColorAttachmentWithExternalFormatResolve", 45},
     {"nullDescriptor", 15},
     {"numAABBs", 9},
     {"numAvailableSgprs", 18},
@@ -2896,6 +2948,8 @@ const char* String(Field field) {
     {"optimalTilingFeatures", 22},
     {"optimalTilingLayoutUUID", 24},
     {"origin", 7},
+    {"osRenderQueueEndTimeUs", 23},
+    {"osRenderQueueStartTimeUs", 25},
     {"outputGridSize", 15},
     {"overallocationBehavior", 23},
     {"pAccelerationStructure", 23},
@@ -3100,6 +3154,7 @@ const char* String(Field field) {
     {"pImageMemoryBarriers", 21},
     {"pImageOpaqueBinds", 18},
     {"pImageSubresources", 19},
+    {"pImages", 8},
     {"pImmutableSamplers", 19},
     {"pImportFenceFdInfo", 19},
     {"pImportFenceWin32HandleInfo", 28},
@@ -3126,6 +3181,7 @@ const char* String(Field field) {
     {"pInternalRepresentations", 25},
     {"pLabelInfo", 11},
     {"pLabelName", 11},
+    {"pLatencyMarkerInfo", 19},
     {"pLaunchInfo", 12},
     {"pLayer", 7},
     {"pLayerName", 11},
@@ -3229,6 +3285,7 @@ const char* String(Field field) {
     {"pQueueInfo", 11},
     {"pQueueLabels", 13},
     {"pQueuePriorities", 17},
+    {"pQueueTypeInfo", 15},
     {"pRanges", 8},
     {"pRasterizationState", 20},
     {"pRaygenShaderBindingTable", 26},
@@ -3272,6 +3329,8 @@ const char* String(Field field) {
     {"pSignalSemaphores", 18},
     {"pSizeInfo", 10},
     {"pSizes", 7},
+    {"pSleepInfo", 11},
+    {"pSleepModeInfo", 15},
     {"pSliceOffsets", 14},
     {"pSliceSegmentOffsets", 21},
     {"pSparseMemoryRequirementCount", 30},
@@ -3323,6 +3382,8 @@ const char* String(Field field) {
     {"pTimes", 7},
     {"pTimestampInfos", 16},
     {"pTimestamps", 12},
+    {"pTimingCount", 13},
+    {"pTimings", 9},
     {"pTokens", 8},
     {"pToolCount", 11},
     {"pToolProperties", 16},
@@ -3482,6 +3543,7 @@ const char* String(Field field) {
     {"presentBarrier", 15},
     {"presentBarrierEnable", 21},
     {"presentBarrierSupported", 24},
+    {"presentEndTimeUs", 17},
     {"presentGravityX", 16},
     {"presentGravityY", 16},
     {"presentID", 10},
@@ -3490,6 +3552,7 @@ const char* String(Field field) {
     {"presentMask", 12},
     {"presentMode", 12},
     {"presentModeCount", 17},
+    {"presentStartTimeUs", 19},
     {"presentWait", 12},
     {"preserveAttachmentCount", 24},
     {"primaryMajor", 13},
@@ -3553,6 +3616,7 @@ const char* String(Field field) {
     {"queueFlags", 11},
     {"queueIndex", 11},
     {"queueLabelCount", 16},
+    {"queueType", 10},
     {"qw", 3},
     {"qx", 3},
     {"qy", 3},
@@ -3603,6 +3667,8 @@ const char* String(Field field) {
     {"renderMajor", 12},
     {"renderMinor", 12},
     {"renderPass", 11},
+    {"renderSubmitEndTimeUs", 22},
+    {"renderSubmitStartTimeUs", 24},
     {"renderpass", 11},
     {"reportAddressBinding", 21},
     {"reportedAddress", 16},
@@ -3831,10 +3897,13 @@ const char* String(Field field) {
     {"sharedMemBytes", 15},
     {"sharedPresentSupportedUsageFlags", 33},
     {"sharingMode", 12},
+    {"signalSemaphore", 16},
     {"signalSemaphoreCount", 21},
     {"signalSemaphoreInfoCount", 25},
     {"signalSemaphoreValueCount", 26},
     {"signalSemaphoreValuesCount", 27},
+    {"simEndTimeUs", 13},
+    {"simStartTimeUs", 15},
     {"simdPerComputeUnit", 19},
     {"size", 5},
     {"sliceCount", 11},
@@ -4057,6 +4126,7 @@ const char* String(Field field) {
     {"u64", 4},
     {"uint32", 7},
     {"uint64", 7},
+    {"underlyingAPI", 14},
     {"uniformAndStorageBuffer16BitAccess", 35},
     {"uniformAndStorageBuffer8BitAccess", 34},
     {"uniformBufferDescriptorSize", 28},
@@ -4177,6 +4247,516 @@ const char* String(Field field) {
     };
     return table[(int)field].data();
 }
+
+bool IsFieldPointer(Field field) {
+    switch (field) {
+    case Field::connection:
+    case Field::context:
+    case Field::dfb:
+    case Field::displayName:
+    case Field::dpy:
+    case Field::hostAddress:
+    case Field::opaqueCaptureDescriptorData:
+    case Field::pAccelerationStructure:
+    case Field::pAccelerationStructures:
+    case Field::pAcquireInfo:
+    case Field::pAcquireKeys:
+    case Field::pAcquireSyncs:
+    case Field::pAcquireTimeoutMilliseconds:
+    case Field::pAcquireTimeouts:
+    case Field::pAddress:
+    case Field::pAddressInfos:
+    case Field::pAllocateInfo:
+    case Field::pAllocator:
+    case Field::pApiVersion:
+    case Field::pApplicationInfo:
+    case Field::pApplicationName:
+    case Field::pAspectReferences:
+    case Field::pAttachmentImageInfos:
+    case Field::pAttachmentInitialSampleLocations:
+    case Field::pAttachments:
+    case Field::pAttributes:
+    case Field::pBeginInfo:
+    case Field::pBindInfo:
+    case Field::pBindInfos:
+    case Field::pBindSessionMemoryInfos:
+    case Field::pBindingFlags:
+    case Field::pBindingInfos:
+    case Field::pBindingReference:
+    case Field::pBindings:
+    case Field::pBinds:
+    case Field::pBlitImageInfo:
+    case Field::pBuffer:
+    case Field::pBufferBinds:
+    case Field::pBufferConstraintsInfo:
+    case Field::pBufferIndices:
+    case Field::pBufferInfo:
+    case Field::pBufferMemoryBarriers:
+    case Field::pBuffers:
+    case Field::pBuildInfo:
+    case Field::pCallableShaderBindingTable:
+    case Field::pCallback:
+    case Field::pCallbackData:
+    case Field::pCapabilities:
+    case Field::pCheckpointData:
+    case Field::pCheckpointDataCount:
+    case Field::pCheckpointMarker:
+    case Field::pClearValues:
+    case Field::pCmdBufLabels:
+    case Field::pCode:
+    case Field::pCodingControlInfo:
+    case Field::pCollection:
+    case Field::pColor:
+    case Field::pColorAttachmentFormats:
+    case Field::pColorAttachmentSamples:
+    case Field::pColorAttachments:
+    case Field::pColorBlendAdvanced:
+    case Field::pColorBlendEnables:
+    case Field::pColorBlendEquations:
+    case Field::pColorBlendState:
+    case Field::pColorSpaces:
+    case Field::pColorWriteEnables:
+    case Field::pColorWriteMasks:
+    case Field::pCombinationCount:
+    case Field::pCombinations:
+    case Field::pCombinedImageSampler:
+    case Field::pCommandBufferDeviceMasks:
+    case Field::pCommandBufferInfos:
+    case Field::pCommandBuffers:
+    case Field::pCommandPool:
+    case Field::pCommittedMemoryInBytes:
+    case Field::pCompatibility:
+    case Field::pConditionalRenderingBegin:
+    case Field::pConfiguration:
+    case Field::pCopyBufferInfo:
+    case Field::pCopyBufferToImageInfo:
+    case Field::pCopyDstLayouts:
+    case Field::pCopyImageInfo:
+    case Field::pCopyImageToBufferInfo:
+    case Field::pCopyImageToImageInfo:
+    case Field::pCopyImageToMemoryInfo:
+    case Field::pCopyMemoryToImageInfo:
+    case Field::pCopySrcLayouts:
+    case Field::pCorrelatedViewMasks:
+    case Field::pCorrelationMasks:
+    case Field::pCountInfo:
+    case Field::pCounterBufferOffsets:
+    case Field::pCounterBuffers:
+    case Field::pCounterCount:
+    case Field::pCounterDescriptions:
+    case Field::pCounterIndices:
+    case Field::pCounterValue:
+    case Field::pCounters:
+    case Field::pCoverageModulationTable:
+    case Field::pCreateInfo:
+    case Field::pCreateInfos:
+    case Field::pCustomSampleOrders:
+    case Field::pData:
+    case Field::pDataSize:
+    case Field::pDecodeInfo:
+    case Field::pDecompressMemoryRegions:
+    case Field::pDeferredOperation:
+    case Field::pDependencies:
+    case Field::pDependencyInfo:
+    case Field::pDependencyInfos:
+    case Field::pDepthAttachment:
+    case Field::pDepthBiasInfo:
+    case Field::pDepthStencil:
+    case Field::pDepthStencilAttachment:
+    case Field::pDepthStencilResolveAttachment:
+    case Field::pDepthStencilState:
+    case Field::pDescriptor:
+    case Field::pDescriptorCopies:
+    case Field::pDescriptorCounts:
+    case Field::pDescriptorInfo:
+    case Field::pDescriptorPool:
+    case Field::pDescriptorSets:
+    case Field::pDescriptorTypes:
+    case Field::pDescriptorUpdateEntries:
+    case Field::pDescriptorUpdateTemplate:
+    case Field::pDescriptorWrites:
+    case Field::pDevice:
+    case Field::pDeviceEventInfo:
+    case Field::pDeviceGroupPresentCapabilities:
+    case Field::pDeviceIndices:
+    case Field::pDeviceMasks:
+    case Field::pDeviceRenderAreas:
+    case Field::pDisabledValidationChecks:
+    case Field::pDisabledValidationFeatures:
+    case Field::pDiscardRectangles:
+    case Field::pDisplay:
+    case Field::pDisplayCount:
+    case Field::pDisplayEventInfo:
+    case Field::pDisplayPlaneInfo:
+    case Field::pDisplayPowerInfo:
+    case Field::pDisplayTimingProperties:
+    case Field::pDisplays:
+    case Field::pDrivers:
+    case Field::pDrmFormatModifierProperties:
+    case Field::pDrmFormatModifiers:
+    case Field::pDynamicOffsets:
+    case Field::pDynamicState:
+    case Field::pDynamicStates:
+    case Field::pEnabledFeatures:
+    case Field::pEnabledValidationFeatures:
+    case Field::pEncodeInfo:
+    case Field::pEndCodingInfo:
+    case Field::pEngineName:
+    case Field::pEvent:
+    case Field::pEvents:
+    case Field::pExclusiveScissorEnables:
+    case Field::pExclusiveScissors:
+    case Field::pExecutableCount:
+    case Field::pExecutableInfo:
+    case Field::pExecuteInfo:
+    case Field::pExternalBufferInfo:
+    case Field::pExternalBufferProperties:
+    case Field::pExternalFenceInfo:
+    case Field::pExternalFenceProperties:
+    case Field::pExternalImageFormatProperties:
+    case Field::pExternalSemaphoreInfo:
+    case Field::pExternalSemaphoreProperties:
+    case Field::pExtras:
+    case Field::pFaultCounts:
+    case Field::pFaultInfo:
+    case Field::pFd:
+    case Field::pFeatures:
+    case Field::pFeedbackInfo:
+    case Field::pFence:
+    case Field::pFences:
+    case Field::pFixedRateFlags:
+    case Field::pFormatConstraints:
+    case Field::pFormatCount:
+    case Field::pFormatInfo:
+    case Field::pFormatProperties:
+    case Field::pFragmentDensityOffsets:
+    case Field::pFragmentShadingRateAttachment:
+    case Field::pFragmentShadingRateCount:
+    case Field::pFragmentShadingRates:
+    case Field::pFragmentSize:
+    case Field::pFramebuffer:
+    case Field::pFunction:
+    case Field::pGeneratedCommandsInfo:
+    case Field::pGeometries:
+    case Field::pGetFdInfo:
+    case Field::pGetWin32HandleInfo:
+    case Field::pGetZirconHandleInfo:
+    case Field::pGranularity:
+    case Field::pGroups:
+    case Field::pHandle:
+    case Field::pHitShaderBindingTable:
+    case Field::pHostMapping:
+    case Field::pHostPointer:
+    case Field::pIdentifier:
+    case Field::pImage:
+    case Field::pImageBinds:
+    case Field::pImageConstraintsInfo:
+    case Field::pImageFormatInfo:
+    case Field::pImageFormatProperties:
+    case Field::pImageIndex:
+    case Field::pImageIndices:
+    case Field::pImageInfo:
+    case Field::pImageMemoryBarriers:
+    case Field::pImageOpaqueBinds:
+    case Field::pImageSubresources:
+    case Field::pImages:
+    case Field::pImmutableSamplers:
+    case Field::pImportFenceFdInfo:
+    case Field::pImportFenceWin32HandleInfo:
+    case Field::pImportSemaphoreFdInfo:
+    case Field::pImportSemaphoreWin32HandleInfo:
+    case Field::pImportSemaphoreZirconHandleInfo:
+    case Field::pIndexInfo:
+    case Field::pIndexTypeValues:
+    case Field::pIndexTypes:
+    case Field::pIndirectCommandsLayout:
+    case Field::pIndirectDeviceAddresses:
+    case Field::pIndirectStrides:
+    case Field::pInfo:
+    case Field::pInfoSize:
+    case Field::pInfos:
+    case Field::pInheritanceInfo:
+    case Field::pInitialData:
+    case Field::pInitializeInfo:
+    case Field::pInputAssemblyState:
+    case Field::pInputAttachmentImage:
+    case Field::pInputAttachments:
+    case Field::pInstance:
+    case Field::pInternalRepresentationCount:
+    case Field::pInternalRepresentations:
+    case Field::pLabelInfo:
+    case Field::pLabelName:
+    case Field::pLatencyMarkerInfo:
+    case Field::pLaunchInfo:
+    case Field::pLayer:
+    case Field::pLayerName:
+    case Field::pLayerPrefix:
+    case Field::pLayers:
+    case Field::pLayout:
+    case Field::pLayoutSizeInBytes:
+    case Field::pLibraries:
+    case Field::pLibraryInfo:
+    case Field::pLibraryInterface:
+    case Field::pMapEntries:
+    case Field::pMarkerInfo:
+    case Field::pMarkerName:
+    case Field::pMaxDeviation:
+    case Field::pMaxPrimitiveCounts:
+    case Field::pMaxWorkgroupSize:
+    case Field::pMemory:
+    case Field::pMemoryBarriers:
+    case Field::pMemoryFdProperties:
+    case Field::pMemoryGetRemoteAddressInfo:
+    case Field::pMemoryHostPointerProperties:
+    case Field::pMemoryMapInfo:
+    case Field::pMemoryProperties:
+    case Field::pMemoryRanges:
+    case Field::pMemoryRequirements:
+    case Field::pMemoryRequirementsCount:
+    case Field::pMemoryUnmapInfo:
+    case Field::pMemoryWin32HandleProperties:
+    case Field::pMemoryZirconHandleProperties:
+    case Field::pMessage:
+    case Field::pMessageIdName:
+    case Field::pMessenger:
+    case Field::pMetadata:
+    case Field::pMetalObjectsInfo:
+    case Field::pMicromap:
+    case Field::pMicromaps:
+    case Field::pMissShaderBindingTable:
+    case Field::pMode:
+    case Field::pModes:
+    case Field::pModule:
+    case Field::pMultisampleProperties:
+    case Field::pMultisampleState:
+    case Field::pMutableDescriptorTypeLists:
+    case Field::pNaluSliceEntries:
+    case Field::pNaluSliceSegmentEntries:
+    case Field::pName:
+    case Field::pNameInfo:
+    case Field::pNext:
+    case Field::pNodeIndex:
+    case Field::pNodeInfo:
+    case Field::pNumPasses:
+    case Field::pObjectName:
+    case Field::pObjects:
+    case Field::pOffset:
+    case Field::pOffsets:
+    case Field::pOpticalFlowImageFormatInfo:
+    case Field::pOverrideInfo:
+    case Field::pParametersAddInfo:
+    case Field::pParams:
+    case Field::pPeerMemoryFeatures:
+    case Field::pPerViewRenderAreas:
+    case Field::pPerformanceQueryCreateInfo:
+    case Field::pPhysicalDeviceCount:
+    case Field::pPhysicalDeviceGroupCount:
+    case Field::pPhysicalDeviceGroupProperties:
+    case Field::pPhysicalDevices:
+    case Field::pPictureResource:
+    case Field::pPipelineCache:
+    case Field::pPipelineCreationFeedback:
+    case Field::pPipelineInfo:
+    case Field::pPipelineLayout:
+    case Field::pPipelineProperties:
+    case Field::pPipelineStageCreationFeedbacks:
+    case Field::pPipelines:
+    case Field::pPlaneLayouts:
+    case Field::pPoolSizes:
+    case Field::pPostSubpassSampleLocations:
+    case Field::pPresentIds:
+    case Field::pPresentInfo:
+    case Field::pPresentModeCount:
+    case Field::pPresentModes:
+    case Field::pPresentationTimingCount:
+    case Field::pPresentationTimings:
+    case Field::pPreserveAttachments:
+    case Field::pPrivateData:
+    case Field::pPrivateDataSlot:
+    case Field::pProfiles:
+    case Field::pProperties:
+    case Field::pPropertiesCount:
+    case Field::pPropertyCount:
+    case Field::pPushConstantRanges:
+    case Field::pQualityLevelInfo:
+    case Field::pQualityLevelProperties:
+    case Field::pQueriedLowLatencyData:
+    case Field::pQueryPool:
+    case Field::pQueue:
+    case Field::pQueueCreateInfos:
+    case Field::pQueueFamilyIndices:
+    case Field::pQueueFamilyProperties:
+    case Field::pQueueFamilyPropertyCount:
+    case Field::pQueueInfo:
+    case Field::pQueueLabels:
+    case Field::pQueuePriorities:
+    case Field::pQueueTypeInfo:
+    case Field::pRanges:
+    case Field::pRasterizationState:
+    case Field::pRaygenShaderBindingTable:
+    case Field::pRectCount:
+    case Field::pRectangles:
+    case Field::pRects:
+    case Field::pReferenceSlots:
+    case Field::pRegions:
+    case Field::pReleaseInfo:
+    case Field::pReleaseKeys:
+    case Field::pReleaseSyncs:
+    case Field::pRenderPass:
+    case Field::pRenderPassBegin:
+    case Field::pRenderPassFeedback:
+    case Field::pRenderingAreaInfo:
+    case Field::pRenderingInfo:
+    case Field::pResolveAttachments:
+    case Field::pResolveImageInfo:
+    case Field::pResults:
+    case Field::pSampleLocations:
+    case Field::pSampleLocationsInfo:
+    case Field::pSampleMask:
+    case Field::pSampledImage:
+    case Field::pSampler:
+    case Field::pScissors:
+    case Field::pSemaphore:
+    case Field::pSemaphores:
+    case Field::pSession:
+    case Field::pSetLayout:
+    case Field::pSetLayouts:
+    case Field::pSetupReferenceSlot:
+    case Field::pShaderGroupCaptureReplayHandle:
+    case Field::pShaderModule:
+    case Field::pShaders:
+    case Field::pShadingRatePaletteEntries:
+    case Field::pShadingRatePalettes:
+    case Field::pSignalInfo:
+    case Field::pSignalSemaphoreDeviceIndices:
+    case Field::pSignalSemaphoreInfos:
+    case Field::pSignalSemaphoreValues:
+    case Field::pSignalSemaphores:
+    case Field::pSizeInfo:
+    case Field::pSizes:
+    case Field::pSleepInfo:
+    case Field::pSleepModeInfo:
+    case Field::pSliceOffsets:
+    case Field::pSliceSegmentOffsets:
+    case Field::pSparseMemoryRequirementCount:
+    case Field::pSparseMemoryRequirements:
+    case Field::pSpecializationInfo:
+    case Field::pSplitInstanceBindRegions:
+    case Field::pSrcCaches:
+    case Field::pStages:
+    case Field::pStatisticCount:
+    case Field::pStatistics:
+    case Field::pStdHeaderVersion:
+    case Field::pStdPPSs:
+    case Field::pStdPictureInfo:
+    case Field::pStdReferenceInfo:
+    case Field::pStdSPSs:
+    case Field::pStdSliceHeader:
+    case Field::pStdSliceSegmentHeader:
+    case Field::pStdVPSs:
+    case Field::pStencilAttachment:
+    case Field::pStorageBuffer:
+    case Field::pStorageImage:
+    case Field::pStorageTexelBuffer:
+    case Field::pStreamStrides:
+    case Field::pStreams:
+    case Field::pStrides:
+    case Field::pSubmits:
+    case Field::pSubpassBeginInfo:
+    case Field::pSubpassEndInfo:
+    case Field::pSubpassFeedback:
+    case Field::pSubpasses:
+    case Field::pSubresource:
+    case Field::pSupport:
+    case Field::pSupported:
+    case Field::pSurface:
+    case Field::pSurfaceCapabilities:
+    case Field::pSurfaceFormatCount:
+    case Field::pSurfaceFormats:
+    case Field::pSurfaceInfo:
+    case Field::pSwapchain:
+    case Field::pSwapchainImageCount:
+    case Field::pSwapchainImages:
+    case Field::pSwapchains:
+    case Field::pTag:
+    case Field::pTagInfo:
+    case Field::pTessellationState:
+    case Field::pTexelBufferView:
+    case Field::pTimeDomainCount:
+    case Field::pTimeDomains:
+    case Field::pTimes:
+    case Field::pTimestampInfos:
+    case Field::pTimestamps:
+    case Field::pTimingCount:
+    case Field::pTimings:
+    case Field::pTokens:
+    case Field::pToolCount:
+    case Field::pToolProperties:
+    case Field::pTransitions:
+    case Field::pUniformBuffer:
+    case Field::pUniformTexelBuffer:
+    case Field::pUpdateInfo:
+    case Field::pUsageCounts:
+    case Field::pUserData:
+    case Field::pValidationCache:
+    case Field::pValue:
+    case Field::pValues:
+    case Field::pVendorBinaryData:
+    case Field::pVendorInfos:
+    case Field::pVersionData:
+    case Field::pVersionInfo:
+    case Field::pVertexAttributeDescriptions:
+    case Field::pVertexBindingDescriptions:
+    case Field::pVertexBindingDivisors:
+    case Field::pVertexInfo:
+    case Field::pVertexInputState:
+    case Field::pVertexOffset:
+    case Field::pVideoFormatInfo:
+    case Field::pVideoFormatProperties:
+    case Field::pVideoFormatPropertyCount:
+    case Field::pVideoProfile:
+    case Field::pVideoSession:
+    case Field::pVideoSessionParameters:
+    case Field::pVideoSessionParametersInfo:
+    case Field::pView:
+    case Field::pViewFormats:
+    case Field::pViewMasks:
+    case Field::pViewOffsets:
+    case Field::pViewportDepths:
+    case Field::pViewportState:
+    case Field::pViewportSwizzles:
+    case Field::pViewportWScalings:
+    case Field::pViewports:
+    case Field::pWaitDstStageMask:
+    case Field::pWaitInfo:
+    case Field::pWaitSemaphoreDeviceIndices:
+    case Field::pWaitSemaphoreInfos:
+    case Field::pWaitSemaphoreValues:
+    case Field::pWaitSemaphores:
+    case Field::pYcbcrConversion:
+    case Field::pZirconHandle:
+    case Field::pfnAllocation:
+    case Field::pfnCallback:
+    case Field::pfnFree:
+    case Field::pfnGetInstanceProcAddr:
+    case Field::pfnInternalAllocation:
+    case Field::pfnInternalFree:
+    case Field::pfnReallocation:
+    case Field::pfnUserCallback:
+    case Field::ppBuildRangeInfos:
+    case Field::ppData:
+    case Field::ppEnabledExtensionNames:
+    case Field::ppEnabledLayerNames:
+    case Field::ppGeometries:
+    case Field::ppMaxPrimitiveCounts:
+    case Field::ppUsageCounts:
+    case Field::valueString:
+        return true;
+    default:
+        return false;
+    }
+}
 }  // namespace vvl
+// clang-format on
 
 // NOLINTEND

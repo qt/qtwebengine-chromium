@@ -15,7 +15,7 @@ import {
 
 type ShaderTypeInfo =
   | { type: 'container'; containerType: 'array'; elementType: ShaderTypeInfo; length: number }
-  | { type: 'container'; containerType: 'struct'; members: ShaderTypeInfo[] }
+  | { type: 'container'; containerType: 'struct'; members: readonly ShaderTypeInfo[] }
   | {
       type: 'container';
       containerType: keyof typeof kVectorContainerTypeInfo | keyof typeof kMatrixContainerTypeInfo;
@@ -228,6 +228,14 @@ g.test('compute,zero_init')
   )
   .batch(15)
   .fn(t => {
+    const { workgroupSize } = t.params;
+    const { maxComputeInvocationsPerWorkgroup } = t.device.limits;
+    const numWorkgroupInvocations = workgroupSize.reduce((a, b) => a * b);
+    t.skipIf(
+      numWorkgroupInvocations > maxComputeInvocationsPerWorkgroup,
+      `workgroupSize: ${workgroupSize} > maxComputeInvocationsPerWorkgroup: ${maxComputeInvocationsPerWorkgroup}`
+    );
+
     let moduleScope = `
       struct Output {
         failed : atomic<u32>

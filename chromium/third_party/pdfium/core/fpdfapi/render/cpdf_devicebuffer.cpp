@@ -64,11 +64,14 @@ CPDF_DeviceBuffer::CPDF_DeviceBuffer(CPDF_RenderContext* pContext,
 
 CPDF_DeviceBuffer::~CPDF_DeviceBuffer() = default;
 
-bool CPDF_DeviceBuffer::Initialize() {
+RetainPtr<CFX_DIBitmap> CPDF_DeviceBuffer::Initialize() {
   FX_RECT bitmap_rect =
       m_Matrix.TransformRect(CFX_FloatRect(m_Rect)).GetOuterRect();
-  return m_pBitmap->Create(bitmap_rect.Width(), bitmap_rect.Height(),
-                           FXDIB_Format::kArgb);
+  if (!m_pBitmap->Create(bitmap_rect.Width(), bitmap_rect.Height(),
+                         FXDIB_Format::kArgb)) {
+    return nullptr;
+  }
+  return m_pBitmap;
 }
 
 void CPDF_DeviceBuffer::OutputToDevice() {
@@ -82,8 +85,10 @@ void CPDF_DeviceBuffer::OutputToDevice() {
     return;
   }
   auto pBuffer = pdfium::MakeRetain<CFX_DIBitmap>();
-  m_pDevice->CreateCompatibleBitmap(pBuffer, m_pBitmap->GetWidth(),
-                                    m_pBitmap->GetHeight());
+  if (!m_pDevice->CreateCompatibleBitmap(pBuffer, m_pBitmap->GetWidth(),
+                                         m_pBitmap->GetHeight())) {
+    return;
+  }
   m_pContext->GetBackground(pBuffer, m_pObject, nullptr, m_Matrix);
   pBuffer->CompositeBitmap(0, 0, pBuffer->GetWidth(), pBuffer->GetHeight(),
                            m_pBitmap, 0, 0, BlendMode::kNormal, nullptr, false);

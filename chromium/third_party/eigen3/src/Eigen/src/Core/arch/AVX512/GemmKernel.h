@@ -18,6 +18,7 @@
 #include <immintrin.h>
 #include <type_traits>
 
+// IWYU pragma: private
 #include "../../InternalHeaderCheck.h"
 
 #if !defined(EIGEN_USE_AVX512_GEMM_KERNELS)
@@ -88,8 +89,6 @@ class gemm_class {
 
   const Index a_stride, b_stride;
   const Index a_off, b_off;
-
-  static EIGEN_ALWAYS_INLINE constexpr int div_up(int a, int b) { return a == 0 ? 0 : (a - 1) / b + 1; }
 
   EIGEN_ALWAYS_INLINE void prefetch_a(const Scalar *a_addr) {
     _mm_prefetch((char *)(a_prefetch_size + a_addr - a_shift), _MM_HINT_T0);
@@ -478,7 +477,7 @@ class gemm_class {
    *
    *              const Scalar *cox = (idx == 0) ? co1 : co2;
    *
-   *              const int um_vecs = div_up(a_unroll, nelems_in_cache_line);
+   *              const int um_vecs = numext::div_ceil(a_unroll, nelems_in_cache_line);
    *              scale_load_c<0, um_vecs, idx, a_unroll>(cox, alpha_reg);
    *              write_c<0, um_vecs, idx, a_unroll>(cox);
    *
@@ -497,7 +496,7 @@ class gemm_class {
   EIGEN_ALWAYS_INLINE void c_update_1count(Scalar *&cox) {
     if (pow >= 4) cox += ldc;
 
-    const int um_vecs = div_up(a_unroll, nelems_in_cache_line);
+    const int um_vecs = numext::div_ceil(a_unroll, nelems_in_cache_line);
     auto &alpha_reg = zmm[alpha_load_reg];
 
     scale_load_c<0, um_vecs, idx, a_unroll>(cox, alpha_reg);
@@ -643,7 +642,7 @@ class gemm_class {
   template <int uk, int max_b_unroll, int a_unroll, int b_unroll, bool ktail, bool fetch_x, bool c_fetch, bool no_a_preload = false>
   EIGEN_ALWAYS_INLINE void innerkernel_1uk(const Scalar *&aa, const Scalar *const &ao, const Scalar *const &bo,
                                            Scalar *&co2, int &fetchA_idx, int &fetchB_idx) {
-    const int um_vecs = div_up(a_unroll, nelems_in_cache_line);
+    const int um_vecs = numext::div_ceil(a_unroll, nelems_in_cache_line);
 
     if (max_b_unroll >= 1)
       innerkernel_1pow<uk, 1, 0, um_vecs, b_unroll, ktail, fetch_x, c_fetch>(aa, ao, bo, co2, fetchA_idx, fetchB_idx);
@@ -728,7 +727,7 @@ class gemm_class {
 
   template <int a_unroll, int b_unroll, int max_b_unroll>
   EIGEN_ALWAYS_INLINE void kloop(const Scalar *&aa, const Scalar *&ao, const Scalar *&bo, Scalar *&co1, Scalar *&co2) {
-    const int um_vecs = div_up(a_unroll, nelems_in_cache_line);
+    const int um_vecs = numext::div_ceil(a_unroll, nelems_in_cache_line);
     if (!use_less_a_regs && k > 1)
       a_loads<0, 2, 0, um_vecs, a_unroll>(ao);
     else

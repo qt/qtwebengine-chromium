@@ -8,7 +8,6 @@
 #ifndef SkRasterPipeline_opts_DEFINED
 #define SkRasterPipeline_opts_DEFINED
 
-#include "include/core/SkData.h"
 #include "include/core/SkTypes.h"
 #include "include/private/base/SkMalloc.h"
 #include "modules/skcms/skcms.h"
@@ -97,6 +96,8 @@ using NoCtx = const void*;
 //   12 bits of precision while rcp_precise should be accurate for float size. For ARM rcp_precise
 //   requires 2 Newton-Raphson refinement steps because its estimate has 8 bit precision, and for
 //   Intel this requires one additional step because its estimate has 12 bit precision.
+//
+// * Don't call rcp_approx or rsqrt_approx directly; only use rcp_fast and rsqrt.
 
 namespace SK_OPTS_NS {
 #if defined(JUMPER_IS_SCALAR)
@@ -120,8 +121,8 @@ namespace SK_OPTS_NS {
     SI I32 abs_  (I32 v)        { return v < 0 ? -v : v; }
     SI F   floor_(F v)          { return floorf(v); }
     SI F    ceil_(F v)          { return ceilf(v); }
-    SI F   rcp_fast(F v)        { return 1.0f / v; }
-    SI F   rsqrt (F v)          { return 1.0f / sqrtf(v); }
+    SI F   rcp_approx(F v)      { return 1.0f / v; }  // use rcp_fast instead
+    SI F   rsqrt_approx(F v)    { return 1.0f / sqrtf(v); }
     SI F   sqrt_ (F v)          { return sqrtf(v); }
     SI F   rcp_precise (F v)    { return 1.0f / v; }
 
@@ -207,11 +208,11 @@ namespace SK_OPTS_NS {
     SI I32 max(I32 a, I32 b) { return vmaxq_s32(a,b); }
     SI U32 max(U32 a, U32 b) { return vmaxq_u32(a,b); }
 
-    SI F   abs_  (F v)   { return vabsq_f32(v); }
-    SI I32 abs_  (I32 v) { return vabsq_s32(v); }
-    SI F   rcp_fast(F v) { auto e = vrecpeq_f32 (v); return vrecpsq_f32 (v,e  ) * e; }
-    SI F   rcp_precise (F v) { auto e = rcp_fast(v); return vrecpsq_f32 (v,e  ) * e; }
-    SI F   rsqrt (F v)   { auto e = vrsqrteq_f32(v); return vrsqrtsq_f32(v,e*e) * e; }
+    SI F   abs_  (F v)       { return vabsq_f32(v); }
+    SI I32 abs_  (I32 v)     { return vabsq_s32(v); }
+    SI F   rcp_approx(F v)   { auto e = vrecpeq_f32(v);  return vrecpsq_f32 (v,e  ) * e; }
+    SI F   rcp_precise(F v)  { auto e = rcp_approx(v);   return vrecpsq_f32 (v,e  ) * e; }
+    SI F   rsqrt_approx(F v) { auto e = vrsqrteq_f32(v); return vrsqrtsq_f32(v,e*e) * e; }
 
     SI U16 pack(U32 v)       { return __builtin_convertvector(v, U16); }
     SI U8  pack(U16 v)       { return __builtin_convertvector(v,  U8); }
@@ -394,15 +395,15 @@ namespace SK_OPTS_NS {
     SI I32 max(I32 a, I32 b) { return _mm256_max_epi32(a,b); }
     SI U32 max(U32 a, U32 b) { return _mm256_max_epu32(a,b); }
 
-    SI F   abs_  (F v)   { return _mm256_and_ps(v, 0-v); }
-    SI I32 abs_  (I32 v) { return _mm256_abs_epi32(v);   }
-    SI F   floor_(F v)   { return _mm256_floor_ps(v);    }
-    SI F   ceil_(F v)    { return _mm256_ceil_ps(v);     }
-    SI F   rcp_fast(F v) { return _mm256_rcp_ps  (v);    }
-    SI F   rsqrt (F v)   { return _mm256_rsqrt_ps(v);    }
-    SI F   sqrt_ (F v)   { return _mm256_sqrt_ps (v);    }
-    SI F rcp_precise (F v) {
-        F e = rcp_fast(v);
+    SI F   abs_  (F v)       { return _mm256_and_ps(v, 0-v); }
+    SI I32 abs_  (I32 v)     { return _mm256_abs_epi32(v);   }
+    SI F   floor_(F v)       { return _mm256_floor_ps(v);    }
+    SI F   ceil_(F v)        { return _mm256_ceil_ps(v);     }
+    SI F   rcp_approx(F v)   { return _mm256_rcp_ps  (v);    }  // use rcp_fast instead
+    SI F   rsqrt_approx(F v) { return _mm256_rsqrt_ps(v);    }
+    SI F   sqrt_ (F v)       { return _mm256_sqrt_ps (v);    }
+    SI F   rcp_precise (F v) {
+        F e = rcp_approx(v);
         return _mm256_fnmadd_ps(v, e, _mm256_set1_ps(2.0f)) * e;
     }
 
@@ -776,9 +777,9 @@ template <typename T> using V = T __attribute__((ext_vector_type(4)));
 #else
     SI I32 abs_(I32 v)         { return max(v, -v); }
 #endif
-    SI F   rcp_fast(F v)       { return _mm_rcp_ps  (v);    }
-    SI F   rcp_precise (F v)   { F e = rcp_fast(v); return e * (2.0f - v * e); }
-    SI F   rsqrt (F v)         { return _mm_rsqrt_ps(v);    }
+    SI F   rcp_approx(F v)     { return _mm_rcp_ps  (v);    }  // use rcp_fast instead
+    SI F   rcp_precise (F v)   { F e = rcp_approx(v); return e * (2.0f - v * e); }
+    SI F   rsqrt_approx(F v)   { return _mm_rsqrt_ps(v);    }
     SI F    sqrt_(F v)         { return _mm_sqrt_ps (v);    }
 
     SI U32 round(F v)          { return _mm_cvtps_epi32(v); }
@@ -1134,6 +1135,16 @@ SI U16 to_half(F f) {
 #endif
 }
 
+#if defined(JUMPER_IS_SCALAR) || defined(JUMPER_IS_SSE2)
+    // In scalar and SSE2 mode, we always use precise math so we can have more predictable results.
+    // Chrome will use the SSE2 implementation when --disable-skia-runtime-opts is set. (b/40042946)
+    SI F rcp_fast(F v) { return rcp_precise(v); }
+    SI F rsqrt(F v)    { return rcp_precise(sqrt_(v)); }
+#else
+    SI F rcp_fast(F v) { return rcp_approx(v); }
+    SI F rsqrt(F v)    { return rsqrt_approx(v); }
+#endif
+
 // Our fundamental vector depth is our pixel stride.
 static constexpr size_t N = sizeof(F) / sizeof(float);
 
@@ -1462,6 +1473,12 @@ SI void from_1010102_xr(U32 rgba, F* r, F* g, F* b, F* a) {
     *g = cast((rgba >> 10) & 0x3ff) * (1/1023.0f) * range + min;
     *b = cast((rgba >> 20) & 0x3ff) * (1/1023.0f) * range + min;
     *a = cast((rgba >> 30)        ) * (1/   3.0f);
+}
+SI void from_10x6(U64 _10x6, F* r, F* g, F* b, F* a) {
+    *r = cast64((_10x6 >>  6) & 0x3ff) * (1/1023.0f);
+    *g = cast64((_10x6 >> 22) & 0x3ff) * (1/1023.0f);
+    *b = cast64((_10x6 >> 38) & 0x3ff) * (1/1023.0f);
+    *a = cast64((_10x6 >> 54) & 0x3ff) * (1/1023.0f);
 }
 SI void from_1616(U32 _1616, F* r, F* g) {
     *r = cast((_1616      ) & 0xffff) * (1/65535.0f);
@@ -2646,6 +2663,30 @@ STAGE(store_16161616, const SkRasterPipeline_MemoryCtx* ctx) {
         G = pack(to_unorm(g, 65535)),
         B = pack(to_unorm(b, 65535)),
         A = pack(to_unorm(a, 65535));
+
+    store4(ptr,tail, R,G,B,A);
+}
+
+STAGE(load_10x6, const SkRasterPipeline_MemoryCtx* ctx) {
+    auto ptr = ptr_at_xy<const uint64_t>(ctx, dx, dy);
+    from_10x6(load<U64>(ptr, tail), &r,&g, &b, &a);
+}
+STAGE(load_10x6_dst, const SkRasterPipeline_MemoryCtx* ctx) {
+    auto ptr = ptr_at_xy<const uint64_t>(ctx, dx, dy);
+    from_10x6(load<U64>(ptr, tail), &dr, &dg, &db, &da);
+}
+STAGE(gather_10x6, const SkRasterPipeline_GatherCtx* ctx) {
+    const uint64_t* ptr;
+    U32 ix = ix_and_ptr(&ptr, ctx, r, g);
+    from_10x6(gather(ptr, ix), &r, &g, &b, &a);
+}
+STAGE(store_10x6, const SkRasterPipeline_MemoryCtx* ctx) {
+    auto ptr = ptr_at_xy<uint16_t>(ctx, 4*dx,4*dy);
+
+    U16 R = pack(to_unorm(r, 1023)) << 6,
+        G = pack(to_unorm(g, 1023)) << 6,
+        B = pack(to_unorm(b, 1023)) << 6,
+        A = pack(to_unorm(a, 1023)) << 6;
 
     store4(ptr,tail, R,G,B,A);
 }

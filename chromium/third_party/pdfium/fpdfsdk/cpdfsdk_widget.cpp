@@ -713,7 +713,8 @@ bool CPDFSDK_Widget::DoHitTest(const CFX_PointF& point) {
 
   bool do_hit_test = GetFieldType() == FormFieldType::kPushButton;
   if (!do_hit_test) {
-    uint32_t perms = GetPDFPage()->GetDocument()->GetUserPermissions();
+    uint32_t perms = GetPDFPage()->GetDocument()->GetUserPermissions(
+        /*get_owner_perms=*/true);
     do_hit_test = (perms & pdfium::access_permissions::kFillForm) ||
                   (perms & pdfium::access_permissions::kModifyAnnotation);
   }
@@ -922,7 +923,7 @@ void CPDFSDK_Widget::DrawAppearance(CFX_RenderDevice* pDevice,
     CFX_Path path;
     path.AppendFloatRect(GetRect());
     pDevice->DrawPath(path, &mtUser2Device, &gsd, 0, 0xFFAAAAAA,
-                      CFX_FillRenderOptions::EvenOddOptions());
+                      {.fill_type = CFX_FillRenderOptions::FillType::kEvenOdd});
   } else {
     CPDFSDK_BAAnnot::DrawAppearance(pDevice, mtUser2Device, mode);
   }

@@ -16,6 +16,7 @@
 #ifndef EIGEN_SVDBASE_H
 #define EIGEN_SVDBASE_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

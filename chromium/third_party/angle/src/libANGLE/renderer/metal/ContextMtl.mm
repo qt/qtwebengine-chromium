@@ -1128,8 +1128,10 @@ angle::Result ContextMtl::syncState(const gl::Context *context,
     gl::state::DirtyBits mergedDirtyBits = gl::state::DirtyBits(dirtyBits) & ~resetBlendBitsMask;
     mergedDirtyBits.set(gl::state::DIRTY_BIT_BLEND_ENABLED, (dirtyBits & checkBlendBitsMask).any());
 
-    for (size_t dirtyBit : mergedDirtyBits)
+    for (auto iter = mergedDirtyBits.begin(), endIter = mergedDirtyBits.end(); iter != endIter;
+         ++iter)
     {
+        size_t dirtyBit = *iter;
         switch (dirtyBit)
         {
             case gl::state::DIRTY_BIT_SCISSOR_TEST_ENABLED:
@@ -1294,12 +1296,19 @@ angle::Result ContextMtl::syncState(const gl::Context *context,
             case gl::state::DIRTY_BIT_DISPATCH_INDIRECT_BUFFER_BINDING:
                 break;
             case gl::state::DIRTY_BIT_PROGRAM_BINDING:
-                mProgram    = mtl::GetImpl(glState.getProgram());
-                mExecutable = mProgram->getExecutable();
+                static_assert(
+                    gl::state::DIRTY_BIT_PROGRAM_EXECUTABLE > gl::state::DIRTY_BIT_PROGRAM_BINDING,
+                    "Dirty bit order");
+                iter.setLaterBit(gl::state::DIRTY_BIT_PROGRAM_EXECUTABLE);
                 break;
             case gl::state::DIRTY_BIT_PROGRAM_EXECUTABLE:
+            {
+                const gl::ProgramExecutable *executable = mState.getProgramExecutable();
+                ASSERT(executable);
+                mExecutable = mtl::GetImpl(executable);
                 updateProgramExecutable(context);
                 break;
+            }
             case gl::state::DIRTY_BIT_TEXTURE_BINDINGS:
                 invalidateCurrentTextures();
                 break;
@@ -2628,8 +2637,9 @@ angle::Result ContextMtl::setupDrawImpl(const gl::Context *context,
     }
     else
     {
-        ANGLE_TRY(mProgram->setupDraw(context, &mRenderEncoder, mRenderPipelineDesc,
-                                      isPipelineDescChanged, textureChanged, uniformBuffersDirty));
+        ANGLE_TRY(mExecutable->setupDraw(context, &mRenderEncoder, mRenderPipelineDesc,
+                                         isPipelineDescChanged, textureChanged,
+                                         uniformBuffersDirty));
     }
 
     return angle::Result::Continue;
@@ -2689,8 +2699,8 @@ angle::Result ContextMtl::handleDirtyRenderPass(const gl::Context *context)
 
 angle::Result ContextMtl::handleDirtyActiveTextures(const gl::Context *context)
 {
-    const gl::State &glState   = mState;
-    const gl::Program *program = glState.getProgram();
+    const gl::State &glState                = mState;
+    const gl::ProgramExecutable *executable = glState.getProgramExecutable();
 
     constexpr auto ensureTextureCreated = [](const gl::Context *context,
                                              gl::Texture *texture) -> angle::Result {
@@ -2709,14 +2719,14 @@ angle::Result ContextMtl::handleDirtyActiveTextures(const gl::Context *context)
     };
 
     const gl::ActiveTexturesCache &textures     = glState.getActiveTexturesCache();
-    const gl::ActiveTextureMask &activeTextures = program->getExecutable().getActiveSamplersMask();
+    const gl::ActiveTextureMask &activeTextures = executable->getActiveSamplersMask();
 
     for (size_t textureUnit : activeTextures)
     {
         ANGLE_TRY(ensureTextureCreated(context, textures[textureUnit]));
     }
 
-    for (size_t imageUnit : program->getExecutable().getActiveImagesMask())
+    for (size_t imageUnit : executable->getActiveImagesMask())
     {
         ANGLE_TRY(ensureTextureCreated(context, glState.getImageUnit(imageUnit).texture.get()));
     }

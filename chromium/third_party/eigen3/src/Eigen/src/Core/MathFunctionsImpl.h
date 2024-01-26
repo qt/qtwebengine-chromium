@@ -11,6 +11,7 @@
 #ifndef EIGEN_MATHFUNCTIONSIMPL_H
 #define EIGEN_MATHFUNCTIONSIMPL_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

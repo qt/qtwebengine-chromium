@@ -268,6 +268,38 @@ class RandomAccessStackDominatorNode
   Derived* jmp_ = nullptr;
 };
 
+// A simple iterator to walk over the predecessors of a block. Note that the
+// iteration order is reversed.
+class PredecessorIterator {
+ public:
+  explicit PredecessorIterator(Block* block) : current_(block) {}
+
+  PredecessorIterator& operator++();
+  constexpr bool operator==(const PredecessorIterator& other) const {
+    return current_ == other.current_;
+  }
+  constexpr bool operator!=(const PredecessorIterator& other) const {
+    return !(*this == other);
+  }
+
+  Block* operator*() const { return current_; }
+
+ private:
+  Block* current_;
+};
+
+// An iterable wrapper for the predecessors of a block.
+class NeighboringPredecessorIterable {
+ public:
+  explicit NeighboringPredecessorIterable(Block* begin) : begin_(begin) {}
+
+  PredecessorIterator begin() const { return PredecessorIterator(begin_); }
+  PredecessorIterator end() const { return PredecessorIterator(nullptr); }
+
+ private:
+  Block* begin_;
+};
+
 // A basic block
 class Block : public RandomAccessStackDominatorNode<Block> {
  public:
@@ -297,6 +329,12 @@ class Block : public RandomAccessStackDominatorNode<Block> {
     }
     std::reverse(result.begin(), result.end());
     return result;
+  }
+
+  // Returns an iterable object (defining begin() and end()) to iterate over the
+  // block's predecessors.
+  NeighboringPredecessorIterable PredecessorsIterable() const {
+    return NeighboringPredecessorIterable(last_predecessor_);
   }
 
   // TODO(dmercadier): we should store predecessor count in the Blocks directly
@@ -347,16 +385,6 @@ class Block : public RandomAccessStackDominatorNode<Block> {
   bool HasPredecessors() const { return last_predecessor_ != nullptr; }
   void ResetLastPredecessor() { last_predecessor_ = nullptr; }
 
-  void SetMappingToNextGraph(Block* next_graph_block) {
-    DCHECK_NULL(next_graph_mapping_);
-    DCHECK_NOT_NULL(next_graph_block);
-    next_graph_mapping_ = next_graph_block;
-    next_graph_block->SetOrigin(this);
-  }
-  Block* MapToNextGraph() const {
-    DCHECK_NOT_NULL(next_graph_mapping_);
-    return next_graph_mapping_;
-  }
   // The block from the previous graph which produced the current block. This
   // has to be updated to be the last block that contributed operations to the
   // current block to ensure that phi nodes are created correctly.git cl
@@ -371,18 +399,6 @@ class Block : public RandomAccessStackDominatorNode<Block> {
   const Block* OriginForBlockEnd() const {
     DCHECK(IsBound());
     return origin_;
-  }
-  // The block from the input graph that corresponds to the current block as a
-  // branch destination. Such a block might not exist, and this function uses a
-  // trick to compute such a block in almost all cases, but might rarely fail
-  // and return `nullptr` instead.
-  const Block* OriginForBlockStart() const {
-    // Check that `origin_` is still valid as a block start and was not changed
-    // to a semantically different block when inlining blocks.
-    if (origin_ && origin_->MapToNextGraph() == this) {
-      return origin_;
-    }
-    return nullptr;
   }
 
   bool IsComplete() const { return end_.valid(); }
@@ -411,6 +427,15 @@ class Block : public RandomAccessStackDominatorNode<Block> {
   }
 
   bool HasPhis(const Graph& graph) const;
+
+#ifdef DEBUG
+  bool HasBackedge(const Graph& graph) const {
+    if (const GotoOp* gto = LastOperation(graph).TryCast<GotoOp>()) {
+      return gto->destination->index().id() < index().id();
+    }
+    return false;
+  }
+#endif
 
   // Computes the dominators of the this block, assuming that the dominators of
   // its predecessors are already computed. Returns the depth of the current
@@ -471,7 +496,6 @@ class Block : public RandomAccessStackDominatorNode<Block> {
   Block* last_predecessor_ = nullptr;
   Block* neighboring_predecessor_ = nullptr;
   const Block* origin_ = nullptr;
-  Block* next_graph_mapping_ = nullptr;
   // The {custom_data_} field can be used by algorithms to temporarily store
   // block-specific data. This field is not preserved when constructing a new
   // output graph and algorithms cannot rely on this field being properly reset
@@ -481,9 +505,18 @@ class Block : public RandomAccessStackDominatorNode<Block> {
   CustomDataKind custom_data_kind_for_debug_check_ = CustomDataKind::kUnset;
   size_t graph_generation_ = 0;
 #endif
+
+  template <class Assembler>
+  friend class GraphVisitor;
 };
 
 std::ostream& operator<<(std::ostream& os, const Block* b);
+
+inline PredecessorIterator& PredecessorIterator::operator++() {
+  DCHECK_NE(current_, nullptr);
+  current_ = current_->NeighboringPredecessor();
+  return *this;
+}
 
 class Graph {
  public:
@@ -495,9 +528,9 @@ class Graph {
         all_blocks_(graph_zone),
         block_permutation_(graph_zone),
         graph_zone_(graph_zone),
-        source_positions_(graph_zone),
-        operation_origins_(graph_zone),
-        operation_types_(graph_zone)
+        source_positions_(graph_zone, this),
+        operation_origins_(graph_zone, this),
+        operation_types_(graph_zone, this)
 #ifdef DEBUG
         ,
         block_type_refinement_(graph_zone)
@@ -521,6 +554,7 @@ class Graph {
   }
 
   V8_INLINE const Operation& Get(OpIndex i) const {
+    DCHECK(BelongsToThisGraph(i));
     // `Operation` contains const fields and can be overwritten with placement
     // new. Therefore, std::launder is necessary to avoid undefined behavior.
     const Operation* ptr =
@@ -530,6 +564,7 @@ class Graph {
     return *ptr;
   }
   V8_INLINE Operation& Get(OpIndex i) {
+    DCHECK(BelongsToThisGraph(i));
     // `Operation` contains const fields and can be overwritten with placement
     // new. Therefore, std::launder is necessary to avoid undefined behavior.
     Operation* ptr =
@@ -553,7 +588,13 @@ class Graph {
     return *bound_blocks_[i.id()];
   }
 
-  OpIndex Index(const Operation& op) const { return operations_.Index(op); }
+  OpIndex Index(const Operation& op) const {
+    OpIndex result = operations_.Index(op);
+#ifdef DEBUG
+    result.set_generation_mod2(generation_mod2());
+#endif
+    return result;
+  }
   BlockIndex BlockOf(OpIndex index) const {
     ZoneVector<Block*>::const_iterator it;
     if (block_permutation_.empty()) {
@@ -571,9 +612,19 @@ class Graph {
     return (*it)->index();
   }
 
-  OpIndex NextIndex(const OpIndex idx) const { return operations_.Next(idx); }
+  OpIndex NextIndex(const OpIndex idx) const {
+    OpIndex next = operations_.Next(idx);
+#ifdef DEBUG
+    next.set_generation_mod2(generation_mod2());
+#endif
+    return next;
+  }
   OpIndex PreviousIndex(const OpIndex idx) const {
-    return operations_.Previous(idx);
+    OpIndex prev = operations_.Previous(idx);
+#ifdef DEBUG
+    prev.set_generation_mod2(generation_mod2());
+#endif
+    return prev;
   }
 
   OperationStorageSlot* Allocate(size_t slot_count) {
@@ -606,8 +657,10 @@ class Graph {
 #ifdef DEBUG
     for (OpIndex input : op.inputs()) {
       DCHECK_LT(input, result);
+      DCHECK(BelongsToThisGraph(input));
     }
 #endif  // DEBUG
+
     return op;
   }
 
@@ -628,15 +681,29 @@ class Graph {
     IncrementInputUses(*new_op);
   }
 
-  V8_INLINE Block* NewLoopHeader() {
-    return NewBlock(Block::Kind::kLoopHeader);
+  V8_INLINE Block* NewLoopHeader(const Block* origin = nullptr) {
+    return NewBlock(Block::Kind::kLoopHeader, origin);
   }
-  V8_INLINE Block* NewBlock() { return NewBlock(Block::Kind::kMerge); }
-  V8_INLINE Block* NewMappedBlock(Block* origin) {
-    Block* new_block = NewBlock(origin->IsLoop() ? Block::Kind::kLoopHeader
-                                                 : Block::Kind::kMerge);
-    origin->SetMappingToNextGraph(new_block);
-    return new_block;
+  V8_INLINE Block* NewBlock(const Block* origin = nullptr) {
+    return NewBlock(Block::Kind::kMerge, origin);
+  }
+
+  V8_INLINE Block* NewBlock(Block::Kind kind, const Block* origin = nullptr) {
+    if (V8_UNLIKELY(next_block_ == all_blocks_.size())) {
+      constexpr size_t new_block_count = 64;
+      base::Vector<Block> blocks =
+          graph_zone_->NewVector<Block>(new_block_count, Block(kind));
+      for (size_t i = 0; i < new_block_count; ++i) {
+        all_blocks_.push_back(&blocks[i]);
+      }
+    }
+    Block* result = all_blocks_[next_block_++];
+    *result = Block(kind);
+#ifdef DEBUG
+    result->graph_generation_ = generation_;
+#endif
+    result->SetOrigin(origin);
+    return result;
   }
 
   V8_INLINE bool Add(Block* block) {
@@ -672,7 +739,7 @@ class Graph {
     }
   }
 
-  OpIndex next_operation_index() const { return operations_.EndIndex(); }
+  OpIndex next_operation_index() const { return EndIndex(); }
   BlockIndex next_block_index() const {
     return BlockIndex(static_cast<uint32_t>(bound_blocks_.size()));
   }
@@ -695,6 +762,21 @@ class Graph {
     return operations_.capacity() / kSlotsPerId;
   }
 
+  OpIndex BeginIndex() const {
+    OpIndex begin = operations_.BeginIndex();
+#ifdef DEBUG
+    begin.set_generation_mod2(generation_mod2());
+#endif
+    return begin;
+  }
+  OpIndex EndIndex() const {
+    OpIndex end = operations_.EndIndex();
+#ifdef DEBUG
+    end.set_generation_mod2(generation_mod2());
+#endif
+    return end;
+  }
+
   class OpIndexIterator
       : public base::iterator<std::bidirectional_iterator_tag, OpIndex,
                               std::ptrdiff_t, OpIndex*, OpIndex> {
@@ -705,11 +787,11 @@ class Graph {
         : index_(index), graph_(graph) {}
     value_type operator*() const { return index_; }
     OpIndexIterator& operator++() {
-      index_ = graph_->operations_.Next(index_);
+      index_ = graph_->NextIndex(index_);
       return *this;
     }
     OpIndexIterator& operator--() {
-      index_ = graph_->operations_.Previous(index_);
+      index_ = graph_->PreviousIndex(index_);
       return *this;
     }
     bool operator!=(OpIndexIterator other) const {
@@ -735,11 +817,11 @@ class Graph {
         : index_(index), graph_(graph) {}
     value_type& operator*() { return graph_->Get(index_); }
     OperationIterator& operator++() {
-      index_ = graph_->operations_.Next(index_);
+      index_ = graph_->NextIndex(index_);
       return *this;
     }
     OperationIterator& operator--() {
-      index_ = graph_->operations_.Previous(index_);
+      index_ = graph_->PreviousIndex(index_);
       return *this;
     }
     bool operator!=(OperationIterator other) const {
@@ -758,14 +840,14 @@ class Graph {
       OperationIterator<const Operation, const Graph>;
 
   base::iterator_range<MutableOperationIterator> AllOperations() {
-    return operations(operations_.BeginIndex(), operations_.EndIndex());
+    return operations(BeginIndex(), EndIndex());
   }
   base::iterator_range<ConstOperationIterator> AllOperations() const {
-    return operations(operations_.BeginIndex(), operations_.EndIndex());
+    return operations(BeginIndex(), EndIndex());
   }
 
   base::iterator_range<OpIndexIterator> AllOperationIndices() const {
-    return OperationIndices(operations_.BeginIndex(), operations_.EndIndex());
+    return OperationIndices(BeginIndex(), EndIndex());
   }
 
   base::iterator_range<MutableOperationIterator> operations(
@@ -823,23 +905,26 @@ class Graph {
 
   bool IsValid(OpIndex i) const { return i < next_operation_index(); }
 
-  const GrowingSidetable<SourcePosition>& source_positions() const {
+  const GrowingOpIndexSidetable<SourcePosition>& source_positions() const {
     return source_positions_;
   }
-  GrowingSidetable<SourcePosition>& source_positions() {
+  GrowingOpIndexSidetable<SourcePosition>& source_positions() {
     return source_positions_;
   }
 
-  const GrowingSidetable<OpIndex>& operation_origins() const {
+  const GrowingOpIndexSidetable<OpIndex>& operation_origins() const {
     return operation_origins_;
   }
-  GrowingSidetable<OpIndex>& operation_origins() { return operation_origins_; }
+  GrowingOpIndexSidetable<OpIndex>& operation_origins() {
+    return operation_origins_;
+  }
 
   uint32_t DominatorTreeDepth() const { return dominator_tree_depth_; }
-  const GrowingSidetable<Type>& operation_types() const {
+
+  const GrowingOpIndexSidetable<Type>& operation_types() const {
     return operation_types_;
   }
-  GrowingSidetable<Type>& operation_types() { return operation_types_; }
+  GrowingOpIndexSidetable<Type>& operation_types() { return operation_types_; }
 #ifdef DEBUG
   // Store refined types per block here for --trace-turbo printing.
   // TODO(nicohartmann@): Remove this once we have a proper way to print
@@ -886,9 +971,9 @@ class Graph {
     std::swap(block_permutation_, companion.block_permutation_);
     std::swap(next_block_, companion.next_block_);
     std::swap(graph_zone_, companion.graph_zone_);
-    std::swap(source_positions_, companion.source_positions_);
-    std::swap(operation_origins_, companion.operation_origins_);
-    std::swap(operation_types_, companion.operation_types_);
+    source_positions_.SwapData(companion.source_positions_);
+    operation_origins_.SwapData(companion.operation_origins_);
+    operation_types_.SwapData(companion.operation_types_);
 #ifdef DEBUG
     std::swap(block_type_refinement_, companion.block_type_refinement_);
     // Update generation index.
@@ -899,6 +984,11 @@ class Graph {
 
 #ifdef DEBUG
   size_t generation() const { return generation_; }
+  int generation_mod2() const { return generation_ % 2; }
+
+  bool BelongsToThisGraph(OpIndex idx) const {
+    return idx.generation_mod2() == generation_mod2();
+  }
 #endif  // DEBUG
 
  private:
@@ -923,23 +1013,6 @@ class Graph {
     }
   }
 
-  V8_INLINE Block* NewBlock(Block::Kind kind) {
-    if (V8_UNLIKELY(next_block_ == all_blocks_.size())) {
-      constexpr size_t new_block_count = 64;
-      base::Vector<Block> blocks =
-          graph_zone_->NewVector<Block>(new_block_count, Block(kind));
-      for (size_t i = 0; i < new_block_count; ++i) {
-        all_blocks_.push_back(&blocks[i]);
-      }
-    }
-    Block* result = all_blocks_[next_block_++];
-    *result = Block(kind);
-#ifdef DEBUG
-    result->graph_generation_ = generation_;
-#endif
-    return result;
-  }
-
   OperationBuffer operations_;
   ZoneVector<Block*> bound_blocks_;
   ZoneVector<Block*> all_blocks_;
@@ -949,10 +1022,10 @@ class Graph {
   ZoneVector<Block*> block_permutation_;
   size_t next_block_ = 0;
   Zone* graph_zone_;
-  GrowingSidetable<SourcePosition> source_positions_;
-  GrowingSidetable<OpIndex> operation_origins_;
+  GrowingOpIndexSidetable<SourcePosition> source_positions_;
+  GrowingOpIndexSidetable<OpIndex> operation_origins_;
   uint32_t dominator_tree_depth_ = 0;
-  GrowingSidetable<Type> operation_types_;
+  GrowingOpIndexSidetable<Type> operation_types_;
 #ifdef DEBUG
   GrowingBlockSidetable<TypeRefinements> block_type_refinement_;
 #endif
@@ -985,34 +1058,15 @@ V8_INLINE const Operation& Block::LastOperation(const Graph& graph) const {
 }
 
 V8_INLINE bool Block::HasPhis(const Graph& graph) const {
+  // TODO(dmercadier): consider re-introducing the invariant that Phis are
+  // always at the begining of a block to speed up such functions. Currently,
+  // in practice, Phis do not appear after the first non-FrameState non-Constant
+  // operation, but this is not enforced.
   DCHECK_EQ(graph_generation_, graph.generation());
-#ifdef DEBUG
-  // Verify that only Phis/FrameStates are found, then all other Phis/
-  // FrameStateOps in the block come consecutively.
-  bool starts_with_phi = false;
-  bool finished_phis = false;
   for (const auto& op : graph.operations(*this)) {
-    if (op.Is<PhiOp>()) {
-      DCHECK(!finished_phis);
-      starts_with_phi = true;
-    }
-    if (!op.Is<PhiOp>() && !op.Is<FrameStateOp>()) {
-      finished_phis = true;
-    }
-  }
-  return starts_with_phi;
-#else   // DEBUG
-  for (const auto& op : graph.operations(*this)) {
-    if (op.Is<PhiOp>()) {
-      return true;
-    } else if (op.Is<FrameStateOp>()) {
-      continue;
-    } else {
-      return false;
-    }
+    if (op.Is<PhiOp>()) return true;
   }
   return false;
-#endif  // DEBUG
 }
 
 struct PrintAsBlockHeader {
@@ -1130,5 +1184,13 @@ inline Derived* RandomAccessStackDominatorNode<Derived>::GetCommonDominator(
 }
 
 }  // namespace v8::internal::compiler::turboshaft
+
+// MSVC needs this definition to know how to deal with the PredecessorIterator.
+template <>
+class std::iterator_traits<
+    v8::internal::compiler::turboshaft::PredecessorIterator> {
+ public:
+  using iterator_category = std::forward_iterator_tag;
+};
 
 #endif  // V8_COMPILER_TURBOSHAFT_GRAPH_H_

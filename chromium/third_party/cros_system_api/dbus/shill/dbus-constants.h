@@ -100,7 +100,10 @@ constexpr char kDhcpPropertyHostnameProperty[] = "DHCPProperty.Hostname";
 constexpr char kDisableWiFiVHTProperty[] = "DisableWiFiVHT";
 constexpr char kDNSProxyDOHProvidersProperty[] = "DNSProxyDOHProviders";
 constexpr char kEnabledTechnologiesProperty[] = "EnabledTechnologies";
+constexpr char kEnableDHCPQoSProperty[] = "EnableDHCPQoS";
 constexpr char kEnableRFC8925Property[] = "EnableRFC8925";
+constexpr char kExperimentalTetheringFunctionality[] =
+    "ExperimentalTetheringFunctionality";
 constexpr char kLOHSConfigProperty[] = "LOHSConfig";
 constexpr char kPortalFallbackHttpUrlsProperty[] = "PortalFallbackHttpUrls";
 constexpr char kPortalFallbackHttpsUrlsProperty[] = "PortalFallbackHttpsUrls";
@@ -552,6 +555,7 @@ constexpr char kNetworkIdProperty[] = "network_id";
 // Flimflam SIMLock status types.
 constexpr char kSIMLockPin[] = "sim-pin";
 constexpr char kSIMLockPuk[] = "sim-puk";
+constexpr char kSIMLockNetworkPin[] = "network-pin";
 
 // APN info property names.
 constexpr char kApnProperty[] = "apn";
@@ -688,6 +692,7 @@ constexpr char kSecurity8021x[] = "802_1x";
 
 // WiFi Security options.
 constexpr char kSecurityNone[] = "none";
+constexpr char kSecurityOwe[] = "owe";
 constexpr char kSecurityWep[] = "wep";
 constexpr char kSecurityWpa[] = "wpa";
 constexpr char kSecurityWpaWpa2[] = "wpa+wpa2";
@@ -756,9 +761,11 @@ constexpr char kErrorOutOfRange[] = "out-of-range";
 constexpr char kErrorPinMissing[] = "pin-missing";
 constexpr char kErrorPppAuthFailed[] = "ppp-auth-failed";
 constexpr char kErrorSimLocked[] = "sim-locked";
+constexpr char kErrorSimCarrierLocked[] = "sim-carrier-locked";
 constexpr char kErrorNotRegistered[] = "not-registered";
 constexpr char kErrorTooManySTAs[] = "too-many-stas";
 constexpr char kErrorDisconnect[] = "disconnect-failure";
+constexpr char kErrorDelayedConnectSetup[] = "delayed-connect-setup-failure";
 constexpr char kErrorUnknownFailure[] = "unknown-failure";
 
 // Flimflam error result codes.
@@ -978,6 +985,10 @@ constexpr char kTetheringConfPassphraseProperty[] = "passphrase";
 constexpr char kTetheringConfSecurityProperty[] = "security";
 constexpr char kTetheringConfSSIDProperty[] = "ssid";
 constexpr char kTetheringConfUpstreamTechProperty[] = "upstream_technology";
+constexpr char kTetheringConfDownstreamDeviceForTestProperty[] =
+    "downstream_device_for_test";
+constexpr char kTetheringConfDownstreamPhyIndexForTestProperty[] =
+    "downstream_phy_index_for_test";
 
 // Manager kTetheringCapabilitiesProperty dictionary key names.
 constexpr char kTetheringCapDownstreamProperty[] = "downstream_technologies";
@@ -1030,6 +1041,13 @@ constexpr char kTetheringEnableResultWrongState[] = "wrong_state";
 
 // kCheckTetheringReadinessFunction return status
 constexpr char kTetheringReadinessNotAllowed[] = "not_allowed";
+constexpr char kTetheringReadinessNotAllowedByCarrier[] =
+    "not_allowed_by_carrier";
+constexpr char kTetheringReadinessNotAllowedOnFw[] = "not_allowed_on_fw";
+constexpr char kTetheringReadinessNotAllowedOnVariant[] =
+    "not_allowed_on_variant";
+constexpr char kTetheringReadinessNotAllowedUserNotEntitled[] =
+    "not_allowed_user_not_entitled";
 constexpr char kTetheringReadinessReady[] = "ready";
 constexpr char kTetheringReadinessUpstreamNetworkNotAvailable[] =
     "upstream_network_not_available";

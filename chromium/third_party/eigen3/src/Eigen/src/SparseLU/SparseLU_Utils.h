@@ -11,6 +11,7 @@
 #ifndef EIGEN_SPARSELU_UTILS_H
 #define EIGEN_SPARSELU_UTILS_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

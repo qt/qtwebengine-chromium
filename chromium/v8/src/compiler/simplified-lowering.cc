@@ -1433,6 +1433,7 @@ class RepresentationSelector {
       if (IsLargeBigInt(TypeOf(accumulator))) {
         ConvertInput(node, FrameState::kFrameStateStackInput,
                      UseInfo::AnyTagged());
+        accumulator = node.stack();
       }
       Zone* zone = jsgraph_->zone();
       if (accumulator == jsgraph_->OptimizedOutConstant()) {
@@ -3722,6 +3723,14 @@ class RepresentationSelector {
         SetOutput<T>(node, MachineType::PointerRepresentation());
         return;
       }
+      case IrOpcode::kLoadStackPointer: {
+        SetOutput<T>(node, MachineType::PointerRepresentation());
+        return;
+      }
+      case IrOpcode::kSetStackPointer: {
+        SetOutput<T>(node, MachineRepresentation::kNone);
+        return;
+      }
       case IrOpcode::kLoadMessage: {
         if (truncation.IsUnused()) return VisitUnused<T>(node);
         VisitUnop<T>(node, UseInfo::Word(), MachineRepresentation::kTagged);
@@ -4277,13 +4286,13 @@ class RepresentationSelector {
         return;
       }
       case IrOpcode::kConvertTaggedHoleToUndefined: {
-        if (InputIs(node, Type::NumberOrTheHole()) &&
+        if (InputIs(node, Type::NumberOrHole()) &&
             truncation.IsUsedAsWord32()) {
           // Propagate the Word32 truncation.
           VisitUnop<T>(node, UseInfo::TruncatingWord32(),
                        MachineRepresentation::kWord32);
           if (lower<T>()) DeferReplacement(node, node->InputAt(0));
-        } else if (InputIs(node, Type::NumberOrTheHole()) &&
+        } else if (InputIs(node, Type::NumberOrHole()) &&
                    truncation.TruncatesOddballAndBigIntToNumber()) {
           // Propagate the Float64 truncation.
           VisitUnop<T>(node, UseInfo::TruncatingFloat64(),
@@ -5509,7 +5518,7 @@ void SimplifiedLowering::DoUnsigned32ToUint8Clamped(Node* node) {
 Node* SimplifiedLowering::ToNumberCode() {
   if (!to_number_code_.is_set()) {
     Callable callable = Builtins::CallableFor(isolate(), Builtin::kToNumber);
-    to_number_code_.set(jsgraph()->HeapConstant(callable.code()));
+    to_number_code_.set(jsgraph()->HeapConstantNoHole(callable.code()));
   }
   return to_number_code_.get();
 }
@@ -5519,7 +5528,7 @@ Node* SimplifiedLowering::ToNumberConvertBigIntCode() {
     Callable callable =
         Builtins::CallableFor(isolate(), Builtin::kToNumberConvertBigInt);
     to_number_convert_big_int_code_.set(
-        jsgraph()->HeapConstant(callable.code()));
+        jsgraph()->HeapConstantNoHole(callable.code()));
   }
   return to_number_convert_big_int_code_.get();
 }
@@ -5527,7 +5536,7 @@ Node* SimplifiedLowering::ToNumberConvertBigIntCode() {
 Node* SimplifiedLowering::ToNumericCode() {
   if (!to_numeric_code_.is_set()) {
     Callable callable = Builtins::CallableFor(isolate(), Builtin::kToNumeric);
-    to_numeric_code_.set(jsgraph()->HeapConstant(callable.code()));
+    to_numeric_code_.set(jsgraph()->HeapConstantNoHole(callable.code()));
   }
   return to_numeric_code_.get();
 }

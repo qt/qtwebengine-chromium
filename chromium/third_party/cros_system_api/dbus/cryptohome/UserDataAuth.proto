@@ -111,6 +111,7 @@ enum CryptohomeErrorCode {
   // precedence and be returned.
   CRYPTOHOME_ERROR_CREDENTIAL_EXPIRED = 60;
   CRYPTOHOME_RELABEL_CREDENTIALS_FAILED = 61;
+  CRYPTOHOME_REPLACE_CREDENTIALS_FAILED = 62;
   // Note: After adding new fields to this enum, the new enum should be added
   // to ash/components/login/auth/auth_session_authenticator.cc's
   // AuthSessionAuthenticator::ProcessCryptohomeError() so that Chromium
@@ -285,6 +286,43 @@ message IsMountedReply {
   bool is_ephemeral_mount = 2;
 }
 
+// Output parameters for EvictDeviceKey()
+message EvictDeviceKeyReply {
+  // Indicates an error if |error| is not empty.
+  CryptohomeErrorCode error = 1;
+
+  // Indicate an error if this field exists.
+  // This field is replacing the |error| field above, for more information on
+  // which field to use and the process on the migration, see comment in
+  // CryptohomeErrorInfo.
+  CryptohomeErrorInfo error_info = 2;
+}
+
+// Input parameters to EvictDeviceKey()
+// Currently key eviction operates on all actively mounted user
+// cryptohomes.
+message EvictDeviceKeyRequest {
+  // Unique ID associated with the current suspend request, attached
+  // to EvictedKeyRestored signal when RestoreDeviceKey completes,
+  // correlated to a unique suspend request id.
+  int64 eviction_id = 1;
+}
+
+message RestoreDeviceKeyRequest {
+  // The id of a running AuthSession, which also identifies the user whose
+  // encrypted device is restored.
+  bytes auth_session_id = 1;
+}
+
+message RestoreDeviceKeyReply {
+  // Indicates an error if |error| is not empty.
+  CryptohomeErrorCode error = 1;
+  // This field is replacing the |error| field above, for more information on
+  // which field to use and the process on the migration, see comment in
+  // CryptohomeErrorInfo.
+  CryptohomeErrorInfo error_info = 2;
+}
+
 // Input parameters to Unmount()
 // Currently we only support unmounting all mounted cryptohomes but in the
 // future we may implement per-user unmount, at which point we can extend this
@@ -310,26 +348,6 @@ message RemoveRequest {
 message RemoveReply {
   CryptohomeErrorCode error = 1;
   CryptohomeErrorInfo error_info = 2;
-}
-
-// Input parameters to ListKeys()
-message ListKeysRequest {
-  // The default behavior is by label so any extension here should honor that.
-
-  // List the key(s) that is/are used to protect the home directory whose
-  // owner is identified by account_id.
-  cryptohome.AccountIdentifier account_id = 1;
-  // Provide user authentication if necessary (currently not required).
-  cryptohome.AuthorizationRequest authorization_request = 2;
-}
-
-// Output parameters for ListKeys()
-message ListKeysReply {
-  CryptohomeErrorCode error = 1;
-  CryptohomeErrorInfo error_info = 3;
-
-  // The labels of the Vault Keyset. This will be empty on error.
-  repeated string labels = 2;
 }
 
 // Input parameters to CheckKey()
@@ -595,6 +613,21 @@ message AuthFactorStatusUpdate {
   AuthFactorWithStatus auth_factor_with_status = 2;
 }
 
+// AuthSessionProperties object contains information about the user's current
+// authentication session, identified by the ID in the request. This object is
+// returned along with replies to calls that can potentially change the
+// authentication session properties. The properties that are necessary for the
+// user today are the intents that the authentication session is authorized for
+// and the amount of time remaining in the authentication session.
+message AuthSessionProperties {
+  // The intents that the Auth Session has been authorized for. This starts from
+  // an empty set when the session is created, and is updated when a factor is
+  // successfully authenticated.
+  repeated AuthIntent authorized_for = 4;
+  // The time left in the current AuthSession after authentication.
+  optional uint32 seconds_left = 5;
+}
+
 message StartAuthSessionReply {
   reserved 4, 7;
 
@@ -635,7 +668,8 @@ message ExtendAuthSessionRequest {
   // to be extended.
   bytes auth_session_id = 1;
   // Duration of the extension requested in seconds, with a default of
-  // 60 seconds if not specified.
+  // 60 seconds if not specified. The API will extend AuthSessions validity to
+  // this duration or the current expiration time, whichever is higher.
   uint32 extension_duration = 2;
 }
 
@@ -659,6 +693,9 @@ message CreatePersistentUserReply {
   // The sanitized username, this is basically a hashed representation
   // of the username used in the paths of user's home directory.
   string sanitized_username = 2;
+
+  // Properties for the auth_session_id after the current call.
+  AuthSessionProperties auth_properties = 4;
 }
 
 message PrepareGuestVaultRequest {}
@@ -685,6 +722,9 @@ message PrepareEphemeralVaultReply {
   // The sanitized username, this is basically a hashed representation
   // of the username used in the paths of user's home directory.
   string sanitized_username = 2;
+
+  // Properties for the auth_session_id after the current call.
+  AuthSessionProperties auth_properties = 4;
 }
 
 message GetAuthSessionStatusRequest {
@@ -702,16 +742,21 @@ enum AuthSessionStatus {
 
 message GetAuthSessionStatusReply {
   CryptohomeErrorCode error = 1;
+  CryptohomeErrorInfo error_info = 5;
 
   // Status for the valid AuthSession.
   AuthSessionStatus status = 2;
   // The time left (in sec) in the current AuthSession. This is only set if
   // AuthSession is authenticated.
+  // TODO(b/301078137): Remove the following after ash adopts new APIs.
   uint32 time_left = 3;
   // The intents that the Auth Session has been authorized for. This starts from
   // an empty set when the session is created, and is updated when a factor is
   // successfully authenticated.
   repeated AuthIntent authorized_for = 4;
+
+  // Properties for the auth_session_id after the current call.
+  AuthSessionProperties auth_properties = 6;
 }
 
 enum VaultEncryptionType {
@@ -761,8 +806,6 @@ message PrepareVaultForMigrationReply {
   string sanitized_username = 2;
 }
 
-// ------------------------- ArcQuota Interface -------------------------
-
 // Input parameters to GetArcDiskFeatures().
 message GetArcDiskFeaturesRequest {}
 
@@ -770,81 +813,6 @@ message GetArcDiskFeaturesRequest {}
 message GetArcDiskFeaturesReply {
   // Set to true if Quota feature is supported for ARC Disk/Storage.
   bool quota_supported = 1;
-}
-
-// Input parameters to GetCurrentSpaceForArcUid().
-message GetCurrentSpaceForArcUidRequest {
-  // The Android UID for whom we are going to query the disk usage.
-  // Note that Android UID is a shifted UID.
-  uint32 uid = 1;
-}
-
-// Output parameters for GetCurrentSpaceForArcUid().
-message GetCurrentSpaceForArcUidReply {
-  // The current disk space usage for the given Android UID.
-  // Will be a negative number if the request fails. See
-  // cryptohome/arc_disk_quota.h for more details.
-  int64 cur_space = 1;
-}
-
-// Input parameters to GetCurrentSpaceForArcGid().
-message GetCurrentSpaceForArcGidRequest {
-  // The Android GID for whom we are going to query the disk usage.
-  // Note that Android GID is a shifted GID.
-  uint32 gid = 1;
-}
-
-// Output parameters for GetCurrentSpaceForArcGid().
-message GetCurrentSpaceForArcGidReply {
-  // The current disk space usage for the given Android GID.
-  // Will be a negative number if the request fails. See
-  // cryptohome/arc_disk_quota.h for more details.
-  int64 cur_space = 1;
-}
-
-// Input parameters to GetCurrentSpaceForArcProjectId().
-message GetCurrentSpaceForArcProjectIdRequest {
-  // The project ID for whom we are going to query the disk usage.
-  uint32 project_id = 1;
-}
-
-// Output parameters for GetCurrentSpaceForArcProjectId().
-message GetCurrentSpaceForArcProjectIdReply {
-  // The current disk space usage for the given project ID.
-  // Will be a negative number if the request fails. See
-  // cryptohome/arc_disk_quota.h for more details.
-  int64 cur_space = 1;
-}
-
-// Input parameters to SetMediaRWDataFileProjectId().
-message SetMediaRWDataFileProjectIdRequest {
-  // The project ID.
-  uint32 project_id = 1;
-}
-
-// Output parameters for SetMediaRWDataFileProjectId().
-message SetMediaRWDataFileProjectIdReply {
-  // Set to true if ioctl syscall for setting the project ID succeeds.
-  bool success = 1;
-
-  // Errno if success == false.
-  int32 error = 2;
-}
-
-// Input parameters to SetMediaRWDataFileProjectInheritanceFlag().
-message SetMediaRWDataFileProjectInheritanceFlagRequest {
-  // Set to true if we are setting the project inheritance flag.
-  bool enable = 1;
-}
-
-// Output parameters for SetMediaRWDataFileProjectInheritanceFlag().
-message SetMediaRWDataFileProjectInheritanceFlagReply {
-  // Set to true if ioctl syscall for setting the project inheritance flag
-  // succeeds.
-  bool success = 1;
-
-  // Errno if success == false.
-  int32 error = 2;
 }
 
 // ------------------------- PKCS#11 Interface -------------------------
@@ -1048,7 +1016,7 @@ message GetSystemSaltRequest {
 message GetSystemSaltReply {
   // The system salt.
   // Note that the caller should not expect the system salt to be a particular
-  // size. The length is defined by the CRYPTOHOME_DEFAULT_SALT_LENGTH
+  // size. The length is defined by the kCryptohomeDefaultSaltLength
   // constant.
   bytes salt = 1;
 }
@@ -1225,13 +1193,16 @@ message AuthenticateAuthFactorReply {
 
   CryptohomeErrorCode error = 1;
   CryptohomeErrorInfo error_info = 2;
-
+  // TODO(b/301078137): Remove the following two after ash adopts new APIs.
   // The intents that the Auth Session has been authorized for. This starts from
   // an empty set when the session is created, and is updated when a factor is
   // successfully authenticated.
   repeated AuthIntent authorized_for = 4;
   // The time left in the current AuthSession after authentication.
   optional uint32 seconds_left = 5;
+
+  // Properties for the auth_session_id after the current call.
+  AuthSessionProperties auth_properties = 6;
 }
 
 // UpdateAuthFactorRequest is built when a user is trying to
@@ -1315,6 +1286,35 @@ message RelabelAuthFactorReply {
   // AuthFactorWithStatus returns newly updated auth factor. This will only be
   // set if the relabel operation succeeds.
   AuthFactorWithStatus relabelled_auth_factor = 3;
+}
+
+// ReplaceAuthFactor will remove an existing auth factor and add a new one to
+// replace it. The new factor must have a different label from the original.
+// The end result of this operation is similar to doing an Add+Remove of an auth
+// factor but executed atomically so that you should never end up with two or
+// zero auth factors afterwards.
+message ReplaceAuthFactorRequest {
+  // AuthFactor cannot be replaced without an active and authenticated
+  // AuthSession running. This id would be used to associate the AuthFactor to
+  // an AuthSession.
+  bytes auth_session_id = 1;
+  // Label to identify the existing AuthFactor to be replaced.
+  string auth_factor_label = 2;
+  // The AuthFactor that we will replace the existing AuthFactor with. The full
+  // structure should be populated with factor specific data and metadata.
+  AuthFactor auth_factor = 3;
+  // In some cases, such as password, the secret would be user supplied. In
+  // those cases the secret can be passed here.
+  AuthInput auth_input = 4;
+}
+
+message ReplaceAuthFactorReply {
+  CryptohomeErrorCode error = 1;
+  CryptohomeErrorInfo error_info = 2;
+
+  // When successful, this field will be set populated with factor and status
+  // information for the replacement auth factor.
+  AuthFactorWithStatus replacement_auth_factor = 3;
 }
 
 // RemoveAuthFactorRequest is built when a user is trying to
@@ -1627,19 +1627,19 @@ message PrepareAuthFactorProgress {
 // Used in the AuthenticateAuthFactorCompleted signal to notify
 // if authentication was successful/failed.
 message AuthenticateAuthFactorCompleted {
-  oneof result {
-    AuthenticateAuthFactorCompletedSuccess success = 1;
-    AuthenticateAuthFactorCompletedFailure failure = 2;
-  }
-}
-
-// Used when Authentication succeeds.
-message AuthenticateAuthFactorCompletedSuccess {
-  AuthFactorType auth_factor_type = 1;
-}
-
-// Used when Authentication fails.
-message AuthenticateAuthFactorCompletedFailure {
+  // error and error_info will be empty in case of success.
   CryptohomeErrorCode error = 1;
   CryptohomeErrorInfo error_info = 2;
+
+  // The auth factor type should be filled regardless of result.
+  AuthFactorType auth_factor_type = 3;
+}
+
+// The message sent in signal EvictedKeyRestoreSignal
+message EvictedKeyRestored {
+  bool done = 1;
+  // Unique ID associated with the current suspend request,
+  // when RestoreDeviceKey completes, correlated to a unique
+  // suspend attempt.
+  int64 eviction_id = 2;
 }

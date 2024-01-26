@@ -1,16 +1,29 @@
-// Copyright 2023 The Dawn Authors
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef SRC_DAWN_NATIVE_D3D11_TEXTURED3D11_H_
 #define SRC_DAWN_NATIVE_D3D11_TEXTURED3D11_H_
@@ -60,11 +73,13 @@ class Texture final : public d3d::Texture {
         const TextureDescriptor* descriptor);
     ID3D11Resource* GetD3D11Resource() const;
 
-    D3D11_RENDER_TARGET_VIEW_DESC GetRTVDescriptor(const Format& format,
-                                                   const SubresourceRange& singleLevelRange) const;
-    D3D11_DEPTH_STENCIL_VIEW_DESC GetDSVDescriptor(const SubresourceRange& singleLevelRange,
-                                                   bool depthReadOnly,
-                                                   bool stencilReadOnly) const;
+    ResultOrError<ComPtr<ID3D11RenderTargetView>> CreateD3D11RenderTargetView(
+        const Format& format,
+        const SubresourceRange& singleLevelRange) const;
+    ResultOrError<ComPtr<ID3D11DepthStencilView>> CreateD3D11DepthStencilView(
+        const SubresourceRange& singleLevelRange,
+        bool depthReadOnly,
+        bool stencilReadOnly) const;
     MaybeError EnsureSubresourceContentInitialized(CommandRecordingContext* commandContext,
                                                    const SubresourceRange& range);
 
@@ -180,19 +195,26 @@ class TextureView final : public TextureViewBase {
   public:
     static Ref<TextureView> Create(TextureBase* texture, const TextureViewDescriptor* descriptor);
 
-    ResultOrError<ComPtr<ID3D11ShaderResourceView>> CreateD3D11ShaderResourceView() const;
-    ResultOrError<ComPtr<ID3D11RenderTargetView>> CreateD3D11RenderTargetView(
-        uint32_t mipLevel = 0u) const;
-    ResultOrError<ComPtr<ID3D11DepthStencilView>> CreateD3D11DepthStencilView(
-        bool depthReadOnly,
-        bool stencilReadOnly,
-        uint32_t mipLevel = 0u) const;
-    ResultOrError<ComPtr<ID3D11UnorderedAccessView>> CreateD3D11UnorderedAccessView() const;
+    ResultOrError<ID3D11ShaderResourceView*> GetOrCreateD3D11ShaderResourceView();
+    ResultOrError<ID3D11RenderTargetView*> GetOrCreateD3D11RenderTargetView();
+    ResultOrError<ID3D11DepthStencilView*> GetOrCreateD3D11DepthStencilView(bool depthReadOnly,
+                                                                            bool stencilReadOnly);
+    ResultOrError<ID3D11UnorderedAccessView*> GetOrCreateD3D11UnorderedAccessView();
 
   private:
     using TextureViewBase::TextureViewBase;
 
     ~TextureView() override;
+
+    ComPtr<ID3D11ShaderResourceView> mD3d11SharedResourceView;
+
+    ComPtr<ID3D11RenderTargetView> mD3d11RenderTargetView;
+
+    bool mD3d11DepthStencilViewDepthReadOnly = false;
+    bool mD3d11DepthStencilViewStencilReadOnly = false;
+    ComPtr<ID3D11DepthStencilView> mD3d11DepthStencilView;
+
+    ComPtr<ID3D11UnorderedAccessView> mD3d11UnorderedAccessView;
 };
 
 }  // namespace dawn::native::d3d11

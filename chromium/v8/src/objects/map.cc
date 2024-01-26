@@ -48,7 +48,7 @@ Tagged<Map> Map::GetPrototypeChainRootMap(Isolate* isolate) const {
 }
 
 // static
-base::Optional<JSFunction> Map::GetConstructorFunction(
+base::Optional<Tagged<JSFunction>> Map::GetConstructorFunction(
     Tagged<Map> map, Tagged<Context> native_context) {
   DisallowGarbageCollection no_gc;
   if (IsPrimitiveMap(map)) {
@@ -98,9 +98,6 @@ VisitorId Map::GetVisitorId(Tagged<Map> map) {
   }
 
   switch (instance_type) {
-    case BYTE_ARRAY_TYPE:
-      return kVisitByteArray;
-
     case BYTECODE_ARRAY_TYPE:
       return kVisitBytecodeArray;
 
@@ -113,10 +110,8 @@ VisitorId Map::GetVisitorId(Tagged<Map> map) {
     case EMBEDDER_DATA_ARRAY_TYPE:
       return kVisitEmbedderDataArray;
 
-    case OBJECT_BOILERPLATE_DESCRIPTION_TYPE:
     case NAME_TO_INDEX_HASH_TABLE_TYPE:
     case REGISTERED_SYMBOL_TABLE_TYPE:
-    case CLOSURE_FEEDBACK_CELL_ARRAY_TYPE:
     case HASH_TABLE_TYPE:
     case ORDERED_HASH_MAP_TYPE:
     case ORDERED_HASH_SET_TYPE:
@@ -125,8 +120,10 @@ VisitorId Map::GetVisitorId(Tagged<Map> map) {
     case GLOBAL_DICTIONARY_TYPE:
     case NUMBER_DICTIONARY_TYPE:
     case SIMPLE_NUMBER_DICTIONARY_TYPE:
-    case SCRIPT_CONTEXT_TABLE_TYPE:
       return kVisitFixedArray;
+
+    case SLOPPY_ARGUMENTS_ELEMENTS_TYPE:
+      return kVisitSloppyArgumentsElements;
 
     case AWAIT_CONTEXT_TYPE:
     case BLOCK_CONTEXT_TYPE:
@@ -144,9 +141,6 @@ VisitorId Map::GetVisitorId(Tagged<Map> map) {
 
     case EPHEMERON_HASH_TABLE_TYPE:
       return kVisitEphemeronHashTable;
-
-    case FIXED_DOUBLE_ARRAY_TYPE:
-      return kVisitFixedDoubleArray;
 
     case PROPERTY_ARRAY_TYPE:
       return kVisitPropertyArray;
@@ -367,6 +361,9 @@ VisitorId Map::GetVisitorId(Tagged<Map> map) {
       if (instance_type == PROTOTYPE_INFO_TYPE) {
         return kVisitPrototypeInfo;
       }
+      if (instance_type == DEBUG_INFO_TYPE) {
+        return kVisitDebugInfo;
+      }
 #if V8_ENABLE_WEBASSEMBLY
       if (instance_type == WASM_INDIRECT_FUNCTION_TABLE_TYPE) {
         return kVisitWasmIndirectFunctionTable;
@@ -418,15 +415,21 @@ VisitorId Map::GetVisitorId(Tagged<Map> map) {
       TORQUE_INSTANCE_TYPE_TO_BODY_DESCRIPTOR_LIST(MAKE_TQ_CASE)
 #undef MAKE_TQ_CASE
 
+#define CASE(TypeCamelCase, TYPE_UPPER_CASE) \
+  case TYPE_UPPER_CASE##_TYPE:               \
+    return kVisit##TypeCamelCase;
+      SIMPLE_HEAP_OBJECT_LIST2(CASE)
+#undef CASE
+
     default:
       UNREACHABLE();
   }
 }
 
 // static
-MaybeObjectHandle Map::WrapFieldType(Isolate* isolate, Handle<FieldType> type) {
+MaybeObjectHandle Map::WrapFieldType(Handle<FieldType> type) {
   if (IsClass(*type)) {
-    return MaybeObjectHandle::Weak((*type)->AsClass(), isolate);
+    return MaybeObjectHandle::Weak(FieldType::AsClass(type));
   }
   return MaybeObjectHandle(type);
 }
@@ -470,7 +473,7 @@ MaybeHandle<Map> Map::CopyWithField(Isolate* isolate, Handle<Map> map,
         isolate, map->instance_type(), &representation, &type);
   }
 
-  MaybeObjectHandle wrapped_type = WrapFieldType(isolate, type);
+  MaybeObjectHandle wrapped_type = WrapFieldType(type);
 
   Descriptor d = Descriptor::DataField(name, index, attributes, constness,
                                        representation, wrapped_type);
@@ -716,7 +719,7 @@ MaybeHandle<Map> Map::TryUpdate(Isolate* isolate, Handle<Map> old_map) {
     }
   }
 
-  base::Optional<Map> new_map = MapUpdater::TryUpdateNoLock(
+  base::Optional<Tagged<Map>> new_map = MapUpdater::TryUpdateNoLock(
       isolate, *old_map, ConcurrencyMode::kSynchronous);
   if (!new_map.has_value()) return MaybeHandle<Map>();
   if (v8_flags.fast_map_update) {
@@ -772,7 +775,7 @@ Tagged<Map> Map::TryReplayPropertyTransitions(Isolate* isolate,
         DCHECK_EQ(PropertyLocation::kField, old_details.location());
         Tagged<FieldType> old_type = old_descriptors->GetFieldType(i);
         if (FieldTypeIsCleared(old_details.representation(), old_type) ||
-            !old_type->NowIs(new_type)) {
+            !FieldType::NowIs(old_type, new_type)) {
           return Map();
         }
       } else {
@@ -1076,9 +1079,10 @@ static Handle<Map> AddMissingElementsTransitions(Isolate* isolate,
 }
 
 // static
-base::Optional<Map> Map::TryAsElementsKind(Isolate* isolate, Handle<Map> map,
-                                           ElementsKind kind,
-                                           ConcurrencyMode cmode) {
+base::Optional<Tagged<Map>> Map::TryAsElementsKind(Isolate* isolate,
+                                                   Handle<Map> map,
+                                                   ElementsKind kind,
+                                                   ConcurrencyMode cmode) {
   Tagged<Map> closest_map =
       FindClosestElementsTransition(isolate, *map, kind, cmode);
   if (closest_map->elements_kind() != kind) return {};
@@ -1795,7 +1799,8 @@ bool CanHoldValue(Tagged<DescriptorArray> descriptors, InternalIndex descriptor,
     if (details.kind() == PropertyKind::kData) {
       return IsGeneralizableTo(constness, details.constness()) &&
              Object::FitsRepresentation(value, details.representation()) &&
-             descriptors->GetFieldType(descriptor)->NowContains(value);
+             FieldType::NowContains(descriptors->GetFieldType(descriptor),
+                                    value);
     } else {
       DCHECK_EQ(PropertyKind::kAccessor, details.kind());
       return false;
@@ -2365,7 +2370,7 @@ MaybeHandle<Map> NormalizedMapCache::Get(Handle<Map> fast_map,
                                          ElementsKind elements_kind,
                                          PropertyNormalizationMode mode) {
   DisallowGarbageCollection no_gc;
-  MaybeObject value = WeakFixedArray::Get(GetIndex(fast_map));
+  MaybeObject value = WeakFixedArray::get(GetIndex(fast_map));
   Tagged<HeapObject> heap_object;
   if (!value.GetHeapObjectIfWeak(&heap_object)) {
     return MaybeHandle<Map>();
@@ -2382,7 +2387,7 @@ MaybeHandle<Map> NormalizedMapCache::Get(Handle<Map> fast_map,
 void NormalizedMapCache::Set(Handle<Map> fast_map, Handle<Map> normalized_map) {
   DisallowGarbageCollection no_gc;
   DCHECK(normalized_map->is_dictionary_map());
-  WeakFixedArray::Set(GetIndex(fast_map),
+  WeakFixedArray::set(GetIndex(fast_map),
                       HeapObjectReference::Weak(*normalized_map));
 }
 

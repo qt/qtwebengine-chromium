@@ -63,6 +63,7 @@ copy_to_gen("copy_stylesheets_for_server") {
   sources = [
     "applicationColorTokens.css",
     "inspectorCommon.css",
+    "inspectorSyntaxHighlight.css",
     "themeColors.css",
     "tokens.css",
   ]
@@ -137,10 +138,12 @@ devtools_module("ui") {
     "../../core/sdk:bundle",
     "../../models/text_utils:bundle",
     "../../ui/legacy/theme_support:bundle",
+    "../components/adorners:bundle",
     "../components/helpers:bundle",
     "../components/icon_button:bundle",
     "../components/settings:bundle",
     "../lit-html:bundle",
+    "../visual_logging:bundle",
     "utils:bundle",
   ]
 }
@@ -177,15 +180,4 @@ devtools_entrypoint("bundle") {
   ]
 
   visibility += devtools_ui_legacy_visibility
-}
-
-devtools_entrypoint("legacy") {
-  entrypoint = "legacy-legacy.ts"
-
-  deps = [ ":bundle" ]
-
-  visibility = [
-    "../..:legacy_entrypoints",
-    "../../legacy_test_runner/*",
-  ]
 }

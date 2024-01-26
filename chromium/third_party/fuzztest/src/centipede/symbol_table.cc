@@ -17,6 +17,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <ostream>
 #include <string>
 #include <string_view>
 
@@ -32,6 +33,14 @@
 #include "./centipede/util.h"
 
 namespace centipede {
+
+bool SymbolTable::Entry::operator==(const Entry &other) const {
+  return this->func == other.func && this->file_line_col == other.file_line_col;
+}
+
+bool SymbolTable::operator==(const SymbolTable &other) const {
+  return this->entries_ == other.entries_;
+}
 
 void SymbolTable::ReadFromLLVMSymbolizer(std::istream &in) {
   // We remove some useless file prefixes for better human readability.
@@ -49,6 +58,14 @@ void SymbolTable::ReadFromLLVMSymbolizer(std::istream &in) {
       file = absl::StripPrefix(file, bad_prefix);
     }
     AddEntry(func, file);
+  }
+}
+
+void SymbolTable::WriteToLLVMSymbolizer(std::ostream &out) {
+  for (const Entry &entry : entries_) {
+    out << entry.func << std::endl;
+    out << entry.file_line_col << std::endl;
+    out << std::endl;
   }
 }
 

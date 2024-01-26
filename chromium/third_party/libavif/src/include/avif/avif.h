@@ -58,7 +58,7 @@ extern "C" {
 #define AVIF_VERSION_MAJOR 1
 #define AVIF_VERSION_MINOR 0
 #define AVIF_VERSION_PATCH 1
-#define AVIF_VERSION_DEVEL 0
+#define AVIF_VERSION_DEVEL 1
 #define AVIF_VERSION \
     ((AVIF_VERSION_MAJOR * 1000000) + (AVIF_VERSION_MINOR * 10000) + (AVIF_VERSION_PATCH * 100) + AVIF_VERSION_DEVEL)
 
@@ -172,12 +172,32 @@ typedef enum avifResult
     AVIF_RESULT_OUT_OF_MEMORY = 26,
     AVIF_RESULT_CANNOT_CHANGE_SETTING = 27, // a setting that can't change is changed during encoding
     AVIF_RESULT_INCOMPATIBLE_IMAGE = 28,    // the image is incompatible with already encoded images
+#if defined(AVIF_ENABLE_EXPERIMENTAL_GAIN_MAP)
+    AVIF_RESULT_ENCODE_GAIN_MAP_FAILED = 29,
+    AVIF_RESULT_DECODE_GAIN_MAP_FAILED = 30,
+    AVIF_RESULT_INVALID_TONE_MAPPED_IMAGE = 31,
+#endif
 
     // Kept for backward compatibility; please use the symbols above instead.
     AVIF_RESULT_NO_AV1_ITEMS_FOUND = AVIF_RESULT_MISSING_IMAGE_ITEM
 } avifResult;
 
 AVIF_API const char * avifResultToString(avifResult result);
+
+// ---------------------------------------------------------------------------
+// avifHeaderFormat
+
+typedef enum avifHeaderFormat
+{
+    // AVIF file with an "avif" brand, a MetaBox and all its required boxes for maximum compatibility.
+    AVIF_HEADER_FULL,
+#if defined(AVIF_ENABLE_EXPERIMENTAL_AVIR)
+    // AVIF file with an "avir" brand and a CondensedImageBox to reduce the encoded file size.
+    // This is based on the m64572 "Condensed image item" MPEG proposal for HEIF.
+    // WARNING: Experimental feature. Produces files that are incompatible with older decoders.
+    AVIF_HEADER_REDUCED,
+#endif
+} avifHeaderFormat;
 
 // ---------------------------------------------------------------------------
 // avifROData/avifRWData: Generic raw memory storage
@@ -497,6 +517,117 @@ typedef struct avifContentLightLevelInformationBox
     uint16_t maxPALL;
 } avifContentLightLevelInformationBox;
 
+#if defined(AVIF_ENABLE_EXPERIMENTAL_GAIN_MAP)
+// ---------------------------------------------------------------------------
+// avifGainMap
+// Gain Maps are a HIGHLY EXPERIMENTAL FEATURE. The format might still change and
+// images containing a gain map encoded with the current version of libavif might
+// not decode with a future version of libavif. The API is not guaranteed
+// to be stable, and might even be removed in the future. Use are your own risk.
+// This is based on ISO/IEC JTC 1/SC 29/WG 3 m64379
+// This product includes Gain Map technology under license by Adobe.
+
+struct avifImage;
+
+// Gain map metadata, for tone mapping between SDR and HDR.
+// All field pairs ending with 'N' and 'D' are fractional values (numerator and denominator).
+typedef struct avifGainMapMetadata
+{
+    // Parameters for converting the gain map from its image encoding to log
+    // space.
+    // gainMapLog = lerp(log(gainMapMin), log(gainMapMax), pow(gainMapEncoded, gainMapGamma));
+    // where 'lerp' is a linear interpolation function.
+
+    // Minimum value in the gain map (in linear space), per RGB channel.
+    uint32_t gainMapMinN[3];
+    uint32_t gainMapMinD[3];
+    // Maximum value in the gain map (in linear space), per RGB channel.
+    uint32_t gainMapMaxN[3];
+    uint32_t gainMapMaxD[3];
+    // Gain map gamma value, per RGB channel. If set to 1.0 and the transferCharacteristics
+    // of the gain map image is different from 2 (AVIF_TRANSFER_CHARACTERISTICS_UNSPECIFIED)
+    // then the transferCharacteristics field should be used instead.
+    uint32_t gainMapGammaN[3];
+    uint32_t gainMapGammaD[3];
+
+    // Parameters used in gain map computation/tone mapping to avoid numerical
+    // instability.
+    // toneMappedLinear = ((baseImageLinear + offsetBase) * exp(gainMapLog * w)) - offsetOther;
+    // Where 'w' is a weight parameter based on the display's HDR capacity
+    // (see below).
+
+    // Offset constants for the SDR image, per RGB channel.
+    uint32_t offsetSdrN[3];
+    uint32_t offsetSdrD[3];
+    // Offset constants for the HDR image, per RGB channel.
+    uint32_t offsetHdrN[3];
+    uint32_t offsetHdrD[3];
+
+    // -----------------------------------------------------------------------
+
+    // Parameters below can be manually tuned after the gain map has been
+    // created.
+
+    // Minimum and maximum HDR capacity (ratio of HDR white over SDR white, in
+    // linear space). The result of tone mapping for a display with an HDR
+    // capacity <= hdrCapacityMin is the SDR image. The result of tone mapping
+    // for a display with an HDR capacity >= hdrCapacityMax is the HDR image.
+    // For a display with a capacity between hdrCapacityMin and hdrCapacityMax,
+    // tone mapping results in an interpolation between the SDR and HDR
+    // versions. hdrCapacityMin and hdrCapacityMax can be tuned to change how
+    // the gain map should be applied.
+    //
+    // If 'H' is the display's current HDR capacity (HDR to SDR ratio), then
+    // the weight 'w' to apply the gain map is computed as follows:
+    // f = clamp((log(H) - log(hdrCapacityMin)) /
+    //           (log(hdrCapacityMax) − log(hdrCapacityMin)), 0, 1);
+    // w = baseRenditionIsHDR ? f - 1 : f;
+    uint32_t hdrCapacityMinN;
+    uint32_t hdrCapacityMinD;
+    uint32_t hdrCapacityMaxN;
+    uint32_t hdrCapacityMaxD;
+
+    // AVIF_TRUE if the base image is the HDR version, AVIF_FALSE if it is the
+    // SDR version.
+    avifBool baseRenditionIsHDR;
+} avifGainMapMetadata;
+
+// Gain map image and associated metadata.
+typedef struct avifGainMap
+{
+    // Gain map pixels.
+    // Used fields: width, height, depth, yufFormat, yuvRange,
+    // yuvChromaSamplePosition, yuvPlanes, yuvRowBytes, imageOwnsYUVPlanes,
+    // matrixCoefficients, transferCharacteristics. Other fields are ignored.
+    struct avifImage * image;
+
+    // Gain map metadata.
+    // For an image grid, the metadata shall be identical for all cells.
+    avifGainMapMetadata metadata;
+} avifGainMap;
+
+// Same as avifGainMapMetadata, but with fields of type double instead of uint32_t fractions.
+// Use avifGainMapMetadataDoubleToFractions() to convert this to a avifGainMapMetadata.
+// See avifGainMapMetadata for detailed descriptions of fields.
+typedef struct avifGainMapMetadataDouble
+{
+    double gainMapMin[3];
+    double gainMapMax[3];
+    double gainMapGamma[3];
+    double offsetSdr[3];
+    double offsetHdr[3];
+    double hdrCapacityMin;
+    double hdrCapacityMax;
+    avifBool baseRenditionIsHDR;
+} avifGainMapMetadataDouble;
+
+// Converts a avifGainMapMetadataDouble to avifGainMapMetadata by converting double values
+// to the closest uint32_t fractions.
+// Returns AVIF_FALSE if some field values are < 0 or > UINT32_MAX.
+AVIF_API avifBool avifGainMapMetadataDoubleToFractions(avifGainMapMetadata * dst, const avifGainMapMetadataDouble * src);
+
+#endif // AVIF_ENABLE_EXPERIMENTAL_GAIN_MAP
+
 // ---------------------------------------------------------------------------
 // avifImage
 
@@ -559,13 +690,24 @@ typedef struct avifImage
     avifRWData xmp;
 
     // Version 1.0.0 ends here. Add any new members after this line.
+
+#if defined(AVIF_ENABLE_EXPERIMENTAL_GAIN_MAP)
+    // Gain map image and metadata. If no gain map is present, gainMap.image is NULL.
+    // When calling avifImageDestroy on the containing image, the gain map image is also destroyed
+    // (the containing image "owns" the gain map).
+    avifGainMap gainMap;
+#endif
 } avifImage;
 
 // avifImageCreate() and avifImageCreateEmpty() return NULL if arguments are invalid or if a memory allocation failed.
 AVIF_API avifImage * avifImageCreate(uint32_t width, uint32_t height, uint32_t depth, avifPixelFormat yuvFormat);
 AVIF_API avifImage * avifImageCreateEmpty(void); // helper for making an image to decode into
-AVIF_API avifResult avifImageCopy(avifImage * dstImage, const avifImage * srcImage, avifPlanesFlags planes); // deep copy
-AVIF_API avifResult avifImageSetViewRect(avifImage * dstImage, const avifImage * srcImage, const avifCropRect * rect); // shallow copy, no metadata
+// Performs a deep copy of an image, including all metadata and planes, and the gain map metadata/planes if present
+// and if AVIF_ENABLE_EXPERIMENTAL_GAIN_MAP is defined.
+AVIF_API avifResult avifImageCopy(avifImage * dstImage, const avifImage * srcImage, avifPlanesFlags planes);
+// Performs a shallow copy of a rectangular area of an image. 'dstImage' does not own the planes.
+// Ignores the gainMap field (which exists only if AVIF_ENABLE_EXPERIMENTAL_GAIN_MAP is defined).
+AVIF_API avifResult avifImageSetViewRect(avifImage * dstImage, const avifImage * srcImage, const avifCropRect * rect);
 AVIF_API void avifImageDestroy(avifImage * image);
 
 AVIF_API avifResult avifImageSetProfileICC(avifImage * image, const uint8_t * icc, size_t iccSize);
@@ -577,6 +719,8 @@ AVIF_API avifResult avifImageSetMetadataExif(avifImage * image, const uint8_t * 
 // Sets XMP metadata.
 AVIF_API avifResult avifImageSetMetadataXMP(avifImage * image, const uint8_t * xmp, size_t xmpSize);
 
+// Allocate/free/steal planes. These functions ignore the gainMap field (which exists only if
+// AVIF_ENABLE_EXPERIMENTAL_GAIN_MAP is defined).
 AVIF_API avifResult avifImageAllocatePlanes(avifImage * image, avifPlanesFlags planes); // Ignores any pre-existing planes
 AVIF_API void avifImageFreePlanes(avifImage * image, avifPlanesFlags planes);           // Ignores already-freed planes
 AVIF_API void avifImageStealPlanes(avifImage * dstImage, avifImage * srcImage, avifPlanesFlags planes);
@@ -1016,6 +1160,32 @@ typedef struct avifDecoder
     struct avifDecoderData * data;
 
     // Version 1.0.0 ends here. Add any new members after this line.
+
+#if defined(AVIF_ENABLE_EXPERIMENTAL_GAIN_MAP)
+    // This is true when avifDecoderParse() detects a gain map.
+    avifBool gainMapPresent;
+    // Enable decoding the gain map image if present (defaults to AVIF_FALSE).
+    // (see also enableParsingGainMapMetadata below).
+    // gainMapPresent is still set if the presence of a gain map is detected, regardless
+    // of this setting.
+    avifBool enableDecodingGainMap;
+    // Enable parsing the gain map metadata if present (defaults to AVIF_FALSE).
+    // gainMapPresent is still set if the presence of a gain map is detected, regardless
+    // of this setting.
+    // Gain map metadata is read during avifDecoderParse(). Like Exif and XMP, this data
+    // can be (unfortunately) packed at the end of the file, which will cause
+    // avifDecoderParse() to return AVIF_RESULT_WAITING_ON_IO until it finds it.
+    // If you don't actually use this data, it's best to leave this to AVIF_FALSE (default).
+    avifBool enableParsingGainMapMetadata;
+    // Do not decode the color/alpha planes of the main image.
+    // Can be useful to decode the gain map image only.
+    avifBool ignoreColorAndAlpha;
+#endif
+
+    // This is true when avifDecoderParse() detects an image sequence track in the image. If this is true, the image can be
+    // decoded either as an animated image sequence or as a still image (the primary image item) by setting avifDecoderSetSource
+    // to the appropriate source.
+    avifBool imageSequenceTrackPresent;
 } avifDecoder;
 
 AVIF_API avifDecoder * avifDecoderCreate(void);
@@ -1076,6 +1246,12 @@ AVIF_API avifResult avifDecoderNthImageTiming(const avifDecoder * decoder, uint3
 // function can be called next to retrieve the number of top rows that can be immediately accessed
 // from the luma plane of decoder->image, and alpha if any. The corresponding rows from the chroma planes,
 // if any, can also be accessed (half rounded up if subsampled, same number of rows otherwise).
+// If a gain map is present and AVIF_ENABLE_EXPERIMENTAL_GAIN_MAP is on and enableDecodingGainMap is also on,
+// the gain map's planes can also be accessed in the same way. If the gain map's height is different from
+// the main image, then the number of available gain map rows is at least:
+// roundf((float)decoded_row_count / decoder->image->height * decoder->image->gainMap.image->height)
+// When gain map scaling is needed, callers might choose to use a few less rows depending on how many rows
+// are needed by the scaling algorithm, to avoid the last row(s) changing when more data becomes available.
 // decoder->allowIncremental must be set to true before calling avifDecoderNextImage() or
 // avifDecoderNthImage(). Returns decoder->image->height when the last call to avifDecoderNextImage() or
 // avifDecoderNthImage() returned AVIF_RESULT_OK. Returns 0 in all other cases.
@@ -1186,6 +1362,13 @@ typedef struct avifEncoder
     struct avifCodecSpecificOptions * csOptions;
 
     // Version 1.0.0 ends here. Add any new members after this line.
+
+    // Defaults to AVIF_HEADER_FULL
+    avifHeaderFormat headerFormat;
+
+#if defined(AVIF_ENABLE_EXPERIMENTAL_GAIN_MAP)
+    int qualityGainMap; // changeable encoder setting
+#endif
 } avifEncoder;
 
 // avifEncoderCreate() returns NULL if a memory allocation failed.

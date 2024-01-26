@@ -53,6 +53,7 @@ import * as PerfUI from '../../ui/legacy/components/perf_ui/perf_ui.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as ThemeSupport from '../../ui/legacy/theme_support/theme_support.js';
+import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 
 import {ExecutionContextSelector} from './ExecutionContextSelector.js';
 
@@ -154,35 +155,24 @@ export class MainImpl {
     await this.requestAndRegisterLocaleData();
 
     Host.userMetrics.syncSetting(Common.Settings.Settings.instance().moduleSetting<boolean>('sync_preferences').get());
+    void VisualLogging.startLogging();
 
     void this.#createAppUI();
   }
 
   #initializeGlobalsForLayoutTests(): void {
-    // @ts-ignore layout test global
-    self.UI = self.UI || {};
-    // @ts-ignore layout test global
-    self.UI.panels = self.UI.panels || {};
-    // @ts-ignore layout test global
-    self.SDK = self.SDK || {};
-    // @ts-ignore layout test global
-    self.Bindings = self.Bindings || {};
-    // @ts-ignore layout test global
-    self.Persistence = self.Persistence || {};
-    // @ts-ignore layout test global
-    self.Workspace = self.Workspace || {};
-    // @ts-ignore layout test global
-    self.Extensions = self.Extensions || {};
     // @ts-ignore e2e test global
-    self.Host = self.Host || {};
+    self.Extensions ||= {};
     // @ts-ignore e2e test global
-    self.Host.userMetrics = self.Host.userMetrics || Host.userMetrics;
+    self.Host ||= {};
     // @ts-ignore e2e test global
-    self.Host.UserMetrics = self.Host.UserMetrics || Host.UserMetrics;
+    self.Host.userMetrics ||= Host.userMetrics;
     // @ts-ignore e2e test global
-    self.ProtocolClient = self.ProtocolClient || {};
+    self.Host.UserMetrics ||= Host.UserMetrics;
     // @ts-ignore e2e test global
-    self.ProtocolClient.test = self.ProtocolClient.test || ProtocolClient.InspectorBackend.test;
+    self.ProtocolClient ||= {};
+    // @ts-ignore e2e test global
+    self.ProtocolClient.test ||= ProtocolClient.InspectorBackend.test;
   }
 
   async requestAndRegisterLocaleData(): Promise<void> {
@@ -290,9 +280,6 @@ export class MainImpl {
         'sourceOrderViewer', 'Source order viewer', undefined,
         'https://developer.chrome.com/blog/new-in-devtools-92/#source-order');
     Root.Runtime.experiments.register('webauthnPane', 'WebAuthn Pane');
-    Root.Runtime.experiments.register(
-        'keyboardShortcutEditor', 'Enable keyboard shortcut editor', false,
-        'https://developer.chrome.com/blog/new-in-devtools-88/#keyboard-shortcuts');
 
     // Back/forward cache
     Root.Runtime.experiments.register(
@@ -323,12 +310,6 @@ export class MainImpl {
     Root.Runtime.experiments.register('instrumentationBreakpoints', 'Enable instrumentation breakpoints', true);
     Root.Runtime.experiments.register('setAllBreakpointsEagerly', 'Set all breakpoints eagerly at startup');
     Root.Runtime.experiments.register('useSourceMapScopes', 'Use scope information from source maps', true);
-
-    // Dual-screen
-    Root.Runtime.experiments.register(
-        'dualScreenSupport', 'Emulation: Support dual screen mode', undefined,
-        'https://developer.chrome.com/blog/new-in-devtools-89#dual-screen');
-    Root.Runtime.experiments.setEnabled('dualScreenSupport', true);
 
     // Advanced Perceptual Contrast Algorithm.
     Root.Runtime.experiments.register(
@@ -377,9 +358,6 @@ export class MainImpl {
     // Local overrides
     Root.Runtime.experiments.register(
         Root.Runtime.ExperimentName.HEADER_OVERRIDES, 'Local overrides for response headers');
-    Root.Runtime.experiments.register(
-        Root.Runtime.ExperimentName.DELETE_OVERRIDES_TEMP_ENABLE, 'Enable "Delete all overrides" temporarily',
-        undefined, 'https://goo.gle/devtools-overrides', 'https://crbug.com/1473681');
 
     // Enable color picking outside the browser window (using Eyedropper API)
     Root.Runtime.experiments.register(
@@ -400,14 +378,8 @@ export class MainImpl {
         'Highlight important DOM properties in the Object Properties viewer');
 
     Root.Runtime.experiments.register(
-        Root.Runtime.ExperimentName.PRELOADING_STATUS_PANEL, 'Enable Preloading Status Panel in Application panel',
+        Root.Runtime.ExperimentName.PRELOADING_STATUS_PANEL, 'Enable Speculative Loads Panel in Application panel',
         true);
-    Root.Runtime.experiments.setEnabled(Root.Runtime.ExperimentName.PRELOADING_STATUS_PANEL, true);
-
-    Root.Runtime.experiments.register(
-        Root.Runtime.ExperimentName.DISABLE_COLOR_FORMAT_SETTING,
-        // Adding the reload hint here because users getting here are likely coming from inside the settings UI, but the regular reminder bar is only shown after the UI is closed which they're not going to see.
-        'Disable the deprecated `Color format` setting (requires reloading DevTools)', false);
 
     Root.Runtime.experiments.register(
         Root.Runtime.ExperimentName.OUTERMOST_TARGET_SELECTOR,
@@ -419,19 +391,32 @@ export class MainImpl {
     Root.Runtime.experiments.register(
         Root.Runtime.ExperimentName.STORAGE_BUCKETS_TREE, 'Enable Storage Buckets Tree in Application panel', true);
 
+    Root.Runtime.experiments.register(
+        Root.Runtime.ExperimentName.NETWORK_PANEL_FILTER_BAR_REDESIGN,
+        'Redesign of the filter bar in the Network Panel',
+    );
+
+    Root.Runtime.experiments.register(
+        Root.Runtime.ExperimentName.BREADCRUMBS_PERFORMANCE_PANEL, 'Enable breadcrumbs in the Performance Panel',
+        false);
+
+    Root.Runtime.experiments.register(
+        Root.Runtime.ExperimentName.TRACK_CONTEXT_MENU,
+        'Enable context menu that allows to modify trees in the Flame Chart', true);
+
     Root.Runtime.experiments.enableExperimentsByDefault([
       'sourceOrderViewer',
       'cssTypeComponentLength',
       Root.Runtime.ExperimentName.PRECISE_CHANGES,
       ...('EyeDropper' in window ? [Root.Runtime.ExperimentName.EYEDROPPER_COLOR_PICKER] : []),
-      'keyboardShortcutEditor',
       'sourcesPrettyPrint',
       'setAllBreakpointsEagerly',
-      Root.Runtime.ExperimentName.DISABLE_COLOR_FORMAT_SETTING,
       Root.Runtime.ExperimentName.TIMELINE_AS_CONSOLE_PROFILE_RESULT_PANEL,
       Root.Runtime.ExperimentName.WASM_DWARF_DEBUGGING,
       Root.Runtime.ExperimentName.HEADER_OVERRIDES,
       Root.Runtime.ExperimentName.OUTERMOST_TARGET_SELECTOR,
+      Root.Runtime.ExperimentName.SELF_XSS_WARNING,
+      Root.Runtime.ExperimentName.PRELOADING_STATUS_PANEL,
     ]);
 
     Root.Runtime.experiments.setNonConfigurableExperiments([
@@ -467,13 +452,8 @@ export class MainImpl {
   async #createAppUI(): Promise<void> {
     MainImpl.time('Main._createAppUI');
 
-    // @ts-ignore layout test global
-    self.UI.viewManager = UI.ViewManager.ViewManager.instance();
-
     // Request filesystems early, we won't create connections until callback is fired. Things will happen in parallel.
-    // @ts-ignore layout test global
-    self.Persistence.isolatedFileSystemManager =
-        Persistence.IsolatedFileSystemManager.IsolatedFileSystemManager.instance();
+    Persistence.IsolatedFileSystemManager.IsolatedFileSystemManager.instance();
 
     const defaultThemeSetting = 'systemPreferred';
     const themeSetting = Common.Settings.Settings.instance().createSetting('uiTheme', defaultThemeSetting);
@@ -504,11 +484,8 @@ export class MainImpl {
     this.#addMainEventListeners(document);
 
     const canDock = Boolean(Root.Runtime.Runtime.queryParam('can_dock'));
-    // @ts-ignore layout test global
-    self.UI.zoomManager = UI.ZoomManager.ZoomManager.instance(
+    UI.ZoomManager.ZoomManager.instance(
         {forceNew: true, win: window, frontendHost: Host.InspectorFrontendHost.InspectorFrontendHostInstance});
-    // @ts-ignore layout test global
-    self.UI.inspectorView = UI.InspectorView.InspectorView.instance();
     UI.ContextMenu.ContextMenu.initialize();
     UI.ContextMenu.ContextMenu.installHandler(document);
 
@@ -524,37 +501,27 @@ export class MainImpl {
     });
     IssuesManager.ContrastCheckTrigger.ContrastCheckTrigger.instance();
 
-    // @ts-ignore layout test global
-    self.UI.dockController = UI.DockController.DockController.instance({forceNew: true, canDock});
-    // @ts-ignore layout test global
-    self.SDK.multitargetNetworkManager = SDK.NetworkManager.MultitargetNetworkManager.instance({forceNew: true});
-    // @ts-ignore layout test global
-    self.SDK.domDebuggerManager = SDK.DOMDebuggerModel.DOMDebuggerManager.instance({forceNew: true});
+    UI.DockController.DockController.instance({forceNew: true, canDock});
+    SDK.NetworkManager.MultitargetNetworkManager.instance({forceNew: true});
+    SDK.DOMDebuggerModel.DOMDebuggerManager.instance({forceNew: true});
     SDK.TargetManager.TargetManager.instance().addEventListener(
         SDK.TargetManager.Events.SuspendStateChanged, this.#onSuspendStateChanged.bind(this));
 
-    // @ts-ignore layout test global
-    self.Workspace.fileManager = Workspace.FileManager.FileManager.instance({forceNew: true});
-    // @ts-ignore layout test global
-    self.Workspace.workspace = Workspace.Workspace.WorkspaceImpl.instance();
+    Workspace.FileManager.FileManager.instance({forceNew: true});
+    Workspace.Workspace.WorkspaceImpl.instance();
 
-    // @ts-ignore layout test global
-    self.Bindings.networkProjectManager = Bindings.NetworkProject.NetworkProjectManager.instance();
+    Bindings.NetworkProject.NetworkProjectManager.instance();
     const resourceMapping = new Bindings.ResourceMapping.ResourceMapping(
         SDK.TargetManager.TargetManager.instance(),
         Workspace.Workspace.WorkspaceImpl.instance(),
     );
-    // @ts-ignore layout test global
-    self.Bindings.resourceMapping = resourceMapping;
     new Bindings.PresentationConsoleMessageHelper.PresentationConsoleMessageManager();
-    // @ts-ignore layout test global
-    self.Bindings.cssWorkspaceBinding = Bindings.CSSWorkspaceBinding.CSSWorkspaceBinding.instance({
+    Bindings.CSSWorkspaceBinding.CSSWorkspaceBinding.instance({
       forceNew: true,
       resourceMapping,
       targetManager: SDK.TargetManager.TargetManager.instance(),
     });
-    // @ts-ignore layout test global
-    self.Bindings.debuggerWorkspaceBinding = Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance({
+    Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance({
       forceNew: true,
       resourceMapping,
       targetManager: SDK.TargetManager.TargetManager.instance(),
@@ -565,39 +532,31 @@ export class MainImpl {
       const outermostTarget = data?.outermostTarget();
       SDK.TargetManager.TargetManager.instance().setScopeTarget(outermostTarget);
     });
-    // @ts-ignore layout test global
-    self.Bindings.breakpointManager = Breakpoints.BreakpointManager.BreakpointManager.instance({
+    Breakpoints.BreakpointManager.BreakpointManager.instance({
       forceNew: true,
       workspace: Workspace.Workspace.WorkspaceImpl.instance(),
       targetManager: SDK.TargetManager.TargetManager.instance(),
       debuggerWorkspaceBinding: Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance(),
     });
-    // @ts-ignore layout test global
+    // @ts-ignore e2e test global
     self.Extensions.extensionServer = Extensions.ExtensionServer.ExtensionServer.instance({forceNew: true});
 
     new Persistence.FileSystemWorkspaceBinding.FileSystemWorkspaceBinding(
         Persistence.IsolatedFileSystemManager.IsolatedFileSystemManager.instance(),
         Workspace.Workspace.WorkspaceImpl.instance());
     Persistence.IsolatedFileSystemManager.IsolatedFileSystemManager.instance().addPlatformFileSystem(
-        // @ts-ignore https://github.com/microsoft/TypeScript/issues/41397
-        'snippet://', new Snippets.ScriptSnippetFileSystem.SnippetFileSystem());
+        'snippet://' as Platform.DevToolsPath.UrlString, new Snippets.ScriptSnippetFileSystem.SnippetFileSystem());
 
-    // @ts-ignore layout test global
-    self.Persistence.persistence = Persistence.Persistence.PersistenceImpl.instance({
+    Persistence.Persistence.PersistenceImpl.instance({
       forceNew: true,
       workspace: Workspace.Workspace.WorkspaceImpl.instance(),
       breakpointManager: Breakpoints.BreakpointManager.BreakpointManager.instance(),
     });
-    // @ts-ignore layout test global
-    self.Persistence.networkPersistenceManager =
-        Persistence.NetworkPersistenceManager.NetworkPersistenceManager.instance(
-            {forceNew: true, workspace: Workspace.Workspace.WorkspaceImpl.instance()});
-    // @ts-ignore layout test global
-    self.Host.Platform = Host.Platform;
+    Persistence.NetworkPersistenceManager.NetworkPersistenceManager.instance(
+        {forceNew: true, workspace: Workspace.Workspace.WorkspaceImpl.instance()});
 
     new ExecutionContextSelector(SDK.TargetManager.TargetManager.instance(), UI.Context.Context.instance());
-    // @ts-ignore layout test global
-    self.Bindings.ignoreListManager = Bindings.IgnoreListManager.IgnoreListManager.instance({
+    Bindings.IgnoreListManager.IgnoreListManager.instance({
       forceNew: true,
       debuggerWorkspaceBinding: Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance(),
     });
@@ -606,11 +565,7 @@ export class MainImpl {
 
     const actionRegistryInstance = UI.ActionRegistry.ActionRegistry.instance({forceNew: true});
     // Required for legacy a11y layout tests
-    // @ts-ignore layout test global
-    self.UI.actionRegistry = actionRegistryInstance;
-    // @ts-ignore layout test global
-    self.UI.shortcutRegistry =
-        UI.ShortcutRegistry.ShortcutRegistry.instance({forceNew: true, actionRegistry: actionRegistryInstance});
+    UI.ShortcutRegistry.ShortcutRegistry.instance({forceNew: true, actionRegistry: actionRegistryInstance});
     this.#registerMessageSinkListener();
 
     MainImpl.timeEnd('Main._createAppUI');

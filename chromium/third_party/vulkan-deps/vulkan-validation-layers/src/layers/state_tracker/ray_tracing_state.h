@@ -21,9 +21,9 @@
 #include "state_tracker/buffer_state.h"
 #include "generated/layer_chassis_dispatch.h"
 
-class ACCELERATION_STRUCTURE_STATE : public BINDABLE {
+class ACCELERATION_STRUCTURE_STATE_NV : public BINDABLE {
   public:
-    ACCELERATION_STRUCTURE_STATE(VkDevice device, VkAccelerationStructureNV as, const VkAccelerationStructureCreateInfoNV *ci)
+    ACCELERATION_STRUCTURE_STATE_NV(VkDevice device, VkAccelerationStructureNV as, const VkAccelerationStructureCreateInfoNV *ci)
         : BINDABLE(as, kVulkanObjectTypeAccelerationStructureNV, false, false, 0),
           create_infoNV(ci),
           memory_requirements(GetMemReqs(device, as, VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_OBJECT_NV)),
@@ -32,9 +32,9 @@ class ACCELERATION_STRUCTURE_STATE : public BINDABLE {
           update_scratch_memory_requirements(
               GetMemReqs(device, as, VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_UPDATE_SCRATCH_NV)),
           tracker_(&memory_requirements) {
-              BINDABLE::SetMemoryTracker(&tracker_);
+        BINDABLE::SetMemoryTracker(&tracker_);
     }
-    ACCELERATION_STRUCTURE_STATE(const ACCELERATION_STRUCTURE_STATE &rh_obj) = delete;
+    ACCELERATION_STRUCTURE_STATE_NV(const ACCELERATION_STRUCTURE_STATE_NV &rh_obj) = delete;
 
     VkAccelerationStructureNV acceleration_structure() const { return handle_.Cast<VkAccelerationStructureNV>(); }
 
@@ -57,10 +57,10 @@ class ACCELERATION_STRUCTURE_STATE : public BINDABLE {
   private:
     static VkMemoryRequirements GetMemReqs(VkDevice device, VkAccelerationStructureNV as,
                                            VkAccelerationStructureMemoryRequirementsTypeNV mem_type) {
-        auto req_info = LvlInitStruct<VkAccelerationStructureMemoryRequirementsInfoNV>();
+        VkAccelerationStructureMemoryRequirementsInfoNV req_info = vku::InitStructHelper();
         req_info.type = mem_type;
         req_info.accelerationStructure = as;
-        auto requirements = LvlInitStruct<VkMemoryRequirements2>();
+        VkMemoryRequirements2 requirements = vku::InitStructHelper();
         DispatchGetAccelerationStructureMemoryRequirementsNV(device, &req_info, &requirements);
         return requirements.memoryRequirements;
     }

@@ -8,10 +8,11 @@
 #include <cmath>
 #include <functional>
 #include <limits>
+#include <memory>
 #include <random>
 #include <vector>
 
-#include <fp16.h>
+#include <fp16/fp16.h>
 
 #include <xnnpack.h>
 
@@ -55,17 +56,20 @@ static void xnnpack_tanh_f16(benchmark::State& state) {
     return;
   }
 
-  status = xnn_setup_tanh_nc_f16(
-    tanh_op, batch_size,
-    input.data(), output.data(),
-    nullptr /* thread pool */);
+  status = xnn_reshape_tanh_nc_f16(tanh_op, batch_size, /*threadpool=*/nullptr);
+  if (status != xnn_status_success) {
+    state.SkipWithError("failed to reshape Tanh operator");
+    return;
+  }
+
+  status = xnn_setup_tanh_nc_f16(tanh_op, input.data(), output.data());
   if (status != xnn_status_success) {
     state.SkipWithError("failed to setup Tanh operator");
     return;
   }
 
   for (auto _ : state) {
-    status = xnn_run_operator(tanh_op, nullptr /* thread pool */);
+    status = xnn_run_operator(tanh_op, /*threadpool=*/nullptr);
     if (status != xnn_status_success) {
       state.SkipWithError("failed to run Tanh operator");
       return;
@@ -118,17 +122,20 @@ static void xnnpack_tanh_f32(benchmark::State& state) {
     return;
   }
 
-  status = xnn_setup_tanh_nc_f32(
-    tanh_op, batch_size,
-    input.data(), output.data(),
-    nullptr /* thread pool */);
+  status = xnn_reshape_tanh_nc_f32(tanh_op, batch_size, /*threadpool=*/nullptr);
+  if (status != xnn_status_success) {
+    state.SkipWithError("failed to reshape Tanh operator");
+    return;
+  }
+
+  status = xnn_setup_tanh_nc_f32(tanh_op, input.data(), output.data());
   if (status != xnn_status_success) {
     state.SkipWithError("failed to setup Tanh operator");
     return;
   }
 
   for (auto _ : state) {
-    status = xnn_run_operator(tanh_op, nullptr /* thread pool */);
+    status = xnn_run_operator(tanh_op, /*threadpool=*/nullptr);
     if (status != xnn_status_success) {
       state.SkipWithError("failed to run Tanh operator");
       return;
@@ -186,17 +193,20 @@ static void xnnpack_tanh_qs8(benchmark::State& state) {
     return;
   }
 
-  status = xnn_setup_tanh_nc_qs8(
-    tanh_op, batch_size,
-    input.data(), output.data(),
-    nullptr /* thread pool */);
+  status = xnn_reshape_tanh_nc_qs8(tanh_op, batch_size, /*threadpool=*/nullptr);
   if (status != xnn_status_success) {
-    state.SkipWithError("failed to setup TanH operator");
+    state.SkipWithError("failed to reshape Tanh operator");
+    return;
+  }
+
+  status = xnn_setup_tanh_nc_qs8(tanh_op, input.data(), output.data());
+  if (status != xnn_status_success) {
+    state.SkipWithError("failed to setup Tanh operator");
     return;
   }
 
   for (auto _ : state) {
-    status = xnn_run_operator(tanh_op, nullptr /* thread pool */);
+    status = xnn_run_operator(tanh_op, /*threadpool=*/nullptr);
     if (status != xnn_status_success) {
       state.SkipWithError("failed to run TanH operator");
       return;
@@ -253,17 +263,20 @@ static void xnnpack_tanh_qu8(benchmark::State& state) {
     return;
   }
 
-  status = xnn_setup_tanh_nc_qu8(
-    tanh_op, batch_size,
-    input.data(), output.data(),
-    nullptr /* thread pool */);
+  status = xnn_reshape_tanh_nc_qu8(tanh_op, batch_size, /*threadpool=*/nullptr);
   if (status != xnn_status_success) {
-    state.SkipWithError("failed to setup TanH operator");
+    state.SkipWithError("failed to reshape Tanh operator");
+    return;
+  }
+
+  status = xnn_setup_tanh_nc_qu8(tanh_op, input.data(), output.data());
+  if (status != xnn_status_success) {
+    state.SkipWithError("failed to setup Tanh operator");
     return;
   }
 
   for (auto _ : state) {
-    status = xnn_run_operator(tanh_op, nullptr /* thread pool */);
+    status = xnn_run_operator(tanh_op, /*threadpool=*/nullptr);
     if (status != xnn_status_success) {
       state.SkipWithError("failed to run TanH operator");
       return;

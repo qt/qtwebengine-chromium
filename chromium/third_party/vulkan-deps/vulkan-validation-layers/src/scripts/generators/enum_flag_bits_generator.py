@@ -65,33 +65,33 @@ class EnumFlagBitsOutputGenerator(BaseGenerator):
 
         out = []
         out.append(f'''// *** THIS FILE IS GENERATED - DO NOT EDIT ***
-// See {os.path.basename(__file__)} for modifications
+            // See {os.path.basename(__file__)} for modifications
 
-/***************************************************************************
-*
-* Copyright (c) 2015-2023 The Khronos Group Inc.
-* Copyright (c) 2015-2023 Valve Corporation
-* Copyright (c) 2015-2023 LunarG, Inc.
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*     http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
-****************************************************************************/\n''')
+            /***************************************************************************
+            *
+            * Copyright (c) 2015-2023 The Khronos Group Inc.
+            * Copyright (c) 2015-2023 Valve Corporation
+            * Copyright (c) 2015-2023 LunarG, Inc.
+            *
+            * Licensed under the Apache License, Version 2.0 (the "License");
+            * you may not use this file except in compliance with the License.
+            * You may obtain a copy of the License at
+            *
+            *     http://www.apache.org/licenses/LICENSE-2.0
+            *
+            * Unless required by applicable law or agreed to in writing, software
+            * distributed under the License is distributed on an "AS IS" BASIS,
+            * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+            * See the License for the specific language governing permissions and
+            * limitations under the License.
+            ****************************************************************************/\n''')
         out.append('// NOLINTBEGIN') # Wrap for clang-tidy to ignore
         out.append('''
-#pragma once
+            #pragma once
+            #include <array>
+            #include "vulkan/vulkan.h"\n''')
 
-#include <array>
-#include "vulkan/vulkan.h"\n''')
-
+        out.append('// clang-format off\n')
         out.append(f'const uint32_t GeneratedVulkanHeaderVersion = {self.vk.headerVersion};\n')
         for bitmask in bitmasks:
             if bitmask.flagName == 'VkGeometryInstanceFlagsKHR':
@@ -115,5 +115,6 @@ class EnumFlagBitsOutputGenerator(BaseGenerator):
         for bitmask in [self.vk.bitmasks[x] for x in flagBitsAsArray]:
             out.append(f'[[maybe_unused]] constexpr std::array All{bitmask.flagName} = {{{",".join([flag.name for flag in bitmask.flags])}}};\n')
 
+        out.append('// clang-format on\n')
         out.append('// NOLINTEND') # Wrap for clang-tidy to ignore
         self.write("".join(out))

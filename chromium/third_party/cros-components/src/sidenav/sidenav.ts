@@ -18,7 +18,7 @@ import {isRTL, isSidenavItem, shadowPiercingActiveItem} from './sidenav_util';
  * go/typescript-reopening
  */
 declare interface ExtendedElement extends Element {
-  // TODO(b/262453851): Investigate if we can use a standard approved method
+  // TODO: b/302632076 - Investigate if we can use a standard approved method
   // instead of this. Perhaps a mix of intersection observer and scrollTo.
   scrollIntoViewIfNeeded: (centerIfNeeded: boolean) => void;
 }
@@ -27,7 +27,7 @@ const ATTRIBUTE_OBSERVER_CONFIG = {
   attributes: true,
   childList: true,
   subtree: true,
-  attributeFilter: ['may-have-children']
+  attributeFilter: ['mayHaveChildren', 'mayhavechildren']
 };
 
 /**
@@ -43,6 +43,14 @@ function isSelectable(item: SidenavItem): boolean {
     parent = parent.parentItem;
   }
   return true;
+}
+
+/**
+ * True iff the user has navigated to `item` or has not navigated and `item`
+ * is enabled.
+ */
+function isSelected(item: SidenavItem): boolean {
+  return item.tabIndex === 0;
 }
 
 /**
@@ -72,35 +80,45 @@ export class Sidenav extends LitElement {
         margin: 0;
         padding: 0;
       }
+
+      slot::slotted(cros-sidenav-item:first-child) {
+        margin-top: 0;
+      }
   `;
   /** @nocollapse */
   static override properties = {
-    ariaSetSize: {type: String},
-    doubleclickExpands:
-        {type: Boolean, reflect: true, attribute: 'doubleclick-expands'},
+    doubleclickExpands: {type: Boolean, reflect: true},
+    allowNoEnabled: {type: Boolean, reflect: true},
+    role: {type: String, reflect: true},
   };
 
   /** @nocollapse */
   static get events() {
     return {
       /** Triggers when a tree item has been enabled. */
-      SIDENAV_ENABLED_CHANGED: 'sidenav_enabled_changed',
+      SIDENAV_ENABLED_CHANGED: 'cros-sidenav-enabled-changed',
     } as const;
   }
 
   /**
    * Return the enabled tree item. If there are items, an enabled item always
-   * exists.
+   * exists, unless `allowNoEnabled` is true.
    */
   get enabledItem(): SidenavItem|null {
     return this.items.find(item => item.enabled) || null;
   }
-  /** Setting this to null is a noop. */
+  /** Setting this to null is a noop, unless `allowNoEnabled` is true. */
   set enabledItem(item: SidenavItem|null) {
-    if (item) this.enableItem(item);
+    if (!item && !this.allowNoEnabled) {
+      throw new Error('Setting enabledItem to null is disallowed.');
+    }
+    this.enableItem(item);
   }
 
-  /** Get all the SidenavItems in the Sidenav. */
+  /**
+   * Get all the SidenavItems in the Sidenav. The items are in the order that
+   * they are shown, top to bottom.
+   */
   get items(): SidenavItem[] {
     return this.childrenSlot.assignedElements()
         .filter(isSidenavItem)
@@ -113,9 +131,14 @@ export class Sidenav extends LitElement {
                 Array.from(e.querySelectorAll('cros-sidenav-item'))));
   }
 
-  /** The child tree items which can be selected, e.g. using the arrow keys. */
+  /**
+   * The child tree items which can be selected, e.g. using the arrow keys.
+   * This set always includes the selected item, even if it is not selectable.
+   * For example, this could happen if the item was selected before being
+   * disabled.
+   */
   get selectableItems(): SidenavItem[] {
-    return this.items.filter(isSelectable);
+    return this.items.filter(e => isSelectable(e) || isSelected(e));
   }
 
   /** The default unnamed slot to let consumer pass children tree items. */
@@ -124,17 +147,16 @@ export class Sidenav extends LitElement {
   }
 
   /**
-   * Value to set aria-setsize, which is the number of the top level child tree
-   * items.
+   * Whether double-clicking expands the tree.
    * @export
    */
-  override ariaSetSize = '0';
+  doubleclickExpands: boolean;
 
   /**
    * Whether double-clicking expands the tree.
    * @export
    */
-  doubleclickExpands: boolean;
+  allowNoEnabled: boolean;
 
   /**
    * The `selectedItem` is the item that the user navigated to. If the user
@@ -143,7 +165,7 @@ export class Sidenav extends LitElement {
    * always be an item to focus, unless there are no items.
    */
   private get selectedItem(): SidenavItem|null {
-    return this.items.find(item => item.tabIndex === 0) || null;
+    return this.items.find(isSelected) || null;
   }
 
   /**
@@ -155,7 +177,7 @@ export class Sidenav extends LitElement {
         for (const mutation of mutationList) {
           if (mutation.type === 'attributes' &&
               (mutation.target as Element).tagName === 'CROS-SIDENAV-ITEM' &&
-              mutation.attributeName === 'may-have-children') {
+              mutation.attributeName?.toLowerCase() === 'mayhavechildren') {
             this.updateLayered();
             return;
           }
@@ -169,6 +191,8 @@ export class Sidenav extends LitElement {
   constructor() {
     super();
     this.doubleclickExpands = false;
+    this.allowNoEnabled = false;
+    this.role = 'navigation';
 
     // Listen for changes to children, to update the Sidenav's state if
     // necessary.
@@ -178,15 +202,13 @@ export class Sidenav extends LitElement {
   override render() {
     return html`
       <ul
-        class="tree"
-        role="tree"
-        aria-setsize=${this.ariaSetSize}
-        @dblclick=${this.onTreeDblClicked}
-        @keydown=${this.onTreeKeyDown}
-        @sidenav_item_expanded=${this.onSidenavItemExpanded}
-        @sidenav_item_collapsed=${this.onSidenavItemCollapsed}
-        @sidenav_item_enabled_changed=${this.onSidenavItemEnabledChanged}
-      >
+          class="tree"
+          role="tree"
+          @dblclick=${this.onTreeDblClicked}
+          @keydown=${this.onTreeKeyDown}
+          @cros-sidenav-item-expanded=${this.onSidenavItemExpanded}
+          @cros-sidenav-item-collapsed=${this.onSidenavItemCollapsed}
+          @cros-sidenav-item-enabled-changed=${this.onSidenavItemEnabledChanged}>
         <slot @slotchange=${this.onSlotChanged}></slot>
       </ul>
     `;
@@ -208,13 +230,24 @@ export class Sidenav extends LitElement {
    * new tree structure.
    */
   private onSlotChanged() {
-    this.ariaSetSize = this.selectableItems.length.toString();
+    const rootChildren =
+        this.childrenSlot.assignedElements().filter(isSidenavItem);
+    rootChildren.forEach((child: SidenavItem, i: number) => {
+      child.layer = 0;
+      child.ariaSetSize = `${rootChildren.length}`;
+      child.ariaPosInSet = `${i + 1}`;
+    });
 
-    // The sidenav must always have an enabled item. This also ensures that it
-    // has a selected/tabbable item.
+    // The sidenav must always have a selected item, unless `allowNoEnabled`.
     if (!this.items.some(item => item.enabled) &&
-        this.selectableItems.length > 0) {
+        this.selectableItems.length > 0 && !this.allowNoEnabled) {
+      // Enabling an item also makes it the selected item.
       this.enableItem(castExists(this.selectableItems[0]));
+    }
+
+    // The sidenav must always have a selected item.
+    if (!this.selectedItem && this.selectableItems.length > 0) {
+      this.selectItem(castExists(this.selectableItems[0]));
     }
 
     this.updateLayered();
@@ -227,7 +260,7 @@ export class Sidenav extends LitElement {
   private updateLayered() {
     const layered = this.querySelectorAll(
                             'cros-sidenav-item cros-sidenav-item, ' +
-                            'cros-sidenav-item[may-have-children]')
+                            'cros-sidenav-item[mayHaveChildren]')
                         .length > 0;
     for (const item of this.querySelectorAll('cros-sidenav-item')) {
       item.inLayered = layered;
@@ -298,7 +331,7 @@ export class Sidenav extends LitElement {
     const selectableItems = this.selectableItems;
     const currentIndex = selectableItems.findIndex(i => i === selectedItem);
 
-    if (e.ctrlKey || e.repeat) {
+    if (e.ctrlKey) {
       return;
     }
 
@@ -308,10 +341,6 @@ export class Sidenav extends LitElement {
 
     let itemToSelect: SidenavItem|null|undefined = null;
     switch (e.key) {
-      case 'Enter':
-      case 'Space':
-        this.enableItem(selectedItem);
-        break;
       case 'ArrowUp':
         if (currentIndex > 0) {
           itemToSelect = selectableItems[currentIndex - 1];
@@ -350,8 +379,29 @@ export class Sidenav extends LitElement {
       case 'End':
         itemToSelect = this.selectableItems[this.selectableItems.length - 1];
         break;
+      case '*':
+        for (const item of this.selectableItems) {
+          if (item.parentItem === selectedItem.parentItem) {
+            item.expanded = true;
+          }
+        }
+        break;
       default:
         break;
+    }
+    // Select the next item whose label starts with the pressed key.
+    if (e.key.match('^[A-Za-z]$')) {
+      // Search after the current item, then continue searching from the
+      // beginning of the items list.
+      for (let searchIndex = (currentIndex + 1) % selectableItems.length;
+           searchIndex !== currentIndex;
+           searchIndex = (searchIndex + 1) % selectableItems.length) {
+        const searchItem: SidenavItem = selectableItems[searchIndex]!;
+        if (searchItem.label.toLowerCase().startsWith(e.key.toLowerCase())) {
+          itemToSelect = searchItem;
+          break;
+        }
+      }
     }
 
     if (itemToSelect) {
@@ -365,7 +415,7 @@ export class Sidenav extends LitElement {
    * also un-enable the previously enabled tree item to make sure at most
    * one tree item is enabled in the tree.
    */
-  private enableItem(itemToEnable: SidenavItem) {
+  private enableItem(itemToEnable: SidenavItem|null) {
     const previousEnabledItem =
         this.items.find(item => item.enabled && item !== itemToEnable) || null;
 
@@ -373,9 +423,12 @@ export class Sidenav extends LitElement {
       previousEnabledItem.enabled = false;
     }
 
-    itemToEnable.enabled = true;
-    this.selectItem(itemToEnable);
-    (itemToEnable as unknown as ExtendedElement).scrollIntoViewIfNeeded(false);
+    if (itemToEnable) {
+      itemToEnable.enabled = true;
+      this.selectItem(itemToEnable);
+      (itemToEnable as unknown as ExtendedElement)
+          .scrollIntoViewIfNeeded(false);
+    }
 
     const enabledChangeEvent: SidenavEnabledChangedEvent =
         new CustomEvent(Sidenav.events.SIDENAV_ENABLED_CHANGED, {
@@ -397,7 +450,7 @@ export class Sidenav extends LitElement {
    */
   private selectItem(itemToSelect: SidenavItem) {
     const oldSelectedItem =
-        this.items.find(item => item.tabIndex === 0 && item !== itemToSelect);
+        this.items.find(item => isSelected(item) && item !== itemToSelect);
 
     if (oldSelectedItem) oldSelectedItem.tabIndex = -1;
     itemToSelect.tabIndex = 0;
@@ -418,12 +471,7 @@ customElements.define('cros-sidenav', Sidenav);
 
 /** Type of the tree item enabling custom event. */
 export type SidenavEnabledChangedEvent = CustomEvent<{
-  /**
-   * The tree item which has been enabled previously.
-   * TODO(b/262453851): Figure out if we need this event at all, and if we do if
-   * we need the prev selected field. In files I don't think this is ever used:
-   * https://source.chromium.org/search?q=previousSelectedItem%20f:file_manager&sq=
-   */
+  /** The tree item which has been enabled previously. */
   previousEnabledItem: SidenavItem | null,
   /** The tree item which has been enabled now. */
   enabledItem: SidenavItem | null,

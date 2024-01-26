@@ -10,6 +10,7 @@
 #ifndef EIGEN_SELECT_H
 #define EIGEN_SELECT_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

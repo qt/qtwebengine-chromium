@@ -1,16 +1,29 @@
-// Copyright 2017 The Dawn Authors
+// Copyright 2017 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/null/DeviceNull.h"
 
@@ -38,7 +51,7 @@ PhysicalDevice::PhysicalDevice(InstanceBase* instance)
     mName = "Null backend";
     mAdapterType = wgpu::AdapterType::CPU;
     MaybeError err = Initialize();
-    ASSERT(err.IsSuccess());
+    DAWN_ASSERT(err.IsSuccess());
 }
 
 PhysicalDevice::~PhysicalDevice() = default;
@@ -63,7 +76,7 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
 }
 
 MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits) {
-    GetDefaultLimits(&limits->v1);
+    GetDefaultLimitsForSupportedFeatureLevel(&limits->v1);
     return {};
 }
 
@@ -209,12 +222,19 @@ ResultOrError<wgpu::TextureUsage> Device::GetSupportedSurfaceUsageImpl(
 }
 
 void Device::DestroyImpl() {
-    ASSERT(GetState() == State::Disconnected);
+    DAWN_ASSERT(GetState() == State::Disconnected);
+    // TODO(crbug.com/dawn/831): DestroyImpl is called from two places.
+    // - It may be called if the device is explicitly destroyed with APIDestroy.
+    //   This case is NOT thread-safe and needs proper synchronization with other
+    //   simultaneous uses of the device.
+    // - It may be called when the last ref to the device is dropped and the device
+    //   is implicitly destroyed. This case is thread-safe because there are no
+    //   other threads using the device since there are no other live refs.
 
     // Clear pending operations before checking mMemoryUsage because some operations keep a
     // reference to Buffers.
     mPendingOperations.clear();
-    ASSERT(mMemoryUsage == 0);
+    DAWN_ASSERT(mMemoryUsage == 0);
 }
 
 void Device::ForgetPendingOperations() {
@@ -259,7 +279,7 @@ MaybeError Device::IncrementMemoryUsage(uint64_t bytes) {
 }
 
 void Device::DecrementMemoryUsage(uint64_t bytes) {
-    ASSERT(mMemoryUsage >= bytes);
+    DAWN_ASSERT(mMemoryUsage >= bytes);
     mMemoryUsage -= bytes;
 }
 
@@ -332,8 +352,8 @@ void Buffer::CopyFromStaging(BufferBase* staging,
 }
 
 void Buffer::DoWriteBuffer(uint64_t bufferOffset, const void* data, size_t size) {
-    ASSERT(bufferOffset + size <= GetSize());
-    ASSERT(mBackingData);
+    DAWN_ASSERT(bufferOffset + size <= GetSize());
+    DAWN_ASSERT(mBackingData);
     memcpy(mBackingData.get() + bufferOffset, data, size);
 }
 
@@ -348,6 +368,13 @@ void* Buffer::GetMappedPointer() {
 void Buffer::UnmapImpl() {}
 
 void Buffer::DestroyImpl() {
+    // TODO(crbug.com/dawn/831): DestroyImpl is called from two places.
+    // - It may be called if the buffer is explicitly destroyed with APIDestroy.
+    //   This case is NOT thread-safe and needs proper synchronization with other
+    //   simultaneous uses of the buffer.
+    // - It may be called when the last ref to the buffer is dropped and the buffer
+    //   is implicitly destroyed. This case is thread-safe because there are no
+    //   other threads using the buffer since there are no other live refs.
     BufferBase::DestroyImpl();
     ToBackend(GetDevice())->DecrementMemoryUsage(GetSize());
 }
@@ -404,7 +431,6 @@ MaybeError ComputePipeline::Initialize() {
     const ProgrammableStage& computeStage = GetStage(SingleShaderStage::Compute);
 
     tint::Program transformedProgram;
-    const tint::Program* program;
     tint::ast::transform::Manager transformManager;
     tint::ast::transform::DataMap transformInputs;
 
@@ -424,13 +450,11 @@ MaybeError ComputePipeline::Initialize() {
                     RunTransforms(&transformManager, computeStage.module->GetTintProgram(),
                                   transformInputs, nullptr, nullptr));
 
-    program = &transformedProgram;
-
     // Do the workgroup size validation as it is actually backend agnostic.
     const CombinedLimits& limits = GetDevice()->GetLimits();
     Extent3D _;
     DAWN_TRY_ASSIGN(
-        _, ValidateComputeStageWorkgroupSize(*program, computeStage.entryPoint.c_str(),
+        _, ValidateComputeStageWorkgroupSize(transformedProgram, computeStage.entryPoint.c_str(),
                                              LimitsForCompilationRequest::Create(limits.v1)));
 
     return {};

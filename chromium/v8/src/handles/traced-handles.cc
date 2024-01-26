@@ -889,7 +889,7 @@ void TracedHandlesImpl::ComputeWeaknessForYoungObjects(
 
   // Treat all objects as roots during incremental marking to avoid corrupting
   // marking worklists.
-  if (is_marking_) return;
+  if (!v8_flags.minor_ms && is_marking_) return;
 
   auto* const handler = isolate_->heap()->GetEmbedderRootsHandler();
   if (!handler) return;
@@ -1167,6 +1167,17 @@ Tagged<Object> TracedHandles::MarkConservatively(
   // state concurrently to setting the markbit is safe.
   if (!node.is_in_use<AccessMode::ATOMIC>()) return Smi::zero();
   return MarkObject(node.object(), node, mark_mode);
+}
+
+bool TracedHandles::IsValidInUseNode(Address* location) {
+  TracedNode* node = TracedNode::FromLocation(location);
+  // This method is called after mark bits have been cleared.
+  DCHECK(!node->markbit<AccessMode::NON_ATOMIC>());
+  CHECK_IMPLIES(node->is_in_use<AccessMode::NON_ATOMIC>(),
+                node->raw_object() != kGlobalHandleZapValue);
+  CHECK_IMPLIES(!node->is_in_use<AccessMode::NON_ATOMIC>(),
+                node->raw_object() == kGlobalHandleZapValue);
+  return node->is_in_use<AccessMode::NON_ATOMIC>();
 }
 
 bool TracedHandles::HasYoung() const { return impl_->HasYoung(); }

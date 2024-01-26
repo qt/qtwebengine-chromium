@@ -17,6 +17,7 @@
 
 #include <cstddef>
 #include <istream>
+#include <ostream>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -31,6 +32,7 @@ namespace centipede {
 // function names, file names, line numbers, column numbers.
 class SymbolTable {
  public:
+  bool operator==(const SymbolTable &other) const;
   // Reads the symbols from a stream produced by `llvm-symbolizer --no-inlines`.
   // https://llvm.org/docs/CommandGuide/llvm-symbolizer.html.
   // The input consists of tuples of 3 lines each:
@@ -39,6 +41,10 @@ class SymbolTable {
   //   <empty line>
   // If called multiple times, this function will append symbols to `this`.
   void ReadFromLLVMSymbolizer(std::istream &in);
+
+  // Writes the contents of `this` to `path` in the same format as read by
+  // `ReadFromLLVMSymbolizer`.
+  void WriteToLLVMSymbolizer(std::ostream &out);
 
   // Invokes `symbolizer_path --no-inlines` on all binaries from `dso_table`,
   // pipes through it all PCs in pc_table that correspond to each of the
@@ -79,6 +85,7 @@ class SymbolTable {
   struct Entry {
     std::string func;
     std::string file_line_col;
+    bool operator==(const Entry &other) const;
   };
 
   // Add function name and file location to symbol table.

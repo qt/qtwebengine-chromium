@@ -31,6 +31,7 @@
 #ifndef EIGEN_SPARSELU_MEMORY
 #define EIGEN_SPARSELU_MEMORY
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

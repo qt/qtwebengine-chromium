@@ -43,6 +43,9 @@
 #include "src/trace_processor/importers/json/json_trace_tokenizer.h"
 #include "src/trace_processor/importers/json/json_utils.h"
 #include "src/trace_processor/importers/ninja/ninja_log_parser.h"
+#include "src/trace_processor/importers/perf/perf_data_parser.h"
+#include "src/trace_processor/importers/perf/perf_data_tokenizer.h"
+#include "src/trace_processor/importers/perf/perf_data_tracker.h"
 #include "src/trace_processor/importers/proto/additional_modules.h"
 #include "src/trace_processor/importers/proto/content_analyzer.h"
 #include "src/trace_processor/importers/systrace/systrace_trace_parser.h"
@@ -84,6 +87,7 @@
 #include "src/trace_processor/sqlite/sqlite_utils.h"
 #include "src/trace_processor/sqlite/stats_table.h"
 #include "src/trace_processor/tp_metatrace.h"
+#include "src/trace_processor/types/trace_processor_context.h"
 #include "src/trace_processor/types/variadic.h"
 #include "src/trace_processor/util/protozero_to_json.h"
 #include "src/trace_processor/util/protozero_to_text.h"
@@ -115,7 +119,7 @@ void RegisterFunction(PerfettoSqlEngine* engine,
                       int argc,
                       Ptr context = nullptr,
                       bool deterministic = true) {
-  auto status = engine->RegisterCppFunction<SqlFunction>(
+  auto status = engine->RegisterStaticFunction<SqlFunction>(
       name, argc, std::move(context), deterministic);
   if (!status.ok())
     PERFETTO_ELOG("%s", status.c_message());
@@ -324,6 +328,8 @@ const char* TraceTypeToString(TraceType trace_type) {
       return "ninja_log";
     case kAndroidBugreportTraceType:
       return "android_bugreport";
+    case kPerfDataTraceType:
+      return "perf_data";
   }
   PERFETTO_FATAL("For GCC");
 }
@@ -367,10 +373,11 @@ TraceProcessorImpl::TraceProcessorImpl(const Config& cfg)
       engine_(context_.storage->mutable_string_pool()) {
   context_.fuchsia_trace_tokenizer.reset(new FuchsiaTraceTokenizer(&context_));
   context_.fuchsia_trace_parser.reset(new FuchsiaTraceParser(&context_));
-
   context_.ninja_log_parser.reset(new NinjaLogParser(&context_));
-
   context_.systrace_trace_parser.reset(new SystraceTraceParser(&context_));
+  context_.perf_data_trace_tokenizer.reset(
+      new perf_importer::PerfDataTokenizer(&context_));
+  context_.perf_data_parser.reset(new perf_importer::PerfDataParser(&context_));
 
   if (util::IsGzipSupported()) {
     context_.gzip_trace_parser.reset(new GzipTraceParser(&context_));
@@ -726,7 +733,7 @@ size_t TraceProcessorImpl::RestoreInitialTables() {
 }
 
 Iterator TraceProcessorImpl::ExecuteQuery(const std::string& sql) {
-  PERFETTO_TP_TRACE(metatrace::Category::TOPLEVEL, "QUERY_EXECUTE");
+  PERFETTO_TP_TRACE(metatrace::Category::API_TIMELINE, "EXECUTE_QUERY");
 
   uint32_t sql_stats_row =
       context_.storage->mutable_sql_stats()->RecordQueryBegin(
@@ -894,7 +901,8 @@ base::Status TraceProcessorImpl::ComputeMetricText(
       *metrics_string = protozero_to_json::ProtozeroToJson(
           pool_, ".perfetto.protos.TraceMetrics",
           protozero::ConstBytes{metrics_proto.data(), metrics_proto.size()},
-          protozero_to_json::kPretty | protozero_to_json::kInlineErrors);
+          protozero_to_json::kPretty | protozero_to_json::kInlineErrors |
+              protozero_to_json::kInlineAnnotations);
       break;
   }
   return status;

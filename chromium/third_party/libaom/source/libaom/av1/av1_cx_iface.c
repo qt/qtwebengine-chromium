@@ -544,6 +544,7 @@ struct aom_codec_alg_priv {
   // Number of stats buffers required for look ahead
   int num_lap_buffers;
   STATS_BUFFER_CTX stats_buf_context;
+  bool monochrome_on_init;
 };
 
 static INLINE int gcd(int64_t a, int b) {
@@ -669,11 +670,7 @@ static aom_codec_err_t validate_config(aom_codec_alg_priv_t *ctx,
   RANGE_CHECK(cfg, kf_mode, AOM_KF_DISABLED, AOM_KF_AUTO);
   RANGE_CHECK_HI(cfg, rc_dropframe_thresh, 100);
   RANGE_CHECK(cfg, g_pass, AOM_RC_ONE_PASS, AOM_RC_THIRD_PASS);
-  if (cfg->g_pass == AOM_RC_ONE_PASS) {
-    RANGE_CHECK_HI(cfg, g_lag_in_frames, MAX_TOTAL_BUFFERS);
-  } else {
-    RANGE_CHECK_HI(cfg, g_lag_in_frames, MAX_LAG_BUFFERS);
-  }
+  RANGE_CHECK_HI(cfg, g_lag_in_frames, MAX_LAG_BUFFERS);
   if (cfg->g_usage == AOM_USAGE_ALL_INTRA) {
     RANGE_CHECK_HI(cfg, g_lag_in_frames, 0);
     RANGE_CHECK_HI(cfg, kf_max_dist, 0);
@@ -1504,6 +1501,12 @@ static aom_codec_err_t encoder_set_config(aom_codec_alg_priv_t *ctx,
         (initial_dimensions->height &&
          (int)cfg->g_h > initial_dimensions->height))
       force_key = 1;
+  }
+
+  if (ctx->monochrome_on_init && cfg->monochrome == 0) {
+    // TODO(aomedia:3465): Allow this case to work without requiring re-init
+    // of encoder.
+    ERROR("Cannot change to monochrome = 0 after init with monochrome");
   }
 
   // Prevent increasing lag_in_frames. This check is stricter than it needs
@@ -2723,6 +2726,8 @@ static aom_codec_err_t encoder_init(aom_codec_ctx_t *ctx) {
       priv->oxcf.use_highbitdepth =
           (ctx->init_flags & AOM_CODEC_USE_HIGHBITDEPTH) ? 1 : 0;
 
+      priv->monochrome_on_init = priv->cfg.monochrome;
+
       priv->ppi = av1_create_primary_compressor(&priv->pkt_list.head,
                                                 *num_lap_buffers, &priv->oxcf);
       if (!priv->ppi) return AOM_CODEC_MEM_ERROR;
@@ -3103,7 +3108,9 @@ static aom_codec_err_t encoder_encode(aom_codec_alg_priv_t *ctx,
       }
       av1_create_workers(ppi, num_workers);
       av1_init_tile_thread_data(ppi, cpi->oxcf.pass == AOM_RC_FIRST_PASS);
+    }
 #if CONFIG_MULTITHREAD
+    if (ppi->p_mt_info.num_workers > 1) {
       for (int i = 0; i < ppi->num_fp_contexts; i++) {
         av1_init_mt_sync(ppi->parallel_cpi[i],
                          ppi->parallel_cpi[i]->oxcf.pass == AOM_RC_FIRST_PASS);
@@ -3111,8 +3118,8 @@ static aom_codec_err_t encoder_encode(aom_codec_alg_priv_t *ctx,
       if (cpi_lap != NULL) {
         av1_init_mt_sync(cpi_lap, 1);
       }
-#endif  // CONFIG_MULTITHREAD
     }
+#endif  // CONFIG_MULTITHREAD
 
     // Re-allocate thread data if workers for encoder multi-threading stage
     // exceeds prev_num_enc_workers.
@@ -3121,8 +3128,10 @@ static aom_codec_err_t encoder_encode(aom_codec_alg_priv_t *ctx,
     if (ppi->p_mt_info.prev_num_enc_workers < num_enc_workers &&
         num_enc_workers <= ppi->p_mt_info.num_workers) {
       free_thread_data(ppi);
-      for (int j = 0; j < ppi->num_fp_contexts; j++)
+      for (int j = 0; j < ppi->num_fp_contexts; j++) {
         aom_free(ppi->parallel_cpi[j]->td.tctx);
+        ppi->parallel_cpi[j]->td.tctx = NULL;
+      }
       av1_init_tile_thread_data(ppi, cpi->oxcf.pass == AOM_RC_FIRST_PASS);
     }
 
@@ -4592,11 +4601,11 @@ static const aom_codec_enc_cfg_t encoder_usage_cfg[] = {
 aom_codec_iface_t aom_codec_av1_cx_algo = {
   "AOMedia Project AV1 Encoder" VERSION_STRING,
   AOM_CODEC_INTERNAL_ABI_VERSION,
-  AOM_CODEC_CAP_HIGHBITDEPTH | AOM_CODEC_CAP_ENCODER |
-      AOM_CODEC_CAP_PSNR,  // aom_codec_caps_t
-  encoder_init,            // aom_codec_init_fn_t
-  encoder_destroy,         // aom_codec_destroy_fn_t
-  encoder_ctrl_maps,       // aom_codec_ctrl_fn_map_t
+  (CONFIG_AV1_HIGHBITDEPTH ? AOM_CODEC_CAP_HIGHBITDEPTH : 0) |
+      AOM_CODEC_CAP_ENCODER | AOM_CODEC_CAP_PSNR,  // aom_codec_caps_t
+  encoder_init,                                    // aom_codec_init_fn_t
+  encoder_destroy,                                 // aom_codec_destroy_fn_t
+  encoder_ctrl_maps,                               // aom_codec_ctrl_fn_map_t
   {
       // NOLINT
       NULL,  // aom_codec_peek_si_fn_t

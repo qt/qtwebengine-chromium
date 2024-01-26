@@ -11,6 +11,7 @@
 #ifndef EIGEN_FORWARDDECLARATIONS_H
 #define EIGEN_FORWARDDECLARATIONS_H
 
+// IWYU pragma: private
 #include "../InternalHeaderCheck.h"
 
 namespace Eigen {

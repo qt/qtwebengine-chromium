@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import type * as Types from '../types/types.js';
 import * as Common from '../../../core/common/common.js';
 import * as Platform from '../../../core/platform/platform.js';
+import type * as CPUProfile from '../../cpu_profile/cpu_profile.js';
+import * as Types from '../types/types.js';
 
 export function extractOriginFromTrace(firstNavigationURL: string): string|null {
   const url = Common.ParsedURL.ParsedURL.fromString(firstNavigationURL);
@@ -80,8 +81,9 @@ export function sortTraceEventsInPlace(events: {ts: Types.Timing.MicroSeconds, d
  * Returns an array of ordered events that results after merging the two
  * ordered input arrays.
  */
-export function mergeEventsInOrder<T extends Types.TraceEvents.TraceEventData>(
-    eventsArray1: T[], eventsArray2: T[]): T[] {
+export function
+mergeEventsInOrder<T1 extends Types.TraceEvents.TraceEventData, T2 extends Types.TraceEvents.TraceEventData>(
+    eventsArray1: T1[], eventsArray2: T2[]): (T1|T2)[] {
   const result = [];
   let i = 0;
   let j = 0;
@@ -152,4 +154,22 @@ export function activeURLForFrameAtTime(
     }
   }
   return null;
+}
+
+export function makeProfileCall(
+    node: CPUProfile.ProfileTreeModel.ProfileNode, ts: Types.Timing.MicroSeconds, pid: Types.TraceEvents.ProcessID,
+    tid: Types.TraceEvents.ThreadID): Types.TraceEvents.TraceEventSyntheticProfileCall {
+  return {
+    cat: '',
+    name: 'ProfileCall',
+    nodeId: node.id,
+    args: {},
+    ph: Types.TraceEvents.Phase.COMPLETE,
+    pid,
+    tid,
+    ts,
+    dur: Types.Timing.MicroSeconds(0),
+    selfTime: Types.Timing.MicroSeconds(0),
+    callFrame: node.callFrame,
+  };
 }

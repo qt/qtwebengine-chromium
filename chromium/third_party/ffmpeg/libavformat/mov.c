@@ -2272,6 +2272,11 @@ static int mov_codec_id(AVStream *st, uint32_t format)
                     (st->codecpar->codec_type == AVMEDIA_TYPE_SUBTITLE &&
                     st->codecpar->codec_id == AV_CODEC_ID_NONE)) {
             id = ff_codec_get_id(ff_codec_movsubtitle_tags, format);
+            if (id <= 0) {
+                id = (format == MOV_MP4_TTML_TAG || format == MOV_ISMV_TTML_TAG) ?
+                     AV_CODEC_ID_TTML : id;
+            }
+
             if (id > 0)
                 st->codecpar->codec_type = AVMEDIA_TYPE_SUBTITLE;
             else
@@ -2466,8 +2471,10 @@ static void mov_parse_stsd_subtitle(MOVContext *c, AVIOContext *pb,
     // ttxt stsd contains display flags, justification, background
     // color, fonts, and default styles, so fake an atom to read it
     MOVAtom fake_atom = { .size = size };
-    // mp4s contains a regular esds atom
-    if (st->codecpar->codec_tag != AV_RL32("mp4s"))
+    // mp4s contains a regular esds atom, dfxp ISMV TTML has no content
+    // in extradata unlike stpp MP4 TTML.
+    if (st->codecpar->codec_tag != AV_RL32("mp4s") &&
+        st->codecpar->codec_tag != MOV_ISMV_TTML_TAG)
         mov_read_glbl(c, pb, fake_atom);
     st->codecpar->width  = sc->width;
     st->codecpar->height = sc->height;
@@ -5737,7 +5744,7 @@ static int mov_read_cmov(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     ret = AVERROR_INVALIDDATA;
     if (uncompress (moov_data, (uLongf *) &moov_len, (const Bytef *)cmov_data, cmov_len) != Z_OK)
         goto free_and_return;
-    ffio_init_context(&ctx, moov_data, moov_len, 0, NULL, NULL, NULL, NULL);
+    ffio_init_read_context(&ctx, moov_data, moov_len);
     ctx.pub.seekable = AVIO_SEEKABLE_NORMAL;
     atom.type = MKTAG('m','o','o','v');
     atom.size = moov_len;
@@ -6509,9 +6516,12 @@ static int mov_read_sample_encryption_info(MOVContext *c, AVIOContext *pb, MOVSt
         return AVERROR_INVALIDDATA;
     }
 
-    *sample = av_encryption_info_clone(sc->cenc.default_encrypted_sample);
-    if (!*sample)
-        return AVERROR(ENOMEM);
+    if (sc->cenc.per_sample_iv_size || use_subsamples) {
+        *sample = av_encryption_info_clone(sc->cenc.default_encrypted_sample);
+        if (!*sample)
+            return AVERROR(ENOMEM);
+    } else
+        *sample = NULL;
 
     if (sc->cenc.per_sample_iv_size != 0) {
         if ((ret = ffio_read_size(pb, (*sample)->iv, sc->cenc.per_sample_iv_size)) < 0) {
@@ -7430,6 +7440,8 @@ static int cenc_filter(MOVContext *mov, AVStream* st, MOVStreamContext *sc, AVPa
         } else if (encrypted_index >= 0 && encrypted_index < encryption_index->nb_encrypted_samples) {
             // Per-sample setting override.
             encrypted_sample = encryption_index->encrypted_samples[encrypted_index];
+            if (!encrypted_sample)
+                encrypted_sample = sc->cenc.default_encrypted_sample;
         } else {
             av_log(mov->fc, AV_LOG_ERROR, "Incorrect number of samples in encryption info\n");
             return AVERROR_INVALIDDATA;
@@ -7777,10 +7789,11 @@ static int mov_read_iloc(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         return 0;
     }
 
-    if (c->fc->nb_streams) {
+    if (c->avif_info) {
         av_log(c->fc, AV_LOG_INFO, "Duplicate iloc box found\n");
         return 0;
     }
+    av_assert0(!c->fc->nb_streams);
 
     version = avio_r8(pb);
     avio_rb24(pb);  // flags.
@@ -8790,6 +8803,8 @@ static AVIndexEntry *mov_find_next_sample(AVFormatContext *s, AVStream **st)
     AVIndexEntry *sample = NULL;
     int64_t best_dts = INT64_MAX;
     int i;
+    MOVContext *mov = s->priv_data;
+    int no_interleave = !mov->interleaved_read || !(s->pb->seekable & AVIO_SEEKABLE_NORMAL);
     for (i = 0; i < s->nb_streams; i++) {
         AVStream *avst = s->streams[i];
         FFStream *const avsti = ffstream(avst);
@@ -8798,7 +8813,7 @@ static AVIndexEntry *mov_find_next_sample(AVFormatContext *s, AVStream **st)
             AVIndexEntry *current_sample = &avsti->index_entries[msc->current_sample];
             int64_t dts = av_rescale(current_sample->timestamp, AV_TIME_BASE, msc->time_scale);
             av_log(s, AV_LOG_TRACE, "stream %d, sample %d, dts %"PRId64"\n", i, msc->current_sample, dts);
-            if (!sample || (!(s->pb->seekable & AVIO_SEEKABLE_NORMAL) && current_sample->pos < sample->pos) ||
+            if (!sample || (no_interleave && current_sample->pos < sample->pos) ||
                 ((s->pb->seekable & AVIO_SEEKABLE_NORMAL) &&
                  ((msc->pb != s->pb && dts < best_dts) || (msc->pb == s->pb && dts != AV_NOPTS_VALUE &&
                  ((FFABS(best_dts - dts) <= AV_TIME_BASE && current_sample->pos < sample->pos) ||
@@ -9292,6 +9307,7 @@ static const AVOption mov_options[] = {
     { "enable_drefs", "Enable external track support.", OFFSET(enable_drefs), AV_OPT_TYPE_BOOL,
         {.i64 = 0}, 0, 1, FLAGS },
     { "max_stts_delta", "treat offsets above this value as invalid", OFFSET(max_stts_delta), AV_OPT_TYPE_INT, {.i64 = UINT_MAX-48000*10 }, 0, UINT_MAX, .flags = AV_OPT_FLAG_DECODING_PARAM },
+    { "interleaved_read", "Interleave packets from multiple tracks at demuxer level", OFFSET(interleaved_read), AV_OPT_TYPE_BOOL, {.i64 = 1 }, 0, 1, .flags = AV_OPT_FLAG_DECODING_PARAM },
 
     { NULL },
 };

@@ -11,6 +11,7 @@
 #ifndef EIGEN_JACOBI_H
 #define EIGEN_JACOBI_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

@@ -16,6 +16,7 @@
 #ifndef EIGEN_MATH_FUNCTIONS_ZVECTOR_H
 #define EIGEN_MATH_FUNCTIONS_ZVECTOR_H
 
+// IWYU pragma: private
 #include "../../InternalHeaderCheck.h"
 
 namespace Eigen {

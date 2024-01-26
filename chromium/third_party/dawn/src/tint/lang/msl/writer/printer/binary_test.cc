@@ -1,17 +1,30 @@
 
-// Copyright 2023 The Tint Authors.
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/msl/writer/printer/helper_test.h"
@@ -25,7 +38,7 @@ namespace {
 
 struct BinaryData {
     const char* result;
-    enum core::ir::Binary::Kind op;
+    core::ir::BinaryOp op;
 };
 inline std::ostream& operator<<(std::ostream& out, BinaryData data) {
     StringStream str;
@@ -60,16 +73,16 @@ void foo() {
 INSTANTIATE_TEST_SUITE_P(
     MslPrinterTest,
     MslPrinterBinaryTest,
-    testing::Values(BinaryData{"(left + right)", core::ir::Binary::Kind::kAdd},
-                    BinaryData{"(left - right)", core::ir::Binary::Kind::kSubtract},
-                    BinaryData{"(left * right)", core::ir::Binary::Kind::kMultiply},
-                    BinaryData{"(left / right)", core::ir::Binary::Kind::kDivide},
-                    BinaryData{"(left % right)", core::ir::Binary::Kind::kModulo},
-                    BinaryData{"(left & right)", core::ir::Binary::Kind::kAnd},
-                    BinaryData{"(left | right)", core::ir::Binary::Kind::kOr},
-                    BinaryData{"(left ^ right)", core::ir::Binary::Kind::kXor},
-                    BinaryData{"(left << right)", core::ir::Binary::Kind::kShiftLeft},
-                    BinaryData{"(left >> right)", core::ir::Binary::Kind::kShiftRight}));
+    testing::Values(BinaryData{"(left + right)", core::ir::BinaryOp::kAdd},
+                    BinaryData{"(left - right)", core::ir::BinaryOp::kSubtract},
+                    BinaryData{"(left * right)", core::ir::BinaryOp::kMultiply},
+                    BinaryData{"(left / right)", core::ir::BinaryOp::kDivide},
+                    BinaryData{"(left % right)", core::ir::BinaryOp::kModulo},
+                    BinaryData{"(left & right)", core::ir::BinaryOp::kAnd},
+                    BinaryData{"(left | right)", core::ir::BinaryOp::kOr},
+                    BinaryData{"(left ^ right)", core::ir::BinaryOp::kXor},
+                    BinaryData{"(left << right)", core::ir::BinaryOp::kShiftLeft},
+                    BinaryData{"(left >> right)", core::ir::BinaryOp::kShiftRight}));
 
 using MslPrinterBinaryBoolTest = MslPrinterTestWithParam<BinaryData>;
 TEST_P(MslPrinterBinaryBoolTest, Emit) {
@@ -97,12 +110,12 @@ void foo() {
 INSTANTIATE_TEST_SUITE_P(
     MslPrinterTest,
     MslPrinterBinaryBoolTest,
-    testing::Values(BinaryData{"(left == right)", core::ir::Binary::Kind::kEqual},
-                    BinaryData{"(left != right)", core::ir::Binary::Kind::kNotEqual},
-                    BinaryData{"(left < right)", core::ir::Binary::Kind::kLessThan},
-                    BinaryData{"(left > right)", core::ir::Binary::Kind::kGreaterThan},
-                    BinaryData{"(left <= right)", core::ir::Binary::Kind::kLessThanEqual},
-                    BinaryData{"(left >= right)", core::ir::Binary::Kind::kGreaterThanEqual}));
+    testing::Values(BinaryData{"(left == right)", core::ir::BinaryOp::kEqual},
+                    BinaryData{"(left != right)", core::ir::BinaryOp::kNotEqual},
+                    BinaryData{"(left < right)", core::ir::BinaryOp::kLessThan},
+                    BinaryData{"(left > right)", core::ir::BinaryOp::kGreaterThan},
+                    BinaryData{"(left <= right)", core::ir::BinaryOp::kLessThanEqual},
+                    BinaryData{"(left >= right)", core::ir::BinaryOp::kGreaterThanEqual}));
 
 // TODO(dsinclair): Needs transform
 // TODO(dsinclair): Requires `bitcast` support
@@ -132,11 +145,9 @@ void foo() {
 }
 
 constexpr BinaryData signed_overflow_defined_behaviour_cases[] = {
-    {"as_type<int>((as_type<uint>(left) + as_type<uint>(right)))", core::ir::Binary::Kind::kAdd},
-    {"as_type<int>((as_type<uint>(left) - as_type<uint>(right)))",
-     core::ir::Binary::Kind::kSubtract},
-    {"as_type<int>((as_type<uint>(left) * as_type<uint>(right)))",
-     core::ir::Binary::Kind::kMultiply}};
+    {"as_type<int>((as_type<uint>(left) + as_type<uint>(right)))", core::ir::BinaryOp::kAdd},
+    {"as_type<int>((as_type<uint>(left) - as_type<uint>(right)))", core::ir::BinaryOp::kSubtract},
+    {"as_type<int>((as_type<uint>(left) * as_type<uint>(right)))", core::ir::BinaryOp::kMultiply}};
 INSTANTIATE_TEST_SUITE_P(MslPrinterTest,
                          MslPrinterBinaryTest_SignedOverflowDefinedBehaviour,
                          testing::ValuesIn(signed_overflow_defined_behaviour_cases));
@@ -169,8 +180,8 @@ void foo() {
 }
 
 constexpr BinaryData shift_signed_overflow_defined_behaviour_cases[] = {
-    {"as_type<int>((as_type<uint>(left) << right))", core::ir::Binary::Kind::kShiftLeft},
-    {"(left >> right)", core::ir::Binary::Kind::kShiftRight}};
+    {"as_type<int>((as_type<uint>(left) << right))", core::ir::BinaryOp::kShiftLeft},
+    {"(left >> right)", core::ir::BinaryOp::kShiftRight}};
 INSTANTIATE_TEST_SUITE_P(MslPrinterTest,
                          MslPrinterBinaryTest_ShiftSignedOverflowDefinedBehaviour,
                          testing::ValuesIn(shift_signed_overflow_defined_behaviour_cases));
@@ -205,13 +216,13 @@ void foo() {
 constexpr BinaryData signed_overflow_defined_behaviour_chained_cases[] = {
     {R"(as_type<int>((as_type<uint>(as_type<int>((as_type<uint>(left) + as_type<uint>(right)))) +
     as_type<uint>(right))))",
-     core::ir::Binary::Kind::kAdd},
+     core::ir::BinaryOp::kAdd},
     {R"(as_type<int>((as_type<uint>(as_type<int>((as_type<uint>(left) - as_type<uint>(right)))) -
     as_type<uint>(right))))",
-     core::ir::Binary::Kind::kSubtract},
+     core::ir::BinaryOp::kSubtract},
     {R"(as_type<int>((as_type<uint>(as_type<int>((as_type<uint>(left) * as_type<uint>(right)))) *
     as_type<uint>(right))))",
-     core::ir::Binary::Kind::kMultiply}};
+     core::ir::BinaryOp::kMultiply}};
 INSTANTIATE_TEST_SUITE_P(MslPrinterTest,
                          MslPrinterBinaryTest_SignedOverflowDefinedBehaviour_Chained,
                          testing::ValuesIn(signed_overflow_defined_behaviour_chained_cases));
@@ -245,8 +256,8 @@ void foo() {
 }
 constexpr BinaryData shift_signed_overflow_defined_behaviour_chained_cases[] = {
     {R"(as_type<int>((as_type<uint>(as_type<int>((as_type<uint>(left) << right))) << right)))",
-     core::ir::Binary::Kind::kShiftLeft},
-    {R"(((left >> right) >> right))", core::ir::Binary::Kind::kShiftRight},
+     core::ir::BinaryOp::kShiftLeft},
+    {R"(((left >> right) >> right))", core::ir::BinaryOp::kShiftRight},
 };
 INSTANTIATE_TEST_SUITE_P(MslPrinterTest,
                          MslPrinterBinaryTest_ShiftSignedOverflowDefinedBehaviour_Chained,
@@ -259,7 +270,7 @@ TEST_F(MslPrinterTest, DISABLED_BinaryModF32) {
         auto* left = b.Var("left", ty.ptr<core::AddressSpace::kFunction, f32>());
         auto* right = b.Var("right", ty.ptr<core::AddressSpace::kFunction, f32>());
 
-        auto* expr1 = b.Binary(core::ir::Binary::Kind::kModulo, ty.f32(), left, right);
+        auto* expr1 = b.Binary(core::ir::BinaryOp::kModulo, ty.f32(), left, right);
 
         b.Let("val", expr1);
     });
@@ -282,7 +293,7 @@ TEST_F(MslPrinterTest, DISABLED_BinaryModF16) {
         auto* left = b.Var("left", ty.ptr<core::AddressSpace::kFunction, f16>());
         auto* right = b.Var("right", ty.ptr<core::AddressSpace::kFunction, f16>());
 
-        auto* expr1 = b.Binary(core::ir::Binary::Kind::kModulo, ty.f16(), left, right);
+        auto* expr1 = b.Binary(core::ir::BinaryOp::kModulo, ty.f16(), left, right);
 
         b.Let("val", expr1);
     });
@@ -303,7 +314,7 @@ TEST_F(MslPrinterTest, DISABLED_BinaryModVec3F32) {
         auto* left = b.Var("left", ty.ptr(core::AddressSpace::kFunction, ty.vec3<f32>()));
         auto* right = b.Var("right", ty.ptr(core::AddressSpace::kFunction, ty.vec3<f32>()));
 
-        auto* expr1 = b.Binary(core::ir::Binary::Kind::kModulo, ty.vec3<f32>(), left, right);
+        auto* expr1 = b.Binary(core::ir::BinaryOp::kModulo, ty.vec3<f32>(), left, right);
 
         b.Let("val", expr1);
     });
@@ -326,7 +337,7 @@ TEST_F(MslPrinterTest, DISABLED_BinaryModVec3F16) {
         auto* left = b.Var("left", ty.ptr(core::AddressSpace::kFunction, ty.vec3<f16>()));
         auto* right = b.Var("right", ty.ptr(core::AddressSpace::kFunction, ty.vec3<f16>()));
 
-        auto* expr1 = b.Binary(core::ir::Binary::Kind::kModulo, ty.vec3<f16>(), left, right);
+        auto* expr1 = b.Binary(core::ir::BinaryOp::kModulo, ty.vec3<f16>(), left, right);
 
         b.Let("val", expr1);
     });
@@ -347,7 +358,7 @@ TEST_F(MslPrinterTest, DISABLED_BinaryBoolAnd) {
         auto* left = b.Var("left", ty.ptr(core::AddressSpace::kFunction, ty.bool_()));
         auto* right = b.Var("right", ty.ptr(core::AddressSpace::kFunction, ty.bool_()));
 
-        auto* expr1 = b.Binary(core::ir::Binary::Kind::kAdd, ty.bool_(), left, right);
+        auto* expr1 = b.Binary(core::ir::BinaryOp::kAdd, ty.bool_(), left, right);
 
         b.Let("val", expr1);
     });
@@ -368,7 +379,7 @@ TEST_F(MslPrinterTest, DISABLED_BinaryBoolOr) {
         auto* left = b.Var("left", ty.ptr(core::AddressSpace::kFunction, ty.bool_()));
         auto* right = b.Var("right", ty.ptr(core::AddressSpace::kFunction, ty.bool_()));
 
-        auto* expr1 = b.Binary(core::ir::Binary::Kind::kOr, ty.bool_(), left, right);
+        auto* expr1 = b.Binary(core::ir::BinaryOp::kOr, ty.bool_(), left, right);
 
         b.Let("val", expr1);
     });

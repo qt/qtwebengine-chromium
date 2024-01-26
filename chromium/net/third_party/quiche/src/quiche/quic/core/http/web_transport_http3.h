@@ -17,6 +17,7 @@
 #include "quiche/quic/core/quic_stream.h"
 #include "quiche/quic/core/quic_types.h"
 #include "quiche/quic/core/web_transport_interface.h"
+#include "quiche/quic/core/web_transport_stats.h"
 #include "quiche/common/platform/api/quiche_mem_slice.h"
 #include "quiche/common/quiche_callbacks.h"
 #include "quiche/web_transport/web_transport.h"
@@ -40,7 +41,7 @@ enum class WebTransportHttp3RejectionReason {
 //
 // WebTransport over HTTP/3 specification:
 // <https://datatracker.ietf.org/doc/html/draft-ietf-webtrans-http3>
-class QUIC_EXPORT_PRIVATE WebTransportHttp3
+class QUICHE_EXPORT WebTransportHttp3
     : public WebTransportSession,
       public QuicSpdyStream::Http3DatagramVisitor {
  public:
@@ -89,6 +90,13 @@ class QUIC_EXPORT_PRIVATE WebTransportHttp3
       absl::string_view datagram) override;
   QuicByteCount GetMaxDatagramSize() const override;
   void SetDatagramMaxTimeInQueue(absl::Duration max_time_in_queue) override;
+
+  webtransport::DatagramStats GetDatagramStats() override {
+    return WebTransportDatagramStatsForQuicSession(*session_);
+  }
+  webtransport::SessionStats GetSessionStats() override {
+    return WebTransportStatsForQuicSession(*session_);
+  }
 
   void NotifySessionDraining() override;
   void SetOnDraining(quiche::SingleUseCallback<void()> callback) override {
@@ -139,8 +147,7 @@ class QUIC_EXPORT_PRIVATE WebTransportHttp3
   std::string error_message_ = "";
 };
 
-class QUIC_EXPORT_PRIVATE WebTransportHttp3UnidirectionalStream
-    : public QuicStream {
+class QUICHE_EXPORT WebTransportHttp3UnidirectionalStream : public QuicStream {
  public:
   // Incoming stream.
   WebTransportHttp3UnidirectionalStream(PendingStream* pending,
@@ -177,16 +184,16 @@ class QUIC_EXPORT_PRIVATE WebTransportHttp3UnidirectionalStream
 
 // Remaps HTTP/3 error code into a WebTransport error code.  Returns nullopt if
 // the provided code is outside of valid range.
-QUIC_EXPORT_PRIVATE absl::optional<WebTransportStreamError>
-Http3ErrorToWebTransport(uint64_t http3_error_code);
+QUICHE_EXPORT absl::optional<WebTransportStreamError> Http3ErrorToWebTransport(
+    uint64_t http3_error_code);
 
 // Same as above, but returns default error value (zero) when none could be
 // mapped.
-QUIC_EXPORT_PRIVATE WebTransportStreamError
+QUICHE_EXPORT WebTransportStreamError
 Http3ErrorToWebTransportOrDefault(uint64_t http3_error_code);
 
 // Remaps WebTransport error code into an HTTP/3 error code.
-QUIC_EXPORT_PRIVATE uint64_t
+QUICHE_EXPORT uint64_t
 WebTransportErrorToHttp3(WebTransportStreamError webtransport_error_code);
 
 }  // namespace quic

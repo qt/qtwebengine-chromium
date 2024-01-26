@@ -1,16 +1,29 @@
-// Copyright 2023 The Tint Authors.
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/core/ir/transform/builtin_polyfill.h"
 
@@ -34,53 +47,69 @@ struct State {
     const BuiltinPolyfillConfig& config;
 
     /// The IR module.
-    Module* ir = nullptr;
+    Module& ir;
 
     /// The IR builder.
-    Builder b{*ir};
+    Builder b{ir};
 
     /// The type manager.
-    core::type::Manager& ty{ir->Types()};
+    core::type::Manager& ty{ir.Types()};
 
     /// The symbol table.
-    SymbolTable& sym{ir->symbols};
+    SymbolTable& sym{ir.symbols};
 
     /// Process the module.
     void Process() {
         // Find the builtin call instructions that may need to be polyfilled.
         Vector<ir::CoreBuiltinCall*, 4> worklist;
-        for (auto* inst : ir->instructions.Objects()) {
+        for (auto* inst : ir.instructions.Objects()) {
             if (!inst->Alive()) {
                 continue;
             }
             if (auto* builtin = inst->As<ir::CoreBuiltinCall>()) {
                 switch (builtin->Func()) {
-                    case core::Function::kCountLeadingZeros:
+                    case core::BuiltinFn::kClamp:
+                        if (config.clamp_int &&
+                            builtin->Result()->Type()->is_integer_scalar_or_vector()) {
+                            worklist.Push(builtin);
+                        }
+                        break;
+                    case core::BuiltinFn::kCountLeadingZeros:
                         if (config.count_leading_zeros) {
                             worklist.Push(builtin);
                         }
                         break;
-                    case core::Function::kCountTrailingZeros:
+                    case core::BuiltinFn::kCountTrailingZeros:
                         if (config.count_trailing_zeros) {
                             worklist.Push(builtin);
                         }
                         break;
-                    case core::Function::kFirstLeadingBit:
+                    case core::BuiltinFn::kExtractBits:
+                        if (config.extract_bits != BuiltinPolyfillLevel::kNone) {
+                            worklist.Push(builtin);
+                        }
+                        break;
+                    case core::BuiltinFn::kFirstLeadingBit:
                         if (config.first_leading_bit) {
                             worklist.Push(builtin);
                         }
                         break;
-                    case core::Function::kFirstTrailingBit:
+                    case core::BuiltinFn::kFirstTrailingBit:
                         if (config.first_trailing_bit) {
                             worklist.Push(builtin);
                         }
                         break;
-                    case core::Function::kSaturate:
+                    case core::BuiltinFn::kInsertBits:
+                        if (config.insert_bits != BuiltinPolyfillLevel::kNone) {
+                            worklist.Push(builtin);
+                        }
+                        break;
+                    case core::BuiltinFn::kSaturate:
                         if (config.saturate) {
                             worklist.Push(builtin);
                         }
                         break;
-                    case core::Function::kTextureSampleBaseClampToEdge:
+                    case core::BuiltinFn::kTextureSampleBaseClampToEdge:
                         if (config.texture_sample_base_clamp_to_edge_2d_f32) {
                             auto* tex =
                                 builtin->Args()[0]->Type()->As<core::type::SampledTexture>();
@@ -100,22 +129,31 @@ struct State {
         for (auto* builtin : worklist) {
             ir::Value* replacement = nullptr;
             switch (builtin->Func()) {
-                case core::Function::kCountLeadingZeros:
+                case core::BuiltinFn::kClamp:
+                    replacement = ClampInt(builtin);
+                    break;
+                case core::BuiltinFn::kCountLeadingZeros:
                     replacement = CountLeadingZeros(builtin);
                     break;
-                case core::Function::kCountTrailingZeros:
+                case core::BuiltinFn::kCountTrailingZeros:
                     replacement = CountTrailingZeros(builtin);
                     break;
-                case core::Function::kFirstLeadingBit:
+                case core::BuiltinFn::kExtractBits:
+                    replacement = ExtractBits(builtin);
+                    break;
+                case core::BuiltinFn::kFirstLeadingBit:
                     replacement = FirstLeadingBit(builtin);
                     break;
-                case core::Function::kFirstTrailingBit:
+                case core::BuiltinFn::kFirstTrailingBit:
                     replacement = FirstTrailingBit(builtin);
                     break;
-                case core::Function::kSaturate:
+                case core::BuiltinFn::kInsertBits:
+                    replacement = InsertBits(builtin);
+                    break;
+                case core::BuiltinFn::kSaturate:
                     replacement = Saturate(builtin);
                     break;
-                case core::Function::kTextureSampleBaseClampToEdge:
+                case core::BuiltinFn::kTextureSampleBaseClampToEdge:
                     replacement = TextureSampleBaseClampToEdge_2d_f32(builtin);
                     break;
                 default:
@@ -123,12 +161,14 @@ struct State {
             }
             TINT_ASSERT_OR_RETURN(replacement);
 
-            // Replace the old builtin call result with the new value.
-            if (auto name = ir->NameOf(builtin->Result())) {
-                ir->SetName(replacement, name);
+            if (replacement != builtin->Result()) {
+                // Replace the old builtin call result with the new value.
+                if (auto name = ir.NameOf(builtin->Result())) {
+                    ir.SetName(replacement, name);
+                }
+                builtin->Result()->ReplaceAllUsesWith(replacement);
+                builtin->Destroy();
             }
-            builtin->Result()->ReplaceAllUsesWith(replacement);
-            builtin->Destroy();
         }
     }
 
@@ -155,6 +195,24 @@ struct State {
             return b.Splat(MatchWidth(element->Type(), match), element, vec->Width());
         }
         return element;
+    }
+
+    /// Polyfill a `clamp()` builtin call for integers.
+    /// @param call the builtin call instruction
+    /// @returns the replacement value
+    ir::Value* ClampInt(ir::CoreBuiltinCall* call) {
+        auto* type = call->Result()->Type();
+        auto* e = call->Args()[0];
+        auto* low = call->Args()[1];
+        auto* high = call->Args()[2];
+
+        Value* result = nullptr;
+        b.InsertBefore(call, [&] {
+            auto* max = b.Call(type, core::BuiltinFn::kMax, e, low);
+            auto* min = b.Call(type, core::BuiltinFn::kMin, max, high);
+            result = min->Result();
+        });
+        return result;
     }
 
     /// Polyfill a `countLeadingZeros()` builtin call.
@@ -191,22 +249,22 @@ struct State {
             if (result_ty->is_signed_integer_scalar_or_vector()) {
                 x = b.Bitcast(uint_ty, x)->Result();
             }
-            auto* b16 = b.Call(uint_ty, core::Function::kSelect, V(0), V(16),
+            auto* b16 = b.Call(uint_ty, core::BuiltinFn::kSelect, V(0), V(16),
                                b.LessThanEqual(bool_ty, x, V(0x0000ffff)));
             x = b.ShiftLeft(uint_ty, x, b16)->Result();
-            auto* b8 = b.Call(uint_ty, core::Function::kSelect, V(0), V(8),
+            auto* b8 = b.Call(uint_ty, core::BuiltinFn::kSelect, V(0), V(8),
                               b.LessThanEqual(bool_ty, x, V(0x00ffffff)));
             x = b.ShiftLeft(uint_ty, x, b8)->Result();
-            auto* b4 = b.Call(uint_ty, core::Function::kSelect, V(0), V(4),
+            auto* b4 = b.Call(uint_ty, core::BuiltinFn::kSelect, V(0), V(4),
                               b.LessThanEqual(bool_ty, x, V(0x0fffffff)));
             x = b.ShiftLeft(uint_ty, x, b4)->Result();
-            auto* b2 = b.Call(uint_ty, core::Function::kSelect, V(0), V(2),
+            auto* b2 = b.Call(uint_ty, core::BuiltinFn::kSelect, V(0), V(2),
                               b.LessThanEqual(bool_ty, x, V(0x3fffffff)));
             x = b.ShiftLeft(uint_ty, x, b2)->Result();
-            auto* b1 = b.Call(uint_ty, core::Function::kSelect, V(0), V(1),
+            auto* b1 = b.Call(uint_ty, core::BuiltinFn::kSelect, V(0), V(1),
                               b.LessThanEqual(bool_ty, x, V(0x7fffffff)));
             auto* b0 =
-                b.Call(uint_ty, core::Function::kSelect, V(0), V(1), b.Equal(bool_ty, x, V(0)));
+                b.Call(uint_ty, core::BuiltinFn::kSelect, V(0), V(1), b.Equal(bool_ty, x, V(0)));
             result = b.Add(uint_ty,
                            b.Or(uint_ty, b16,
                                 b.Or(uint_ty, b8,
@@ -254,22 +312,22 @@ struct State {
             if (result_ty->is_signed_integer_scalar_or_vector()) {
                 x = b.Bitcast(uint_ty, x)->Result();
             }
-            auto* b16 = b.Call(uint_ty, core::Function::kSelect, V(0), V(16),
+            auto* b16 = b.Call(uint_ty, core::BuiltinFn::kSelect, V(0), V(16),
                                b.Equal(bool_ty, b.And(uint_ty, x, V(0x0000ffff)), V(0)));
             x = b.ShiftRight(uint_ty, x, b16)->Result();
-            auto* b8 = b.Call(uint_ty, core::Function::kSelect, V(0), V(8),
+            auto* b8 = b.Call(uint_ty, core::BuiltinFn::kSelect, V(0), V(8),
                               b.Equal(bool_ty, b.And(uint_ty, x, V(0x000000ff)), V(0)));
             x = b.ShiftRight(uint_ty, x, b8)->Result();
-            auto* b4 = b.Call(uint_ty, core::Function::kSelect, V(0), V(4),
+            auto* b4 = b.Call(uint_ty, core::BuiltinFn::kSelect, V(0), V(4),
                               b.Equal(bool_ty, b.And(uint_ty, x, V(0x0000000f)), V(0)));
             x = b.ShiftRight(uint_ty, x, b4)->Result();
-            auto* b2 = b.Call(uint_ty, core::Function::kSelect, V(0), V(2),
+            auto* b2 = b.Call(uint_ty, core::BuiltinFn::kSelect, V(0), V(2),
                               b.Equal(bool_ty, b.And(uint_ty, x, V(0x00000003)), V(0)));
             x = b.ShiftRight(uint_ty, x, b2)->Result();
-            auto* b1 = b.Call(uint_ty, core::Function::kSelect, V(0), V(1),
+            auto* b1 = b.Call(uint_ty, core::BuiltinFn::kSelect, V(0), V(1),
                               b.Equal(bool_ty, b.And(uint_ty, x, V(0x00000001)), V(0)));
             auto* b0 =
-                b.Call(uint_ty, core::Function::kSelect, V(0), V(1), b.Equal(bool_ty, x, V(0)));
+                b.Call(uint_ty, core::BuiltinFn::kSelect, V(0), V(1), b.Equal(bool_ty, x, V(0)));
             result = b.Add(uint_ty,
                            b.Or(uint_ty, b16,
                                 b.Or(uint_ty, b8, b.Or(uint_ty, b4, b.Or(uint_ty, b2, b1)))),
@@ -280,6 +338,36 @@ struct State {
             }
         });
         return result;
+    }
+
+    /// Polyfill an `extractBits()` builtin call.
+    /// @param call the builtin call instruction
+    /// @returns the replacement value
+    ir::Value* ExtractBits(ir::CoreBuiltinCall* call) {
+        auto* offset = call->Args()[1];
+        auto* count = call->Args()[2];
+
+        switch (config.extract_bits) {
+            case BuiltinPolyfillLevel::kClampOrRangeCheck: {
+                b.InsertBefore(call, [&] {
+                    // Replace:
+                    //    extractBits(e, offset, count)
+                    // With:
+                    //    let o = min(offset, 32);
+                    //    let c = min(count, w - o);
+                    //    extractBits(e, o, c);
+                    auto* o = b.Call(ty.u32(), core::BuiltinFn::kMin, offset, 32_u);
+                    auto* c = b.Call(ty.u32(), core::BuiltinFn::kMin, count,
+                                     b.Subtract(ty.u32(), 32_u, o));
+                    call->SetOperand(ir::CoreBuiltinCall::kArgsOperandOffset + 1, o->Result());
+                    call->SetOperand(ir::CoreBuiltinCall::kArgsOperandOffset + 2, c->Result());
+                });
+                return call->Result();
+            }
+            default:
+                TINT_UNIMPLEMENTED() << "extractBits polyfill level";
+        }
+        return nullptr;
     }
 
     /// Polyfill a `firstLeadingBit()` builtin call.
@@ -316,27 +404,27 @@ struct State {
             if (result_ty->is_signed_integer_scalar_or_vector()) {
                 x = b.Bitcast(uint_ty, x)->Result();
                 auto* inverted = b.Complement(uint_ty, x);
-                x = b.Call(uint_ty, core::Function::kSelect, inverted, x,
+                x = b.Call(uint_ty, core::BuiltinFn::kSelect, inverted, x,
                            b.LessThan(bool_ty, x, V(0x80000000)))
                         ->Result();
             }
-            auto* b16 = b.Call(uint_ty, core::Function::kSelect, V(16), V(0),
+            auto* b16 = b.Call(uint_ty, core::BuiltinFn::kSelect, V(16), V(0),
                                b.Equal(bool_ty, b.And(uint_ty, x, V(0xffff0000)), V(0)));
             x = b.ShiftRight(uint_ty, x, b16)->Result();
-            auto* b8 = b.Call(uint_ty, core::Function::kSelect, V(8), V(0),
+            auto* b8 = b.Call(uint_ty, core::BuiltinFn::kSelect, V(8), V(0),
                               b.Equal(bool_ty, b.And(uint_ty, x, V(0x0000ff00)), V(0)));
             x = b.ShiftRight(uint_ty, x, b8)->Result();
-            auto* b4 = b.Call(uint_ty, core::Function::kSelect, V(4), V(0),
+            auto* b4 = b.Call(uint_ty, core::BuiltinFn::kSelect, V(4), V(0),
                               b.Equal(bool_ty, b.And(uint_ty, x, V(0x000000f0)), V(0)));
             x = b.ShiftRight(uint_ty, x, b4)->Result();
-            auto* b2 = b.Call(uint_ty, core::Function::kSelect, V(2), V(0),
+            auto* b2 = b.Call(uint_ty, core::BuiltinFn::kSelect, V(2), V(0),
                               b.Equal(bool_ty, b.And(uint_ty, x, V(0x0000000c)), V(0)));
             x = b.ShiftRight(uint_ty, x, b2)->Result();
-            auto* b1 = b.Call(uint_ty, core::Function::kSelect, V(1), V(0),
+            auto* b1 = b.Call(uint_ty, core::BuiltinFn::kSelect, V(1), V(0),
                               b.Equal(bool_ty, b.And(uint_ty, x, V(0x00000002)), V(0)));
             result = b.Or(uint_ty, b16, b.Or(uint_ty, b8, b.Or(uint_ty, b4, b.Or(uint_ty, b2, b1))))
                          ->Result();
-            result = b.Call(uint_ty, core::Function::kSelect, result, V(0xffffffff),
+            result = b.Call(uint_ty, core::BuiltinFn::kSelect, result, V(0xffffffff),
                             b.Equal(bool_ty, x, V(0)))
                          ->Result();
             if (result_ty->is_signed_integer_scalar_or_vector()) {
@@ -380,23 +468,23 @@ struct State {
             if (result_ty->is_signed_integer_scalar_or_vector()) {
                 x = b.Bitcast(uint_ty, x)->Result();
             }
-            auto* b16 = b.Call(uint_ty, core::Function::kSelect, V(0), V(16),
+            auto* b16 = b.Call(uint_ty, core::BuiltinFn::kSelect, V(0), V(16),
                                b.Equal(bool_ty, b.And(uint_ty, x, V(0x0000ffff)), V(0)));
             x = b.ShiftRight(uint_ty, x, b16)->Result();
-            auto* b8 = b.Call(uint_ty, core::Function::kSelect, V(0), V(8),
+            auto* b8 = b.Call(uint_ty, core::BuiltinFn::kSelect, V(0), V(8),
                               b.Equal(bool_ty, b.And(uint_ty, x, V(0x000000ff)), V(0)));
             x = b.ShiftRight(uint_ty, x, b8)->Result();
-            auto* b4 = b.Call(uint_ty, core::Function::kSelect, V(0), V(4),
+            auto* b4 = b.Call(uint_ty, core::BuiltinFn::kSelect, V(0), V(4),
                               b.Equal(bool_ty, b.And(uint_ty, x, V(0x0000000f)), V(0)));
             x = b.ShiftRight(uint_ty, x, b4)->Result();
-            auto* b2 = b.Call(uint_ty, core::Function::kSelect, V(0), V(2),
+            auto* b2 = b.Call(uint_ty, core::BuiltinFn::kSelect, V(0), V(2),
                               b.Equal(bool_ty, b.And(uint_ty, x, V(0x00000003)), V(0)));
             x = b.ShiftRight(uint_ty, x, b2)->Result();
-            auto* b1 = b.Call(uint_ty, core::Function::kSelect, V(0), V(1),
+            auto* b1 = b.Call(uint_ty, core::BuiltinFn::kSelect, V(0), V(1),
                               b.Equal(bool_ty, b.And(uint_ty, x, V(0x00000001)), V(0)));
             result = b.Or(uint_ty, b16, b.Or(uint_ty, b8, b.Or(uint_ty, b4, b.Or(uint_ty, b2, b1))))
                          ->Result();
-            result = b.Call(uint_ty, core::Function::kSelect, result, V(0xffffffff),
+            result = b.Call(uint_ty, core::BuiltinFn::kSelect, result, V(0xffffffff),
                             b.Equal(bool_ty, x, V(0)))
                          ->Result();
             if (result_ty->is_signed_integer_scalar_or_vector()) {
@@ -404,6 +492,36 @@ struct State {
             }
         });
         return result;
+    }
+
+    /// Polyfill an `insertBits()` builtin call.
+    /// @param call the builtin call instruction
+    /// @returns the replacement value
+    ir::Value* InsertBits(ir::CoreBuiltinCall* call) {
+        auto* offset = call->Args()[2];
+        auto* count = call->Args()[3];
+
+        switch (config.insert_bits) {
+            case BuiltinPolyfillLevel::kClampOrRangeCheck: {
+                b.InsertBefore(call, [&] {
+                    // Replace:
+                    //    insertBits(e, offset, count)
+                    // With:
+                    //    let o = min(offset, 32);
+                    //    let c = min(count, w - o);
+                    //    insertBits(e, o, c);
+                    auto* o = b.Call(ty.u32(), core::BuiltinFn::kMin, offset, 32_u);
+                    auto* c = b.Call(ty.u32(), core::BuiltinFn::kMin, count,
+                                     b.Subtract(ty.u32(), 32_u, o));
+                    call->SetOperand(ir::CoreBuiltinCall::kArgsOperandOffset + 2, o->Result());
+                    call->SetOperand(ir::CoreBuiltinCall::kArgsOperandOffset + 3, c->Result());
+                });
+                return call->Result();
+            }
+            default:
+                TINT_UNIMPLEMENTED() << "insertBits polyfill level";
+        }
+        return nullptr;
     }
 
     /// Polyfill a `saturate()` builtin call.
@@ -421,7 +539,7 @@ struct State {
             zero = MatchWidth(b.Constant(0_h), type);
             one = MatchWidth(b.Constant(1_h), type);
         }
-        auto* clamp = b.Call(type, core::Function::kClamp, Vector{call->Args()[0], zero, one});
+        auto* clamp = b.Call(type, core::BuiltinFn::kClamp, Vector{call->Args()[0], zero, one});
         clamp->InsertBefore(call);
         return clamp->Result();
     }
@@ -441,13 +559,13 @@ struct State {
         auto* coords = call->Args()[2];
         b.InsertBefore(call, [&] {
             auto* vec2f = ty.vec2<f32>();
-            auto* dims = b.Call(ty.vec2<u32>(), core::Function::kTextureDimensions, texture);
+            auto* dims = b.Call(ty.vec2<u32>(), core::BuiltinFn::kTextureDimensions, texture);
             auto* fdims = b.Convert(vec2f, dims);
             auto* half_texel = b.Divide(vec2f, b.Splat(vec2f, 0.5_f, 2), fdims);
             auto* one_minus_half_texel = b.Subtract(vec2f, b.Splat(vec2f, 1_f, 2), half_texel);
             auto* clamped =
-                b.Call(vec2f, core::Function::kClamp, coords, half_texel, one_minus_half_texel);
-            result = b.Call(ty.vec4<f32>(), core::Function::kTextureSampleLevel, texture, sampler,
+                b.Call(vec2f, core::BuiltinFn::kClamp, coords, half_texel, one_minus_half_texel);
+            result = b.Call(ty.vec4<f32>(), core::BuiltinFn::kTextureSampleLevel, texture, sampler,
                             clamped, 0_f)
                          ->Result();
         });
@@ -457,8 +575,8 @@ struct State {
 
 }  // namespace
 
-Result<SuccessType, std::string> BuiltinPolyfill(Module* ir, const BuiltinPolyfillConfig& config) {
-    auto result = ValidateAndDumpIfNeeded(*ir, "BuiltinPolyfill transform");
+Result<SuccessType> BuiltinPolyfill(Module& ir, const BuiltinPolyfillConfig& config) {
+    auto result = ValidateAndDumpIfNeeded(ir, "BuiltinPolyfill transform");
     if (!result) {
         return result;
     }

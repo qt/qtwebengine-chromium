@@ -10,6 +10,7 @@
 #ifndef EIGEN_REAL_QZ_H
 #define EIGEN_REAL_QZ_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

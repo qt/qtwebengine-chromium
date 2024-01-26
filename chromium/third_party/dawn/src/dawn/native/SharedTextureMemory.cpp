@@ -1,16 +1,29 @@
-// Copyright 2023 The Dawn Authors
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/SharedTextureMemory.h"
 
@@ -30,16 +43,17 @@ class ErrorSharedTextureMemory : public SharedTextureMemoryBase {
     ErrorSharedTextureMemory(DeviceBase* device, const SharedTextureMemoryDescriptor* descriptor)
         : SharedTextureMemoryBase(device, descriptor, ObjectBase::kError) {}
 
+    Ref<SharedTextureMemoryContents> CreateContents() override { DAWN_UNREACHABLE(); }
     ResultOrError<Ref<TextureBase>> CreateTextureImpl(
         const TextureDescriptor* descriptor) override {
-        UNREACHABLE();
+        DAWN_UNREACHABLE();
     }
     MaybeError BeginAccessImpl(TextureBase* texture,
                                const BeginAccessDescriptor* descriptor) override {
-        UNREACHABLE();
+        DAWN_UNREACHABLE();
     }
     ResultOrError<FenceAndSignalValue> EndAccessImpl(TextureBase* texture) override {
-        UNREACHABLE();
+        DAWN_UNREACHABLE();
     }
 };
 
@@ -62,20 +76,18 @@ SharedTextureMemoryBase::SharedTextureMemoryBase(DeviceBase* device,
           {0, 0, 0},
           wgpu::TextureFormat::Undefined,
       },
-      mState(new SharedTextureMemoryState(GetWeakRef(this))) {}
+      mContents(new SharedTextureMemoryContents(GetWeakRef(this))) {}
 
 SharedTextureMemoryBase::SharedTextureMemoryBase(DeviceBase* device,
                                                  const char* label,
                                                  const SharedTextureMemoryProperties& properties)
-    : ApiObjectBase(device, label),
-      mProperties(properties),
-      mState(new SharedTextureMemoryState(GetWeakRef(this))) {
+    : ApiObjectBase(device, label), mProperties(properties) {
     const Format& internalFormat = device->GetValidInternalFormat(properties.format);
     if (!internalFormat.supportsStorageUsage) {
-        ASSERT(!(mProperties.usage & wgpu::TextureUsage::StorageBinding));
+        DAWN_ASSERT(!(mProperties.usage & wgpu::TextureUsage::StorageBinding));
     }
     if (!internalFormat.isRenderable) {
-        ASSERT(!(mProperties.usage & wgpu::TextureUsage::RenderAttachment));
+        DAWN_ASSERT(!(mProperties.usage & wgpu::TextureUsage::RenderAttachment));
     }
     GetObjectTrackingList()->Track(this);
 }
@@ -85,6 +97,11 @@ ObjectType SharedTextureMemoryBase::GetType() const {
 }
 
 void SharedTextureMemoryBase::DestroyImpl() {}
+
+void SharedTextureMemoryBase::Initialize() {
+    DAWN_ASSERT(!IsError());
+    mContents = CreateContents();
+}
 
 void SharedTextureMemoryBase::APIGetProperties(SharedTextureMemoryProperties* properties) const {
     properties->usage = mProperties.usage;
@@ -116,6 +133,10 @@ TextureBase* SharedTextureMemoryBase::APICreateTexture(const TextureDescriptor* 
         return TextureBase::MakeError(GetDevice(), descriptor);
     }
     return result.Detach();
+}
+
+Ref<SharedTextureMemoryContents> SharedTextureMemoryBase::CreateContents() {
+    return AcquireRef(new SharedTextureMemoryContents(GetWeakRef(this)));
 }
 
 ResultOrError<Ref<TextureBase>> SharedTextureMemoryBase::CreateTexture(
@@ -159,16 +180,16 @@ ResultOrError<Ref<TextureBase>> SharedTextureMemoryBase::CreateTexture(
     return texture;
 }
 
-SharedTextureMemoryState* SharedTextureMemoryBase::GetState() const {
-    return mState.Get();
+SharedTextureMemoryContents* SharedTextureMemoryBase::GetContents() const {
+    return mContents.Get();
 }
 
 MaybeError SharedTextureMemoryBase::ValidateTextureCreatedFromSelf(TextureBase* texture) {
-    auto* state = texture->GetSharedTextureMemoryState();
-    DAWN_INVALID_IF(state == nullptr, "%s was not created from %s.", texture, this);
+    auto* contents = texture->GetSharedTextureMemoryContents();
+    DAWN_INVALID_IF(contents == nullptr, "%s was not created from %s.", texture, this);
 
     auto* sharedTextureMemory =
-        texture->GetSharedTextureMemoryState()->GetSharedTextureMemory().Promote().Get();
+        texture->GetSharedTextureMemoryContents()->GetSharedTextureMemory().Promote().Get();
     DAWN_INVALID_IF(sharedTextureMemory != this, "%s created from %s cannot be used with %s.",
                     texture, sharedTextureMemory, this);
     return {};
@@ -198,7 +219,8 @@ MaybeError SharedTextureMemoryBase::BeginAccess(TextureBase* texture,
                                                 const BeginAccessDescriptor* descriptor) {
     // Append begin fences first. Fences should be tracked regardless of whether later errors occur.
     for (size_t i = 0; i < descriptor->fenceCount; ++i) {
-        mState->mPendingFences->push_back({descriptor->fences[i], descriptor->signaledValues[i]});
+        mContents->mPendingFences->push_back(
+            {descriptor->fences[i], descriptor->signaledValues[i]});
     }
 
     DAWN_TRY(GetDevice()->ValidateIsAlive());
@@ -240,7 +262,7 @@ bool SharedTextureMemoryBase::APIEndAccess(TextureBase* texture, EndAccessState*
 
 MaybeError SharedTextureMemoryBase::EndAccess(TextureBase* texture, EndAccessState* state) {
     PendingFenceList fenceList;
-    mState->AcquirePendingFences(&fenceList);
+    mContents->AcquirePendingFences(&fenceList);
 
     if (!texture->IsError()) {
         texture->SetHasAccess(false);
@@ -289,26 +311,27 @@ ResultOrError<FenceAndSignalValue> SharedTextureMemoryBase::EndAccessInternal(
     return EndAccessImpl(texture);
 }
 
-// SharedTextureMemoryState
+// SharedTextureMemoryContents
 
-SharedTextureMemoryState::SharedTextureMemoryState(
+SharedTextureMemoryContents::SharedTextureMemoryContents(
     WeakRef<SharedTextureMemoryBase> sharedTextureMemory)
     : mSharedTextureMemory(std::move(sharedTextureMemory)) {}
 
-const WeakRef<SharedTextureMemoryBase>& SharedTextureMemoryState::GetSharedTextureMemory() const {
+const WeakRef<SharedTextureMemoryBase>& SharedTextureMemoryContents::GetSharedTextureMemory()
+    const {
     return mSharedTextureMemory;
 }
 
-void SharedTextureMemoryState::AcquirePendingFences(PendingFenceList* fences) {
+void SharedTextureMemoryContents::AcquirePendingFences(PendingFenceList* fences) {
     *fences = mPendingFences;
     mPendingFences->clear();
 }
 
-void SharedTextureMemoryState::SetLastUsageSerial(ExecutionSerial lastUsageSerial) {
+void SharedTextureMemoryContents::SetLastUsageSerial(ExecutionSerial lastUsageSerial) {
     mLastUsageSerial = lastUsageSerial;
 }
 
-ExecutionSerial SharedTextureMemoryState::GetLastUsageSerial() const {
+ExecutionSerial SharedTextureMemoryContents::GetLastUsageSerial() const {
     return mLastUsageSerial;
 }
 

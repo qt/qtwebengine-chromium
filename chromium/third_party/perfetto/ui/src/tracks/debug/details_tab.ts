@@ -14,10 +14,14 @@
 
 import m from 'mithril';
 
-import {GridLayout} from '../..//frontend/widgets/grid_layout';
-import {Section} from '../..//frontend/widgets/section';
-import {ColumnType, LONG, STR} from '../../common/query_result';
-import {Duration, duration, Time, time} from '../../common/time';
+import {duration, Time, time} from '../../base/time';
+import {
+  ColumnType,
+  durationFromSql,
+  LONG,
+  STR,
+  timeFromSql,
+} from '../../common/query_result';
 import {raf} from '../../core/raf_scheduler';
 import {
   BottomTab,
@@ -46,15 +50,17 @@ import {
   ThreadState,
   threadStateRef,
 } from '../../frontend/thread_state';
-import {DetailsShell} from '../../frontend/widgets/details_shell';
-import {DurationWidget} from '../../frontend/widgets/duration';
 import {Timestamp} from '../../frontend/widgets/timestamp';
+import {DetailsShell} from '../../widgets/details_shell';
+import {DurationWidget} from '../../widgets/duration';
+import {GridLayout} from '../../widgets/grid_layout';
+import {Section} from '../../widgets/section';
 import {
   dictToTree,
   dictToTreeNodes,
   Tree,
   TreeNode,
-} from '../../frontend/widgets/tree';
+} from '../../widgets/tree';
 
 import {ARG_PREFIX} from './add_debug_track_menu';
 
@@ -134,15 +140,14 @@ export class DebugSliceDetailsTab extends
 
   private async maybeLoadSlice(
       id: number|undefined, ts: time, dur: duration, table: string|undefined,
-      sqlTrackId?: number): Promise<SliceDetails|undefined> {
+      trackId?: number): Promise<SliceDetails|undefined> {
     if (id === undefined) return undefined;
-    if ((table !== 'slice') && sqlTrackId === undefined) return undefined;
+    if ((table !== 'slice') && trackId === undefined) return undefined;
 
     const slice = await getSlice(this.engine, asSliceSqlId(id));
     if (slice === undefined) return undefined;
     if ((table === 'slice') ||
-        (slice.ts === ts && slice.dur === dur &&
-         slice.sqlTrackId === sqlTrackId)) {
+        (slice.ts === ts && slice.dur === dur && slice.trackId === trackId)) {
       return slice;
     } else {
       return undefined;
@@ -216,8 +221,8 @@ export class DebugSliceDetailsTab extends
     }
     const details = dictToTreeNodes({
       'Name': this.data['name'] as string,
-      'Start time': m(Timestamp, {ts: Time.fromSql(this.data['ts'])}),
-      'Duration': m(DurationWidget, {dur: Duration.fromSql(this.data['dur'])}),
+      'Start time': m(Timestamp, {ts: timeFromSql(this.data['ts'])}),
+      'Duration': m(DurationWidget, {dur: durationFromSql(this.data['dur'])}),
       'Debug slice id': `${this.config.sqlTableName}[${this.config.id}]`,
     });
     details.push(this.renderThreadStateInfo());
@@ -251,10 +256,6 @@ export class DebugSliceDetailsTab extends
 
   isLoading() {
     return this.data === undefined;
-  }
-
-  renderTabCanvas() {
-    return;
   }
 }
 

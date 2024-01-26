@@ -54,7 +54,13 @@ const defaultFormatOptions = {
 // them repeatedly during rendering.
 const serialize = (value: {}): string => JSON.stringify(value);
 const formatterFactory = (key: string|undefined): Intl.NumberFormat => {
-  return new Intl.NumberFormat(navigator.language, key ? JSON.parse(key) : {});
+  // If we pass undefined as the locale, that achieves two things:
+  // 1. Avoids us referencing window.navigatior to fetch the locale, which is
+  //    useful given long term we would like this engine to run in NodeJS
+  //    environments.
+  // 2. Will cause the formatter to fallback to the locale of the system, which
+  //    is likely going to be the most accurate one to use anyway.
+  return new Intl.NumberFormat(undefined, key ? JSON.parse(key) : {});
 };
 const formatters = new Map<string, Intl.NumberFormat>();
 
@@ -157,7 +163,8 @@ export function eventTimingsMicroSeconds(event: Types.TraceEvents.TraceEventData
     duration: Types.Timing.MicroSeconds(event.dur || 0),
     // TODO(crbug.com/1434599): Implement selfTime calculation for events
     // from the new engine.
-    selfTime: Types.Timing.MicroSeconds(event.dur || 0),
+    selfTime: Types.TraceEvents.isRendererEvent(event) ? Types.Timing.MicroSeconds(event.selfTime || 0) :
+                                                         Types.Timing.MicroSeconds(event.dur || 0),
   };
 }
 export function eventTimingsMilliSeconds(event: Types.TraceEvents.TraceEventData):
@@ -180,14 +187,29 @@ export function eventTimingsSeconds(event: Types.TraceEvents.TraceEventData): Ev
   };
 }
 
-export function traceBoundsMilliseconds(bounds: Types.Timing.TraceWindow): {
-  min: Types.Timing.MilliSeconds,
-  max: Types.Timing.MilliSeconds,
-  range: Types.Timing.MilliSeconds,
-} {
+export function traceWindowMilliSeconds(bounds: Types.Timing.TraceWindow): Types.Timing.TraceWindowMilliSeconds {
   return {
     min: microSecondsToMilliseconds(bounds.min),
     max: microSecondsToMilliseconds(bounds.max),
     range: microSecondsToMilliseconds(bounds.range),
   };
+}
+
+export function traceWindowMillisecondsToMicroSeconds(bounds: Types.Timing.TraceWindowMilliSeconds):
+    Types.Timing.TraceWindow {
+  return {
+    min: millisecondsToMicroseconds(bounds.min),
+    max: millisecondsToMicroseconds(bounds.max),
+    range: millisecondsToMicroseconds(bounds.range),
+  };
+}
+
+export function traceWindowFromMilliSeconds(
+    min: Types.Timing.MilliSeconds, max: Types.Timing.MilliSeconds): Types.Timing.TraceWindow {
+  const traceWindow: Types.Timing.TraceWindow = {
+    min: millisecondsToMicroseconds(min),
+    max: millisecondsToMicroseconds(max),
+    range: millisecondsToMicroseconds(Types.Timing.MilliSeconds(max - min)),
+  };
+  return traceWindow;
 }

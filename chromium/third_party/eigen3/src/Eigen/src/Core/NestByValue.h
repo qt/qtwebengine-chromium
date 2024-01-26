@@ -11,6 +11,7 @@
 #ifndef EIGEN_NESTBYVALUE_H
 #define EIGEN_NESTBYVALUE_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

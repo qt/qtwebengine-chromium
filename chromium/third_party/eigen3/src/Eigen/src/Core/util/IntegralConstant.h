@@ -11,6 +11,7 @@
 #ifndef EIGEN_INTEGRAL_CONSTANT_H
 #define EIGEN_INTEGRAL_CONSTANT_H
 
+// IWYU pragma: private
 #include "../InternalHeaderCheck.h"
 
 namespace Eigen {

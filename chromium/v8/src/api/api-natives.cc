@@ -7,6 +7,7 @@
 #include "src/api/api-inl.h"
 #include "src/common/message-template.h"
 #include "src/execution/isolate-inl.h"
+#include "src/execution/protectors-inl.h"
 #include "src/heap/heap-inl.h"
 #include "src/logging/runtime-call-stats-scope.h"
 #include "src/objects/api-callbacks.h"
@@ -182,7 +183,7 @@ Tagged<Object> GetIntrinsic(Isolate* isolate, v8::Intrinsic intrinsic) {
     V8_INTRINSICS_LIST(GET_INTRINSIC_VALUE)
 #undef GET_INTRINSIC_VALUE
   }
-  return Object();
+  return Tagged<Object>();
 }
 
 template <typename TemplateInfoT>
@@ -195,13 +196,13 @@ MaybeHandle<JSObject> ConfigureInstance(Isolate* isolate, Handle<JSObject> obj,
 
   // Walk the inheritance chain and copy all accessors to current object.
   int max_number_of_properties = 0;
-  TemplateInfoT info = *data;
+  Tagged<TemplateInfoT> info = *data;
   while (!info.is_null()) {
-    Tagged<Object> props = info.property_accessors();
+    Tagged<Object> props = info->property_accessors();
     if (!IsUndefined(props, isolate)) {
-      max_number_of_properties += TemplateList::cast(props)->length();
+      max_number_of_properties += ArrayList::cast(props)->length();
     }
-    info = info.GetParent(isolate);
+    info = info->GetParent(isolate);
   }
 
   if (max_number_of_properties > 0) {
@@ -210,7 +211,9 @@ MaybeHandle<JSObject> ConfigureInstance(Isolate* isolate, Handle<JSObject> obj,
     Handle<FixedArray> array =
         isolate->factory()->NewFixedArray(max_number_of_properties);
 
-    for (Handle<TemplateInfoT> temp(*data, isolate); !temp->is_null();
+    // TODO(leszeks): Avoid creating unnecessary handles for cases where we
+    // don't need to append anything.
+    for (Handle<TemplateInfoT> temp(*data, isolate); !(*temp).is_null();
          temp = handle(temp->GetParent(isolate), isolate)) {
       // Accumulate accessors.
       Tagged<Object> maybe_properties = temp->property_accessors();
@@ -233,8 +236,7 @@ MaybeHandle<JSObject> ConfigureInstance(Isolate* isolate, Handle<JSObject> obj,
 
   Tagged<Object> maybe_property_list = data->property_list();
   if (IsUndefined(maybe_property_list, isolate)) return obj;
-  Handle<TemplateList> properties(TemplateList::cast(maybe_property_list),
-                                  isolate);
+  Handle<ArrayList> properties(ArrayList::cast(maybe_property_list), isolate);
   if (properties->length() == 0) return obj;
 
   int i = 0;
@@ -364,7 +366,8 @@ void UncacheTemplateInstantiation(Isolate* isolate,
     Tagged<FixedArray> fast_cache =
         native_context->fast_template_instantiations_cache();
     DCHECK(!IsUndefined(fast_cache->get(serial_number), isolate));
-    fast_cache->set_undefined(serial_number);
+    fast_cache->set(serial_number, ReadOnlyRoots{isolate}.undefined_value(),
+                    SKIP_WRITE_BARRIER);
     data->set_serial_number(TemplateInfo::kUncached);
   } else if (caching_mode == CachingMode::kUnlimited ||
              (serial_number <
@@ -560,11 +563,11 @@ MaybeHandle<JSFunction> InstantiateFunction(
 void AddPropertyToPropertyList(Isolate* isolate, Handle<TemplateInfo> templ,
                                int length, Handle<Object>* data) {
   Tagged<Object> maybe_list = templ->property_list();
-  Handle<TemplateList> list;
+  Handle<ArrayList> list;
   if (IsUndefined(maybe_list, isolate)) {
-    list = TemplateList::New(isolate, length);
+    list = ArrayList::New(isolate, length, AllocationType::kOld);
   } else {
-    list = handle(TemplateList::cast(maybe_list), isolate);
+    list = handle(ArrayList::cast(maybe_list), isolate);
   }
   templ->set_number_of_properties(templ->number_of_properties() + 1);
   for (int i = 0; i < length; i++) {
@@ -572,7 +575,7 @@ void AddPropertyToPropertyList(Isolate* isolate, Handle<TemplateInfo> templ,
         data[i].is_null()
             ? Handle<Object>::cast(isolate->factory()->undefined_value())
             : data[i];
-    list = TemplateList::Add(isolate, list, value);
+    list = ArrayList::Add(isolate, list, value);
   }
   templ->set_property_list(*list);
 }
@@ -678,13 +681,13 @@ void ApiNatives::AddNativeDataProperty(Isolate* isolate,
                                        Handle<TemplateInfo> info,
                                        Handle<AccessorInfo> property) {
   Tagged<Object> maybe_list = info->property_accessors();
-  Handle<TemplateList> list;
+  Handle<ArrayList> list;
   if (IsUndefined(maybe_list, isolate)) {
-    list = TemplateList::New(isolate, 1);
+    list = ArrayList::New(isolate, 1, AllocationType::kOld);
   } else {
-    list = handle(TemplateList::cast(maybe_list), isolate);
+    list = handle(ArrayList::cast(maybe_list), isolate);
   }
-  list = TemplateList::Add(isolate, list, property);
+  list = ArrayList::Add(isolate, list, property);
   info->set_property_accessors(*list);
 }
 
@@ -751,6 +754,10 @@ Handle<JSFunction> ApiNatives::CreateApiFunction(
     // that is undetectable but not callable, we need to update the types.h
     // to allow encoding this.
     CHECK(!IsUndefined(obj->GetInstanceCallHandler(), isolate));
+
+    if (Protectors::IsNoUndetectableObjectsIntact(isolate)) {
+      Protectors::InvalidateNoUndetectableObjects(isolate);
+    }
     map->set_is_undetectable(true);
   }
 

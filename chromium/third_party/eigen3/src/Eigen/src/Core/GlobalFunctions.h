@@ -51,6 +51,7 @@
     } \
   };
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen

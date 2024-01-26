@@ -18,9 +18,11 @@
 namespace vl {
     class LayerSettings {
       public:
-        LayerSettings(const char *pLayerName, const VkLayerSettingsCreateInfoEXT *pCreateInfo,
-                      const VkAllocationCallbacks *pAllocator, VlLayerSettingLogCallback pCallback);
+        LayerSettings(const char *pLayerName, const VkLayerSettingsCreateInfoEXT *pFirstCreateInfo,
+                      const VkAllocationCallbacks *pAllocator, VkuLayerSettingLogCallback pCallback);
         ~LayerSettings();
+
+        void SetPrefix(const char *pPrefix) { this->prefix = pPrefix; }
 
 	    bool HasEnvSetting(const char *pSettingName);
 
@@ -52,9 +54,11 @@ namespace vl {
         std::filesystem::path FindSettingsFile();
         void ParseSettingsFile(const std::filesystem::path &filename);
 
+        std::string prefix;
         std::string layer_name;
-        const VkLayerSettingsCreateInfoEXT *create_info{nullptr};
-        VlLayerSettingLogCallback pCallback{nullptr};
+
+        const VkLayerSettingsCreateInfoEXT *first_create_info{nullptr};
+        VkuLayerSettingLogCallback pCallback{nullptr};
     };
 }// namespace vl
 

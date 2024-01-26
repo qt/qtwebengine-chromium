@@ -1,16 +1,29 @@
-// Copyright 2019 The Dawn Authors
+// Copyright 2019 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/Features.h"
 
@@ -46,14 +59,11 @@ static constexpr FeatureEnumAndInfo kFeatureInfo[] = {
      {"Support Adaptable Scalable Texture Compressed (ASTC) "
       "texture formats",
       "https://bugs.chromium.org/p/dawn/issues/detail?id=955", FeatureInfo::FeatureState::Stable}},
-    {Feature::PipelineStatisticsQuery,
-     {"Support Pipeline Statistics Query", "https://bugs.chromium.org/p/dawn/issues/detail?id=434",
-      FeatureInfo::FeatureState::Experimental}},
     {Feature::TimestampQuery,
      {"Support Timestamp Query", "https://bugs.chromium.org/p/dawn/issues/detail?id=434",
       FeatureInfo::FeatureState::Experimental}},
-    {Feature::TimestampQueryInsidePasses,
-     {"Support Timestamp Query inside render/compute pass",
+    {Feature::ChromiumExperimentalTimestampQueryInsidePasses,
+     {"Support experimental Timestamp Query inside render/compute pass",
       "https://bugs.chromium.org/p/dawn/issues/detail?id=434",
       FeatureInfo::FeatureState::Experimental}},
     {Feature::DepthClipControl,
@@ -71,8 +81,7 @@ static constexpr FeatureEnumAndInfo kFeatureInfo[] = {
       "https://bugs.chromium.org/p/dawn/issues/detail?id=1197", FeatureInfo::FeatureState::Stable}},
     {Feature::ShaderF16,
      {"Supports the \"enable f16;\" directive in WGSL",
-      "https://bugs.chromium.org/p/dawn/issues/detail?id=1510",
-      FeatureInfo::FeatureState::Experimental}},
+      "https://bugs.chromium.org/p/dawn/issues/detail?id=1510", FeatureInfo::FeatureState::Stable}},
     {Feature::RG11B10UfloatRenderable,
      {"Allows the RENDER_ATTACHMENT usage on textures with format \"rg11b10ufloat\", and also "
       "allows textures of that format to be multisampled.",
@@ -82,8 +91,7 @@ static constexpr FeatureEnumAndInfo kFeatureInfo[] = {
       "https://bugs.chromium.org/p/dawn/issues/detail?id=1591", FeatureInfo::FeatureState::Stable}},
     {Feature::Float32Filterable,
      {"Allows textures with formats \"r32float\" \"rg32float\" and \"rgba32float\" to be filtered.",
-      "https://bugs.chromium.org/p/dawn/issues/detail?id=1664",
-      FeatureInfo::FeatureState::Experimental}},
+      "https://bugs.chromium.org/p/dawn/issues/detail?id=1664", FeatureInfo::FeatureState::Stable}},
     {Feature::ChromiumExperimentalSubgroups,
      {"Experimental, allows using subgroup and supports the \"enable "
       "chromium_experimental_subgroups\" directive in WGSL. Only used to investigate the semantic "
@@ -118,6 +126,9 @@ static constexpr FeatureEnumAndInfo kFeatureInfo[] = {
     {Feature::MultiPlanarFormatP010,
      {"Import and use the P010 multi-planar texture format with per plane views",
       "https://bugs.chromium.org/p/dawn/issues/detail?id=551", FeatureInfo::FeatureState::Stable}},
+    {Feature::MultiPlanarRenderTargets,
+     {"Import and use multi-planar texture formats as render attachments",
+      "https://bugs.chromium.org/p/dawn/issues/detail?id=1337", FeatureInfo::FeatureState::Stable}},
     {Feature::DawnNative,
      {"WebGPU is running on top of dawn_native.",
       "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
@@ -237,12 +248,17 @@ static constexpr FeatureEnumAndInfo kFeatureInfo[] = {
      {"Support for importing and exporting MTLSharedEvent used for GPU synchronization.",
       "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/shared_fence.md",
       FeatureInfo::FeatureState::Experimental}},
+    {Feature::HostMappedPointer,
+     {"Support creation of buffers from host-mapped pointers.",
+      "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
+      "host_mapped_pointer.md",
+      FeatureInfo::FeatureState::Experimental}},
 };
 
 }  // anonymous namespace
 
 void FeaturesSet::EnableFeature(Feature feature) {
-    ASSERT(feature != Feature::InvalidEnum);
+    DAWN_ASSERT(feature != Feature::InvalidEnum);
     featuresBitSet.set(feature);
 }
 
@@ -251,7 +267,7 @@ void FeaturesSet::EnableFeature(wgpu::FeatureName feature) {
 }
 
 bool FeaturesSet::IsEnabled(Feature feature) const {
-    ASSERT(feature != Feature::InvalidEnum);
+    DAWN_ASSERT(feature != Feature::InvalidEnum);
     return featuresBitSet[feature];
 }
 
@@ -276,7 +292,7 @@ std::vector<const char*> FeaturesSet::GetEnabledFeatureNames() const {
 
     uint32_t index = 0;
     for (Feature feature : IterateBitSet(featuresBitSet)) {
-        ASSERT(feature != Feature::InvalidEnum);
+        DAWN_ASSERT(feature != Feature::InvalidEnum);
         enabledFeatureNames[index] = kFeatureNameAndInfoList[feature].name;
         ++index;
     }

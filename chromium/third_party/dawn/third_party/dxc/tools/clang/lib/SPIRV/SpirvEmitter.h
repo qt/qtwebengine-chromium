@@ -704,15 +704,17 @@ private:
                                           SourceLocation loc,
                                           SourceRange range);
 
-  /// Returns the alignment of `vk::RawBufferLoad()`.
-  uint32_t getAlignmentForRawBufferLoad(const CallExpr *callExpr);
-
-  /// Returns the alignment of `vk::RawBufferStore()`.
-  uint32_t getAlignmentForRawBufferStore(const CallExpr *callExpr);
+  /// Returns the value of the alignment argument for `vk::RawBufferLoad()` and
+  /// `vk::RawBufferStore()`.
+  uint32_t getRawBufferAlignment(const Expr *expr);
 
   /// Process vk::ext_execution_mode intrinsic
   SpirvInstruction *processIntrinsicExecutionMode(const CallExpr *expr,
                                                   bool useIdParams);
+
+  /// Processes the 'firstbit{high|low}' intrinsic functions.
+  SpirvInstruction *processIntrinsicFirstbit(const CallExpr *,
+                                             GLSLstd450 glslOpcode);
 
 private:
   /// Returns the <result-id> for constant value 0 of the given type.
@@ -795,7 +797,8 @@ private:
   spv::LoopControlMask translateLoopAttribute(const Stmt *, const Attr &);
 
   static hlsl::ShaderModel::Kind getShaderModelKind(StringRef stageName);
-  static spv::ExecutionModel getSpirvShaderStage(hlsl::ShaderModel::Kind smk, bool);
+  static spv::ExecutionModel getSpirvShaderStage(hlsl::ShaderModel::Kind smk,
+                                                 bool);
 
   /// \brief Adds necessary execution modes for the hull/domain shaders based on
   /// the HLSL attributes of the entry point function.
@@ -1173,6 +1176,10 @@ private:
   std::vector<SpirvVariable *>
   getInterfacesForEntryPoint(SpirvFunction *entryPoint);
 
+  /// \brief Emits OpBeginInvocationInterlockEXT and add the appropriate
+  /// execution mode, if it has not already been added.
+  void beginInvocationInterlock(SourceLocation loc, SourceRange range);
+
 private:
   /// \brief If the given FunctionDecl is not already in the workQueue, creates
   /// a FunctionInfo object for it, and inserts it into the workQueue. It also
@@ -1211,6 +1218,13 @@ private:
   /// gets the info/warning/error messages via |messages|.
   /// Returns true on success and false otherwise.
   bool spirvToolsValidate(std::vector<uint32_t> *mod, std::string *messages);
+
+  /// Adds the appropriate derivative group execution mode to the entry point.
+  /// The entry point must already have a LocalSize execution mode, which will
+  ///  be used to determine which execution mode (quad or linear) is required.
+  ///  This decision is made according to the rules in
+  ///  https://microsoft.github.io/DirectX-Specs/d3d/HLSL_SM_6_6_Derivatives.html.
+  void addDerivativeGroupExecutionMode();
 
 public:
   /// \brief Wrapper method to create a fatal error message and report it

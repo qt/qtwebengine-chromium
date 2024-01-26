@@ -1115,6 +1115,7 @@ static void set_good_speed_features_framesize_independent(
     sf->mv_sf.search_method = DIAMOND;
     sf->mv_sf.disable_second_mv = 2;
     sf->mv_sf.prune_mesh_search = PRUNE_MESH_SEARCH_LVL_1;
+    sf->mv_sf.use_intrabc = 0;
 
     sf->inter_sf.disable_interinter_wedge_newmv_search = boosted ? 0 : 1;
     sf->inter_sf.mv_cost_upd_level = INTERNAL_COST_UPD_SBROW;
@@ -1385,8 +1386,9 @@ static void set_rt_speed_feature_framesize_dependent(const AV1_COMP *const cpi,
     if (speed == 7) {
       sf->rt_sf.prefer_large_partition_blocks = 1;
       // Enable this feature for [360p, 720p] resolution range initially.
+      // Only enable for low bitdepth to mitigate issue: b/303023614.
       if (!cpi->rc.rtc_external_ratectrl &&
-          AOMMIN(cm->width, cm->height) <= 720)
+          AOMMIN(cm->width, cm->height) <= 720 && !cpi->oxcf.use_highbitdepth)
         sf->hl_sf.accurate_bit_estimate = cpi->oxcf.q_cfg.aq_mode == NO_AQ;
     }
     if (speed >= 7) {
@@ -1506,11 +1508,7 @@ static void set_rt_speed_feature_framesize_dependent(const AV1_COMP *const cpi,
         cpi->svc.number_temporal_layers > 1)
       sf->hl_sf.accurate_bit_estimate = 0;
 
-    // TODO(yunqingwang@google.com): test to see if
-    // estimate_motion_for_var_based_partition == 2 helps here.
-    if (sf->rt_sf.estimate_motion_for_var_based_partition == 2)
-      sf->rt_sf.estimate_motion_for_var_based_partition = 1;
-    if (speed >= 9) sf->rt_sf.estimate_motion_for_var_based_partition = 0;
+    sf->rt_sf.estimate_motion_for_var_based_partition = 1;
 
     // For single layers RPS: bias/adjustment for recovery frame.
     if (cpi->ppi->rtc_ref.bias_recovery_frame) {
@@ -1597,6 +1595,10 @@ static void set_rt_speed_feature_framesize_dependent(const AV1_COMP *const cpi,
     // TODO(aomedia:3412): The setting accurate_bit_estimate = 0
     // can be removed once it's fixed for lossless mode.
     sf->hl_sf.accurate_bit_estimate = 0;
+  }
+  if (cpi->oxcf.use_highbitdepth) {
+    // Disable for use_highbitdepth = 1 to mitigate issue: b/303023614.
+    sf->rt_sf.estimate_motion_for_var_based_partition = 0;
   }
 }
 
@@ -2008,6 +2010,7 @@ static AOM_INLINE void init_mv_sf(MV_SPEED_FEATURES *mv_sf) {
   mv_sf->skip_fullpel_search_using_startmv = 0;
   mv_sf->warp_search_method = WARP_SEARCH_SQUARE;
   mv_sf->warp_search_iters = 8;
+  mv_sf->use_intrabc = 1;
 }
 
 static AOM_INLINE void init_inter_sf(INTER_MODE_SPEED_FEATURES *inter_sf) {

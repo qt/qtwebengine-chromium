@@ -2453,10 +2453,10 @@ void xnn_f32_gemm_minmax_ukernel_6x8s4__neonfma(
 void xnn_f32_ibilinear_chw_ukernel__neonfma_p8(
     size_t output_pixels,
     size_t channels,
-    const float**restrict input,
+    const float** restrict input,
     size_t input_offset,
-    const float*restrict weights,
-    float*restrict output,
+    const float* restrict weights,
+    float* restrict output,
     size_t input_increment) XNN_OOB_READS
 {
   assert(output_pixels != 0);
@@ -2693,10 +2693,10 @@ void xnn_f32_ibilinear_chw_ukernel__neonfma_p8(
 void xnn_f32_ibilinear_ukernel__neonfma_c8(
     size_t output_pixels,
     size_t channels,
-    const float**restrict input,
+    const float** restrict input,
     size_t input_offset,
-    const float*restrict weights,
-    float*restrict output,
+    const float* restrict weights,
+    float* restrict output,
     size_t output_increment) XNN_OOB_READS
 {
   assert(output_pixels != 0);
@@ -2830,9 +2830,9 @@ void xnn_f32_igemm_minmax_ukernel_1x8s4__neonfma(
     size_t nc,
     size_t kc,
     size_t ks,
-    const float**restrict a,
-    const float*restrict w,
-    float*restrict c,
+    const float** restrict a,
+    const float* restrict w,
+    float* restrict c,
     size_t cm_stride,
     size_t cn_stride,
     size_t a_offset,
@@ -2993,9 +2993,9 @@ void xnn_f32_igemm_minmax_ukernel_4x8s4__neonfma(
     size_t nc,
     size_t kc,
     size_t ks,
-    const float**restrict a,
-    const float*restrict w,
-    float*restrict c,
+    const float** restrict a,
+    const float* restrict w,
+    float* restrict c,
     size_t cm_stride,
     size_t cn_stride,
     size_t a_offset,
@@ -3324,9 +3324,9 @@ void xnn_f32_igemm_minmax_ukernel_6x8s4__neonfma(
     size_t nc,
     size_t kc,
     size_t ks,
-    const float**restrict a,
-    const float*restrict w,
-    float*restrict c,
+    const float** restrict a,
+    const float* restrict w,
+    float* restrict c,
     size_t cm_stride,
     size_t cn_stride,
     size_t a_offset,
@@ -3764,7 +3764,7 @@ void xnn_f32_igemm_minmax_ukernel_6x8s4__neonfma(
 
 extern XNN_INTERNAL const float xnn_table_exp2_k_over_64[64];
 
-void xnn_f32_raddstoreexpminusmax_ukernel__neonfma_rr1_lut64_p2_x16(
+void xnn_f32_raddstoreexpminusmax_ukernel__neonfma_rr1_lut64_p2_u16(
     size_t batch,
     const float* input,
     const float* max,
@@ -4012,8 +4012,8 @@ void xnn_f32_spmm_minmax_ukernel_32x1__neonfma_pipelined(
     const float32x4_t vmax = vminmax.val[1];
   #else
     const float32x2x2_t vminmax = vld2_dup_f32(&params->scalar.min);
-    const float32x4_t vmin = vcombine_f32(vminmax.val[0],vminmax.val[0]);
-    const float32x4_t vmax = vcombine_f32(vminmax.val[1],vminmax.val[1]);
+    const float32x4_t vmin = vcombine_f32(vminmax.val[0], vminmax.val[0]);
+    const float32x4_t vmax = vcombine_f32(vminmax.val[1], vminmax.val[1]);
   #endif
 
   size_t output_decrement = output_stride * nc - 32 * sizeof(float);
@@ -4274,7 +4274,7 @@ void xnn_f32_spmm_minmax_ukernel_32x1__neonfma_pipelined(
 
 extern XNN_INTERNAL const int32_t xnn_table_exp2minus_k_over_16[16];
 
-void xnn_f32_velu_ukernel__neonfma_rr1_lut16_p3_x16(
+void xnn_f32_velu_ukernel__neonfma_rr1_lut16_p3_u16(
     size_t batch,
     const float* input,
     float* output,
@@ -4494,7 +4494,7 @@ void xnn_f32_velu_ukernel__neonfma_rr1_lut16_p3_x16(
   }
 }
 
-void xnn_f32_velu_ukernel__neonfma_rr1_p6_x8(
+void xnn_f32_velu_ukernel__neonfma_rr1_p6_u8(
     size_t batch,
     const float* input,
     float* output,
@@ -4642,10 +4642,10 @@ void xnn_f32_velu_ukernel__neonfma_rr1_p6_x8(
 void xnn_f32_vmulcaddc_minmax_ukernel_c4__neonfma_2x(
     size_t rows,
     size_t channels,
-    const float*restrict input,
+    const float* restrict input,
     size_t input_stride,
-    const float*restrict weights,
-    float*restrict output,
+    const float* restrict weights,
+    float* restrict output,
     size_t output_stride,
     const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
@@ -4734,7 +4734,7 @@ void xnn_f32_vmulcaddc_minmax_ukernel_c4__neonfma_2x(
 
 extern XNN_INTERNAL const float xnn_table_exp2minus_k_over_64[64];
 
-void xnn_f32_vsigmoid_ukernel__neonfma_rr1_lut64_p2_nr2recps_x16(
+void xnn_f32_vsigmoid_ukernel__neonfma_rr1_lut64_p2_nr2recps_u16(
     size_t batch,
     const float* input,
     float* output,
@@ -4970,7 +4970,7 @@ void xnn_f32_vsigmoid_ukernel__neonfma_rr1_lut64_p2_nr2recps_x16(
   }
 }
 
-void xnn_f32_vtanh_ukernel__neonfma_expm1minus_rr1_p6h5ts_nr2fma_x8(
+void xnn_f32_vtanh_ukernel__neonfma_expm1minus_rr1_p6h5ts_nr2fma_u8(
     size_t batch,
     const float* input,
     float* output,

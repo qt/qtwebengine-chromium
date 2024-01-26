@@ -10,6 +10,7 @@
 #ifndef EIGEN_SPARSE_CWISE_UNARY_OP_H
 #define EIGEN_SPARSE_CWISE_UNARY_OP_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen { 

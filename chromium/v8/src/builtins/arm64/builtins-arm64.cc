@@ -1101,19 +1101,20 @@ void ResetFeedbackVectorOsrUrgency(MacroAssembler* masm,
 void Builtins::Generate_BaselineOutOfLinePrologue(MacroAssembler* masm) {
   UseScratchRegisterScope temps(masm);
   // Need a few extra registers
-  temps.Include(x14, x15);
+  temps.Include(CPURegList(kXRegSizeInBits, {x14, x15, x22}));
 
   auto descriptor =
       Builtins::CallInterfaceDescriptorFor(Builtin::kBaselineOutOfLinePrologue);
   Register closure = descriptor.GetRegisterParameter(
       BaselineOutOfLinePrologueDescriptor::kClosure);
-  // Load the feedback vector from the closure.
+  // Load the feedback cell and vector from the closure.
+  Register feedback_cell = temps.AcquireX();
   Register feedback_vector = temps.AcquireX();
-  __ LoadTaggedField(feedback_vector,
+  __ LoadTaggedField(feedback_cell,
                      FieldMemOperand(closure, JSFunction::kFeedbackCellOffset));
   __ LoadTaggedField(
       feedback_vector,
-      FieldMemOperand(feedback_vector, FeedbackCell::kValueOffset));
+      FieldMemOperand(feedback_cell, FeedbackCell::kValueOffset));
   __ AssertFeedbackVector(feedback_vector, x4);
 
   // Check the tiering state.
@@ -1165,16 +1166,8 @@ void Builtins::Generate_BaselineOutOfLinePrologue(MacroAssembler* masm) {
     // the frame, so load it into a register.
     Register bytecode_array = descriptor.GetRegisterParameter(
         BaselineOutOfLinePrologueDescriptor::kInterpreterBytecodeArray);
-    __ Push(argc, bytecode_array);
-
-    // Baseline code frames store the feedback vector where interpreter would
-    // store the bytecode offset.
+    __ Push(argc, bytecode_array, feedback_cell, feedback_vector);
     __ AssertFeedbackVector(feedback_vector, x4);
-    // Our stack is currently aligned. We have have to push something along with
-    // the feedback vector to keep it that way -- we may as well start
-    // initialising the register frame.
-    __ LoadRoot(kInterpreterAccumulatorRegister, RootIndex::kUndefinedValue);
-    __ Push(feedback_vector, kInterpreterAccumulatorRegister);
   }
 
   Label call_stack_guard;
@@ -1198,11 +1191,7 @@ void Builtins::Generate_BaselineOutOfLinePrologue(MacroAssembler* masm) {
   }
 
   // Do "fast" return to the caller pc in lr.
-  if (v8_flags.debug_code) {
-    // The accumulator should already be "undefined", we don't have to load it.
-    __ CompareRoot(kInterpreterAccumulatorRegister, RootIndex::kUndefinedValue);
-    __ Assert(eq, AbortReason::kUnexpectedValue);
-  }
+  __ LoadRoot(kInterpreterAccumulatorRegister, RootIndex::kUndefinedValue);
   __ Ret();
 
   __ bind(&flags_need_processing);
@@ -1237,9 +1226,8 @@ void Builtins::Generate_BaselineOutOfLinePrologueDeopt(MacroAssembler* masm) {
   // We're here because we got deopted during BaselineOutOfLinePrologue's stack
   // check. Undo all its frame creation and call into the interpreter instead.
 
-  // Drop the accumulator register (we already started building the register
-  // frame) and bytecode offset (was the feedback vector but got replaced
-  // during deopt).
+  // Drop the feedback vector and the bytecode offset (was the feedback vector
+  // but got replaced during deopt).
   __ Drop(2);
 
   // Bytecode array, argc, Closure, Context.
@@ -1291,38 +1279,20 @@ void Builtins::Generate_InterpreterEntryTrampoline(
                   BYTECODE_ARRAY_TYPE);
   __ B(ne, &compile_lazy);
 
-#ifndef V8_JITLESS
-  // Load the feedback vector from the closure.
-  Register feedback_vector = x2;
-  __ LoadTaggedField(feedback_vector,
-                     FieldMemOperand(closure, JSFunction::kFeedbackCellOffset));
-  __ LoadTaggedField(
-      feedback_vector,
-      FieldMemOperand(feedback_vector, FeedbackCell::kValueOffset));
-
   Label push_stack_frame;
-  // Check if feedback vector is valid. If valid, check for optimized code
-  // and update invocation count. Otherwise, setup the stack frame.
-  __ LoadTaggedField(x7,
-                     FieldMemOperand(feedback_vector, HeapObject::kMapOffset));
-  __ Ldrh(x7, FieldMemOperand(x7, Map::kInstanceTypeOffset));
-  __ Cmp(x7, FEEDBACK_VECTOR_TYPE);
-  __ B(ne, &push_stack_frame);
+  Register feedback_vector = x2;
+  __ LoadFeedbackVector(feedback_vector, closure, x7, &push_stack_frame);
 
-  // Check the tiering state.
+#ifndef V8_JITLESS
+  // If feedback vector is valid, check for optimized code and update invocation
+  // count.
   Label flags_need_processing;
   Register flags = w7;
   __ LoadFeedbackVectorFlagsAndJumpIfNeedsProcessing(
       flags, feedback_vector, CodeKind::INTERPRETED_FUNCTION,
       &flags_need_processing);
 
-  {
-    UseScratchRegisterScope temps(masm);
-    ResetFeedbackVectorOsrUrgency(masm, feedback_vector, temps.AcquireW());
-  }
-
-  Label not_optimized;
-  __ bind(&not_optimized);
+  ResetFeedbackVectorOsrUrgency(masm, feedback_vector, w7);
 
   // Increment invocation count for the function.
   __ Ldr(w10, FieldMemOperand(feedback_vector,
@@ -1334,13 +1304,14 @@ void Builtins::Generate_InterpreterEntryTrampoline(
   // Open a frame scope to indicate that there is a frame on the stack.  The
   // MANUAL indicates that the scope shouldn't actually generate code to set up
   // the frame (that is done below).
-  __ Bind(&push_stack_frame);
 #else
   // Note: By omitting the above code in jitless mode we also disable:
   // - kFlagsLogNextExecution: only used for logging/profiling; and
   // - kInvocationCountOffset: only used for tiering heuristics and code
   //   coverage.
 #endif  // !V8_JITLESS
+
+  __ Bind(&push_stack_frame);
   FrameScope frame_scope(masm, StackFrame::MANUAL);
   __ Push<MacroAssembler::kSignLR>(lr, fp);
   __ mov(fp, sp);
@@ -1351,12 +1322,10 @@ void Builtins::Generate_InterpreterEntryTrampoline(
          Operand(BytecodeArray::kHeaderSize - kHeapObjectTag));
 
   // Push actual argument count, bytecode array, Smi tagged bytecode array
-  // offset and an undefined (to properly align the stack pointer).
-  static_assert(MacroAssembler::kExtraSlotClaimedByPrologue == 1);
+  // offset and the feedback vector.
   __ SmiTag(x6, kInterpreterBytecodeOffsetRegister);
   __ Push(kJavaScriptCallArgCountRegister, kInterpreterBytecodeArrayRegister);
-  __ LoadRoot(kInterpreterAccumulatorRegister, RootIndex::kUndefinedValue);
-  __ Push(x6, kInterpreterAccumulatorRegister);
+  __ Push(x6, feedback_vector);
 
   // Allocate the local and temporary register file on the stack.
   Label stack_overflow;
@@ -1380,9 +1349,11 @@ void Builtins::Generate_InterpreterEntryTrampoline(
     // register in the register file.
     Label loop_header;
     __ Lsr(x11, x11, kSystemPointerSizeLog2);
-    // Round down (since we already have an undefined in the stack) the number
-    // of registers to a multiple of 2, to align the stack to 16 bytes.
+    // Round up the number of registers to a multiple of 2, to align the stack
+    // to 16 bytes.
+    __ Add(x11, x11, 1);
     __ Bic(x11, x11, 1);
+    __ LoadRoot(kInterpreterAccumulatorRegister, RootIndex::kUndefinedValue);
     __ PushMultipleTimes(kInterpreterAccumulatorRegister, x11);
     __ Bind(&loop_header);
   }
@@ -2528,6 +2499,8 @@ void Generate_PrepareForCopyingVarargs(MacroAssembler* masm, Register argc,
   __ Bind(&even);
   __ Cbz(slots_to_claim, &exit);
   __ Claim(slots_to_claim);
+  // An alignment slot may have been allocated above. If the number of stack
+  // parameters is 0, the we have to initialize the alignment slot.
   __ Cbz(slots_to_copy, &init);
 
   // Move the arguments already in the stack including the receiver.
@@ -2548,20 +2521,10 @@ void Generate_PrepareForCopyingVarargs(MacroAssembler* masm, Register argc,
   // call.
   {
     __ Bind(&init);
-    // Unconditionally initialize the last parameter slot. If `len` is odd, then
-    // it is an alignment slot that we have to initialize to avoid issues in the
-    // GC. If `len` is even, then the write is unnecessary, but faster than a
-    // check + jump.
+    // This code here is only reached when the number of stack parameters is 0.
+    // In that case we have to initialize the alignment slot if there is one.
+    __ Tbz(len, 0, &exit);
     __ Str(xzr, MemOperand(sp, len, LSL, kSystemPointerSizeLog2));
-  }
-  // Fill a possible alignment slot with a meaningful value.
-  {
-    Register total_num_args = x10;
-    __ Add(total_num_args, argc, len);
-    // If the sum is even, then there are no alignment slots that need
-    // initialization.
-    __ Tbz(total_num_args, 0, &exit);
-    __ Str(xzr, MemOperand(sp, total_num_args, LSL, kSystemPointerSizeLog2));
   }
   __ Bind(&exit);
 }
@@ -3421,20 +3384,28 @@ void LoadTargetJumpBuffer(MacroAssembler* masm, Register target_continuation,
 }
 
 void SyncStackLimit(MacroAssembler* masm, const CPURegister& keep1 = NoReg,
-                    const CPURegister& keep2 = padreg) {
+                    const CPURegister& keep2 = padreg,
+                    const CPURegister& keep3 = NoReg) {
   using ER = ExternalReference;
 #if V8_ENABLE_WEBASSEMBLY
   __ Push(keep1, keep2);
+  if (keep3 != NoReg) {
+    __ Push(keep3, padreg);
+  }
   {
     FrameScope scope(masm, StackFrame::MANUAL);
     __ Mov(arg_reg_1, ER::isolate_address(masm->isolate()));
     __ CallCFunction(ER::wasm_sync_stack_limit(), 1);
+  }
+  if (keep3 != NoReg) {
+    __ Pop(padreg, keep3);
   }
   __ Pop(keep2, keep1);
 #endif  // V8_ENABLE_WEBASSEMBLY
 }
 
 void ReloadParentContinuation(MacroAssembler* masm, Register return_reg,
+                              Register return_value, Register context,
                               Register tmp1, Register tmp2) {
   Register active_continuation = tmp1;
   __ LoadRoot(active_continuation, RootIndex::kActiveContinuation);
@@ -3472,7 +3443,7 @@ void ReloadParentContinuation(MacroAssembler* masm, Register return_reg,
   // Switch stack!
   LoadJumpBuffer(masm, jmpbuf, false, tmp1);
 
-  SyncStackLimit(masm, return_reg);
+  SyncStackLimit(masm, return_reg, return_value, context);
 }
 
 void RestoreParentSuspender(MacroAssembler* masm, Register tmp1,
@@ -3657,6 +3628,30 @@ void Builtins::Generate_WasmToJsWrapperAsm(MacroAssembler* masm) {
           // which will get spilled in Torque, and one for stack alignment.
           xzr, xzr);
   __ TailCallBuiltin(Builtin::kWasmToJsWrapperCSA);
+}
+
+void Builtins::Generate_WasmTrapHandlerLandingPad(MacroAssembler* masm) {
+  // This builtin gets called from the WebAssembly trap handler when an
+  // out-of-bounds memory access happened or when a null reference gets
+  // dereferenced. This builtin then fakes a call from the instruction that
+  // triggered the signal to the runtime. This is done by setting a return
+  // address and then jumping to a builtin which will call further to the
+  // runtime.
+  // As the return address we use the fault address + 1. Using the fault address
+  // itself would cause problems with safepoints and source positions.
+  //
+  // The problem with safepoints is that a safepoint has to be registered at the
+  // return address, and that at most one safepoint should be registered at a
+  // location. However, there could already be a safepoint registered at the
+  // fault address if the fault address is the return address of a call.
+  //
+  // The problem with source positions is that the stack trace code looks for
+  // the source position of a call before the return address. The source
+  // position of the faulty memory access, however, is recorded at the fault
+  // address. Therefore the stack trace code would not find the source position
+  // if we used the fault address as the return address.
+  __ Add(lr, kWasmTrapHandlerFaultAddressRegister, 1);
+  __ TailCallBuiltin(Builtin::kWasmTrapHandlerThrowTrap);
 }
 
 void Builtins::Generate_WasmSuspend(MacroAssembler* masm) {
@@ -3985,15 +3980,15 @@ void SwitchToAllocatedStack(MacroAssembler* masm, RegisterAllocator& regs,
 void SwitchBackAndReturnPromise(MacroAssembler* masm, RegisterAllocator& regs,
                                 Label* return_promise) {
   regs.ResetExcept();
-  DEFINE_PINNED(return_reg, kReturnRegister0);  // x0
   // The return value of the wasm function becomes the parameter of the
   // FulfillPromise builtin, and the promise is the return value of this
   // wrapper.
-  DEFINE_PINNED(return_value, x1);
-  __ Move(return_value, return_reg);
+  static const Builtin_FulfillPromise_InterfaceDescriptor desc;
+  DEFINE_PINNED(promise, desc.GetRegisterParameter(0));
+  DEFINE_PINNED(return_value, desc.GetRegisterParameter(1));
+  __ Move(return_value, kReturnRegister0);
   DEFINE_SCOPED(tmp);
   DEFINE_SCOPED(tmp2);
-  Register promise = return_reg;
   __ LoadRoot(promise, RootIndex::kActiveSuspender);
   __ LoadTaggedField(
       promise, FieldMemOperand(promise, WasmSuspenderObject::kPromiseOffset));
@@ -4003,22 +3998,31 @@ void SwitchBackAndReturnPromise(MacroAssembler* masm, RegisterAllocator& regs,
   __ LoadTaggedField(kContextRegister,
                      FieldMemOperand(kContextRegister,
                                      WasmInstanceObject::kNativeContextOffset));
+
+  ReloadParentContinuation(masm, promise, return_value, kContextRegister, tmp,
+                           tmp2);
+  RestoreParentSuspender(masm, tmp, tmp2);
+
   __ Mov(tmp, 1);
   __ Str(tmp,
          MemOperand(fp, StackSwitchFrameConstants::kGCScanSlotCountOffset));
   __ Push(padreg, promise);
   __ CallBuiltin(Builtin::kFulfillPromise);
   __ Pop(promise, padreg);
+  FREE_REG(return_value);
+  FREE_REG(promise);
 
   __ bind(return_promise);
-  ReloadParentContinuation(masm, promise, tmp, tmp2);
-  RestoreParentSuspender(masm, tmp, tmp2);
-  FREE_REG(return_value);
 }
 
 void GenerateExceptionHandlingLandingPad(MacroAssembler* masm,
                                          RegisterAllocator& regs,
                                          Label* return_promise) {
+  regs.ResetExcept();
+  static const Builtin_RejectPromise_InterfaceDescriptor desc;
+  DEFINE_PINNED(promise, desc.GetRegisterParameter(0));
+  DEFINE_PINNED(reason, desc.GetRegisterParameter(1));
+  DEFINE_PINNED(debug_event, desc.GetRegisterParameter(2));
   int catch_handler = __ pc_offset();
   __ JumpTarget();
 
@@ -4032,8 +4036,7 @@ void GenerateExceptionHandlingLandingPad(MacroAssembler* masm,
 
   // The exception becomes the parameter of the RejectPromise builtin, and the
   // promise is the return value of this wrapper.
-  __ Move(x1, kReturnRegister0);
-  Register promise = kReturnRegister0;
+  __ Move(reason, kReturnRegister0);
   __ LoadRoot(promise, RootIndex::kActiveSuspender);
   __ LoadTaggedField(
       promise, FieldMemOperand(promise, WasmSuspenderObject::kPromiseOffset));
@@ -4043,20 +4046,21 @@ void GenerateExceptionHandlingLandingPad(MacroAssembler* masm,
   __ LoadTaggedField(kContextRegister,
                      FieldMemOperand(kContextRegister,
                                      WasmInstanceObject::kNativeContextOffset));
-  __ Mov(x2, 1);
-  __ Str(x2, MemOperand(fp, StackSwitchFrameConstants::kGCScanSlotCountOffset));
+
+  DEFINE_SCOPED(tmp);
+  DEFINE_SCOPED(tmp2);
+  ReloadParentContinuation(masm, promise, reason, kContextRegister, tmp, tmp2);
+  RestoreParentSuspender(masm, tmp, tmp2);
+
+  __ Mov(tmp, 1);
+  __ Str(tmp,
+         MemOperand(fp, StackSwitchFrameConstants::kGCScanSlotCountOffset));
   __ Push(padreg, promise);
-  static const Builtin_RejectPromise_InterfaceDescriptor desc;
-  static_assert(desc.GetRegisterParameter(0) == x0 &&  // promise
-                desc.GetRegisterParameter(1) == x1 &&  // reason
-                desc.GetRegisterParameter(2) == x2     // debugEvent
-  );
-  __ LoadRoot(x2, RootIndex::kTrueValue);
+  __ LoadRoot(debug_event, RootIndex::kTrueValue);
   __ CallBuiltin(Builtin::kRejectPromise);
   __ Pop(promise, padreg);
 
-  // Run the rest of the wrapper normally (switch to the old stack,
-  // deconstruct the frame, ...).
+  // Run the rest of the wrapper normally (deconstruct the frame, ...).
   __ jmp(return_promise);
 
   masm->isolate()->builtins()->SetJSPIPromptHandlerOffset(catch_handler);
@@ -4849,9 +4853,10 @@ void Builtins::Generate_CallApiCallbackImpl(MacroAssembler* masm,
 
   const bool with_profiling =
       mode != CallApiCallbackMode::kOptimizedNoProfiling;
+  Label* no_done = nullptr;
   CallApiFunctionAndReturn(masm, with_profiling, api_function_address,
                            thunk_ref, thunk_arg, kUseStackSpaceOperand,
-                           &stack_space_operand, return_value_operand);
+                           &stack_space_operand, return_value_operand, no_done);
 }
 
 void Builtins::Generate_CallApiGetter(MacroAssembler* masm) {
@@ -4966,9 +4971,10 @@ void Builtins::Generate_CallApiGetter(MacroAssembler* masm) {
   MemOperand* const kUseStackSpaceConstant = nullptr;
 
   const bool with_profiling = true;
-  CallApiFunctionAndReturn(masm, with_profiling, api_function_address,
-                           thunk_ref, thunk_arg, kStackUnwindSpace,
-                           kUseStackSpaceConstant, return_value_operand);
+  Label* no_done = nullptr;
+  CallApiFunctionAndReturn(
+      masm, with_profiling, api_function_address, thunk_ref, thunk_arg,
+      kStackUnwindSpace, kUseStackSpaceConstant, return_value_operand, no_done);
 }
 
 void Builtins::Generate_DirectCEntry(MacroAssembler* masm) {
@@ -5328,13 +5334,14 @@ void Generate_BaselineOrInterpreterEntry(MacroAssembler* masm,
     AssertCodeIsBaseline(masm, code_obj, x3);
   }
 
-  // Load the feedback vector.
-  Register feedback_vector = x2;
-  __ LoadTaggedField(feedback_vector,
+  // Load the feedback cell and vector.
+  Register feedback_cell = x2;
+  Register feedback_vector = x15;
+  __ LoadTaggedField(feedback_cell,
                      FieldMemOperand(closure, JSFunction::kFeedbackCellOffset));
   __ LoadTaggedField(
       feedback_vector,
-      FieldMemOperand(feedback_vector, FeedbackCell::kValueOffset));
+      FieldMemOperand(feedback_cell, FeedbackCell::kValueOffset));
 
   Label install_baseline_code;
   // Check if feedback vector is valid. If not, call prepare for baseline to
@@ -5345,9 +5352,17 @@ void Generate_BaselineOrInterpreterEntry(MacroAssembler* masm,
   // Save BytecodeOffset from the stack frame.
   __ SmiUntag(kInterpreterBytecodeOffsetRegister,
               MemOperand(fp, InterpreterFrameConstants::kBytecodeOffsetFromFp));
-  // Replace BytecodeOffset with the feedback vector.
+  // Replace bytecode offset with feedback cell.
+  static_assert(InterpreterFrameConstants::kBytecodeOffsetFromFp ==
+                BaselineFrameConstants::kFeedbackCellFromFp);
+  __ Str(feedback_cell,
+         MemOperand(fp, BaselineFrameConstants::kFeedbackCellFromFp));
+  feedback_cell = no_reg;
+  // Update feedback vector cache.
+  static_assert(InterpreterFrameConstants::kFeedbackVectorFromFp ==
+                BaselineFrameConstants::kFeedbackVectorFromFp);
   __ Str(feedback_vector,
-         MemOperand(fp, InterpreterFrameConstants::kBytecodeOffsetFromFp));
+         MemOperand(fp, InterpreterFrameConstants::kFeedbackVectorFromFp));
   feedback_vector = no_reg;
 
   // Compute baseline pc for bytecode offset.

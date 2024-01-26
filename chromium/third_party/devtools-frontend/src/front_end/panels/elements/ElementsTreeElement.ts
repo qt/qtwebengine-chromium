@@ -37,6 +37,7 @@ import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import type * as IssuesManager from '../../models/issues_manager/issues_manager.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as CodeMirror from '../../third_party/codemirror.next/codemirror.next.js';
 import * as Adorners from '../../ui/components/adorners/adorners.js';
@@ -45,17 +46,14 @@ import * as IconButton from '../../ui/components/icon_button/icon_button.js';
 import * as TextEditor from '../../ui/components/text_editor/text_editor.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
+import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 import * as Emulation from '../emulation/emulation.js';
-
-import type * as IssuesManager from '../../models/issues_manager/issues_manager.js';
 
 import * as ElementsComponents from './components/components.js';
 import {canGetJSPath, cssPath, jsPath, xPath} from './DOMPath.js';
 import {ElementsPanel} from './ElementsPanel.js';
-
-import {MappedCharToEntity, type ElementsTreeOutline, type UpdateRecord} from './ElementsTreeOutline.js';
+import {type ElementsTreeOutline, MappedCharToEntity, type UpdateRecord} from './ElementsTreeOutline.js';
 import {ImagePreviewPopover} from './ImagePreviewPopover.js';
-
 import {getRegisteredDecorators, type MarkerDecorator, type MarkerDecoratorRegistration} from './MarkerDecorator.js';
 
 const UIStrings = {
@@ -198,6 +196,11 @@ const UIStrings = {
    * the overlay showing CSS scroll snapping for the current element.
    */
   disableScrollSnap: 'Disable scroll-snap overlay',
+  /**
+   *@description Label of an adorner in the Elements panel. When clicked, it redirects
+   * to the Media Panel.
+   */
+  openMediaPanel: 'Jump to Media panel',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/elements/ElementsTreeElement.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -255,6 +258,9 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     super();
     this.nodeInternal = node;
     this.treeOutline = null;
+    this.listItemElement.setAttribute(
+        'jslog',
+        `${VisualLogging.treeItem().track({click: true}).context('disclosureTriangle').parent('elementsTreeOutline')}`);
     this.contentElement = this.listItemElement.createChild('div');
     this.gutterContainer = this.contentElement.createChild('div', 'gutter-container');
     this.gutterContainer.addEventListener('click', this.showContextMenu.bind(this));
@@ -1875,6 +1881,20 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
         break;
       }
 
+      case Node.DOCUMENT_NODE: {
+        const documentElement = titleDOM.createChild('span');
+        UI.UIUtils.createTextChild(documentElement, '#document (');
+        const text = (node as SDK.DOMModel.DOMDocument).documentURL;
+        documentElement.appendChild(Components.Linkifier.Linkifier.linkifyURL(text, {
+          text,
+          preventClick: true,
+          showColumnNumber: false,
+          inlineFrameIndex: 0,
+        }));
+        UI.UIUtils.createTextChild(documentElement, ')');
+        break;
+      }
+
       case Node.DOCUMENT_FRAGMENT_NODE: {
         const fragmentElement = titleDOM.createChild('span', 'webkit-html-fragment');
         fragmentElement.textContent = Platform.StringUtilities.collapseWhitespace(node.nodeNameInCorrectCase());
@@ -2060,6 +2080,29 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     return adorner;
   }
 
+  adornMedia({name}: {name: string}): Adorners.Adorner.Adorner {
+    const adornerContent = document.createElement('span');
+
+    adornerContent.textContent = name;
+    adornerContent.classList.add('adorner-with-icon');
+
+    const linkIcon = new IconButton.Icon.Icon();
+    linkIcon.data = {iconName: 'select-element', color: 'var(--icon-default)', width: '14px', height: '14px'};
+    adornerContent.append(linkIcon);
+
+    const adorner = new Adorners.Adorner.Adorner();
+    adorner.data = {
+      name,
+      content: adornerContent,
+    };
+    if (isOpeningTag(this.tagTypeContext)) {
+      this.tagTypeContext.adorners.push(adorner);
+      ElementsPanel.instance().registerAdorner(adorner);
+      this.updateAdorners(this.tagTypeContext);
+    }
+    return adorner;
+  }
+
   removeAdorner(adornerToRemove: Adorners.Adorner.Adorner, context: OpeningTagContext): void {
     const adorners = context.adorners;
     ElementsPanel.instance().deregisterAdorner(adornerToRemove);
@@ -2156,6 +2199,10 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     if (isContainer) {
       this.pushContainerAdorner(this.tagTypeContext);
     }
+
+    if (node.isMediaNode()) {
+      this.pushMediaAdorner(this.tagTypeContext);
+    }
   }
 
   pushGridAdorner(context: OpeningTagContext, isSubgrid: boolean): void {
@@ -2197,6 +2244,9 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
         });
 
     context.styleAdorners.push(adorner);
+    if (node.domModel().overlayModel().isHighlightedGridInPersistentOverlay(nodeId)) {
+      adorner.toggle(true);
+    }
   }
 
   pushScrollSnapAdorner(context: OpeningTagContext): void {
@@ -2237,6 +2287,10 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
         });
 
     context.styleAdorners.push(adorner);
+
+    if (node.domModel().overlayModel().isHighlightedScrollSnapInPersistentOverlay(nodeId)) {
+      adorner.toggle(true);
+    }
   }
 
   pushFlexAdorner(context: OpeningTagContext): void {
@@ -2273,10 +2327,15 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
           if (eventNodeId !== nodeId) {
             return;
           }
+
           adorner.toggle(enabled);
         });
 
     context.styleAdorners.push(adorner);
+
+    if (node.domModel().overlayModel().isHighlightedFlexContainerInPersistentOverlay(nodeId)) {
+      adorner.toggle(true);
+    }
   }
 
   pushContainerAdorner(context: OpeningTagContext): void {
@@ -2317,6 +2376,34 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
         });
 
     context.styleAdorners.push(adorner);
+    if (node.domModel().overlayModel().isHighlightedContainerQueryInPersistentOverlay(nodeId)) {
+      adorner.toggle(true);
+    }
+  }
+
+  pushMediaAdorner(context: OpeningTagContext): void {
+    const node = this.node();
+    const nodeId = node.id;
+    if (!nodeId) {
+      return;
+    }
+    const config = ElementsComponents.AdornerManager.getRegisteredAdorner(
+        ElementsComponents.AdornerManager.RegisteredAdorners.MEDIA);
+    const adorner = this.adornMedia(config);
+    adorner.classList.add('media');
+
+    const onClick = (((): void => {
+                       void UI.ViewManager.ViewManager.instance().showView('medias');
+                     }) as EventListener);
+
+    adorner.addInteraction(onClick, {
+      isToggle: false,
+      shouldPropagateOnKeydown: false,
+      ariaLabelDefault: i18nString(UIStrings.openMediaPanel),
+      ariaLabelActive: i18nString(UIStrings.openMediaPanel),
+    });
+
+    context.styleAdorners.push(adorner);
   }
 }
 
@@ -2346,3 +2433,12 @@ export interface EditorHandles {
   editor?: TextEditor.TextEditor.TextEditor;
   resize: () => void;
 }
+
+// As a privacy measure we are logging elements tree outline as a flat list where every tree item is a
+// child of a tree outline.
+function loggingParentProvider(e: Element): Element|undefined {
+  const treeElement = UI.TreeOutline.TreeElement.getTreeElementBylistItemNode(e);
+  return treeElement?.treeOutline?.element;
+}
+
+VisualLogging.registerParentProvider('elementsTreeOutline', loggingParentProvider);

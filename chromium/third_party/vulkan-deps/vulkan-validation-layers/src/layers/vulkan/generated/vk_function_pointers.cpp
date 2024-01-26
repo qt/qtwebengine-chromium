@@ -2,25 +2,26 @@
 // See function_pointers_generator.py for modifications
 
 /***************************************************************************
-*
-* Copyright (c) 2015-2023 The Khronos Group Inc.
-* Copyright (c) 2015-2023 Valve Corporation
-* Copyright (c) 2015-2023 LunarG, Inc.
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*     http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
-****************************************************************************/
+ *
+ * Copyright (c) 2015-2023 The Khronos Group Inc.
+ * Copyright (c) 2015-2023 Valve Corporation
+ * Copyright (c) 2015-2023 LunarG, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ ****************************************************************************/
 
 // NOLINTBEGIN
+// clang-format off
 
 #include "vk_function_pointers.h"
 #include <cassert>
@@ -818,6 +819,11 @@ PFN_vkGetShaderBinaryDataEXT GetShaderBinaryDataEXT;
 PFN_vkCmdBindShadersEXT CmdBindShadersEXT;
 PFN_vkGetFramebufferTilePropertiesQCOM GetFramebufferTilePropertiesQCOM;
 PFN_vkGetDynamicRenderingTilePropertiesQCOM GetDynamicRenderingTilePropertiesQCOM;
+PFN_vkSetLatencySleepModeNV SetLatencySleepModeNV;
+PFN_vkLatencySleepNV LatencySleepNV;
+PFN_vkSetLatencyMarkerNV SetLatencyMarkerNV;
+PFN_vkGetLatencyTimingsNV GetLatencyTimingsNV;
+PFN_vkQueueNotifyOutOfBandNV QueueNotifyOutOfBandNV;
 PFN_vkCmdSetAttachmentFeedbackLoopEnableEXT CmdSetAttachmentFeedbackLoopEnableEXT;
 #ifdef VK_USE_PLATFORM_SCREEN_QNX
 PFN_vkGetScreenBufferPropertiesQNX GetScreenBufferPropertiesQNX;
@@ -2170,6 +2176,15 @@ void InitDeviceExtension(VkInstance instance, VkDevice device, const char* exten
             }
         },
         {
+            "VK_NV_low_latency2", [](VkInstance , VkDevice device) {
+                SetLatencySleepModeNV = reinterpret_cast<PFN_vkSetLatencySleepModeNV>(GetDeviceProcAddr(device, "vkSetLatencySleepModeNV"));
+                LatencySleepNV = reinterpret_cast<PFN_vkLatencySleepNV>(GetDeviceProcAddr(device, "vkLatencySleepNV"));
+                SetLatencyMarkerNV = reinterpret_cast<PFN_vkSetLatencyMarkerNV>(GetDeviceProcAddr(device, "vkSetLatencyMarkerNV"));
+                GetLatencyTimingsNV = reinterpret_cast<PFN_vkGetLatencyTimingsNV>(GetDeviceProcAddr(device, "vkGetLatencyTimingsNV"));
+                QueueNotifyOutOfBandNV = reinterpret_cast<PFN_vkQueueNotifyOutOfBandNV>(GetDeviceProcAddr(device, "vkQueueNotifyOutOfBandNV"));
+            }
+        },
+        {
             "VK_EXT_attachment_feedback_loop_dynamic_state", [](VkInstance , VkDevice device) {
                 CmdSetAttachmentFeedbackLoopEnableEXT = reinterpret_cast<PFN_vkCmdSetAttachmentFeedbackLoopEnableEXT>(GetDeviceProcAddr(device, "vkCmdSetAttachmentFeedbackLoopEnableEXT"));
             }
@@ -2754,6 +2769,11 @@ void ResetAllExtensions() {
     CmdBindShadersEXT = nullptr;
     GetFramebufferTilePropertiesQCOM = nullptr;
     GetDynamicRenderingTilePropertiesQCOM = nullptr;
+    SetLatencySleepModeNV = nullptr;
+    LatencySleepNV = nullptr;
+    SetLatencyMarkerNV = nullptr;
+    GetLatencyTimingsNV = nullptr;
+    QueueNotifyOutOfBandNV = nullptr;
     CmdSetAttachmentFeedbackLoopEnableEXT = nullptr;
 #ifdef VK_USE_PLATFORM_SCREEN_QNX
     GetScreenBufferPropertiesQNX = nullptr;
@@ -2785,4 +2805,5 @@ void ResetAllExtensions() {
     CmdDrawMeshTasksIndirectCountEXT = nullptr;
 }
 } // namespace vk
+// clang-format on
 // NOLINTEND

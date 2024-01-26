@@ -10,6 +10,7 @@
 #ifndef EIGEN_CORE_ARCH_AVX512_TRSM_KERNEL_H
 #define EIGEN_CORE_ARCH_AVX512_TRSM_KERNEL_H
 
+// IWYU pragma: private
 #include "../../InternalHeaderCheck.h"
 
 #if !defined(EIGEN_USE_AVX512_TRSM_KERNELS)

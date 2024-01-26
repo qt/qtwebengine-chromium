@@ -125,7 +125,7 @@ public:
      * Otherwise this will delete/release the backend object that is wrapped in the BackendTexture.
      * The BackendTexture will be reset to an invalid state and should not be used again.
      */
-    void deleteBackendTexture(BackendTexture&);
+    void deleteBackendTexture(const BackendTexture&);
 
     /**
      * Frees GPU resources created and held by the Context. Can be called to reduce GPU memory
@@ -141,6 +141,11 @@ public:
      * budget.
      */
     void performDeferredCleanup(std::chrono::milliseconds msNotUsed);
+
+    /**
+     * Returns the number of bytes of gpu memory currently budgeted in the Context's cache.
+     */
+    size_t currentBudgetedBytes() const;
 
     // Provides access to functions that aren't part of the public API.
     ContextPriv priv();

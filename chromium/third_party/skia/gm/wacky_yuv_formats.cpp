@@ -47,7 +47,9 @@
 #include "src/core/SkYUVMath.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
+#include "tools/DecodeUtils.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 #include "tools/gpu/YUVUtils.h"
 
 #include <math.h>
@@ -692,7 +694,7 @@ static void draw_col_label(SkCanvas* canvas, int x, int yuvColorSpace, bool opaq
     static_assert(std::size(kYUVColorSpaceNames) == kLastEnum_SkYUVColorSpace + 1);
 
     SkPaint paint;
-    SkFont  font(ToolUtils::create_portable_typeface(nullptr, SkFontStyle::Bold()), 16);
+    SkFont  font(ToolUtils::CreatePortableTypeface("Sans", SkFontStyle::Bold()), 16);
     font.setEdging(SkFont::Edging::kAlias);
 
     SkRect textRect;
@@ -719,7 +721,7 @@ static void draw_row_label(SkCanvas* canvas, int y, int yuvFormat) {
     static_assert(std::size(kYUVFormatNames) == kLast_YUVFormat + 1);
 
     SkPaint paint;
-    SkFont  font(ToolUtils::create_portable_typeface(nullptr, SkFontStyle::Bold()), 16);
+    SkFont  font(ToolUtils::CreatePortableTypeface("Sans", SkFontStyle::Bold()), 16);
     font.setEdging(SkFont::Edging::kAlias);
 
     SkRect textRect;
@@ -870,7 +872,7 @@ protected:
             // before they are deleted. Since we don't know when we'll next have access to a
             // direct context, flush all the work now.
             dContext->flush();
-            dContext->submit(true);
+            dContext->submit(GrSyncCpu::kYes);
         }
 
         return true;
@@ -1077,9 +1079,8 @@ protected:
             int i = 0;
             for (sk_sp<SkColorSpace> cs : {sk_sp<SkColorSpace>(nullptr),
                                            SkColorSpace::MakeSRGB()}) {
-                auto lazyYUV = sk_gpu_test::LazyYUVImage::Make(yuvaPixmaps,
-                                                               GrMipmapped::kNo,
-                                                               std::move(cs));
+                auto lazyYUV = sk_gpu_test::LazyYUVImage::Make(
+                        yuvaPixmaps, skgpu::Mipmapped::kNo, std::move(cs));
                 fImages[opaque][i++] =
                         lazyYUV->refImage(context, sk_gpu_test::LazyYUVImage::Type::kFromTextures);
             }
@@ -1089,7 +1090,7 @@ protected:
         // they are deleted. Since we don't know when we'll next have access to a direct context,
         // flush all the work now.
         context->flush();
-        context->submit(true);
+        context->submit(GrSyncCpu::kYes);
 
         return true;
     }
@@ -1215,7 +1216,7 @@ protected:
     SkISize getISize() override { return SkISize::Make(1280, 768); }
 
     void onOnceBeforeDraw() override {
-        fOrig = GetResourceAsImage("images/mandrill_256.png");
+        fOrig = ToolUtils::GetResourceAsImage("images/mandrill_256.png");
     }
 
     void onDraw(SkCanvas* canvas) override {
@@ -1238,7 +1239,7 @@ protected:
             auto yuvaPixmaps = SkYUVAPixmaps::FromExternalPixmaps(info, pixmaps);
             auto img = SkImages::TextureFromYUVAPixmaps(canvas->recordingContext(),
                                                         yuvaPixmaps,
-                                                        GrMipmapped::kNo,
+                                                        skgpu::Mipmapped::kNo,
                                                         /* limit to max tex size */ false,
                                                         /* color space */ nullptr);
             if (img) {

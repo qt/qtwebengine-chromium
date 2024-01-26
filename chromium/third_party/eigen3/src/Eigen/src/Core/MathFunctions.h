@@ -17,6 +17,7 @@
 #define EIGEN_LOG2E 1.442695040888963407359924681001892137426645954152985934135449406931109219L
 #define EIGEN_LN2   0.693147180559945309417232121458176568075500134360255254120680009493393621L
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {
@@ -1339,6 +1340,19 @@ template<> EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
 double ceil(const double &x) { return ::ceil(x); }
 #endif
 
+
+// Integer division with rounding up.
+// T is assumed to be an integer type with a>=0, and b>0
+template<typename T>
+EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE EIGEN_CONSTEXPR
+T div_ceil(T a, T b)
+{
+  EIGEN_STATIC_ASSERT((NumTraits<T>::IsInteger), THIS FUNCTION IS FOR INTEGER TYPES)
+  eigen_assert(a >= 0);
+  eigen_assert(b > 0);
+  // Note: This form is used because it cannot overflow.
+  return a == 0 ? 0 : (a - 1) / b + 1;
+}
 
 /** Log base 2 for 32 bits positive integers.
   * Conveniently returns 0 for x==0. */

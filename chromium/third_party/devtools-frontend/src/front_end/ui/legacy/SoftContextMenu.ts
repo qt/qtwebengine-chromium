@@ -83,10 +83,11 @@ export class SoftContextMenu {
   private subMenu?: SoftContextMenu;
   private onMenuClosed?: () => void;
   private focusOnTheFirstItem = true;
+  private keepOpen: boolean;
 
   constructor(
-      items: SoftContextMenuDescriptor[], itemSelectedCallback: (arg0: number) => void, parentMenu?: SoftContextMenu,
-      onMenuClosed?: () => void) {
+      items: SoftContextMenuDescriptor[], itemSelectedCallback: (arg0: number) => void, keepOpen: boolean,
+      parentMenu?: SoftContextMenu, onMenuClosed?: () => void) {
     this.items = items;
     this.itemSelectedCallback = itemSelectedCallback;
     this.parentMenu = parentMenu;
@@ -94,6 +95,11 @@ export class SoftContextMenu {
 
     this.detailsForElementMap = new WeakMap();
     this.onMenuClosed = onMenuClosed;
+    this.keepOpen = keepOpen;
+  }
+
+  getItems(): SoftContextMenuDescriptor[] {
+    return this.items;
   }
 
   show(document: Document, anchorBox: AnchorBox): void {
@@ -216,16 +222,19 @@ export class SoftContextMenu {
     menuItemElement.classList.add('soft-context-menu-item');
     menuItemElement.tabIndex = -1;
     ARIAUtils.markAsMenuItem(menuItemElement);
+    if (item.checked) {
+      menuItemElement.setAttribute('checked', '');
+    }
     const checkMarkElement = new IconButton.Icon.Icon();
     checkMarkElement.data = {iconName: 'checkmark', color: 'var(--icon-default)', width: '14px', height: '14px'};
     checkMarkElement.classList.add('checkmark');
+    if (item.id !== undefined) {
+      menuItemElement.setAttribute('data-action-id', item.id.toString());
+    }
     checkMarkElement.style.minWidth =
         '14px';  // <devtools-icon> collapses to 0 width otherwise, throwing off alignment.
     checkMarkElement.style.minHeight = '14px';
     menuItemElement.appendChild(checkMarkElement);
-    if (!item.checked) {
-      checkMarkElement.style.opacity = '0';
-    }
     if (item.tooltip) {
       Tooltip.install(menuItemElement, item.tooltip);
     }
@@ -306,7 +315,6 @@ export class SoftContextMenu {
     menuItemElement.appendChild(checkMarkElement);
     checkMarkElement.style.minWidth =
         '14px';  // <devtools-icon> collapses to 0 width otherwise, throwing off alignment.
-    checkMarkElement.style.opacity = '0';
 
     createTextChild(menuItemElement, item.label || '');
     ARIAUtils.setExpanded(menuItemElement, false);
@@ -363,22 +371,48 @@ export class SoftContextMenu {
     return root;
   }
 
-  private triggerAction(menuItemElement: HTMLElement, event: Event): void {
-    const detailsForElement = this.detailsForElementMap.get(menuItemElement);
-    if (detailsForElement) {
-      if (!detailsForElement.subItems) {
-        this.root().discard();
-        event.consume(true);
-        if (typeof detailsForElement.actionId !== 'undefined') {
-          this.itemSelectedCallback(detailsForElement.actionId);
-          delete detailsForElement.actionId;
-        }
-        return;
-      }
+  setChecked(item: SoftContextMenuDescriptor, checked: boolean): void {
+    item.checked = checked;
+    const element = this.contextMenuElement?.querySelector(`[data-action-id="${item.id}"]`);
+    if (!element) {
+      return;
+    }
+    if (checked) {
+      element.setAttribute('checked', '');
+    } else {
+      element.removeAttribute('checked');
     }
 
-    this.showSubMenu(menuItemElement);
-    event.consume();
+    const checkedState = item.checked ? i18nString(UIStrings.checked) : i18nString(UIStrings.unchecked);
+    const accessibleName = item.shortcut ?
+        i18nString(UIStrings.sSS, {PH1: String(item.label), PH2: item.shortcut, PH3: checkedState}) :
+        i18nString(UIStrings.sS, {PH1: String(item.label), PH2: checkedState});
+    ARIAUtils.setLabel(element, accessibleName);
+  }
+
+  private triggerAction(menuItemElement: HTMLElement, event: Event): void {
+    const detailsForElement = this.detailsForElementMap.get(menuItemElement);
+    if (!detailsForElement || detailsForElement.subItems) {
+      this.showSubMenu(menuItemElement);
+      event.consume();
+      return;
+    }
+    if (this.keepOpen) {
+      event.consume(true);
+      const item = this.items.find(item => item.id === detailsForElement.actionId);
+      if (item?.id !== undefined) {
+        this.setChecked(item, !item.checked);
+        this.itemSelectedCallback(item.id);
+      }
+      return;
+    }
+    this.root().discard();
+    event.consume(true);
+    if (typeof detailsForElement.actionId !== 'undefined') {
+      this.itemSelectedCallback(detailsForElement.actionId);
+      delete detailsForElement.actionId;
+    }
+    return;
   }
 
   private showSubMenu(menuItemElement: HTMLElement): void {
@@ -399,7 +433,7 @@ export class SoftContextMenu {
     if (!detailsForElement.subItems) {
       return;
     }
-    this.subMenu = new SoftContextMenu(detailsForElement.subItems, this.itemSelectedCallback, this);
+    this.subMenu = new SoftContextMenu(detailsForElement.subItems, this.itemSelectedCallback, false, this);
     const anchorBox = menuItemElement.boxInWindow();
     // Adjust for padding.
     anchorBox.y -= 5;

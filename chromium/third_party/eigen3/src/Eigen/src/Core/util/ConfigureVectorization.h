@@ -473,6 +473,7 @@
 
 
 /** \brief Namespace containing all symbols from the %Eigen library. */
+// IWYU pragma: private
 #include "../InternalHeaderCheck.h"
 
 namespace Eigen {

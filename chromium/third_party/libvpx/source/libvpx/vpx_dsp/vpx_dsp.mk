@@ -133,6 +133,10 @@ DSP_SRCS-yes += arm/vpx_convolve_copy_neon.c
 DSP_SRCS-yes += arm/vpx_convolve8_neon.c
 DSP_SRCS-yes += arm/vpx_convolve_avg_neon.c
 DSP_SRCS-yes += arm/vpx_convolve_neon.c
+DSP_SRCS-$(HAVE_NEON_DOTPROD) += arm/vpx_convolve8_neon_dotprod.c
+DSP_SRCS-$(HAVE_NEON_DOTPROD) += arm/vpx_convolve_neon_dotprod.c
+DSP_SRCS-$(HAVE_NEON_I8MM) += arm/vpx_convolve8_neon_i8mm.c
+DSP_SRCS-$(HAVE_NEON_I8MM) += arm/vpx_convolve_neon_i8mm.c
 endif  # HAVE_NEON
 endif  # HAVE_NEON_ASM
 
@@ -369,7 +373,9 @@ DSP_SRCS-$(HAVE_SSE2)   += x86/sum_squares_sse2.c
 DSP_SRCS-$(HAVE_MSA)    += mips/sum_squares_msa.c
 
 DSP_SRCS-$(HAVE_NEON)   += arm/sad4d_neon.c
+DSP_SRCS-$(HAVE_NEON_DOTPROD) += arm/sad4d_neon_dotprod.c
 DSP_SRCS-$(HAVE_NEON)   += arm/sad_neon.c
+DSP_SRCS-$(HAVE_NEON_DOTPROD) += arm/sad_neon_dotprod.c
 DSP_SRCS-$(HAVE_NEON)   += arm/subtract_neon.c
 
 DSP_SRCS-$(HAVE_MSA)    += mips/sad_msa.c
@@ -412,6 +418,7 @@ DSP_SRCS-yes            += variance.h
 DSP_SRCS-$(HAVE_NEON)   += arm/avg_pred_neon.c
 DSP_SRCS-$(HAVE_NEON)   += arm/subpel_variance_neon.c
 DSP_SRCS-$(HAVE_NEON)   += arm/variance_neon.c
+DSP_SRCS-$(HAVE_NEON_DOTPROD)   += arm/variance_neon_dotprod.c
 
 DSP_SRCS-$(HAVE_MSA)    += mips/variance_msa.c
 DSP_SRCS-$(HAVE_MSA)    += mips/sub_pixel_variance_msa.c

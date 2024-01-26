@@ -16,7 +16,6 @@
 #include "config/aom_dsp_rtcd.h"
 
 #include "aom_dsp/aom_filter.h"
-#include "aom_dsp/arm/dist_wtd_avg_neon.h"
 #include "aom_dsp/arm/mem_neon.h"
 #include "aom_dsp/arm/sum_neon.h"
 #include "aom_dsp/variance.h"
@@ -468,64 +467,54 @@ HIGHBD_MSE_WXH_NEON(8, 8)
 
 #undef HIGHBD_MSE_WXH_NEON
 
-void aom_highbd_dist_wtd_comp_avg_pred_neon(
-    uint8_t *comp_pred8, const uint8_t *pred8, int width, int height,
-    const uint8_t *ref8, int ref_stride,
-    const DIST_WTD_COMP_PARAMS *jcp_param) {
-  const uint16_t *pred = CONVERT_TO_SHORTPTR(pred8);
-  const uint16_t *ref = CONVERT_TO_SHORTPTR(ref8);
-  uint16_t *comp_pred = CONVERT_TO_SHORTPTR(comp_pred8);
-  const uint16x8_t fwd_offset_u16 = vdupq_n_u16(jcp_param->fwd_offset);
-  const uint16x8_t bck_offset_u16 = vdupq_n_u16(jcp_param->bck_offset);
+static INLINE uint64x2_t mse_accumulate_u16_8x2(uint64x2_t sum, uint16x8_t s0,
+                                                uint16x8_t s1, uint16x8_t d0,
+                                                uint16x8_t d1) {
+  uint16x8_t e0 = vabdq_u16(s0, d0);
+  uint16x8_t e1 = vabdq_u16(s1, d1);
 
-  int i = height;
-  if (width > 8) {
+  uint32x4_t mse = vmull_u16(vget_low_u16(e0), vget_low_u16(e0));
+  mse = vmlal_u16(mse, vget_high_u16(e0), vget_high_u16(e0));
+  mse = vmlal_u16(mse, vget_low_u16(e1), vget_low_u16(e1));
+  mse = vmlal_u16(mse, vget_high_u16(e1), vget_high_u16(e1));
+
+  return vpadalq_u32(sum, mse);
+}
+
+uint64_t aom_mse_wxh_16bit_highbd_neon(uint16_t *dst, int dstride,
+                                       uint16_t *src, int sstride, int w,
+                                       int h) {
+  assert((w == 8 || w == 4) && (h == 8 || h == 4));
+
+  uint64x2_t sum = vdupq_n_u64(0);
+
+  if (w == 8) {
     do {
-      int j = 0;
-      do {
-        const uint16x8_t p = vld1q_u16(pred + j);
-        const uint16x8_t r = vld1q_u16(ref + j);
+      uint16x8_t d0 = vld1q_u16(dst + 0 * dstride);
+      uint16x8_t d1 = vld1q_u16(dst + 1 * dstride);
+      uint16x8_t s0 = vld1q_u16(src + 0 * sstride);
+      uint16x8_t s1 = vld1q_u16(src + 1 * sstride);
 
-        const uint16x8_t avg =
-            dist_wtd_avg_u16x8(r, p, fwd_offset_u16, bck_offset_u16);
+      sum = mse_accumulate_u16_8x2(sum, s0, s1, d0, d1);
 
-        vst1q_u16(comp_pred + j, avg);
-
-        j += 8;
-      } while (j < width);
-
-      comp_pred += width;
-      pred += width;
-      ref += ref_stride;
-    } while (--i != 0);
-  } else if (width == 8) {
+      dst += 2 * dstride;
+      src += 2 * sstride;
+      h -= 2;
+    } while (h != 0);
+  } else {  // w == 4
     do {
-      const uint16x8_t p = vld1q_u16(pred);
-      const uint16x8_t r = vld1q_u16(ref);
+      uint16x8_t d0 = load_unaligned_u16_4x2(dst + 0 * dstride, dstride);
+      uint16x8_t d1 = load_unaligned_u16_4x2(dst + 2 * dstride, dstride);
+      uint16x8_t s0 = load_unaligned_u16_4x2(src + 0 * sstride, sstride);
+      uint16x8_t s1 = load_unaligned_u16_4x2(src + 2 * sstride, sstride);
 
-      const uint16x8_t avg =
-          dist_wtd_avg_u16x8(r, p, fwd_offset_u16, bck_offset_u16);
+      sum = mse_accumulate_u16_8x2(sum, s0, s1, d0, d1);
 
-      vst1q_u16(comp_pred, avg);
-
-      comp_pred += width;
-      pred += width;
-      ref += ref_stride;
-    } while (--i != 0);
-  } else {
-    assert(width == 4);
-    do {
-      const uint16x4_t p = vld1_u16(pred);
-      const uint16x4_t r = vld1_u16(ref);
-
-      const uint16x4_t avg = dist_wtd_avg_u16x4(
-          r, p, vget_low_u16(fwd_offset_u16), vget_low_u16(bck_offset_u16));
-
-      vst1_u16(comp_pred, avg);
-
-      comp_pred += width;
-      pred += width;
-      ref += ref_stride;
-    } while (--i != 0);
+      dst += 4 * dstride;
+      src += 4 * sstride;
+      h -= 4;
+    } while (h != 0);
   }
+
+  return horizontal_add_u64x2(sum);
 }

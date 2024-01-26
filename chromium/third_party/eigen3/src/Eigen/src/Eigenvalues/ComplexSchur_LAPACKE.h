@@ -33,6 +33,7 @@
 #ifndef EIGEN_COMPLEX_SCHUR_LAPACKE_H
 #define EIGEN_COMPLEX_SCHUR_LAPACKE_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen { 

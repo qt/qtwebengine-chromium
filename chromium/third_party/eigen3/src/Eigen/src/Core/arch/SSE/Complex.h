@@ -10,6 +10,7 @@
 #ifndef EIGEN_COMPLEX_SSE_H
 #define EIGEN_COMPLEX_SSE_H
 
+// IWYU pragma: private
 #include "../../InternalHeaderCheck.h"
 
 namespace Eigen {

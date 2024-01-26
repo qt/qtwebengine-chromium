@@ -10,6 +10,7 @@
 #ifndef EIGEN_CXX11_THREADPOOL_RUNQUEUE_H
 #define EIGEN_CXX11_THREADPOOL_RUNQUEUE_H
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {

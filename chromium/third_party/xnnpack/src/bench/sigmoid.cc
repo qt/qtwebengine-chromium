@@ -11,10 +11,11 @@
 #include <cmath>
 #include <functional>
 #include <limits>
+#include <memory>
 #include <random>
 #include <vector>
 
-#include <fp16.h>
+#include <fp16/fp16.h>
 
 #include <xnnpack.h>
 
@@ -58,17 +59,20 @@ static void xnnpack_sigmoid_f16(benchmark::State& state) {
     return;
   }
 
-  status = xnn_setup_sigmoid_nc_f16(
-    sigmoid_op, batch_size,
-    input.data(), output.data(),
-    nullptr /* thread pool */);
+  status = xnn_reshape_sigmoid_nc_f16(sigmoid_op, batch_size, /*threadpool=*/nullptr);
+  if (status != xnn_status_success) {
+    state.SkipWithError("failed to reshape Sigmoid operator");
+    return;
+  }
+
+  status = xnn_setup_sigmoid_nc_f16(sigmoid_op, input.data(), output.data());
   if (status != xnn_status_success) {
     state.SkipWithError("failed to setup Sigmoid operator");
     return;
   }
 
   for (auto _ : state) {
-    status = xnn_run_operator(sigmoid_op, nullptr /* thread pool */);
+    status = xnn_run_operator(sigmoid_op, /*threadpool=*/nullptr);
     if (status != xnn_status_success) {
       state.SkipWithError("failed to run Sigmoid operator");
       return;
@@ -121,17 +125,20 @@ static void xnnpack_sigmoid_f32(benchmark::State& state) {
     return;
   }
 
-  status = xnn_setup_sigmoid_nc_f32(
-    sigmoid_op, batch_size,
-    input.data(), output.data(),
-    nullptr /* thread pool */);
+  status = xnn_reshape_sigmoid_nc_f32(sigmoid_op, batch_size, /*threadpool=*/nullptr);
+  if (status != xnn_status_success) {
+    state.SkipWithError("failed to reshape Sigmoid operator");
+    return;
+  }
+
+  status = xnn_setup_sigmoid_nc_f32(sigmoid_op, input.data(), output.data());
   if (status != xnn_status_success) {
     state.SkipWithError("failed to setup Sigmoid operator");
     return;
   }
 
   for (auto _ : state) {
-    status = xnn_run_operator(sigmoid_op, nullptr /* thread pool */);
+    status = xnn_run_operator(sigmoid_op, /*threadpool=*/nullptr);
     if (status != xnn_status_success) {
       state.SkipWithError("failed to run Sigmoid operator");
       return;
@@ -189,17 +196,21 @@ static void xnnpack_sigmoid_qs8(benchmark::State& state) {
     return;
   }
 
-  status = xnn_setup_sigmoid_nc_qs8(
-    sigmoid_op, batch_size,
-    input.data(), output.data(),
-    nullptr /* thread pool */);
+
+  status = xnn_reshape_sigmoid_nc_qs8(sigmoid_op, batch_size, /*threadpool=*/nullptr);
+  if (status != xnn_status_success) {
+    state.SkipWithError("failed to reshape Sigmoid operator");
+    return;
+  }
+
+  status = xnn_setup_sigmoid_nc_qs8(sigmoid_op, input.data(), output.data());
   if (status != xnn_status_success) {
     state.SkipWithError("failed to setup Sigmoid operator");
     return;
   }
 
   for (auto _ : state) {
-    status = xnn_run_operator(sigmoid_op, nullptr /* thread pool */);
+    status = xnn_run_operator(sigmoid_op, /*threadpool=*/nullptr);
     if (status != xnn_status_success) {
       state.SkipWithError("failed to run Sigmoid operator");
       return;
@@ -256,17 +267,20 @@ static void xnnpack_sigmoid_qu8(benchmark::State& state) {
     return;
   }
 
-  status = xnn_setup_sigmoid_nc_qu8(
-    sigmoid_op, batch_size,
-    input.data(), output.data(),
-    nullptr /* thread pool */);
+  status = xnn_reshape_sigmoid_nc_qu8(sigmoid_op, batch_size, /*threadpool=*/nullptr);
+  if (status != xnn_status_success) {
+    state.SkipWithError("failed to reshape Sigmoid operator");
+    return;
+  }
+
+  status = xnn_setup_sigmoid_nc_qu8(sigmoid_op, input.data(), output.data());
   if (status != xnn_status_success) {
     state.SkipWithError("failed to setup Sigmoid operator");
     return;
   }
 
   for (auto _ : state) {
-    status = xnn_run_operator(sigmoid_op, nullptr /* thread pool */);
+    status = xnn_run_operator(sigmoid_op, /*threadpool=*/nullptr);
     if (status != xnn_status_success) {
       state.SkipWithError("failed to run Sigmoid operator");
       return;

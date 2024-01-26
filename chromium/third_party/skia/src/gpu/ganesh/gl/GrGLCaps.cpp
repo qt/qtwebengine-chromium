@@ -7,26 +7,46 @@
 
 #include "src/gpu/ganesh/gl/GrGLCaps.h"
 
-#include <algorithm>
-#include <memory>
-
+#include "include/core/SkColor.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkSize.h"
 #include "include/core/SkTextureCompressionType.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrContextOptions.h"
+#include "include/gpu/GrDriverBugWorkarounds.h"
+#include "include/gpu/GrTypes.h"
 #include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
-#include "src/base/SkMathPriv.h"
-#include "src/base/SkTSearch.h"
+#include "include/gpu/gl/GrGLFunctions.h"
+#include "include/gpu/gl/GrGLInterface.h"
+#include "include/private/base/SkMath.h"
+#include "include/private/base/SkTemplates.h"
+#include "include/private/base/SkTo.h"
 #include "src/core/SkCompressedDataUtils.h"
+#include "src/gpu/Blend.h"
 #include "src/gpu/ganesh/GrBackendUtils.h"
 #include "src/gpu/ganesh/GrProgramDesc.h"
+#include "src/gpu/ganesh/GrRenderTarget.h"
 #include "src/gpu/ganesh/GrRenderTargetProxy.h"
 #include "src/gpu/ganesh/GrShaderCaps.h"
+#include "src/gpu/ganesh/GrSurface.h"
+#include "src/gpu/ganesh/GrSurfaceProxy.h"
 #include "src/gpu/ganesh/GrSurfaceProxyPriv.h"
-#include "src/gpu/ganesh/GrTextureProxyPriv.h"
-#include "src/gpu/ganesh/SkGr.h"
+#include "src/gpu/ganesh/GrTextureProxy.h"
 #include "src/gpu/ganesh/TestFormatColorTypeCombination.h"
 #include "src/gpu/ganesh/gl/GrGLContext.h"
+#include "src/gpu/ganesh/gl/GrGLDefines.h"
 #include "src/gpu/ganesh/gl/GrGLRenderTarget.h"
 #include "src/gpu/ganesh/gl/GrGLTexture.h"
+#include "src/gpu/ganesh/gl/GrGLUtil.h"
+#include "src/sksl/SkSLGLSL.h"
+
+#include <algorithm>
+#include <cstddef>
+#include <initializer_list>
+#include <memory>
+
+class GrProgramInfo;
+class SkJSONWriter;
 
 #if defined(SK_BUILD_FOR_IOS)
 #include <TargetConditionals.h>
@@ -99,6 +119,12 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
     // standard can be unused (optimized away) if SK_ASSUME_GL_ES is set
     sk_ignore_unused_variable(standard);
     GrGLVersion version = ctxInfo.version();
+
+#if defined(GR_TEST_UTILS)
+    const GrGLubyte* deviceName;
+    GR_GL_CALL_RET(gli, deviceName, GetString(GR_GL_RENDERER));
+    this->setDeviceName(reinterpret_cast<const char*>(deviceName));
+#endif
 
     if (GR_IS_GR_GL(standard)) {
         GrGLint max;
@@ -726,6 +752,9 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
         fMultiDrawType = MultiDrawType::kNone;
     }
 
+    // We do not support GrBackendSemaphore for GL backends because the clients cannot really make
+    // GrGLSync objects ahead of time without talking to the GPU.
+    fBackendSemaphoreSupport = false;
     // We prefer GL sync objects but also support NV_fence_sync. The former can be
     // used to implements GrFence and GrSemaphore. The latter only implements GrFence.
     // TODO: support CHROMIUM_sync_point and maybe KHR_fence_sync
@@ -2967,7 +2996,11 @@ void GrGLCaps::initFormatTable(const GrGLContextInfo& ctxInfo, const GrGLInterfa
             if (ctxInfo.hasExtension("GL_EXT_texture_compression_s3tc")) {
                 info.fFlags = FormatInfo::kTexturable_Flag;
             }
-        } // No WebGL support
+        } else if (GR_IS_GR_WEBGL(standard)) {
+            if (ctxInfo.hasExtension("WEBGL_compressed_texture_s3tc")) {
+                info.fFlags = FormatInfo::kTexturable_Flag;
+            }
+        }
 
         // There are no support GrColorTypes for this format
     }
@@ -2981,9 +3014,13 @@ void GrGLCaps::initFormatTable(const GrGLContextInfo& ctxInfo, const GrGLInterfa
             if (ctxInfo.hasExtension("GL_EXT_texture_compression_s3tc")) {
                 info.fFlags = FormatInfo::kTexturable_Flag;
             }
-        } // No WebGL support
+        } else if (GR_IS_GR_WEBGL(standard)) {
+            if (ctxInfo.hasExtension("WEBGL_compressed_texture_s3tc")) {
+                info.fFlags = FormatInfo::kTexturable_Flag;
+            }
+        }
 
-          // There are no support GrColorTypes for this format
+        // There are no support GrColorTypes for this format
     }
 
     // Format: COMPRESSED_RGB8_ETC2
@@ -3002,7 +3039,11 @@ void GrGLCaps::initFormatTable(const GrGLContextInfo& ctxInfo, const GrGLInterfa
                     ctxInfo.hasExtension("GL_OES_compressed_ETC2_RGB8_texture")) {
                     info.fFlags = FormatInfo::kTexturable_Flag;
                 }
-            } // No WebGL support
+            } else if (GR_IS_GR_WEBGL(standard)) {
+                if (ctxInfo.hasExtension("WEBGL_compressed_texture_etc")) {
+                    info.fFlags = FormatInfo::kTexturable_Flag;
+                }
+            }
         }
 
         // There are no support GrColorTypes for this format
@@ -3017,7 +3058,12 @@ void GrGLCaps::initFormatTable(const GrGLContextInfo& ctxInfo, const GrGLInterfa
             if (ctxInfo.hasExtension("GL_OES_compressed_ETC1_RGB8_texture")) {
                 info.fFlags = FormatInfo::kTexturable_Flag;
             }
-        } // No GL or WebGL support
+        } else if (GR_IS_GR_WEBGL(standard)) {
+            if (ctxInfo.hasExtension("WEBGL_compressed_texture_etc1")) {
+                info.fFlags = FormatInfo::kTexturable_Flag;
+            }
+        }
+        // No GL support
 
         // There are no support GrColorTypes for this format
     }
@@ -4049,6 +4095,14 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
         fDrawArraysBaseVertexIsBroken = true;
     }
 
+    // b/40043081, b/40045491: indirect draws in ANGLE + D3D are very slow
+    if (ctxInfo.angleBackend() == GrGLANGLEBackend::kD3D9 ||
+        ctxInfo.angleBackend() == GrGLANGLEBackend::kD3D11) {
+        fBaseVertexBaseInstanceSupport = false;
+        fNativeDrawIndirectSupport = false;
+        fMultiDrawType = MultiDrawType::kNone;
+    }
+
     // https://b.corp.google.com/issues/188410972
     if (ctxInfo.isRunningOverVirgl()) {
         fDrawInstancedSupport = false;
@@ -4173,12 +4227,6 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
         shaderCaps->fCanUseFragCoord = false;
     }
 
-    // On Mali G71, mediump ints don't appear capable of representing every integer beyond +/-2048.
-    // (Are they implemented with fp16?)
-    if (ctxInfo.vendor() == GrGLVendor::kARM) {
-        shaderCaps->fIncompleteShortIntPrecision = true;
-    }
-
     if (fDriverBugWorkarounds.add_and_true_to_loop_condition) {
         shaderCaps->fAddAndTrueToLoopCondition = true;
     }
@@ -4284,6 +4332,7 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
 #endif
 
     if (ctxInfo.vendor()   == GrGLVendor::kIntel       ||  // IntelIris640 drops draws completely.
+        ctxInfo.webglVendor() == GrGLVendor::kIntel    ||  // Disable if the webgl vendor is Intel
         ctxInfo.renderer() == GrGLRenderer::kMaliT     ||  // Some curves appear flat on GalaxyS6.
         ctxInfo.renderer() == GrGLRenderer::kAdreno3xx ||
         ctxInfo.renderer() == GrGLRenderer::kAdreno430 ||

@@ -1,18 +1,29 @@
-// Copyright 2023 The Tint Authors.
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
-// GEN_BUILD:CONDITION(tint_build_ir)
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/spirv/writer/common/helper_test.h"
 
@@ -367,6 +378,105 @@ TEST_F(SpirvWriterTest, Switch_Phi_MultipleValue_1) {
          %10 = OpPhi %int %int_10 %5 %int_20 %8
          %13 = OpPhi %bool %true %5 %false %8
                OpReturnValue %13
+               OpFunctionEnd
+)");
+}
+
+TEST_F(SpirvWriterTest, Switch_Phi_NestedIf) {
+    auto* func = b.Function("foo", ty.i32());
+    b.Append(func->Block(), [&] {
+        auto* s = b.Switch(42_i);
+        s->SetResults(b.InstructionResult(ty.i32()));
+        auto* case_a = b.Case(s, Vector{core::ir::Switch::CaseSelector{b.Constant(1_i)},
+                                        core::ir::Switch::CaseSelector{nullptr}});
+        b.Append(case_a, [&] {  //
+            auto* inner = b.If(true);
+            inner->SetResults(b.InstructionResult(ty.i32()));
+            b.Append(inner->True(), [&] {  //
+                b.ExitIf(inner, 10_i);
+            });
+            b.Append(inner->False(), [&] {  //
+                b.ExitIf(inner, 20_i);
+            });
+
+            b.ExitSwitch(s, inner->Result());
+        });
+
+        auto* case_b = b.Case(s, Vector{core::ir::Switch::CaseSelector{b.Constant(2_i)}});
+        b.Append(case_b, [&] {  //
+            b.ExitSwitch(s, 20_i);
+        });
+
+        b.Return(func, s);
+    });
+
+    ASSERT_TRUE(Generate()) << Error() << output_;
+    EXPECT_INST(R"(
+          %4 = OpLabel
+               OpSelectionMerge %8 None
+               OpSwitch %int_42 %5 1 %5 2 %7
+          %5 = OpLabel
+               OpSelectionMerge %9 None
+               OpBranchConditional %true %10 %11
+         %10 = OpLabel
+               OpBranch %9
+         %11 = OpLabel
+               OpBranch %9
+          %9 = OpLabel
+         %14 = OpPhi %int %int_10 %10 %int_20 %11
+               OpBranch %8
+          %7 = OpLabel
+               OpBranch %8
+          %8 = OpLabel
+         %17 = OpPhi %int %int_20 %7 %14 %9
+               OpReturnValue %17
+               OpFunctionEnd
+)");
+}
+
+TEST_F(SpirvWriterTest, Switch_Phi_NestedSwitch) {
+    auto* func = b.Function("foo", ty.i32());
+    b.Append(func->Block(), [&] {
+        auto* outer = b.Switch(42_i);
+        outer->SetResults(b.InstructionResult(ty.i32()));
+        auto* case_a = b.Case(outer, Vector{core::ir::Switch::CaseSelector{b.Constant(1_i)},
+                                            core::ir::Switch::CaseSelector{nullptr}});
+        b.Append(case_a, [&] {  //
+            auto* inner = b.Switch(42_i);
+            auto* case_inner = b.Case(inner, Vector{core::ir::Switch::CaseSelector{b.Constant(2_i)},
+                                                    core::ir::Switch::CaseSelector{nullptr}});
+            b.Append(case_inner, [&] {  //
+                b.ExitSwitch(inner);
+            });
+
+            b.ExitSwitch(outer, 10_i);
+        });
+
+        auto* case_b = b.Case(outer, Vector{core::ir::Switch::CaseSelector{b.Constant(2_i)}});
+        b.Append(case_b, [&] {  //
+            b.ExitSwitch(outer, 20_i);
+        });
+
+        b.Return(func, outer);
+    });
+
+    ASSERT_TRUE(Generate()) << Error() << output_;
+    EXPECT_INST(R"(
+          %4 = OpLabel
+               OpSelectionMerge %8 None
+               OpSwitch %int_42 %5 1 %5 2 %7
+          %5 = OpLabel
+               OpSelectionMerge %10 None
+               OpSwitch %int_42 %9 2 %9
+          %9 = OpLabel
+               OpBranch %10
+         %10 = OpLabel
+               OpBranch %8
+          %7 = OpLabel
+               OpBranch %8
+          %8 = OpLabel
+         %11 = OpPhi %int %int_20 %7 %int_10 %10
+               OpReturnValue %11
                OpFunctionEnd
 )");
 }

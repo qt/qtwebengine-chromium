@@ -1,16 +1,29 @@
-# Copyright 2012 The Dawn Authors
+# Copyright 2012 The Dawn & Tint Authors
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
 #
-#     http://www.apache.org/licenses/LICENSE-2.0
+# 1. Redistributions of source code must retain the above copyright notice, this
+#    list of conditions and the following disclaimer.
 #
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+# 3. Neither the name of the copyright holder nor the names of its
+#    contributors may be used to endorse or promote products derived from
+#    this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import("../../../scripts/dawn_overrides_with_defaults.gni")
 
@@ -282,6 +295,7 @@ dawn_test("dawn_unittests") {
     "DawnNativeTest.cpp",
     "DawnNativeTest.h",
     "MockCallback.h",
+    "ParamGenerator.h",
     "ToggleParser.cpp",
     "ToggleParser.h",
     "unittests/AsyncTaskTests.cpp",
@@ -302,7 +316,6 @@ dawn_test("dawn_unittests") {
     "unittests/ITypBitsetTests.cpp",
     "unittests/ITypSpanTests.cpp",
     "unittests/ITypVectorTests.cpp",
-    "unittests/LimitsTests.cpp",
     "unittests/LinkedListTests.cpp",
     "unittests/MathTests.cpp",
     "unittests/MutexProtectedTests.cpp",
@@ -335,6 +348,7 @@ dawn_test("dawn_unittests") {
     "unittests/native/DestroyObjectTests.cpp",
     "unittests/native/DeviceAsyncTaskTests.cpp",
     "unittests/native/DeviceCreationTests.cpp",
+    "unittests/native/LimitsTests.cpp",
     "unittests/native/ObjectContentHasherTests.cpp",
     "unittests/native/StreamTests.cpp",
     "unittests/validation/BindGroupValidationTests.cpp",
@@ -395,6 +409,8 @@ dawn_test("dawn_unittests") {
     "unittests/wire/WireDisconnectTests.cpp",
     "unittests/wire/WireErrorCallbackTests.cpp",
     "unittests/wire/WireExtensionTests.cpp",
+    "unittests/wire/WireFutureTest.cpp",
+    "unittests/wire/WireFutureTest.h",
     "unittests/wire/WireInjectDeviceTests.cpp",
     "unittests/wire/WireInjectInstanceTests.cpp",
     "unittests/wire/WireInjectSwapChainTests.cpp",
@@ -445,8 +461,7 @@ source_set("test_infra_sources") {
 
   public_deps = [ ":gmock_and_gtest" ]
 
-  if (dawn_supports_glfw_for_windowing || dawn_enable_opengl) {
-    assert(dawn_supports_glfw_for_windowing)
+  if (dawn_supports_glfw_for_windowing) {
     public_deps += [ "${dawn_root}/src/dawn/glfw" ]
   }
 
@@ -501,8 +516,11 @@ source_set("end2end_tests_sources") {
 
   sources = [
     "end2end/AdapterCreationTests.cpp",
+    "end2end/AdapterEnumerationTests.cpp",
     "end2end/BasicTests.cpp",
     "end2end/BindGroupTests.cpp",
+    "end2end/BufferHostMappedPointerTests.cpp",
+    "end2end/BufferHostMappedPointerTests.h",
     "end2end/BufferTests.cpp",
     "end2end/BufferZeroInitTests.cpp",
     "end2end/ClipSpaceTests.cpp",
@@ -537,6 +555,7 @@ source_set("end2end_tests_sources") {
     "end2end/DualSourceBlendTests.cpp",
     "end2end/DynamicBufferOffsetTests.cpp",
     "end2end/EntryPointTests.cpp",
+    "end2end/EventTests.cpp",
     "end2end/ExperimentalDP4aTests.cpp",
     "end2end/ExternalTextureTests.cpp",
     "end2end/FirstIndexOffsetTests.cpp",
@@ -552,7 +571,6 @@ source_set("end2end_tests_sources") {
     "end2end/NonzeroBufferCreationTests.cpp",
     "end2end/NonzeroTextureCreationTests.cpp",
     "end2end/OpArrayLengthTests.cpp",
-    "end2end/PhysicalDeviceDiscoveryTests.cpp",
     "end2end/PipelineCachingTests.cpp",
     "end2end/PipelineLayoutTests.cpp",
     "end2end/PrimitiveStateTests.cpp",
@@ -619,7 +637,10 @@ source_set("end2end_tests_sources") {
         "end2end/VideoViewsTests_mac.cpp",
       ]
     }
-    sources += [ "end2end/SharedTextureMemoryTests_apple.mm" ]
+    sources += [
+      "end2end/BufferHostMappedPointerTests_apple.mm",
+      "end2end/SharedTextureMemoryTests_apple.mm",
+    ]
 
     frameworks = [ "IOSurface.framework" ]
 
@@ -627,6 +648,13 @@ source_set("end2end_tests_sources") {
         []) {
       configs -= [ "//build/config/compiler:enable_arc" ]
     }
+  }
+
+  if (is_mac || is_ios || is_linux) {
+    sources += [ "end2end/BufferHostMappedPointerTests_posix.cpp" ]
+  }
+  if (is_win) {
+    sources += [ "end2end/BufferHostMappedPointerTests_win.cpp" ]
   }
 
   if (dawn_supports_glfw_for_windowing) {

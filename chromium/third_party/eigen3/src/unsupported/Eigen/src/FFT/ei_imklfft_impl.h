@@ -7,6 +7,7 @@
 
 #include <mkl_dfti.h>
 
+// IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 #include <complex>
