@@ -886,7 +886,8 @@ BMPImageReader::ProcessingResult BMPImageReader::ProcessRLEData() {
     // the image.
     const uint8_t count = ReadUint8(0);
     const uint8_t code = ReadUint8(1);
-    if ((count || (code != 1)) && PastEndOfImage(0)) {
+    const bool is_past_end_of_image = PastEndOfImage(0);
+    if ((count || (code != 1)) && is_past_end_of_image) {
       return kFailure;
     }
 
@@ -911,7 +912,9 @@ BMPImageReader::ProcessingResult BMPImageReader::ProcessRLEData() {
                             : (coord_.y() > 0))) {
             buffer_->SetHasAlpha(true);
           }
-          ColorCorrectCurrentRow();
+          if (!is_past_end_of_image) {
+            ColorCorrectCurrentRow();
+          }
           // There's no need to move |coord_| here to trigger the caller
           // to call SetPixelsChanged().  If the only thing that's changed
           // is the alpha state, that will be properly written into the
@@ -1136,6 +1139,13 @@ void BMPImageReader::ColorCorrectCurrentRow() {
   if (!transform) {
     return;
   }
+  int decoder_width = parent_->Size().width();
+  // Enforce 0 ≤ current row < bitmap height.
+  CHECK_GE(coord_.y(), 0);
+  CHECK_LT(coord_.y(), buffer_->Bitmap().height());
+  // Enforce decoder width == bitmap width exactly. (The bitmap rowbytes might
+  // add a bit of padding, but we are only converting one row at a time.)
+  CHECK_EQ(decoder_width, buffer_->Bitmap().width());
   ImageFrame::PixelData* const row = buffer_->GetAddr(0, coord_.y());
   const skcms_PixelFormat fmt = XformColorFormat();
   const skcms_AlphaFormat alpha =
@@ -1144,7 +1154,7 @@ void BMPImageReader::ColorCorrectCurrentRow() {
           : skcms_AlphaFormat_Unpremul;
   const bool success =
       skcms_Transform(row, fmt, alpha, transform->SrcProfile(), row, fmt, alpha,
-                      transform->DstProfile(), parent_->Size().width());
+                      transform->DstProfile(), decoder_width);
   DCHECK(success);
   buffer_->SetPixelsChanged(true);
 }
