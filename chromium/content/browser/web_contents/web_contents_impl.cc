@@ -220,6 +220,11 @@ namespace {
 // The window which we dobounce load info updates in.
 constexpr auto kUpdateLoadStatesInterval = base::Milliseconds(250);
 
+// Kill switch for crash immediately on dangling BrowserContext.
+BASE_FEATURE(kCrashOnDanglingBrowserContext,
+             "CrashOnDanglingBrowserContext",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 using LifecycleState = RenderFrameHost::LifecycleState;
 using LifecycleStateImpl = RenderFrameHostImpl::LifecycleStateImpl;
 
@@ -958,11 +963,18 @@ class WebContentsOfBrowserContext : public base::SupportsUserData::Data {
           env, web_contents_with_dangling_ptr_to_browser_context);
 #endif  // BUILDFLAG(IS_ANDROID)
 
-      NOTREACHED()
-          << "BrowserContext is getting destroyed without first closing all "
-          << "WebContents (for more info see https://crbug.com/1376879#c44); "
-          << "creator = " << creator;
-      base::debug::DumpWithoutCrashing();
+      if (base::FeatureList::IsEnabled(kCrashOnDanglingBrowserContext)) {
+        LOG(FATAL)
+            << "BrowserContext is getting destroyed without first closing all "
+            << "WebContents (for more info see https://crbug.com/1376879#c44); "
+            << "creator = " << creator;
+      } else {
+        NOTREACHED()
+            << "BrowserContext is getting destroyed without first closing all "
+            << "WebContents (for more info see https://crbug.com/1376879#c44); "
+            << "creator = " << creator;
+        base::debug::DumpWithoutCrashing();
+      }
     }
   }
 
