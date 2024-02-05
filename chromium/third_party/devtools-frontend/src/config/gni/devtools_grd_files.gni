@@ -2,6 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/devtools.gni")
+import("//$devtools_root_location/config/gni/i18n.gni")
+
 # This represents all the files expected to be be in the GRD. The file
 # has two lists, one for files expected for the Release build
 # (is_debug=false), and another for the Debug build (is_debug=true).
@@ -647,6 +650,16 @@ grd_files_release_sources = [
   "front_end/ui/visual_logging/visual_logging.js",
   "front_end/worker_app.html",
 ]
+
+if (is_qtwebengine) {
+  grd_files_release_sources -= [
+    "front_end/core/i18n/locales/en-US.json",
+    "front_end/core/i18n/locales/zh.json"
+  ]
+  foreach(locale, bundled_devtools_locales) {
+    grd_files_release_sources += [ "front_end/core/i18n/locales/$locale.json" ]
+  }
+}
 
 grd_files_debug_sources = [
   "front_end/core/common/App.js",
@@ -2160,6 +2173,12 @@ grd_files_debug_sources = [
   "front_end/ui/visual_logging/LoggingState.js",
   "front_end/ui/visual_logging/NonDomState.js",
 ]
+
+if (is_qtwebengine) {
+  grd_files_debug_sources -= [
+    "front_end/core/i18n/locales/en-XL.json"
+  ]
+}
 
 # Confirm that there is no overlap between the two lists.
 _grd_files_release_sources =
