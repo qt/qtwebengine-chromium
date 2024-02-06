@@ -218,13 +218,13 @@ PersistentSparseHistogramDataManager::LoadRecords(
     // The sample-record could be for any sparse histogram. Add the reference
     // to the appropriate collection for later use.
     if (found_id == match_id) {
-      found_records.emplace_back(ref, value);
+      found_records.push_back({ref, value});
       found = true;
     } else {
       std::vector<ReferenceAndSample>* samples =
           GetSampleMapRecordsWhileLocked(found_id);
       CHECK(samples);
-      samples->emplace_back(ref, value);
+      samples->push_back({ref, value});
     }
   }
 

@@ -25,6 +25,10 @@
 
 namespace autofill::i18n_model_definition {
 
+static const std::string kLegacyHierarchyCountryCodeString{"XX"};
+static const AddressCountryCode kLegacyHierarchyCountryCode =
+    AddressCountryCode(kLegacyHierarchyCountryCodeString);
+
 namespace {
 using i18n_model_definition::kAutofillFormattingRulesMap;
 using i18n_model_definition::kAutofillModelRules;

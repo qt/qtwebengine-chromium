@@ -78,7 +78,7 @@ struct IsRequired {
   // This function is not defined and consteval. Therefore, any evaluation will
   // fail and fail at compile time.
   template <typename T>
-  consteval operator T();  // NOLINT
+  operator T();  // NOLINT
 };
 
 }  // namespace internal

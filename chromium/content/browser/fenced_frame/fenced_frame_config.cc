@@ -402,7 +402,7 @@ void FencedFrameProperties::UpdateParentParsedPermissionsPolicy(
         feature, allow_list.AllowedOrigins(), allow_list.SelfIfMatches(),
         allow_list.MatchesAll(), allow_list.MatchesOpaqueSrc());
   }
-  parent_permissions_info_.emplace(parsed_policies, parent_origin);
+  parent_permissions_info_ = ParentPermissionsInfo{ parsed_policies, parent_origin };
 }
 
 }  // namespace content

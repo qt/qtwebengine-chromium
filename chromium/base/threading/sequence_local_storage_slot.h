@@ -84,7 +84,7 @@ class GenericSequenceLocalStorageSlot {
     if (!slot) {
       return emplace();
     }
-    return slot->external_value.value_as<T>();
+    return slot->external_value.template value_as<T>();
   }
 
   // Returns a pointer to the value for the current sequence. May be
@@ -93,7 +93,7 @@ class GenericSequenceLocalStorageSlot {
     auto* value =
         internal::SequenceLocalStorageMap::GetForCurrentThread().Get(slot_id_);
     if (value) {
-      return std::addressof(value->external_value.value_as<T>());
+      return std::addressof(value->external_value.template value_as<T>());
     }
     return nullptr;
   }
@@ -174,7 +174,7 @@ class SmallSequenceLocalStorageSlot {
     if (!slot) {
       return emplace();
     }
-    return slot->inline_value.value_as<T>();
+    return slot->inline_value.template value_as<T>();
   }
 
   // Returns a pointer to the value for the current sequence. May be
@@ -185,7 +185,7 @@ class SmallSequenceLocalStorageSlot {
     if (!slot) {
       return nullptr;
     }
-    return &slot->inline_value.value_as<T>();
+    return &slot->inline_value.template value_as<T>();
   }
   const T* GetValuePointer() const {
     return const_cast<SmallSequenceLocalStorageSlot*>(this)->GetValuePointer();
@@ -214,7 +214,7 @@ class SmallSequenceLocalStorageSlot {
 
     return internal::SequenceLocalStorageMap::GetForCurrentThread()
         .Set(slot_id_, std::move(value_destructor_pair))
-        ->inline_value.value_as<T>();
+        ->inline_value.template value_as<T>();
   }
 
  private:

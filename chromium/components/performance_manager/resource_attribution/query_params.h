@@ -29,8 +29,8 @@ class ContextCollection {
   ContextCollection(const ContextCollection& other);
   ContextCollection& operator=(const ContextCollection& other);
 
-  friend constexpr bool operator==(const ContextCollection&,
-                                   const ContextCollection&) = default;
+  friend bool operator==(const ContextCollection&,
+                         const ContextCollection&) = default;
 
   // Adds `context` to the collection.
   void AddResourceContext(const ResourceContext& context);
@@ -67,8 +67,8 @@ struct QueryParams {
   QueryParams(const QueryParams& other);
   QueryParams& operator=(const QueryParams& other);
 
-  friend constexpr bool operator==(const QueryParams&,
-                                   const QueryParams&) = default;
+  friend bool operator==(const QueryParams&,
+                         const QueryParams&) = default;
 
   // Resource types to measure.
   ResourceTypeSet resource_types;

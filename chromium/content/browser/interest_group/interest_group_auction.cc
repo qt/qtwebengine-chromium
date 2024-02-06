@@ -501,7 +501,7 @@ bool SampleDebugReport(
           ? DebugReportCooldownType::kShortCooldown
           : DebugReportCooldownType::kRestrictedCooldown;
   new_debug_report_lockout_and_cooldowns.debug_report_cooldown_map[origin] =
-      DebugReportCooldown(now, cooldown_type);
+      DebugReportCooldown{now, cooldown_type};
   base::UmaHistogramEnumeration(
       "Ads.InterestGroup.Auction.ForDebuggingOnlyCooldownType", cooldown_type);
 

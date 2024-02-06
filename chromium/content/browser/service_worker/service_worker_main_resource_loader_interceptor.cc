@@ -363,10 +363,10 @@ ServiceWorkerMainResourceLoaderInterceptor::GetStorageKeyFromWorkerHost(
   }
   auto* storage_partition = process->GetStoragePartition();
 
-  return absl::visit(base::Overloaded([&, this](auto token) {
+  return absl::visit(base::Overloaded{[&, this](auto token) {
                        return GetStorageKeyFromWorkerHost(storage_partition,
                                                           token, origin);
-                     }),
+                     }},
                      *worker_token_);
 }
 
