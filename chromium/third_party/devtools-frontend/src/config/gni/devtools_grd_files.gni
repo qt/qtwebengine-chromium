@@ -2145,6 +2145,12 @@ grd_files_debug_sources = [
   "front_end/ui/lit-html/static.js",
 ]
 
+if (is_qtwebengine) {
+  grd_files_debug_sources -= [
+    "front_end/core/i18n/locales/en-XL.json"
+  ]
+}
+
 # Confirm that there is no overlap between the two lists.
 _grd_files_release_sources =
     filter_exclude(grd_files_release_sources, grd_files_debug_sources)
