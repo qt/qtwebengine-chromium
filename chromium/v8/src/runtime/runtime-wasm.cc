@@ -20,6 +20,7 @@
 #include "src/wasm/wasm-constants.h"
 #include "src/wasm/wasm-debug.h"
 #include "src/wasm/wasm-engine.h"
+#include "src/wasm/wasm-module.h"
 #include "src/wasm/wasm-objects.h"
 #include "src/wasm/wasm-subtyping.h"
 #include "src/wasm/wasm-value.h"
@@ -470,10 +471,29 @@ RUNTIME_FUNCTION(Runtime_TierUpWasmToJSWrapper) {
     instance = handle(WasmInstanceObject::cast(tuple->value1()), isolate);
     origin = handle(tuple->value2(), isolate);
   }
-  // Get the function's canonical signature index. Note that the function's
-  // signature may not be present in the importing module.
-  uint32_t canonical_sig_index =
-      wasm::GetTypeCanonicalizer()->AddRecursiveGroup(&sig);
+
+  uint32_t canonical_sig_index = std::numeric_limits<uint32_t>::max();
+  const wasm::WasmModule* module = instance->module();
+  if (WasmApiFunctionRef::CallOriginIsImportIndex(origin)) {
+    int func_index = WasmApiFunctionRef::CallOriginAsIndex(origin);
+    canonical_sig_index =
+        module->isorecursive_canonical_type_ids[module->functions[func_index]
+                                                    .sig_index];
+  } else {
+    // Indirect function table index.
+    int entry_index = WasmApiFunctionRef::CallOriginAsIndex(origin);
+    int table_count = instance->indirect_function_tables()->length();
+    // We have to find the table which contains the correct entry.
+    for (int table_index = 0; table_index < table_count; ++table_index) {
+      Handle<WasmIndirectFunctionTable> table =
+          instance->GetIndirectFunctionTable(isolate, table_index);
+      if (table->refs()->get(entry_index) == *ref) {
+        canonical_sig_index = table->sig_ids()->get(entry_index);
+        break;
+      }
+    }
+  }
+  DCHECK_NE(canonical_sig_index, std::numeric_limits<uint32_t>::max());
 
   // Compile a wrapper for the target callable.
   Handle<JSReceiver> callable(JSReceiver::cast(ref->callable()), isolate);
