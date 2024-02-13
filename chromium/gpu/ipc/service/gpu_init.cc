@@ -1016,6 +1016,7 @@ void GpuInit::InitializeInProcess(base::CommandLine* command_line,
 #endif
 
 #ifdef TOOLKIT_QT
+  gpu_info_.gl_implementation_parts = gl::GetGLImplementationParts();
   if (gpu_feature_info_.status_values[GPU_FEATURE_TYPE_VULKAN] !=
           kGpuFeatureStatusEnabled ||
       !InitializeVulkan()) {
