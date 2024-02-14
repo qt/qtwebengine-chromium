@@ -60,6 +60,7 @@ if (ozone_platform_x11) {
       "//base",
       "//components/viz/common/resources:shared_image_format",
       "//skia",
+      "//third_party/minigbm",
       "//ui/gfx:buffer_types",
       "//ui/gfx:memory_buffer",
       "//ui/gfx/x",
