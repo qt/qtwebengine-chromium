@@ -179,6 +179,11 @@ void RspTargetWriter::Run() {
       for (const Target* cur : cdeps.linkable_deps) {
         if (cur->dependency_output_file().value() !=
             cur->link_output_file().value()) {
+          LOG(ERROR) << "Dependency output file name does not match "
+                        "link output file name:\n" <<
+                        cur->dependency_output_file().value() <<
+                        " vs " <<
+                        cur->link_output_file().value();
           solibs.push_back(cur->link_output_file());
         } else {
           out_ << "\"" << prefix;
