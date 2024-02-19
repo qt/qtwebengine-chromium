@@ -254,7 +254,7 @@ class ChannelPosix : public Channel,
         socket_.reset();
         std::ignore = server_.TakePlatformHandle();
       }
- #if BUILDFLAG(OS_IOS)
+ #if defined(OS_IOS)
       base::AutoLock fd_lock(fds_to_close_lock_);
       fds_to_close_.clear();
  #endif
