@@ -55,7 +55,7 @@ if (UPDATE_DEPS)
     list(APPEND update_dep_command "${UPDATE_DEPS_DIR}")
 
     if (VVL_ENABLE_ASAN)
-        list(APPEND update_dep_command "--asan" )
+        list(APPEND update_dep_command "--asan")
     endif()
 
     if (NOT BUILD_TESTS)
@@ -67,6 +67,15 @@ if (UPDATE_DEPS)
     endif()
 
     list(APPEND cmake_vars "CMAKE_TOOLCHAIN_FILE")
+
+    # Avoids manually setting CMAKE_SYSTEM_NAME unless it's needed:
+    # https://cmake.org/cmake/help/latest/variable/CMAKE_CROSSCOMPILING.html
+    if (NOT "${CMAKE_SYSTEM_NAME}" STREQUAL "${CMAKE_HOST_SYSTEM_NAME}")
+        list(APPEND cmake_vars "CMAKE_SYSTEM_NAME")
+    endif()
+    if (APPLE)
+        list(APPEND cmake_vars "CMAKE_OSX_ARCHITECTURES" "CMAKE_OSX_DEPLOYMENT_TARGET")
+    endif()
     if (NOT MSVC_IDE)
         list(APPEND cmake_vars "CMAKE_CXX_COMPILER" "CMAKE_C_COMPILER" "CMAKE_ASM_COMPILER")
     endif()
@@ -135,7 +144,6 @@ if (GOOGLETEST_INSTALL_DIR)
 endif()
 if (VULKAN_HEADERS_INSTALL_DIR)
     list(APPEND CMAKE_PREFIX_PATH ${VULKAN_HEADERS_INSTALL_DIR})
-    set(CMAKE_REQUIRE_FIND_PACKAGE_VulkanHeaders TRUE PARENT_SCOPE)
 endif()
 if (VULKAN_UTILITY_LIBRARIES_INSTALL_DIR)
     list(APPEND CMAKE_PREFIX_PATH ${VULKAN_UTILITY_LIBRARIES_INSTALL_DIR})

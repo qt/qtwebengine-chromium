@@ -17,14 +17,29 @@
 
 #include <stdint.h>
 
-#include <optional>
 #include <string>
 
+#include "absl/status/status.h"
 #include "absl/status/statusor.h"
-
-
+#include "absl/strings/string_view.h"
+#include "absl/time/time.h"
+#include "absl/types/span.h"
 
 namespace anonymous_tokens {
+
+// blinded_token_request will be encoded in 256 bytes for token type DA7A.
+constexpr int kDA7ABlindedTokenRequestSizeInBytes = 256;
+
+// TokenRequest struct will be encoded in 259 bytes for token type DA7A.
+constexpr int kDA7AMarshaledTokenRequestSizeInBytes = 259;
+
+// Timestamp precision must be at least 15 minutes.
+constexpr int kFifteenMinutesInSeconds = 900;
+
+// Timestamp must expire within the next week.
+constexpr int kOneWeekToHours = 168;
+
+constexpr int kAlpha2CountryCodeLength = 2;
 
 // TokenRequest contains the blinded_token_request along with the token type
 // represented using two bytes and the truncated_token_key_id which is the last
@@ -35,7 +50,7 @@ namespace anonymous_tokens {
 //
 // The token_type is initialized to a default value of 0xDA7A which represents
 // RSA Blind Signatures with Public Metadata.
-struct  TokenRequest {
+struct TokenRequest {
   uint16_t token_type{0XDA7A};
   uint8_t truncated_token_key_id;
   std::string blinded_token_request;
@@ -44,7 +59,7 @@ struct  TokenRequest {
 // Extension id a type-value structure whose semantics are determined by the
 // type. The extension_type as well as length (size in bytes) of an
 // extension_value must be a 2-octet integer.
-struct  Extension {
+struct Extension {
   uint16_t extension_type{0X0001};
   std::string extension_value;
 };
@@ -53,7 +68,7 @@ struct  Extension {
 // See
 // https://chris-wood.github.io/draft-hendrickson-privacypass-expiration-extension/draft-hendrickson-privacypass-expiration-extension.html
 // for the editors copy.
-struct  ExpirationTimestamp {
+struct ExpirationTimestamp {
   uint64_t timestamp_precision;
   uint64_t timestamp;
 
@@ -67,7 +82,7 @@ struct  ExpirationTimestamp {
 // See
 // https://chris-wood.github.io/draft-hendrickson-privacypass-geolocation-extension/draft-hendrickson-privacypass-geolocation-extension.txt
 // for the editors copy.
-struct  GeoHint {
+struct GeoHint {
   std::string geo_hint;
 
   // Derived in FromExtension from geo_hint.
@@ -86,7 +101,7 @@ struct  GeoHint {
 // This struct and its implementation should be considered the registry of
 // service type identifier mappings.
 // Represents a private extension using id 0xF001.
-struct  ServiceType {
+struct ServiceType {
   typedef uint8_t ServiceTypeId;
   static constexpr ServiceTypeId kChromeIpBlinding = 0x01;
   ServiceTypeId service_type_id;
@@ -107,7 +122,7 @@ struct  ServiceType {
 // Production clients MUST never set 0x01, and attesters should refuse to grant
 // 0x01 to production clients.
 // Represents a private extension using id 0xF002.
-struct  DebugMode {
+struct DebugMode {
   // Mode values
   // We don't use an enum here because SWIG doesn't support c++11 typed enums,
   // and we need enum to be exactly uint8
@@ -121,15 +136,35 @@ struct  DebugMode {
   static absl::StatusOr<DebugMode> FromExtension(const Extension& ext);
 };
 
+// ProxyLayer allows verifiers corresponding to a particular layer to check that
+// the request is intended for them.
+//  - 0x00 is proxy A.
+//  - 0x01 is proxy B.
+//  - Any other mode value is invalid.
+// Represents a private extension using id 0xF003.
+struct ProxyLayer {
+  // Layer values
+  // We don't use an enum here because SWIG doesn't support c++11 typed enums,
+  // and we need enum to be exactly uint8
+  typedef uint8_t Layer;
+  static constexpr Layer kProxyA = 0x00;
+  static constexpr Layer kProxyB = 0x01;
+  Layer layer;
+
+  absl::StatusOr<Extension> AsExtension() const;
+
+  static absl::StatusOr<ProxyLayer> FromExtension(const Extension& ext);
+};
+
 // The contents of Extensions is a list of Extension values. The length (size in
 // bytes) of this list should be a 2-octet integer.
-struct  Extensions {
+struct Extensions {
   std::vector<Extension> extensions;
 };
 
 // ExtendedTokenRequest is simply a TokenRequest-Extensions structure. Public
 // Metadata will be encoded as Extensions.
-struct  ExtendedTokenRequest {
+struct ExtendedTokenRequest {
   TokenRequest request;
   Extensions extensions;
 };
@@ -144,7 +179,7 @@ struct  ExtendedTokenRequest {
 //
 // The token_type is initialized to a default value of 0xDA7A which represents
 // RSA Blind Signatures with Public Metadata.
-struct  Token {
+struct Token {
   uint16_t token_type{0XDA7A};
   std::string token_key_id;
   std::string nonce;
@@ -173,34 +208,63 @@ struct TokenChallenge {
 // signature.
 //
 // It does not require the authenticator field to be populated.
-absl::StatusOr<std::string>  AuthenticatorInput(
+absl::StatusOr<std::string> AuthenticatorInput(
     const Token& token);
 
 // This methods takes in a Token structure and encodes it into a string.
-absl::StatusOr<std::string>  MarshalToken(
+absl::StatusOr<std::string> MarshalToken(
     const Token& token);
 
 // This methods takes in an encoded Token and decodes it into a Token struct.
-absl::StatusOr<Token>  UnmarshalToken(std::string token);
+absl::StatusOr<Token> UnmarshalToken(std::string token);
 
 // This methods takes in an Extension struct and encodes it into a string.
-absl::StatusOr<std::string>  EncodeExtension(
+absl::StatusOr<std::string> EncodeExtension(
     const Extension& extension);
 
 // This methods takes in an Extensions struct and encodes it into a string.
-absl::StatusOr<std::string>  EncodeExtensions(
+absl::StatusOr<std::string> EncodeExtensions(
     const Extensions& extensions);
 
 // This methods takes a string of encoded extensions and decodes it to an
 // Extensions struct.
-absl::StatusOr<Extensions>  DecodeExtensions(
+absl::StatusOr<Extensions> DecodeExtensions(
     absl::string_view encoded_extensions);
 
 // This method takes in a TokenChallenge structure and encodes it into a string.
-absl::StatusOr<std::string>  MarshalTokenChallenge(
+absl::StatusOr<std::string> MarshalTokenChallenge(
     const TokenChallenge& token_challenge);
 
-}  // namespace anonymous_tokens
+// This method takes in a TokenRequest structure and encodes it into a string.
+absl::StatusOr<std::string> MarshalTokenRequest(
+    const TokenRequest& token_request);
 
+// This methods takes in an encoded TokenRequest and decodes it into a
+// TokenRequest struct.
+absl::StatusOr<TokenRequest> UnmarshalTokenRequest(
+    absl::string_view token_request);
+
+// This method takes in an ExtendedTokenRequest structure and encodes it into a
+// string.
+absl::StatusOr<std::string> MarshalExtendedTokenRequest(
+    const ExtendedTokenRequest& extended_token_request);
+
+// This methods takes in an encoded ExtendedTokenRequest and decodes it into a
+// ExtendedTokenRequest struct.
+absl::StatusOr<ExtendedTokenRequest>
+UnmarshalExtendedTokenRequest(absl::string_view extended_token_request);
+
+// This method takes in an Extensions struct, checks that the ordering matches
+// the given ordering in expected_types, and validates extension values.
+absl::Status ValidateExtensionsOrderAndValues(
+    const Extensions& extensions, absl::Span<uint16_t> expected_types,
+    absl::Time now);
+
+// This method takes in an Extensions struct and validates extension values by
+// converting them to structs.
+absl::Status ValidateExtensionsValues(const Extensions& extensions,
+                                      absl::Time now);
+
+}  // namespace anonymous_tokens
 
 #endif  // ANONYMOUS_TOKENS_CPP_PRIVACY_PASS_TOKEN_ENCODINGS_H_

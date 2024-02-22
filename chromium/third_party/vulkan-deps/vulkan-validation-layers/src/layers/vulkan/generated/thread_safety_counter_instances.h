@@ -61,10 +61,12 @@ c_VkValidationCacheEXT(kVulkanObjectTypeValidationCacheEXT, this),
 c_VkAccelerationStructureNV(kVulkanObjectTypeAccelerationStructureNV, this),
 c_VkPerformanceConfigurationINTEL(kVulkanObjectTypePerformanceConfigurationINTEL, this),
 c_VkIndirectCommandsLayoutNV(kVulkanObjectTypeIndirectCommandsLayoutNV, this),
+c_VkCudaModuleNV(kVulkanObjectTypeCudaModuleNV, this),
+c_VkCudaFunctionNV(kVulkanObjectTypeCudaFunctionNV, this),
 c_VkAccelerationStructureKHR(kVulkanObjectTypeAccelerationStructureKHR, this),
 #ifdef VK_USE_PLATFORM_FUCHSIA
 c_VkBufferCollectionFUCHSIA(kVulkanObjectTypeBufferCollectionFUCHSIA, this),
-#endif // VK_USE_PLATFORM_FUCHSIA
+#endif  // VK_USE_PLATFORM_FUCHSIA
 c_VkMicromapEXT(kVulkanObjectTypeMicromapEXT, this),
 c_VkOpticalFlowSessionNV(kVulkanObjectTypeOpticalFlowSessionNV, this),
 c_VkShaderEXT(kVulkanObjectTypeShaderEXT, this),

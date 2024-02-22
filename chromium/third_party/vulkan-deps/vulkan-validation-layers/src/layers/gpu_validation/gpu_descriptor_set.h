@@ -22,12 +22,14 @@
 #include "state_tracker/descriptor_sets.h"
 #include "vma/vma.h"
 
-namespace gpuav_state {
+namespace gpuav {
 
-class DescriptorSet : public cvdescriptorset::DescriptorSet {
+class Validator;
+
+class DescriptorSet : public vvl::DescriptorSet {
   public:
-    DescriptorSet(const VkDescriptorSet set, DESCRIPTOR_POOL_STATE *pool,
-                  const std::shared_ptr<cvdescriptorset::DescriptorSetLayout const> &layout, uint32_t variable_count,
+    DescriptorSet(const VkDescriptorSet set, vvl::DescriptorPool *pool,
+                  const std::shared_ptr<vvl::DescriptorSetLayout const> &layout, uint32_t variable_count,
                   ValidationStateTracker *state_data);
     virtual ~DescriptorSet();
     void Destroy() override { last_used_state_.reset(); };
@@ -40,14 +42,19 @@ class DescriptorSet : public cvdescriptorset::DescriptorSet {
         VmaAllocation allocation{nullptr};
         VkBuffer buffer{VK_NULL_HANDLE};
         VkDeviceAddress device_addr{0};
+
+        std::map<uint32_t, std::vector<uint32_t>> UsedDescriptors(const DescriptorSet &set) const;
     };
     void PerformPushDescriptorsUpdate(uint32_t write_count, const VkWriteDescriptorSet *write_descs) override;
     void PerformWriteUpdate(const VkWriteDescriptorSet &) override;
-    void PerformCopyUpdate(const VkCopyDescriptorSet &, const cvdescriptorset::DescriptorSet &) override;
+    void PerformCopyUpdate(const VkCopyDescriptorSet &, const vvl::DescriptorSet &) override;
 
     VkDeviceAddress GetLayoutState();
     std::shared_ptr<State> GetCurrentState();
+    std::shared_ptr<State> GetOutputState();
 
+  protected:
+    bool SkipBinding(const vvl::DescriptorBinding &binding) const override { return true; }
   private:
     struct Layout {
         VmaAllocation allocation{nullptr};
@@ -59,7 +66,36 @@ class DescriptorSet : public cvdescriptorset::DescriptorSet {
     Layout layout_;
     std::atomic<uint32_t> current_version_{0};
     std::shared_ptr<State> last_used_state_;
+    std::shared_ptr<State> output_state_;
     mutable std::mutex state_lock_;
 };
 
-}  // namespace gpuav_state
+typedef uint32_t DescriptorId;
+class DescriptorHeap {
+  public:
+    DescriptorHeap(Validator &, uint32_t max_descriptors);
+    ~DescriptorHeap();
+    DescriptorId NextId(const VulkanTypedHandle &handle);
+    void DeleteId(DescriptorId id);
+
+    VkDeviceAddress GetDeviceAddress() const {
+        return device_address_;
+    }
+
+  private:
+    std::lock_guard<std::mutex> Lock() const { return std::lock_guard<std::mutex>(lock_); }
+
+    mutable std::mutex lock_;
+
+    const uint32_t max_descriptors_;
+    DescriptorId next_id_{1};
+    vvl::unordered_map<DescriptorId, VulkanTypedHandle> alloc_map_;
+
+    VmaAllocator allocator_{nullptr};
+    VmaAllocation allocation_{nullptr};
+    VkBuffer buffer_{VK_NULL_HANDLE};
+    uint32_t *gpu_heap_state_{nullptr};
+    VkDeviceAddress device_address_{0};
+};
+
+}  // namespace gpuav

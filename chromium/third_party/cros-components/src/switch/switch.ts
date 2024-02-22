@@ -7,7 +7,7 @@
 import '@material/web/switch/switch.js';
 
 import {MdSwitch} from '@material/web/switch/switch.js';
-import {css, CSSResultGroup, html, LitElement} from 'lit';
+import {PropertyValues, css, CSSResultGroup, html, LitElement} from 'lit';
 
 import {shouldProcessClick} from '../helpers/helpers';
 
@@ -128,6 +128,13 @@ export class Switch extends LitElement {
 
   override click() {
     this.mdSwitch?.click();
+  }
+
+  override updated(changedProperties: PropertyValues<this>) {
+    if (changedProperties.has('disabled')) {
+      // Work around for b/315384008.
+      this.renderRoot.querySelector('md-switch')?.requestUpdate();
+    }
   }
 }
 

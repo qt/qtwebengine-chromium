@@ -1,7 +1,7 @@
-/* Copyright (c) 2015-2023 The Khronos Group Inc.
- * Copyright (c) 2015-2023 Valve Corporation
- * Copyright (c) 2015-2023 LunarG, Inc.
- * Copyright (C) 2015-2023 Google Inc.
+/* Copyright (c) 2015-2024 The Khronos Group Inc.
+ * Copyright (c) 2015-2024 Valve Corporation
+ * Copyright (c) 2015-2024 LunarG, Inc.
+ * Copyright (C) 2015-2024 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -313,7 +313,8 @@ bool StatelessValidation::manual_PreCallValidateCreateSampler(VkDevice device, c
     if (pCreateInfo->borderColor == VK_BORDER_COLOR_INT_CUSTOM_EXT ||
         pCreateInfo->borderColor == VK_BORDER_COLOR_FLOAT_CUSTOM_EXT) {
         if (!IsExtEnabled(device_extensions.vk_ext_custom_border_color)) {
-            skip |= LogError(kVUID_PVError_ExtensionNotEnabled, device, create_info_loc.dot(Field::borderColor),
+            // TODO - https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/2787
+            skip |= LogError("UNASSIGNED-DrawState-ExtensionNotEnabled", device, create_info_loc.dot(Field::borderColor),
                              "is %s but %s is not enabled.", string_VkBorderColor(pCreateInfo->borderColor),
                              VK_EXT_CUSTOM_BORDER_COLOR_EXTENSION_NAME);
         }
@@ -496,70 +497,70 @@ bool StatelessValidation::manual_PreCallValidateCreateDescriptorSetLayout(VkDevi
     // Validation for parameters excluded from the generated validation code due to a 'noautovalidity' tag in vk.xml
     if (pCreateInfo->pBindings != nullptr) {
         for (uint32_t i = 0; i < pCreateInfo->bindingCount; ++i) {
+            if (pCreateInfo->pBindings[i].descriptorCount == 0) {
+                continue;
+            }
+
             const Location binding_loc = create_info_loc.dot(Field::pBindings, i);
-            if (pCreateInfo->pBindings[i].descriptorCount != 0) {
-                // If descriptorCount is not 0, stageFlags must be a valid combination of VkShaderStageFlagBits values
-                if ((pCreateInfo->pBindings[i].stageFlags != 0) &&
-                    ((pCreateInfo->pBindings[i].stageFlags & (~AllVkShaderStageFlagBits)) != 0)) {
-                    skip |= LogError("VUID-VkDescriptorSetLayoutBinding-descriptorCount-00283", device,
+            VkShaderStageFlags stage_flags = pCreateInfo->pBindings[i].stageFlags;
+            if (stage_flags != 0) {
+                if (stage_flags != VK_SHADER_STAGE_ALL && ((stage_flags & (~AllVkShaderStageFlagBitsExcludingStageAll)) != 0)) {
+                    skip |= LogError("VUID-VkDescriptorSetLayoutBinding-descriptorCount-09465", device,
                                      binding_loc.dot(Field::descriptorCount),
                                      "is %" PRIu32 " but stageFlags is invalid (0x%" PRIx32 ").",
-                                     pCreateInfo->pBindings[i].descriptorCount, pCreateInfo->pBindings[i].stageFlags);
+                                     pCreateInfo->pBindings[i].descriptorCount, stage_flags);
                 }
 
                 if ((pCreateInfo->pBindings[i].descriptorType == VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT) &&
-                    (pCreateInfo->pBindings[i].stageFlags != 0) &&
-                    (pCreateInfo->pBindings[i].stageFlags != VK_SHADER_STAGE_FRAGMENT_BIT)) {
+                    (stage_flags != VK_SHADER_STAGE_FRAGMENT_BIT)) {
                     skip |= LogError("VUID-VkDescriptorSetLayoutBinding-descriptorType-01510", device,
                                      binding_loc.dot(Field::stageFlags),
                                      "is %s but descriptorType is VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT.",
-                                     string_VkShaderStageFlags(pCreateInfo->pBindings[i].stageFlags).c_str());
+                                     string_VkShaderStageFlags(stage_flags).c_str());
                 }
+            }
 
-                if (pCreateInfo->pBindings[i].descriptorType == VK_DESCRIPTOR_TYPE_MUTABLE_EXT) {
-                    if (mutable_descriptor_type) {
-                        if (i >= mutable_descriptor_type->mutableDescriptorTypeListCount) {
-                            skip |= LogError("VUID-VkDescriptorSetLayoutCreateInfo-pBindings-07303", device,
-                                             binding_loc.pNext(Struct::VkMutableDescriptorTypeCreateInfoEXT,
-                                                               Field::mutableDescriptorTypeListCount),
-                                             "is %" PRIu32 " but descriptorType is VK_DESCRIPTOR_TYPE_MUTABLE_EXT but ",
-                                             mutable_descriptor_type->mutableDescriptorTypeListCount);
-                        }
-                    } else {
-                        skip |= LogError("VUID-VkDescriptorSetLayoutCreateInfo-pBindings-07303", device,
-                                         binding_loc.dot(Field::descriptorType),
-                                         "is VK_DESCRIPTOR_TYPE_MUTABLE_EXT but VkMutableDescriptorTypeCreateInfoEXT is not "
-                                         "included in the pNext chain.");
+            if (pCreateInfo->pBindings[i].descriptorType == VK_DESCRIPTOR_TYPE_MUTABLE_EXT) {
+                if (mutable_descriptor_type) {
+                    if (i >= mutable_descriptor_type->mutableDescriptorTypeListCount) {
+                        skip |= LogError(
+                            "VUID-VkDescriptorSetLayoutCreateInfo-pBindings-07303", device,
+                            binding_loc.pNext(Struct::VkMutableDescriptorTypeCreateInfoEXT, Field::mutableDescriptorTypeListCount),
+                            "is %" PRIu32 " but descriptorType is VK_DESCRIPTOR_TYPE_MUTABLE_EXT but ",
+                            mutable_descriptor_type->mutableDescriptorTypeListCount);
                     }
-                    if (pCreateInfo->pBindings[i].pImmutableSamplers) {
-                        skip |= LogError("VUID-VkDescriptorSetLayoutCreateInfo-descriptorType-04594", device,
-                                         binding_loc.dot(Field::descriptorType),
-                                         "is VK_DESCRIPTOR_TYPE_MUTABLE_EXT but pImmutableSamplers is not NULL.");
-                    }
-                    if (!mutable_descriptor_type_features_enabled) {
-                        skip |= LogError("VUID-VkDescriptorSetLayoutCreateInfo-mutableDescriptorType-04595", device,
-                                         binding_loc.dot(Field::descriptorType),
-                                         "is VK_DESCRIPTOR_TYPE_MUTABLE_EXT but "
-                                         "mutableDescriptorType feature was not enabled.");
-                    }
+                } else {
+                    skip |= LogError("VUID-VkDescriptorSetLayoutCreateInfo-pBindings-07303", device,
+                                     binding_loc.dot(Field::descriptorType),
+                                     "is VK_DESCRIPTOR_TYPE_MUTABLE_EXT but VkMutableDescriptorTypeCreateInfoEXT is not "
+                                     "included in the pNext chain.");
                 }
+                if (pCreateInfo->pBindings[i].pImmutableSamplers) {
+                    skip |= LogError("VUID-VkDescriptorSetLayoutCreateInfo-descriptorType-04594", device,
+                                     binding_loc.dot(Field::descriptorType),
+                                     "is VK_DESCRIPTOR_TYPE_MUTABLE_EXT but pImmutableSamplers is not NULL.");
+                }
+                if (!mutable_descriptor_type_features_enabled) {
+                    skip |= LogError("VUID-VkDescriptorSetLayoutCreateInfo-mutableDescriptorType-04595", device,
+                                     binding_loc.dot(Field::descriptorType),
+                                     "is VK_DESCRIPTOR_TYPE_MUTABLE_EXT but "
+                                     "mutableDescriptorType feature was not enabled.");
+                }
+            }
 
-                if (pCreateInfo->flags & VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR &&
-                    pCreateInfo->pBindings[i].descriptorType == VK_DESCRIPTOR_TYPE_MUTABLE_EXT) {
-                    skip |=
-                        LogError("VUID-VkDescriptorSetLayoutCreateInfo-flags-04591", device, binding_loc.dot(Field::descriptorType),
+            if (pCreateInfo->flags & VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR &&
+                pCreateInfo->pBindings[i].descriptorType == VK_DESCRIPTOR_TYPE_MUTABLE_EXT) {
+                skip |= LogError("VUID-VkDescriptorSetLayoutCreateInfo-flags-04591", device, binding_loc.dot(Field::descriptorType),
                                  "is VK_DESCRIPTOR_TYPE_MUTABLE_EXT, but flags includes "
                                  "VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR.");
-                }
+            }
 
-                if (pCreateInfo->flags & VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT &&
-                    ((pCreateInfo->pBindings[i].descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC) ||
-                     (pCreateInfo->pBindings[i].descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC))) {
-                    skip |=
-                        LogError("VUID-VkDescriptorSetLayoutCreateInfo-flags-08000", device, binding_loc.dot(Field::descriptorType),
+            if (pCreateInfo->flags & VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT &&
+                ((pCreateInfo->pBindings[i].descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC) ||
+                 (pCreateInfo->pBindings[i].descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC))) {
+                skip |= LogError("VUID-VkDescriptorSetLayoutCreateInfo-flags-08000", device, binding_loc.dot(Field::descriptorType),
                                  "is %s, but flags includes VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR.",
                                  string_VkDescriptorType(pCreateInfo->pBindings[i].descriptorType));
-                }
             }
         }
 
@@ -570,21 +571,20 @@ bool StatelessValidation::manual_PreCallValidateCreateDescriptorSetLayout(VkDevi
 
     // TODO - Remove these 2 extension checks once the enum-to-extensions logic is generated
     // mostly likely will fail test trying to hit these
+    // https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/2787
     if (pCreateInfo->flags & VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR &&
         !IsExtEnabled(device_extensions.vk_khr_push_descriptor)) {
-        skip |= LogError(
-            device, kVUID_Core_DrawState_ExtensionNotEnabled,
-            "vkCreateDescriptorSetLayout(): Attempted to use %s in %s but its required extension %s has not been enabled.\n",
-            "VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR", "VkDescriptorSetLayoutCreateInfo::flags",
-            VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
+        skip |= LogError("UNASSIGNED-DrawState-ExtensionNotEnabled", device, error_obj.location,
+                         "Attempted to use %s in %s but its required extension %s has not been enabled.\n",
+                         "VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR", "VkDescriptorSetLayoutCreateInfo::flags",
+                         VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
     }
     if (pCreateInfo->flags & VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT &&
         !IsExtEnabled(device_extensions.vk_ext_descriptor_indexing)) {
-        skip |= LogError(
-            device, kVUID_Core_DrawState_ExtensionNotEnabled,
-            "vkCreateDescriptorSetLayout(): Attemped to use %s in %s but its required extension %s has not been enabled.\n",
-            "VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT", "VkDescriptorSetLayoutCreateInfo::flags",
-            VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
+        skip |= LogError("UNASSIGNED-DrawState-ExtensionNotEnabled", device, error_obj.location,
+                         "Attemped to use %s in %s but its required extension %s has not been enabled.\n",
+                         "VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT", "VkDescriptorSetLayoutCreateInfo::flags",
+                         VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
     }
 
     if ((pCreateInfo->flags & VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR) &&
@@ -637,209 +637,183 @@ bool StatelessValidation::manual_PreCallValidateFreeDescriptorSets(VkDevice devi
 }
 
 bool StatelessValidation::ValidateWriteDescriptorSet(const Location &loc, const uint32_t descriptorWriteCount,
-                                                     const VkWriteDescriptorSet *pDescriptorWrites,
-                                                     const bool isPushDescriptor) const {
+                                                     const VkWriteDescriptorSet *pDescriptorWrites) const {
     bool skip = false;
     if (!pDescriptorWrites) {
         return skip;
     }
-    const char *vkCallingFunction = loc.StringFunc();
+    const bool is_push_descriptor =
+        loc.function == Func::vkCmdPushDescriptorSetKHR || loc.function == Func::vkCmdPushDescriptorSet2KHR;
+
     for (uint32_t i = 0; i < descriptorWriteCount; ++i) {
+        const Location writes_loc = loc.dot(Field::pDescriptorWrites, i);
+        const auto &descriptor_writes = pDescriptorWrites[i];
         // descriptorCount must be greater than 0
-        if (pDescriptorWrites[i].descriptorCount == 0) {
-            skip |= LogError(device, "VUID-VkWriteDescriptorSet-descriptorCount-arraylength",
-                             "%s(): parameter pDescriptorWrites[%" PRIu32 "].descriptorCount must be greater than 0.",
-                             vkCallingFunction, i);
+        if (descriptor_writes.descriptorCount == 0) {
+            skip |= LogError("VUID-VkWriteDescriptorSet-descriptorCount-arraylength", device,
+                             writes_loc.dot(Field::descriptorCount), "is zero.");
         }
 
         // If called from vkCmdPushDescriptorSetKHR, the dstSet member is ignored.
-        if (!isPushDescriptor) {
+        if (!is_push_descriptor) {
             // dstSet must be a valid VkDescriptorSet handle
-            skip |= ValidateRequiredHandle(loc.dot(Field::pDescriptorWrites, i).dot(Field::dstSet), pDescriptorWrites[i].dstSet);
+            skip |= ValidateRequiredHandle(loc.dot(Field::pDescriptorWrites, i).dot(Field::dstSet), descriptor_writes.dstSet);
         }
 
-        if ((pDescriptorWrites[i].descriptorType == VK_DESCRIPTOR_TYPE_SAMPLER) ||
-            (pDescriptorWrites[i].descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) ||
-            (pDescriptorWrites[i].descriptorType == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE) ||
-            (pDescriptorWrites[i].descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) ||
-            (pDescriptorWrites[i].descriptorType == VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT)) {
-            if (pDescriptorWrites[i].pImageInfo == nullptr) {
-                if (!isPushDescriptor) {
-                    // If descriptorType is VK_DESCRIPTOR_TYPE_SAMPLER, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                    // VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE or
-                    // VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, pImageInfo must be a pointer to an array of descriptorCount valid
-                    // VkDescriptorImageInfo structures. Valid imageView handles are checked in
-                    // ObjectLifetimes::ValidateDescriptorWrite.
-                    skip |=
-                        LogError(device, "VUID-vkUpdateDescriptorSets-pDescriptorWrites-06493",
-                                 "%s(): if pDescriptorWrites[%" PRIu32
-                                 "].descriptorType is VK_DESCRIPTOR_TYPE_SAMPLER, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, "
-                                 "VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE or "
-                                 "VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, pDescriptorWrites[%" PRIu32 "].pImageInfo must not be NULL.",
-                                 vkCallingFunction, i, i);
-                } else if ((pDescriptorWrites[i].descriptorType == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE) ||
-                           (pDescriptorWrites[i].descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) ||
-                           (pDescriptorWrites[i].descriptorType == VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT)) {
-                    // If called from vkCmdPushDescriptorSetKHR, pImageInfo is only requred for descriptor types
-                    // VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, and
-                    // VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT
-                    skip |= LogError(device, "VUID-vkCmdPushDescriptorSetKHR-pDescriptorWrites-06494",
-                                     "%s(): if pDescriptorWrites[%" PRIu32
-                                     "].descriptorType is VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE "
-                                     "or VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, pDescriptorWrites[%" PRIu32
-                                     "].pImageInfo must not be NULL.",
-                                     vkCallingFunction, i, i);
-                }
-            } else if (pDescriptorWrites[i].descriptorType != VK_DESCRIPTOR_TYPE_SAMPLER) {
-                // If descriptorType is VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
-                // VK_DESCRIPTOR_TYPE_STORAGE_IMAGE or VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, the imageLayout
-                // member of any given element of pImageInfo must be a valid VkImageLayout
-                for (uint32_t descriptor_index = 0; descriptor_index < pDescriptorWrites[i].descriptorCount; ++descriptor_index) {
-                    skip |= ValidateRangedEnum(
-                        loc.dot(Field::pDescriptorWrites, i).dot(Field::pImageInfo, descriptor_index).dot(Field::imageLayout),
-                        "VkImageLayout", pDescriptorWrites[i].pImageInfo[descriptor_index].imageLayout, kVUIDUndefined);
+        const VkDescriptorType descriptor_type = descriptor_writes.descriptorType;
+        if ((descriptor_type == VK_DESCRIPTOR_TYPE_SAMPLER) || (descriptor_type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) ||
+            (descriptor_type == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE) || (descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) ||
+            (descriptor_type == VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT)) {
+            if (descriptor_writes.pImageInfo == nullptr) {
+                const char *vuid =
+                    loc.function == Func::vkCmdPushDescriptorSetKHR      ? "VUID-vkCmdPushDescriptorSetKHR-pDescriptorWrites-06494"
+                    : (loc.function == Func::vkCmdPushDescriptorSet2KHR) ? "VUID-VkPushDescriptorSetInfoKHR-pDescriptorWrites-06494"
+                                                                         : "VUID-vkUpdateDescriptorSets-pDescriptorWrites-06493";
+                skip |= LogError(vuid, device, writes_loc.dot(Field::descriptorType), "is %s but pImageInfo is NULL.",
+                                 string_VkDescriptorType(descriptor_type));
+            } else if (descriptor_type != VK_DESCRIPTOR_TYPE_SAMPLER) {
+                for (uint32_t descriptor_index = 0; descriptor_index < descriptor_writes.descriptorCount; ++descriptor_index) {
+                    skip |= ValidateRangedEnum(writes_loc.dot(Field::pImageInfo, descriptor_index).dot(Field::imageLayout),
+                                               "VkImageLayout", descriptor_writes.pImageInfo[descriptor_index].imageLayout,
+                                               kVUIDUndefined);
                 }
             }
-        } else if ((pDescriptorWrites[i].descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) ||
-                   (pDescriptorWrites[i].descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER) ||
-                   (pDescriptorWrites[i].descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC) ||
-                   (pDescriptorWrites[i].descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC)) {
-            // If descriptorType is VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            // VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC or VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, pBufferInfo must be a
-            // pointer to an array of descriptorCount valid VkDescriptorBufferInfo structures
-            // Valid buffer handles are checked in ObjectLifetimes::ValidateDescriptorWrite.
-            if (pDescriptorWrites[i].pBufferInfo == nullptr) {
-                skip |= LogError(device, "VUID-VkWriteDescriptorSet-descriptorType-00324",
-                                 "%s(): if pDescriptorWrites[%" PRIu32
-                                 "].descriptorType is "
-                                 "VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, "
-                                 "VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC or VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, "
-                                 "pDescriptorWrites[%" PRIu32 "].pBufferInfo must not be NULL.",
-                                 vkCallingFunction, i, i);
+        } else if ((descriptor_type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) ||
+                   (descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER) ||
+                   (descriptor_type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC) ||
+                   (descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC)) {
+            if (descriptor_writes.pBufferInfo == nullptr) {
+                skip |= LogError("VUID-VkWriteDescriptorSet-descriptorType-00324", device, writes_loc.dot(Field::descriptorType),
+                                 "is %s but pBufferInfo is NULL.", string_VkDescriptorType(descriptor_type));
             } else {
                 const auto *robustness2_features = vku::FindStructInPNextChain<VkPhysicalDeviceRobustness2FeaturesEXT>(device_createinfo_pnext);
                 if (robustness2_features && robustness2_features->nullDescriptor) {
-                    for (uint32_t descriptor_index = 0; descriptor_index < pDescriptorWrites[i].descriptorCount;
-                         ++descriptor_index) {
-                        if (pDescriptorWrites[i].pBufferInfo[descriptor_index].buffer == VK_NULL_HANDLE &&
-                            (pDescriptorWrites[i].pBufferInfo[descriptor_index].offset != 0 ||
-                             pDescriptorWrites[i].pBufferInfo[descriptor_index].range != VK_WHOLE_SIZE)) {
-                            skip |= LogError(device, "VUID-VkDescriptorBufferInfo-buffer-02999",
-                                             "%s(): if pDescriptorWrites[%" PRIu32
-                                             "].buffer is VK_NULL_HANDLE, "
-                                             "offset (%" PRIu64 ") must be zero and range (%" PRIu64 ") must be VK_WHOLE_SIZE.",
-                                             vkCallingFunction, i, pDescriptorWrites[i].pBufferInfo[descriptor_index].offset,
-                                             pDescriptorWrites[i].pBufferInfo[descriptor_index].range);
+                    for (uint32_t descriptor_index = 0; descriptor_index < descriptor_writes.descriptorCount; ++descriptor_index) {
+                        if (descriptor_writes.pBufferInfo[descriptor_index].buffer == VK_NULL_HANDLE &&
+                            (descriptor_writes.pBufferInfo[descriptor_index].offset != 0 ||
+                             descriptor_writes.pBufferInfo[descriptor_index].range != VK_WHOLE_SIZE)) {
+                            skip |= LogError("VUID-VkDescriptorBufferInfo-buffer-02999", device,
+                                             writes_loc.dot(Field::pBufferInfo, descriptor_index).dot(Field::buffer),
+                                             "is VK_NULL_HANDLE, but offset (%" PRIu64 ") is not zero and range (%" PRIu64
+                                             ") is not VK_WHOLE_SIZE when descriptor type is %s.",
+                                             descriptor_writes.pBufferInfo[descriptor_index].offset,
+                                             descriptor_writes.pBufferInfo[descriptor_index].range,
+                                             string_VkDescriptorType(descriptor_type));
                         }
                     }
                 }
             }
-        } else if ((pDescriptorWrites[i].descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER) ||
-                   (pDescriptorWrites[i].descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER)) {
+        } else if ((descriptor_type == VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER) ||
+                   (descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER)) {
             // Valid bufferView handles are checked in ObjectLifetimes::ValidateDescriptorWrite.
         }
 
-        if ((pDescriptorWrites[i].descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) ||
-            (pDescriptorWrites[i].descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC)) {
+        if ((descriptor_type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) ||
+            (descriptor_type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC)) {
             VkDeviceSize uniform_alignment = device_limits.minUniformBufferOffsetAlignment;
-            for (uint32_t j = 0; j < pDescriptorWrites[i].descriptorCount; j++) {
-                if (pDescriptorWrites[i].pBufferInfo != NULL) {
-                    if (SafeModulo(pDescriptorWrites[i].pBufferInfo[j].offset, uniform_alignment) != 0) {
-                        skip |= LogError(device, "VUID-VkWriteDescriptorSet-descriptorType-00327",
-                                         "%s(): pDescriptorWrites[%" PRIu32 "].pBufferInfo[%" PRIu32 "].offset (%" PRIu64
-                                         ") must be a multiple of device limit minUniformBufferOffsetAlignment %" PRIu64 ".",
-                                         vkCallingFunction, i, j, pDescriptorWrites[i].pBufferInfo[j].offset, uniform_alignment);
+            for (uint32_t j = 0; j < descriptor_writes.descriptorCount; j++) {
+                if (descriptor_writes.pBufferInfo != NULL) {
+                    if (SafeModulo(descriptor_writes.pBufferInfo[j].offset, uniform_alignment) != 0) {
+                        skip |= LogError("VUID-VkWriteDescriptorSet-descriptorType-00327", device,
+                                         writes_loc.dot(Field::pBufferInfo, j).dot(Field::offset),
+                                         "(%" PRIu64 ") must be a multiple of device limit minUniformBufferOffsetAlignment %" PRIu64
+                                         " when descriptor type is %s.",
+                                         descriptor_writes.pBufferInfo[j].offset, uniform_alignment,
+                                         string_VkDescriptorType(descriptor_type));
                     }
                 }
             }
-        } else if ((pDescriptorWrites[i].descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER) ||
-                   (pDescriptorWrites[i].descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC)) {
+        } else if ((descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER) ||
+                   (descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC)) {
             VkDeviceSize storage_alignment = device_limits.minStorageBufferOffsetAlignment;
-            for (uint32_t j = 0; j < pDescriptorWrites[i].descriptorCount; j++) {
-                if (pDescriptorWrites[i].pBufferInfo != NULL) {
-                    if (SafeModulo(pDescriptorWrites[i].pBufferInfo[j].offset, storage_alignment) != 0) {
-                        skip |= LogError(device, "VUID-VkWriteDescriptorSet-descriptorType-00328",
-                                         "%s(): pDescriptorWrites[%" PRIu32 "].pBufferInfo[%" PRIu32 "].offset (%" PRIu64
-                                         ") must be a multiple of device limit minStorageBufferOffsetAlignment %" PRIu64 ".",
-                                         vkCallingFunction, i, j, pDescriptorWrites[i].pBufferInfo[j].offset, storage_alignment);
+            for (uint32_t j = 0; j < descriptor_writes.descriptorCount; j++) {
+                if (descriptor_writes.pBufferInfo != NULL) {
+                    if (SafeModulo(descriptor_writes.pBufferInfo[j].offset, storage_alignment) != 0) {
+                        skip |= LogError("VUID-VkWriteDescriptorSet-descriptorType-00328", device,
+                                         writes_loc.dot(Field::pBufferInfo, j).dot(Field::offset),
+                                         "(%" PRIu64 ") must be a multiple of device limit minStorageBufferOffsetAlignment %" PRIu64
+                                         " when descriptor type is %s.",
+                                         descriptor_writes.pBufferInfo[j].offset, storage_alignment,
+                                         string_VkDescriptorType(descriptor_type));
                     }
                 }
             }
         }
         // pNext chain must be either NULL or a pointer to a valid instance of VkWriteDescriptorSetAccelerationStructureKHR
         // or VkWriteDescriptorSetInlineUniformBlockEX
-        if (pDescriptorWrites[i].descriptorType == VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR) {
-            const auto *pnext_struct = vku::FindStructInPNextChain<VkWriteDescriptorSetAccelerationStructureKHR>(pDescriptorWrites[i].pNext);
-            if (!pnext_struct || (pnext_struct->accelerationStructureCount != pDescriptorWrites[i].descriptorCount)) {
-                skip |= LogError(device, "VUID-VkWriteDescriptorSet-descriptorType-02382",
-                                 "%s(): If descriptorType is VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, the pNext"
-                                 "chain must include a VkWriteDescriptorSetAccelerationStructureKHR structure whose "
-                                 "accelerationStructureCount %" PRIu32 " member equals descriptorCount %" PRIu32 ".",
-                                 vkCallingFunction, pnext_struct ? pnext_struct->accelerationStructureCount : -1,
-                                 pDescriptorWrites[i].descriptorCount);
+        if (descriptor_type == VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR) {
+            const auto *pnext_struct =
+                vku::FindStructInPNextChain<VkWriteDescriptorSetAccelerationStructureKHR>(descriptor_writes.pNext);
+            if (!pnext_struct) {
+                skip |= LogError("VUID-VkWriteDescriptorSet-descriptorType-02382", device, writes_loc,
+                                 "doesn't include a pNext chain to VkWriteDescriptorSetAccelerationStructureKHR.");
+            } else if (pnext_struct->accelerationStructureCount != descriptor_writes.descriptorCount) {
+                skip |= LogError(
+                    "VUID-VkWriteDescriptorSet-descriptorType-02382", device,
+                    writes_loc.pNext(Struct::VkWriteDescriptorSetAccelerationStructureKHR, Field::accelerationStructureCount),
+                    "%" PRIu32 " does not equal descriptorCount %" PRIu32 ".", pnext_struct->accelerationStructureCount,
+                    descriptor_writes.descriptorCount);
             }
             // further checks only if we have right structtype
             if (pnext_struct) {
-                if (pnext_struct->accelerationStructureCount != pDescriptorWrites[i].descriptorCount) {
-                    skip |=
-                        LogError(device, "VUID-VkWriteDescriptorSetAccelerationStructureKHR-accelerationStructureCount-02236",
-                                 "%s(): accelerationStructureCount %" PRIu32 " must be equal to descriptorCount %" PRIu32
-                                 " in the extended structure "
-                                 ".",
-                                 vkCallingFunction, pnext_struct->accelerationStructureCount, pDescriptorWrites[i].descriptorCount);
+                if (pnext_struct->accelerationStructureCount != descriptor_writes.descriptorCount) {
+                    skip |= LogError(
+                        "VUID-VkWriteDescriptorSetAccelerationStructureKHR-accelerationStructureCount-02236", device,
+                        writes_loc.pNext(Struct::VkWriteDescriptorSetAccelerationStructureKHR, Field::accelerationStructureCount),
+                        "%" PRIu32 " does not equal descriptorCount %" PRIu32 ".", pnext_struct->accelerationStructureCount,
+                        descriptor_writes.descriptorCount);
                 }
                 if (pnext_struct->accelerationStructureCount == 0) {
-                    skip |=
-                        LogError(device, "VUID-VkWriteDescriptorSetAccelerationStructureKHR-accelerationStructureCount-arraylength",
-                                 "%s(): accelerationStructureCount must be greater than 0 .", vkCallingFunction);
+                    skip |= LogError(
+                        "VUID-VkWriteDescriptorSetAccelerationStructureKHR-accelerationStructureCount-arraylength", device,
+                        writes_loc.pNext(Struct::VkWriteDescriptorSetAccelerationStructureKHR, Field::accelerationStructureCount),
+                        "is zero.");
                 }
                 const auto *robustness2_features = vku::FindStructInPNextChain<VkPhysicalDeviceRobustness2FeaturesEXT>(device_createinfo_pnext);
                 if (robustness2_features && robustness2_features->nullDescriptor == VK_FALSE) {
                     for (uint32_t j = 0; j < pnext_struct->accelerationStructureCount; ++j) {
                         if (pnext_struct->pAccelerationStructures[j] == VK_NULL_HANDLE) {
                             skip |=
-                                LogError(device, "VUID-VkWriteDescriptorSetAccelerationStructureKHR-pAccelerationStructures-03580",
-                                         "%s(): If the nullDescriptor feature is not enabled, each member of "
-                                         "pAccelerationStructures must not be VK_NULL_HANDLE.",
-                                         vkCallingFunction);
+                                LogError("VUID-VkWriteDescriptorSetAccelerationStructureKHR-pAccelerationStructures-03580", device,
+                                         writes_loc.pNext(Struct::VkWriteDescriptorSetAccelerationStructureKHR,
+                                                          Field::pAccelerationStructures, j),
+                                         "is VK_NULL_HANDLE but the nullDescriptor feature was not enabled.");
                         }
                     }
                 }
             }
-        } else if (pDescriptorWrites[i].descriptorType == VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV) {
-            const auto *pnext_struct = vku::FindStructInPNextChain<VkWriteDescriptorSetAccelerationStructureNV>(pDescriptorWrites[i].pNext);
-            if (!pnext_struct || (pnext_struct->accelerationStructureCount != pDescriptorWrites[i].descriptorCount)) {
-                skip |= LogError(device, "VUID-VkWriteDescriptorSet-descriptorType-03817",
-                                 "%s(): If descriptorType is VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, the pNext"
+        } else if (descriptor_type == VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV) {
+            const auto *pnext_struct =
+                vku::FindStructInPNextChain<VkWriteDescriptorSetAccelerationStructureNV>(descriptor_writes.pNext);
+            if (!pnext_struct || (pnext_struct->accelerationStructureCount != descriptor_writes.descriptorCount)) {
+                skip |= LogError("VUID-VkWriteDescriptorSet-descriptorType-03817", device, loc,
+                                 "If descriptorType is VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, the pNext"
                                  "chain must include a VkWriteDescriptorSetAccelerationStructureNV structure whose "
                                  "accelerationStructureCount %" PRIu32 " member equals descriptorCount %" PRIu32 ".",
-                                 vkCallingFunction, pnext_struct ? pnext_struct->accelerationStructureCount : -1,
-                                 pDescriptorWrites[i].descriptorCount);
+                                 pnext_struct ? pnext_struct->accelerationStructureCount : -1, descriptor_writes.descriptorCount);
             }
             // further checks only if we have right structtype
             if (pnext_struct) {
-                if (pnext_struct->accelerationStructureCount != pDescriptorWrites[i].descriptorCount) {
+                if (pnext_struct->accelerationStructureCount != descriptor_writes.descriptorCount) {
                     skip |=
-                        LogError(device, "VUID-VkWriteDescriptorSetAccelerationStructureNV-accelerationStructureCount-03747",
-                                 "%s(): accelerationStructureCount %" PRIu32 " must be equal to descriptorCount %" PRIu32
+                        LogError("VUID-VkWriteDescriptorSetAccelerationStructureNV-accelerationStructureCount-03747", device, loc,
+                                 "accelerationStructureCount %" PRIu32 " must be equal to descriptorCount %" PRIu32
                                  " in the extended structure "
                                  ".",
-                                 vkCallingFunction, pnext_struct->accelerationStructureCount, pDescriptorWrites[i].descriptorCount);
+                                 pnext_struct->accelerationStructureCount, descriptor_writes.descriptorCount);
                 }
                 if (pnext_struct->accelerationStructureCount == 0) {
-                    skip |=
-                        LogError(device, "VUID-VkWriteDescriptorSetAccelerationStructureNV-accelerationStructureCount-arraylength",
-                                 "%s(): accelerationStructureCount must be greater than 0 .", vkCallingFunction);
+                    skip |= LogError("VUID-VkWriteDescriptorSetAccelerationStructureNV-accelerationStructureCount-arraylength",
+                                     device, loc, "accelerationStructureCount must be greater than 0 .");
                 }
                 const auto *robustness2_features = vku::FindStructInPNextChain<VkPhysicalDeviceRobustness2FeaturesEXT>(device_createinfo_pnext);
                 if (robustness2_features && robustness2_features->nullDescriptor == VK_FALSE) {
                     for (uint32_t j = 0; j < pnext_struct->accelerationStructureCount; ++j) {
                         if (pnext_struct->pAccelerationStructures[j] == VK_NULL_HANDLE) {
-                            skip |=
-                                LogError(device, "VUID-VkWriteDescriptorSetAccelerationStructureNV-pAccelerationStructures-03749",
-                                         "%s(): If the nullDescriptor feature is not enabled, each member of "
-                                         "pAccelerationStructures must not be VK_NULL_HANDLE.",
-                                         vkCallingFunction);
+                            skip |= LogError("VUID-VkWriteDescriptorSetAccelerationStructureNV-pAccelerationStructures-03749",
+                                             device, loc,
+                                             "If the nullDescriptor feature is not enabled, each member of "
+                                             "pAccelerationStructures must not be VK_NULL_HANDLE.");
                         }
                     }
                 }
@@ -854,7 +828,7 @@ bool StatelessValidation::manual_PreCallValidateUpdateDescriptorSets(VkDevice de
                                                                      uint32_t descriptorCopyCount,
                                                                      const VkCopyDescriptorSet *pDescriptorCopies,
                                                                      const ErrorObject &error_obj) const {
-    return ValidateWriteDescriptorSet(error_obj.location, descriptorWriteCount, pDescriptorWrites, false);
+    return ValidateWriteDescriptorSet(error_obj.location, descriptorWriteCount, pDescriptorWrites);
 }
 
 static bool MutableDescriptorTypePartialOverlap(const VkDescriptorPoolCreateInfo *pCreateInfo, uint32_t i, uint32_t j) {
@@ -939,8 +913,11 @@ bool StatelessValidation::manual_PreCallValidateCreateDescriptorPool(VkDevice de
 
     const auto *mutable_descriptor_type_features =
         vku::FindStructInPNextChain<VkPhysicalDeviceMutableDescriptorTypeFeaturesEXT>(device_createinfo_pnext);
-    bool mutable_descriptor_type_enabled =
+    const bool mutable_descriptor_type_enabled =
         mutable_descriptor_type_features && mutable_descriptor_type_features->mutableDescriptorType == VK_TRUE;
+
+    const auto *inline_uniform_info = vku::FindStructInPNextChain<VkDescriptorPoolInlineUniformBlockCreateInfo>(pCreateInfo->pNext);
+    const bool non_zero_inline_uniform_count = inline_uniform_info && inline_uniform_info->maxInlineUniformBlockBindings != 0;
 
     if (pCreateInfo->pPoolSizes) {
         for (uint32_t i = 0; i < pCreateInfo->poolSizeCount; ++i) {
@@ -949,11 +926,18 @@ bool StatelessValidation::manual_PreCallValidateCreateDescriptorPool(VkDevice de
                 skip |= LogError("VUID-VkDescriptorPoolSize-descriptorCount-00302", device, pool_loc.dot(Field::descriptorCount),
                                  "is zero.");
             }
-            if (pCreateInfo->pPoolSizes[i].type == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK_EXT &&
-                (pCreateInfo->pPoolSizes[i].descriptorCount % 4) != 0) {
-                skip |= LogError("VUID-VkDescriptorPoolSize-type-02218", device, pool_loc.dot(Field::descriptorCount),
+            if (pCreateInfo->pPoolSizes[i].type == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK) {
+                if (SafeModulo(pCreateInfo->pPoolSizes[i].descriptorCount, 4) != 0) {
+                    skip |=
+                        LogError("VUID-VkDescriptorPoolSize-type-02218", device, pool_loc.dot(Field::descriptorCount),
                                  "is %" PRIu32 " (not a multiple of 4), but type is VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK_EXT.",
                                  pCreateInfo->pPoolSizes[i].descriptorCount);
+                }
+                if (!non_zero_inline_uniform_count) {
+                    skip |=
+                        LogError("VUID-VkDescriptorPoolCreateInfo-pPoolSizes-09424", device, pool_loc.dot(Field::type),
+                                 "is VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK but no maxInlineUniformBlockBindings was provided.");
+                }
             }
             if (pCreateInfo->pPoolSizes[i].type == VK_DESCRIPTOR_TYPE_MUTABLE_EXT && !mutable_descriptor_type_enabled) {
                 skip |= LogError("VUID-VkDescriptorPoolCreateInfo-mutableDescriptorType-04608", device, pool_loc.dot(Field::type),
@@ -1139,8 +1123,54 @@ bool StatelessValidation::manual_PreCallValidateCreateSamplerYcbcrConversion(VkD
     return skip;
 }
 
-bool StatelessValidation::manual_PreCallValidateCreateSamplerYcbcrConversionKHR(
-    VkDevice device, const VkSamplerYcbcrConversionCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator,
-    VkSamplerYcbcrConversion *pYcbcrConversion, const ErrorObject &error_obj) const {
-    return manual_PreCallValidateCreateSamplerYcbcrConversion(device, pCreateInfo, pAllocator, pYcbcrConversion, error_obj);
+bool StatelessValidation::manual_PreCallValidateGetDescriptorEXT(VkDevice device, const VkDescriptorGetInfoEXT *pDescriptorInfo,
+                                                                 size_t dataSize, void *pDescriptor,
+                                                                 const ErrorObject &error_obj) const {
+    bool skip = false;
+
+    const Location descriptor_info_loc = error_obj.location.dot(Field::pDescriptorInfo);
+    switch (pDescriptorInfo->type) {
+        case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+            if (!pDescriptorInfo->data.pCombinedImageSampler) {
+                skip |= LogError("VUID-VkDescriptorGetInfoEXT-pCombinedImageSampler-parameter", device,
+                                 descriptor_info_loc.dot(Field::type),
+                                 "is VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, but pCombinedImageSampler is null.");
+            }
+            break;
+        case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
+            if (!pDescriptorInfo->data.pInputAttachmentImage) {
+                skip |= LogError("VUID-VkDescriptorGetInfoEXT-pInputAttachmentImage-parameter", device,
+                                 descriptor_info_loc.dot(Field::type),
+                                 "is VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, but pInputAttachmentImage is null.");
+            }
+            break;
+        case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+            if (pDescriptorInfo->data.pUniformTexelBuffer) {
+                skip |= ValidateDescriptorAddressInfoEXT(*pDescriptorInfo->data.pUniformTexelBuffer,
+                                                         descriptor_info_loc.dot(Field::data).dot(Field::pUniformTexelBuffer));
+            }
+            break;
+        case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+            if (pDescriptorInfo->data.pStorageTexelBuffer) {
+                skip |= ValidateDescriptorAddressInfoEXT(*pDescriptorInfo->data.pStorageTexelBuffer,
+                                                         descriptor_info_loc.dot(Field::data).dot(Field::pStorageTexelBuffer));
+            }
+            break;
+        case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+            if (pDescriptorInfo->data.pUniformBuffer) {
+                skip |= ValidateDescriptorAddressInfoEXT(*pDescriptorInfo->data.pUniformBuffer,
+                                                         descriptor_info_loc.dot(Field::data).dot(Field::pUniformBuffer));
+            }
+            break;
+        case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+            if (pDescriptorInfo->data.pStorageBuffer) {
+                skip |= ValidateDescriptorAddressInfoEXT(*pDescriptorInfo->data.pStorageBuffer,
+                                                         descriptor_info_loc.dot(Field::data).dot(Field::pStorageBuffer));
+            }
+            break;
+        default:
+            break;
+    }
+
+    return skip;
 }

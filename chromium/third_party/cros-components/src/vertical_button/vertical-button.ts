@@ -7,13 +7,11 @@
 import '@material/web/button/filled-button.js';
 import '@material/web/button/text-button.js';
 
-import {css, CSSResultGroup, html, LitElement} from 'lit';
+import {css, CSSResultGroup, html, LitElement, PropertyValues} from 'lit';
 import {styleMap} from 'lit/directives/style-map';
 
 /**
  * A ChromeOS compliant vertical-button.
- * See spec
- * https://www.figma.com/file/1XsFoZH868xLcLPfPZRxLh/CrOS-Next---Component-Library-%26-Spec?type=design&node-id=9644-165677&mode=design&t=0xBcgechLxIMCLG0-0
  */
 export class VerticalButton extends LitElement {
   static BORDER_RADIUS = 20;
@@ -33,8 +31,9 @@ export class VerticalButton extends LitElement {
     }
     md-filled-button {
       width: 100%;
-      min-height: ${VerticalButton.MIN_HEIGHT}px;
       min-width: ${VerticalButton.WIDTH}px;
+      padding-top: ${VerticalButton.PADDING_TOP}px;
+      padding-bottom: ${VerticalButton.PADDING_BOTTOM}px;
       --md-filled-button-leading-space: ${VerticalButton.HORIZONTAL_PADDING}px;
       --md-filled-button-trailing-space: ${VerticalButton.HORIZONTAL_PADDING}px;
       --md-filled-button-with-leading-icon-leading-space: 0px;
@@ -80,8 +79,6 @@ export class VerticalButton extends LitElement {
       --md-filled-button-disabled-container-color: var(--cros-sys-disabled_container);
     }
     :host div {
-      padding-top: ${VerticalButton.PADDING_TOP}px;
-      padding-bottom: ${VerticalButton.PADDING_BOTTOM}px;
       display: flex;
       align-items: center;
       flex-direction: column;
@@ -157,6 +154,13 @@ export class VerticalButton extends LitElement {
           </div>
         </md-filled-button>
         `;
+  }
+
+  override updated(changedProperties: PropertyValues<this>) {
+    if (changedProperties.has('disabled')) {
+      // Work around for b/315384008.
+      this.renderRoot.querySelector('md-filled-button')?.requestUpdate();
+    }
   }
 }
 

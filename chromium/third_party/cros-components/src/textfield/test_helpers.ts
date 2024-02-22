@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {MdOutlinedTextField} from '@material/web/textfield/outlined-text-field';
+import {MdOutlinedTextField} from '@material/web/textfield/outlined-text-field.js';
 import {cast, castExists} from 'google3/javascript/common/asserts/asserts';
 import {isInstanceOf} from 'google3/javascript/common/asserts/guards';
 import {IconButton} from 'google3/third_party/javascript/cros_components/icon_button/icon-button';

@@ -27,13 +27,11 @@
 #include "anonymous_tokens/cpp/crypto/blinder.h"
 #include "anonymous_tokens/cpp/crypto/crypto_utils.h"
 
-
-
 namespace anonymous_tokens {
 
 // RsaBlinder `blinds` input messages, and then unblinds them after they are
 // signed.
-class  RsaBlinder : public Blinder {
+class RsaBlinder : public Blinder {
  public:
   // Passing of public_metadata is optional. If it is set to any value including
   // an empty string, RsaBlinder will assume that partially blind RSA signature
@@ -95,6 +93,5 @@ class  RsaBlinder : public Blinder {
 };
 
 }  // namespace anonymous_tokens
-
 
 #endif  // ANONYMOUS_TOKENS_CPP_CRYPTO_RSA_BLINDER_H_

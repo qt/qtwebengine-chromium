@@ -17,7 +17,7 @@
  * limitations under the License.
  */
 #pragma once
-#include "state_tracker/base_node.h"
+#include "state_tracker/state_object.h"
 
 // Note: some of the types in this header are needed by both the DescriptorSet and Pipeline
 // state objects. It is helpful to have a separate header to avoid circular #include madness.
@@ -54,14 +54,16 @@ struct hash<SamplerUsedByImage> {
 };
 }  // namespace std
 
-class SAMPLER_STATE : public BASE_NODE {
+namespace vvl {
+
+class Sampler : public StateObject {
   public:
     const VkSamplerCreateInfo createInfo;
     const VkSamplerYcbcrConversion samplerConversion;
     const VkSamplerCustomBorderColorCreateInfoEXT customCreateInfo;
 
-    SAMPLER_STATE(const VkSampler s, const VkSamplerCreateInfo *pci)
-        : BASE_NODE(s, kVulkanObjectTypeSampler),
+    Sampler(const VkSampler s, const VkSamplerCreateInfo *pci)
+        : StateObject(s, kVulkanObjectTypeSampler),
           createInfo(*pci),
           samplerConversion(GetConversion(pci)),
           customCreateInfo(GetCustomCreateInfo(pci)) {}
@@ -81,16 +83,16 @@ class SAMPLER_STATE : public BASE_NODE {
     }
 };
 
-class SAMPLER_YCBCR_CONVERSION_STATE : public BASE_NODE {
+class SamplerYcbcrConversion : public StateObject {
   public:
     const VkFormatFeatureFlags2KHR format_features;
     const VkFormat format;
     const VkFilter chromaFilter;
     const uint64_t external_format;
 
-    SAMPLER_YCBCR_CONVERSION_STATE(VkSamplerYcbcrConversion ycbcr, const VkSamplerYcbcrConversionCreateInfo *info,
-                                   VkFormatFeatureFlags2KHR features)
-        : BASE_NODE(ycbcr, kVulkanObjectTypeSamplerYcbcrConversion),
+    SamplerYcbcrConversion(VkSamplerYcbcrConversion ycbcr, const VkSamplerYcbcrConversionCreateInfo *info,
+                           VkFormatFeatureFlags2KHR features)
+        : StateObject(ycbcr, kVulkanObjectTypeSamplerYcbcrConversion),
           format_features(features),
           format(info->format),
           chromaFilter(info->chromaFilter),
@@ -98,3 +100,5 @@ class SAMPLER_YCBCR_CONVERSION_STATE : public BASE_NODE {
 
     VkSamplerYcbcrConversion ycbcr_conversion() const { return handle_.Cast<VkSamplerYcbcrConversion>(); }
 };
+
+}  // namespace vvl

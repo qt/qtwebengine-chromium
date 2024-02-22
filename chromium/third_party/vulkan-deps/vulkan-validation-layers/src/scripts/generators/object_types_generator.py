@@ -20,6 +20,7 @@
 
 import os
 from generators.base_generator import BaseGenerator
+from generators.generator_utils import PlatformGuardHelper
 
 class ObjectTypesOutputGenerator(BaseGenerator):
     def __init__(self):
@@ -109,7 +110,7 @@ static inline VulkanObjectType ConvertCoreObjectToVulkanObject(VkObjectType vulk
 }\n''')
 
         out.append('''
-static inline VkDebugReportObjectTypeEXT convertCoreObjectToDebugReportObject(VkObjectType core_report_obj) {
+static inline VkDebugReportObjectTypeEXT ConvertCoreObjectToDebugReportObject(VkObjectType core_report_obj) {
     switch (core_report_obj) {
         case VK_OBJECT_TYPE_UNKNOWN: return VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT;\n''')
         for handle in self.vk.handles.values():
@@ -117,6 +118,16 @@ static inline VkDebugReportObjectTypeEXT convertCoreObjectToDebugReportObject(Vk
             if object != 'VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT':
                 out.append(f'        case {handle.type}: return {object};\n')
         out.append('''        default: return VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT;
+    }
+}\n''')
+
+        out.append('''
+// Helper function to get Instance object types
+static inline bool IsInstanceVkObjectType(VkObjectType type) {
+    switch (type) {\n''')
+        out.extend([f'        case {handle.type}:\n' for handle in self.vk.handles.values() if handle.instance])
+        out.append('''            return true;''')
+        out.append('''        default: return false;
     }
 }\n''')
 
@@ -145,9 +156,9 @@ template <> struct VulkanObjectTypeInfo<kVulkanObjectTypeUnknown> {
 };
 
 #endif //  VK_DEFINE_HANDLE logic duplication\n''')
-
+        guard_helper = PlatformGuardHelper()
         for handle in [x for x in self.vk.handles.values() if x.dispatchable]:
-            out.extend([f'#ifdef {handle.protect}\n'] if handle.protect else [])
+            out.extend(guard_helper.add_guard(handle.protect))
             out.append(f'''
 template <> struct VkHandleInfo<{handle.name}> {{
     static const VulkanObjectType kVulkanObjectType = kVulkanObjectType{handle.name[2:]};
@@ -160,11 +171,11 @@ template <> struct VkHandleInfo<{handle.name}> {{
 template <> struct VulkanObjectTypeInfo<kVulkanObjectType{handle.name[2:]}> {{
     typedef {handle.name} Type;
 }};\n''')
-            out.extend([f'#endif //{handle.protect}\n'] if handle.protect else [])
+        out.extend(guard_helper.add_guard(None))
         out.append('#ifdef TYPESAFE_NONDISPATCHABLE_HANDLES\n')
 
         for handle in [x for x in self.vk.handles.values() if not x.dispatchable]:
-            out.extend([f'#ifdef {handle.protect}\n'] if handle.protect else [])
+            out.extend(guard_helper.add_guard(handle.protect))
             out.append(f'''
 template <> struct VkHandleInfo<{handle.name}> {{
     static const VulkanObjectType kVulkanObjectType = kVulkanObjectType{handle.name[2:]};
@@ -177,7 +188,7 @@ template <> struct VkHandleInfo<{handle.name}> {{
 template <> struct VulkanObjectTypeInfo<kVulkanObjectType{handle.name[2:]}> {{
     typedef {handle.name} Type;
 }};\n''')
-            out.extend([f'#endif //{handle.protect}\n'] if handle.protect else [])
+        out.extend(guard_helper.add_guard(None))
         out.append('#endif // TYPESAFE_NONDISPATCHABLE_HANDLES\n')
 
         out.append('''

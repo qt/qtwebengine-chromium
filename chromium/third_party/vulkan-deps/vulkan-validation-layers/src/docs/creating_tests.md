@@ -54,6 +54,7 @@ Here is an example of adding `VK_KHR_sampler_ycbcr_conversion` with all the exte
 ```cpp
 // Setup extensions, including dependent instance and device extensions. This call should be made before any call to InitFramework
 AddRequiredExtensions(VK_KHR_SAMPLER_YCBCR_CONVERSION_EXTENSION_NAME);
+AddRequiredFeature(vkt::Feature:: samplerYcbcrConversion);
 
 // Among other things, this will create the VkInstance and VkPhysicalDevice that will be used for the test.
 // Also will check that all extensions and their dependencies were enabled successfully
@@ -104,16 +105,24 @@ If a certain version of Vulkan is needed a test writer can call
 
 ```cpp
 SetTargetApiVersion(VK_API_VERSION_1_1);
-// Will skip if version is not high enough
+// Will skip if the supported instance version is not high enough, but actual device supported version may be lower
 RETURN_IF_SKIP(InitFramework());
 ```
 
-Later in the test it can also be checked
+Later in the test the actual Vulkan version supported by the device can be checked
+
 ```cpp
 if (DeviceValidationVersion() >= VK_API_VERSION_1_1) {
     // Only can be ran on Vulkan 1.0 or 1.1
 }
 ```
+
+### Promoted extensions
+
+The test framework now automatically handles extensions promoted to core versions by not enabling the extensions if the target instance Vulkan version (set through `SetTargetApiVersion`) or the Vulkan version supported by the device (queriable using `DeviceValidationVersion`) already includes the instance or device extension's functionality, respectively.
+This applies to both requirements requested using `AddRequiredExtensions` or `AddOptionalExtensions`, as well as optional requirements checked using `IsExtensionsEnabled`.
+
+In order to enforce enabling extensions even when they are included in the effective Vulkan version (which should only be necessary for very specific test cases), the test case can call the `AllowPromotedExtensions` function.
 
 ### Getting Function Pointers
 
@@ -207,7 +216,7 @@ used to make it obvious).
 VkImageSubresource subresource{};
 subresource.aspectMask = VK_IMAGE_ASPECT_MEMORY_PLANE_3_BIT_EXT;
 VkSubresourceLayout layout{};
-m_errorMonitor->SetDesiredFailureMsg(kErrorBit, "VUID-vkGetImageSubresourceLayout-tiling-02271");
+m_errorMonitor->SetDesiredFailureMsg(kErrorBit, "VUID-vkGetImageSubresourceLayout-tiling-09433");
 vk::GetImageSubresourceLayout(m_device->handle(), image.handle(), &subresource, &layout);
 m_errorMonitor->VerifyFound();
 ```

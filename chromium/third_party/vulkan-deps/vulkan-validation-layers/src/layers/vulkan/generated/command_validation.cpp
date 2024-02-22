@@ -813,6 +813,48 @@ static const vvl::unordered_map<Func, CommandValidationInfo> kCommandValidationT
     CMD_SCOPE_BOTH, "kVUIDUndefined",
     CMD_SCOPE_OUTSIDE, "VUID-vkCmdBindIndexBuffer2KHR-videocoding",
 }},
+{Func::vkCmdBindDescriptorSets2KHR, {
+    "VUID-vkCmdBindDescriptorSets2KHR-commandBuffer-recording",
+    nullptr,
+    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdBindDescriptorSets2KHR-commandBuffer-cmdpool",
+    CMD_SCOPE_BOTH, "kVUIDUndefined",
+    CMD_SCOPE_OUTSIDE, "VUID-vkCmdBindDescriptorSets2KHR-videocoding",
+}},
+{Func::vkCmdPushConstants2KHR, {
+    "VUID-vkCmdPushConstants2KHR-commandBuffer-recording",
+    nullptr,
+    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdPushConstants2KHR-commandBuffer-cmdpool",
+    CMD_SCOPE_BOTH, "kVUIDUndefined",
+    CMD_SCOPE_OUTSIDE, "VUID-vkCmdPushConstants2KHR-videocoding",
+}},
+{Func::vkCmdPushDescriptorSet2KHR, {
+    "VUID-vkCmdPushDescriptorSet2KHR-commandBuffer-recording",
+    nullptr,
+    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdPushDescriptorSet2KHR-commandBuffer-cmdpool",
+    CMD_SCOPE_BOTH, "kVUIDUndefined",
+    CMD_SCOPE_OUTSIDE, "VUID-vkCmdPushDescriptorSet2KHR-videocoding",
+}},
+{Func::vkCmdPushDescriptorSetWithTemplate2KHR, {
+    "VUID-vkCmdPushDescriptorSetWithTemplate2KHR-commandBuffer-recording",
+    nullptr,
+    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdPushDescriptorSetWithTemplate2KHR-commandBuffer-cmdpool",
+    CMD_SCOPE_BOTH, "kVUIDUndefined",
+    CMD_SCOPE_OUTSIDE, "VUID-vkCmdPushDescriptorSetWithTemplate2KHR-videocoding",
+}},
+{Func::vkCmdSetDescriptorBufferOffsets2EXT, {
+    "VUID-vkCmdSetDescriptorBufferOffsets2EXT-commandBuffer-recording",
+    nullptr,
+    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdSetDescriptorBufferOffsets2EXT-commandBuffer-cmdpool",
+    CMD_SCOPE_BOTH, "kVUIDUndefined",
+    CMD_SCOPE_OUTSIDE, "VUID-vkCmdSetDescriptorBufferOffsets2EXT-videocoding",
+}},
+{Func::vkCmdBindDescriptorBufferEmbeddedSamplers2EXT, {
+    "VUID-vkCmdBindDescriptorBufferEmbeddedSamplers2EXT-commandBuffer-recording",
+    nullptr,
+    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdBindDescriptorBufferEmbeddedSamplers2EXT-commandBuffer-cmdpool",
+    CMD_SCOPE_BOTH, "kVUIDUndefined",
+    CMD_SCOPE_OUTSIDE, "VUID-vkCmdBindDescriptorBufferEmbeddedSamplers2EXT-videocoding",
+}},
 {Func::vkCmdDebugMarkerBeginEXT, {
     "VUID-vkCmdDebugMarkerBeginEXT-commandBuffer-recording",
     nullptr,
@@ -1232,6 +1274,13 @@ static const vvl::unordered_map<Func, CommandValidationInfo> kCommandValidationT
     VK_QUEUE_GRAPHICS_BIT, "VUID-vkCmdSetDepthBias2EXT-commandBuffer-cmdpool",
     CMD_SCOPE_BOTH, "kVUIDUndefined",
     CMD_SCOPE_OUTSIDE, "VUID-vkCmdSetDepthBias2EXT-videocoding",
+}},
+{Func::vkCmdCudaLaunchKernelNV, {
+    "VUID-vkCmdCudaLaunchKernelNV-commandBuffer-recording",
+    nullptr,
+    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdCudaLaunchKernelNV-commandBuffer-cmdpool",
+    CMD_SCOPE_BOTH, "kVUIDUndefined",
+    CMD_SCOPE_OUTSIDE, "VUID-vkCmdCudaLaunchKernelNV-videocoding",
 }},
 {Func::vkCmdBindDescriptorBuffersEXT, {
     "VUID-vkCmdBindDescriptorBuffersEXT-commandBuffer-recording",
@@ -1750,7 +1799,7 @@ static const vvl::unordered_map<Func, CommandValidationInfo> kCommandValidationT
 // Ran on all vkCmd* commands
 // Because it validate the implicit VUs that stateless can't, if this fails, it is likely
 // the input is very bad and other checks will crash dereferencing null pointers
-bool CoreChecks::ValidateCmd(const CMD_BUFFER_STATE& cb_state, const Location& loc) const {
+bool CoreChecks::ValidateCmd(const vvl::CommandBuffer& cb_state, const Location& loc) const {
     bool skip = false;
 
     auto info_it = kCommandValidationTable.find(loc.function);

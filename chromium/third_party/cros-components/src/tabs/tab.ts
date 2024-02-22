@@ -4,14 +4,22 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import '@material/web/tabs/primary-tab';
+import '@material/web/tabs/primary-tab.js';
 
 import {css, CSSResultGroup, html, LitElement} from 'lit';
 
 /** A chromeOS compliant tab component for use in cros-tabs. */
 export class Tab extends LitElement {
-  static override shadowRootOptions:
-      ShadowRootInit = {mode: 'open', delegatesFocus: true};
+  /** @nocollapse */
+  static override shadowRootOptions: ShadowRootInit = {
+    ...LitElement.shadowRootOptions,
+    mode: 'open',
+    delegatesFocus: true,
+  };
+
+  get mdTab(): HTMLElement|null {
+    return this.shadowRoot!.querySelector('md-primary-tab');
+  }
 
   /** @nocollapse */
   static override styles: CSSResultGroup = css`
@@ -64,6 +72,10 @@ export class Tab extends LitElement {
       --md-focus-ring-width: 2px;
       margin-bottom: 0;
     }
+
+    ::slotted(*) {
+      margin: 0 4px;
+    }
   `;
 
   /** @nocollapse */
@@ -80,6 +92,14 @@ export class Tab extends LitElement {
 
   override firstUpdated() {
     this.setAttribute('md-tab', 'tab');
+
+    // Add extra styles if the tabs should fill the width of a container.
+    if (this.parentElement!.hasAttribute('fill-container')) {
+      if (this.mdTab) {
+        this.mdTab.style.width = '100%';
+        this.mdTab.style.boxSizing = 'border-box';
+      }
+    }
   }
 
   override render() {

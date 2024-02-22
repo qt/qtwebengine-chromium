@@ -134,7 +134,7 @@ bool CoreChecks::PreCallValidateGetMemoryAndroidHardwareBufferANDROID(VkDevice d
                                                                       struct AHardwareBuffer **pBuffer,
                                                                       const ErrorObject &error_obj) const {
     bool skip = false;
-    auto mem_info = Get<DEVICE_MEMORY_STATE>(pInfo->memory);
+    auto mem_info = Get<vvl::DeviceMemory>(pInfo->memory);
 
     // VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID must have been included in
     // VkExportMemoryAllocateInfo::handleTypes when memory was created.
@@ -150,15 +150,16 @@ bool CoreChecks::PreCallValidateGetMemoryAndroidHardwareBufferANDROID(VkDevice d
 
     // If the pNext chain of the VkMemoryAllocateInfo used to allocate memory included a VkMemoryDedicatedAllocateInfo
     // with non-NULL image member, then that image must already be bound to memory.
-    if (mem_info->IsDedicatedImage()) {
-        auto image_state = Get<IMAGE_STATE>(mem_info->dedicated->handle.Cast<VkImage>());
+    const VkImage dedicated_image = mem_info->GetDedicatedImage();
+    if (dedicated_image != VK_NULL_HANDLE) {
+        auto image_state = Get<vvl::Image>(dedicated_image);
         if ((nullptr == image_state) || (0 == (image_state->CountDeviceMemory(mem_info->deviceMemory())))) {
-            const LogObjectList objlist(device, pInfo->memory, mem_info->dedicated->handle);
+            const LogObjectList objlist(device, pInfo->memory, dedicated_image);
             skip |= LogError("VUID-VkMemoryGetAndroidHardwareBufferInfoANDROID-pNext-01883", objlist,
                              error_obj.location.dot(Field::pInfo).dot(Field::memory),
                              "(%s) was allocated using a dedicated "
                              "%s, but that image is not bound to the VkDeviceMemory object.",
-                             FormatHandle(pInfo->memory).c_str(), FormatHandle(mem_info->dedicated->handle).c_str());
+                             FormatHandle(pInfo->memory).c_str(), FormatHandle(dedicated_image).c_str());
         }
     }
 
@@ -292,7 +293,7 @@ bool CoreChecks::ValidateAllocateMemoryANDROID(const VkMemoryAllocateInfo *alloc
                                  "AHardwareBuffer's usage is 0x%" PRIx64 ". (AHB = %p).", ahb_desc.usage, import_ahb_info->buffer);
             }
 
-            auto image_state = Get<IMAGE_STATE>(mem_ded_alloc_info->image);
+            auto image_state = Get<vvl::Image>(mem_ded_alloc_info->image);
             const auto *ici = &image_state->createInfo;
             const Location &dedicated_image_loc = allocate_info_loc.dot(Struct::VkMemoryDedicatedAllocateInfo, Field::image);
 
@@ -324,16 +325,6 @@ bool CoreChecks::ValidateAllocateMemoryANDROID(const VkMemoryAllocateInfo *alloc
                              ahb_desc.height, ahb_desc.layers, import_ahb_info->buffer);
             }
 
-            // If the Android hardware buffer's usage includes AHARDWAREBUFFER_USAGE_GPU_MIPMAP_COMPLETE, the image must
-            // have either a full mipmap chain or exactly 1 mip level.
-            //
-            // NOTE! The language of this VUID contradicts the language in the spec (1.1.93), which says "The
-            // AHARDWAREBUFFER_USAGE_GPU_MIPMAP_COMPLETE flag does not correspond to a Vulkan image usage or creation flag. Instead,
-            // its presence indicates that the Android hardware buffer contains a complete mipmap chain, and its absence indicates
-            // that the Android hardware buffer contains only a single mip level."
-            //
-            // TODO: This code implements the VUID's meaning, but it seems likely that the spec text is actually correct.
-            // Clarification requested.
             if ((ahb_desc.usage & AHARDWAREBUFFER_USAGE_GPU_MIPMAP_COMPLETE) != 0) {
                 if ((ici->mipLevels != 1) && (ici->mipLevels != FullMipChainLevels(ici->extent))) {
                     skip |= LogError(
@@ -409,7 +400,7 @@ bool CoreChecks::ValidateAllocateMemoryANDROID(const VkMemoryAllocateInfo *alloc
 bool CoreChecks::ValidateGetImageMemoryRequirementsANDROID(const VkImage image, const Location &loc) const {
     bool skip = false;
 
-    auto image_state = Get<IMAGE_STATE>(image);
+    auto image_state = Get<vvl::Image>(image);
     if (image_state != nullptr) {
         if (image_state->IsExternalBuffer() && (0 == image_state->GetBoundMemoryStates().size())) {
             const char *vuid = loc.function == Func::vkGetImageMemoryRequirements
@@ -497,15 +488,20 @@ bool CoreChecks::ValidateCreateImageANDROID(const VkImageCreateInfo *create_info
                              string_VkImageCreateFlags(create_info->flags).c_str());
         }
 
-        // only SAMPLED is allowed, but format_resolve allowed INPUT as well
-        if (0 != (~VK_IMAGE_USAGE_SAMPLED_BIT & create_info->usage)) {
-            if (((VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT & create_info->usage) == VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT) ||
-                !enabled_features.externalFormatResolve) {
-                skip |= LogError("VUID-VkImageCreateInfo-pNext-02397", device,
-                                 create_info_loc.pNext(Struct::VkExternalFormatANDROID, Field::externalFormat),
-                                 "(%" PRIu64 ") is non-zero, but usage is %s.", ext_fmt_android->externalFormat,
-                                 string_VkImageUsageFlags(create_info->usage).c_str());
-            }
+        if (0 != (~(VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT) &
+                  create_info->usage)) {
+            skip |= LogError("VUID-VkImageCreateInfo-pNext-02397", device,
+                             create_info_loc.pNext(Struct::VkExternalFormatANDROID, Field::externalFormat),
+                             "(%" PRIu64 ") is non-zero, but usage is %s.", ext_fmt_android->externalFormat,
+                             string_VkImageUsageFlags(create_info->usage).c_str());
+        } else if (!enabled_features.externalFormatResolve &&
+                   ((VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT) & create_info->usage)) {
+            skip |= LogError(
+                "VUID-VkImageCreateInfo-pNext-09457", device,
+                create_info_loc.pNext(Struct::VkExternalFormatANDROID, Field::externalFormat),
+                "(%" PRIu64
+                ") is non-zero, but usage is %s (without externalFormatResolve, only VK_IMAGE_USAGE_SAMPLED_BIT is allowed).",
+                ext_fmt_android->externalFormat, string_VkImageUsageFlags(create_info->usage).c_str());
         }
 
         if (VK_IMAGE_TILING_OPTIMAL != create_info->tiling) {
@@ -558,7 +554,7 @@ bool CoreChecks::ValidateCreateImageANDROID(const VkImageCreateInfo *create_info
 // Validate creating an image view with an AHB format
 bool CoreChecks::ValidateCreateImageViewANDROID(const VkImageViewCreateInfo *create_info, const Location &create_info_loc) const {
     bool skip = false;
-    auto image_state = Get<IMAGE_STATE>(create_info->image);
+    auto image_state = Get<vvl::Image>(create_info->image);
 
     if (image_state->HasAHBFormat()) {
         if (VK_FORMAT_UNDEFINED != create_info->format) {
@@ -573,7 +569,7 @@ bool CoreChecks::ValidateCreateImageViewANDROID(const VkImageViewCreateInfo *cre
         uint64_t external_format = 0;
         const VkSamplerYcbcrConversionInfo *ycbcr_conv_info = vku::FindStructInPNextChain<VkSamplerYcbcrConversionInfo>(create_info->pNext);
         if (ycbcr_conv_info != nullptr) {
-            auto ycbcr_state = Get<SAMPLER_YCBCR_CONVERSION_STATE>(ycbcr_conv_info->conversion);
+            auto ycbcr_state = Get<vvl::SamplerYcbcrConversion>(ycbcr_conv_info->conversion);
             if (ycbcr_state) {
                 conv_found = true;
                 external_format = ycbcr_state->external_format;

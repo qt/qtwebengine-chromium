@@ -27,18 +27,22 @@
 
 struct CommandBufferSubmitState {
     const CoreChecks *core;
-    const QUEUE_STATE *queue_state;
+    const vvl::Queue *queue_state;
     QFOTransferCBScoreboards<QFOImageTransferBarrier> qfo_image_scoreboards;
     QFOTransferCBScoreboards<QFOBufferTransferBarrier> qfo_buffer_scoreboards;
     std::vector<VkCommandBuffer> current_cmds;
     GlobalImageLayoutMap overlay_image_layout_map;
+
+    // The "local" prefix is about tracking state within a *single* queue submission
+    // (accross all command buffers of that submission), as opposed to globally
+    // tracking state accross *all* submissions to the same queue.
     QueryMap local_query_to_state_map;
-    EventToStageMap local_event_to_stage_map;
-    vvl::unordered_map<VkVideoSessionKHR, VideoSessionDeviceState> local_video_session_state{};
+    EventToStageMap local_event_signal_info;
+    vvl::unordered_map<VkVideoSessionKHR, vvl::VideoSessionDeviceState> local_video_session_state{};
 
-    CommandBufferSubmitState(const CoreChecks *c, const QUEUE_STATE *q) : core(c), queue_state(q) {}
+    CommandBufferSubmitState(const CoreChecks *c, const vvl::Queue *q) : core(c), queue_state(q) {}
 
-    bool Validate(const Location &loc, const CMD_BUFFER_STATE &cb_state, uint32_t perf_pass) {
+    bool Validate(const Location &loc, const vvl::CommandBuffer &cb_state, uint32_t perf_pass) {
         bool skip = false;
         skip |= core->ValidateCmdBufImageLayouts(loc, cb_state, overlay_image_layout_map);
         auto cmd = cb_state.commandBuffer();
@@ -46,36 +50,7 @@ struct CommandBufferSubmitState {
         skip |= core->ValidatePrimaryCommandBufferState(
             loc, cb_state, static_cast<uint32_t>(std::count(current_cmds.begin(), current_cmds.end(), cmd)), &qfo_image_scoreboards,
             &qfo_buffer_scoreboards);
-        skip |= core->ValidateQueueFamilyIndices(loc, cb_state, queue_state->Queue());
-
-        for (const auto &descriptor_set : cb_state.validate_descriptorsets_in_queuesubmit) {
-            auto set_node = core->Get<cvdescriptorset::DescriptorSet>(descriptor_set.first);
-            if (!set_node) {
-                continue;
-            }
-            for (const auto &cmd_info : descriptor_set.second) {
-                // dynamic data isn't allowed in UPDATE_AFTER_BIND, so dynamicOffsets is always empty.
-                std::vector<uint32_t> dynamic_offsets;
-                std::optional<vvl::unordered_map<VkImageView, VkImageLayout>> checked_layouts;
-
-                CoreChecks::DescriptorContext context{loc,
-                                                      core->GetDrawDispatchVuid(cmd_info.command),
-                                                      cb_state,
-                                                      *set_node,
-                                                      cmd_info.framebuffer,
-                                                      false,  // This is submit time not record time...
-                                                      checked_layouts};
-
-                for (const auto &binding_info : cmd_info.binding_infos) {
-                    std::string error;
-                    if (set_node->GetTotalDescriptorCount() > cvdescriptorset::PrefilterBindRequestMap::kManyDescriptors_) {
-                        context.checked_layouts.emplace();
-                    }
-                    const auto *binding = set_node->GetBinding(binding_info.first);
-                    skip |= core->ValidateDescriptorSetBindingData(context, binding_info, *binding);
-                }
-            }
-        }
+        skip |= core->ValidateQueueFamilyIndices(loc, cb_state, queue_state->VkHandle());
 
         // Potential early exit here as bad object state may crash in delayed function calls
         if (skip) {
@@ -87,16 +62,17 @@ struct CommandBufferSubmitState {
             skip |= function(*core, *queue_state, cb_state);
         }
         for (auto &function : cb_state.eventUpdates) {
-            skip |= function(const_cast<CMD_BUFFER_STATE &>(cb_state), /*do_validate*/ true, &local_event_to_stage_map);
+            skip |= function(const_cast<vvl::CommandBuffer &>(cb_state), /*do_validate*/ true, local_event_signal_info,
+                             queue_state->VkHandle(), loc);
         }
         VkQueryPool first_perf_query_pool = VK_NULL_HANDLE;
         for (auto &function : cb_state.queryUpdates) {
-            skip |= function(const_cast<CMD_BUFFER_STATE &>(cb_state), /*do_validate*/ true, first_perf_query_pool, perf_pass,
+            skip |= function(const_cast<vvl::CommandBuffer &>(cb_state), /*do_validate*/ true, first_perf_query_pool, perf_pass,
                              &local_query_to_state_map);
         }
 
         for (const auto &it : cb_state.video_session_updates) {
-            auto video_session_state = core->Get<VIDEO_SESSION_STATE>(it.first);
+            auto video_session_state = core->Get<vvl::VideoSession>(it.first);
             auto local_state_it = local_video_session_state.find(it.first);
             if (local_state_it == local_video_session_state.end()) {
                 local_state_it = local_video_session_state.insert({it.first, video_session_state->DeviceStateCopy()}).first;
@@ -113,7 +89,7 @@ bool CoreChecks::PreCallValidateQueueSubmit(VkQueue queue, uint32_t submitCount,
                                             const ErrorObject &error_obj) const {
     bool skip = false;
     {
-        auto fence_state = Get<FENCE_STATE>(fence);
+        auto fence_state = Get<vvl::Fence>(fence);
         const LogObjectList objlist(queue, fence);
         skip = ValidateFenceForSubmit(fence_state.get(), "VUID-vkQueueSubmit-fence-00064", "VUID-vkQueueSubmit-fence-00063",
                                       objlist, error_obj.location);
@@ -122,7 +98,7 @@ bool CoreChecks::PreCallValidateQueueSubmit(VkQueue queue, uint32_t submitCount,
         return true;
     }
 
-    auto queue_state = Get<QUEUE_STATE>(queue);
+    auto queue_state = Get<vvl::Queue>(queue);
     CommandBufferSubmitState cb_submit_state(this, queue_state.get());
     SemaphoreSubmitState sem_submit_state(this, queue,
                                           physical_device_state->queue_family_properties[queue_state->queueFamilyIndex].queueFlags);
@@ -136,7 +112,7 @@ bool CoreChecks::PreCallValidateQueueSubmit(VkQueue queue, uint32_t submitCount,
         const Location submit_loc = error_obj.location.dot(Struct::VkSubmitInfo, Field::pSubmits, submit_idx);
         bool suspended_render_pass_instance = false;
         for (uint32_t i = 0; i < submit.commandBufferCount; i++) {
-            auto cb_state = GetRead<CMD_BUFFER_STATE>(submit.pCommandBuffers[i]);
+            auto cb_state = GetRead<vvl::CommandBuffer>(submit.pCommandBuffers[i]);
             if (cb_state) {
                 skip |= cb_submit_state.Validate(submit_loc.dot(Field::pCommandBuffers, i), *cb_state, perf_pass);
 
@@ -212,7 +188,7 @@ bool CoreChecks::PreCallValidateQueueSubmit(VkQueue queue, uint32_t submitCount,
         // Make sure command buffers are all protected or unprotected
         for (uint32_t i = 0; i < submit.commandBufferCount; i++) {
             const Location cb_loc = submit_loc.dot(Field::pCommandBuffers, i);
-            auto cb_state = GetRead<CMD_BUFFER_STATE>(submit.pCommandBuffers[i]);
+            auto cb_state = GetRead<vvl::CommandBuffer>(submit.pCommandBuffers[i]);
             if (cb_state) {
                 if ((cb_state->unprotected == true) && (protected_submit == true)) {
                     const LogObjectList objlist(cb_state->commandBuffer(), queue);
@@ -240,7 +216,7 @@ bool CoreChecks::ValidateQueueSubmit2(VkQueue queue, uint32_t submitCount, const
                                       const ErrorObject &error_obj) const {
     bool skip = false;
     {
-        auto fence_state = Get<FENCE_STATE>(fence);
+        auto fence_state = Get<vvl::Fence>(fence);
         const LogObjectList objlist(queue, fence);
         skip = ValidateFenceForSubmit(fence_state.get(), "VUID-vkQueueSubmit2-fence-04895", "VUID-vkQueueSubmit2-fence-04894",
                                       objlist, error_obj.location);
@@ -254,7 +230,7 @@ bool CoreChecks::ValidateQueueSubmit2(VkQueue queue, uint32_t submitCount, const
                          "synchronization2 feature is not enabled");
     }
 
-    auto queue_state = Get<QUEUE_STATE>(queue);
+    auto queue_state = Get<vvl::Queue>(queue);
     CommandBufferSubmitState cb_submit_state(this, queue_state.get());
     SemaphoreSubmitState sem_submit_state(this, queue,
                                           physical_device_state->queue_family_properties[queue_state->queueFamilyIndex].queueFlags);
@@ -279,7 +255,7 @@ bool CoreChecks::ValidateQueueSubmit2(VkQueue queue, uint32_t submitCount, const
         bool suspended_render_pass_instance = false;
         for (uint32_t i = 0; i < submit.commandBufferInfoCount; i++) {
             const Location info_loc = submit_loc.dot(Struct::VkCommandBufferSubmitInfo, Field::pCommandBufferInfos, i);
-            auto cb_state = GetRead<CMD_BUFFER_STATE>(submit.pCommandBufferInfos[i].commandBuffer);
+            auto cb_state = GetRead<vvl::CommandBuffer>(submit.pCommandBufferInfos[i].commandBuffer);
             skip |= cb_submit_state.Validate(info_loc.dot(Field::commandBuffer), *cb_state, perf_pass);
 
             {
@@ -350,7 +326,7 @@ void CoreChecks::PostCallRecordQueueSubmit(VkQueue queue, uint32_t submitCount, 
     for (uint32_t submit_idx = 0; submit_idx < submitCount; submit_idx++) {
         const VkSubmitInfo *submit = &pSubmits[submit_idx];
         for (uint32_t i = 0; i < submit->commandBufferCount; i++) {
-            auto cb_state = GetWrite<CMD_BUFFER_STATE>(submit->pCommandBuffers[i]);
+            auto cb_state = GetWrite<vvl::CommandBuffer>(submit->pCommandBuffers[i]);
             if (cb_state) {
                 for (auto *secondary_cmd_buffer : cb_state->linkedCommandBuffers) {
                     UpdateCmdBufImageLayouts(*secondary_cmd_buffer);
@@ -370,7 +346,7 @@ void CoreChecks::RecordQueueSubmit2(VkQueue queue, uint32_t submitCount, const V
     for (uint32_t submit_idx = 0; submit_idx < submitCount; submit_idx++) {
         const VkSubmitInfo2KHR *submit = &pSubmits[submit_idx];
         for (uint32_t i = 0; i < submit->commandBufferInfoCount; i++) {
-            auto cb_state = GetWrite<CMD_BUFFER_STATE>(submit->pCommandBufferInfos[i].commandBuffer);
+            auto cb_state = GetWrite<vvl::CommandBuffer>(submit->pCommandBufferInfos[i].commandBuffer);
             if (cb_state) {
                 for (auto *secondaryCmdBuffer : cb_state->linkedCommandBuffers) {
                     UpdateCmdBufImageLayouts(*secondaryCmdBuffer);
@@ -385,8 +361,7 @@ void CoreChecks::RecordQueueSubmit2(VkQueue queue, uint32_t submitCount, const V
 
 void CoreChecks::PostCallRecordQueueSubmit2KHR(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2KHR *pSubmits, VkFence fence,
                                                const RecordObject &record_obj) {
-    StateTracker::PostCallRecordQueueSubmit2KHR(queue, submitCount, pSubmits, fence, record_obj);
-    RecordQueueSubmit2(queue, submitCount, pSubmits, fence, record_obj);
+    PostCallRecordQueueSubmit2(queue, submitCount, pSubmits, fence, record_obj);
 }
 
 void CoreChecks::PostCallRecordQueueSubmit2(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2 *pSubmits, VkFence fence,
@@ -396,8 +371,9 @@ void CoreChecks::PostCallRecordQueueSubmit2(VkQueue queue, uint32_t submitCount,
 }
 
 // Check that the queue family index of 'queue' matches one of the entries in pQueueFamilyIndices
-bool CoreChecks::ValidImageBufferQueue(const CMD_BUFFER_STATE &cb_state, const VulkanTypedHandle &object, uint32_t queueFamilyIndex,
-                                       uint32_t count, const uint32_t *indices, const Location &loc) const {
+bool CoreChecks::ValidImageBufferQueue(const vvl::CommandBuffer &cb_state, const VulkanTypedHandle &object,
+                                       uint32_t queueFamilyIndex, uint32_t count, const uint32_t *indices,
+                                       const Location &loc) const {
     bool found = false;
     bool skip = false;
     for (uint32_t i = 0; i < count; i++) {
@@ -419,12 +395,12 @@ bool CoreChecks::ValidImageBufferQueue(const CMD_BUFFER_STATE &cb_state, const V
 
 // Validate that queueFamilyIndices of primary command buffers match this queue
 // Secondary command buffers were previously validated in vkCmdExecuteCommands().
-bool CoreChecks::ValidateQueueFamilyIndices(const Location &loc, const CMD_BUFFER_STATE &cb_state, VkQueue queue) const {
+bool CoreChecks::ValidateQueueFamilyIndices(const Location &loc, const vvl::CommandBuffer &cb_state, VkQueue queue) const {
     using sync_vuid_maps::GetQueueSubmitVUID;
     using sync_vuid_maps::SubmitError;
     bool skip = false;
     auto pool = cb_state.command_pool;
-    auto queue_state = Get<QUEUE_STATE>(queue);
+    auto queue_state = Get<vvl::Queue>(queue);
 
     if (pool && queue_state) {
         if (pool->queueFamilyIndex != queue_state->queueFamilyIndex) {
@@ -438,10 +414,10 @@ bool CoreChecks::ValidateQueueFamilyIndices(const Location &loc, const CMD_BUFFE
         }
 
         // Ensure that any bound images or buffers created with SHARING_MODE_CONCURRENT have access to the current queue family
-        for (const auto &base_node : cb_state.object_bindings) {
-            switch (base_node->Type()) {
+        for (const auto &state_object : cb_state.object_bindings) {
+            switch (state_object->Type()) {
                 case kVulkanObjectTypeImage: {
-                    auto image_state = static_cast<const IMAGE_STATE *>(base_node.get());
+                    auto image_state = static_cast<const vvl::Image *>(state_object.get());
                     if (image_state && image_state->createInfo.sharingMode == VK_SHARING_MODE_CONCURRENT) {
                         skip |= ValidImageBufferQueue(cb_state, image_state->Handle(), queue_state->queueFamilyIndex,
                                                       image_state->createInfo.queueFamilyIndexCount,
@@ -450,7 +426,7 @@ bool CoreChecks::ValidateQueueFamilyIndices(const Location &loc, const CMD_BUFFE
                     break;
                 }
                 case kVulkanObjectTypeBuffer: {
-                    auto buffer_state = static_cast<const BUFFER_STATE *>(base_node.get());
+                    auto buffer_state = static_cast<const vvl::Buffer *>(state_object.get());
                     if (buffer_state && buffer_state->createInfo.sharingMode == VK_SHARING_MODE_CONCURRENT) {
                         skip |= ValidImageBufferQueue(cb_state, buffer_state->Handle(), queue_state->queueFamilyIndex,
                                                       buffer_state->createInfo.queueFamilyIndexCount,
@@ -467,7 +443,7 @@ bool CoreChecks::ValidateQueueFamilyIndices(const Location &loc, const CMD_BUFFE
     return skip;
 }
 
-bool CoreChecks::ValidateCommandBufferState(const CMD_BUFFER_STATE &cb_state, const Location &loc, uint32_t current_submit_count,
+bool CoreChecks::ValidateCommandBufferState(const vvl::CommandBuffer &cb_state, const Location &loc, uint32_t current_submit_count,
                                             const char *vuid) const {
     bool skip = false;
     if (disabled[command_buffer_state]) {
@@ -477,7 +453,8 @@ bool CoreChecks::ValidateCommandBufferState(const CMD_BUFFER_STATE &cb_state, co
     // Validate ONE_TIME_SUBMIT_BIT CB is not being submitted more than once
     if (const uint64_t submissions = cb_state.submitCount + current_submit_count;
         (cb_state.beginInfo.flags & VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT) && (submissions > 1)) {
-        skip |= LogError(kVUID_Core_DrawState_CommandBufferSingleSubmitViolation, cb_state.commandBuffer(), loc,
+        // VU being worked on https://gitlab.khronos.org/vulkan/vulkan/-/issues/2456
+        skip |= LogError("UNASSIGNED-DrawState-CommandBufferSingleSubmitViolation", cb_state.commandBuffer(), loc,
                          "%s recorded with VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT has been submitted %" PRIu64 " times.",
                          FormatHandle(cb_state).c_str(), submissions);
     }
@@ -505,7 +482,7 @@ bool CoreChecks::ValidateCommandBufferState(const CMD_BUFFER_STATE &cb_state, co
     return skip;
 }
 
-bool CoreChecks::ValidateCommandBufferSimultaneousUse(const Location &loc, const CMD_BUFFER_STATE &cb_state,
+bool CoreChecks::ValidateCommandBufferSimultaneousUse(const Location &loc, const vvl::CommandBuffer &cb_state,
                                                       int current_submit_count) const {
     using sync_vuid_maps::GetQueueSubmitVUID;
     using sync_vuid_maps::SubmitError;
@@ -522,7 +499,7 @@ bool CoreChecks::ValidateCommandBufferSimultaneousUse(const Location &loc, const
 }
 
 bool CoreChecks::ValidatePrimaryCommandBufferState(
-    const Location &loc, const CMD_BUFFER_STATE &cb_state, uint32_t current_submit_count,
+    const Location &loc, const vvl::CommandBuffer &cb_state, uint32_t current_submit_count,
     QFOTransferCBScoreboards<QFOImageTransferBarrier> *qfo_image_scoreboards,
     QFOTransferCBScoreboards<QFOBufferTransferBarrier> *qfo_buffer_scoreboards) const {
     using sync_vuid_maps::GetQueueSubmitVUID;
@@ -580,7 +557,7 @@ bool CoreChecks::PreCallValidateQueueBindSparse(VkQueue queue, uint32_t bindInfo
                                                 VkFence fence, const ErrorObject &error_obj) const {
     bool skip = false;
     {
-        auto fence_state = Get<FENCE_STATE>(fence);
+        auto fence_state = Get<vvl::Fence>(fence);
         const LogObjectList objlist(queue, fence);
         skip = ValidateFenceForSubmit(fence_state.get(), "VUID-vkQueueBindSparse-fence-01114", "VUID-vkQueueBindSparse-fence-01113",
                                       objlist, error_obj.location);
@@ -589,7 +566,7 @@ bool CoreChecks::PreCallValidateQueueBindSparse(VkQueue queue, uint32_t bindInfo
         return true;
     }
 
-    auto queue_data = Get<QUEUE_STATE>(queue);
+    auto queue_data = Get<vvl::Queue>(queue);
     const auto queue_flags = physical_device_state->queue_family_properties[queue_data->queueFamilyIndex].queueFlags;
     if (!(queue_flags & VK_QUEUE_SPARSE_BINDING_BIT)) {
         skip |= LogError("VUID-vkQueueBindSparse-queuetype", queue, error_obj.location,
@@ -608,7 +585,7 @@ bool CoreChecks::PreCallValidateQueueBindSparse(VkQueue queue, uint32_t bindInfo
             for (uint32_t buffer_idx = 0; buffer_idx < bind_info.bufferBindCount; ++buffer_idx) {
                 const VkSparseBufferMemoryBindInfo &buffer_bind = bind_info.pBufferBinds[buffer_idx];
                 if (buffer_bind.pBinds) {
-                    auto buffer_state = Get<BUFFER_STATE>(buffer_bind.buffer);
+                    auto buffer_state = Get<vvl::Buffer>(buffer_bind.buffer);
                     for (uint32_t buffer_bind_idx = 0; buffer_bind_idx < buffer_bind.bindCount; ++buffer_bind_idx) {
                         const VkSparseMemoryBind &memory_bind = buffer_bind.pBinds[buffer_bind_idx];
                         const Location buffer_loc = bind_info_loc.dot(Field::pBufferBinds, buffer_idx);
@@ -625,7 +602,7 @@ bool CoreChecks::PreCallValidateQueueBindSparse(VkQueue queue, uint32_t bindInfo
             for (uint32_t image_opaque_idx = 0; image_opaque_idx < bind_info.imageOpaqueBindCount; ++image_opaque_idx) {
                 const VkSparseImageOpaqueMemoryBindInfo &image_opaque_bind = bind_info.pImageOpaqueBinds[image_opaque_idx];
                 if (image_opaque_bind.pBinds) {
-                    auto image_state = Get<IMAGE_STATE>(image_opaque_bind.image);
+                    auto image_state = Get<vvl::Image>(image_opaque_bind.image);
                     for (uint32_t image_opaque_bind_idx = 0; image_opaque_bind_idx < image_opaque_bind.bindCount;
                          ++image_opaque_bind_idx) {
                         const VkSparseMemoryBind &memory_bind = image_opaque_bind.pBinds[image_opaque_bind_idx];
@@ -645,19 +622,20 @@ bool CoreChecks::PreCallValidateQueueBindSparse(VkQueue queue, uint32_t bindInfo
             for (uint32_t image_idx = 0; image_idx < bind_info.imageBindCount; ++image_idx) {
                 const Location bind_loc = bind_info_loc.dot(Field::pImageBinds, image_idx);
                 const VkSparseImageMemoryBindInfo &image_bind = bind_info.pImageBinds[image_idx];
-                auto image_state = Get<IMAGE_STATE>(image_bind.image);
+                auto image_state = Get<vvl::Image>(image_bind.image);
+                if (!image_state) {
+                    continue;
+                }
 
-                if (image_state && !(image_state->sparse_residency)) {
+                if (!image_state->sparse_residency) {
                     skip |= LogError("VUID-VkSparseImageMemoryBindInfo-image-02901", image_bind.image, bind_loc.dot(Field::image),
                                      "must have been created with VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT set.");
                 }
 
-                if (image_bind.pBinds) {
-                    for (uint32_t image_bind_idx = 0; image_bind_idx < image_bind.bindCount; ++image_bind_idx) {
-                        const VkSparseImageMemoryBind &memory_bind = image_bind.pBinds[image_bind_idx];
-                        skip |= ValidateSparseImageMemoryBind(image_state.get(), memory_bind, bind_loc,
-                                                              bind_loc.dot(Field::pBinds, image_bind_idx));
-                    }
+                for (uint32_t image_bind_idx = 0; image_bind_idx < image_bind.bindCount; ++image_bind_idx) {
+                    const Location image_bind_loc = bind_loc.dot(Field::pBinds, image_bind_idx);
+                    const VkSparseImageMemoryBind &memory_bind = image_bind.pBinds[image_bind_idx];
+                    skip |= ValidateSparseImageMemoryBind(image_state.get(), memory_bind, bind_loc, image_bind_loc);
                 }
             }
         }

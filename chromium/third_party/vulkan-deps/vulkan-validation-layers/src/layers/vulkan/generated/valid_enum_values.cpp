@@ -31,6 +31,7 @@
 //      devices over the lifespan of the project (e.g., VLT).
 
 // clang-format off
+
 template<>
 std::vector<VkResult> ValidationObject::ValidParamValues() const {
     constexpr std::array CoreVkResultEnums = {VK_SUCCESS, VK_NOT_READY, VK_TIMEOUT, VK_EVENT_SET, VK_EVENT_RESET, VK_INCOMPLETE, VK_ERROR_OUT_OF_HOST_MEMORY, VK_ERROR_OUT_OF_DEVICE_MEMORY, VK_ERROR_INITIALIZATION_FAILED, VK_ERROR_DEVICE_LOST, VK_ERROR_MEMORY_MAP_FAILED, VK_ERROR_LAYER_NOT_PRESENT, VK_ERROR_EXTENSION_NOT_PRESENT, VK_ERROR_FEATURE_NOT_PRESENT, VK_ERROR_INCOMPATIBLE_DRIVER, VK_ERROR_TOO_MANY_OBJECTS, VK_ERROR_FORMAT_NOT_SUPPORTED, VK_ERROR_FRAGMENTED_POOL, VK_ERROR_UNKNOWN};
@@ -129,6 +130,7 @@ std::vector<VkObjectType> ValidationObject::ValidParamValues() const {
         { &DeviceExtensions::vk_intel_performance_query, { VK_OBJECT_TYPE_PERFORMANCE_CONFIGURATION_INTEL } },
         { &DeviceExtensions::vk_nv_device_generated_commands, { VK_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_NV } },
         { &DeviceExtensions::vk_ext_private_data, { VK_OBJECT_TYPE_PRIVATE_DATA_SLOT } },
+        { &DeviceExtensions::vk_nv_cuda_kernel_launch, { VK_OBJECT_TYPE_CUDA_MODULE_NV, VK_OBJECT_TYPE_CUDA_FUNCTION_NV } },
         { &DeviceExtensions::vk_fuchsia_buffer_collection, { VK_OBJECT_TYPE_BUFFER_COLLECTION_FUCHSIA } },
         { &DeviceExtensions::vk_ext_opacity_micromap, { VK_OBJECT_TYPE_MICROMAP_EXT } },
         { &DeviceExtensions::vk_nv_optical_flow, { VK_OBJECT_TYPE_OPTICAL_FLOW_SESSION_NV } },
@@ -832,7 +834,6 @@ std::vector<VkFragmentShadingRateCombinerOpKHR> ValidationObject::ValidParamValu
     return values;
 }
 
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 template<>
 std::vector<VkVideoEncodeTuningModeKHR> ValidationObject::ValidParamValues() const {
     constexpr std::array CoreVkVideoEncodeTuningModeKHREnums = {VK_VIDEO_ENCODE_TUNING_MODE_DEFAULT_KHR, VK_VIDEO_ENCODE_TUNING_MODE_HIGH_QUALITY_KHR, VK_VIDEO_ENCODE_TUNING_MODE_LOW_LATENCY_KHR, VK_VIDEO_ENCODE_TUNING_MODE_ULTRA_LOW_LATENCY_KHR, VK_VIDEO_ENCODE_TUNING_MODE_LOSSLESS_KHR};
@@ -848,7 +849,6 @@ std::vector<VkVideoEncodeTuningModeKHR> ValidationObject::ValidParamValues() con
     std::copy(unique_exts.cbegin(), unique_exts.cend(), std::back_inserter(values));
     return values;
 }
-#endif //VK_ENABLE_BETA_EXTENSIONS
 
 template<>
 std::vector<VkComponentTypeKHR> ValidationObject::ValidParamValues() const {
@@ -883,6 +883,22 @@ std::vector<VkScopeKHR> ValidationObject::ValidParamValues() const {
 }
 
 template<>
+std::vector<VkTimeDomainKHR> ValidationObject::ValidParamValues() const {
+    constexpr std::array CoreVkTimeDomainKHREnums = {VK_TIME_DOMAIN_DEVICE_KHR, VK_TIME_DOMAIN_CLOCK_MONOTONIC_KHR, VK_TIME_DOMAIN_CLOCK_MONOTONIC_RAW_KHR, VK_TIME_DOMAIN_QUERY_PERFORMANCE_COUNTER_KHR};
+    static const vvl::unordered_map<const ExtEnabled DeviceExtensions::*, std::vector<VkTimeDomainKHR>> ExtendedVkTimeDomainKHREnums = {
+    };
+    std::vector<VkTimeDomainKHR> values(CoreVkTimeDomainKHREnums.cbegin(), CoreVkTimeDomainKHREnums.cend());
+    std::set<VkTimeDomainKHR> unique_exts;
+    for (const auto& [extension, enums]: ExtendedVkTimeDomainKHREnums) {
+        if (IsExtEnabled(device_extensions.*extension)) {
+            unique_exts.insert(enums.cbegin(), enums.cend());
+        }
+    }
+    std::copy(unique_exts.cbegin(), unique_exts.cend(), std::back_inserter(values));
+    return values;
+}
+
+template<>
 std::vector<VkDebugReportObjectTypeEXT> ValidationObject::ValidParamValues() const {
     constexpr std::array CoreVkDebugReportObjectTypeEXTEnums = {VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_PHYSICAL_DEVICE_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_QUEUE_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_SEMAPHORE_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_COMMAND_BUFFER_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_FENCE_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_MEMORY_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_BUFFER_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_EVENT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_QUERY_POOL_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_BUFFER_VIEW_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_VIEW_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_SHADER_MODULE_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_PIPELINE_CACHE_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_PIPELINE_LAYOUT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_RENDER_PASS_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_PIPELINE_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_SAMPLER_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_POOL_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_SET_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_FRAMEBUFFER_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_COMMAND_POOL_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_SURFACE_KHR_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_SWAPCHAIN_KHR_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_DEBUG_REPORT_CALLBACK_EXT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_DISPLAY_KHR_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_DISPLAY_MODE_KHR_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_VALIDATION_CACHE_EXT_EXT};
     static const vvl::unordered_map<const ExtEnabled DeviceExtensions::*, std::vector<VkDebugReportObjectTypeEXT>> ExtendedVkDebugReportObjectTypeEXTEnums = {
@@ -890,6 +906,7 @@ std::vector<VkDebugReportObjectTypeEXT> ValidationObject::ValidParamValues() con
         { &DeviceExtensions::vk_khr_sampler_ycbcr_conversion, { VK_DEBUG_REPORT_OBJECT_TYPE_SAMPLER_YCBCR_CONVERSION_EXT } },
         { &DeviceExtensions::vk_nvx_binary_import, { VK_DEBUG_REPORT_OBJECT_TYPE_CU_MODULE_NVX_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_CU_FUNCTION_NVX_EXT } },
         { &DeviceExtensions::vk_nv_ray_tracing, { VK_DEBUG_REPORT_OBJECT_TYPE_ACCELERATION_STRUCTURE_NV_EXT } },
+        { &DeviceExtensions::vk_nv_cuda_kernel_launch, { VK_DEBUG_REPORT_OBJECT_TYPE_CUDA_MODULE_NV_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_CUDA_FUNCTION_NV_EXT } },
         { &DeviceExtensions::vk_fuchsia_buffer_collection, { VK_DEBUG_REPORT_OBJECT_TYPE_BUFFER_COLLECTION_FUCHSIA_EXT } },
         { &DeviceExtensions::vk_khr_acceleration_structure, { VK_DEBUG_REPORT_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR_EXT } },
     };
@@ -1225,22 +1242,6 @@ std::vector<VkAccelerationStructureMemoryRequirementsTypeNV> ValidationObject::V
 }
 
 template<>
-std::vector<VkTimeDomainEXT> ValidationObject::ValidParamValues() const {
-    constexpr std::array CoreVkTimeDomainEXTEnums = {VK_TIME_DOMAIN_DEVICE_EXT, VK_TIME_DOMAIN_CLOCK_MONOTONIC_EXT, VK_TIME_DOMAIN_CLOCK_MONOTONIC_RAW_EXT, VK_TIME_DOMAIN_QUERY_PERFORMANCE_COUNTER_EXT};
-    static const vvl::unordered_map<const ExtEnabled DeviceExtensions::*, std::vector<VkTimeDomainEXT>> ExtendedVkTimeDomainEXTEnums = {
-    };
-    std::vector<VkTimeDomainEXT> values(CoreVkTimeDomainEXTEnums.cbegin(), CoreVkTimeDomainEXTEnums.cend());
-    std::set<VkTimeDomainEXT> unique_exts;
-    for (const auto& [extension, enums]: ExtendedVkTimeDomainEXTEnums) {
-        if (IsExtEnabled(device_extensions.*extension)) {
-            unique_exts.insert(enums.cbegin(), enums.cend());
-        }
-    }
-    std::copy(unique_exts.cbegin(), unique_exts.cend(), std::back_inserter(values));
-    return values;
-}
-
-template<>
 std::vector<VkMemoryOverallocationBehaviorAMD> ValidationObject::ValidParamValues() const {
     constexpr std::array CoreVkMemoryOverallocationBehaviorAMDEnums = {VK_MEMORY_OVERALLOCATION_BEHAVIOR_DEFAULT_AMD, VK_MEMORY_OVERALLOCATION_BEHAVIOR_ALLOWED_AMD, VK_MEMORY_OVERALLOCATION_BEHAVIOR_DISALLOWED_AMD};
     static const vvl::unordered_map<const ExtEnabled DeviceExtensions::*, std::vector<VkMemoryOverallocationBehaviorAMD>> ExtendedVkMemoryOverallocationBehaviorAMDEnums = {
@@ -1416,7 +1417,7 @@ std::vector<VkFullScreenExclusiveEXT> ValidationObject::ValidParamValues() const
     std::copy(unique_exts.cbegin(), unique_exts.cend(), std::back_inserter(values));
     return values;
 }
-#endif //VK_USE_PLATFORM_WIN32_KHR
+#endif  // VK_USE_PLATFORM_WIN32_KHR
 
 template<>
 std::vector<VkLineRasterizationModeEXT> ValidationObject::ValidParamValues() const {
@@ -1701,6 +1702,22 @@ std::vector<VkShaderCodeTypeEXT> ValidationObject::ValidParamValues() const {
     std::vector<VkShaderCodeTypeEXT> values(CoreVkShaderCodeTypeEXTEnums.cbegin(), CoreVkShaderCodeTypeEXTEnums.cend());
     std::set<VkShaderCodeTypeEXT> unique_exts;
     for (const auto& [extension, enums]: ExtendedVkShaderCodeTypeEXTEnums) {
+        if (IsExtEnabled(device_extensions.*extension)) {
+            unique_exts.insert(enums.cbegin(), enums.cend());
+        }
+    }
+    std::copy(unique_exts.cbegin(), unique_exts.cend(), std::back_inserter(values));
+    return values;
+}
+
+template<>
+std::vector<VkLayerSettingTypeEXT> ValidationObject::ValidParamValues() const {
+    constexpr std::array CoreVkLayerSettingTypeEXTEnums = {VK_LAYER_SETTING_TYPE_BOOL32_EXT, VK_LAYER_SETTING_TYPE_INT32_EXT, VK_LAYER_SETTING_TYPE_INT64_EXT, VK_LAYER_SETTING_TYPE_UINT32_EXT, VK_LAYER_SETTING_TYPE_UINT64_EXT, VK_LAYER_SETTING_TYPE_FLOAT32_EXT, VK_LAYER_SETTING_TYPE_FLOAT64_EXT, VK_LAYER_SETTING_TYPE_STRING_EXT};
+    static const vvl::unordered_map<const ExtEnabled DeviceExtensions::*, std::vector<VkLayerSettingTypeEXT>> ExtendedVkLayerSettingTypeEXTEnums = {
+    };
+    std::vector<VkLayerSettingTypeEXT> values(CoreVkLayerSettingTypeEXTEnums.cbegin(), CoreVkLayerSettingTypeEXTEnums.cend());
+    std::set<VkLayerSettingTypeEXT> unique_exts;
+    for (const auto& [extension, enums]: ExtendedVkLayerSettingTypeEXTEnums) {
         if (IsExtEnabled(device_extensions.*extension)) {
             unique_exts.insert(enums.cbegin(), enums.cend());
         }

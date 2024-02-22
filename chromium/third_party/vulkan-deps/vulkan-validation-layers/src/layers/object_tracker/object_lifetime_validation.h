@@ -16,13 +16,6 @@
  * limitations under the License.
  */
 
-// clang-format off
-[[maybe_unused]] static const char *kVUID_ObjectTracker_Info = "UNASSIGNED-ObjectTracker-Info";
-[[maybe_unused]] static const char *kVUID_ObjectTracker_InternalError = "UNASSIGNED-ObjectTracker-InternalError";
-[[maybe_unused]] static const char *kVUID_ObjectTracker_ObjectLeak =    "UNASSIGNED-ObjectTracker-ObjectLeak";
-[[maybe_unused]] static const char *kVUID_ObjectTracker_UnknownObject = "UNASSIGNED-ObjectTracker-UnknownObject";
-// clang-format on
-
 extern uint64_t object_track_index;
 
 // Object Status -- used to track state of individual objects
@@ -65,7 +58,7 @@ class ObjectLifetimes : public ValidationObject {
     // Vector of unordered_maps per object type to hold ObjTrackState info
     object_map_type object_map[kVulkanObjectTypeMax + 1];
     // Special-case map for swapchain images
-    object_map_type swapchainImageMap;
+    object_map_type swapchain_image_map;
 
     void *device_createinfo_pnext;
     bool null_descriptor_enabled;
@@ -81,13 +74,15 @@ class ObjectLifetimes : public ValidationObject {
     }
 
     template <typename T1>
-    void InsertObject(object_map_type &map, T1 object, VulkanObjectType object_type, std::shared_ptr<ObjTrackState> pNode) {
+    void InsertObject(object_map_type &map, T1 object, VulkanObjectType object_type, const Location &loc,
+                      std::shared_ptr<ObjTrackState> pNode) {
         uint64_t object_handle = HandleToUint64(object);
         const bool inserted = map.insert(object_handle, pNode);
         if (!inserted) {
             // The object should not already exist. If we couldn't add it to the map, there was probably
             // a race condition in the app. Report an error and move on.
-            (void)LogError(object, kVUID_ObjectTracker_Info,
+            // TODO should this be an error? https://gitlab.khronos.org/vulkan/vulkan/-/issues/3616
+            (void)LogError("UNASSIGNED-ObjectTracker-Insert", object, loc,
                            "Couldn't insert %s Object 0x%" PRIxLEAST64
                            ", already existed. This should not happen and may indicate a "
                            "race condition in the application.",
@@ -105,10 +100,12 @@ class ObjectLifetimes : public ValidationObject {
 
     void DestroyUndestroyedObjects(VulkanObjectType object_type);
 
-    void CreateQueue(VkQueue vkObj);
-    void AllocateCommandBuffer(const VkCommandPool command_pool, const VkCommandBuffer command_buffer, VkCommandBufferLevel level);
-    void AllocateDescriptorSet(VkDescriptorPool descriptor_pool, VkDescriptorSet descriptor_set);
-    void CreateSwapchainImageObject(VkImage swapchain_image, VkSwapchainKHR swapchain);
+    void CreateQueue(VkQueue vkObj, const Location &loc);
+    void AllocateCommandBuffer(const VkCommandPool command_pool, const VkCommandBuffer command_buffer, VkCommandBufferLevel level,
+                               const Location &loc);
+    void AllocateDescriptorSet(VkDescriptorPool descriptor_pool, VkDescriptorSet descriptor_set, const Location &loc);
+    void AllocateDisplayKHR(VkPhysicalDevice physical_device, VkDisplayKHR display, const Location &loc);
+    void CreateSwapchainImageObject(VkImage swapchain_image, VkSwapchainKHR swapchain, const Location &loc);
     void DestroyLeakedInstanceObjects();
     void DestroyLeakedDeviceObjects();
     void DestroyQueueDataStructures();
@@ -117,74 +114,13 @@ class ObjectLifetimes : public ValidationObject {
     bool ValidateSamplerObjects(const VkDescriptorSetLayoutCreateInfo *pCreateInfo, const Location &loc) const;
     bool ValidateDescriptorWrite(VkWriteDescriptorSet const *desc, bool isPush, const Location &loc) const;
     bool ValidateAnonymousObject(uint64_t object, VkObjectType core_object_type, const char *invalid_handle_vuid,
-                                 const Location &loc) const;
-    bool ValidateAccelerationStructures(const char *dst_handle_vuid, uint32_t count,
+                                 const char *wrong_parent_vuid, const Location &loc) const;
+    bool ValidateAccelerationStructures(const char *src_handle_vuid, const char *dst_handle_vuid, uint32_t count,
                                         const VkAccelerationStructureBuildGeometryInfoKHR *infos, const Location &loc) const;
 
-    bool TracksObject(uint64_t object_handle, VulkanObjectType object_type) const {
-        // Look for object in object map
-        if (object_map[object_type].contains(object_handle)) {
-            return true;
-        }
-        // If object is an image, also look for it in the swapchain image map
-        if (object_type == kVulkanObjectTypeImage && swapchainImageMap.find(object_handle) != swapchainImageMap.end()) {
-            return true;
-        }
-        return false;
-    }
-
+    bool TracksObject(uint64_t object_handle, VulkanObjectType object_type) const;
     bool CheckObjectValidity(uint64_t object_handle, VulkanObjectType object_type, const char *invalid_handle_vuid,
-                             const char *wrong_parent_vuid, const Location &loc, VulkanObjectType parent_type) const {
-        constexpr bool skip = false;
-
-        // If this instance of lifetime validation tracks the object, report success
-        if (TracksObject(object_handle, object_type)) {
-            return skip;
-        }
-        // Object not found, look for it in other device object maps
-        const ObjectLifetimes *other_lifetimes = nullptr;
-        for (const auto &other_device_data : layer_data_map) {
-            const auto lifetimes = other_device_data.second->GetValidationObject<ObjectLifetimes>();
-            if (lifetimes && lifetimes != this && lifetimes->TracksObject(object_handle, object_type)) {
-                other_lifetimes = lifetimes;
-                break;
-            }
-        }
-        // Object was not found anywhere
-        if (!other_lifetimes) {
-            return LogError(invalid_handle_vuid, instance, loc, "Invalid %s Object 0x%" PRIxLEAST64 ".", object_string[object_type],
-                            object_handle);
-        }
-        // Anonymous object validation does not check parent, only that the object exists
-        if (wrong_parent_vuid == kVUIDUndefined) {
-            return skip;
-        }
-        // Object found on another device
-        LogObjectList objlist;
-        std::string handle_str;
-        std::string other_handle_str;
-        if (parent_type == kVulkanObjectTypeDevice) {
-            objlist = LogObjectList(instance, device, other_lifetimes->device);
-            handle_str = FormatHandle(device);
-            other_handle_str = FormatHandle(other_lifetimes->device);
-        } else if (parent_type == kVulkanObjectTypeInstance) {
-            objlist = LogObjectList(instance, other_lifetimes->instance);
-            handle_str = FormatHandle(instance);
-            other_handle_str = FormatHandle(other_lifetimes->instance);
-        } else if (parent_type == kVulkanObjectTypePhysicalDevice) {
-            objlist = LogObjectList(instance, physical_device, other_lifetimes->physical_device);
-            handle_str = FormatHandle(physical_device);
-            other_handle_str = FormatHandle(other_lifetimes->physical_device);
-        } else {
-            assert(false);
-            return skip;
-        }
-        return LogError(wrong_parent_vuid, objlist, loc,
-                        "(%s 0x%" PRIxLEAST64
-                        ") was created, allocated or retrieved from %s, but command is using (or its dispatchable parameter is "
-                        "associated with) %s",
-                        object_string[object_type], object_handle, other_handle_str.c_str(), handle_str.c_str());
-    }
+                             const char *wrong_parent_vuid, const Location &loc, VulkanObjectType parent_type) const;
 
     template <typename T1>
     bool ValidateObject(T1 object, VulkanObjectType object_type, bool null_allowed, const char *invalid_handle_vuid,
@@ -197,7 +133,7 @@ class ObjectLifetimes : public ValidationObject {
     }
 
     template <typename T1>
-    void CreateObject(T1 object, VulkanObjectType object_type, const VkAllocationCallbacks *pAllocator) {
+    void CreateObject(T1 object, VulkanObjectType object_type, const VkAllocationCallbacks *pAllocator, const Location &loc) {
         uint64_t object_handle = HandleToUint64(object);
         const bool custom_allocator = (pAllocator != nullptr);
         if (!object_map[object_type].contains(object_handle)) {
@@ -206,7 +142,7 @@ class ObjectLifetimes : public ValidationObject {
             pNewObjNode->status = custom_allocator ? OBJSTATUS_CUSTOM_ALLOCATOR : OBJSTATUS_NONE;
             pNewObjNode->handle = object_handle;
 
-            InsertObject(object_map[object_type], object, object_type, pNewObjNode);
+            InsertObject(object_map[object_type], object, object_type, loc, pNewObjNode);
             num_objects[object_type]++;
             num_total_objects++;
 
@@ -216,27 +152,7 @@ class ObjectLifetimes : public ValidationObject {
         }
     }
 
-    void DestroyObjectSilently(uint64_t object, VulkanObjectType object_type) {
-        assert(object != HandleToUint64(VK_NULL_HANDLE));
-
-        auto item = object_map[object_type].pop(object);
-        if (item == object_map[object_type].end()) {
-            // We've already checked that the object exists. If we couldn't find and atomically remove it
-            // from the map, there must have been a race condition in the app. Report an error and move on.
-            (void)LogError(device, kVUID_ObjectTracker_Info,
-                           "Couldn't destroy %s Object 0x%" PRIxLEAST64
-                           ", not found. This should not happen and may indicate a race condition in the application.",
-                           object_string[object_type], object);
-
-            return;
-        }
-        assert(num_total_objects > 0);
-
-        num_total_objects--;
-        assert(num_objects[item->second->object_type] > 0);
-
-        num_objects[item->second->object_type]--;
-    }
+    void DestroyObjectSilently(uint64_t object, VulkanObjectType object_type);
 
     template <typename T1>
     void RecordDestroyObject(T1 object_handle, VulkanObjectType object_type) {

@@ -21,7 +21,7 @@
 namespace sync_utils {
 static constexpr uint32_t kNumPipelineStageBits = sizeof(VkPipelineStageFlags2KHR) * 8;
 
-VkPipelineStageFlags2KHR DisabledPipelineStages(const DeviceFeatures &features) {
+VkPipelineStageFlags2KHR DisabledPipelineStages(const DeviceFeatures &features, const DeviceExtensions& device_extensions) {
     VkPipelineStageFlags2KHR result = 0;
     if (!features.geometryShader) {
         result |= VK_PIPELINE_STAGE_GEOMETRY_SHADER_BIT;
@@ -47,8 +47,10 @@ VkPipelineStageFlags2KHR DisabledPipelineStages(const DeviceFeatures &features) 
     if (!features.attachmentFragmentShadingRate && !features.shadingRateImage) {
         result |= VK_PIPELINE_STAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR;
     }
+    if (!IsExtEnabled(device_extensions.vk_nv_ray_tracing) && !features.rayTracingPipeline) {
+        result |= VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR;
+    }
     // TODO: VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR
-    // TODO: VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR
     return result;
 }
 
@@ -292,12 +294,12 @@ ShaderStageAccesses GetShaderStageAccesses(VkShaderStageFlagBits shader_stage) {
     return it->second;
 }
 
-const std::shared_ptr<const BUFFER_STATE> BufferBarrier::GetResourceState(const ValidationStateTracker &state_tracker) const {
-    return state_tracker.Get<BUFFER_STATE>(buffer);
+const std::shared_ptr<const vvl::Buffer> BufferBarrier::GetResourceState(const ValidationStateTracker &state_tracker) const {
+    return state_tracker.Get<vvl::Buffer>(buffer);
 }
 
-const std::shared_ptr<const IMAGE_STATE> ImageBarrier::GetResourceState(const ValidationStateTracker &state_tracker) const {
-    return state_tracker.Get<IMAGE_STATE>(image);
+const std::shared_ptr<const vvl::Image> ImageBarrier::GetResourceState(const ValidationStateTracker &state_tracker) const {
+    return state_tracker.Get<vvl::Image>(image);
 }
 
 }  // namespace sync_utils

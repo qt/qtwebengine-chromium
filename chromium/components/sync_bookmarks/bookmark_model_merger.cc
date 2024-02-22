@@ -538,8 +538,12 @@ BookmarkModelMerger::BookmarkModelMerger(
       remote_forest_(BuildRemoteForest(std::move(updates), bookmark_tracker)),
       uuid_to_match_map_(
           FindGuidMatchesOrReassignLocal(remote_forest_, bookmark_model_)) {
-  DCHECK(bookmark_tracker_->IsEmpty());
-  DCHECK(favicon_service);
+  CHECK(bookmark_tracker_->IsEmpty());
+  CHECK(favicon_service);
+  CHECK(bookmark_model);
+  CHECK(bookmark_model->bookmark_bar_node());
+  CHECK(bookmark_model->mobile_node());
+  CHECK(bookmark_model->other_node());
 
   int num_updates_in_forest = 0;
   for (const auto& [server_defined_unique_tag, root] : remote_forest_) {
@@ -593,6 +597,7 @@ void BookmarkModelMerger::Merge() {
     DCHECK_EQ(permanent_folder->uuid(),
               GetPermanentFolderUuidForServerDefinedUniqueTag(
                   server_defined_unique_tag));
+
     MergeSubtree(/*local_node=*/permanent_folder,
                  /*remote_node=*/root);
   }

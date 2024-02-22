@@ -26,7 +26,6 @@
 #include "anonymous_tokens/cpp/testing/utils.h"
 #include "anonymous_tokens/proto/anonymous_tokens.pb.h"
 
-
 namespace anonymous_tokens {
 namespace {
 
@@ -78,7 +77,7 @@ class AnonymousTokensRedemptionClientTest : public testing::Test {
     dummy_token_with_input_ = GetRandomDummyTokenWithInput();
     *(dummy_response_.add_anonymous_token_redemption_results()) =
         CreateRedemptionResultForTesting(dummy_token_with_input_);
-    generator_.seed(::testing::FLAGS_gtest_random_seed);
+    generator_.seed(GTEST_FLAG_GET(random_seed));
   }
 
   // Generates a dummy RSABlindSignatureTokenWithInput which is not
@@ -503,4 +502,3 @@ TEST_F(AnonymousTokensRedemptionClientTest,
 
 }  // namespace
 }  // namespace anonymous_tokens
-

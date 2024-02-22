@@ -5,8 +5,8 @@
  */
 
 import '@material/web/menu/menu.js';
-import '@material/web/menu/sub-menu';
-import '@material/web/menu/menu-item';
+import '@material/web/menu/sub-menu.js';
+import '@material/web/menu/menu-item.js';
 import './menu_item';
 
 import {css, CSSResultGroup, html, LitElement} from 'lit';
@@ -20,24 +20,8 @@ const chevronIcon =
  * Hovering or clicking element will open a second submenu.
  */
 export class SubMenuItem extends LitElement {
+  /** @nocollapse */
   static override styles: CSSResultGroup = css`
-    md-sub-menu {
-      --md-list-item-disabled-label-text-color: var(--cros-sys-on_surface);
-      --md-list-item-disabled-label-text-opacity: var(--cros-sys-opacity-disabled);
-      --md-list-item-disabled-trailing-icon-opacity: var(--cros-sys-opacity-disabled);
-      --md-list-item-focus-label-text-color: var(--cros-sys-on_surface);
-      --md-list-item-hover-label-text-color: var(--cros-sys-on_surface);
-      --md-list-item-label-text-color: var(--cros-sys-on_surface);
-      --md-list-item-label-text-font: var(--cros-button-2-font-family);
-      --md-list-item-label-text-size: var(--cros-button-2-font-size);
-      --md-list-item-label-text-line-height: var(--cros-button-2-line-height);
-      --md-list-item-label-text-weight: var(--cros-button-2-font-weight);
-      --md-list-item-pressed-label-text-color: var(--cros-sys-on_surface);
-      --md-menu-item-selected-container-color: var(--cros-sys-hover_on_subtle);
-      --md-menu-item-selected-label-text-color: var(--cros-sys-on_surface);
-      --md-list-item-trailing-space: 16px;
-      --md-list-item-trailing-element-headline-trailing-element-space: 48px;
-    }
     #icon {
       width: 20px;
       height: 20px;
@@ -46,14 +30,9 @@ export class SubMenuItem extends LitElement {
     :host-context([dir=rtl]) #icon {
       transform: scaleX(-1);
     }
-    md-sub-menu::part(focus-ring) {
-      --md-focus-ring-active-width: 2px;
-      --md-focus-ring-color: var(--cros-sys-focus_ring);
-      --md-focus-ring-duration: 0s;
-      --md-focus-ring-width: 2px;
-    }
   `;
 
+  /** @nocollapse */
   static override shadowRootOptions = {
     mode: 'open' as const,
     delegatesFocus: true,
@@ -62,7 +41,7 @@ export class SubMenuItem extends LitElement {
   /** @nocollapse */
   static override properties = {
     headline: {type: String},
-    // Use a lit property to handle reflecting with preset attributes
+    // Use a lit property to handle reflecting with preset attributes.
     tabIndex: {type: Number, reflect: true},
     disabled: {type: Boolean},
   };

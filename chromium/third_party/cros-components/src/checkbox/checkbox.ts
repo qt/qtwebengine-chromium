@@ -7,7 +7,7 @@
 import '@material/web/checkbox/checkbox.js';
 
 import {MdCheckbox} from '@material/web/checkbox/checkbox.js';
-import {css, CSSResultGroup, html, LitElement} from 'lit';
+import {css, CSSResultGroup, html, LitElement, PropertyValues} from 'lit';
 
 import {shouldProcessClick} from '../helpers/helpers';
 
@@ -18,8 +18,6 @@ const RIPPLE_SIZE = css`40px`;
 
 /**
  * A ChromeOS compliant checkbox.
- * See spec
- * https://www.figma.com/file/1XsFoZH868xLcLPfPZRxLh/CrOS-Next---Component-Library-%26-Spec?node-id=2796%3A12821&t=yiSJIVSrbtOP4ZCo-0
  */
 export class Checkbox extends LitElement {
   /** @nocollapse */
@@ -81,6 +79,13 @@ export class Checkbox extends LitElement {
       opacity: var(--cros-disabled-opacity);
     }
   `;
+
+  /** @nocollapse */
+  static override shadowRootOptions = {
+    ...LitElement.shadowRootOptions,
+    delegatesFocus: true
+  };
+
   /** @nocollapse */
   static override properties = {
     checked: {type: Boolean, reflect: true},
@@ -134,6 +139,13 @@ export class Checkbox extends LitElement {
 
   override click() {
     this.mdCheckbox.click();
+  }
+
+  override updated(changedProperties: PropertyValues<this>) {
+    if (changedProperties.has('disabled')) {
+      // Work around for b/315384008.
+      this.renderRoot.querySelector('md-checkbox')?.requestUpdate();
+    }
   }
 }
 

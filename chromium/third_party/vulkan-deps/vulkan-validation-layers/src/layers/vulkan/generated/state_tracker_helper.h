@@ -85,6 +85,8 @@ struct DeviceFeatures {
     bool clustercullingShader;
     // VkPhysicalDeviceClusterCullingShaderFeaturesHUAWEI
     bool multiviewClusterCullingShader;
+    // VkPhysicalDeviceClusterCullingShaderVrsFeaturesHUAWEI
+    bool clusterShadingRate;
     // VkPhysicalDeviceCoherentMemoryFeaturesAMD
     bool deviceCoherentMemory;
     // VkPhysicalDeviceColorWriteEnableFeaturesEXT
@@ -111,6 +113,8 @@ struct DeviceFeatures {
     bool cubicRangeClamp;
     // VkPhysicalDeviceCubicWeightsFeaturesQCOM
     bool selectableCubicWeights;
+    // VkPhysicalDeviceCudaKernelLaunchFeaturesNV
+    bool cudaKernelLaunchFeatures;
     // VkPhysicalDeviceCustomBorderColorFeaturesEXT
     bool customBorderColorWithoutFormat;
     // VkPhysicalDeviceCustomBorderColorFeaturesEXT
@@ -489,6 +493,8 @@ struct DeviceFeatures {
     bool maintenance4;
     // VkPhysicalDeviceMaintenance5FeaturesKHR
     bool maintenance5;
+    // VkPhysicalDeviceMaintenance6FeaturesKHR
+    bool maintenance6;
     // VkPhysicalDeviceMemoryDecompressionFeaturesNV
     bool memoryDecompression;
     // VkPhysicalDeviceMemoryPriorityFeaturesEXT
@@ -537,6 +543,10 @@ struct DeviceFeatures {
     bool opticalFlow;
     // VkPhysicalDevicePageableDeviceLocalMemoryFeaturesEXT
     bool pageableDeviceLocalMemory;
+    // VkPhysicalDevicePerStageDescriptorSetFeaturesNV
+    bool dynamicPipelineLayout;
+    // VkPhysicalDevicePerStageDescriptorSetFeaturesNV
+    bool perStageDescriptorSet;
     // VkPhysicalDevicePerformanceQueryFeaturesKHR
     bool performanceCounterMultipleQueryPools;
     // VkPhysicalDevicePerformanceQueryFeaturesKHR
@@ -639,6 +649,10 @@ struct DeviceFeatures {
     bool rayTraversalPrimitiveCulling;
     // VkPhysicalDeviceRayTracingPositionFetchFeaturesKHR
     bool rayTracingPositionFetch;
+    // VkPhysicalDeviceRelaxedLineRasterizationFeaturesIMG
+    bool relaxedLineRasterization;
+    // VkPhysicalDeviceRenderPassStripedFeaturesARM
+    bool renderPassStriped;
     // VkPhysicalDeviceRepresentativeFragmentTestFeaturesNV
     bool representativeFragmentTest;
     // VkPhysicalDeviceRobustness2FeaturesEXT
@@ -651,6 +665,8 @@ struct DeviceFeatures {
     bool samplerYcbcrConversion;
     // VkPhysicalDeviceScalarBlockLayoutFeatures, VkPhysicalDeviceVulkan12Features
     bool scalarBlockLayout;
+    // VkPhysicalDeviceSchedulingControlsFeaturesARM
+    bool schedulingControls;
     // VkPhysicalDeviceSeparateDepthStencilLayoutsFeatures, VkPhysicalDeviceVulkan12Features
     bool separateDepthStencilLayouts;
     // VkPhysicalDeviceShaderAtomicFloat2FeaturesEXT
@@ -785,12 +801,14 @@ struct DeviceFeatures {
     bool variablePointers;
     // VkPhysicalDeviceVariablePointersFeatures, VkPhysicalDeviceVulkan11Features
     bool variablePointersStorageBuffer;
-    // VkPhysicalDeviceVertexAttributeDivisorFeaturesEXT
+    // VkPhysicalDeviceVertexAttributeDivisorFeaturesKHR
     bool vertexAttributeInstanceRateDivisor;
-    // VkPhysicalDeviceVertexAttributeDivisorFeaturesEXT
+    // VkPhysicalDeviceVertexAttributeDivisorFeaturesKHR
     bool vertexAttributeInstanceRateZeroDivisor;
     // VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT
     bool vertexInputDynamicState;
+    // VkPhysicalDeviceVideoMaintenance1FeaturesKHR
+    bool videoMaintenance1;
     // VkPhysicalDeviceVulkan12Features
     bool descriptorIndexing;
     // VkPhysicalDeviceVulkan12Features

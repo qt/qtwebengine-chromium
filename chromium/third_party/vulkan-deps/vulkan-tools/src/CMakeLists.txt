@@ -39,24 +39,20 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 option(BUILD_CUBE "Build cube" ON)
 option(BUILD_VULKANINFO "Build vulkaninfo" ON)
 option(BUILD_ICD "Build icd" ON)
+
 option(ENABLE_ADDRESS_SANITIZER "Use address sanitization")
+if (ENABLE_ADDRESS_SANITIZER)
+    add_compile_options(-fsanitize=address)
+    if (NOT MSVC)
+        add_link_options(-fsanitize=address)
+    endif()
+endif()
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
-if(APPLE)
-    set(MOLTENVK_REPO_ROOT "MOLTENVK-NOTFOUND" CACHE PATH "Absolute path to a MoltenVK repo directory")
-    if(NOT MOLTENVK_REPO_ROOT AND NOT DEFINED ENV{MOLTENVK_REPO_ROOT})
-        message(FATAL_ERROR "Must define location of MoltenVK repo -- see BUILD.md")
-    endif()
-
-    if(NOT MOLTENVK_REPO_ROOT)
-        set(MOLTENVK_REPO_ROOT $ENV{MOLTENVK_REPO_ROOT})
-    endif()
-    message(STATUS "Using MoltenVK repo location at ${MOLTENVK_REPO_ROOT}")
-endif()
-
 find_package(VulkanHeaders QUIET CONFIG)
 find_package(VulkanLoader QUIET CONFIG)
+find_package(volk QUIET CONFIG)
 
 include(GNUInstallDirs)
 
@@ -71,8 +67,6 @@ if (${CMAKE_CXX_COMPILER_ID} MATCHES "(GNU|Clang)")
         -Wextra
         -Wno-unused-parameter
         -Wno-missing-field-initializers
-        -fno-strict-aliasing
-        -fno-builtin-memcmp
     )
 
     if (${CMAKE_CXX_COMPILER_ID} MATCHES "GNU")
@@ -136,10 +130,6 @@ if (GIT_FOUND AND EXISTS "${CMAKE_CURRENT_LIST_DIR}/.git/HEAD")
         endif()
         string(REGEX REPLACE "\n$" "" GIT_BRANCH_NAME "${GIT_BRANCH_NAME}")
     endif()
-endif()
-
-if(APPLE)
-    include(mac_common.cmake)
 endif()
 
 if(BUILD_CUBE)

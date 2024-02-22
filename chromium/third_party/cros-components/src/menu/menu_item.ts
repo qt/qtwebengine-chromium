@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import '@material/web/menu/menu-item';
-import '../placeholder_icon/placeholder-icon';
+import '@material/web/menu/menu-item.js';
 import '../switch/switch';
 
-import {MenuItem as MenuItemType} from '@material/web/menu/menu-item';
+import {CloseMenuEvent, MenuItem as MenuItemType} from '@material/web/menu/menu-item.js';
 import {css, CSSResultGroup, html, LitElement, PropertyValues} from 'lit';
+import {ifDefined} from 'lit/directives/if-defined';
 
 const CHECKED_ICON = html`
   <svg width="20" height="20" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
@@ -19,12 +19,17 @@ const CHECKED_ICON = html`
 `;
 
 /**
- * A cros compliant menu-item component for use in cros-menu.
- * @fires trigger Fired when the user clicks on or otherwise activates the menu
+ * Fired when the user clicks on or otherwise activates the menu
  * item i.e. via a enter or space key.
  */
+export type MenuItemTriggeredEvent = CustomEvent<{
+  menuItem: MenuItem,
+}>;
+
+/**
+ * A cros compliant menu-item component for use in cros-menu.
+ */
 export class MenuItem extends LitElement implements MenuItemType {
-  /** @nocollapse */
   // TODO: b/198759625 - Remove negative margin-inline-end when mwc token
   // available (padding 16px)
   /** @nocollapse */
@@ -49,6 +54,8 @@ export class MenuItem extends LitElement implements MenuItemType {
       --md-menu-item-pressed-state-layer-opacity: 1;
       --md-menu-item-trailing-element-headline-trailing-element-space: 48px;
       --md-menu-item-trailing-space: 16px;
+      --md-menu-item-selected-container-color: var(--cros-sys-hover_on_subtle);
+      --md-menu-item-selected-label-text-color: var(--cros-sys-on_surface);
     }
     md-menu-item([itemEnd=null]) {
       --md-menu-item-trailing-space: 48px;
@@ -142,6 +149,12 @@ export class MenuItem extends LitElement implements MenuItemType {
     type: {type: String},
   };
 
+  /** @nocollapse */
+  static events = {
+    /** Triggers when an item is clicked or equivalent. */
+    MENU_ITEM_TRIGGERED: 'cros-menu-item-triggered',
+  } as const;
+
   /**
    * Headline is the primary text of the list item, name follows from
    * md-menu-item.
@@ -189,13 +202,18 @@ export class MenuItem extends LitElement implements MenuItemType {
    */
   shortcutText: string;
   /**
-   * Whether or not to display the menu item in the selected visual state.
-   */
-  selected: boolean;
-  /**
    * Sets the behavior and role of the menu item, defaults to "menuitem".
    */
   type: 'menuitem'|'option'|'button'|'link';
+
+  /**
+   * For properties menu-item proxies to a child element via a setter, any
+   * attempt to set the value before firstUpdated() will cause the value to be
+   * dropped since there is no md-menu-item to send the value to. To prevent
+   * this we cache these values and set them on first render.
+   */
+  protected missedPropertySets: Partial<
+      {selected: boolean, typeaheadText: string, switchSelected: boolean}> = {};
 
   constructor() {
     super();
@@ -210,7 +228,6 @@ export class MenuItem extends LitElement implements MenuItemType {
     this.tabIndex = 0;
     this.checked = false;
     this.shortcutText = 'Shortcut';
-    this.selected = false;
     this.type = 'menuitem';
   }
 
@@ -226,11 +243,15 @@ export class MenuItem extends LitElement implements MenuItemType {
 
   override updated(changedProperties: PropertyValues<this>) {
     super.updated(changedProperties);
+    if (changedProperties.has('keepOpen') && this.keepOpen) {
+      this.addEventListener('keydown', this.keyDownListener);
+      this.addEventListener('click', this.clickListener);
+    }
     if (changedProperties.has('itemEnd') && this.itemEnd === 'switch') {
-      this.addEventListener('keydown', this.switchKeyDownListener);
+      this.addEventListener('keydown', this.keyDownListener);
       this.setAttribute('role', 'menuitemcheckbox');
       this.setAttribute('aria-checked', 'false');
-      this.addEventListener('click', this.switchClickListener);
+      this.addEventListener('click', this.clickListener);
     }
     if (changedProperties.has('itemStart') && this.itemStart === 'icon' &&
         this.startSlot) {
@@ -253,42 +274,80 @@ export class MenuItem extends LitElement implements MenuItemType {
    * `headline` property.
    */
   get typeaheadText() {
-    return this.renderRoot.querySelector('md-menu-item')?.typeaheadText ?? '';
+    return this.renderRoot?.querySelector('md-menu-item')?.typeaheadText ?? '';
   }
 
   set typeaheadText(text: string) {
-    const item = this.renderRoot.querySelector('md-menu-item');
-    if (!item) return;
-    item.typeaheadText = text;
+    const item = this.renderRoot?.querySelector('md-menu-item');
+    if (!item) {
+      this.missedPropertySets.typeaheadText = text;
+    } else {
+      item.typeaheadText = text;
+    }
+  }
+
+  /**
+   * Whether or not to display the menu item in the selected visual state.
+   */
+  get selected() {
+    return this.renderRoot?.querySelector('md-menu-item')?.selected ?? false;
+  }
+
+  set selected(selected: boolean) {
+    const item = this.renderRoot?.querySelector('md-menu-item');
+    if (!item) {
+      this.missedPropertySets.selected = selected;
+    } else {
+      item.selected = selected;
+    }
+  }
+
+  get switchSelected() {
+    return this.renderRoot?.querySelector('cros-switch')?.selected ?? false;
+  }
+
+  set switchSelected(value: boolean) {
+    if (!this.renderRoot) return;
+    const crosSwitch = this.renderRoot.querySelector('cros-switch');
+    if (!crosSwitch) {
+      this.missedPropertySets.switchSelected = value;
+    } else {
+      crosSwitch.selected = value;
+    }
   }
 
   override disconnectedCallback() {
     super.disconnectedCallback();
-    if (this.itemEnd === 'switch') {
-      this.removeEventListener('keydown', this.switchKeyDownListener);
-      this.removeEventListener('click', this.switchClickListener);
+    if (this.itemEnd === 'switch' || this.keepOpen) {
+      this.removeEventListener('keydown', this.keyDownListener);
+      this.removeEventListener('click', this.clickListener);
     }
   }
 
-  // Toggles switch item within the end slot on `enter` or `space`.
-  private readonly switchKeyDownListener = (e: KeyboardEvent) => {
+  private keyDownListener(e: KeyboardEvent) {
     if (e.key === 'Enter' || e.key === ' ') {
-      const crosSwitch = this.renderRoot.querySelector('cros-switch')!;
-      crosSwitch.selected = !crosSwitch.selected;
+      e.preventDefault();
+      this.onTrigger();
     }
-  };
+  }
 
-  // Toggles switch item within the end slot if any part of menu-item is
-  // clicked.
-  private readonly switchClickListener = (e: MouseEvent) => {
-    const crosSwitch = this.renderRoot.querySelector('cros-switch')!;
-    crosSwitch.selected = !crosSwitch.selected;
-    if (crosSwitch.selected) {
-      this.setAttribute('aria-checked', 'true');
-    } else {
-      this.setAttribute('aria-checked', 'false');
+  private clickListener() {
+    this.onTrigger();
+  }
+
+  private onTrigger() {
+    if (this.itemEnd === 'switch') {
+      const crosSwitch = this.renderRoot.querySelector('cros-switch')!;
+      if (this.disabled) return;
+      crosSwitch.selected = !crosSwitch.selected;
+      if (crosSwitch.selected) {
+        this.setAttribute('aria-checked', 'true');
+      } else {
+        this.setAttribute('aria-checked', 'false');
+      }
     }
-  };
+    this.fireTriggerEvent();
+  }
 
   // Set item to be placed in `end` slot of menu item (if any).
   // Checked property (check mark) will always take precedence over any icon
@@ -325,7 +384,8 @@ export class MenuItem extends LitElement implements MenuItemType {
         endSlot = html`
           <cros-switch
               slot="end"
-              class="slot-end">
+              class="slot-end"
+              ?selected=${!!this.missedPropertySets.switchSelected}>
           </cros-switch>`;
         break;
       default:
@@ -340,9 +400,14 @@ export class MenuItem extends LitElement implements MenuItemType {
     return [html`<slot name="end" slot="end"></slot>`, endSlot];
   }
 
-  private fireTriggerEvent() {
+  private fireTriggerEvent(e?: CloseMenuEvent) {
+    const reason = e?.detail.reason;
+    if (reason && reason.kind === 'keydown' && reason.key === 'Escape') {
+      return;
+    }
+
     this.dispatchEvent(
-        new CustomEvent<void>('trigger', {bubbles: true, composed: true}));
+        new CustomEvent(MenuItem.events.MENU_ITEM_TRIGGERED, {bubbles: true, composed: true}));
   }
 
   override render() {
@@ -358,11 +423,12 @@ export class MenuItem extends LitElement implements MenuItemType {
     }
     return html`
       <md-menu-item
-          @close-menu=${() => void this.fireTriggerEvent()}
+          @close-menu=${(e: CloseMenuEvent) => void this.fireTriggerEvent(e)}
           .keepOpen=${keepOpen}
           .disabled=${this.disabled}
           .tabIndex=${this.tabIndex}
-          ?selected=${this.selected}
+           ?selected=${!!this.missedPropertySets.selected}
+           typeahead-text=${ifDefined(this.missedPropertySets.typeaheadText)}
           .type=${this.type}>
         <div slot="headline" id="headline">${this.headline}</div>
         ${startSlot}
@@ -381,6 +447,9 @@ export class MenuItem extends LitElement implements MenuItemType {
 customElements.define('cros-menu-item', MenuItem);
 
 declare global {
+  interface HTMLElementEventMap {
+    [MenuItem.events.MENU_ITEM_TRIGGERED]: MenuItemTriggeredEvent;
+  }
   interface HTMLElementTagNameMap {
     'cros-menu-item': MenuItem;
   }

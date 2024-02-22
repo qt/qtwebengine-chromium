@@ -343,10 +343,12 @@ PCSTR g_pFeatureInfoNames[] = {
     "Derivatives in mesh and amplification shaders",
     "Resource descriptor heap indexing",
     "Sampler descriptor heap indexing",
-    "<RESERVED>",
+    "Wave Matrix",
     "64-bit Atomics on Heap Resources",
     "Advanced Texture Ops",
     "Writeable MSAA Textures",
+    "SampleCmp with gradient or bias",
+    "Extended command info",
 };
 static_assert(_countof(g_pFeatureInfoNames) == ShaderFeatureInfoCount,
               "g_pFeatureInfoNames needs to be updated");

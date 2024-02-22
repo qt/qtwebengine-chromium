@@ -25,9 +25,9 @@ bool BestPractices::CheckPipelineStageFlags(const Location& loc, VkPipelineStage
     bool skip = false;
 
     if (flags & VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT) {
-        skip |= LogWarning(kVUID_BestPractices_PipelineStageFlags, device, loc, "You are using VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT");
+        skip |= LogWarning(kVUID_BestPractices_PipelineStageFlags, device, loc, "using VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT");
     } else if (flags & VK_PIPELINE_STAGE_ALL_COMMANDS_BIT) {
-        skip |= LogWarning(kVUID_BestPractices_PipelineStageFlags, device, loc, "You are using VK_PIPELINE_STAGE_ALL_COMMANDS_BIT");
+        skip |= LogWarning(kVUID_BestPractices_PipelineStageFlags, device, loc, "using VK_PIPELINE_STAGE_ALL_COMMANDS_BIT");
     }
 
     return skip;
@@ -37,11 +37,9 @@ bool BestPractices::CheckPipelineStageFlags(const Location& loc, VkPipelineStage
     bool skip = false;
 
     if (flags & VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT_KHR) {
-        skip |= LogWarning(kVUID_BestPractices_PipelineStageFlags, device, loc,
-                           "You are using VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT_KHR");
+        skip |= LogWarning(kVUID_BestPractices_PipelineStageFlags, device, loc, "using VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT_KHR");
     } else if (flags & VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT_KHR) {
-        skip |= LogWarning(kVUID_BestPractices_PipelineStageFlags, device, loc,
-                           "You are using VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT_KHR");
+        skip |= LogWarning(kVUID_BestPractices_PipelineStageFlags, device, loc, "using VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT_KHR");
     }
 
     return skip;
@@ -282,7 +280,7 @@ bool BestPractices::PreCallValidateCmdPipelineBarrier(
         auto num = num_barriers_objects_.load();
         if (num + imageMemoryBarrierCount + bufferMemoryBarrierCount > kMaxRecommendedBarriersSizeAMD) {
             skip |= LogPerformanceWarning(kVUID_BestPractices_CmdBuffer_highBarrierCount, device, error_obj.location,
-                                          "%s Performance warning: In this frame, %" PRIu32
+                                          "%s In this frame, %" PRIu32
                                           " barriers were already submitted. Barriers have a high cost and can "
                                           "stall the GPU. "
                                           "Consider consolidating and re-organizing the frame to use fewer barriers.",
@@ -306,17 +304,17 @@ bool BestPractices::PreCallValidateCmdPipelineBarrier(
 
             if (old_is_read_layout && new_is_read_layout) {
                 skip |= LogPerformanceWarning(kVUID_BestPractices_PipelineBarrier_readToReadBarrier, device, error_obj.location,
-                                              "%s %s Performance warning: Don't issue read-to-read barriers. "
+                                              "%s %s Don't issue read-to-read barriers. "
                                               "Get the resource in the right state the first time you use it.",
                                               VendorSpecificTag(kBPVendorAMD), VendorSpecificTag(kBPVendorNVIDIA));
             }
 
             // general with no storage
             if (VendorCheckEnabled(kBPVendorAMD) && image_barrier.newLayout == VK_IMAGE_LAYOUT_GENERAL) {
-                auto image_state = Get<IMAGE_STATE>(pImageMemoryBarriers[i].image);
+                auto image_state = Get<vvl::Image>(pImageMemoryBarriers[i].image);
                 if (!(image_state->createInfo.usage & VK_IMAGE_USAGE_STORAGE_BIT)) {
                     skip |= LogPerformanceWarning(kVUID_BestPractices_vkImage_AvoidGeneral, device, error_obj.location,
-                                                  "%s Performance warning: VK_IMAGE_LAYOUT_GENERAL should only be used with "
+                                                  "%s VK_IMAGE_LAYOUT_GENERAL should only be used with "
                                                   "VK_IMAGE_USAGE_STORAGE_BIT images.",
                                                   VendorSpecificTag(kBPVendorAMD));
                 }
@@ -357,12 +355,12 @@ bool BestPractices::ValidateCmdPipelineBarrierImageBarrier(VkCommandBuffer comma
                                                            const Location& loc) const {
     bool skip = false;
 
-    const auto cmd_state = GetRead<bp_state::CommandBuffer>(commandBuffer);
-    assert(cmd_state);
+    const auto cb_state = GetRead<bp_state::CommandBuffer>(commandBuffer);
+    assert(cb_state);
 
     if (VendorCheckEnabled(kBPVendorNVIDIA)) {
         if (barrier.oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && barrier.newLayout != VK_IMAGE_LAYOUT_UNDEFINED) {
-            skip |= ValidateZcull(*cmd_state, barrier.image, barrier.subresourceRange, loc);
+            skip |= ValidateZcull(*cb_state, barrier.image, barrier.subresourceRange, loc);
         }
     }
 
@@ -370,7 +368,7 @@ bool BestPractices::ValidateCmdPipelineBarrierImageBarrier(VkCommandBuffer comma
 }
 
 template <typename Func>
-static void ForEachSubresource(const IMAGE_STATE& image, const VkImageSubresourceRange& range, Func&& func) {
+static void ForEachSubresource(const vvl::Image& image, const VkImageSubresourceRange& range, Func&& func) {
     const uint32_t layerCount =
         (range.layerCount == VK_REMAINING_ARRAY_LAYERS) ? (image.full_range.layerCount - range.baseArrayLayer) : range.layerCount;
     const uint32_t levelCount =
@@ -387,16 +385,17 @@ static void ForEachSubresource(const IMAGE_STATE& image, const VkImageSubresourc
 
 template <typename ImageMemoryBarrier>
 void BestPractices::RecordCmdPipelineBarrierImageBarrier(VkCommandBuffer commandBuffer, const ImageMemoryBarrier& barrier) {
-    auto cb = Get<bp_state::CommandBuffer>(commandBuffer);
-    assert(cb);
+    auto cb_state = Get<bp_state::CommandBuffer>(commandBuffer);
+    assert(cb_state);
 
     // Is a queue ownership acquisition barrier
     if (barrier.srcQueueFamilyIndex != barrier.dstQueueFamilyIndex &&
-        barrier.dstQueueFamilyIndex == cb->command_pool->queueFamilyIndex) {
+        barrier.dstQueueFamilyIndex == cb_state->command_pool->queueFamilyIndex) {
         auto image = Get<bp_state::Image>(barrier.image);
         auto subresource_range = barrier.subresourceRange;
-        cb->queue_submit_functions.push_back([image, subresource_range](const ValidationStateTracker& vst, const QUEUE_STATE& qs,
-                                                                        const CMD_BUFFER_STATE& cbs) -> bool {
+        cb_state->queue_submit_functions.push_back([image, subresource_range](const ValidationStateTracker& vst,
+                                                                              const vvl::Queue& qs,
+                                                                              const vvl::CommandBuffer& cbs) -> bool {
             ForEachSubresource(*image, subresource_range, [&](uint32_t layer, uint32_t level) {
                 // Update queue family index without changing usage, signifying a correct queue family transfer
                 image->UpdateUsage(layer, level, image->GetUsageType(layer, level), qs.queueFamilyIndex);
@@ -406,7 +405,7 @@ void BestPractices::RecordCmdPipelineBarrierImageBarrier(VkCommandBuffer command
     }
 
     if (VendorCheckEnabled(kBPVendorNVIDIA)) {
-        RecordResetZcullDirection(*cb, barrier.image, barrier.subresourceRange);
+        RecordResetZcullDirection(*cb_state, barrier.image, barrier.subresourceRange);
     }
 }
 
@@ -445,9 +444,9 @@ bool BestPractices::PreCallValidateCreateSemaphore(VkDevice device, const VkSema
                                                    const ErrorObject& error_obj) const {
     bool skip = false;
     if (VendorCheckEnabled(kBPVendorAMD) || VendorCheckEnabled(kBPVendorNVIDIA)) {
-        if (Count<SEMAPHORE_STATE>() > kMaxRecommendedSemaphoreObjectsSizeAMD) {
+        if (Count<vvl::Semaphore>() > kMaxRecommendedSemaphoreObjectsSizeAMD) {
             skip |= LogPerformanceWarning(kVUID_BestPractices_SyncObjects_HighNumberOfSemaphores, device, error_obj.location,
-                                          "%s %s Performance warning: High number of vkSemaphore objects created. "
+                                          "%s %s High number of vkSemaphore objects created. "
                                           "Minimize the amount of queue synchronization that is used. "
                                           "Semaphores and fences have overhead. Each fence has a CPU and GPU cost with it.",
                                           VendorSpecificTag(kBPVendorAMD), VendorSpecificTag(kBPVendorNVIDIA));
@@ -462,9 +461,9 @@ bool BestPractices::PreCallValidateCreateFence(VkDevice device, const VkFenceCre
                                                const ErrorObject& error_obj) const {
     bool skip = false;
     if (VendorCheckEnabled(kBPVendorAMD) || VendorCheckEnabled(kBPVendorNVIDIA)) {
-        if (Count<FENCE_STATE>() > kMaxRecommendedFenceObjectsSizeAMD) {
+        if (Count<vvl::Fence>() > kMaxRecommendedFenceObjectsSizeAMD) {
             skip |= LogPerformanceWarning(kVUID_BestPractices_SyncObjects_HighNumberOfFences, device, error_obj.location,
-                                          "%s %s Performance warning: High number of VkFence objects created."
+                                          "%s %s High number of VkFence objects created."
                                           "Minimize the amount of CPU-GPU synchronization that is used. "
                                           "Semaphores and fences have overhead. Each fence has a CPU and GPU cost with it.",
                                           VendorSpecificTag(kBPVendorAMD), VendorSpecificTag(kBPVendorNVIDIA));

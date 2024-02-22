@@ -696,6 +696,13 @@ void DesktopNativeWidgetAura::OnWidgetInitDone() {
   desktop_window_tree_host_->OnWidgetInitDone();
 }
 
+void DesktopNativeWidgetAura::ReparentNativeViewImpl(
+    gfx::NativeView new_parent) {
+  desktop_window_tree_host_->SetParent(
+      new_parent ? new_parent->GetHost()->GetAcceleratedWidget()
+                 : gfx::kNullAcceleratedWidget);
+}
+
 std::unique_ptr<NonClientFrameView>
 DesktopNativeWidgetAura::CreateNonClientFrameView() {
   return desktop_window_tree_host_->CreateNonClientFrameView();
@@ -1157,11 +1164,6 @@ void DesktopNativeWidgetAura::SetVisibilityAnimationTransition(
       break;
   }
   wm::SetWindowVisibilityAnimationTransition(content_window_, wm_transition);
-}
-
-bool DesktopNativeWidgetAura::IsTranslucentWindowOpacitySupported() const {
-  return desktop_window_tree_host_ &&
-         desktop_window_tree_host_->IsTranslucentWindowOpacitySupported();
 }
 
 ui::GestureRecognizer* DesktopNativeWidgetAura::GetGestureRecognizer() {

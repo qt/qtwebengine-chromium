@@ -1,10 +1,10 @@
 #!/usr/bin/python3 -i
 #
-# Copyright (c) 2015-2023 The Khronos Group Inc.
-# Copyright (c) 2015-2023 Valve Corporation
-# Copyright (c) 2015-2023 LunarG, Inc.
-# Copyright (c) 2015-2023 Google Inc.
-# Copyright (c) 2023-2023 RasterGrid Kft.
+# Copyright (c) 2015-2024 The Khronos Group Inc.
+# Copyright (c) 2015-2024 Valve Corporation
+# Copyright (c) 2015-2024 LunarG, Inc.
+# Copyright (c) 2015-2024 Google Inc.
+# Copyright (c) 2023-2024 RasterGrid Kft.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@
 
 import os
 from generators.base_generator import BaseGenerator
+from generators.generator_utils import PlatformGuardHelper
 
 # This class is a container for any source code, data, or other behavior that is necessary to
 # customize the generator script for a specific target API variant (e.g. Vulkan SC). As such,
@@ -69,9 +70,9 @@ class EnumFlagBitsOutputGenerator(BaseGenerator):
 
             /***************************************************************************
             *
-            * Copyright (c) 2015-2023 The Khronos Group Inc.
-            * Copyright (c) 2015-2023 Valve Corporation
-            * Copyright (c) 2015-2023 LunarG, Inc.
+            * Copyright (c) 2015-2024 The Khronos Group Inc.
+            * Copyright (c) 2015-2024 Valve Corporation
+            * Copyright (c) 2015-2024 LunarG, Inc.
             *
             * Licensed under the Apache License, Version 2.0 (the "License");
             * you may not use this file except in compliance with the License.
@@ -93,22 +94,31 @@ class EnumFlagBitsOutputGenerator(BaseGenerator):
 
         out.append('// clang-format off\n')
         out.append(f'const uint32_t GeneratedVulkanHeaderVersion = {self.vk.headerVersion};\n')
+        guard_helper = PlatformGuardHelper()
         for bitmask in bitmasks:
             if bitmask.flagName == 'VkGeometryInstanceFlagsKHR':
                 continue # only called in VkAccelerationStructureInstanceKHR which is never called anywhere explicitly
+            if bitmask.flagName == 'VkShaderStageFlags':
+                continue # Special case handled below
             elif len(bitmask.flags) == 0:
                 continue # some bitmask are empty and used for reserve in the future
 
-            out.extend([f'#ifdef {bitmask.protect}\n'] if bitmask.protect else [])
+            out.extend(guard_helper.add_guard(bitmask.protect))
             out.append(f'const {bitmask.flagName} All{bitmask.name} = {"|".join([flag.name for flag in bitmask.flags])}')
             out.append(';\n')
-            out.extend([f'#endif //{bitmask.protect}\n'] if bitmask.protect else [])
+        out.extend(guard_helper.add_guard(None))
 
         out.extend(APISpecific.genManualConstants(self.targetApiName))
 
         out.append('\n')
         out.append('// mask of all the VK_PIPELINE_STAGE_*_SHADER_BIT stages\n')
-        out.append(f'const VkPipelineStageFlagBits2 allVkPipelineShaderStageBits2 = {"|".join([flag.name for flag in self.vk.bitmasks["VkPipelineStageFlagBits2"].flags if "_SHADER_BIT" in flag.name])};\n')
+        out.append(f'const VkPipelineStageFlagBits2 AllVkPipelineShaderStageBits2 = {"|".join([flag.name for flag in self.vk.bitmasks["VkPipelineStageFlagBits2"].flags if "_SHADER_BIT" in flag.name])};\n')
+        out.append('\n')
+
+        # Special edge cases
+        out.append('// VK_SHADER_STAGE_ALL is special bit that is the collection of all bits.\n')
+        out.append('const VkShaderStageFlags AllVkShaderStageFlagBits = VK_SHADER_STAGE_ALL;\n')
+        out.append(f'const VkShaderStageFlags AllVkShaderStageFlagBitsExcludingStageAll = {"|".join([flag.name for flag in self.vk.bitmasks["VkShaderStageFlagBits"].flags if flag.name != "VK_SHADER_STAGE_ALL"])};\n')
 
         out.append('\n')
         flagBitsAsArray = ['VkQueueFlagBits', 'VkShaderStageFlagBits']

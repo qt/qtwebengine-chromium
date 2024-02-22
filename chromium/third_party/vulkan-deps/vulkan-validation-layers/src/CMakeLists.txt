@@ -24,8 +24,7 @@ set(API_TYPE "vulkan")
 
 add_subdirectory(scripts)
 
-set(VVL_CPP_STANDARD 17 CACHE STRING "Set the C++ standard to build against.")
-set(CMAKE_CXX_STANDARD ${VVL_CPP_STANDARD})
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -45,7 +44,13 @@ if(WIN32)
 elseif(ANDROID)
     add_compile_definitions(VK_USE_PLATFORM_ANDROID_KHR)
 elseif(APPLE)
-    add_compile_definitions(VK_USE_PLATFORM_MACOS_MVK VK_USE_PLATFORM_METAL_EXT)
+    add_compile_definitions(VK_USE_PLATFORM_METAL_EXT)
+    if (IOS)
+        add_compile_definitions(VK_USE_PLATFORM_IOS_MVK)
+    endif()
+    if (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+        add_compile_definitions(VK_USE_PLATFORM_MACOS_MVK)
+    endif()
 else()
     option(BUILD_WSI_XCB_SUPPORT "Build XCB WSI support" ON)
     option(BUILD_WSI_XLIB_SUPPORT "Build Xlib WSI support" ON)
@@ -105,21 +110,10 @@ endif()
 
 option(VVL_ENABLE_ASAN "Use address sanitization")
 if (VVL_ENABLE_ASAN)
-    if (MSVC)
-        add_compile_options(/fsanitize=address)
-    else()
-        add_compile_options(-fsanitize=address -fno-omit-frame-pointer)
+    add_compile_options(-fsanitize=address)
+    if (NOT MSVC)
         add_link_options(-fsanitize=address)
     endif()
-endif()
-
-option(VVL_CLANG_TIDY "Use clang-tidy")
-if (VVL_CLANG_TIDY)
-    find_program(CLANG_TIDY NAMES clang-tidy)
-    if(NOT CLANG_TIDY)
-        message(FATAL_ERROR "clang-tidy not found!")
-    endif()
-    set(CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY}")
 endif()
 
 if(${CMAKE_CXX_COMPILER_ID} MATCHES "(GNU|Clang)")
@@ -143,6 +137,7 @@ elseif(MSVC)
 
     # Enforce stricter ISO C++
     add_compile_options(/permissive-)
+    add_compile_options(/utf-8)
 
     # PDBs aren't generated on Release builds by default.
     add_compile_options("$<$<CONFIG:Release>:/Zi>")
@@ -156,10 +151,6 @@ elseif(MSVC)
     add_link_options("$<$<CONFIG:Release>:/OPT:ICF>")
 
     add_compile_options($<$<BOOL:${MSVC_IDE}>:/MP>) # Speed up Visual Studio builds
-endif()
-
-if (BUILD_LAYER_SUPPORT_FILES)
-    message(WARNING "BUILD_LAYER_SUPPORT_FILES is deprecated! See https://github.com/KhronosGroup/Vulkan-Utility-Libraries/issues/18")
 endif()
 
 add_subdirectory(layers)

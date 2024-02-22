@@ -28,15 +28,19 @@
 #endif
 
 struct DeviceFeatures;
+struct DeviceExtensions;
 class ValidationStateTracker;
-class BUFFER_STATE;
-class IMAGE_STATE;
+
+namespace vvl {
+class Image;
+class Buffer;
+}  // namespace vvl
 
 namespace sync_utils {
 
 static constexpr VkQueueFlags kAllQueueTypes = (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT);
 
-VkPipelineStageFlags2KHR DisabledPipelineStages(const DeviceFeatures& features);
+VkPipelineStageFlags2KHR DisabledPipelineStages(const DeviceFeatures& features, const DeviceExtensions& device_extensions);
 
 // Expand all pipeline stage bits. If queue_flags and disabled_feature_mask is provided, the expansion of ALL_COMMANDS_BIT
 // and ALL_GRAPHICS_BIT will be limited to what is supported.
@@ -149,7 +153,7 @@ struct BufferBarrier : QueueFamilyBarrier {
           size(barrier.size) {}
 
     VulkanTypedHandle GetTypedHandle() const { return VulkanTypedHandle(buffer, kVulkanObjectTypeBuffer); }
-    const std::shared_ptr<const BUFFER_STATE> GetResourceState(const ValidationStateTracker& state_tracker) const;
+    const std::shared_ptr<const vvl::Buffer> GetResourceState(const ValidationStateTracker& state_tracker) const;
 };
 
 struct ImageBarrier : QueueFamilyBarrier {
@@ -172,7 +176,7 @@ struct ImageBarrier : QueueFamilyBarrier {
           subresourceRange(barrier.subresourceRange) {}
 
     VulkanTypedHandle GetTypedHandle() const { return VulkanTypedHandle(image, kVulkanObjectTypeImage); }
-    const std::shared_ptr<const IMAGE_STATE> GetResourceState(const ValidationStateTracker& state_tracker) const;
+    const std::shared_ptr<const vvl::Image> GetResourceState(const ValidationStateTracker& state_tracker) const;
 };
 
 }  // namespace sync_utils

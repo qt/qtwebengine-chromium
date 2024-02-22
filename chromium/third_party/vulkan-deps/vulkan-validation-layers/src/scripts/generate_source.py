@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-# Copyright (c) 2021-2023 The Khronos Group Inc.
-# Copyright (c) 2021-2023 Valve Corporation
-# Copyright (c) 2021-2023 LunarG, Inc.
+# Copyright (c) 2021-2024 The Khronos Group Inc.
+# Copyright (c) 2021-2024 Valve Corporation
+# Copyright (c) 2021-2024 LunarG, Inc.
 # Copyright (c) 2021-2023 Google Inc.
 # Copyright (c) 2023-2023 RasterGrid Kft.
 #
@@ -28,6 +28,7 @@ import difflib
 import json
 import common_ci
 from xml.etree import ElementTree
+from generate_spec_error_message import GenerateSpecErrorMessage
 
 def RunGenerators(api: str, registry: str, grammar: str, directory: str, styleFile: str, targetFilter: str):
 
@@ -69,6 +70,7 @@ def RunGenerators(api: str, registry: str, grammar: str, directory: str, styleFi
     from generators.error_location_helper_generator import ErrorLocationHelperOutputGenerator
     from generators.pnext_chain_extraction_generator import PnextChainExtractionGenerator
     from generators.state_tracker_helper_generator import StateTrackerHelperOutputGenerator
+    from generators.feature_requirements import FeatureRequirementsGenerator
 
     # These set fields that are needed by both OutputGenerator and BaseGenerator,
     # but are uniform and don't need to be set at a per-generated file level
@@ -142,6 +144,10 @@ def RunGenerators(api: str, registry: str, grammar: str, directory: str, styleFi
             'genCombined': True,
         },
         'vk_dispatch_table_helper.h' : {
+            'generator' : DispatchTableHelperOutputGenerator,
+            'genCombined': True,
+        },
+        'vk_dispatch_table_helper.cpp' : {
             'generator' : DispatchTableHelperOutputGenerator,
             'genCombined': True,
         },
@@ -277,6 +283,14 @@ def RunGenerators(api: str, registry: str, grammar: str, directory: str, styleFi
             'generator' : StateTrackerHelperOutputGenerator,
             'genCombined': True,
         },
+        'feature_requirements_helper.h' : {
+            'generator' : FeatureRequirementsGenerator,
+            'genCombined': True,
+        },
+        'feature_requirements_helper.cpp' : {
+            'generator' : FeatureRequirementsGenerator,
+            'genCombined': True,
+        },
     }
 
     unknownTargets = [x for x in (targetFilter if targetFilter else []) if x not in generators.keys()]
@@ -340,6 +354,7 @@ def main(argv):
         'gpu_as_inspection_comp.h',
         'gpu_pre_dispatch_comp.h',
         'gpu_pre_draw_vert.h',
+        'gpu_pre_trace_rays_rgen.h',
         'inst_functions_comp.h',
         'gpu_inst_shader_hash.h'
     ]
@@ -402,16 +417,11 @@ def main(argv):
     grammar = os.path.abspath(os.path.join(args.grammar, 'spirv.core.grammar.json'))
     RunGenerators(args.api, registry, grammar, gen_dir, styleFile, args.target)
 
-    # Generate vk_validation_error_messages.h
-    try:
-        cmd = [repo_relative("scripts/vk_validation_stats.py"),
-               os.path.abspath(os.path.join(args.registry, "validusage.json")),
-              '-export_header']
-        print(' '.join(cmd))
-        subprocess.check_call([sys.executable] + cmd, cwd=gen_dir)
-    except Exception as e:
-        print('ERROR:', str(e))
-        return 1
+    # Generate vk_validation_error_messages.h (ignore if targeting a single generator)
+    if (not args.target):
+        valid_usage_file = os.path.abspath(os.path.join(args.registry, "validusage.json"))
+        error_message_file = os.path.join(gen_dir, 'vk_validation_error_messages.h')
+        GenerateSpecErrorMessage(args.api, valid_usage_file, error_message_file)
 
     # optional post-generation steps
     if args.verify:

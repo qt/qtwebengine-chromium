@@ -50,7 +50,7 @@ bool BestPractices::ValidateBuildAccelerationStructure(VkCommandBuffer commandBu
     if (VendorCheckEnabled(kBPVendorNVIDIA)) {
         if ((cb_node->GetQueueFlags() & VK_QUEUE_GRAPHICS_BIT) != 0) {
             skip |= LogPerformanceWarning(kVUID_BestPractices_AccelerationStructure_NotAsync, commandBuffer, loc,
-                                          "%s Performance warning: Prefer building acceleration structures on an asynchronous "
+                                          "%s Prefer building acceleration structures on an asynchronous "
                                           "compute queue, instead of using the universal graphics queue.",
                                           VendorSpecificTag(kBPVendorNVIDIA));
         }
@@ -65,7 +65,7 @@ bool BestPractices::PreCallValidateBindAccelerationStructureMemoryNV(VkDevice de
     bool skip = false;
 
     for (uint32_t i = 0; i < bindInfoCount; i++) {
-        auto as_state = Get<ACCELERATION_STRUCTURE_STATE_NV>(pBindInfos[i].accelerationStructure);
+        auto as_state = Get<vvl::AccelerationStructureNV>(pBindInfos[i].accelerationStructure);
         if (!as_state->memory_requirements_checked) {
             // There's not an explicit requirement in the spec to call vkGetImageMemoryRequirements() prior to calling
             // BindAccelerationStructureMemoryNV but it's implied in that memory being bound must conform with

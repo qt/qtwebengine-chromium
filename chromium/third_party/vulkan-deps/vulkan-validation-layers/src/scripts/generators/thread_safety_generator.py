@@ -21,6 +21,7 @@
 import os
 from generators.vulkan_object import Command, Param
 from generators.base_generator import BaseGenerator
+from generators.generator_utils import PlatformGuardHelper
 
 def GetParentInstance(param: Param) -> str:
     instanceParent = ['VkSurfaceKHR',
@@ -66,6 +67,7 @@ class ThreadSafetyOutputGenerator(BaseGenerator):
             'vkRegisterDisplayEventEXT',
             'vkCreateRayTracingPipelinesKHR',
             'vkQueuePresentKHR',
+            'vkWaitForPresentKHR',
         ]
 
         self.blacklist = [
@@ -150,11 +152,11 @@ class ThreadSafetyOutputGenerator(BaseGenerator):
                             limit = limit[0:dotp+1] + limit[dotp+2:dotp+3].lower() + limit[dotp+3:]
                             out.append(f'for (uint32_t index2=0; index2 < {limit}; index2++) {{\n')
                             element = element.replace('[]','[index2]')
-                            out.append(f'    {prefix}WriteObject{suffix}({element}, vvl::Func::{command.name});')
+                            out.append(f'    {prefix}WriteObject{suffix}({element}, record_obj.location);')
                             out.append('}\n')
                             out.append('}\n')
                         else:
-                            out.append(f'{prefix}WriteObject{suffix}({element}, vvl::Func::{command.name});\n')
+                            out.append(f'{prefix}WriteObject{suffix}({element}, record_obj.location);\n')
                     out.append('}\n')
                     out.append('}\n')
                 else:
@@ -163,17 +165,17 @@ class ThreadSafetyOutputGenerator(BaseGenerator):
                         member = str(member).replace("::", "->")
                         member = str(member).replace(".", "->")
                         suffix = 'ParentInstance' if 'surface' in member else ''
-                        out.append(f'    {prefix}WriteObject{suffix}({member}, vvl::Func::{command.name});\n')
+                        out.append(f'    {prefix}WriteObject{suffix}({member}, record_obj.location);\n')
             elif param.externSync:
                 if param.length:
                     out.append(f'''
                         if ({param.name}) {{
                             for (uint32_t index = 0; index < {param.length}; index++) {{
-                                {prefix}WriteObject{GetParentInstance(param)}({param.name}[index], vvl::Func::{command.name});
+                                {prefix}WriteObject{GetParentInstance(param)}({param.name}[index], record_obj.location);
                             }}
                         }}\n''')
                 else:
-                    out.append(f'{prefix}WriteObject{GetParentInstance(param)}({param.name}, vvl::Func::{command.name});\n')
+                    out.append(f'{prefix}WriteObject{GetParentInstance(param)}({param.name}, record_obj.location);\n')
                     if ('Destroy' in command.name or 'Free' in command.name or 'ReleasePerformanceConfigurationINTEL' in command.name) and prefix == 'Finish':
                         out.append(f'DestroyObject{GetParentInstance(param)}({param.name});\n')
             elif param.pointer and ('Create' in command.name or 'Allocate' in command.name or 'AcquirePerformanceConfigurationINTEL' in command.name) and prefix == 'Finish':
@@ -223,13 +225,13 @@ class ThreadSafetyOutputGenerator(BaseGenerator):
                         out.append(f'''
                             if ({param.name}) {{
                                 for (uint32_t index = 0; index < {dereference}{param.length}; index++) {{
-                                    {prefix}ReadObject{GetParentInstance(param)}({param.name}[index], vvl::Func::{command.name});
+                                    {prefix}ReadObject{GetParentInstance(param)}({param.name}[index], record_obj.location);
                                 }}
                             }}\n''')
                     elif not param.pointer:
                         # Pointer params are often being created.
                         # They are not being read from.
-                        out.append(f'{prefix}ReadObject{GetParentInstance(param)}({param.name}, vvl::Func::{command.name});\n')
+                        out.append(f'{prefix}ReadObject{GetParentInstance(param)}({param.name}, record_obj.location);\n')
 
 
         for param in [x for x in command.params if x.externSync]:
@@ -256,6 +258,7 @@ class ThreadSafetyOutputGenerator(BaseGenerator):
             #include "chassis.h"
             #include "thread_tracker/thread_safety_validation.h"
             ''')
+        guard_helper = PlatformGuardHelper()
         for command in [x for x in self.vk.commands.values() if x.name not in self.blacklist and x.name not in self.manual_commands]:
             # Determine first if this function needs to be intercepted
             startThreadSafety = self.makeThreadUseBlock(command, start=True)
@@ -263,25 +266,36 @@ class ThreadSafetyOutputGenerator(BaseGenerator):
             if startThreadSafety is None and finishThreadSafety is None:
                 continue
 
-            out.extend([f'#ifdef {command.protect}\n'] if command.protect else [])
+            # For alias that are promoted, just point to new function, RecordObject will allow us to distinguish the caller
+            paramList = [param.name for param in command.params]
+            paramList.append('record_obj')
+            aliasParams = ', '.join(paramList)
+
+            out.extend(guard_helper.add_guard(command.protect))
             prototype = command.cPrototype.split('VKAPI_CALL ')[1]
             prototype = f'void ThreadSafety::PreCallRecord{prototype[2:]}'
-            prototype = prototype.replace(');', ') {\n')
+            prototype = prototype.replace(');', ', const RecordObject& record_obj) {\n')
             out.append(prototype)
-            out.extend([startThreadSafety] if startThreadSafety is not None else [])
+            if command.alias:
+                out.append(f'PreCallRecord{command.alias[2:]}({aliasParams});')
+            else:
+                out.extend([startThreadSafety] if startThreadSafety is not None else [])
             out.append('}\n\n')
 
             prototype = prototype.replace('PreCallRecord', 'PostCallRecord')
-            prototype = prototype.replace(')', ', const RecordObject& record_obj)')
             out.append(prototype)
-            out.extend([finishThreadSafety] if finishThreadSafety is not None else [])
+            if command.alias:
+                out.append(f'PostCallRecord{command.alias[2:]}({aliasParams});')
+            else:
+                out.extend([finishThreadSafety] if finishThreadSafety is not None else [])
             out.append('}\n\n')
 
-            out.extend([f'#endif // {command.protect}\n'] if command.protect else [])
+        out.extend(guard_helper.add_guard(None))
         self.write("".join(out))
 
     def generateCommands(self):
         out = []
+        guard_helper = PlatformGuardHelper()
         for command in [x for x in self.vk.commands.values() if x.name not in self.blacklist]:
             # Determine first if this function needs to be intercepted
             startThreadSafety = self.makeThreadUseBlock(command, start=True)
@@ -289,39 +303,40 @@ class ThreadSafetyOutputGenerator(BaseGenerator):
             if startThreadSafety is None and finishThreadSafety is None:
                 continue
 
-            out.extend([f'#ifdef {command.protect}\n'] if command.protect else [])
+            out.extend(guard_helper.add_guard(command.protect))
 
             prototype = command.cPrototype.split('VKAPI_CALL ')[1]
             prototype = f'void PreCallRecord{prototype[2:]}'
-            prototype = prototype.replace(');', ') override;\n\n')
+            prototype = prototype.replace(');', ', const RecordObject& record_obj) override;\n\n')
             if 'ValidationCache' in command.name:
                 prototype = prototype.replace(' override;', ';')
             out.append(prototype)
 
             prototype = prototype.replace('PreCallRecord', 'PostCallRecord')
-            prototype = prototype.replace(')', ', const RecordObject& record_obj)')
             out.append(prototype)
 
-            out.extend([f'#endif // {command.protect}\n'] if command.protect else [])
+        out.extend(guard_helper.add_guard(None))
         self.write("".join(out))
 
     def generateCounterDefinitions(self):
         out = []
         out.append('// clang-format off\n')
+        guard_helper = PlatformGuardHelper()
         for handle in [x for x in self.vk.handles.values() if not x.dispatchable]:
-            out.extend([f'#ifdef {handle.protect}\n'] if handle.protect else [])
+            out.extend(guard_helper.add_guard(handle.protect))
             out.append(f'counter<{handle.name}> c_{handle.name};\n')
-            out.extend([f'#endif // {handle.protect}\n'] if handle.protect else [])
+        out.extend(guard_helper.add_guard(None))
         out.append('// clang-format on\n')
         self.write("".join(out))
 
     def generateCounterInstance(self):
         out = []
         out.append('// clang-format off\n')
+        guard_helper = PlatformGuardHelper()
         for handle in [x for x in self.vk.handles.values() if not x.dispatchable]:
-            out.extend([f'#ifdef {handle.protect}\n'] if handle.protect else [])
+            out.extend(guard_helper.add_guard(handle.protect))
             out.append(f'c_{handle.name}(kVulkanObjectType{handle.name[2:]}, this),\n')
-            out.extend([f'#endif // {handle.protect}\n'] if handle.protect else [])
+        out.extend(guard_helper.add_guard(None))
         out.append('// clang-format on\n')
         self.write("".join(out))
 
@@ -329,9 +344,10 @@ class ThreadSafetyOutputGenerator(BaseGenerator):
         out = []
         out.append('// clang-format off\n')
         instanceParent = ['VkSurfaceKHR', 'VkDebugReportCallbackEXT', 'VkDebugUtilsMessengerEXT', 'VkDisplayKHR']
+        guard_helper = PlatformGuardHelper()
         for handle in [x for x in self.vk.handles.values() if not x.dispatchable]:
-            out.extend([f'#ifdef {handle.protect}\n'] if handle.protect else [])
+            out.extend(guard_helper.add_guard(handle.protect))
             out.extend([f'WRAPPER_PARENT_INSTANCE({handle.name})\n'] if handle.name in instanceParent else [f'WRAPPER({handle.name})\n'])
-            out.extend([f'#endif // {handle.protect}\n'] if handle.protect else [])
+        out.extend(guard_helper.add_guard(None))
         out.append('// clang-format on\n')
         self.write("".join(out))

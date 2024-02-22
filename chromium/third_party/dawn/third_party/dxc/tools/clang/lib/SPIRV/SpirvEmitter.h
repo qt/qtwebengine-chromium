@@ -104,6 +104,13 @@ public:
                : (var->getAttr<HLSLGroupSharedAttr>() != nullptr);
   }
 
+  /// Create SpirvIntrinsicInstruction for arbitrary SPIR-V instructions
+  /// specified by [[vk::ext_instruction(..)]] or [[vk::ext_type_def(..)]]
+  SpirvInstruction *
+  createSpirvIntrInstExt(llvm::ArrayRef<const Attr *> attrs, QualType retType,
+                         llvm::ArrayRef<SpirvInstruction *> spvArgs,
+                         bool isInstr, SourceLocation loc);
+
 private:
   void doFunctionDecl(const FunctionDecl *decl);
   void doVarDecl(const VarDecl *decl);
@@ -173,6 +180,10 @@ private:
   bool loadIfAliasVarRef(const Expr *aliasVarExpr,
                          SpirvInstruction **aliasVarInstr,
                          SourceRange rangeOverride = {});
+
+  /// Check whether a member value has a nointerpolation qualifier in its type
+  /// declaration or any parents' type declaration recursively.
+  bool isNoInterpMemberExpr(const MemberExpr *expr);
 
 private:
   /// Translates the given frontend binary operator into its SPIR-V equivalent
@@ -379,7 +390,8 @@ private:
   collectArrayStructIndices(const Expr *expr, bool rawIndex,
                             llvm::SmallVectorImpl<uint32_t> *rawIndices,
                             llvm::SmallVectorImpl<SpirvInstruction *> *indices,
-                            bool *isMSOutAttribute = nullptr);
+                            bool *isMSOutAttribute = nullptr,
+                            bool *isNointerp = nullptr);
 
   /// For L-values, creates an access chain to index into the given SPIR-V
   /// evaluation result and returns the new SPIR-V evaluation result.
@@ -644,6 +656,10 @@ private:
   /// Processes the NonUniformResourceIndex intrinsic function.
   SpirvInstruction *processIntrinsicNonUniformResourceIndex(const CallExpr *);
 
+  /// Processes the SM 6.4 dot4add_{i|u}8packed intrinsic functions.
+  SpirvInstruction *processIntrinsicDP4a(const CallExpr *callExpr,
+                                         hlsl::IntrinsicOp op);
+
   /// Processes the SM 6.6 pack_{s|u}8 and pack_clamp_{s|u}8 intrinsic
   /// functions.
   SpirvInstruction *processIntrinsic8BitPack(const CallExpr *,
@@ -667,19 +683,15 @@ private:
   /// Process mesh shader intrinsics.
   void processMeshOutputCounts(const CallExpr *callExpr);
 
+  /// Process GetAttributeAtVertex for barycentrics.
+  SpirvInstruction *processGetAttributeAtVertex(const CallExpr *expr);
+
   /// Process ray query traceinline intrinsics.
   SpirvInstruction *processTraceRayInline(const CXXMemberCallExpr *expr);
 
   /// Process ray query intrinsics
   SpirvInstruction *processRayQueryIntrinsics(const CXXMemberCallExpr *expr,
                                               hlsl::IntrinsicOp opcode);
-
-  /// Create SpirvIntrinsicInstruction for arbitrary SPIR-V instructions
-  /// specified by [[vk::ext_instruction(..)]] or [[vk::ext_type_def(..)]]
-  SpirvInstruction *createSpirvIntrInstExt(
-      llvm::ArrayRef<const Attr *> attrs, QualType retType,
-      const llvm::SmallVectorImpl<SpirvInstruction *> &spvArgs, bool isInstr,
-      SourceLocation loc);
   /// Process spirv intrinsic instruction
   SpirvInstruction *processSpvIntrinsicCallExpr(const CallExpr *expr);
 
@@ -800,6 +812,9 @@ private:
   static spv::ExecutionModel getSpirvShaderStage(hlsl::ShaderModel::Kind smk,
                                                  bool);
 
+  /// \brief Handle inline SPIR-V attributes for the entry function.
+  void processInlineSpirvAttributes(const FunctionDecl *entryFunction);
+
   /// \brief Adds necessary execution modes for the hull/domain shaders based on
   /// the HLSL attributes of the entry point function.
   /// In the case of hull shaders, also writes the number of output control
@@ -904,7 +919,7 @@ private:
   /// method panics if it finds a case value that is not an integer literal.
   void discoverAllCaseStmtInSwitchStmt(
       const Stmt *root, SpirvBasicBlock **defaultBB,
-      std::vector<std::pair<uint32_t, SpirvBasicBlock *>> *targets);
+      std::vector<std::pair<llvm::APInt, SpirvBasicBlock *>> *targets);
 
   /// Flattens structured AST of the given switch statement into a vector of AST
   /// nodes and stores into flatSwitch.
@@ -964,7 +979,6 @@ private:
   /// statement.
   void processSwitchStmtUsingIfStmts(const SwitchStmt *switchStmt);
 
-private:
   /// Handles the offset argument in the given method call at the given argument
   /// index. Panics if the argument at the given index does not exist. Writes
   /// the <result-id> to either *constOffset or *varOffset, depending on the
@@ -1142,7 +1156,6 @@ private:
                                             const CXXMethodDecl *memberFn,
                                             SourceLocation loc);
 
-private:
   /// \brief Takes a vector of size 4, and returns a vector of size 1 or 2 or 3
   /// or 4. Creates a CompositeExtract or VectorShuffle instruction to extract
   /// a scalar or smaller vector from the beginning of the input vector if
@@ -1180,7 +1193,6 @@ private:
   /// execution mode, if it has not already been added.
   void beginInvocationInterlock(SourceLocation loc, SourceRange range);
 
-private:
   /// \brief If the given FunctionDecl is not already in the workQueue, creates
   /// a FunctionInfo object for it, and inserts it into the workQueue. It also
   /// updates the functionInfoMap with the proper mapping.
@@ -1225,6 +1237,16 @@ private:
   ///  This decision is made according to the rules in
   ///  https://microsoft.github.io/DirectX-Specs/d3d/HLSL_SM_6_6_Derivatives.html.
   void addDerivativeGroupExecutionMode();
+
+  /// Creates an input variable for `param` that will be used by the patch
+  /// constant function. The parameter is also added to the patch constant
+  /// function. The wrapper function will copy the input variable to the
+  /// parameter.
+  SpirvVariable *
+  createPCFParmVarAndInitFromStageInputVar(const ParmVarDecl *param);
+
+  /// Returns a function scope parameter with the same type as |param|.
+  SpirvVariable *createFunctionScopeTempFromParameter(const ParmVarDecl *param);
 
 public:
   /// \brief Wrapper method to create a fatal error message and report it

@@ -20,14 +20,15 @@
 #define GPU_SHADERS_CONSTANTS_H
 
 #ifdef __cplusplus
-namespace gpuav_glsl {
+namespace gpuav {
+namespace glsl {
 using uint = unsigned int;
 
 // Upper bound for maxUpdateAfterBindDescriptorsInAllPools. This value needs to
 // be small enough to allow for a table in memory, but some devices set it to 2^32.
 // This value only matters for host code, but it is defined here so it can be used
 // in unit tests.
-const uint kDebugInputBindlessMaxDescriptors = 1024u*1024u;
+const uint kDebugInputBindlessMaxDescriptors = 1024u*1024u*4u;
 
 #endif
 
@@ -166,7 +167,8 @@ const int kInstErrorOOB = 4;
 const int kInstErrorPreDrawValidate = 5;
 const int kInstErrorPreDispatchValidate = 6;
 const int kInstErrorBindlessDestroyed = 7;
-const int kInstErrorMax = 7;
+const int kInstErrorPreTraceRaysKhrValidate = 8;
+const int kInstErrorMax = 8;
 
 // Direct Input Buffer Offsets
 //
@@ -229,8 +231,22 @@ const int pre_draw_first_instance_error = 3;
 const int pre_dispatch_count_exceeds_limit_x_error = 1;
 const int pre_dispatch_count_exceeds_limit_y_error = 2;
 const int pre_dispatch_count_exceeds_limit_z_error = 3;
+const int pre_trace_rays_query_dimensions_exceeds_width_limit = 1;
+const int pre_trace_rays_query_dimensions_exceeds_height_limit = 2;
+const int pre_trace_rays_query_dimensions_exceeds_depth_limit = 3;
+const int pre_draw_group_count_exceeds_limit_x_error = 4;
+const int pre_draw_group_count_exceeds_limit_y_error = 5;
+const int pre_draw_group_count_exceeds_limit_z_error = 6;
+const int pre_draw_group_count_exceeds_total_error = 7;
+
+// These values select which pre-draw validation will be performed
+const int pre_draw_select_count_buffer = 1;
+const int pre_draw_select_draw_buffer = 2;
+const int pre_draw_select_mesh_count_buffer = 3;
+const int pre_draw_select_mesh_no_count = 4;
 
 #ifdef __cplusplus
-} // namespace gpuav_glsl
+}  // namespace glsl
+}  // namespace gpuav
 #endif
 #endif

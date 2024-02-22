@@ -399,8 +399,6 @@ void PostCallRecordEnumeratePhysicalDeviceGroupsKHR(VkInstance instance, uint32_
 void PostCallRecordGetMemoryWin32HandleKHR(VkDevice device, const VkMemoryGetWin32HandleInfoKHR* pGetWin32HandleInfo,
                                            HANDLE* pHandle, const RecordObject& record_obj) override;
 
-#endif  // VK_USE_PLATFORM_WIN32_KHR
-#ifdef VK_USE_PLATFORM_WIN32_KHR
 void PostCallRecordGetMemoryWin32HandlePropertiesKHR(VkDevice device, VkExternalMemoryHandleTypeFlagBits handleType, HANDLE handle,
                                                      VkMemoryWin32HandlePropertiesKHR* pMemoryWin32HandleProperties,
                                                      const RecordObject& record_obj) override;
@@ -417,8 +415,6 @@ void PostCallRecordImportSemaphoreWin32HandleKHR(VkDevice device,
                                                  const VkImportSemaphoreWin32HandleInfoKHR* pImportSemaphoreWin32HandleInfo,
                                                  const RecordObject& record_obj) override;
 
-#endif  // VK_USE_PLATFORM_WIN32_KHR
-#ifdef VK_USE_PLATFORM_WIN32_KHR
 void PostCallRecordGetSemaphoreWin32HandleKHR(VkDevice device, const VkSemaphoreGetWin32HandleInfoKHR* pGetWin32HandleInfo,
                                               HANDLE* pHandle, const RecordObject& record_obj) override;
 
@@ -444,8 +440,6 @@ void PostCallRecordGetSwapchainStatusKHR(VkDevice device, VkSwapchainKHR swapcha
 void PostCallRecordImportFenceWin32HandleKHR(VkDevice device, const VkImportFenceWin32HandleInfoKHR* pImportFenceWin32HandleInfo,
                                              const RecordObject& record_obj) override;
 
-#endif  // VK_USE_PLATFORM_WIN32_KHR
-#ifdef VK_USE_PLATFORM_WIN32_KHR
 void PostCallRecordGetFenceWin32HandleKHR(VkDevice device, const VkFenceGetWin32HandleInfoKHR* pGetWin32HandleInfo, HANDLE* pHandle,
                                           const RecordObject& record_obj) override;
 
@@ -539,25 +533,29 @@ void PostCallRecordGetPipelineExecutableInternalRepresentationsKHR(
 void PostCallRecordMapMemory2KHR(VkDevice device, const VkMemoryMapInfoKHR* pMemoryMapInfo, void** ppData,
                                  const RecordObject& record_obj) override;
 
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 void PostCallRecordGetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR(
     VkPhysicalDevice physicalDevice, const VkPhysicalDeviceVideoEncodeQualityLevelInfoKHR* pQualityLevelInfo,
     VkVideoEncodeQualityLevelPropertiesKHR* pQualityLevelProperties, const RecordObject& record_obj) override;
 
-#endif  // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 void PostCallRecordGetEncodedVideoSessionParametersKHR(VkDevice device,
                                                        const VkVideoEncodeSessionParametersGetInfoKHR* pVideoSessionParametersInfo,
                                                        VkVideoEncodeSessionParametersFeedbackInfoKHR* pFeedbackInfo,
                                                        size_t* pDataSize, void* pData, const RecordObject& record_obj) override;
 
-#endif  // VK_ENABLE_BETA_EXTENSIONS
 void PostCallRecordQueueSubmit2KHR(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence,
                                    const RecordObject& record_obj) override;
 
 void PostCallRecordGetPhysicalDeviceCooperativeMatrixPropertiesKHR(VkPhysicalDevice physicalDevice, uint32_t* pPropertyCount,
                                                                    VkCooperativeMatrixPropertiesKHR* pProperties,
                                                                    const RecordObject& record_obj) override;
+
+void PostCallRecordGetPhysicalDeviceCalibrateableTimeDomainsKHR(VkPhysicalDevice physicalDevice, uint32_t* pTimeDomainCount,
+                                                                VkTimeDomainKHR* pTimeDomains,
+                                                                const RecordObject& record_obj) override;
+
+void PostCallRecordGetCalibratedTimestampsKHR(VkDevice device, uint32_t timestampCount,
+                                              const VkCalibratedTimestampInfoKHR* pTimestampInfos, uint64_t* pTimestamps,
+                                              uint64_t* pMaxDeviation, const RecordObject& record_obj) override;
 
 void PostCallRecordCreateDebugReportCallbackEXT(VkInstance instance, const VkDebugReportCallbackCreateInfoEXT* pCreateInfo,
                                                 const VkAllocationCallbacks* pAllocator, VkDebugReportCallbackEXT* pCallback,
@@ -610,8 +608,6 @@ void PostCallRecordCreateViSurfaceNN(VkInstance instance, const VkViSurfaceCreat
 void PostCallRecordAcquireXlibDisplayEXT(VkPhysicalDevice physicalDevice, Display* dpy, VkDisplayKHR display,
                                          const RecordObject& record_obj) override;
 
-#endif  // VK_USE_PLATFORM_XLIB_XRANDR_EXT
-#ifdef VK_USE_PLATFORM_XLIB_XRANDR_EXT
 void PostCallRecordGetRandROutputDisplayEXT(VkPhysicalDevice physicalDevice, Display* dpy, RROutput rrOutput,
                                             VkDisplayKHR* pDisplay, const RecordObject& record_obj) override;
 
@@ -669,8 +665,6 @@ void PostCallRecordGetAndroidHardwareBufferPropertiesANDROID(VkDevice device, co
                                                              VkAndroidHardwareBufferPropertiesANDROID* pProperties,
                                                              const RecordObject& record_obj) override;
 
-#endif  // VK_USE_PLATFORM_ANDROID_KHR
-#ifdef VK_USE_PLATFORM_ANDROID_KHR
 void PostCallRecordGetMemoryAndroidHardwareBufferANDROID(VkDevice device, const VkMemoryGetAndroidHardwareBufferInfoANDROID* pInfo,
                                                          struct AHardwareBuffer** pBuffer, const RecordObject& record_obj) override;
 
@@ -681,14 +675,10 @@ void PostCallRecordCreateExecutionGraphPipelinesAMDX(VkDevice device, VkPipeline
                                                      const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
                                                      const RecordObject& record_obj) override;
 
-#endif  // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 void PostCallRecordGetExecutionGraphPipelineScratchSizeAMDX(VkDevice device, VkPipeline executionGraph,
                                                             VkExecutionGraphPipelineScratchSizeAMDX* pSizeInfo,
                                                             const RecordObject& record_obj) override;
 
-#endif  // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 void PostCallRecordGetExecutionGraphPipelineNodeIndexAMDX(VkDevice device, VkPipeline executionGraph,
                                                           const VkPipelineShaderStageNodeCreateInfoAMDX* pNodeInfo,
                                                           uint32_t* pNodeIndex, const RecordObject& record_obj) override;
@@ -731,11 +721,11 @@ void PostCallRecordGetMemoryHostPointerPropertiesEXT(VkDevice device, VkExternal
                                                      const RecordObject& record_obj) override;
 
 void PostCallRecordGetPhysicalDeviceCalibrateableTimeDomainsEXT(VkPhysicalDevice physicalDevice, uint32_t* pTimeDomainCount,
-                                                                VkTimeDomainEXT* pTimeDomains,
+                                                                VkTimeDomainKHR* pTimeDomains,
                                                                 const RecordObject& record_obj) override;
 
 void PostCallRecordGetCalibratedTimestampsEXT(VkDevice device, uint32_t timestampCount,
-                                              const VkCalibratedTimestampInfoEXT* pTimestampInfos, uint64_t* pTimestamps,
+                                              const VkCalibratedTimestampInfoKHR* pTimestampInfos, uint64_t* pTimestamps,
                                               uint64_t* pMaxDeviation, const RecordObject& record_obj) override;
 
 void PostCallRecordInitializePerformanceApiINTEL(VkDevice device, const VkInitializePerformanceApiInfoINTEL* pInitializeInfo,
@@ -796,18 +786,12 @@ void PostCallRecordGetPhysicalDeviceSurfacePresentModes2EXT(VkPhysicalDevice phy
                                                             uint32_t* pPresentModeCount, VkPresentModeKHR* pPresentModes,
                                                             const RecordObject& record_obj) override;
 
-#endif  // VK_USE_PLATFORM_WIN32_KHR
-#ifdef VK_USE_PLATFORM_WIN32_KHR
 void PostCallRecordAcquireFullScreenExclusiveModeEXT(VkDevice device, VkSwapchainKHR swapchain,
                                                      const RecordObject& record_obj) override;
 
-#endif  // VK_USE_PLATFORM_WIN32_KHR
-#ifdef VK_USE_PLATFORM_WIN32_KHR
 void PostCallRecordReleaseFullScreenExclusiveModeEXT(VkDevice device, VkSwapchainKHR swapchain,
                                                      const RecordObject& record_obj) override;
 
-#endif  // VK_USE_PLATFORM_WIN32_KHR
-#ifdef VK_USE_PLATFORM_WIN32_KHR
 void PostCallRecordGetDeviceGroupSurfacePresentModes2EXT(VkDevice device, const VkPhysicalDeviceSurfaceInfo2KHR* pSurfaceInfo,
                                                          VkDeviceGroupPresentModeFlagsKHR* pModes,
                                                          const RecordObject& record_obj) override;
@@ -851,6 +835,17 @@ void PostCallRecordCreatePrivateDataSlotEXT(VkDevice device, const VkPrivateData
 void PostCallRecordSetPrivateDataEXT(VkDevice device, VkObjectType objectType, uint64_t objectHandle,
                                      VkPrivateDataSlot privateDataSlot, uint64_t data, const RecordObject& record_obj) override;
 
+void PostCallRecordCreateCudaModuleNV(VkDevice device, const VkCudaModuleCreateInfoNV* pCreateInfo,
+                                      const VkAllocationCallbacks* pAllocator, VkCudaModuleNV* pModule,
+                                      const RecordObject& record_obj) override;
+
+void PostCallRecordGetCudaModuleCacheNV(VkDevice device, VkCudaModuleNV module, size_t* pCacheSize, void* pCacheData,
+                                        const RecordObject& record_obj) override;
+
+void PostCallRecordCreateCudaFunctionNV(VkDevice device, const VkCudaFunctionCreateInfoNV* pCreateInfo,
+                                        const VkAllocationCallbacks* pAllocator, VkCudaFunctionNV* pFunction,
+                                        const RecordObject& record_obj) override;
+
 void PostCallRecordGetBufferOpaqueCaptureDescriptorDataEXT(VkDevice device, const VkBufferCaptureDescriptorDataInfoEXT* pInfo,
                                                            void* pData, const RecordObject& record_obj) override;
 
@@ -874,8 +869,6 @@ void PostCallRecordGetDeviceFaultInfoEXT(VkDevice device, VkDeviceFaultCountsEXT
 void PostCallRecordAcquireWinrtDisplayNV(VkPhysicalDevice physicalDevice, VkDisplayKHR display,
                                          const RecordObject& record_obj) override;
 
-#endif  // VK_USE_PLATFORM_WIN32_KHR
-#ifdef VK_USE_PLATFORM_WIN32_KHR
 void PostCallRecordGetWinrtDisplayNV(VkPhysicalDevice physicalDevice, uint32_t deviceRelativeId, VkDisplayKHR* pDisplay,
                                      const RecordObject& record_obj) override;
 
@@ -890,45 +883,31 @@ void PostCallRecordCreateDirectFBSurfaceEXT(VkInstance instance, const VkDirectF
 void PostCallRecordGetMemoryZirconHandleFUCHSIA(VkDevice device, const VkMemoryGetZirconHandleInfoFUCHSIA* pGetZirconHandleInfo,
                                                 zx_handle_t* pZirconHandle, const RecordObject& record_obj) override;
 
-#endif  // VK_USE_PLATFORM_FUCHSIA
-#ifdef VK_USE_PLATFORM_FUCHSIA
 void PostCallRecordGetMemoryZirconHandlePropertiesFUCHSIA(VkDevice device, VkExternalMemoryHandleTypeFlagBits handleType,
                                                           zx_handle_t zirconHandle,
                                                           VkMemoryZirconHandlePropertiesFUCHSIA* pMemoryZirconHandleProperties,
                                                           const RecordObject& record_obj) override;
 
-#endif  // VK_USE_PLATFORM_FUCHSIA
-#ifdef VK_USE_PLATFORM_FUCHSIA
 void PostCallRecordImportSemaphoreZirconHandleFUCHSIA(
     VkDevice device, const VkImportSemaphoreZirconHandleInfoFUCHSIA* pImportSemaphoreZirconHandleInfo,
     const RecordObject& record_obj) override;
 
-#endif  // VK_USE_PLATFORM_FUCHSIA
-#ifdef VK_USE_PLATFORM_FUCHSIA
 void PostCallRecordGetSemaphoreZirconHandleFUCHSIA(VkDevice device,
                                                    const VkSemaphoreGetZirconHandleInfoFUCHSIA* pGetZirconHandleInfo,
                                                    zx_handle_t* pZirconHandle, const RecordObject& record_obj) override;
 
-#endif  // VK_USE_PLATFORM_FUCHSIA
-#ifdef VK_USE_PLATFORM_FUCHSIA
 void PostCallRecordCreateBufferCollectionFUCHSIA(VkDevice device, const VkBufferCollectionCreateInfoFUCHSIA* pCreateInfo,
                                                  const VkAllocationCallbacks* pAllocator, VkBufferCollectionFUCHSIA* pCollection,
                                                  const RecordObject& record_obj) override;
 
-#endif  // VK_USE_PLATFORM_FUCHSIA
-#ifdef VK_USE_PLATFORM_FUCHSIA
 void PostCallRecordSetBufferCollectionImageConstraintsFUCHSIA(VkDevice device, VkBufferCollectionFUCHSIA collection,
                                                               const VkImageConstraintsInfoFUCHSIA* pImageConstraintsInfo,
                                                               const RecordObject& record_obj) override;
 
-#endif  // VK_USE_PLATFORM_FUCHSIA
-#ifdef VK_USE_PLATFORM_FUCHSIA
 void PostCallRecordSetBufferCollectionBufferConstraintsFUCHSIA(VkDevice device, VkBufferCollectionFUCHSIA collection,
                                                                const VkBufferConstraintsInfoFUCHSIA* pBufferConstraintsInfo,
                                                                const RecordObject& record_obj) override;
 
-#endif  // VK_USE_PLATFORM_FUCHSIA
-#ifdef VK_USE_PLATFORM_FUCHSIA
 void PostCallRecordGetBufferCollectionPropertiesFUCHSIA(VkDevice device, VkBufferCollectionFUCHSIA collection,
                                                         VkBufferCollectionPropertiesFUCHSIA* pProperties,
                                                         const RecordObject& record_obj) override;
@@ -1105,7 +1084,7 @@ const vvl::unordered_map<std::string, DeprecationData> deprecated_extensions = {
     {"VK_NV_external_memory", {kExtDeprecated, "VK_KHR_external_memory"}},
     {"VK_NV_external_memory_win32", {kExtDeprecated, "VK_KHR_external_memory_win32"}},
     {"VK_NV_win32_keyed_mutex", {kExtPromoted, "VK_KHR_win32_keyed_mutex"}},
-    {"VK_EXT_validation_flags", {kExtDeprecated, "VK_EXT_validation_features"}},
+    {"VK_EXT_validation_flags", {kExtDeprecated, "VK_EXT_layer_settings"}},
     {"VK_EXT_shader_subgroup_ballot", {kExtDeprecated, "VK_VERSION_1_2"}},
     {"VK_EXT_shader_subgroup_vote", {kExtDeprecated, "VK_VERSION_1_1"}},
     {"VK_EXT_texture_compression_astc_hdr", {kExtPromoted, "VK_VERSION_1_3"}},
@@ -1117,6 +1096,8 @@ const vvl::unordered_map<std::string, DeprecationData> deprecated_extensions = {
     {"VK_EXT_descriptor_indexing", {kExtPromoted, "VK_VERSION_1_2"}},
     {"VK_EXT_shader_viewport_index_layer", {kExtPromoted, "VK_VERSION_1_2"}},
     {"VK_EXT_global_priority", {kExtPromoted, "VK_KHR_global_priority"}},
+    {"VK_EXT_calibrated_timestamps", {kExtPromoted, "VK_KHR_calibrated_timestamps"}},
+    {"VK_EXT_vertex_attribute_divisor", {kExtPromoted, "VK_KHR_vertex_attribute_divisor"}},
     {"VK_EXT_pipeline_creation_feedback", {kExtPromoted, "VK_VERSION_1_3"}},
     {"VK_NV_fragment_shader_barycentric", {kExtPromoted, "VK_KHR_fragment_shader_barycentric"}},
     {"VK_EXT_scalar_block_layout", {kExtPromoted, "VK_VERSION_1_2"}},
@@ -1124,6 +1105,7 @@ const vvl::unordered_map<std::string, DeprecationData> deprecated_extensions = {
     {"VK_EXT_buffer_device_address", {kExtDeprecated, "VK_KHR_buffer_device_address"}},
     {"VK_EXT_tooling_info", {kExtPromoted, "VK_VERSION_1_3"}},
     {"VK_EXT_separate_stencil_usage", {kExtPromoted, "VK_VERSION_1_2"}},
+    {"VK_EXT_validation_features", {kExtDeprecated, "VK_EXT_layer_settings"}},
     {"VK_EXT_host_query_reset", {kExtPromoted, "VK_VERSION_1_2"}},
     {"VK_EXT_extended_dynamic_state", {kExtPromoted, "VK_VERSION_1_3"}},
     {"VK_EXT_shader_demote_to_helper_invocation", {kExtPromoted, "VK_VERSION_1_3"}},
@@ -1147,6 +1129,7 @@ const vvl::unordered_map<std::string, std::string> special_use_extensions = {
     {"VK_AMD_shader_info", "devtools"},
     {"VK_EXT_validation_flags", "debugging"},
     {"VK_EXT_depth_clip_enable", "d3demulation"},
+    {"VK_IMG_relaxed_line_rasterization", "glemulation"},
     {"VK_EXT_debug_utils", "debugging"},
     {"VK_AMD_buffer_marker", "devtools"},
     {"VK_EXT_pipeline_creation_feedback", "devtools"},

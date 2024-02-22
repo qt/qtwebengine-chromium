@@ -19,7 +19,7 @@
 # limitations under the License.
 
 import os
-from generators.generator_utils import buildListVUID, getVUID
+from generators.generator_utils import buildListVUID, getVUID, PlatformGuardHelper
 from generators.vulkan_object import Handle, Command, Struct, Member, Param
 from generators.base_generator import BaseGenerator
 
@@ -30,21 +30,6 @@ from generators.base_generator import BaseGenerator
 # interfaces or their use in the generator script will have downstream effects and thus
 # should be avoided unless absolutely necessary.
 class APISpecific:
-    # Returns VUIDs to report when detecting undestroyed objects
-    @staticmethod
-    def getUndestroyedObjectVUID(targetApiName: str, scope: str) -> str:
-        match targetApiName:
-
-            # Vulkan specific undestroyed object VUIDs
-            case 'vulkan':
-                per_scope = {
-                    'instance': 'VUID-vkDestroyInstance-instance-00629',
-                    'device': 'VUID-vkDestroyDevice-device-05137'
-                }
-
-        return per_scope[scope]
-
-
     # Tells whether an object handle type is implicitly destroyed because it does not have
     # destroy APIs or its parent object type does not have destroy APIs
     @staticmethod
@@ -102,6 +87,7 @@ class ObjectTrackerOutputGenerator(BaseGenerator):
             'vkDestroySwapchainKHR',
             'vkGetSwapchainImagesKHR',
             'vkCmdPushDescriptorSetKHR',
+            'vkCmdPushDescriptorSet2KHR',
             'vkDestroyDevice',
             'vkResetDescriptorPool',
             'vkGetPhysicalDeviceDisplayPropertiesKHR',
@@ -119,6 +105,8 @@ class ObjectTrackerOutputGenerator(BaseGenerator):
             'vkCreateRayTracingPipelinesKHR',
             'vkExportMetalObjectsEXT',
             'vkGetDescriptorEXT',
+            'vkGetPrivateData',
+            'vkSetPrivateData',
             ]
         # These VUIDS are not implicit, but are best handled in this layer. Codegen for vkDestroy calls will generate a key
         # which is translated here into a good VU.  Saves ~40 checks.
@@ -174,6 +162,18 @@ class ObjectTrackerOutputGenerator(BaseGenerator):
             "VkAccelerationStructureNV-accelerationStructure-nullalloc": "\"VUID-vkDestroyAccelerationStructureNV-accelerationStructure-03754\"",
             "shader-compatalloc": "\"VUID-vkDestroyShaderEXT-pAllocator-08483\"",
             "shader-nullalloc": "\"VUID-vkDestroyShaderEXT-pAllocator-08484\"",
+            "callback-compatalloc": "\"VUID-vkDestroyDebugReportCallbackEXT-instance-01242\"",
+            "callback-nullalloc": "\"VUID-vkDestroyDebugReportCallbackEXT-instance-01243\"",
+            "messenger-compatalloc": "\"VUID-vkDestroyDebugUtilsMessengerEXT-messenger-01915\"",
+            "messenger-nullalloc": "\"VUID-vkDestroyDebugUtilsMessengerEXT-messenger-01916\"",
+            "operation-compatalloc": "\"VUID-vkDestroyDeferredOperationKHR-operation-03434\"",
+            "operation-nullalloc": "\"VUID-vkDestroyDeferredOperationKHR-operation-03435\"",
+            "micromap-compatalloc": "\"VUID-vkDestroyMicromapEXT-micromap-07442\"",
+            "micromap-nullalloc": "\"VUID-vkDestroyMicromapEXT-micromap-07443\"",
+            "privateDataSlot-compatalloc": "\"VUID-vkDestroyPrivateDataSlot-privateDataSlot-04062\"",
+            "privateDataSlot-nullalloc": "\"VUID-vkDestroyPrivateDataSlot-privateDataSlot-04063\"",
+            "validationCache-compatalloc": "\"VUID-vkDestroyValidationCacheEXT-validationCache-01537\"",
+            "validationCache-nullalloc": "\"VUID-vkDestroyValidationCacheEXT-validationCache-01538\"",
            }
 
         # Structures that do not define parent/commonparent VUIDs for vulkan handles.
@@ -210,8 +210,6 @@ class ObjectTrackerOutputGenerator(BaseGenerator):
             'VkImportFenceFdInfoKHR',
             'VkFenceGetFdInfoKHR',
             'VkPhysicalDeviceSurfaceInfo2KHR',
-            'VkPipelineInfoKHR',
-            'VkPipelineExecutableInfoKHR',
             'VkMemoryMapInfoKHR',
             'VkMemoryUnmapInfoKHR',
             'VkVideoEncodeSessionParametersGetInfoKHR',
@@ -258,7 +256,6 @@ class ObjectTrackerOutputGenerator(BaseGenerator):
             'VkShaderModuleValidationCacheCreateInfoEXT',
             'VkGraphicsPipelineShaderGroupsCreateInfoNV',
             'VkSubpassShadingPipelineCreateInfoHUAWEI',
-            'VkRenderPassAttachmentBeginInfo',
             'VkBindImageMemorySwapchainInfoKHR',
             'VkRenderingFragmentDensityMapAttachmentInfoEXT',
             'VkRenderingFragmentShadingRateAttachmentInfoKHR',
@@ -353,8 +350,9 @@ class ObjectTrackerOutputGenerator(BaseGenerator):
 
     def generateHeader(self):
         out = []
+        guard_helper = PlatformGuardHelper()
         for command in self.vk.commands.values():
-            out.extend([f'#ifdef {command.protect}\n'] if command.protect else [])
+            out.extend(guard_helper.add_guard(command.protect))
             (pre_call_validate, pre_call_record, post_call_record) = self.generateFunctionBody(command)
 
             prototype = (command.cPrototype.split('VKAPI_CALL ')[1])[2:-1]
@@ -369,22 +367,22 @@ class ObjectTrackerOutputGenerator(BaseGenerator):
                 prePrototype = prototype.replace(')', ', const ErrorObject& error_obj)')
                 out.append(f'bool PreCallValidate{prePrototype} const{terminator}')
 
+            prototype = prototype.replace(')', ', const RecordObject& record_obj)')
             if pre_call_record:
                 out.append(f'void PreCallRecord{prototype}{terminator}')
 
             if post_call_record:
-                prototype = prototype.replace(')', ', const RecordObject& record_obj)')
                 out.append(f'void PostCallRecord{prototype}{terminator}')
 
-            out.extend([f'#endif // {command.protect}\n'] if command.protect else [])
+        out.extend(guard_helper.add_guard(None))
 
         out.append('''
 
             void PostCallRecordDestroyInstance(VkInstance instance, const VkAllocationCallbacks *pAllocator, const RecordObject& record_obj) override;
-            void PreCallRecordResetDescriptorPool(VkDevice device, VkDescriptorPool descriptorPool, VkDescriptorPoolResetFlags flags) override;
+            void PreCallRecordResetDescriptorPool(VkDevice device, VkDescriptorPool descriptorPool, VkDescriptorPoolResetFlags flags, const RecordObject& record_obj) override;
             void PostCallRecordGetPhysicalDeviceQueueFamilyProperties(VkPhysicalDevice physicalDevice, uint32_t *pQueueFamilyPropertyCount, VkQueueFamilyProperties *pQueueFamilyProperties, const RecordObject& record_obj) override;
-            void PreCallRecordFreeCommandBuffers(VkDevice device, VkCommandPool commandPool, uint32_t commandBufferCount, const VkCommandBuffer *pCommandBuffers) override;
-            void PreCallRecordFreeDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool, uint32_t descriptorSetCount, const VkDescriptorSet *pDescriptorSets) override;
+            void PreCallRecordFreeCommandBuffers(VkDevice device, VkCommandPool commandPool, uint32_t commandBufferCount, const VkCommandBuffer *pCommandBuffers, const RecordObject& record_obj) override;
+            void PreCallRecordFreeDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool, uint32_t descriptorSetCount, const VkDescriptorSet *pDescriptorSets, const RecordObject& record_obj) override;
             void PostCallRecordGetPhysicalDeviceQueueFamilyProperties2(VkPhysicalDevice physicalDevice, uint32_t *pQueueFamilyPropertyCount, VkQueueFamilyProperties2 *pQueueFamilyProperties, const RecordObject& record_obj) override;
             void PostCallRecordGetPhysicalDeviceQueueFamilyProperties2KHR(VkPhysicalDevice physicalDevice, uint32_t *pQueueFamilyPropertyCount, VkQueueFamilyProperties2 *pQueueFamilyProperties, const RecordObject& record_obj) override;
             void PostCallRecordGetPhysicalDeviceDisplayPropertiesKHR(VkPhysicalDevice physicalDevice, uint32_t *pPropertyCount, VkDisplayPropertiesKHR *pProperties, const RecordObject& record_obj) override;
@@ -408,8 +406,8 @@ WriteLockGuard ObjectLifetimes::WriteLock() { return WriteLockGuard(validation_o
 // ObjectTracker undestroyed objects validation function
 bool ObjectLifetimes::ReportUndestroyedInstanceObjects(VkInstance instance, const Location& loc) const {
     bool skip = false;
-    const std::string error_code = "%s";
-''' % APISpecific.getUndestroyedObjectVUID(self.targetApiName, 'instance'))
+    const std::string error_code = "VUID-vkDestroyInstance-instance-00629";
+''')
         for handle in [x for x in self.vk.handles.values() if not x.dispatchable and not self.isParentDevice(x)]:
             comment_prefix = ''
             if APISpecific.IsImplicitlyDestroyed(self.targetApiName, handle.name):
@@ -421,8 +419,8 @@ bool ObjectLifetimes::ReportUndestroyedInstanceObjects(VkInstance instance, cons
         out.append('''
 bool ObjectLifetimes::ReportUndestroyedDeviceObjects(VkDevice device, const Location& loc) const {
     bool skip = false;
-    const std::string error_code = "%s";
-''' % APISpecific.getUndestroyedObjectVUID(self.targetApiName, 'device'))
+    const std::string error_code = "VUID-vkDestroyDevice-device-05137";
+''')
 
         comment_prefix = ''
         if APISpecific.IsImplicitlyDestroyed(self.targetApiName, 'VkCommandBuffer'):
@@ -449,9 +447,9 @@ bool ObjectLifetimes::ReportUndestroyedDeviceObjects(VkDevice device, const Loca
         out.append('}\n')
 
         out.append('// clang-format on')
-
+        guard_helper = PlatformGuardHelper()
         for command in [x for x in self.vk.commands.values() if x.name not in self.no_autogen_list]:
-            out.extend([f'#ifdef {command.protect}\n'] if command.protect else [])
+            out.extend(guard_helper.add_guard(command.protect))
 
             # Generate object handling code
             (pre_call_validate, pre_call_record, post_call_record) = self.generateFunctionBody(command)
@@ -466,6 +464,16 @@ bool ObjectLifetimes::ReportUndestroyedDeviceObjects(VkDevice device, const Loca
                         // {command.name}:
                         {pre_call_validate}
                         ''')
+                elif command.alias:
+                    # For alias that are promoted, just point to new function, ErrorObject will allow us to distinguish the caller
+                    paramList = [param.name for param in command.params]
+                    paramList.append('error_obj')
+                    params = ', '.join(paramList)
+                    out.append(f'''
+                        bool ObjectLifetimes::PreCallValidate{prePrototype} const {{
+                            return PreCallValidate{command.alias[2:]}({params});
+                        }}
+                        ''')
                 else:
                     out.append(f'''
                         bool ObjectLifetimes::PreCallValidate{prePrototype} const {{
@@ -477,8 +485,9 @@ bool ObjectLifetimes::ReportUndestroyedDeviceObjects(VkDevice device, const Loca
 
             # Output PreCallRecordAPI function if necessary
             if pre_call_record:
+                postPrototype = prototype.replace(')', ', const RecordObject& record_obj)')
                 out.append(f'''
-                    void ObjectLifetimes::PreCallRecord{prototype} {{
+                    void ObjectLifetimes::PreCallRecord{postPrototype} {{
                         {pre_call_record}
                     }}
                     ''')
@@ -503,7 +512,7 @@ bool ObjectLifetimes::ReportUndestroyedDeviceObjects(VkDevice device, const Loca
                 out.append(f'{post_call_record}\n')
                 out.append('}\n')
 
-            out.extend([f'#endif // {command.protect}\n'] if command.protect else [])
+        out.extend(guard_helper.add_guard(None))
 
         self.write("".join(out))
 
@@ -544,7 +553,7 @@ bool ObjectLifetimes::ReportUndestroyedDeviceObjects(VkDevice device, const Loca
         return param_vuid
 
     def hasFieldParentVUID(self, member: Member, structName: str) -> bool:
-        # Not a vulkan handle. Parent VUIDs are only for vulkan handles 
+        # Not a vulkan handle. Parent VUIDs are only for vulkan handles
         if member.type not in self.vk.handles:
             return False
 
@@ -555,20 +564,20 @@ bool ObjectLifetimes::ReportUndestroyedDeviceObjects(VkDevice device, const Loca
 
     def hasParameterParentVUID(self, parameter: Member, commandName: str) -> bool:
         # Check for commands that, except the first dispatchable parameter,
-        # do not have other parameters that are Vulkan handles. 
+        # do not have other parameters that are Vulkan handles.
         # Such commands can't have parent VUIDs (e.g. vkQueueWaitIdle)
         params = self.vk.commands[commandName].params
         only_dispatchable_parameter = len([x for x in params if x.type in self.vk.handles and (not x.pointer or x.const)]) == 1
         if only_dispatchable_parameter:
             return False
-        
+
         # Special case: vkReleaseFullScreenExclusiveModeEXT.
         # The specification does not define a parent VUID for the swapchain parameter.
         # It mentions in a free form that device should be associated with a swapchain.
         if commandName == 'vkReleaseFullScreenExclusiveModeEXT':
             return False
 
-        # Not a vulkan handle. Parent VUIDs are only for vulkan handles 
+        # Not a vulkan handle. Parent VUIDs are only for vulkan handles
         if parameter.type not in self.vk.handles:
             return False
 
@@ -592,9 +601,19 @@ bool ObjectLifetimes::ReportUndestroyedDeviceObjects(VkDevice device, const Loca
         if not self.hasFieldParentVUID(member, structName):
             return 'kVUIDUndefined'
 
-        # Special case
+        # Special cases
+        # Make sure function is not in 'structs_that_forgot_about_parent_vuids'
         if commandName == 'vkCreateImageView' and member.name == 'image':
             return "\"VUID-vkCreateImageView-image-09179\""
+        if 'vkCmdBeginRenderPass' in commandName and member.name == 'pAttachments':
+            return "\"VUID-VkRenderPassBeginInfo-framebuffer-02780\""
+        if 'vkGetPipelineExecutablePropertiesKHR' in commandName and member.name == 'pipeline':
+                return "\"VUID-vkGetPipelineExecutablePropertiesKHR-pipeline-03271\""
+        if 'VkPipelineExecutableInfoKHR' in structName and member.name == 'pipeline':
+            if commandName == 'vkGetPipelineExecutableStatisticsKHR':
+                return "\"VUID-vkGetPipelineExecutableStatisticsKHR-pipeline-03273\""
+            elif commandName == 'vkGetPipelineExecutableInternalRepresentationsKHR':
+                return "\"VUID-vkGetPipelineExecutableInternalRepresentationsKHR-pipeline-03277\""
 
         if singleParentVuid:
             return getVUID(self.valid_vuids, f'VUID-{structName}-{member.name}-parent')
@@ -752,19 +771,19 @@ bool ObjectLifetimes::ReportUndestroyedDeviceObjects(VkDevice device, const Loca
 
                 contains_pNext = False
                 if struct.extendedBy:
+                    guard_helper = PlatformGuardHelper()
                     for extendedBy in struct.extendedBy:
                         extended_struct = self.vk.structs[extendedBy]
                         extended_members = [x for x in extended_struct.members if x.type in self.vk.handles]
                         if not extended_members:
                             continue
                         contains_pNext = True
-                        nested_struct.extend([f'#ifdef {extended_struct.protect}\n'] if extended_struct.protect else [])
+                        nested_struct.extend(guard_helper.add_guard(extended_struct.protect))
                         nested_struct.append(f'if (auto pNext = vku::FindStructInPNextChain<{extendedBy}>({new_prefix}pNext)) {{\n')
                         nested_struct.append(f'    const Location pNext_loc = {new_error_loc}.pNext(Struct::{extendedBy});\n')
                         nested_struct.append(self.validateObjects(extended_members, 'pNext->', arrayIndex + 1, extendedBy, topCommand, 'pNext_loc'))
                         nested_struct.append('}\n')
-                        nested_struct.extend([f'#endif // {extended_struct.protect}\n'] if extended_struct.protect else [])
-
+                    nested_struct.extend(guard_helper.add_guard(None))
                 # Close indentation
                 if member.length is not None:
                     nested_struct.append('}\n')
@@ -814,7 +833,9 @@ bool ObjectLifetimes::ReportUndestroyedDeviceObjects(VkDevice device, const Loca
 
                 allocator = command.params[-2].name if command.params[-2].type == 'VkAllocationCallbacks' else 'nullptr'
                 objectDest = f'{command.params[-1].name}[index]' if objectArray else f'*{command.params[-1].name}'
-                post_call_record += f'CreateObject({objectDest}, kVulkanObjectType{handle_type[2:]}, {allocator});\n'
+                location = f'record_obj.location.dot(Field::{command.params[-1].name}, index)' if objectArray else 'record_obj.location'
+
+                post_call_record += f'CreateObject({objectDest}, kVulkanObjectType{handle_type[2:]}, {allocator}, {location});\n'
                 if objectArray:
                     post_call_record += '}\n'
                     post_call_record += '}\n'

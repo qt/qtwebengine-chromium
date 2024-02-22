@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import '@material/web/iconbutton/filled-icon-button';
+import '@material/web/iconbutton/filled-icon-button.js';
 import '@material/web/iconbutton/filled-tonal-icon-button.js';
 import '@material/web/iconbutton/icon-button.js';
 
@@ -58,10 +58,9 @@ const TOGGLE_CONTAINER_ON_PROMINENT = css`var(--cros-sys-highlight_shape)`;
 
 const LARGE_CONTAINER_WIDTH = css`72px`;
 const LARGE_CONTAINER_HEIGHT = css`56px`;
+
 /**
- * A cros compliant icon-button component.
- * See spec:
- * https://www.figma.com/file/1XsFoZH868xLcLPfPZRxLh/CrOS-Next---Component-Library-%26-Spec?node-id=2447%3A5928
+ * A ChromeOS compliant icon-button component.
  */
 export class IconButton extends LitElement {
   /** @export */
@@ -210,6 +209,7 @@ export class IconButton extends LitElement {
       --md-filled-icon-button-disabled-icon-opacity: 1;
       --md-filled-icon-button-hover-state-layer-opacity: 1;
       --md-filled-icon-button-icon-size: var(--cros-icon-button-icon-size, 20px);
+      --md-filled-icon-button-pressed-state-layer-opacity: 1;
       --md-filled-icon-button-selected-container-color: ${
       TOGGLE_CONTAINER_ON_BASE};
       --md-filled-icon-button-toggle-selected-focus-icon-color: ${
@@ -307,6 +307,12 @@ export class IconButton extends LitElement {
   `;
 
   /** @nocollapse */
+  static override shadowRootOptions = {
+    ...LitElement.shadowRootOptions,
+    delegatesFocus: true
+  };
+
+  /** @nocollapse */
   static override properties = {
     ariaLabel: {type: String, reflect: true, attribute: 'aria-label'},
     prominent: {type: Boolean, reflect: true},
@@ -327,6 +333,15 @@ export class IconButton extends LitElement {
     this.surface = 'base';
     this.disabled = false;
     this.selected = false;
+  }
+
+  override connectedCallback() {
+    super.connectedCallback();
+    // All aria properties on button just get proxied down to the real <button>
+    // element, as such we set role to presentation so screenreaders ignore
+    // this component and instead only read aria attributes off the inner
+    // interactive element.
+    this.setAttribute('role', 'presentation');
   }
 
   override render() {

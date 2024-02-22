@@ -25,11 +25,9 @@
 #include "anonymous_tokens/cpp/privacy_pass/token_encodings.h"
 #include <openssl/base.h>
 
-
-
 namespace anonymous_tokens {
 
-class  PrivacyPassRsaBssaPublicMetadataClient {
+class PrivacyPassRsaBssaPublicMetadataClient {
  public:
   #ifndef SWIG
   // PrivacyPassRsaBssaPublicMetadataClient is neither copyable nor copy
@@ -103,6 +101,5 @@ class  PrivacyPassRsaBssaPublicMetadataClient {
 };
 
 }  // namespace anonymous_tokens
-
 
 #endif  // ANONYMOUS_TOKENS_CPP_PRIVACY_PASS_RSA_BSSA_PUBLIC_METADATA_CLIENT_H_

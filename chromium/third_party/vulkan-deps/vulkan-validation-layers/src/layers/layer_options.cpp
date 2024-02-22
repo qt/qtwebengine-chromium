@@ -17,6 +17,7 @@
  */
 
 #include "layer_options.h"
+#include "utils/hash_util.h"
 #include <vulkan/layer/vk_layer_settings.hpp>
 
 // Include new / delete overrides if using mimalloc. This needs to be include exactly once in a file that is
@@ -32,7 +33,6 @@ const char *SETTING_VALIDATE_BEST_PRACTICES_AMD = "validate_best_practices_amd";
 const char *SETTING_VALIDATE_BEST_PRACTICES_IMG = "validate_best_practices_img";
 const char *SETTING_VALIDATE_BEST_PRACTICES_NVIDIA = "validate_best_practices_nvidia";
 const char *SETTING_VALIDATE_SYNC = "validate_sync";
-const char *SETTING_VALIDATE_SYNC_QUEUE_SUBMIT = "sync_queue_submit";
 const char *SETTING_VALIDATE_GPU_BASED = "validate_gpu_based";
 const char *SETTING_RESERVE_BINDING_SLOT = "reserve_binding_slot";
 
@@ -48,6 +48,7 @@ const char *SETTING_UNIQUE_HANDLES = "unique_handles";
 const char *SETTING_OBJECT_LIFETIME = "object_lifetime";
 const char *SETTING_CHECK_SHADERS = "check_shaders";
 const char *SETTING_CHECK_SHADERS_CACHING = "check_shaders_caching";
+const char *SETTING_VALIDATE_SYNC_QUEUE_SUBMIT = "sync_queue_submit";
 
 const char *SETTING_MESSAGE_ID_FILTER = "message_id_filter";
 const char *SETTING_CUSTOM_STYPE_LIST = "custom_stype_list";
@@ -55,8 +56,7 @@ const char *SETTING_DUPLICATE_MESSAGE_LIMIT = "duplicate_message_limit";
 const char *SETTING_FINE_GRAINED_LOCKING = "fine_grained_locking";
 
 const char *SETTING_GPUAV_VALIDATE_DESCRIPTORS = "gpuav_descriptor_checks";
-const char *SETTING_GPUAV_VALIDATE_DRAW_INDIRECT = "validate_draw_indirect";
-const char *SETTING_GPUAV_VALIDATE_DISPATCH_INDIRECT = "validate_dispatch_indirect";
+const char *SETTING_GPUAV_VALIDATE_INDIRECT_BUFFER = "validate_indirect_buffer";
 const char *SETTING_GPUAV_VMA_LINEAR_OUTPUT = "vma_linear_output";
 const char *SETTING_GPUAV_WARN_ON_ROBUST_OOB = "warn_on_robust_oob";
 const char *SETTING_GPUAV_USE_INSTRUMENTED_SHADER_CACHE = "use_instrumented_shader_cache";
@@ -77,6 +77,9 @@ void SetValidationDisable(CHECK_DISABLED &disable_data, const ValidationCheckDis
             break;
         case VALIDATION_CHECK_DISABLE_IMAGE_LAYOUT_VALIDATION:
             disable_data[image_layout_validation] = true;
+            break;
+        case VALIDATION_CHECK_DISABLE_SYNCHRONIZATION_VALIDATION_QUEUE_SUBMIT:
+            disable_data[sync_validation_queue_submit] = true;
             break;
         default:
             assert(true);
@@ -137,9 +140,6 @@ void SetValidationEnable(CHECK_ENABLED &enable_data, const ValidationCheckEnable
             enable_data[vendor_specific_img] = true;
             enable_data[vendor_specific_nvidia] = true;
             break;
-        case VALIDATION_CHECK_ENABLE_SYNCHRONIZATION_VALIDATION_QUEUE_SUBMIT:
-            enable_data[sync_validation_queue_submit] = true;
-            break;
         default:
             assert(true);
     }
@@ -158,7 +158,7 @@ void SetValidationFeatureEnable(CHECK_ENABLED &enable_data, const VkValidationFe
             enable_data[best_practices] = true;
             break;
         case VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT:
-            enable_data[debug_printf] = true;
+            enable_data[debug_printf_validation] = true;
             break;
         case VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT:
             enable_data[sync_validation] = true;
@@ -289,7 +289,7 @@ void CreateFilterMessageIdList(std::string raw_id_list, const std::string &delim
         token = GetNextToken(&raw_id_list, delimiter, &pos);
         uint32_t int_id = TokenToUint(token);
         if (int_id == 0) {
-            const uint32_t id_hash = vvl_vuid_hash(token);
+            const uint32_t id_hash = hash_util::VuidHash(token);
             if (id_hash != 0) {
                 int_id = id_hash;
             }
@@ -398,14 +398,9 @@ void ProcessConfigAndEnvSettings(ConfigAndEnvSettings *settings_data) {
                                 settings_data->gpuav_settings->validate_descriptors);
     }
 
-    if (vkuHasLayerSetting(layer_setting_set, SETTING_GPUAV_VALIDATE_DRAW_INDIRECT)) {
-        vkuGetLayerSettingValue(layer_setting_set, SETTING_GPUAV_VALIDATE_DRAW_INDIRECT,
-                                settings_data->gpuav_settings->validate_draw_indirect);
-    }
-
-    if (vkuHasLayerSetting(layer_setting_set, SETTING_GPUAV_VALIDATE_DISPATCH_INDIRECT)) {
-        vkuGetLayerSettingValue(layer_setting_set, SETTING_GPUAV_VALIDATE_DISPATCH_INDIRECT,
-                                settings_data->gpuav_settings->validate_dispatch_indirect);
+    if (vkuHasLayerSetting(layer_setting_set, SETTING_GPUAV_VALIDATE_INDIRECT_BUFFER)) {
+        vkuGetLayerSettingValue(layer_setting_set, SETTING_GPUAV_VALIDATE_INDIRECT_BUFFER,
+                                settings_data->gpuav_settings->validate_indirect_buffer);
     }
 
     if (vkuHasLayerSetting(layer_setting_set, SETTING_GPUAV_VMA_LINEAR_OUTPUT)) {
@@ -454,14 +449,12 @@ void ProcessConfigAndEnvSettings(ConfigAndEnvSettings *settings_data) {
         SetValidationSetting(layer_setting_set, settings_data->enables, vendor_specific_nvidia,
                              SETTING_VALIDATE_BEST_PRACTICES_NVIDIA);
         SetValidationSetting(layer_setting_set, settings_data->enables, sync_validation, SETTING_VALIDATE_SYNC);
-        SetValidationSetting(layer_setting_set, settings_data->enables, sync_validation_queue_submit,
-                             SETTING_VALIDATE_SYNC_QUEUE_SUBMIT);
 
         if (vkuHasLayerSetting(layer_setting_set, SETTING_VALIDATE_GPU_BASED)) {
             std::string setting_value;
             vkuGetLayerSettingValue(layer_setting_set, SETTING_VALIDATE_GPU_BASED, setting_value);
             settings_data->enables[gpu_validation] = setting_value == "GPU_BASED_GPU_ASSISTED";
-            settings_data->enables[debug_printf] = setting_value == "GPU_BASED_DEBUG_PRINTF";
+            settings_data->enables[debug_printf_validation] = setting_value == "GPU_BASED_DEBUG_PRINTF";
         }
 
         SetValidationSetting(layer_setting_set, settings_data->enables, gpu_validation_reserve_binding_slot,
@@ -482,6 +475,8 @@ void ProcessConfigAndEnvSettings(ConfigAndEnvSettings *settings_data) {
         SetValidationSetting(layer_setting_set, settings_data->disables, object_tracking, SETTING_OBJECT_LIFETIME);
         SetValidationSetting(layer_setting_set, settings_data->disables, shader_validation, SETTING_CHECK_SHADERS);
         SetValidationSetting(layer_setting_set, settings_data->disables, shader_validation_caching, SETTING_CHECK_SHADERS_CACHING);
+        SetValidationSetting(layer_setting_set, settings_data->disables, sync_validation_queue_submit,
+                             SETTING_VALIDATE_SYNC_QUEUE_SUBMIT);
     }
 
     vkuDestroyLayerSettingSet(layer_setting_set, nullptr);

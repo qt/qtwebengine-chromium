@@ -42,6 +42,7 @@
 #include "cc/input/overscroll_behavior.h"
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/paint_holding_reason.h"
+#include "services/device/public/mojom/device_posture_provider.mojom-blink.h"
 #include "services/viz/public/mojom/hit_test/input_target_client.mojom-blink.h"
 #include "third_party/blink/public/common/input/web_coalesced_input_event.h"
 #include "third_party/blink/public/common/input/web_gesture_device.h"
@@ -325,7 +326,6 @@ class CORE_EXPORT WebFrameWidgetImpl
 
   void OnTaskCompletedForFrame(base::TimeTicks start_time,
                                base::TimeTicks end_time,
-                               base::TimeTicks desired_execution_time,
                                LocalFrame*) override;
   void SetVirtualKeyboardResizeHeightForTesting(int);
   bool GetMayThrottleIfUndrawnFramesForTesting();
@@ -339,7 +339,6 @@ class CORE_EXPORT WebFrameWidgetImpl
   bool RequestedMainFramePending() override;
   ukm::UkmRecorder* MainFrameUkmRecorder() override;
   ukm::SourceId MainFrameUkmSourceId() override;
-  bool IsMainFrameFullyLoaded() const override;
 
   // WebFrameWidget overrides.
   void InitializeNonCompositing(WebNonCompositedWidgetClient* client) override;
@@ -614,6 +613,9 @@ class CORE_EXPORT WebFrameWidgetImpl
   // Called when the widget should get targeting input.
   void SetMouseCapture(bool capture);
 
+  // Called when the widget's main frame has ongoing autoscroll selection.
+  void NotifyAutoscrollForSelectionInMainFrame(bool autoscroll_selection);
+
   // Sets the current page scale factor and minimum / maximum limits. Both
   // limits are initially 1 (no page scale allowed).
   void SetPageScaleStateAndLimits(float page_scale_factor,
@@ -658,6 +660,9 @@ class CORE_EXPORT WebFrameWidgetImpl
       const gfx::Rect& compositor_viewport_pixel_rect);
   void UpdateCompositorViewportRect(
       const gfx::Rect& compositor_viewport_pixel_rect);
+  void OverrideDevicePostureForEmulation(
+      device::mojom::blink::DevicePostureType device_posture_param);
+  void DisableDevicePostureOverrideForEmulation();
   void SetWindowSegments(const std::vector<gfx::Rect>& window_segments);
   viz::FrameSinkId GetFrameSinkIdAtPoint(const gfx::PointF& point,
                                          gfx::PointF* local_point);
@@ -686,9 +691,18 @@ class CORE_EXPORT WebFrameWidgetImpl
   // coordinate space.
   Vector<gfx::Rect> CalculateVisibleLineBoundsOnScreen();
 
+  // Returns true if this widget corresponds to a frame which is being replaced.
+  // The compositor for the widget has been detached and passed to the new
+  // widget.
+  bool WillBeDestroyed() const;
+
+  bool IsScrollGestureActive() const;
+
+  // Request a new `viz::LocalSurfaceId` on the compositor thread.
+  void RequestNewLocalSurfaceId();
+
  protected:
   // WidgetBaseClient overrides:
-  void WillBeginMainFrame() override;
   void ScheduleAnimation() override;
   void DidBeginMainFrame() override;
   std::unique_ptr<cc::LayerTreeFrameSink> AllocateNewLayerTreeFrameSink()
@@ -881,13 +895,12 @@ class CORE_EXPORT WebFrameWidgetImpl
   void ForEachRemoteFrameControlledByWidget(
       base::FunctionRef<void(RemoteFrame*)> callback);
 
-  void SetWindowRectSynchronously(const gfx::Rect& new_window_rect);
-
   void SendOverscrollEventFromImplSide(const gfx::Vector2dF& overscroll_delta,
                                        cc::ElementId scroll_latched_element_id);
-  void SendScrollEndEventFromImplSide(bool affects_outer_viewport,
-                                      cc::ElementId scroll_latched_element_id);
-
+  void SendEndOfScrollEvents(bool affects_outer_viewport,
+                             cc::ElementId scroll_latched_element_id);
+  void SendSnapChangingEventIfNeeded(
+      const cc::CompositorCommitData& commit_data);
   void RecordManipulationTypeCounts(cc::ManipulationInfo info);
 
   enum DragAction { kDragEnter, kDragOver };
@@ -980,6 +993,9 @@ class CORE_EXPORT WebFrameWidgetImpl
   // True when `this` should ignore input events.
   bool ShouldIgnoreInputEvents();
 
+  // Triggers onmove event for window.
+  void EnqueueMoveEvent();
+
   // Stores the current composition line bounds. These bounds are rectangles
   // which surround each line of text in a currently focused input or textarea
   // element.
@@ -1014,6 +1030,8 @@ class CORE_EXPORT WebFrameWidgetImpl
   // passed to any new child RenderWidget.
   float page_scale_factor_in_mainframe_ = 1.f;
   bool is_pinch_gesture_active_in_mainframe_ = false;
+
+  bool is_scroll_gesture_active_ = false;
 
   // If set, the (plugin) element which has mouse capture.
   Member<HTMLPlugInElement> mouse_capture_element_;

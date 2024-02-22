@@ -18,6 +18,7 @@
 
 import os
 from generators.base_generator import BaseGenerator
+from generators.generator_utils import PlatformGuardHelper
 
 class FunctionPointersOutputGenerator(BaseGenerator):
     def __init__(self):
@@ -78,12 +79,14 @@ class FunctionPointersOutputGenerator(BaseGenerator):
 
 namespace vk {
 ''')
+        guard_helper = PlatformGuardHelper()
         for command in self.vk.commands.values():
-            out.extend([f'#ifdef {command.protect}\n'] if command.protect else [])
+            out.extend(guard_helper.add_guard(command.protect))
             out.append(f'extern PFN_{command.name} {command.name[2:]};\n')
-            out.extend([f'#endif //{command.protect}\n'] if command.protect else [])
+        out.extend(guard_helper.add_guard(None))
         out.append('''
 void InitCore(const char *api_name);
+void InitExtensionFromCore(const char* extension_name);
 void InitInstanceExtension(VkInstance instance, const char* extension_name);
 void InitDeviceExtension(VkInstance instance, VkDevice device, const char* extension_name);
 void ResetAllExtensions();
@@ -148,10 +151,11 @@ static inline void *get_proc_address(dl_handle library, const char *name) {
 
 namespace vk {
 ''')
+        guard_helper = PlatformGuardHelper()
         for command in self.vk.commands.values():
-            out.extend([f'#ifdef {command.protect}\n'] if command.protect else [])
+            out.extend(guard_helper.add_guard(command.protect))
             out.append(f'PFN_{command.name} {command.name[2:]};\n')
-            out.extend([f'#endif //{command.protect}\n'] if command.protect else [])
+        out.extend(guard_helper.add_guard(None))
 
         out.append('''
 void InitCore(const char *api_name) {
@@ -180,19 +184,42 @@ void InitCore(const char *api_name) {
         out.append('}')
 
         out.append('''
+void InitExtensionFromCore(const char* extension_name) {
+    static const vvl::unordered_map<std::string, std::function<void()>> initializers = {
+''')
+        for extension in [x for x in self.vk.extensions.values() if x.commands and x.promotedTo]:
+            out.extend(guard_helper.add_guard(extension.protect))
+            out.append('        {\n')
+            out.append(f'            "{extension.name}", []() {{\n')
+            for command in [x for x in extension.commands]:
+                if command.alias is not None and not self.vk.commands[command.alias].extensions:
+                    out.append(f'                {command.name[2:]} = {command.alias[2:]};\n')
+            out.append('            }\n')
+            out.append('        },\n')
+        out.extend(guard_helper.add_guard(None))
+
+        out.append('''
+    };
+
+    if (auto it = initializers.find(extension_name); it != initializers.end())
+        (it->second)();
+}
+''')
+
+        out.append('''
 void InitInstanceExtension(VkInstance instance, const char* extension_name) {
     assert(instance);
     static const vvl::unordered_map<std::string, std::function<void(VkInstance)>> initializers = {
 ''')
         for extension in [x for x in self.vk.extensions.values() if x.instance and x.commands]:
-            out.extend([f'#ifdef {extension.protect}\n'] if extension.protect else [])
+            out.extend(guard_helper.add_guard(extension.protect))
             out.append('        {\n')
             out.append(f'            "{extension.name}", [](VkInstance instance) {{\n')
             for command in [x for x in extension.commands]:
                 out.append(f'                {command.name[2:]} = reinterpret_cast<PFN_{command.name}>(GetInstanceProcAddr(instance, "{command.name}"));\n')
             out.append('            }\n')
             out.append('        },\n')
-            out.extend([f'#endif //{extension.protect}\n'] if extension.protect else [])
+        out.extend(guard_helper.add_guard(None))
 
         out.append('''
     };
@@ -207,7 +234,7 @@ void InitDeviceExtension(VkInstance instance, VkDevice device, const char* exten
     static const vvl::unordered_map<std::string, std::function<void(VkInstance, VkDevice)>> initializers = {
 ''')
         for extension in [x for x in self.vk.extensions.values() if x.device and x.commands]:
-            out.extend([f'#ifdef {extension.protect}\n'] if extension.protect else [])
+            out.extend(guard_helper.add_guard(extension.protect))
             out.append('        {\n')
             instanceCommand = [x for x in extension.commands if x.instance]
             deviceCommand = [x for x in extension.commands if x.device]
@@ -216,7 +243,7 @@ void InitDeviceExtension(VkInstance instance, VkDevice device, const char* exten
             out.extend([f'                {command.name[2:]} = reinterpret_cast<PFN_{command.name}>(GetInstanceProcAddr(instance, "{command.name}"));\n' for command in instanceCommand])
             out.append('            }\n')
             out.append('        },\n')
-            out.extend([f'#endif //{extension.protect}\n'] if extension.protect else [])
+        out.extend(guard_helper.add_guard(None))
 
         out.append('''
     };
@@ -228,9 +255,9 @@ void InitDeviceExtension(VkInstance instance, VkDevice device, const char* exten
 
         out.append('void ResetAllExtensions() {\n')
         for command in [x for x in self.vk.commands.values() if x.extensions]:
-            out.extend([f'#ifdef {command.protect}\n'] if command.protect else [])
+            out.extend(guard_helper.add_guard(command.protect))
             out.append(f'    {command.name[2:]} = nullptr;\n')
-            out.extend([f'#endif //{command.protect}\n'] if command.protect else [])
+        out.extend(guard_helper.add_guard(None))
 
         out.append('}\n')
 

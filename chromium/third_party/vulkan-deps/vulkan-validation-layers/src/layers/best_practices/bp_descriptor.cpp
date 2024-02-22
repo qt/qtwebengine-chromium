@@ -49,25 +49,6 @@ bool BestPractices::PreCallValidateAllocateDescriptorSets(VkDevice device, const
                                    pAllocateInfo->descriptorSetCount, FormatHandle(*pool_state).c_str(),
                                    pool_state->GetAvailableSets());
             }
-
-            for (uint32_t i = 0; i < pAllocateInfo->descriptorSetCount; i++) {
-                auto layout = Get<cvdescriptorset::DescriptorSetLayout>(pAllocateInfo->pSetLayouts[i]);
-                if (layout) {  // if null, this is validated/logged in object_tracker
-                    const uint32_t binding_count = layout->GetBindingCount();
-                    for (uint32_t j = 0; j < binding_count; ++j) {
-                        const VkDescriptorType type = layout->GetTypeFromIndex(j);
-                        if (!pool_state->IsAvailableType(type)) {
-                            // This check would be caught by validation if VK_KHR_maintenance1 was not enabled
-                            skip |=
-                                LogWarning(kVUID_BestPractices_DescriptorTypeNotInPool, pool_state->Handle(), error_obj.location,
-                                           "pSetLayouts[%" PRIu32 "] binding %" PRIu32
-                                           " was created with %s but the "
-                                           "Descriptor Pool was not created with this type",
-                                           i, j, string_VkDescriptorType(type));
-                        }
-                    }
-                }
-            }
         }
     }
 
@@ -177,8 +158,7 @@ bool BestPractices::PreCallValidateUpdateDescriptorSets(VkDevice device, uint32_
     if (VendorCheckEnabled(kBPVendorAMD)) {
         if (descriptorCopyCount > 0) {
             skip |= LogPerformanceWarning(kVUID_BestPractices_UpdateDescriptors_AvoidCopyingDescriptors, device, error_obj.location,
-                                          "%s Performance warning: copying descriptor sets is not recommended",
-                                          VendorSpecificTag(kBPVendorAMD));
+                                          "%s copying descriptor sets is not recommended", VendorSpecificTag(kBPVendorAMD));
         }
     }
 
@@ -193,7 +173,7 @@ bool BestPractices::PreCallValidateCreateDescriptorUpdateTemplate(VkDevice devic
     bool skip = false;
     if (VendorCheckEnabled(kBPVendorAMD)) {
         skip |= LogPerformanceWarning(kVUID_BestPractices_UpdateDescriptors_PreferNonTemplate, device, error_obj.location,
-                                      "%s Performance warning: using DescriptorSetWithTemplate is not recommended. Prefer using "
+                                      "%s using DescriptorSetWithTemplate is not recommended. Prefer using "
                                       "vkUpdateDescriptorSet instead",
                                       VendorSpecificTag(kBPVendorAMD));
     }

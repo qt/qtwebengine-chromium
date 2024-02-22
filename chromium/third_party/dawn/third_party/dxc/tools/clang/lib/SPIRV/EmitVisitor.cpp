@@ -262,8 +262,9 @@ void EmitVisitor::emitDebugLine(spv::Op op, const SourceLocation &loc,
   // Technically entry function wrappers do not exist in HLSL. They are just
   // created by DXC. We do not want to emit line information for their
   // instructions. To prevent spirv-opt from removing all debug info, we emit
-  // at least a single OpLine to specify the end of the shader.
-  if (inEntryFunctionWrapper && op != spv::Op::OpReturn)
+  // OpLines to specify the beginning and end of the function.
+  if (inEntryFunctionWrapper &&
+      (op != spv::Op::OpReturn && op != spv::Op::OpFunction))
     return;
 
   // Based on SPIR-V spec, OpSelectionMerge must immediately precede either an
@@ -376,22 +377,10 @@ void EmitVisitor::emitDebugLine(spv::Op op, const SourceLocation &loc,
     debugColumnEnd = columnEnd;
   }
 
-  if (emittedSource[fileId] == 0) {
-    if (!spvOptions.debugInfoVulkan) {
-      SpirvString *fileNameInst =
-          new (context) SpirvString(/*SourceLocation*/ {}, fileName);
-      visit(fileNameInst);
-      SpirvSource *src = new (context)
-          SpirvSource(/*SourceLocation*/ {}, spv::SourceLanguage::HLSL,
-                      hlslVersion, fileNameInst, "");
-      visit(src);
-      spvInstructions.push_back(src);
-      spvInstructions.push_back(fileNameInst);
-    } else {
-      SpirvDebugSource *src = new (context) SpirvDebugSource(fileName, "");
-      visit(src);
-      spvInstructions.push_back(src);
-    }
+  if ((emittedSource[fileId] == 0) && (spvOptions.debugInfoVulkan)) {
+    SpirvDebugSource *src = new (context) SpirvDebugSource(fileName, "");
+    visit(src);
+    spvInstructions.push_back(src);
   }
 
   curInst.clear();
@@ -846,7 +835,7 @@ bool EmitVisitor::visit(SpirvSwitch *inst) {
   curInst.push_back(
       getOrAssignResultId<SpirvBasicBlock>(inst->getDefaultLabel()));
   for (const auto &target : inst->getTargets()) {
-    curInst.push_back(target.first);
+    typeHandler.emitIntLiteral(target.first, curInst);
     curInst.push_back(getOrAssignResultId<SpirvBasicBlock>(target.second));
   }
   finalizeInstruction(&mainBinary);
@@ -2611,6 +2600,12 @@ template <typename vecType>
 void EmitTypeHandler::emitIntLiteral(const SpirvConstantInteger *intLiteral,
                                      vecType &outInst) {
   const auto &literalVal = intLiteral->getValue();
+  emitIntLiteral(literalVal, outInst);
+}
+
+template <typename vecType>
+void EmitTypeHandler::emitIntLiteral(const llvm::APInt &literalVal,
+                                     vecType &outInst) {
   bool positive = !literalVal.isNegative();
   if (literalVal.getBitWidth() <= 32) {
     outInst.push_back(positive ? literalVal.getZExtValue()

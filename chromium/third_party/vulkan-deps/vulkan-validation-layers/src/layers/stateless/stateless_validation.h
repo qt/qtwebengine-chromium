@@ -1,7 +1,7 @@
-/* Copyright (c) 2015-2023 The Khronos Group Inc.
- * Copyright (c) 2015-2023 Valve Corporation
- * Copyright (c) 2015-2023 LunarG, Inc.
- * Copyright (C) 2015-2023 Google Inc.
+/* Copyright (c) 2015-2024 The Khronos Group Inc.
+ * Copyright (c) 2015-2024 Valve Corporation
+ * Copyright (c) 2015-2024 LunarG, Inc.
+ * Copyright (C) 2015-2024 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -64,11 +64,12 @@ class StatelessValidation : public ValidationObject {
         VkPhysicalDeviceRayTracingPipelinePropertiesKHR ray_tracing_props_khr;
         VkPhysicalDeviceAccelerationStructurePropertiesKHR acc_structure_props;
         VkPhysicalDeviceTransformFeedbackPropertiesEXT transform_feedback_props;
-        VkPhysicalDeviceVertexAttributeDivisorPropertiesEXT vertex_attribute_divisor_props;
+        VkPhysicalDeviceVertexAttributeDivisorPropertiesKHR vertex_attribute_divisor_props;
         VkPhysicalDeviceBlendOperationAdvancedPropertiesEXT blend_operation_advanced_props;
         VkPhysicalDeviceMaintenance4PropertiesKHR maintenance4_props;
         VkPhysicalDeviceFragmentShadingRatePropertiesKHR fragment_shading_rate_props;
         VkPhysicalDeviceDepthStencilResolveProperties depth_stencil_resolve_props;
+        VkPhysicalDeviceExternalMemoryHostPropertiesEXT external_memory_host_props;
     };
     DeviceExtensionProperties phys_dev_ext_props = {};
 
@@ -424,49 +425,28 @@ class StatelessValidation : public ValidationObject {
      * @param count_loc Name of count parameter.
      * @param array_loc Name of array parameter.
      * @param enumName Name of the enumeration being validated.
-     * @param valid_values The list of valid values for the enumeration.
      * @param count Number of enumeration values in the array.
      * @param array Array of enumeration values to validate.
      * @param countRequired The 'count' parameter may not be 0 when true.
      * @param arrayRequired The 'array' parameter may not be NULL when true.
+     * @param count_required_vuid The VUID for the '*count' parameter.
+     * @param array_required_vuid The VUID for the 'array' parameter.
      * @return Boolean value indicating that the call should be skipped.
      */
     template <typename T>
     bool ValidateRangedEnumArray(const Location &count_loc, const Location &array_loc, const char *enumName, uint32_t count,
-                                 const T *array, bool countRequired, bool arrayRequired) const {
+                                 const T *array, bool countRequired, bool arrayRequired, const char *count_required_vuid,
+                                 const char *array_required_vuid) const {
         bool skip = false;
         const auto valid_values = ValidParamValues<T>();
 
         if ((count == 0) || (array == nullptr)) {
-            skip |=
-                ValidateArray(count_loc, array_loc, count, &array, countRequired, arrayRequired, kVUIDUndefined, kVUIDUndefined);
+            skip |= ValidateArray(count_loc, array_loc, count, &array, countRequired, arrayRequired, count_required_vuid,
+                                  array_required_vuid);
         } else {
             for (uint32_t i = 0; i < count; ++i) {
                 if (std::find(valid_values.begin(), valid_values.end(), array[i]) == valid_values.end()) {
-                    skip |= LogError(kVUID_PVError_UnrecognizedValue, device, array_loc.dot(i),
-                                     "(%" PRIu32
-                                     ") does not fall within the begin..end range of the core %s "
-                                     "enumeration tokens and is not an extension added token",
-                                     array[i], enumName);
-                }
-            }
-        }
-
-        return skip;
-    }
-
-    template <typename T>
-    bool ValidateRangedEnumArray(const Location &count_loc, const Location &array_loc, const char *vuid, const char *enumName,
-                                 uint32_t count, const T *array, bool countRequired, bool arrayRequired) const {
-        bool skip = false;
-        const auto valid_values = ValidParamValues<T>();
-
-        if ((count == 0) || (array == nullptr)) {
-            skip |= ValidateArray(count_loc, array_loc, count, &array, countRequired, arrayRequired, vuid, vuid);
-        } else {
-            for (uint32_t i = 0; i < count; ++i) {
-                if (std::find(valid_values.begin(), valid_values.end(), array[i]) == valid_values.end()) {
-                    skip |= LogError(vuid, device, array_loc.dot(i),
+                    skip |= LogError(array_required_vuid, device, array_loc.dot(i),
                                      "(%" PRIu32
                                      ") does not fall within the begin..end range of the core %s "
                                      "enumeration tokens and is not an extension added token",
@@ -554,7 +534,8 @@ class StatelessValidation : public ValidationObject {
 
     bool OutputExtensionError(const Location &loc, const std::string &extension_name) const;
 
-    void PreCallRecordDestroyInstance(VkInstance instance, const VkAllocationCallbacks *pAllocator) override;
+    void PreCallRecordDestroyInstance(VkInstance instance, const VkAllocationCallbacks *pAllocator,
+                                      const RecordObject &record_obj) override;
 
     bool manual_PreCallValidateCreateQueryPool(VkDevice device, const VkQueryPoolCreateInfo *pCreateInfo,
                                                const VkAllocationCallbacks *pAllocator, VkQueryPool *pQueryPool,
@@ -579,6 +560,10 @@ class StatelessValidation : public ValidationObject {
                                                const VkAllocationCallbacks *pAllocator, VkImageView *pView,
                                                const ErrorObject &error_obj) const;
 
+    bool manual_PreCallValidateGetDeviceImageSubresourceLayoutKHR(VkDevice device, const VkDeviceImageSubresourceInfoKHR *pInfo,
+                                                                  VkSubresourceLayout2KHR *pLayout,
+                                                                  const ErrorObject &error_obj) const;
+
     bool ValidateViewport(const VkViewport &viewport, VkCommandBuffer object, const Location &loc) const;
 
     bool manual_PreCallValidateCreatePipelineLayout(VkDevice device, const VkPipelineLayoutCreateInfo *pCreateInfo,
@@ -586,22 +571,7 @@ class StatelessValidation : public ValidationObject {
                                                     const ErrorObject &error_obj) const;
 
     bool ValidatePipelineShaderStageCreateInfo(const VkPipelineShaderStageCreateInfo *pCreateInfo, const Location &loc) const;
-    bool ValidatePipelineTessellationStateCreateInfo(const VkPipelineTessellationStateCreateInfo &info, uint32_t index,
-                                                     const Location &loc) const;
-    bool ValidatePipelineVertexInputStateCreateInfo(const VkPipelineVertexInputStateCreateInfo &info, uint32_t index,
-                                                    const Location &loc) const;
-    bool ValidatePipelineViewportStateCreateInfo(const VkPipelineViewportStateCreateInfo &info, uint32_t index,
-                                                 const Location &loc) const;
-    bool ValidatePipelineMultisampleStateCreateInfo(const VkPipelineMultisampleStateCreateInfo &info, uint32_t index,
-                                                    const Location &loc) const;
-    bool ValidatePipelineColorBlendAttachmentState(const VkPipelineColorBlendAttachmentState &attachment_state, uint32_t pipe_index,
-                                                   uint32_t attachment_index, const Location &loc) const;
-    bool ValidatePipelineColorBlendStateCreateInfo(const VkPipelineColorBlendStateCreateInfo &info, uint32_t index,
-                                                   const Location &loc) const;
-    bool ValidatePipelineDepthStencilStateCreateInfo(const VkPipelineDepthStencilStateCreateInfo &info, uint32_t index,
-                                                     const Location &loc) const;
-    bool ValidatePipelineInputAssemblyStateCreateInfo(const VkPipelineInputAssemblyStateCreateInfo &info, uint32_t index,
-                                                      const Location &loc) const;
+    bool ValidatePipelineRenderingCreateInfo(const VkPipelineRenderingCreateInfo &rendering_struct, const Location &loc) const;
     bool manual_PreCallValidateCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
                                                        const VkGraphicsPipelineCreateInfo *pCreateInfos,
                                                        const VkAllocationCallbacks *pAllocator, VkPipeline *pPipelines,
@@ -639,7 +609,7 @@ class StatelessValidation : public ValidationObject {
 #endif  // VK_USE_PLATFORM_METAL_EXT
 
     bool ValidateWriteDescriptorSet(const Location &loc, const uint32_t descriptorWriteCount,
-                                    const VkWriteDescriptorSet *pDescriptorWrites, const bool isPushDescriptor) const;
+                                    const VkWriteDescriptorSet *pDescriptorWrites) const;
     bool manual_PreCallValidateUpdateDescriptorSets(VkDevice device, uint32_t descriptorWriteCount,
                                                     const VkWriteDescriptorSet *pDescriptorWrites, uint32_t descriptorCopyCount,
                                                     const VkCopyDescriptorSet *pDescriptorCopies,
@@ -655,10 +625,6 @@ class StatelessValidation : public ValidationObject {
     bool manual_PreCallValidateCreateRenderPass2(VkDevice device, const VkRenderPassCreateInfo2 *pCreateInfo,
                                                  const VkAllocationCallbacks *pAllocator, VkRenderPass *pRenderPass,
                                                  const ErrorObject &error_obj) const;
-
-    bool manual_PreCallValidateCreateRenderPass2KHR(VkDevice device, const VkRenderPassCreateInfo2 *pCreateInfo,
-                                                    const VkAllocationCallbacks *pAllocator, VkRenderPass *pRenderPass,
-                                                    const ErrorObject &error_obj) const;
 
     bool manual_PreCallValidateFreeCommandBuffers(VkDevice device, VkCommandPool commandPool, uint32_t commandBufferCount,
                                                   const VkCommandBuffer *pCommandBuffers, const ErrorObject &error_obj) const;
@@ -681,10 +647,6 @@ class StatelessValidation : public ValidationObject {
                                                                        const VkPhysicalDeviceImageFormatInfo2 *pImageFormatInfo,
                                                                        VkImageFormatProperties2 *pImageFormatProperties,
                                                                        const ErrorObject &error_obj) const;
-    bool manual_PreCallValidateGetPhysicalDeviceImageFormatProperties2KHR(VkPhysicalDevice physicalDevice,
-                                                                          const VkPhysicalDeviceImageFormatInfo2 *pImageFormatInfo,
-                                                                          VkImageFormatProperties2 *pImageFormatProperties,
-                                                                          const ErrorObject &error_obj) const;
     bool manual_PreCallValidateGetPhysicalDeviceImageFormatProperties(VkPhysicalDevice physicalDevice, VkFormat format,
                                                                       VkImageType type, VkImageTiling tiling,
                                                                       VkImageUsageFlags usage, VkImageCreateFlags flags,
@@ -695,9 +657,6 @@ class StatelessValidation : public ValidationObject {
                                              uint32_t regionCount, const VkBufferCopy *pRegions,
                                              const ErrorObject &error_obj) const;
 
-    bool manual_PreCallValidateCmdCopyBuffer2KHR(VkCommandBuffer commandBuffer, const VkCopyBufferInfo2KHR *pCopyBufferInfo,
-                                                 const ErrorObject &error_obj) const;
-
     bool manual_PreCallValidateCmdCopyBuffer2(VkCommandBuffer commandBuffer, const VkCopyBufferInfo2 *pCopyBufferInfo,
                                               const ErrorObject &error_obj) const;
 
@@ -706,6 +665,14 @@ class StatelessValidation : public ValidationObject {
 
     bool manual_PreCallValidateCmdFillBuffer(VkCommandBuffer commandBuffer, VkBuffer dstBuffer, VkDeviceSize dstOffset,
                                              VkDeviceSize size, uint32_t data, const ErrorObject &error_obj) const;
+
+    bool manual_PreCallValidateCmdBindDescriptorBuffersEXT(VkCommandBuffer commandBuffer, uint32_t bufferCount,
+                                                           const VkDescriptorBufferBindingInfoEXT *pBindingInfos,
+                                                           const ErrorObject &error_obj) const;
+
+    bool manual_PreCallValidateGetPhysicalDeviceExternalBufferProperties(
+        VkPhysicalDevice physicalDevice, const VkPhysicalDeviceExternalBufferInfo *pExternalBufferInfo,
+        VkExternalBufferProperties *pExternalBufferProperties, const ErrorObject &error_obj) const;
 
     bool manual_PreCallValidateCreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfoKHR *pCreateInfo,
                                                   const VkAllocationCallbacks *pAllocator, VkSwapchainKHR *pSwapchain,
@@ -752,6 +719,9 @@ class StatelessValidation : public ValidationObject {
                                                        VkPipelineLayout layout, uint32_t set, uint32_t descriptorWriteCount,
                                                        const VkWriteDescriptorSet *pDescriptorWrites,
                                                        const ErrorObject &error_obj) const;
+    bool manual_PreCallValidateCmdPushDescriptorSet2KHR(VkCommandBuffer commandBuffer,
+                                                        const VkPushDescriptorSetInfoKHR *pPushDescriptorSetInfo,
+                                                        const ErrorObject &error_obj) const;
     bool manual_PreCallValidateCmdSetExclusiveScissorNV(VkCommandBuffer commandBuffer, uint32_t firstExclusiveScissor,
                                                         uint32_t exclusiveScissorCount, const VkRect2D *pExclusiveScissors,
                                                         const ErrorObject &error_obj) const;
@@ -765,9 +735,6 @@ class StatelessValidation : public ValidationObject {
                                                          const VkCoarseSampleOrderCustomNV *pCustomSampleOrders,
                                                          const ErrorObject &error_obj) const;
 
-    bool manual_PreCallValidateEnumerateDeviceExtensionProperties(VkPhysicalDevice physicalDevice, const char *pLayerName,
-                                                                  uint32_t *pPropertyCount,
-                                                                  VkExtensionProperties *pProperties) const;
     bool manual_PreCallValidateAllocateMemory(VkDevice device, const VkMemoryAllocateInfo *pAllocateInfo,
                                               const VkAllocationCallbacks *pAllocator, VkDeviceMemory *pMemory,
                                               const ErrorObject &error_obj) const;
@@ -782,6 +749,9 @@ class StatelessValidation : public ValidationObject {
                                                               const VkAllocationCallbacks *pAllocator,
                                                               VkAccelerationStructureKHR *pAccelerationStructure,
                                                               const ErrorObject &error_obj) const;
+    bool manual_PreCallValidateDestroyAccelerationStructureKHR(VkDevice device, VkAccelerationStructureKHR accelerationStructure,
+                                                               const VkAllocationCallbacks *pAllocator,
+                                                               const ErrorObject &error_obj) const;
     bool manual_PreCallValidateCmdBuildAccelerationStructureNV(VkCommandBuffer commandBuffer,
                                                                const VkAccelerationStructureInfoNV *pInfo, VkBuffer instanceData,
                                                                VkDeviceSize instanceOffset, VkBool32 update,
@@ -873,11 +843,9 @@ class StatelessValidation : public ValidationObject {
                                                             const VkAllocationCallbacks *pAllocator,
                                                             VkSamplerYcbcrConversion *pYcbcrConversion,
                                                             const ErrorObject &error_obj) const;
-    bool manual_PreCallValidateCreateSamplerYcbcrConversionKHR(VkDevice device,
-                                                               const VkSamplerYcbcrConversionCreateInfo *pCreateInfo,
-                                                               const VkAllocationCallbacks *pAllocator,
-                                                               VkSamplerYcbcrConversion *pYcbcrConversion,
-                                                               const ErrorObject &error_obj) const;
+
+    bool manual_PreCallValidateGetDescriptorEXT(VkDevice device, const VkDescriptorGetInfoEXT *pDescriptorInfo, size_t dataSize,
+                                                void *pDescriptor, const ErrorObject &error_obj) const;
 
     bool manual_PreCallValidateGetMemoryFdKHR(VkDevice device, const VkMemoryGetFdInfoKHR *pGetFdInfo, int *pFd,
                                               const ErrorObject &error_obj) const;
@@ -900,7 +868,14 @@ class StatelessValidation : public ValidationObject {
     bool manual_PreCallValidateGetFenceFdKHR(VkDevice device, const VkFenceGetFdInfoKHR *pGetFdInfo, int *pFd,
                                              const ErrorObject &error_obj) const;
 
+    bool manual_PreCallValidateGetMemoryHostPointerPropertiesEXT(VkDevice device, VkExternalMemoryHandleTypeFlagBits handleType,
+                                                                 const void *pHostPointer,
+                                                                 VkMemoryHostPointerPropertiesEXT *pMemoryHostPointerProperties,
+                                                                 const ErrorObject &error_obj) const;
+
 #ifdef VK_USE_PLATFORM_WIN32_KHR
+    bool manual_PreCallValidateGetMemoryWin32HandleKHR(VkDevice device, const VkMemoryGetWin32HandleInfoKHR *pGetWin32HandleInfo,
+                                                       HANDLE *pHandle, const ErrorObject &error_obj) const;
     bool manual_PreCallValidateGetMemoryWin32HandlePropertiesKHR(VkDevice device, VkExternalMemoryHandleTypeFlagBits handleType,
                                                                  HANDLE handle,
                                                                  VkMemoryWin32HandlePropertiesKHR *pMemoryWin32HandleProperties,
@@ -969,23 +944,11 @@ class StatelessValidation : public ValidationObject {
     bool manual_PreCallValidateGetDeviceAccelerationStructureCompatibilityKHR(
         VkDevice device, const VkAccelerationStructureVersionInfoKHR *pVersionInfo,
         VkAccelerationStructureCompatibilityKHR *pCompatibility, const ErrorObject &error_obj) const;
-    bool ValidateCmdSetViewportWithCount(VkCommandBuffer commandBuffer, uint32_t viewportCount, const VkViewport *pViewports,
-                                         const ErrorObject &error_obj) const;
-    bool manual_PreCallValidateCmdSetViewportWithCountEXT(VkCommandBuffer commandBuffer, uint32_t viewportCount,
-                                                          const VkViewport *pViewports, const ErrorObject &error_obj) const;
     bool manual_PreCallValidateCmdSetViewportWithCount(VkCommandBuffer commandBuffer, uint32_t viewportCount,
                                                        const VkViewport *pViewports, const ErrorObject &error_obj) const;
 
-    bool ValidateCmdSetScissorWithCount(VkCommandBuffer commandBuffer, uint32_t scissorCount, const VkRect2D *pScissors,
-                                        const ErrorObject &error_obj) const;
-    bool manual_PreCallValidateCmdSetScissorWithCountEXT(VkCommandBuffer commandBuffer, uint32_t scissorCount,
-                                                         const VkRect2D *pScissors, const ErrorObject &error_obj) const;
     bool manual_PreCallValidateCmdSetScissorWithCount(VkCommandBuffer commandBuffer, uint32_t scissorCount,
                                                       const VkRect2D *pScissors, const ErrorObject &error_obj) const;
-    bool manual_PreCallValidateCmdBindVertexBuffers2EXT(VkCommandBuffer commandBuffer, uint32_t firstBinding, uint32_t bindingCount,
-                                                        const VkBuffer *pBuffers, const VkDeviceSize *pOffsets,
-                                                        const VkDeviceSize *pSizes, const VkDeviceSize *pStrides,
-                                                        const ErrorObject &error_obj) const;
     bool manual_PreCallValidateCmdBindVertexBuffers2(VkCommandBuffer commandBuffer, uint32_t firstBinding, uint32_t bindingCount,
                                                      const VkBuffer *pBuffers, const VkDeviceSize *pOffsets,
                                                      const VkDeviceSize *pSizes, const VkDeviceSize *pStrides,
@@ -1014,6 +977,9 @@ class StatelessValidation : public ValidationObject {
                                                     const VkVertexInputAttributeDescription2EXT *pVertexAttributeDescriptions,
                                                     const ErrorObject &error_obj) const;
 
+    bool ValidateCmdPushConstants(VkCommandBuffer commandBuffer, uint32_t offset, uint32_t size, const Location &loc) const;
+    bool manual_PreCallValidateCmdPushConstants2KHR(VkCommandBuffer commandBuffer, const VkPushConstantsInfoKHR *pPushConstantsInfo,
+                                                    const ErrorObject &error_obj) const;
     bool manual_PreCallValidateCmdPushConstants(VkCommandBuffer commandBuffer, VkPipelineLayout layout,
                                                 VkShaderStageFlags stageFlags, uint32_t offset, uint32_t size, const void *pValues,
                                                 const ErrorObject &error_obj) const;
@@ -1028,12 +994,8 @@ class StatelessValidation : public ValidationObject {
     bool ValidateCmdBeginRenderPass(const VkRenderPassBeginInfo *const rp_begin, const ErrorObject &error_obj) const;
     bool manual_PreCallValidateCmdBeginRenderPass(VkCommandBuffer, const VkRenderPassBeginInfo *pRenderPassBegin, VkSubpassContents,
                                                   const ErrorObject &error_obj) const;
-    bool manual_PreCallValidateCmdBeginRenderPass2KHR(VkCommandBuffer, const VkRenderPassBeginInfo *pRenderPassBegin,
-                                                      const VkSubpassBeginInfo *, const ErrorObject &error_obj) const;
     bool manual_PreCallValidateCmdBeginRenderPass2(VkCommandBuffer, const VkRenderPassBeginInfo *pRenderPassBegin,
                                                    const VkSubpassBeginInfo *, const ErrorObject &error_obj) const;
-    bool manual_PreCallValidateCmdBeginRenderingKHR(VkCommandBuffer commandBuffer, const VkRenderingInfo *pRenderingInfo,
-                                                    const ErrorObject &error_obj) const;
     bool manual_PreCallValidateCmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo *pRenderingInfo,
                                                  const ErrorObject &error_obj) const;
 
@@ -1080,6 +1042,9 @@ class StatelessValidation : public ValidationObject {
                                                               const VkBool32 *pExclusiveScissorEnables,
                                                               const ErrorObject &error_obj) const;
 
+    bool manual_PreCallValidateSetDeviceMemoryPriorityEXT(VkDevice device, VkDeviceMemory memory, float priority,
+                                                          const ErrorObject &error_obj) const;
+
 #ifdef VK_USE_PLATFORM_WIN32_KHR
     bool manual_PreCallValidateGetPhysicalDeviceSurfacePresentModes2EXT(VkPhysicalDevice physicalDevice,
                                                                         const VkPhysicalDeviceSurfaceInfo2KHR *pSurfaceInfo,
@@ -1091,17 +1056,10 @@ class StatelessValidation : public ValidationObject {
     bool manual_PreCallValidateGetDeviceImageMemoryRequirements(VkDevice device, const VkDeviceImageMemoryRequirements *pInfo,
                                                                 VkMemoryRequirements2 *pMemoryRequirements,
                                                                 const ErrorObject &error_obj) const;
-    bool manual_PreCallValidateGetDeviceImageMemoryRequirementsKHR(VkDevice device, const VkDeviceImageMemoryRequirements *pInfo,
-                                                                   VkMemoryRequirements2 *pMemoryRequirements,
-                                                                   const ErrorObject &error_obj) const;
     bool manual_PreCallValidateGetDeviceImageSparseMemoryRequirements(VkDevice device, const VkDeviceImageMemoryRequirements *pInfo,
                                                                       uint32_t *pSparseMemoryRequirementCount,
                                                                       VkSparseImageMemoryRequirements2 *pSparseMemoryRequirements,
                                                                       const ErrorObject &error_obj) const;
-    bool manual_PreCallValidateGetDeviceImageSparseMemoryRequirementsKHR(
-        VkDevice device, const VkDeviceImageMemoryRequirements *pInfo, uint32_t *pSparseMemoryRequirementCount,
-        VkSparseImageMemoryRequirements2 *pSparseMemoryRequirements, const ErrorObject &error_obj) const;
-
     bool manual_PreCallValidateQueueBindSparse(VkQueue queue, uint32_t bindInfoCount, const VkBindSparseInfo *pBindInfo,
                                                VkFence fence, const ErrorObject &error_obj) const;
 
@@ -1110,5 +1068,7 @@ class StatelessValidation : public ValidationObject {
                                                      const ErrorObject &error_obj) const;
 #endif  // VK_USE_PLATFORM_METAL_EXT
 
+    bool ValidateAllocateMemoryExternal(VkDevice device, const VkMemoryAllocateInfo *pAllocateInfo, VkMemoryAllocateFlags flags,
+                                        const Location &allocate_info_loc) const;
 #include "generated/stateless_validation_helper.h"
 };  // Class StatelessValidation

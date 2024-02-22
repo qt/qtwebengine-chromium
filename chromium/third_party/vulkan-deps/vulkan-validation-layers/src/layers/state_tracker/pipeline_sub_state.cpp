@@ -23,7 +23,7 @@ VkPipelineLayoutCreateFlags PipelineSubState::PipelineLayoutCreateFlags() const 
     return (layout_state) ? layout_state->CreateFlags() : static_cast<VkPipelineLayoutCreateFlags>(0);
 }
 
-VertexInputState::VertexInputState(const PIPELINE_STATE &p, const safe_VkGraphicsPipelineCreateInfo &create_info)
+VertexInputState::VertexInputState(const vvl::Pipeline &p, const safe_VkGraphicsPipelineCreateInfo &create_info)
     : PipelineSubState(p), input_state(create_info.pVertexInputState), input_assembly_state(create_info.pInputAssemblyState) {
     if (create_info.pVertexInputState) {
         const auto *vici = create_info.pVertexInputState;
@@ -56,14 +56,14 @@ VertexInputState::VertexInputState(const PIPELINE_STATE &p, const safe_VkGraphic
     }
 }
 
-PreRasterState::PreRasterState(const PIPELINE_STATE &p, const ValidationStateTracker &state_data,
-                               const safe_VkGraphicsPipelineCreateInfo &create_info, std::shared_ptr<const RENDER_PASS_STATE> rp)
+PreRasterState::PreRasterState(const vvl::Pipeline &p, const ValidationStateTracker &state_data,
+                               const safe_VkGraphicsPipelineCreateInfo &create_info, std::shared_ptr<const vvl::RenderPass> rp)
     : PipelineSubState(p), rp_state(rp), subpass(create_info.subpass) {
-    pipeline_layout = state_data.Get<PIPELINE_LAYOUT_STATE>(create_info.layout);
+    pipeline_layout = state_data.Get<vvl::PipelineLayout>(create_info.layout);
 
     viewport_state = create_info.pViewportState;
 
-    rp_state = state_data.Get<RENDER_PASS_STATE>(create_info.renderPass);
+    rp_state = state_data.Get<vvl::RenderPass>(create_info.renderPass);
 
     raster_state = create_info.pRasterizationState;
 
@@ -80,15 +80,15 @@ PreRasterState::PreRasterState(const PIPELINE_STATE &p, const ValidationStateTra
         }
         all_stages |= stage;
 
-        auto module_state = state_data.Get<SHADER_MODULE_STATE>(stage_ci.module);
+        auto module_state = state_data.Get<vvl::ShaderModule>(stage_ci.module);
         if (!module_state) {
             // If module is null and there is a VkShaderModuleCreateInfo in the pNext chain of the stage info, then this
             // module is part of a library and the state must be created
             const auto shader_ci = vku::FindStructInPNextChain<VkShaderModuleCreateInfo>(stage_ci.pNext);
             if (shader_ci) {
                 // don't need to worry about GroupDecoration in GPL
-                auto spirv_module = std::make_shared<SPIRV_MODULE_STATE>(shader_ci->codeSize, shader_ci->pCode);
-                module_state = std::make_shared<SHADER_MODULE_STATE>(VK_NULL_HANDLE, spirv_module, 0);
+                auto spirv_module = std::make_shared<spirv::Module>(shader_ci->codeSize, shader_ci->pCode);
+                module_state = std::make_shared<vvl::ShaderModule>(VK_NULL_HANDLE, spirv_module, 0);
             }
         }
 
@@ -188,15 +188,15 @@ void SetFragmentShaderInfoPrivate(FragmentShaderState &fs_state, const Validatio
                                   const CreateInfo &create_info) {
     for (uint32_t i = 0; i < create_info.stageCount; ++i) {
         if (create_info.pStages[i].stage == VK_SHADER_STAGE_FRAGMENT_BIT) {
-            auto module_state = state_data.Get<SHADER_MODULE_STATE>(create_info.pStages[i].module);
+            auto module_state = state_data.Get<vvl::ShaderModule>(create_info.pStages[i].module);
             if (!module_state) {
                 // If module is null and there is a VkShaderModuleCreateInfo in the pNext chain of the stage info, then this
                 // module is part of a library and the state must be created
                 const auto shader_ci = vku::FindStructInPNextChain<VkShaderModuleCreateInfo>(create_info.pStages[i].pNext);
                 if (shader_ci) {
                     // don't need to worry about GroupDecoration in GPL
-                    auto spirv_module = std::make_shared<SPIRV_MODULE_STATE>(shader_ci->codeSize, shader_ci->pCode);
-                    module_state = std::make_shared<SHADER_MODULE_STATE>(VK_NULL_HANDLE, spirv_module, 0);
+                    auto spirv_module = std::make_shared<spirv::Module>(shader_ci->codeSize, shader_ci->pCode);
+                    module_state = std::make_shared<vvl::ShaderModule>(VK_NULL_HANDLE, spirv_module, 0);
                 }
             }
 
@@ -212,6 +212,11 @@ void SetFragmentShaderInfoPrivate(FragmentShaderState &fs_state, const Validatio
             if (module_state) {
                 fs_state.fragment_shader = std::move(module_state);
                 fs_state.fragment_shader_ci = ToShaderStageCI(create_info.pStages[i]);
+                // can be null if using VK_EXT_shader_module_identifier
+                if (fs_state.fragment_shader->spirv) {
+                    fs_state.fragment_entry_point = fs_state.fragment_shader->spirv->FindEntrypoint(
+                        fs_state.fragment_shader_ci->pName, fs_state.fragment_shader_ci->stage);
+                }
             }
         }
     }
@@ -229,11 +234,11 @@ void FragmentShaderState::SetFragmentShaderInfo(FragmentShaderState &fs_state, c
     SetFragmentShaderInfoPrivate(fs_state, state_data, create_info);
 }
 
-FragmentShaderState::FragmentShaderState(const PIPELINE_STATE &p, const ValidationStateTracker &dev_data,
-                                         std::shared_ptr<const RENDER_PASS_STATE> rp, uint32_t subp, VkPipelineLayout layout)
-    : PipelineSubState(p), rp_state(rp), subpass(subp), pipeline_layout(dev_data.Get<PIPELINE_LAYOUT_STATE>(layout)) {}
+FragmentShaderState::FragmentShaderState(const vvl::Pipeline &p, const ValidationStateTracker &dev_data,
+                                         std::shared_ptr<const vvl::RenderPass> rp, uint32_t subp, VkPipelineLayout layout)
+    : PipelineSubState(p), rp_state(rp), subpass(subp), pipeline_layout(dev_data.Get<vvl::PipelineLayout>(layout)) {}
 
-FragmentOutputState::FragmentOutputState(const PIPELINE_STATE &p, std::shared_ptr<const RENDER_PASS_STATE> rp, uint32_t sp)
+FragmentOutputState::FragmentOutputState(const vvl::Pipeline &p, std::shared_ptr<const vvl::RenderPass> rp, uint32_t sp)
     : PipelineSubState(p), rp_state(rp), subpass(sp) {}
 
 // static

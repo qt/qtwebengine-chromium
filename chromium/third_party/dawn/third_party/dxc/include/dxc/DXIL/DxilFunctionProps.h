@@ -16,6 +16,8 @@
 #include <vector>
 
 #include "dxc/DXIL/DxilConstants.h"
+#include "dxc/DXIL/DxilNodeProps.h"
+#include "llvm/ADT/StringRef.h"
 
 namespace llvm {
 class Function;
@@ -27,13 +29,16 @@ struct DxilFunctionProps {
   DxilFunctionProps() {
     memset(&ShaderProps, 0, sizeof(ShaderProps));
     shaderKind = DXIL::ShaderKind::Invalid;
-    waveSize = 0;
+    NodeShaderID = {};
+    NodeShaderSharedInput = {};
+    memset(&Node, 0, sizeof(Node));
+    Node.LaunchType = DXIL::NodeLaunchType::Invalid;
+    Node.LocalRootArgumentsTableIndex = -1;
+    waveMinSize = 0;
+    waveMaxSize = 0;
+    wavePreferredSize = 0;
   }
   union {
-    // Compute shader.
-    struct {
-      unsigned numThreads[3];
-    } CS;
     // Geometry shader.
     struct {
       DXIL::InputPrimitive inputPrimitive;
@@ -75,7 +80,6 @@ struct DxilFunctionProps {
     } Ray;
     // Mesh shader.
     struct {
-      unsigned numThreads[3];
       unsigned maxVertexCount;
       unsigned maxPrimitiveCount;
       DXIL::MeshOutputTopology outputTopology;
@@ -83,14 +87,33 @@ struct DxilFunctionProps {
     } MS;
     // Amplification shader.
     struct {
-      unsigned numThreads[3];
       unsigned payloadSizeInBytes;
     } AS;
   } ShaderProps;
+
+  // numThreads shared between multiple shader types and node shaders.
+  unsigned numThreads[3];
+
+  struct NodeProps {
+    DXIL::NodeLaunchType LaunchType = DXIL::NodeLaunchType::Invalid;
+    bool IsProgramEntry;
+    int LocalRootArgumentsTableIndex;
+    unsigned DispatchGrid[3];
+    unsigned MaxDispatchGrid[3];
+    unsigned MaxRecursionDepth;
+  } Node;
+
   DXIL::ShaderKind shaderKind;
-  // WaveSize is currently allowed only on compute shaders, but could be
-  // supported on other shader types in the future
-  unsigned waveSize;
+  NodeID NodeShaderID;
+  NodeID NodeShaderSharedInput;
+  std::vector<NodeIOProperties> InputNodes;
+  std::vector<NodeIOProperties> OutputNodes;
+
+  // SM 6.6 allows WaveSize specification for only a single required size. SM
+  // 6.8+ allows specification of WaveSize as a min, max and preferred value.
+  unsigned waveMinSize;
+  unsigned waveMaxSize;
+  unsigned wavePreferredSize;
   // Save root signature for lib profile entry.
   std::vector<uint8_t> serializedRootSignature;
   void SetSerializedRootSignature(const uint8_t *pData, unsigned size) {
@@ -128,6 +151,10 @@ struct DxilFunctionProps {
   }
   bool IsMS() const { return shaderKind == DXIL::ShaderKind::Mesh; }
   bool IsAS() const { return shaderKind == DXIL::ShaderKind::Amplification; }
+  bool IsNode() const {
+    return shaderKind == DXIL::ShaderKind::Node ||
+           Node.LaunchType != DXIL::NodeLaunchType::Invalid;
+  };
 };
 
 } // namespace hlsl

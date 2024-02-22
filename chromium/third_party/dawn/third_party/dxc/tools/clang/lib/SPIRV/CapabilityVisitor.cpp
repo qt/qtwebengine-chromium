@@ -246,6 +246,12 @@ bool CapabilityVisitor::visit(SpirvDecoration *decor) {
                  loc);
     break;
   }
+  case spv::Decoration::PerVertexKHR: {
+    addExtension(Extension::KHR_fragment_shader_barycentric, "PerVertexKHR",
+                 loc);
+    addCapability(spv::Capability::FragmentBarycentricKHR);
+    break;
+  }
   // Capabilities needed for built-ins
   case spv::Decoration::BuiltIn: {
     AddVulkanMemoryModelForVolatile(decor, loc);
@@ -359,15 +365,14 @@ bool CapabilityVisitor::visit(SpirvDecoration *decor) {
       addCapability(spv::Capability::CullDistance);
       break;
     }
-    case spv::BuiltIn::BaryCoordNoPerspAMD:
-    case spv::BuiltIn::BaryCoordNoPerspCentroidAMD:
-    case spv::BuiltIn::BaryCoordNoPerspSampleAMD:
-    case spv::BuiltIn::BaryCoordSmoothAMD:
-    case spv::BuiltIn::BaryCoordSmoothCentroidAMD:
-    case spv::BuiltIn::BaryCoordSmoothSampleAMD:
-    case spv::BuiltIn::BaryCoordPullModelAMD: {
-      addExtension(Extension::AMD_shader_explicit_vertex_parameter,
+    case spv::BuiltIn::BaryCoordKHR:
+    case spv::BuiltIn::BaryCoordNoPerspKHR: {
+      // SV_Barycentrics will have only two builtins
+      // But it is still allowed to decorate those two builtins with
+      // interpolation qualifier like centroid or sample.
+      addExtension(Extension::KHR_fragment_shader_barycentric,
                    "SV_Barycentrics", loc);
+      addCapability(spv::Capability::FragmentBarycentricKHR);
       break;
     }
     case spv::BuiltIn::ShadingRateKHR:
@@ -729,27 +734,6 @@ bool CapabilityVisitor::visit(SpirvExtInstImport *instr) {
                  /*SourceLocation*/ {});
   }
   return true;
-}
-
-bool CapabilityVisitor::visit(SpirvExtInst *instr) {
-  // OpExtInst using the GLSL extended instruction allows only 32-bit types by
-  // default for interpolation instructions. The AMD_gpu_shader_half_float
-  // extension adds support for 16-bit floating-point component types for these
-  // instructions:
-  // InterpolateAtCentroid, InterpolateAtSample, InterpolateAtOffset
-  if (SpirvType::isOrContainsType<FloatType, 16>(instr->getResultType()))
-    switch (instr->getInstruction()) {
-    case GLSLstd450::GLSLstd450InterpolateAtCentroid:
-    case GLSLstd450::GLSLstd450InterpolateAtSample:
-    case GLSLstd450::GLSLstd450InterpolateAtOffset:
-      addExtension(Extension::AMD_gpu_shader_half_float, "16-bit float",
-                   instr->getSourceLocation());
-      break;
-    default:
-      break;
-    }
-
-  return visitInstruction(instr);
 }
 
 bool CapabilityVisitor::visit(SpirvAtomic *instr) {

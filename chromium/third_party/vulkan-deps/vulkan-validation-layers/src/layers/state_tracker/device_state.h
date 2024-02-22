@@ -17,24 +17,26 @@
  * limitations under the License.
  */
 #pragma once
-#include "state_tracker/base_node.h"
+#include "state_tracker/state_object.h"
 #include "generated/layer_chassis_dispatch.h"
 #include "generated/vk_safe_struct.h"
 #include <vector>
 
-class QUEUE_FAMILY_PERF_COUNTERS {
+class QueueFamilyPerfCounters {
   public:
     std::vector<VkPerformanceCounterKHR> counters;
 };
 
-class SURFACELESS_QUERY_STATE {
+class SurfacelessQueryState {
   public:
     std::vector<safe_VkSurfaceFormat2KHR> formats;
     std::vector<VkPresentModeKHR> present_modes;
     safe_VkSurfaceCapabilities2KHR capabilities;
 };
 
-class PHYSICAL_DEVICE_STATE : public BASE_NODE {
+namespace vvl {
+
+class PhysicalDevice : public StateObject {
   public:
     uint32_t queue_family_known_count = 1;  // spec implies one QF must always be supported
     const std::vector<VkQueueFamilyProperties> queue_family_properties;
@@ -42,14 +44,14 @@ class PHYSICAL_DEVICE_STATE : public BASE_NODE {
     bool vkGetPhysicalDeviceDisplayPlanePropertiesKHR_called = false;
     uint32_t display_plane_property_count = 0;
 
-    // Map of queue family index to QUEUE_FAMILY_PERF_COUNTERS
-    vvl::unordered_map<uint32_t, std::unique_ptr<QUEUE_FAMILY_PERF_COUNTERS>> perf_counters;
+    // Map of queue family index to QueueFamilyPerfCounters
+    unordered_map<uint32_t, std::unique_ptr<QueueFamilyPerfCounters>> perf_counters;
 
     // Surfaceless Query extension needs 'global' surface_state data
-    SURFACELESS_QUERY_STATE surfaceless_query_state{};
+    SurfacelessQueryState surfaceless_query_state{};
 
-    PHYSICAL_DEVICE_STATE(VkPhysicalDevice phys_dev)
-        : BASE_NODE(phys_dev, kVulkanObjectTypePhysicalDevice), queue_family_properties(GetQueueFamilyProps(phys_dev)) {}
+    PhysicalDevice(VkPhysicalDevice phys_dev)
+        : StateObject(phys_dev, kVulkanObjectTypePhysicalDevice), queue_family_properties(GetQueueFamilyProps(phys_dev)) {}
 
     VkPhysicalDevice PhysDev() const { return handle_.Cast<VkPhysicalDevice>(); }
 
@@ -64,12 +66,14 @@ class PHYSICAL_DEVICE_STATE : public BASE_NODE {
     }
 };
 
-class DISPLAY_MODE_STATE : public BASE_NODE {
+class DisplayMode : public StateObject {
   public:
     const VkPhysicalDevice physical_device;
 
-    DISPLAY_MODE_STATE(VkDisplayModeKHR dm, VkPhysicalDevice phys_dev)
-        : BASE_NODE(dm, kVulkanObjectTypeDisplayModeKHR), physical_device(phys_dev) {}
+    DisplayMode(VkDisplayModeKHR dm, VkPhysicalDevice phys_dev)
+        : StateObject(dm, kVulkanObjectTypeDisplayModeKHR), physical_device(phys_dev) {}
 
     VkDisplayModeKHR display_mode() const { return handle_.Cast<VkDisplayModeKHR>(); }
 };
+
+}  // namespace vvl

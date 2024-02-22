@@ -1,6 +1,6 @@
-/* Copyright (c) 2015-2017, 2019-2023 The Khronos Group Inc.
- * Copyright (c) 2015-2017, 2019-2023 Valve Corporation
- * Copyright (c) 2015-2017, 2019-2023 LunarG, Inc.
+/* Copyright (c) 2015-2017, 2019-2024 The Khronos Group Inc.
+ * Copyright (c) 2015-2017, 2019-2024 Valve Corporation
+ * Copyright (c) 2015-2017, 2019-2024 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -118,7 +118,7 @@ using insert_iterator = std::insert_iterator<T>;
 //       MoveAssignable and MoveConstructable
 // NOTE: Unlike std::vector, iterators are invalidated by move assignment between small_vector objects effectively the
 //       "small string" allocation functions as an incompatible allocator.
-template <typename T, size_t N, typename SizeType = uint8_t>
+template <typename T, size_t N, typename SizeType = uint32_t>
 class small_vector {
   public:
     using value_type = T;
@@ -854,20 +854,20 @@ namespace vvl {
 inline constexpr std::in_place_t in_place{};
 
 // Partial implementation of std::span for C++11
-template <typename T>
-class span {
+template <typename T, typename Iterator>
+class enumeration {
   public:
     using pointer = T *;
     using const_pointer = T const *;
-    using iterator = pointer;
-    using const_iterator = const_pointer;
+    using iterator = Iterator;
+    using const_iterator = const Iterator;
 
-    span() = default;
-    span(pointer start, size_t n) : data_(start), count_(n) {}
-    template <typename Iterator>
-    span(Iterator start, Iterator end) : data_(&(*start)), count_(end - start) {}
+    enumeration() = default;
+    enumeration(pointer start, size_t n) : data_(start), count_(n) {}
+    template <typename Position>
+    enumeration(Position start, Position end) : data_(&(*start)), count_(end - start) {}
     template <typename Container>
-    span(Container &c) : data_(c.data()), count_(c.size()) {}
+    enumeration(Container &c) : data_(c.data()), count_(c.size()) {}
 
     iterator begin() { return data_; }
     const_iterator begin() const { return data_; }
@@ -895,6 +895,45 @@ class span {
     size_t count_ = 0;
 };
 
+template <typename T, typename IndexType = size_t>
+class IndexedIterator {
+  public:
+    IndexedIterator(T *data, IndexType index = 0) : index_(index), data_(data) {}
+
+    IndexedIterator<T, IndexType> &operator*() { return *this; }
+    const IndexedIterator<T, IndexType> &operator*() const { return *this; }
+
+    // prefix increment
+    IndexedIterator<T, IndexType> &operator++() {
+        ++data_;
+        ++index_;
+        return *this;
+    }
+
+    // postfix increment
+    IndexedIterator<T, IndexType> operator++(int) {
+        IndexedIterator<T, IndexType> old = *this;
+        operator++();
+        return old;
+    }
+
+    bool operator==(const IndexedIterator<T, IndexType> &rhs) const {
+        // No need to compare indices, just compare pointers
+        // And given the implementation of enumeration::end(),
+        // where no index is given when constructing an iterator,
+        // index_ will default to 0 for end(), which is wrong, but we can live with it for now
+        return data_ == rhs.data_;
+    }
+    bool operator!=(const IndexedIterator<T, IndexType> &rhs) const { return data_ != rhs.data_; }
+
+  public:
+    IndexType index_ = 0;
+    T *data_;
+};
+
+template <typename T>
+using span = enumeration<T, T *>;
+
 //
 // Allow type inference that using the constructor doesn't allow in C++11
 template <typename T>
@@ -904,6 +943,15 @@ span<T> make_span(T *begin, size_t count) {
 template <typename T>
 span<T> make_span(T *begin, T *end) {
     return make_span<T>(begin, end);
+}
+
+template <typename T, typename IndexType>
+enumeration<T, IndexedIterator<T, IndexType>> enumerate(T *begin, IndexType count) {
+    return enumeration<T, IndexedIterator<T, IndexType>>(begin, count);
+}
+template <typename T>
+enumeration<T, IndexedIterator<T>> enumerate(T *begin, T *end) {
+    return enumeration<T, IndexedIterator<T>>(begin, end);
 }
 
 template <typename BaseType>
@@ -967,6 +1015,8 @@ class TlsGuard {
         return std::move(*payload_);
     }
     T *operator->() { return &(*payload_); }
+
+    operator bool() { return payload_.has_value(); }
 
   private:
     inline thread_local static std::optional<T> payload_{};

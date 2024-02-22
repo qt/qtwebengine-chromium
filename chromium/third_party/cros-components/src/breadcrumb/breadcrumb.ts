@@ -9,9 +9,7 @@ import '@material/web/button/text-button.js';
 import {css, CSSResultGroup, html, LitElement} from 'lit';
 
 /**
- * A cros compliant breadcrumb component.
- * See spec:
- * https://www.figma.com/file/1XsFoZH868xLcLPfPZRxLh/CrOS-Next---Component-Library-%26-Spec?node-id=3669%3A53793&t=6W7VqUU0nkApOSgg-0
+ * A ChromeOS compliant breadcrumb component.
  */
 export class Breadcrumb extends LitElement {
   /** @nocollapse */

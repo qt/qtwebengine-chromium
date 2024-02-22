@@ -43,7 +43,10 @@ MaybeHandle<Object> Runtime::GetObjectProperty(
   if (result.is_null()) {
     return result;
   }
-  if (is_found) *is_found = it.IsFound();
+  if (is_found) {
+    *is_found = it.state() != LookupIterator::INTEGER_INDEXED_EXOTIC &&
+                it.state() != LookupIterator::NOT_FOUND;
+  }
 
   return result;
 }
@@ -187,7 +190,7 @@ RUNTIME_FUNCTION(Runtime_ObjectHasOwnProperty) {
       LookupIterator it(isolate, js_obj, key, js_obj, c);
       Maybe<bool> maybe = JSReceiver::HasProperty(&it);
       if (maybe.IsNothing()) return ReadOnlyRoots(isolate).exception();
-      DCHECK(!isolate->has_pending_exception());
+      DCHECK(!isolate->has_exception());
       if (maybe.FromJust()) return ReadOnlyRoots(isolate).true_value();
     }
 
@@ -203,7 +206,7 @@ RUNTIME_FUNCTION(Runtime_ObjectHasOwnProperty) {
     LookupIterator it(isolate, js_obj, key, js_obj, LookupIterator::OWN);
     Maybe<bool> maybe = JSReceiver::HasProperty(&it);
     if (maybe.IsNothing()) return ReadOnlyRoots(isolate).exception();
-    DCHECK(!isolate->has_pending_exception());
+    DCHECK(!isolate->has_exception());
     return isolate->heap()->ToBoolean(maybe.FromJust());
 
   } else if (IsJSProxy(*object)) {
@@ -992,7 +995,7 @@ RUNTIME_FUNCTION(Runtime_DefineKeyedOwnPropertyInLiteral) {
       &it, value, PropertyAttributes::NONE, Just(kDontThrow));
   // Cannot fail since this should only be called when
   // creating an object literal.
-  RETURN_FAILURE_IF_SCHEDULED_EXCEPTION(isolate);
+  RETURN_FAILURE_IF_EXCEPTION(isolate);
   DCHECK(result.IsJust());
   USE(result);
 
@@ -1423,7 +1426,7 @@ Maybe<bool> FindPrivateMembersFromReceiver(Isolate* isolate,
       CollectPrivateMembersFromReceiver(isolate, receiver, desc, &results),
       Nothing<bool>());
 
-  if (results.size() == 0) {
+  if (results.empty()) {
     THROW_NEW_ERROR_RETURN_VALUE(isolate, NewError(not_found_message, desc),
                                  Nothing<bool>());
   } else if (results.size() > 1) {

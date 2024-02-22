@@ -29,13 +29,15 @@ class SpirvGrammarHelperOutputGenerator(BaseGenerator):
         BaseGenerator.__init__(self)
 
         self.opcodes = dict()
+        self.opnames = []
         self.atomicsOps = []
         self.groupOps = []
-        self.imageAcesssOps = []
-        self.sampledImageAccessOps = []
+        self.debugOps = []
+        self.annotationOps = []
         self.imageGatherOps = []
         self.imageSampleOps = []
         self.imageFetchOps = []
+        self.typeOps = [] # OpType*
         self.storageClassList = [] # list of storage classes
         self.executionModelList = []
         self.executionModeList = []
@@ -43,8 +45,21 @@ class SpirvGrammarHelperOutputGenerator(BaseGenerator):
         self.builtInList = []
         self.dimList = []
         self.cooperativeMatrixList = []
+        self.hasType = []
+        self.hasResult = []
         # Need range to be large as largest possible operand index
+        # This is done to make it easier to group switch case of same value
         self.imageOperandsParamCount = [[] for i in range(3)]
+        self.memoryScopePosition = [[] for i in range(5)]
+        self.executionScopePosition = [[] for i in range(4)]
+        self.imageOperandsPosition = [[] for i in range(8)]
+        self.imageAccessOperand = [[] for i in range(4)]
+
+        self.kindId = [] # "category" : "Id"
+        self.kindLiteral = [] # "category" : "Literal"
+        self.kindComposite = [] # "category" : "Composite"
+        self.kindValueEnum = [] # "category" : "ValueEnum"
+        self.kindBitEnum = [] # "category" : "BitEnum"
 
         self.parseGrammar(grammar)
 
@@ -81,11 +96,25 @@ class SpirvGrammarHelperOutputGenerator(BaseGenerator):
             kernelCapability.append('SubgroupAvcMotionEstimationChromaINTEL')
 
             for operandKind in operandKinds:
-                if operandKind['kind'] == 'Capability':
+                kind = operandKind['kind']
+                category = operandKind['category']
+
+                if category == 'Id':
+                    self.kindId.append(kind)
+                elif category == 'Literal':
+                    self.kindLiteral.append(kind)
+                elif category == 'Composite':
+                    self.kindComposite.append(kind)
+                elif category == 'ValueEnum':
+                    self.kindValueEnum.append(kind)
+                elif category == 'BitEnum':
+                    self.kindBitEnum.append(kind)
+
+                if kind == 'Capability':
                     for enum in operandKind['enumerants']:
                         if 'capabilities' in enum and len(enum['capabilities']) == 1 and enum['capabilities'][0] == 'Kernel':
                             kernelCapability.append(enum['enumerant'])
-                if operandKind['kind'] == 'ImageOperands':
+                elif kind == 'ImageOperands':
                     values = [] # prevent alias from being duplicatd
                     for enum in operandKind['enumerants']:
                         count = 0  if 'parameters' not in enum else len(enum['parameters'])
@@ -100,9 +129,29 @@ class SpirvGrammarHelperOutputGenerator(BaseGenerator):
                 self.addToStringList(operandKind, 'Dim', self.dimList)
                 self.addToStringList(operandKind, 'CooperativeMatrixOperands', self.cooperativeMatrixList, ['NoneKHR'])
 
+            # Currently no alias field, so need to manually track alias commands
+            # https://github.com/KhronosGroup/SPIRV-Headers/issues/109
+            aliasOpname = [
+                'OpSDotKHR',
+                'OpUDotKHR',
+                'OpSUDotKHR',
+                'OpSDotAccSatKHR',
+                'OpUDotAccSatKHR',
+                'OpSUDotAccSatKHR',
+                'OpReportIntersectionKHR',
+                'OpTypeAccelerationStructureNV',
+                'OpDemoteToHelperInvocationEXT',
+                'OpDecorateStringGOOGLE',
+                'OpMemberDecorateStringGOOGLE',
+            ]
+
             for instruction in instructions:
                 opname = instruction['opname']
                 opcode = instruction['opcode']
+
+                if opname in aliasOpname:
+                    continue
+
                 if 'capabilities' in instruction:
                     notSupported = True
                     for capability in instruction['capabilities']:
@@ -112,55 +161,87 @@ class SpirvGrammarHelperOutputGenerator(BaseGenerator):
                     if notSupported:
                         continue # If just 'Kernel' capabilites then it's ment for OpenCL and skip instruction
 
-                # Nice side effect of using a dict here is alias opcodes will be last in the grammar file
-                # ex: OpTypeAccelerationStructureNV will be replaced by OpTypeAccelerationStructureKHR
+                self.opnames.append(opname)
+
                 self.opcodes[opcode] = {
-                    'name' : opname,
-                    'hasType' : "false",
-                    'hasResult' : "false",
-
-                    'memoryScopePosition' : 0,
-                    'executionScopePosition' : 0,
-                    'imageOperandsPosition' : 0,
-                    'storageClassPosition' : 0,
-
                     'imageRefPosition' : 0,
                     'sampledImageRefPosition' : 0,
+
+                    'opname' : opname,
+                    'operands' : [],
+                    'hasOptional' : False,
+                    'hasVariableLength' : False,
                 }
 
                 if instruction['class'] == 'Atomic':
                     self.atomicsOps.append(opname)
                 if instruction['class'] == 'Non-Uniform':
                     self.groupOps.append(opname)
+                if instruction['class'] == 'Debug':
+                    self.debugOps.append(opname)
+                if instruction['class'] == 'Annotation':
+                    self.annotationOps.append(opname)
                 if re.search("OpImage.*Gather", opname) is not None:
                     self.imageGatherOps.append(opname)
                 if re.search("OpImageFetch.*", opname) is not None:
                     self.imageFetchOps.append(opname)
                 if re.search("OpImageSample.*", opname) is not None:
                     self.imageSampleOps.append(opname)
+                if re.search("OpType.*", opname) is not None:
+                    self.typeOps.append(opname)
                 if 'operands' in instruction:
                     for index, operand in enumerate(instruction['operands']):
-                        if operand['kind'] == 'IdResultType':
-                            self.opcodes[opcode]['hasType'] = "true"
-                        if operand['kind'] == 'IdResult':
-                            self.opcodes[opcode]['hasResult'] = "true"
+                        kind = operand['kind']
+                        if kind == 'IdResultType':
+                            self.hasType.append(opname)
+                        elif kind == 'IdResult':
+                            self.hasResult.append(opname)
+                        else:
+                            # Operands are anything that isn't a result or result type
+                            if 'quantifier' in operand:
+                                if operand['quantifier'] == '?':
+                                    self.opcodes[opcode]['hasOptional'] = True
+                                if operand['quantifier'] == '*':
+                                    self.opcodes[opcode]['hasVariableLength'] = True
+
+                            operands = self.opcodes[opcode]['operands']
+                            if kind in self.kindId:
+                                if opname in ['OpLoopMerge', 'OpSelectionMerge', 'OpBranch']:
+                                    operands.append('Label')
+                                elif opname == 'OpBranchConditional' and 'Condition' not in operand['name']:
+                                    operands.append('Label')
+                                else:
+                                    operands.append('Id')
+                            elif kind in self.kindLiteral:
+                                if kind == 'LiteralString':
+                                    operands.append('LiteralString')
+                                else:
+                                    operands.append('Literal')
+                            elif kind in self.kindComposite:
+                                if opname == 'OpSwitch':
+                                    operands.append('Label')
+                                else:
+                                    operands.append('Composite')
+                            elif kind in self.kindValueEnum:
+                                operands.append('ValueEnum')
+                            elif kind in self.kindBitEnum:
+                                operands.append('BitEnum')
+
                         # some instructions have both types of IdScope
                         # OpReadClockKHR has the wrong 'name' as 'Scope'
-                        if operand['kind'] == 'IdScope':
+                        if kind == 'IdScope':
                             if operand['name'] == '\'Execution\'' or operand['name'] == '\'Scope\'':
-                                self.opcodes[opcode]['executionScopePosition'] = index + 1
+                                self.executionScopePosition[index + 1].append(opname)
                             elif operand['name'] == '\'Memory\'':
-                                self.opcodes[opcode]['memoryScopePosition'] = index + 1
+                                self.memoryScopePosition[index + 1].append(opname)
                             elif operand['name'] == '\'Visibility\'':
                                 continue # ignore
                             else:
                                 print(f'Error: unknown operand {opname} with IdScope {operand["name"]} not handled correctly\n')
                                 sys.exit(1)
-                        if operand['kind'] == 'ImageOperands':
-                            self.opcodes[opcode]['imageOperandsPosition'] = index + 1
-                        if operand['kind'] == 'StorageClass':
-                            self.opcodes[opcode]['storageClassPosition'] = index + 1
-                        if operand['kind'] == 'IdRef':
+                        if kind == 'ImageOperands':
+                            self.imageOperandsPosition[index + 1].append(opname)
+                        if kind == 'IdRef':
                             if operand['name'] == '\'Image\'':
                                 self.opcodes[opcode]['imageRefPosition'] = index + 1
                             elif operand['name'] == '\'Sampled Image\'':
@@ -177,9 +258,9 @@ class SpirvGrammarHelperOutputGenerator(BaseGenerator):
                         print("Error: unknown opcode {} not handled correctly\n".format(opname))
                         sys.exit(1)
                     elif imageRef != 0:
-                        self.imageAcesssOps.append(opname)
+                        self.imageAccessOperand[imageRef].append(opname)
                     elif sampledImageRef != 0:
-                        self.sampledImageAccessOps.append(opname)
+                        self.imageAccessOperand[sampledImageRef].append(opname)
 
     def generate(self):
         self.write(f'''// *** THIS FILE IS GENERATED - DO NOT EDIT ***
@@ -222,25 +303,8 @@ class SpirvGrammarHelperOutputGenerator(BaseGenerator):
             #pragma once
             #include <cstdint>
             #include <string>
+            #include <vector>
             #include <spirv/unified1/spirv.hpp>
-
-            bool AtomicOperation(uint32_t opcode);
-            bool GroupOperation(uint32_t opcode);
-
-            bool ImageGatherOperation(uint32_t opcode);
-            bool ImageFetchOperation(uint32_t opcode);
-            bool ImageSampleOperation(uint32_t opcode);
-            uint32_t ImageAccessOperandsPosition(uint32_t opcode);
-            uint32_t SampledImageAccessOperandsPosition(uint32_t opcode);
-
-            bool OpcodeHasType(uint32_t opcode);
-            bool OpcodeHasResult(uint32_t opcode);
-
-            uint32_t OpcodeMemoryScopePosition(uint32_t opcode);
-            uint32_t OpcodeExecutionScopePosition(uint32_t opcode);
-            uint32_t OpcodeImageOperandsPosition(uint32_t opcode);
-
-            uint32_t ImageOperandsParamCount(uint32_t opcode);
 
             const char* string_SpvOpcode(uint32_t opcode);
             const char* string_SpvStorageClass(uint32_t storage_class);
@@ -251,212 +315,109 @@ class SpirvGrammarHelperOutputGenerator(BaseGenerator):
             const char* string_SpvDim(uint32_t dim);
             std::string string_SpvCooperativeMatrixOperands(uint32_t mask);
             ''')
-        self.write("".join(out))
 
-    def generateSource(self):
-        out = []
-        out.append('''
-            #include "containers/custom_containers.h"
-            #include "spirv_grammar_helper.h"
-            #include "state_tracker/shader_instruction.h"
+        hasTypeCase = "\n".join([f"        case spv::{f}:" for f in self.hasType])
+        hasResultCase = "\n".join([f"        case spv::{f}:" for f in self.hasResult])
+        out.append(f'''
+            static constexpr bool OpcodeHasType(uint32_t opcode) {{
+                switch (opcode) {{
+            {hasTypeCase}
+                        return true;
+                    default:
+                        return false;
+                }}
+            }}
 
-            // All information related to each SPIR-V opcode instruction
-            struct InstructionInfo {
-                const char* name;
-                bool has_type;    // always operand 0 if present
-                bool has_result;  // always operand 1 if present
-
-                uint32_t memory_scope_position;     // operand ID position or zero if not present
-                uint32_t execution_scope_position;  // operand ID position or zero if not present
-                uint32_t image_operands_position;   // operand ID position or zero if not present
-
-                uint32_t image_access_operands_position;          // operand ID position or zero if not present
-                uint32_t sampled_image_access_operands_position;  // operand ID position or zero if not present
-            };
+            static constexpr bool OpcodeHasResult(uint32_t opcode) {{
+                switch (opcode) {{
+            {hasResultCase}
+                        return true;
+                    default:
+                        return false;
+                }}
+            }}
             ''')
-
-        out.append('''
-// Static table to replace having many large switch statement functions for looking up each part
-// of a given SPIR-V opcode instruction
-//
-// clang-format off
-static const vvl::unordered_map<uint32_t, InstructionInfo> kInstructionTable {
-''')
-        for info in self.opcodes.values():
-            out.append('    {{spv::{}, {{"{}", {}, {}, {}, {}, {}, {}, {}}}}},\n'.format(
-                info['name'],
-                info['name'],
-                info['hasType'],
-                info['hasResult'],
-                info['memoryScopePosition'],
-                info['executionScopePosition'],
-                info['imageOperandsPosition'],
-                info['imageRefPosition'],
-                info['sampledImageRefPosition'],
-            ))
-        out.append('};\n')
-        out.append('// clang-format on\n')
 
         # \n is not allowed in f-string until 3.12
         atomicCase = "\n".join([f"        case spv::{f}:" for f in self.atomicsOps])
         groupCase = "\n".join([f"        case spv::{f}:" for f in self.groupOps])
+        debugCase = "\n".join([f"        case spv::{f}:" for f in self.debugOps])
+        annotationCase = "\n".join([f"        case spv::{f}:" for f in self.annotationOps])
         out.append(f'''
-            // Any non supported operation will be covered with VUID 01090
-            bool AtomicOperation(uint32_t opcode) {{
-                bool found = false;
+            // Any non supported operation will be covered with other VUs
+            static constexpr bool AtomicOperation(uint32_t opcode) {{
                 switch (opcode) {{
             {atomicCase}
-                        found = true;
-                        break;
+                        return true;
                     default:
-                        break;
+                        return false;
                 }}
-                return found;
             }}
 
-            // Any non supported operation will be covered with VUID 01090
-            bool GroupOperation(uint32_t opcode) {{
-                bool found = false;
+            // Any non supported operation will be covered with other VUs
+            static constexpr bool GroupOperation(uint32_t opcode) {{
                 switch (opcode) {{
             {groupCase}
-                        found = true;
-                        break;
+                        return true;
                     default:
-                        break;
+                        return false;
                 }}
-                return found;
             }}
-            ''')
 
-        out.append('''
-            spv::StorageClass Instruction::StorageClass() const {
-                spv::StorageClass storage_class = spv::StorageClassMax;
-                switch (Opcode()) {
-            ''')
-        for info in [x for x in self.opcodes.values() if x['storageClassPosition'] != 0]:
-            out.append(f'        case spv::{info["name"]}:\n')
-            out.append(f'            storage_class = static_cast<spv::StorageClass>(Word({info["storageClassPosition"]}));\n')
-            out.append('            break;\n')
-        out.append('''
+           static constexpr  bool DebugOperation(uint32_t opcode) {{
+                switch (opcode) {{
+            {debugCase}
+                        return true;
                     default:
-                        break;
-                }
-                return storage_class;
-            }
+                        return false;
+                }}
+            }}
+
+            static constexpr bool AnnotationOperation(uint32_t opcode) {{
+                switch (opcode) {{
+            {annotationCase}
+                        return true;
+                    default:
+                        return false;
+                }}
+            }}
             ''')
 
         imageGatherOpsCase = "\n".join([f"        case spv::{f}:" for f in self.imageGatherOps])
         imageFetchOpsCase = "\n".join([f"        case spv::{f}:" for f in self.imageFetchOps])
         imageSampleOpsCase = "\n".join([f"        case spv::{f}:" for f in self.imageSampleOps])
         out.append(f'''
-            bool ImageGatherOperation(uint32_t opcode) {{
-                bool found = false;
+            static constexpr bool ImageGatherOperation(uint32_t opcode) {{
                 switch (opcode) {{
             {imageGatherOpsCase}
-                        found = true;
-                        break;
+                        return true;
                     default:
-                        break;
+                        return false;
                 }}
-                return found;
             }}
 
-            bool ImageFetchOperation(uint32_t opcode) {{
-                bool found = false;
+            static constexpr bool ImageFetchOperation(uint32_t opcode) {{
                 switch (opcode) {{
             {imageFetchOpsCase}
-                        found = true;
-                        break;
+                        return true;
                     default:
-                        break;
+                        return false;
                 }}
-                return found;
             }}
 
-            bool ImageSampleOperation(uint32_t opcode) {{
-                bool found = false;
+            static constexpr bool ImageSampleOperation(uint32_t opcode) {{
                 switch (opcode) {{
             {imageSampleOpsCase}
-                        found = true;
-                        break;
+                        return true;
                     default:
-                        break;
+                        return false;
                 }}
-                return found;
             }}
             ''')
 
         out.append('''
-            // Return operand position of Image IdRef or zero if there is none
-            uint32_t ImageAccessOperandsPosition(uint32_t opcode) {
-                uint32_t position = 0;
-                auto format_info = kInstructionTable.find(opcode);
-                if (format_info != kInstructionTable.end()) {
-                    position = format_info->second.image_access_operands_position;
-                }
-                return position;
-            }
-
-            // Return operand position of 'Sampled Image' IdRef or zero if there is none
-            uint32_t SampledImageAccessOperandsPosition(uint32_t opcode) {
-                uint32_t position = 0;
-                auto format_info = kInstructionTable.find(opcode);
-                if (format_info != kInstructionTable.end()) {
-                    position = format_info->second.sampled_image_access_operands_position;
-                }
-                return position;
-            }
-
-            bool OpcodeHasType(uint32_t opcode) {
-                bool has_type = false;
-                auto format_info = kInstructionTable.find(opcode);
-                if (format_info != kInstructionTable.end()) {
-                    has_type = format_info->second.has_type;
-                }
-                return has_type;
-            }
-
-            bool OpcodeHasResult(uint32_t opcode) {
-                bool has_result = false;
-                auto format_info = kInstructionTable.find(opcode);
-                if (format_info != kInstructionTable.end()) {
-                    has_result = format_info->second.has_result;
-                }
-                return has_result;
-            }
-
-            // Return operand position of Memory Scope <ID> or zero if there is none
-            uint32_t OpcodeMemoryScopePosition(uint32_t opcode) {
-                uint32_t position = 0;
-                auto format_info = kInstructionTable.find(opcode);
-                if (format_info != kInstructionTable.end()) {
-                    position = format_info->second.memory_scope_position;
-                }
-                return position;
-            }
-
-            // Return operand position of Execution Scope <ID> or zero if there is none
-            uint32_t OpcodeExecutionScopePosition(uint32_t opcode) {
-                uint32_t position = 0;
-                auto format_info = kInstructionTable.find(opcode);
-                if (format_info != kInstructionTable.end()) {
-                    position = format_info->second.execution_scope_position;
-                }
-                return position;
-            }
-
-            // Return operand position of Image Operands <ID> or zero if there is none
-            uint32_t OpcodeImageOperandsPosition(uint32_t opcode) {
-                uint32_t position = 0;
-                auto format_info = kInstructionTable.find(opcode);
-                if (format_info != kInstructionTable.end()) {
-                    position = format_info->second.image_operands_position;
-                }
-                return position;
-            }
-
             // Return number of optional parameter from ImageOperands
-            uint32_t ImageOperandsParamCount(uint32_t image_operand) {
+            static constexpr uint32_t ImageOperandsParamCount(uint32_t image_operand) {
                 uint32_t count = 0;
                 switch (image_operand) {
             ''')
@@ -478,17 +439,139 @@ static const vvl::unordered_map<uint32_t, InstructionInfo> kInstructionTable {
             ''')
 
         out.append('''
-            const char* string_SpvOpcode(uint32_t opcode) {
-                auto format_info = kInstructionTable.find(opcode);
-                if (format_info != kInstructionTable.end()) {
-                    return format_info->second.name;
-                } else {
-                    return "Unknown Opcode";
+            // Return operand position of Memory Scope <ID> or zero if there is none
+            static constexpr uint32_t OpcodeMemoryScopePosition(uint32_t opcode) {
+                uint32_t position = 0;
+                switch (opcode) {
+            ''')
+        for index, opcodes in enumerate(self.memoryScopePosition):
+            for opcode in opcodes:
+                out.append(f'        case spv::{opcode}:\n')
+            if len(opcodes) != 0:
+                out.append(f'            return {index};\n')
+        out.append('''
+                    default:
+                        break;
                 }
+                return position;
             }
             ''')
 
+        out.append('''
+            // Return operand position of Execution Scope <ID> or zero if there is none
+            static constexpr uint32_t OpcodeExecutionScopePosition(uint32_t opcode) {
+                uint32_t position = 0;
+                switch (opcode) {
+            ''')
+        for index, opcodes in enumerate(self.executionScopePosition):
+            for opcode in opcodes:
+                out.append(f'        case spv::{opcode}:\n')
+            if len(opcodes) != 0:
+                out.append(f'            return {index};\n')
+        out.append('''
+                    default:
+                        break;
+                }
+                return position;
+            }
+            ''')
+
+        out.append('''
+            // Return operand position of Image Operands <ID> or zero if there is none
+            static constexpr uint32_t OpcodeImageOperandsPosition(uint32_t opcode) {
+                uint32_t position = 0;
+                switch (opcode) {
+            ''')
+        for index, opcodes in enumerate(self.imageOperandsPosition):
+            for opcode in opcodes:
+                out.append(f'        case spv::{opcode}:\n')
+            if len(opcodes) != 0:
+                out.append(f'            return {index};\n')
+        out.append('''
+                    default:
+                        break;
+                }
+                return position;
+            }
+            ''')
+
+        out.append('''
+            // Return operand position of 'Image' or 'Sampled Image' IdRef or zero if there is none.
+            static constexpr uint32_t OpcodeImageAccessPosition(uint32_t opcode) {
+                uint32_t position = 0;
+                switch (opcode) {
+            ''')
+        for index, opcodes in enumerate(self.imageAccessOperand):
+            for opcode in opcodes:
+                out.append(f'        case spv::{opcode}:\n')
+            if len(opcodes) != 0:
+                out.append(f'            return {index};\n')
+        out.append('''
+                    default:
+                        break;
+                }
+                return position;
+            }
+            ''')
+
+        out.append('''
+            // All valid OpType*
+            enum class SpvType {
+                Empty = 0,
+            ''')
+        for type in self.typeOps:
+            out.append(f'k{type[6:]},\n')
+        out.append("};\n")
+
+        typeCase = "\n".join([f"case spv::{f}: return SpvType::k{f[6:]};" for f in self.typeOps])
         out.append(f'''
+            static constexpr SpvType GetSpvType(uint32_t opcode) {{
+                switch (opcode) {{
+                    {typeCase}
+                    default:
+                        return SpvType::Empty;
+                }}
+            }}
+            ''')
+
+        out.append('''
+            enum class OperandKind {
+                Id,
+                Label, // Id but for Control Flow
+                Literal,
+                LiteralString,
+                Composite,
+                ValueEnum,
+                BitEnum,
+            };
+
+            struct OperandInfo {
+                std::vector<OperandKind> types;
+            };
+
+            const OperandInfo& GetOperandInfo(uint32_t opcode);
+            ''')
+
+        self.write("".join(out))
+
+    def generateSource(self):
+        out = []
+        out.append('''
+            #include "containers/custom_containers.h"
+            #include "spirv_grammar_helper.h"
+            ''')
+
+        out.append(f'''
+            const char* string_SpvOpcode(uint32_t opcode) {{
+                switch(opcode) {{
+            {"".join([f"""        case spv::{x}:
+                        return "{x}";
+            """ for x in self.opnames])}
+                    default:
+                        return "Unknown Opcode";
+                }}
+            }}
+
             const char* string_SpvStorageClass(uint32_t storage_class) {{
                 switch(storage_class) {{
             {"".join([f"""        case spv::StorageClass{x}:
@@ -573,5 +656,24 @@ static const vvl::unordered_map<uint32_t, InstructionInfo> kInstructionTable {
                 if (ret.empty()) ret.append("CooperativeMatrixOperandsMask(0)");
                 return ret;
             }}
+            ''')
+
+
+        out.append('''
+            const OperandInfo& GetOperandInfo(uint32_t opcode) {
+                static const vvl::unordered_map<uint32_t, OperandInfo> kOperandTable {
+                // clang-format off\n''')
+        for info in self.opcodes.values():
+            opname = info['opname']
+            kinds = ", ".join([f"OperandKind::{f}" for f in info['operands']])
+            out.append(f'        {{spv::{opname}, {{{{{kinds}}}}}}},\n')
+        out.append('''    }; // clang-format on
+
+                auto info = kOperandTable.find(opcode);
+                if (info != kOperandTable.end()) {
+                    return info->second;
+                }
+                return kOperandTable.find(spv::OpNop)->second;
+            }
             ''')
         self.write("".join(out))

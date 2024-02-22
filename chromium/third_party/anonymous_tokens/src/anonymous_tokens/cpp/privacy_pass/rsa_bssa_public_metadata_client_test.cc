@@ -26,7 +26,6 @@
 #include "anonymous_tokens/cpp/testing/utils.h"
 #include <openssl/digest.h>
 
-
 namespace anonymous_tokens {
 namespace {
 
@@ -34,7 +33,7 @@ class PrivacyPassRsaBssaClientTest : public testing::Test {
  protected:
   void SetUp() override {
     // Seed the random string generator.
-    generator_.seed(::testing::FLAGS_gtest_random_seed);
+    generator_.seed(GTEST_FLAG_GET(random_seed));
 
     // Create RSA public and private key structs.
     auto [test_rsa_public_key, test_rsa_private_key] =
@@ -415,4 +414,3 @@ TEST_F(PrivacyPassRsaBssaClientTest, TokenCreationAndVerificationSuccess) {
 
 }  // namespace
 }  // namespace anonymous_tokens
-

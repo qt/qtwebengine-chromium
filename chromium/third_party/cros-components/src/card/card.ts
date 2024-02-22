@@ -7,7 +7,7 @@
 import '@material/web/ripple/ripple.js';
 import '@material/web/focus/md-focus-ring.js';
 
-import {css, CSSResultGroup, html, LitElement} from 'lit';
+import {css, CSSResultGroup, html, LitElement, nothing} from 'lit';
 
 const DEFAULT_TICK_MARGIN = css`14px`;
 
@@ -31,9 +31,9 @@ function renderTick() {
 /** A chromeOS compliant card. */
 export class Card extends LitElement {
   /**
-   * Note about #content display: Because `display: block` / `inline-block` resize
-   * depending on any applicable line-height they often don't neatly wrap user
-   * content. Instead we use flex here with direction column to "emulate"
+   * Note about #content display: Because `display: block` / `inline-block`
+   * resize depending on any applicable line-height they often don't neatly wrap
+   * user content. Instead we use flex here with direction column to "emulate"
    * `display: block` while ignoring line-height. Users are free to set this
    * to `block` via the shadow part and deal with the line-height sizing
    * themselves if they wish, but by default we want this to tightly wrap
@@ -42,6 +42,7 @@ export class Card extends LitElement {
    */
   static override styles: CSSResultGroup = css`
     :host {
+      border-radius: 12px;
       color: var(--cros-sys-on_surface);
       display: block;
       font: var(--cros-body-0-font);
@@ -49,6 +50,10 @@ export class Card extends LitElement {
       height: fit-content;
       min-width: 50px;
       min-height: 50px;
+    }
+
+    :host([interactive]) * {
+      cursor: pointer;
     }
 
     #container {
@@ -156,36 +161,79 @@ export class Card extends LitElement {
   selected = false;
 
   /** @export */
+  interactive = false;
+
+  /** @export */
   cardStyle: 'outline'|'filled'|'elevated' = 'outline';
+
+  /**
+   * The card's aria role. Allowed values are a short list of expected roles for
+   * a card. They can be extended with types from
+   * https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Roles
+   * @export
+   */
+  override role: 'button'|'dialog'|'none'|'presentation'|'link'|'img'|'cell'|
+      null = null;
 
   /** @nocollapse */
   static override properties = {
     cardStyle: {type: String, reflect: true},
     disabled: {type: Boolean, reflect: true},
     selected: {type: Boolean, reflect: true},
+    interactive: {type: Boolean, reflect: true},
+    ariaLabel: {type: String, attribute: 'aria-label'},
+    ariaRoleDescription: {type: String, attribute: 'aria-roledescription'},
+    role: {type: String},
     tabIndex: {type: Number},
   };
 
   override render() {
+    const interactive = !this.disabled && this.interactive;
+    const hasTabstop = this.hasAttribute('tabIndex') && this.tabIndex > -1;
+
+    const maybeRipple =
+        interactive ? html`<md-ripple for="container"></md-ripple>` : nothing;
+    const maybeFocusRing = hasTabstop ?
+        html`<md-focus-ring for="container"></md-focus-ring>` :
+        nothing;
+
     return html`
-        <button id="container" tabindex=${this.tabIndex}>
+        <div
+            aria-label=${this.ariaLabel ?? nothing}
+            aria-roledescription=${this.ariaRoleDescription ?? nothing}
+            tabindex=${this.tabIndex ?? nothing}
+            role=${this.role ?? 'none'}
+            @keydown=${this.onKeyDown}
+            id="container">
           <div id="background" part="background">
             <slot name="background"></slot>
           </div>
-          <md-ripple
-              for="container"
-              ?disabled=${this.disabled}>
-          </md-ripple>
-          <md-focus-ring
-              for="container"
-              ?disabled=${this.disabled}>
-          </md-focus-ring>
+          ${maybeRipple}
+          ${maybeFocusRing}
           ${renderTick()}
           <div id="content" part="content">
             <slot></slot>
           </div>
-        </button>
+        </div>
     `;
+  }
+
+  private onKeyDown(e: KeyboardEvent) {
+    switch (e.key) {
+      case 'Enter':
+      case ' ':
+        if (e.composedPath()[0] !==
+            this.shadowRoot!.querySelector('#container')) {
+          // If a child element of this card was keyboard-activated, it should
+          // not trigger a click on this card.
+          break;
+        }
+        e.currentTarget?.dispatchEvent(
+            new MouseEvent('click', {bubbles: true, composed: true}));
+        break;
+      default:
+        break;
+    }
   }
 }
 

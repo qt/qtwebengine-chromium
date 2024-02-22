@@ -61,10 +61,12 @@ counter<VkValidationCacheEXT> c_VkValidationCacheEXT;
 counter<VkAccelerationStructureNV> c_VkAccelerationStructureNV;
 counter<VkPerformanceConfigurationINTEL> c_VkPerformanceConfigurationINTEL;
 counter<VkIndirectCommandsLayoutNV> c_VkIndirectCommandsLayoutNV;
+counter<VkCudaModuleNV> c_VkCudaModuleNV;
+counter<VkCudaFunctionNV> c_VkCudaFunctionNV;
 counter<VkAccelerationStructureKHR> c_VkAccelerationStructureKHR;
 #ifdef VK_USE_PLATFORM_FUCHSIA
 counter<VkBufferCollectionFUCHSIA> c_VkBufferCollectionFUCHSIA;
-#endif // VK_USE_PLATFORM_FUCHSIA
+#endif  // VK_USE_PLATFORM_FUCHSIA
 counter<VkMicromapEXT> c_VkMicromapEXT;
 counter<VkOpticalFlowSessionNV> c_VkOpticalFlowSessionNV;
 counter<VkShaderEXT> c_VkShaderEXT;

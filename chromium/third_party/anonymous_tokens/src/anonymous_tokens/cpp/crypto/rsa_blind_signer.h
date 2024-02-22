@@ -24,15 +24,13 @@
 #include "anonymous_tokens/cpp/crypto/crypto_utils.h"
 #include "anonymous_tokens/proto/anonymous_tokens.pb.h"
 
-
-
 namespace anonymous_tokens {
 
 // The RSA SSA (Signature Schemes with Appendix) using PSS (Probabilistic
 // Signature Scheme) encoding is defined at
 // https://tools.ietf.org/html/rfc8017#section-8.1). This implementation uses
 // Boring SSL for the underlying cryptographic operations.
-class  RsaBlindSigner : public BlindSigner {
+class RsaBlindSigner : public BlindSigner {
  public:
   ~RsaBlindSigner() override = default;
   RsaBlindSigner(const RsaBlindSigner&) = delete;
@@ -69,6 +67,5 @@ class  RsaBlindSigner : public BlindSigner {
 };
 
 }  // namespace anonymous_tokens
-
 
 #endif  // ANONYMOUS_TOKENS_CPP_CRYPTO_RSA_BLIND_SIGNER_H_

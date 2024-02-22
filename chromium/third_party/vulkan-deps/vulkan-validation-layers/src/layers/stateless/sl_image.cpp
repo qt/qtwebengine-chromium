@@ -141,6 +141,12 @@ bool StatelessValidation::manual_PreCallValidateCreateImage(VkDevice device, con
                          "imageType is %s.",
                          string_VkImageType(pCreateInfo->imageType));
     }
+    if ((image_flags & VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT) &&
+        (image_flags &
+         (VK_IMAGE_CREATE_SPARSE_ALIASED_BIT | VK_IMAGE_CREATE_SPARSE_BINDING_BIT | VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT))) {
+        skip |= LogError("VUID-VkImageCreateInfo-flags-09403", device, create_info_loc.dot(Field::flags), "is %s.",
+                         string_VkImageCreateFlags(image_flags).c_str());
+    }
 
     if ((image_flags & VK_IMAGE_CREATE_2D_VIEW_COMPATIBLE_BIT_EXT) && (pCreateInfo->imageType != VK_IMAGE_TYPE_3D)) {
         skip |= LogError("VUID-VkImageCreateInfo-flags-07755", device, create_info_loc.dot(Field::flags),
@@ -740,5 +746,77 @@ bool StatelessValidation::manual_PreCallValidateCreateImageView(VkDevice device,
         ExportMetalObjectsPNextUtil(VK_EXPORT_METAL_OBJECT_TYPE_METAL_TEXTURE_BIT_EXT, "VUID-VkImageViewCreateInfo-pNext-06787",
                                     error_obj.location, "VK_EXPORT_METAL_OBJECT_TYPE_METAL_TEXTURE_BIT_EXT", pCreateInfo->pNext);
 #endif  // VK_USE_PLATFORM_METAL_EXT
+    return skip;
+}
+
+bool StatelessValidation::manual_PreCallValidateGetDeviceImageSubresourceLayoutKHR(VkDevice device,
+                                                                                   const VkDeviceImageSubresourceInfoKHR *pInfo,
+                                                                                   VkSubresourceLayout2KHR *pLayout,
+                                                                                   const ErrorObject &error_obj) const {
+    bool skip = false;
+    const Location info_loc = error_obj.location.dot(Field::pInfo);
+    const Location create_info_loc = info_loc.dot(Field::pCreateInfo);
+    const Location subresource_loc = info_loc.dot(Field::pSubresource);
+
+    const VkImageCreateInfo &create_info = *pInfo->pCreateInfo;
+    const VkImageSubresource &subresource = pInfo->pSubresource->imageSubresource;
+    const VkImageAspectFlags aspect_mask = subresource.aspectMask;
+
+    if (GetBitSetCount(aspect_mask) != 1) {
+        skip |= LogError("VUID-VkDeviceImageSubresourceInfoKHR-aspectMask-00997", device, subresource_loc.dot(Field::aspectMask),
+                         "(%s) must have exactly 1 bit set.", string_VkImageAspectFlags(aspect_mask).c_str());
+    }
+
+    if (subresource.mipLevel >= create_info.mipLevels) {
+        skip |= LogError("VUID-VkDeviceImageSubresourceInfoKHR-mipLevel-01716", device, subresource_loc.dot(Field::mipLevel),
+                         "(%" PRIu32 ") must be less than %s (%" PRIu32 ").", subresource.mipLevel,
+                         create_info_loc.dot(Field::mipLevel).Fields().c_str(), create_info.mipLevels);
+    }
+
+    if (subresource.arrayLayer >= create_info.arrayLayers) {
+        skip |= LogError("VUID-VkDeviceImageSubresourceInfoKHR-arrayLayer-01717", device, subresource_loc.dot(Field::arrayLayer),
+                         "(%" PRIu32 ") must be less than %s (%" PRIu32 ").", subresource.arrayLayer,
+                         create_info_loc.dot(Field::arrayLayers).Fields().c_str(), create_info.arrayLayers);
+    }
+
+    const VkFormat image_format = create_info.format;
+    const bool tiling_linear_optimal =
+        create_info.tiling == VK_IMAGE_TILING_LINEAR || create_info.tiling == VK_IMAGE_TILING_OPTIMAL;
+    if (vkuFormatIsColor(image_format) && !vkuFormatIsMultiplane(image_format) && (aspect_mask != VK_IMAGE_ASPECT_COLOR_BIT) &&
+        tiling_linear_optimal) {
+        skip |= LogError("VUID-VkDeviceImageSubresourceInfoKHR-format-08886", device, subresource_loc.dot(Field::aspectMask),
+                         "(%s) is invalid with %s (%s).", string_VkImageAspectFlags(aspect_mask).c_str(),
+                         create_info_loc.dot(Field::format).Fields().c_str(), string_VkFormat(image_format));
+    }
+
+    if (vkuFormatHasDepth(image_format) && ((aspect_mask & VK_IMAGE_ASPECT_DEPTH_BIT) == 0)) {
+        skip |= LogError("VUID-VkDeviceImageSubresourceInfoKHR-format-04462", device, subresource_loc.dot(Field::aspectMask),
+                         "(%s) is invalid with %s (%s).", string_VkImageAspectFlags(aspect_mask).c_str(),
+                         create_info_loc.dot(Field::format).Fields().c_str(), string_VkFormat(image_format));
+    }
+
+    if (vkuFormatHasStencil(image_format) && ((aspect_mask & VK_IMAGE_ASPECT_STENCIL_BIT) == 0)) {
+        skip |= LogError("VUID-VkDeviceImageSubresourceInfoKHR-format-04463", device, subresource_loc.dot(Field::aspectMask),
+                         "(%s) is invalid with %s (%s).", string_VkImageAspectFlags(aspect_mask).c_str(),
+                         create_info_loc.dot(Field::format).Fields().c_str(), string_VkFormat(image_format));
+    }
+
+    if (!vkuFormatHasDepth(image_format) && !vkuFormatHasStencil(image_format)) {
+        if ((aspect_mask & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) != 0) {
+            skip |= LogError("VUID-VkDeviceImageSubresourceInfoKHR-format-04464", device, subresource_loc.dot(Field::aspectMask),
+                             "(%s) is invalid with %s (%s).", string_VkImageAspectFlags(aspect_mask).c_str(),
+                             create_info_loc.dot(Field::format).Fields().c_str(), string_VkFormat(image_format));
+        }
+    }
+
+    // subresource's aspect must be compatible with image's format.
+    if (create_info.tiling == VK_IMAGE_TILING_LINEAR) {
+        if (vkuFormatIsMultiplane(image_format) && !IsOnlyOneValidPlaneAspect(image_format, aspect_mask)) {
+            skip |= LogError("VUID-VkDeviceImageSubresourceInfoKHR-tiling-08717", device, subresource_loc.dot(Field::aspectMask),
+                             "(%s) is invalid for %s (%s).", string_VkImageAspectFlags(aspect_mask).c_str(),
+                             create_info_loc.dot(Field::format).Fields().c_str(), string_VkFormat(image_format));
+        }
+    }
+
     return skip;
 }

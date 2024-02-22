@@ -139,6 +139,23 @@ bool StatelessValidation::manual_PreCallValidateCreateInstance(const VkInstanceC
         }
     }
 
+    const auto *debug_report_callback = vku::FindStructInPNextChain<VkDebugReportCallbackCreateInfoEXT>(pCreateInfo->pNext);
+    if (debug_report_callback && !local_instance_extensions.vk_ext_debug_report) {
+        skip |= LogError("VUID-VkInstanceCreateInfo-pNext-04925", instance, create_info_loc.dot(Field::ppEnabledExtensionNames),
+                         "does not include VK_EXT_debug_report, but the pNext chain includes VkDebugReportCallbackCreateInfoEXT.");
+    }
+    const auto *debug_utils_messenger = vku::FindStructInPNextChain<VkDebugUtilsMessengerCreateInfoEXT>(pCreateInfo->pNext);
+    if (debug_utils_messenger && !local_instance_extensions.vk_ext_debug_utils) {
+        skip |= LogError("VUID-VkInstanceCreateInfo-pNext-04926", instance, create_info_loc.dot(Field::ppEnabledExtensionNames),
+                         "does not include VK_EXT_debug_utils, but the pNext chain includes VkDebugUtilsMessengerCreateInfoEXT.");
+    }
+    const auto *direct_driver_loading_list = vku::FindStructInPNextChain<VkDirectDriverLoadingListLUNARG>(pCreateInfo->pNext);
+    if (direct_driver_loading_list && !local_instance_extensions.vk_lunarg_direct_driver_loading) {
+        skip |= LogError(
+            "VUID-VkInstanceCreateInfo-pNext-09400", instance, create_info_loc.dot(Field::ppEnabledExtensionNames),
+            "does not include VK_LUNARG_direct_driver_loading, but the pNext chain includes VkDirectDriverLoadingListLUNARG.");
+    }
+
 #ifdef VK_USE_PLATFORM_METAL_EXT
     auto export_metal_object_info = vku::FindStructInPNextChain<VkExportMetalObjectCreateInfoEXT>(pCreateInfo->pNext);
     while (export_metal_object_info) {
@@ -227,7 +244,8 @@ void StatelessValidation::PostCallRecordEnumeratePhysicalDeviceGroups(
     }
 }
 
-void StatelessValidation::PreCallRecordDestroyInstance(VkInstance instance, const VkAllocationCallbacks *pAllocator) {
+void StatelessValidation::PreCallRecordDestroyInstance(VkInstance instance, const VkAllocationCallbacks *pAllocator,
+                                                       const RecordObject &record_obj) {
     for (auto it = physical_device_properties_map.begin(); it != physical_device_properties_map.end();) {
         delete (it->second);
         it = physical_device_properties_map.erase(it);
@@ -314,12 +332,20 @@ void StatelessValidation::PostCallRecordCreateDevice(VkPhysicalDevice physicalDe
         phys_dev_ext_props.transform_feedback_props = transform_feedback_props;
     }
 
-    if (IsExtEnabled(device_extensions.vk_ext_vertex_attribute_divisor)) {
+    if (IsExtEnabled(device_extensions.vk_khr_vertex_attribute_divisor)) {
+        // Get the needed vertex attribute divisor limits
+        VkPhysicalDeviceVertexAttributeDivisorPropertiesKHR vertex_attribute_divisor_props = vku::InitStructHelper();
+        VkPhysicalDeviceProperties2 prop2 = vku::InitStructHelper(&vertex_attribute_divisor_props);
+        GetPhysicalDeviceProperties2(physicalDevice, prop2);
+        phys_dev_ext_props.vertex_attribute_divisor_props = vertex_attribute_divisor_props;
+    } else if (IsExtEnabled(device_extensions.vk_ext_vertex_attribute_divisor)) {
         // Get the needed vertex attribute divisor limits
         VkPhysicalDeviceVertexAttributeDivisorPropertiesEXT vertex_attribute_divisor_props = vku::InitStructHelper();
         VkPhysicalDeviceProperties2 prop2 = vku::InitStructHelper(&vertex_attribute_divisor_props);
         GetPhysicalDeviceProperties2(physicalDevice, prop2);
-        phys_dev_ext_props.vertex_attribute_divisor_props = vertex_attribute_divisor_props;
+        phys_dev_ext_props.vertex_attribute_divisor_props = vku::InitStructHelper();
+        phys_dev_ext_props.vertex_attribute_divisor_props.maxVertexAttribDivisor =
+            vertex_attribute_divisor_props.maxVertexAttribDivisor;
     }
 
     if (IsExtEnabled(device_extensions.vk_ext_blend_operation_advanced)) {
@@ -350,6 +376,13 @@ void StatelessValidation::PostCallRecordCreateDevice(VkPhysicalDevice physicalDe
         VkPhysicalDeviceProperties2 prop2 = vku::InitStructHelper(&depth_stencil_resolve_props);
         GetPhysicalDeviceProperties2(physicalDevice, prop2);
         phys_dev_ext_props.depth_stencil_resolve_props = depth_stencil_resolve_props;
+    }
+
+    if (IsExtEnabled(device_extensions.vk_ext_external_memory_host)) {
+        VkPhysicalDeviceExternalMemoryHostPropertiesEXT external_memory_host_props = vku::InitStructHelper();
+        VkPhysicalDeviceProperties2 prop2 = vku::InitStructHelper(&external_memory_host_props);
+        GetPhysicalDeviceProperties2(physicalDevice, prop2);
+        phys_dev_ext_props.external_memory_host_props = external_memory_host_props;
     }
 
     stateless_validation->phys_dev_ext_props = this->phys_dev_ext_props;
@@ -479,10 +512,12 @@ bool StatelessValidation::manual_PreCallValidateCreateDevice(VkPhysicalDevice ph
             "must also be VK_TRUE.");
     }
     auto vertex_attribute_divisor_features = vku::FindStructInPNextChain<VkPhysicalDeviceVertexAttributeDivisorFeaturesEXT>(pCreateInfo->pNext);
-    if (vertex_attribute_divisor_features && (!IsExtEnabled(device_extensions.vk_ext_vertex_attribute_divisor))) {
-        skip |= LogError(kVUID_PVError_ExtensionNotEnabled, physicalDevice, error_obj.location,
-                         "pNext includes a VkPhysicalDeviceVertexAttributeDivisorFeaturesEXT "
-                         "struct, VK_EXT_vertex_attribute_divisor must be enabled when it creates a device.");
+    if (vertex_attribute_divisor_features && (!IsExtEnabled(device_extensions.vk_ext_vertex_attribute_divisor) &&
+                                              !IsExtEnabled(device_extensions.vk_khr_vertex_attribute_divisor))) {
+        skip |= LogError(
+            kVUID_PVError_ExtensionNotEnabled, physicalDevice, error_obj.location,
+            "pNext includes a VkPhysicalDeviceVertexAttributeDivisorFeaturesKHR "
+            "struct, VK_KHR_vertex_attribute_divisor or VK_EXT_vertex_attribute_divisor must be enabled when it creates a device.");
     }
 
     const auto *vulkan_11_features = vku::FindStructInPNextChain<VkPhysicalDeviceVulkan11Features>(pCreateInfo->pNext);
@@ -803,13 +838,6 @@ bool StatelessValidation::manual_PreCallValidateGetPhysicalDeviceImageFormatProp
     return skip;
 }
 
-bool StatelessValidation::manual_PreCallValidateGetPhysicalDeviceImageFormatProperties2KHR(
-    VkPhysicalDevice physicalDevice, const VkPhysicalDeviceImageFormatInfo2 *pImageFormatInfo,
-    VkImageFormatProperties2 *pImageFormatProperties, const ErrorObject &error_obj) const {
-    return manual_PreCallValidateGetPhysicalDeviceImageFormatProperties2(physicalDevice, pImageFormatInfo, pImageFormatProperties,
-                                                                         error_obj);
-}
-
 bool StatelessValidation::manual_PreCallValidateGetPhysicalDeviceImageFormatProperties(
     VkPhysicalDevice physicalDevice, VkFormat format, VkImageType type, VkImageTiling tiling, VkImageUsageFlags usage,
     VkImageCreateFlags flags, VkImageFormatProperties *pImageFormatProperties, const ErrorObject &error_obj) const {
@@ -821,15 +849,6 @@ bool StatelessValidation::manual_PreCallValidateGetPhysicalDeviceImageFormatProp
     }
 
     return skip;
-}
-
-// TODO - This is being called from anywhere
-bool StatelessValidation::manual_PreCallValidateEnumerateDeviceExtensionProperties(VkPhysicalDevice physicalDevice,
-                                                                                   const char *pLayerName, uint32_t *pPropertyCount,
-                                                                                   VkExtensionProperties *pProperties) const {
-    const Location loc(Func::vkEnumerateDeviceExtensionProperties);
-    return ValidateArray(loc.dot(Field::pPropertyCount), loc.dot(Field::pProperties), pPropertyCount, &pProperties, true, false,
-                         false, kVUIDUndefined, "VUID-vkEnumerateDeviceExtensionProperties-pProperties-parameter");
 }
 
 bool StatelessValidation::manual_PreCallValidateSetDebugUtilsObjectNameEXT(VkDevice device,

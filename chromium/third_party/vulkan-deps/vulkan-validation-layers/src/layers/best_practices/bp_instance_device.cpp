@@ -154,8 +154,7 @@ bool BestPractices::PreCallValidateCreateDevice(VkPhysicalDevice physicalDevice,
         std::string inst_api_name = StringAPIVersion(api_version);
         std::string dev_api_name = StringAPIVersion(device_api_version);
 
-        Location loc(Func::vkCreateDevice);
-        LogInfo(kVUID_BestPractices_CreateDevice_API_Mismatch, device, loc,
+        LogInfo(kVUID_BestPractices_CreateDevice_API_Mismatch, device, error_obj.location,
                 "API Version of current instance, %s is higher than API Version on device, %s", inst_api_name.c_str(),
                 dev_api_name.c_str());
     }
@@ -222,7 +221,7 @@ bool BestPractices::PreCallValidateCreateDevice(VkPhysicalDevice physicalDevice,
 }
 
 // Common function to handle validation for GetPhysicalDeviceQueueFamilyProperties & 2KHR version
-bool BestPractices::ValidateCommonGetPhysicalDeviceQueueFamilyProperties(const PHYSICAL_DEVICE_STATE* bp_pd_state,
+bool BestPractices::ValidateCommonGetPhysicalDeviceQueueFamilyProperties(const vvl::PhysicalDevice* bp_pd_state,
                                                                          uint32_t requested_queue_family_property_count,
                                                                          const CALL_STATE call_state, const Location& loc) const {
     bool skip = false;
@@ -351,10 +350,11 @@ void BestPractices::PostCallRecordGetPhysicalDeviceFeatures2KHR(VkPhysicalDevice
     PostCallRecordGetPhysicalDeviceFeatures2(physicalDevice, pFeatures, record_obj);
 }
 
-void BestPractices::PreCallRecordQueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence) {
-    ValidationStateTracker::PreCallRecordQueueSubmit(queue, submitCount, pSubmits, fence);
+void BestPractices::PreCallRecordQueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence,
+                                             const RecordObject& record_obj) {
+    ValidationStateTracker::PreCallRecordQueueSubmit(queue, submitCount, pSubmits, fence, record_obj);
 
-    auto queue_state = Get<QUEUE_STATE>(queue);
+    auto queue_state = Get<vvl::Queue>(queue);
     for (uint32_t submit = 0; submit < submitCount; submit++) {
         const auto& submit_info = pSubmits[submit];
         for (uint32_t cb_index = 0; cb_index < submit_info.commandBufferCount; cb_index++) {
@@ -420,14 +420,14 @@ bool BestPractices::PreCallValidateQueueBindSparse(VkQueue queue, uint32_t bindI
     for (uint32_t bind_idx = 0; bind_idx < bindInfoCount; bind_idx++) {
         const VkBindSparseInfo& bind_info = pBindInfo[bind_idx];
         // Store sparse binding image_state and after binding is complete make sure that any requiring metadata have it bound
-        vvl::unordered_set<const IMAGE_STATE*> sparse_images;
+        vvl::unordered_set<const vvl::Image*> sparse_images;
         // Track images getting metadata bound by this call in a set, it'll be recorded into the image_state
         // in RecordQueueBindSparse.
-        vvl::unordered_set<const IMAGE_STATE*> sparse_images_with_metadata;
+        vvl::unordered_set<const vvl::Image*> sparse_images_with_metadata;
         // If we're binding sparse image memory make sure reqs were queried and note if metadata is required and bound
         for (uint32_t i = 0; i < bind_info.imageBindCount; ++i) {
             const auto& image_bind = bind_info.pImageBinds[i];
-            auto image_state = Get<IMAGE_STATE>(image_bind.image);
+            auto image_state = Get<vvl::Image>(image_bind.image);
             if (!image_state) {
                 continue;  // Param/Object validation should report image_bind.image handles being invalid, so just skip here.
             }
@@ -451,7 +451,7 @@ bool BestPractices::PreCallValidateQueueBindSparse(VkQueue queue, uint32_t bindI
         }
         for (uint32_t i = 0; i < bind_info.imageOpaqueBindCount; ++i) {
             const auto& image_opaque_bind = bind_info.pImageOpaqueBinds[i];
-            auto image_state = Get<IMAGE_STATE>(bind_info.pImageOpaqueBinds[i].image);
+            auto image_state = Get<vvl::Image>(bind_info.pImageOpaqueBinds[i].image);
             if (!image_state) {
                 continue;  // Param/Object validation should report image_bind.image handles being invalid, so just skip here.
             }
@@ -491,10 +491,10 @@ bool BestPractices::PreCallValidateQueueBindSparse(VkQueue queue, uint32_t bindI
     }
 
     if (VendorCheckEnabled(kBPVendorNVIDIA)) {
-        auto queue_state = Get<QUEUE_STATE>(queue);
+        auto queue_state = Get<vvl::Queue>(queue);
         if (queue_state && queue_state->queueFamilyProperties.queueFlags != (VK_QUEUE_TRANSFER_BIT | VK_QUEUE_SPARSE_BINDING_BIT)) {
             skip |= LogPerformanceWarning(kVUID_BestPractices_QueueBindSparse_NotAsync, queue, error_obj.location,
-                                          "vkQueueBindSparse() issued on queue %s. All binds should happen on an asynchronous copy "
+                                          "issued on queue %s. All binds should happen on an asynchronous copy "
                                           "queue to hide the OS scheduling and submit costs.",
                                           FormatHandle(queue).c_str());
         }
@@ -513,7 +513,7 @@ void BestPractices::ManualPostCallRecordQueueBindSparse(VkQueue queue, uint32_t 
         const VkBindSparseInfo& bind_info = pBindInfo[bind_idx];
         for (uint32_t i = 0; i < bind_info.imageOpaqueBindCount; ++i) {
             const auto& image_opaque_bind = bind_info.pImageOpaqueBinds[i];
-            auto image_state = Get<IMAGE_STATE>(bind_info.pImageOpaqueBinds[i].image);
+            auto image_state = Get<vvl::Image>(bind_info.pImageOpaqueBinds[i].image);
             if (!image_state) {
                 continue;  // Param/Object validation should report image_bind.image handles being invalid, so just skip here.
             }

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import '@material/web/tabs/tabs';
+import '@material/web/tabs/tabs.js';
 
 import {css, CSSResultGroup, html, LitElement} from 'lit';
 
@@ -12,15 +12,29 @@ import {css, CSSResultGroup, html, LitElement} from 'lit';
 export const TABS_GAP = '8px';
 
 /**
- * A chromeOS compliant tabs component.
- * See spec
- * https://www.figma.com/file/1XsFoZH868xLcLPfPZRxLh/CrOS-Next---Component-Library-%26-Spec?type=design&node-id=4020-63202
+ * A ChromeOS compliant tabs component.
  */
 export class Tabs extends LitElement {
+  get mdTabs(): HTMLElement|null {
+    return this.shadowRoot!.querySelector('md-tabs');
+  }
+
+  get tabSlot(): HTMLSlotElement {
+    return this.shadowRoot!.querySelector('slot') as HTMLSlotElement;
+  }
+
   /** @nocollapse */
   static override styles: CSSResultGroup = css`
     :host {
       display: inline-block;
+    }
+
+    :host-context([fill-container]) md-tabs {
+      min-inline-size: var(--container-size, auto);
+    }
+
+    :host-context([fill-container]) slot {
+      gap: var(--container-tabs-gap, 0);
     }
 
     md-tabs {
@@ -30,6 +44,7 @@ export class Tabs extends LitElement {
     slot {
       display: flex;
       gap: var(--cros-tabs-gap, 8px);
+      width: 100%;
     }
   `;
 

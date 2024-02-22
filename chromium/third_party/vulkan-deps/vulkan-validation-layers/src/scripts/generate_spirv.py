@@ -24,10 +24,7 @@ import subprocess
 import struct
 import re
 import argparse
-
-# helper to define paths relative to the repo root
-def repo_relative(path):
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), '..', path))
+import common_ci
 
 SPIRV_MAGIC = 0x07230203
 COLUMNS = 10
@@ -39,19 +36,47 @@ def identifierize(s):
     # translate leading digits
     return re.sub("^[^a-zA-Z_]+", "_", s)
 
-def compile(filename, glslang_validator):
+def compile(filename, glslang_validator, spirv_opt, target_env):
     tmpfile = os.path.basename(filename) + '.tmp'
 
     # invoke glslangValidator
     try:
         args = [glslang_validator]
+
+        if not target_env:
+            requires_vulkan_1_2 = ['rgen']
+            if filename.split(".")[-1] in requires_vulkan_1_2:
+                target_env = "vulkan1.2"
+        if target_env:
+            args += ["--target-env", target_env]
         # functions called by the SPIRV-Tools instrumentation require special options
         if tmpfile.startswith("inst_"):
-            args += ["--no-link", "--target-env", "vulkan1.0"]
+            args += ["--no-link", "--target-env"]
+            if filename.endswith(".rgen"):
+                args += ["vulkan1.2"]
+            else:
+                args += ["vulkan1.0"]
         else:
             args += ["-V"]
         args += ["-o", tmpfile, filename]
-        output = subprocess.check_output(args, universal_newlines=True)
+        subprocess.check_output(args, universal_newlines=True)
+    except subprocess.CalledProcessError as e:
+        raise Exception(e.output)
+
+    # invoke spirv-opt
+    try:
+        args = [spirv_opt, tmpfile, '-o', tmpfile]
+
+        # gpu_shaders_constants.h adds many constants not needed and it slows down linking time
+        args += ['--eliminate-dead-const']
+        # Runs some basic optimizations that don't touch CFG for goal of making linking functions smaller (and faster)
+        args += ['--eliminate-local-single-block']
+        args += ['--eliminate-local-single-store']
+        args += ['--vector-dce']
+        args += ['--simplify-instructions']
+        args += ['--eliminate-dead-code-aggressive']
+
+        subprocess.check_output(args, universal_newlines=True)
     except subprocess.CalledProcessError as e:
         raise Exception(e.output)
 
@@ -107,6 +132,7 @@ def write(words, filename, apiname, outdir = None):
 *
 ****************************************************************************/
 
+// To view SPIR-V, copy contents of array and paste in https://www.khronos.org/spir/visualizer/
 static const uint32_t %s[%d] = {
 %s
 };
@@ -115,19 +141,19 @@ static const uint32_t %s[%d] = {
     if outdir:
       out_file = os.path.join(outdir, f'layers/{apiname}/generated')
     else:
-      out_file = repo_relative(f'layers/{apiname}/generated')
+      out_file = common_ci.RepoRelative(f'layers/{apiname}/generated')
     out_file = os.path.join(out_file, name + '.h')
     os.makedirs(os.path.dirname(out_file), exist_ok=True)
     with open(out_file, "w") as f:
         print(header, end="", file=f)
 
 def write_inst_hash(outdir=None):
-    shader_file = repo_relative(f'layers/gpu_shaders/inst_functions.comp')
+    shader_file = common_ci.RepoRelative('layers/gpu_shaders/inst_functions.comp')
     result = subprocess.run(["git", "hash-object", shader_file], capture_output=True, text=True)
     git_hash = result.stdout.rstrip('\n')
 
     try:
-        str_as_int = int(git_hash, 16)
+        int(git_hash, 16)
     except ValueError:
         raise ValueError(f'value for INST_SHADER_GIT_HASH ({git_hash}) must be a SHA1 hash.')
     if len(git_hash) != 40:
@@ -163,11 +189,11 @@ def write_inst_hash(outdir=None):
 ''')
 
     out.append(f'#define INST_SHADER_GIT_HASH "{git_hash}"\n')
-    
+
     if outdir:
-      out_file = os.path.join(outdir, f'layers/vulkan/generated')
+      out_file = os.path.join(outdir, 'layers/vulkan/generated')
     else:
-      out_file = repo_relative(f'layers/vulkan/generated')
+      out_file = common_ci.RepoRelative('layers/vulkan/generated')
     os.makedirs(out_file, exist_ok=True)
     out_file = os.path.join(out_file, "gpu_inst_shader_hash.h")
     with open(out_file, 'w') as outfile:
@@ -181,7 +207,9 @@ def main():
                         help='Specify API name to generate')
     parser.add_argument('--shader', action='store', type=str, help='Input Filename')
     parser.add_argument('--glslang', action='store', type=str, help='Path to glslangValidator to use')
+    parser.add_argument('--spirv-opt', action='store', dest='spirv_opt', type=str, help='Path to glslangValidator to use')
     parser.add_argument('--outdir', action='store', type=str, help='Optional path to output directory')
+    parser.add_argument('--targetenv', action='store', type=str, help='Optional --target-env argument passed down to glslangValidator')
     args = parser.parse_args()
 
     generate_shaders = []
@@ -192,20 +220,27 @@ def main():
     else:
         # Get all shaders in gpu_shaders folder
         shader_type = ['vert', 'tesc', 'tese', 'geom', 'frag', 'comp', 'mesh', 'task', 'rgen', 'rint', 'rahit', 'rchit', 'rmiss', 'rcall']
-        gpu_shaders = repo_relative('layers/gpu_shaders')
+        gpu_shaders = common_ci.RepoRelative('layers/gpu_shaders')
         for filename in os.listdir(gpu_shaders):
             if (filename.split(".")[-1] in shader_type):
                 generate_shaders.append(os.path.join(gpu_shaders, filename))
 
     # default glslangValidator path
-    glslang_validator =  repo_relative('external/glslang/build/install/bin/glslangValidator')
+    glslang_validator =  common_ci.RepoRelative('external/glslang/build/install/bin/glslangValidator')
     if args.glslang:
         glslang_validator = args.glslang
     if not os.path.isfile(glslang_validator):
         sys.exit("Cannot find glslangValidator " + glslang_validator)
 
+    # default spirv-opt path
+    spirv_opt =  common_ci.RepoRelative('external/SPIRV-Tools/build/install/bin/spirv-opt')
+    if args.spirv_opt:
+        spirv_opt = args.spirv_opt
+    if not os.path.isfile(spirv_opt):
+        sys.exit("Cannot find spirv-opt " + spirv_opt)
+
     for shader in generate_shaders:
-        words = compile(shader, glslang_validator)
+        words = compile(shader, glslang_validator, spirv_opt, args.targetenv)
         write(words, shader, args.api, args.outdir)
     write_inst_hash(args.outdir)
 

@@ -37,9 +37,8 @@ loader_settings global_loader_settings;
 
 void free_layer_configuration(const struct loader_instance* inst, loader_settings_layer_configuration* layer_configuration) {
     loader_instance_heap_free(inst, layer_configuration->name);
-    layer_configuration->name = NULL;
     loader_instance_heap_free(inst, layer_configuration->path);
-    layer_configuration->path = NULL;
+    memset(layer_configuration, 0, sizeof(loader_settings_layer_configuration));
 }
 
 void free_loader_settings(const struct loader_instance* inst, loader_settings* settings) {
@@ -50,7 +49,6 @@ void free_loader_settings(const struct loader_instance* inst, loader_settings* s
     }
     loader_instance_heap_free(inst, settings->layer_configurations);
     loader_instance_heap_free(inst, settings->settings_file_path);
-    settings->layer_configurations = NULL;
     memset(settings, 0, sizeof(loader_settings));
 }
 
@@ -194,11 +192,13 @@ VkResult parse_layer_configurations(const struct loader_instance* inst, cJSON* s
 out:
     if (res != VK_SUCCESS) {
         if (loader_settings->layer_configurations) {
-            for (uint32_t i = 0; i < layer_configurations_count; i++) {
-                free_layer_configuration(inst, &loader_settings->layer_configurations[i]);
+            for (uint32_t i = 0; i < loader_settings->layer_configuration_count; i++) {
+                free_layer_configuration(inst, &(loader_settings->layer_configurations[i]));
             }
+            loader_settings->layer_configuration_count = 0;
+            loader_instance_heap_free(inst, loader_settings->layer_configurations);
+            loader_settings->layer_configurations = NULL;
         }
-        loader_instance_heap_free(inst, &loader_settings->layer_configurations);
     }
 
     return res;
@@ -335,7 +335,7 @@ VkResult get_loader_settings(const struct loader_instance* inst, loader_settings
 
     // Corresponds to the settings object that has no app keys
     int global_settings_index = -1;
-    // Corresponds to the settings object which has a matchign app key
+    // Corresponds to the settings object which has a matching app key
     int index_to_use = -1;
 
     char current_process_path[1024];
@@ -521,10 +521,12 @@ VkResult get_settings_layers(const struct loader_instance* inst, struct loader_l
 
     const loader_settings* settings = get_current_settings_and_lock(inst);
 
-    // Assume the list doesn't contain LOADER_SETTINGS_LAYER_UNORDERED_LAYER_LOCATION at first
-    if (settings != NULL && settings->settings_active) {
-        *should_search_for_other_layers = false;
+    if (NULL == settings || !settings->settings_active) {
+        goto out;
     }
+
+    // Assume the list doesn't contain LOADER_SETTINGS_LAYER_UNORDERED_LAYER_LOCATION at first
+    *should_search_for_other_layers = false;
 
     for (uint32_t i = 0; i < settings->layer_configuration_count; i++) {
         loader_settings_layer_configuration* layer_config = &settings->layer_configurations[i];
@@ -549,7 +551,7 @@ VkResult get_settings_layers(const struct loader_instance* inst, struct loader_l
         }
 
         // The special layer location that indicates where unordered layers should go only should have the
-        // settings_control_value set - everythign else should be NULL
+        // settings_control_value set - everything else should be NULL
         if (layer_config->control == LOADER_SETTINGS_LAYER_UNORDERED_LAYER_LOCATION) {
             struct loader_layer_properties props = {0};
             props.settings_control_value = LOADER_SETTINGS_LAYER_UNORDERED_LAYER_LOCATION;

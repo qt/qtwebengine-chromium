@@ -564,6 +564,25 @@ void GetEnabledDeviceFeatures(const VkDeviceCreateInfo *pCreateInfo, DeviceFeatu
                 features->cooperativeMatrixRobustBufferAccess |= enabled->cooperativeMatrixRobustBufferAccess == VK_TRUE;
                 break;
             }
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_MAINTENANCE_1_FEATURES_KHR: {
+                const VkPhysicalDeviceVideoMaintenance1FeaturesKHR *enabled =
+                    reinterpret_cast<const VkPhysicalDeviceVideoMaintenance1FeaturesKHR *>(pNext);
+                features->videoMaintenance1 |= enabled->videoMaintenance1 == VK_TRUE;
+                break;
+            }
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_FEATURES_KHR: {
+                const VkPhysicalDeviceVertexAttributeDivisorFeaturesKHR *enabled =
+                    reinterpret_cast<const VkPhysicalDeviceVertexAttributeDivisorFeaturesKHR *>(pNext);
+                features->vertexAttributeInstanceRateDivisor |= enabled->vertexAttributeInstanceRateDivisor == VK_TRUE;
+                features->vertexAttributeInstanceRateZeroDivisor |= enabled->vertexAttributeInstanceRateZeroDivisor == VK_TRUE;
+                break;
+            }
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_6_FEATURES_KHR: {
+                const VkPhysicalDeviceMaintenance6FeaturesKHR *enabled =
+                    reinterpret_cast<const VkPhysicalDeviceMaintenance6FeaturesKHR *>(pNext);
+                features->maintenance6 |= enabled->maintenance6 == VK_TRUE;
+                break;
+            }
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TRANSFORM_FEEDBACK_FEATURES_EXT: {
                 const VkPhysicalDeviceTransformFeedbackFeaturesEXT *enabled =
                     reinterpret_cast<const VkPhysicalDeviceTransformFeedbackFeaturesEXT *>(pNext);
@@ -602,6 +621,12 @@ void GetEnabledDeviceFeatures(const VkDeviceCreateInfo *pCreateInfo, DeviceFeatu
                 features->depthClipEnable |= enabled->depthClipEnable == VK_TRUE;
                 break;
             }
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RELAXED_LINE_RASTERIZATION_FEATURES_IMG: {
+                const VkPhysicalDeviceRelaxedLineRasterizationFeaturesIMG *enabled =
+                    reinterpret_cast<const VkPhysicalDeviceRelaxedLineRasterizationFeaturesIMG *>(pNext);
+                features->relaxedLineRasterization |= enabled->relaxedLineRasterization == VK_TRUE;
+                break;
+            }
 #ifdef VK_ENABLE_BETA_EXTENSIONS
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ENQUEUE_FEATURES_AMDX: {
                 const VkPhysicalDeviceShaderEnqueueFeaturesAMDX *enabled =
@@ -633,13 +658,6 @@ void GetEnabledDeviceFeatures(const VkDeviceCreateInfo *pCreateInfo, DeviceFeatu
                 const VkPhysicalDeviceRepresentativeFragmentTestFeaturesNV *enabled =
                     reinterpret_cast<const VkPhysicalDeviceRepresentativeFragmentTestFeaturesNV *>(pNext);
                 features->representativeFragmentTest |= enabled->representativeFragmentTest == VK_TRUE;
-                break;
-            }
-            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_FEATURES_EXT: {
-                const VkPhysicalDeviceVertexAttributeDivisorFeaturesEXT *enabled =
-                    reinterpret_cast<const VkPhysicalDeviceVertexAttributeDivisorFeaturesEXT *>(pNext);
-                features->vertexAttributeInstanceRateDivisor |= enabled->vertexAttributeInstanceRateDivisor == VK_TRUE;
-                features->vertexAttributeInstanceRateZeroDivisor |= enabled->vertexAttributeInstanceRateZeroDivisor == VK_TRUE;
                 break;
             }
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COMPUTE_SHADER_DERIVATIVES_FEATURES_NV: {
@@ -880,6 +898,12 @@ void GetEnabledDeviceFeatures(const VkDeviceCreateInfo *pCreateInfo, DeviceFeatu
                 features->diagnosticsConfig |= enabled->diagnosticsConfig == VK_TRUE;
                 break;
             }
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUDA_KERNEL_LAUNCH_FEATURES_NV: {
+                const VkPhysicalDeviceCudaKernelLaunchFeaturesNV *enabled =
+                    reinterpret_cast<const VkPhysicalDeviceCudaKernelLaunchFeaturesNV *>(pNext);
+                features->cudaKernelLaunchFeatures |= enabled->cudaKernelLaunchFeatures == VK_TRUE;
+                break;
+            }
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_FEATURES_EXT: {
                 const VkPhysicalDeviceDescriptorBufferFeaturesEXT *enabled =
                     reinterpret_cast<const VkPhysicalDeviceDescriptorBufferFeaturesEXT *>(pNext);
@@ -1110,6 +1134,12 @@ void GetEnabledDeviceFeatures(const VkDeviceCreateInfo *pCreateInfo, DeviceFeatu
                 features->multiviewClusterCullingShader |= enabled->multiviewClusterCullingShader == VK_TRUE;
                 break;
             }
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CLUSTER_CULLING_SHADER_VRS_FEATURES_HUAWEI: {
+                const VkPhysicalDeviceClusterCullingShaderVrsFeaturesHUAWEI *enabled =
+                    reinterpret_cast<const VkPhysicalDeviceClusterCullingShaderVrsFeaturesHUAWEI *>(pNext);
+                features->clusterShadingRate |= enabled->clusterShadingRate == VK_TRUE;
+                break;
+            }
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BORDER_COLOR_SWIZZLE_FEATURES_EXT: {
                 const VkPhysicalDeviceBorderColorSwizzleFeaturesEXT *enabled =
                     reinterpret_cast<const VkPhysicalDeviceBorderColorSwizzleFeaturesEXT *>(pNext);
@@ -1121,6 +1151,12 @@ void GetEnabledDeviceFeatures(const VkDeviceCreateInfo *pCreateInfo, DeviceFeatu
                 const VkPhysicalDevicePageableDeviceLocalMemoryFeaturesEXT *enabled =
                     reinterpret_cast<const VkPhysicalDevicePageableDeviceLocalMemoryFeaturesEXT *>(pNext);
                 features->pageableDeviceLocalMemory |= enabled->pageableDeviceLocalMemory == VK_TRUE;
+                break;
+            }
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SCHEDULING_CONTROLS_FEATURES_ARM: {
+                const VkPhysicalDeviceSchedulingControlsFeaturesARM *enabled =
+                    reinterpret_cast<const VkPhysicalDeviceSchedulingControlsFeaturesARM *>(pNext);
+                features->schedulingControls |= enabled->schedulingControls == VK_TRUE;
                 break;
             }
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_SLICED_VIEW_OF_3D_FEATURES_EXT: {
@@ -1145,6 +1181,12 @@ void GetEnabledDeviceFeatures(const VkDeviceCreateInfo *pCreateInfo, DeviceFeatu
                 const VkPhysicalDeviceNonSeamlessCubeMapFeaturesEXT *enabled =
                     reinterpret_cast<const VkPhysicalDeviceNonSeamlessCubeMapFeaturesEXT *>(pNext);
                 features->nonSeamlessCubeMap |= enabled->nonSeamlessCubeMap == VK_TRUE;
+                break;
+            }
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RENDER_PASS_STRIPED_FEATURES_ARM: {
+                const VkPhysicalDeviceRenderPassStripedFeaturesARM *enabled =
+                    reinterpret_cast<const VkPhysicalDeviceRenderPassStripedFeaturesARM *>(pNext);
+                features->renderPassStriped |= enabled->renderPassStriped == VK_TRUE;
                 break;
             }
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_DENSITY_MAP_OFFSET_FEATURES_QCOM: {
@@ -1350,6 +1392,13 @@ void GetEnabledDeviceFeatures(const VkDeviceCreateInfo *pCreateInfo, DeviceFeatu
                 const VkPhysicalDeviceMultiviewPerViewRenderAreasFeaturesQCOM *enabled =
                     reinterpret_cast<const VkPhysicalDeviceMultiviewPerViewRenderAreasFeaturesQCOM *>(pNext);
                 features->multiviewPerViewRenderAreas |= enabled->multiviewPerViewRenderAreas == VK_TRUE;
+                break;
+            }
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PER_STAGE_DESCRIPTOR_SET_FEATURES_NV: {
+                const VkPhysicalDevicePerStageDescriptorSetFeaturesNV *enabled =
+                    reinterpret_cast<const VkPhysicalDevicePerStageDescriptorSetFeaturesNV *>(pNext);
+                features->perStageDescriptorSet |= enabled->perStageDescriptorSet == VK_TRUE;
+                features->dynamicPipelineLayout |= enabled->dynamicPipelineLayout == VK_TRUE;
                 break;
             }
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_PROCESSING_2_FEATURES_QCOM: {

@@ -8,10 +8,10 @@ import './sidenav_item';
 
 import {css, CSSResultGroup, html, LitElement} from 'lit';
 
-import {castExists} from '../helpers/helpers';
+import {castExists, isRTL} from '../helpers/helpers';
 
 import {SidenavItem, SidenavItemCollapsedEvent, SidenavItemEnabledChangedEvent, SidenavItemExpandedEvent} from './sidenav_item';
-import {isRTL, isSidenavItem, shadowPiercingActiveItem} from './sidenav_util';
+import {isSidenavItem, shadowPiercingActiveItem} from './sidenav_util';
 
 /**
  * Allow calling `scrollIntoViewIfNeeded`.
@@ -23,7 +23,7 @@ declare interface ExtendedElement extends Element {
   scrollIntoViewIfNeeded: (centerIfNeeded: boolean) => void;
 }
 
-const ATTRIBUTE_OBSERVER_CONFIG = {
+const CHILDREN_OBSERVER_CONFIG = {
   attributes: true,
   childList: true,
   subtree: true,
@@ -87,8 +87,9 @@ export class Sidenav extends LitElement {
   `;
   /** @nocollapse */
   static override properties = {
-    doubleclickExpands: {type: Boolean, reflect: true},
     allowNoEnabled: {type: Boolean, reflect: true},
+    ariaSetSize: {type: String, attribute: 'aria-setsize'},
+    doubleclickExpands: {type: Boolean, reflect: true},
     role: {type: String, reflect: true},
   };
 
@@ -183,6 +184,10 @@ export class Sidenav extends LitElement {
           }
           if (mutation.type === 'childList') {
             this.updateLayered();
+            if (!this.hasAttribute('aria-setsize')) {
+              // Detect aria-setsize, if it hasn't been overriden by the client.
+              this.ariaSetSize = `${this.items.length}`;
+            }
             return;
           }
         }
@@ -193,10 +198,6 @@ export class Sidenav extends LitElement {
     this.doubleclickExpands = false;
     this.allowNoEnabled = false;
     this.role = 'navigation';
-
-    // Listen for changes to children, to update the Sidenav's state if
-    // necessary.
-    this.itemAttributeObserver.observe(this, ATTRIBUTE_OBSERVER_CONFIG);
   }
 
   override render() {
@@ -204,14 +205,34 @@ export class Sidenav extends LitElement {
       <ul
           class="tree"
           role="tree"
+          aria-setsize="${this.ariaSetSize ?? 0}"
           @dblclick=${this.onTreeDblClicked}
           @keydown=${this.onTreeKeyDown}
           @cros-sidenav-item-expanded=${this.onSidenavItemExpanded}
           @cros-sidenav-item-collapsed=${this.onSidenavItemCollapsed}
-          @cros-sidenav-item-enabled-changed=${this.onSidenavItemEnabledChanged}>
+          @cros-sidenav-item-enabled-changed=${
+        this.onSidenavItemEnabledChanged}>
         <slot @slotchange=${this.onSlotChanged}></slot>
       </ul>
     `;
+  }
+
+  override connectedCallback() {
+    super.connectedCallback();
+    // Listen for changes to children, to update the Sidenav's state if
+    // necessary.
+    this.itemAttributeObserver.observe(this, CHILDREN_OBSERVER_CONFIG);
+  }
+
+  override disconnectedCallback() {
+    super.disconnectedCallback();
+    this.itemAttributeObserver.disconnect();
+  }
+
+  override firstUpdated() {
+    if (!this.hasAttribute('aria-setsize')) {
+      this.ariaSetSize = `${this.items.length}`;
+    }
   }
 
   /**
@@ -251,6 +272,11 @@ export class Sidenav extends LitElement {
     }
 
     this.updateLayered();
+  }
+
+  override async getUpdateComplete() {
+    await Promise.all(this.items.map(item => item.updateComplete));
+    return super.getUpdateComplete();
   }
 
   /**
@@ -358,7 +384,7 @@ export class Sidenav extends LitElement {
           break;
         }
 
-        const expandKey = isRTL() ? 'ArrowLeft' : 'ArrowRight';
+        const expandKey = isRTL(this) ? 'ArrowLeft' : 'ArrowRight';
         if (e.key === expandKey) {
           if (selectedItem.hasChildren() && !selectedItem.expanded) {
             selectedItem.expanded = true;
