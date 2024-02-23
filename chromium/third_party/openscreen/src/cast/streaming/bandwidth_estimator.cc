@@ -9,8 +9,7 @@
 #include "util/osp_logging.h"
 #include "util/saturate_cast.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 using clock_operators::operator<<;
 
@@ -152,5 +151,4 @@ int32_t BandwidthEstimator::FlowTracker::Sum() const {
   return saturate_cast<int32_t>(result);
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

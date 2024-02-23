@@ -14,8 +14,7 @@
 #include "platform/base/macros.h"
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 using State = ServicePublisher::State;
 
@@ -114,5 +113,4 @@ DnsSdPublisherClient::CreateDnsSdServiceInternal(
   return CreateDnsSdService(task_runner_, publisher_, dns_sd_config);
 }
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp

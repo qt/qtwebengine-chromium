@@ -8,8 +8,7 @@
 
 #include "gtest/gtest.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 TEST(CastStreamingAppIdsTest, Test) {
   EXPECT_TRUE(IsCastStreamingAppId("0F5096E8"));
@@ -60,5 +59,4 @@ TEST(CastStreamingAppIdsTest, Test) {
   EXPECT_STREQ("BFD92C23", GetIosAppStreamingAudioVideoAppId());
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

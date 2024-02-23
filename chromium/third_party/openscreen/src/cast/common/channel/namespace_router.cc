@@ -8,8 +8,7 @@
 
 #include "cast/common/channel/proto/cast_channel.pb.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 NamespaceRouter::NamespaceRouter() = default;
 NamespaceRouter::~NamespaceRouter() = default;
@@ -33,5 +32,4 @@ void NamespaceRouter::OnMessage(VirtualConnectionRouter* router,
   }
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

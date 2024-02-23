@@ -14,8 +14,7 @@
 #include "platform/api/time.h"
 #include "util/enum_name_table.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 enum class StatisticsEventType : int {
   kUnknown = 0,
@@ -55,38 +54,30 @@ extern const EnumNameTable<StatisticsEventType,
                                StatisticsEventType::kNumOfEvents)>
     kStatisticEventTypeNames;
 
-struct FrameEvent {
-  constexpr FrameEvent(FrameId frame_id,
-                       StatisticsEventType type,
-                       StatisticsEventMediaType media_type,
-                       RtpTimeTicks rtp_timestamp,
-                       int width,
-                       int height,
-                       uint32_t size,
-                       Clock::time_point timestamp,
-                       Clock::duration delay_delta,
-                       bool key_frame,
-                       int target_bitrate)
+struct StatisticsEvent {
+  constexpr StatisticsEvent(FrameId frame_id,
+                            StatisticsEventType type,
+                            StatisticsEventMediaType media_type,
+                            RtpTimeTicks rtp_timestamp,
+                            uint32_t size,
+                            Clock::time_point timestamp,
+                            Clock::time_point received_timestamp)
       : frame_id(frame_id),
         type(type),
         media_type(media_type),
         rtp_timestamp(rtp_timestamp),
-        width(width),
-        height(height),
         size(size),
         timestamp(timestamp),
-        delay_delta(delay_delta),
-        key_frame(key_frame),
-        target_bitrate(target_bitrate) {}
+        received_timestamp(received_timestamp) {}
 
-  FrameEvent();
-  FrameEvent(const FrameEvent& other);
-  FrameEvent(FrameEvent&& other) noexcept;
-  FrameEvent& operator=(const FrameEvent& other);
-  FrameEvent& operator=(FrameEvent&& other);
-  ~FrameEvent();
+  constexpr StatisticsEvent() = default;
+  StatisticsEvent(const StatisticsEvent& other);
+  StatisticsEvent(StatisticsEvent&& other) noexcept;
+  StatisticsEvent& operator=(const StatisticsEvent& other);
+  StatisticsEvent& operator=(StatisticsEvent&& other);
+  ~StatisticsEvent() = default;
 
-  bool operator==(const FrameEvent& other) const;
+  bool operator==(const StatisticsEvent& other) const;
 
   // The frame this event is associated with.
   FrameId frame_id;
@@ -100,11 +91,7 @@ struct FrameEvent {
   // The RTP timestamp of the frame this event is associated with.
   RtpTimeTicks rtp_timestamp;
 
-  // Resolution of the frame. Only set for video FRAME_CAPTURE_END events.
-  int width = 0;
-  int height = 0;
-
-  // Size of encoded frame in bytes. Only set for FRAME_ENCODED event.
+  // Size of this packet, or the frame it is associated with.
   // Note: we use uint32_t instead of size_t for byte count because this struct
   // is sent over IPC which could span 32 & 64 bit processes.
   uint32_t size = 0;
@@ -112,11 +99,55 @@ struct FrameEvent {
   // Time of event logged.
   Clock::time_point timestamp;
 
+  // Time that the event was received by the sender. Only set for receiver-side
+  // events.
+  Clock::time_point received_timestamp;
+};
+
+struct FrameEvent : public StatisticsEvent {
+  constexpr FrameEvent(FrameId frame_id_in,
+                       StatisticsEventType type_in,
+                       StatisticsEventMediaType media_type_in,
+                       RtpTimeTicks rtp_timestamp_in,
+                       uint32_t size_in,
+                       Clock::time_point timestamp_in,
+                       Clock::time_point received_timestamp_in,
+                       int width,
+                       int height,
+                       Clock::duration delay_delta,
+                       bool key_frame,
+                       int target_bitrate)
+      : StatisticsEvent(frame_id_in,
+                        type_in,
+                        media_type_in,
+                        rtp_timestamp_in,
+                        size_in,
+                        timestamp_in,
+                        received_timestamp_in),
+        width(width),
+        height(height),
+        delay_delta(delay_delta),
+        key_frame(key_frame),
+        target_bitrate(target_bitrate) {}
+
+  constexpr FrameEvent() = default;
+  FrameEvent(const FrameEvent& other);
+  FrameEvent(FrameEvent&& other) noexcept;
+  FrameEvent& operator=(const FrameEvent& other);
+  FrameEvent& operator=(FrameEvent&& other);
+  ~FrameEvent() = default;
+
+  bool operator==(const FrameEvent& other) const;
+
+  // Resolution of the frame. Only set for video FRAME_CAPTURE_END events.
+  int width = 0;
+  int height = 0;
+
   // Only set for FRAME_PLAYOUT events.
   // If this value is zero the frame is rendered on time.
   // If this value is positive it means the frame is rendered late.
   // If this value is negative it means the frame is rendered early.
-  Clock::duration delay_delta;
+  Clock::duration delay_delta{};
 
   // Whether the frame is a key frame. Only set for video FRAME_ENCODED event.
   bool key_frame = false;
@@ -126,30 +157,32 @@ struct FrameEvent {
   int target_bitrate = 0;
 };
 
-struct PacketEvent {
-  constexpr PacketEvent(uint16_t packet_id,
-                        uint16_t max_packet_id,
-                        RtpTimeTicks rtp_timestamp,
-                        FrameId frame_id,
-                        uint32_t size,
-                        Clock::time_point timestamp,
-                        StatisticsEventType type,
-                        StatisticsEventMediaType media_type)
-      : packet_id(packet_id),
-        max_packet_id(max_packet_id),
-        rtp_timestamp(rtp_timestamp),
-        frame_id(frame_id),
-        size(size),
-        timestamp(timestamp),
-        type(type),
-        media_type(media_type) {}
+struct PacketEvent : public StatisticsEvent {
+  constexpr PacketEvent(FrameId frame_id_in,
+                        StatisticsEventType type_in,
+                        StatisticsEventMediaType media_type_in,
+                        RtpTimeTicks rtp_timestamp_in,
+                        uint32_t size_in,
+                        Clock::time_point timestamp_in,
+                        Clock::time_point received_timestamp_in,
+                        uint16_t packet_id,
+                        uint16_t max_packet_id)
+      : StatisticsEvent(frame_id_in,
+                        type_in,
+                        media_type_in,
+                        rtp_timestamp_in,
+                        size_in,
+                        timestamp_in,
+                        received_timestamp_in),
+        packet_id(packet_id),
+        max_packet_id(max_packet_id) {}
 
-  PacketEvent();
+  constexpr PacketEvent() = default;
   PacketEvent(const PacketEvent& other);
   PacketEvent(PacketEvent&& other) noexcept;
   PacketEvent& operator=(const PacketEvent& other);
   PacketEvent& operator=(PacketEvent&& other);
-  ~PacketEvent();
+  ~PacketEvent() = default;
 
   bool operator==(const PacketEvent& other) const;
 
@@ -158,27 +191,8 @@ struct PacketEvent {
 
   // The highest packet ID seen so far at time of event.
   uint16_t max_packet_id = 0;
-
-  // The RTP timestamp of the frame this event is associated with.
-  RtpTimeTicks rtp_timestamp;
-
-  // The frame this event is associated with.
-  FrameId frame_id;
-
-  // The size of this packet.
-  uint32_t size = 0;
-
-  // Time of event logged.
-  Clock::time_point timestamp;
-
-  // The type of this packet event.
-  StatisticsEventType type = StatisticsEventType::kUnknown;
-
-  // Whether this was audio or video (or unknown).
-  StatisticsEventMediaType media_type = StatisticsEventMediaType::kUnknown;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STREAMING_STATISTICS_DEFINES_H_

@@ -20,8 +20,7 @@
 
 #if defined(ENABLE_TRACE_LOGGING)
 
-namespace openscreen {
-namespace internal {
+namespace openscreen::internal {
 
 // A base class for all trace logging objects which will create new entries in
 // the Trace Hierarchy.
@@ -197,8 +196,7 @@ class TraceInstanceHelper {
   static TraceInstanceWrapper Empty() { return TraceInstanceWrapper(); }
 };
 
-}  // namespace internal
-}  // namespace openscreen
+}  // namespace openscreen::internal
 
 #endif  // defined(ENABLE_TRACE_LOGGING)
 

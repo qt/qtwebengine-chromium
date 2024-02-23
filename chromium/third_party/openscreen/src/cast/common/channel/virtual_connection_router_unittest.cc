@@ -15,8 +15,7 @@
 #include "cast/common/public/cast_socket.h"
 #include "gtest/gtest.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 namespace {
 
 static_assert(::cast::channel::CastMessage_ProtocolVersion_CASTV2_1_0 ==
@@ -433,5 +432,4 @@ TEST_F(VirtualConnectionRouterTest, HandlesConnectionMessagesAsSpecialCase) {
   EXPECT_EQ(kConnectionNamespace, message.namespace_());
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

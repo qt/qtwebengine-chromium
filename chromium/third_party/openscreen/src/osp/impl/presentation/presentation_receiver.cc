@@ -16,8 +16,7 @@
 #include "util/osp_logging.h"
 #include "util/trace_logging.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 namespace {
 
 msgs::PresentationConnectionCloseEvent_reason GetEventCloseReason(
@@ -555,5 +554,4 @@ uint64_t Receiver::GetNextConnectionId() {
   return request_id++;
 }
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp

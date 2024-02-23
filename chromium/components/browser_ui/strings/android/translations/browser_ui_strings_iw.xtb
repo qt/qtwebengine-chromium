@@ -193,7 +193,8 @@
 <translation id="4336434711095810371">ניקוי כל הנתונים</translation>
 <translation id="4338831206024587507">כל האתרים בדומיין <ph name="DOMAIN" /></translation>
 <translation id="4402755511846832236">אתרים לא יוכלו לדעת מתי המכשיר הזה משמש אותך באופן פעיל</translation>
-<translation id="4412992751769744546">‏התר קובצי Cookie של צד שלישי</translation>
+<translation id="4412992751769744546">‏אישור לקובצי Cookie של צד שלישי
+</translation>
 <translation id="4428065317363009941">התאמה אישית של מודעות</translation>
 <translation id="4434045419905280838">חלונות קופצים והפניות אוטומטיות</translation>
 <translation id="4468959413250150279">השתקת צלילים באתר ספציפי.</translation>
@@ -315,7 +316,7 @@
 <translation id="6545864417968258051">‏סריקת Bluetooth</translation>
 <translation id="6552800053856095716">{PERMISSIONS_SUMMARY_BLOCKED,plural, =1{נחסמו ההרשאות <ph name="PERMISSION_1" />,‏ <ph name="PERMISSION_2" /> ועוד אחת (<ph name="NUM_MORE" />)}one{נחסמו ההרשאות <ph name="PERMISSION_1" />,‏ <ph name="PERMISSION_2" /> ועוד <ph name="NUM_MORE" />}two{נחסמו ההרשאות <ph name="PERMISSION_1" />,‏ <ph name="PERMISSION_2" /> ועוד <ph name="NUM_MORE" />}other{נחסמו ההרשאות <ph name="PERMISSION_1" />,‏ <ph name="PERMISSION_2" /> ועוד <ph name="NUM_MORE" />}}</translation>
 <translation id="6554732001434021288">הביקור האחרון התבצע לפני <ph name="NUM_DAYS" /> ימים</translation>
-<translation id="6561560012278703671">הצגת חיווי בסרגל הכתובות (מונע הקפצה של חלוניות הודעה מפריעות)</translation>
+<translation id="6561560012278703671">הצגת התראות שקטה יותר (למניעת הקפצה של חלוניות מפריעות)</translation>
 <translation id="6593061639179217415">לגרסה במחשב</translation>
 <translation id="6608650720463149374"><ph name="GIGABYTES" /> GB</translation>
 <translation id="6612358246767739896">תוכן מוגן</translation>

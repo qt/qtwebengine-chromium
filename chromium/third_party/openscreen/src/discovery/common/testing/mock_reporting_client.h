@@ -8,8 +8,7 @@
 #include "discovery/common/reporting_client.h"
 #include "gmock/gmock.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 class MockReportingClient : public ReportingClient {
  public:
@@ -17,7 +16,6 @@ class MockReportingClient : public ReportingClient {
   MOCK_METHOD1(OnRecoverableError, void(Error error));
 };
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery
 
 #endif  // DISCOVERY_COMMON_TESTING_MOCK_REPORTING_CLIENT_H_

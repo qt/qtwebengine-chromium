@@ -7,14 +7,12 @@
 
 #include <stdint.h>
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 void CopyPlane(const uint8_t* src,
                int src_stride,
                int num_rows,
                uint8_t* dst,
                int dst_stride);
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STANDALONE_SENDER_STREAMING_ENCODER_UTIL_H_

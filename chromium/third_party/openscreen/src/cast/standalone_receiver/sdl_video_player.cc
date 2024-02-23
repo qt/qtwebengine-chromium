@@ -12,8 +12,7 @@
 #include "util/osp_logging.h"
 #include "util/trace_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 namespace {
 constexpr char kVideoMediaType[] = "video";
@@ -210,5 +209,4 @@ uint32_t SDLVideoPlayer::GetSDLPixelFormat(const AVFrame& picture) {
   return SDL_PIXELFORMAT_UNKNOWN;
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

@@ -19,8 +19,7 @@
 #include "cast/standalone_receiver/dummy_player.h"  // nogncheck
 #endif  // defined(CAST_STANDALONE_RECEIVER_HAVE_EXTERNAL_LIBS)
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 class StreamingPlaybackController final : public ReceiverSession::Client {
  public:
@@ -81,7 +80,6 @@ class StreamingPlaybackController final : public ReceiverSession::Client {
   std::unique_ptr<SimpleRemotingReceiver> remoting_receiver_;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STANDALONE_RECEIVER_STREAMING_PLAYBACK_CONTROLLER_H_

@@ -14,8 +14,7 @@
 
 using ::cast::channel::CastMessage;
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 SenderSocketFactory::Client::~Client() = default;
 
@@ -203,5 +202,4 @@ void SenderSocketFactory::OnMessage(CastSocket* socket, CastMessage message) {
                        std::unique_ptr<CastSocket>(pending->socket.release()));
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

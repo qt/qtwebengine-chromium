@@ -22,8 +22,7 @@
 #include "platform/test/fake_task_runner.h"
 #include "platform/test/fake_udp_socket.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 class MockServiceObserver : public ProtocolConnectionServiceObserver {
  public:
@@ -84,7 +83,6 @@ class FakeQuicBridge {
   std::unique_ptr<FakeUdpSocket> server_socket_;
 };
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp
 
 #endif  // OSP_IMPL_QUIC_TESTING_QUIC_TEST_SUPPORT_H_

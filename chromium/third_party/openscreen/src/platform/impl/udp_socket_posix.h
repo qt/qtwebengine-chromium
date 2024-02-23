@@ -5,7 +5,6 @@
 #ifndef PLATFORM_IMPL_UDP_SOCKET_POSIX_H_
 #define PLATFORM_IMPL_UDP_SOCKET_POSIX_H_
 
-#include "absl/types/optional.h"
 #include "platform/api/udp_socket.h"
 #include "platform/base/macros.h"
 #include "platform/impl/platform_client_posix.h"

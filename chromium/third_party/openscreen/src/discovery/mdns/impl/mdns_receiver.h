@@ -13,8 +13,7 @@
 #include "platform/base/error.h"
 #include "platform/base/udp_packet.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 class MdnsMessage;
 
@@ -66,7 +65,6 @@ class MdnsReceiver {
   Config config_;
 };
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery
 
 #endif  // DISCOVERY_MDNS_IMPL_MDNS_RECEIVER_H_

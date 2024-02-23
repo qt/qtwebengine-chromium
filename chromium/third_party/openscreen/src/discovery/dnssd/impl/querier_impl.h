@@ -12,7 +12,6 @@
 #include <vector>
 
 #include "absl/hash/hash.h"
-#include "absl/strings/string_view.h"
 #include "discovery/dnssd/impl/constants.h"
 #include "discovery/dnssd/impl/conversion_layer.h"
 #include "discovery/dnssd/impl/dns_data_graph.h"
@@ -24,8 +23,7 @@
 #include "discovery/mdns/public/mdns_records.h"
 #include "discovery/mdns/public/mdns_service.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 class NetworkInterfaceConfig;
 class ReportingClient;
@@ -78,7 +76,6 @@ class QuerierImpl : public DnsSdQuerier, public MdnsRecordChangedCallback {
   ReportingClient* reporting_client_;
 };
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery
 
 #endif  // DISCOVERY_DNSSD_IMPL_QUERIER_IMPL_H_

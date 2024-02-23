@@ -10,8 +10,7 @@
 
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 FakeQuicConnectionFactoryBridge::FakeQuicConnectionFactoryBridge(
     const IPEndpoint& controller_endpoint)
@@ -221,5 +220,4 @@ void FakeServerQuicConnectionFactory::OnRead(UdpSocket* socket,
   idle_ = bridge_->server_idle();
 }
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp

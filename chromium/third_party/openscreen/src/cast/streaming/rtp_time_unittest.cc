@@ -9,8 +9,7 @@
 #include "gtest/gtest.h"
 #include "util/chrono_helpers.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // Tests that conversions between std::chrono durations and RtpTimeDelta are
 // accurate.  Note that this implicitly tests the conversions to/from
@@ -70,5 +69,4 @@ TEST(RtpTimeDeltaTest, ConversionToAndFromDurations) {
                 .ToDuration<microseconds>(kTimebase));
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

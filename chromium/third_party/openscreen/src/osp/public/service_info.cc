@@ -9,8 +9,7 @@
 
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 bool ServiceInfo::operator==(const ServiceInfo& other) const {
   return (service_id == other.service_id &&
@@ -53,5 +52,4 @@ std::string ServiceInfo::ToString() const {
   return ss.str();
 }
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp

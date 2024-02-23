@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "cast/standalone_sender/connection_settings.h"
@@ -16,8 +17,7 @@
 #include "cast/standalone_sender/streaming_video_encoder.h"
 #include "cast/streaming/sender_session.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // Plays the media file at a given path over and over again, transcoding and
 // streaming its audio/video.
@@ -90,14 +90,13 @@ class LoopingFileSender final : public SimulatedAudioCapturer::Client,
   int num_capturers_running_ = 0;
   Clock::time_point capture_begin_time_{};
   Clock::time_point latest_frame_time_{};
-  absl::optional<SimulatedAudioCapturer> audio_capturer_;
-  absl::optional<SimulatedVideoCapturer> video_capturer_;
+  std::optional<SimulatedAudioCapturer> audio_capturer_;
+  std::optional<SimulatedVideoCapturer> video_capturer_;
 
   Alarm next_task_;
   Alarm console_update_task_;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STANDALONE_SENDER_LOOPING_FILE_SENDER_H_

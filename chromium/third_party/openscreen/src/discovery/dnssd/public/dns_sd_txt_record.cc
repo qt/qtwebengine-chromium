@@ -9,8 +9,7 @@
 
 #include "util/span_util.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 // static
 bool DnsSdTxtRecord::IsValidTxtValue(const std::string& key, ByteView value) {
@@ -169,5 +168,4 @@ bool DnsSdTxtRecord::CaseInsensitiveComparison::operator()(
   return false;
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

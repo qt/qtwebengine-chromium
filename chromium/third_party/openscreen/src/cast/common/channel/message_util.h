@@ -6,8 +6,8 @@
 #define CAST_COMMON_CHANNEL_MESSAGE_UTIL_H_
 
 #include <string>
+#include <string_view>
 
-#include "absl/strings/string_view.h"
 #include "cast/common/channel/proto/cast_channel.pb.h"
 #include "util/enum_name_table.h"
 
@@ -15,8 +15,7 @@ namespace Json {
 class Value;
 }
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // Reserved message namespaces for internal messages.
 static constexpr char kCastInternalNamespacePrefix[] =
@@ -195,7 +194,7 @@ inline bool IsAuthMessage(const ::cast::channel::CastMessage& message) {
   return message.namespace_() == kAuthNamespace;
 }
 
-inline bool IsTransportNamespace(absl::string_view namespace_) {
+inline bool IsTransportNamespace(std::string_view namespace_) {
   return (namespace_.size() > (sizeof(kTransportNamespacePrefix) - 1)) &&
          (namespace_.find_first_of(kTransportNamespacePrefix) == 0);
 }
@@ -225,7 +224,6 @@ std::string ToString(const ::cast::channel::CastMessage& message);
 // Helper to get the actual message payload out of a cast message.
 const std::string& GetPayload(const ::cast::channel::CastMessage& message);
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_COMMON_CHANNEL_MESSAGE_UTIL_H_

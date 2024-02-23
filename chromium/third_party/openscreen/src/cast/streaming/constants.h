@@ -14,8 +14,7 @@
 #include <chrono>
 #include <ratio>
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // Default target playout delay. The playout delay is the window of time between
 // capture from the source until presentation at the receiver.
@@ -110,7 +109,6 @@ enum class StreamType { kUnknown, kAudio, kVideo };
 
 enum class CastMode : uint8_t { kMirroring, kRemoting };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STREAMING_CONSTANTS_H_

@@ -26,8 +26,7 @@
 #include "json/value.h"
 #include "util/json/json_serialization.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 class Environment;
 class Sender;
@@ -289,7 +288,6 @@ class SenderSession final {
   SenderStatsClient* stats_client_ = nullptr;
 };  // namespace cast
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STREAMING_SENDER_SESSION_H_

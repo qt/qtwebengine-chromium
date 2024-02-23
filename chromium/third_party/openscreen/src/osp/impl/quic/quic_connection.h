@@ -10,8 +10,7 @@
 
 #include "platform/api/udp_socket.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 class QuicStream {
  public:
@@ -80,7 +79,6 @@ class QuicConnection : public UdpSocket::Client {
   Delegate* const delegate_;
 };
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp
 
 #endif  // OSP_IMPL_QUIC_QUIC_CONNECTION_H_

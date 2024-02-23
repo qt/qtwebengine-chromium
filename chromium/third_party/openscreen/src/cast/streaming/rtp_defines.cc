@@ -6,8 +6,7 @@
 
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 RtpPayloadType GetPayloadType(AudioCodec codec, bool use_android_rtp_hack) {
   if (use_android_rtp_hack) {
@@ -111,5 +110,4 @@ bool IsRtcpPacketType(uint8_t raw_byte) {
   return false;
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

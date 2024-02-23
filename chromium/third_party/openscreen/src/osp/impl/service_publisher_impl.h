@@ -12,8 +12,7 @@
 #include "osp/public/service_publisher.h"
 #include "platform/base/macros.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 class ServicePublisherImpl final
     : public ServicePublisher,
@@ -71,7 +70,6 @@ class ServicePublisherImpl final
   OSP_DISALLOW_COPY_AND_ASSIGN(ServicePublisherImpl);
 };
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp
 
 #endif  // OSP_IMPL_SERVICE_PUBLISHER_IMPL_H_

@@ -8,10 +8,10 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <thread>
 #include <vector>
 
-#include "absl/types/optional.h"
 #include "platform/api/time.h"
 #include "platform/base/macros.h"
 #include "platform/impl/socket_handle_waiter_posix.h"
@@ -116,7 +116,7 @@ class PlatformClientPosix {
   // Threads for running TaskRunner and OperationLoop instances.
   // NOTE: These must be declared last to avoid nondterministic failures.
   std::thread networking_loop_thread_;
-  absl::optional<std::thread> task_runner_thread_;
+  std::optional<std::thread> task_runner_thread_;
 
   static PlatformClientPosix* instance_;
 

@@ -19,8 +19,7 @@
 #include "platform/test/fake_clock.h"
 #include "platform/test/fake_task_runner.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 namespace {
 
@@ -198,5 +197,4 @@ TEST_F(PresentationReceiverTest, StartPresentation) {
 // TODO(btolsch): Connect and reconnect.
 // TODO(btolsch): Terminate request and event.
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp

@@ -5,6 +5,7 @@
 #ifndef CAST_STREAMING_RPC_MESSENGER_H_
 #define CAST_STREAMING_RPC_MESSENGER_H_
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <utility>
@@ -14,8 +15,7 @@
 #include "util/flat_map.h"
 #include "util/weak_ptr.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // Processes incoming and outgoing RPC messages and links them to desired
 // components on both end points. For outgoing messages, the messenger
@@ -105,7 +105,6 @@ class RpcMessenger {
   WeakPtrFactory<RpcMessenger> weak_factory_{this};
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STREAMING_RPC_MESSENGER_H_

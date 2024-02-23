@@ -14,8 +14,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 class SimpleMessagePort : public MessagePort {
  public:
@@ -64,7 +63,6 @@ class SimpleMessagePort : public MessagePort {
   std::vector<std::string> posted_messages_;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STREAMING_TESTING_SIMPLE_MESSAGE_PORT_H_

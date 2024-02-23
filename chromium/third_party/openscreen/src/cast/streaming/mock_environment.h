@@ -8,8 +8,7 @@
 #include "cast/streaming/environment.h"
 #include "gmock/gmock.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // An Environment that can intercept all packet sends, for unit testing.
 class MockEnvironment : public Environment {
@@ -27,7 +26,6 @@ class MockEnvironment : public Environment {
               (override));
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STREAMING_MOCK_ENVIRONMENT_H_

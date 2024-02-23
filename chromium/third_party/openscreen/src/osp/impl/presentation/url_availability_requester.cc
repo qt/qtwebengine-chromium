@@ -17,8 +17,7 @@
 
 using std::chrono::seconds;
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 namespace {
 
 static constexpr Clock::duration kWatchDuration = seconds(20);
@@ -490,5 +489,4 @@ ErrorOr<size_t> UrlAvailabilityRequester::ReceiverRequester::OnStreamMessage(
   return Error::Code::kCborParsing;
 }
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp

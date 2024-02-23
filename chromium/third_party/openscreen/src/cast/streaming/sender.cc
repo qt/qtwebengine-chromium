@@ -18,8 +18,7 @@
 #include "util/std_util.h"
 #include "util/trace_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 using clock_operators::operator<<;
 
@@ -100,6 +99,7 @@ void DispatchFrameLogMessages(
     return;
   }
 
+  const Clock::time_point now = environment.now();
   const StatisticsEventMediaType media_type = ToMediaType(stream_type);
   for (const RtcpReceiverFrameLogMessage& log_message : messages) {
     for (const RtcpReceiverEventLogMessage& event_message :
@@ -108,6 +108,7 @@ void DispatchFrameLogMessages(
         case StatisticsEventType::kPacketReceived: {
           PacketEvent event;
           event.timestamp = event_message.timestamp;
+          event.received_timestamp = now;
           event.type = event_message.type;
           event.media_type = media_type;
           event.rtp_timestamp = log_message.rtp_timestamp;
@@ -121,6 +122,7 @@ void DispatchFrameLogMessages(
         case StatisticsEventType::kFramePlayedOut: {
           FrameEvent event;
           event.timestamp = event_message.timestamp;
+          event.received_timestamp = now;
           event.type = event_message.type;
           event.media_type = media_type;
           event.rtp_timestamp = log_message.rtp_timestamp;
@@ -731,5 +733,4 @@ Sender::Observer::~Observer() = default;
 Sender::PendingFrameSlot::PendingFrameSlot() = default;
 Sender::PendingFrameSlot::~PendingFrameSlot() = default;
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

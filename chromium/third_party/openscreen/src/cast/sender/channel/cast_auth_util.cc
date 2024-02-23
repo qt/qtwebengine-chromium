@@ -21,8 +21,7 @@
 #include "util/osp_logging.h"
 #include "util/span_util.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 using ::cast::channel::AuthResponse;
 using ::cast::channel::CastMessage;
@@ -436,5 +435,4 @@ ErrorOr<CastDeviceCertPolicy> VerifyCredentialsForTest(
                                verification_time, enforce_sha256_checking);
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

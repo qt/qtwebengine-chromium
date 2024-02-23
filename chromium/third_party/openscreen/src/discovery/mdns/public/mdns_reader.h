@@ -12,8 +12,7 @@
 #include "platform/base/error.h"
 #include "util/big_endian.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 struct Config;
 
@@ -89,7 +88,6 @@ class MdnsReader : public BigEndianReader {
   const size_t kMaximumAllowedRdataSize;
 };
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery
 
 #endif  // DISCOVERY_MDNS_PUBLIC_MDNS_READER_H_

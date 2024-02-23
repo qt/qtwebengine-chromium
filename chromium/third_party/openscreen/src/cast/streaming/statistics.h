@@ -18,8 +18,7 @@
 #include "platform/api/time.h"
 #include "util/enum_name_table.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 enum class StatisticType {
   // Frame enqueuing rate.
@@ -56,7 +55,8 @@ enum class StatisticType {
   // Packet transmission bitrate in kbps.
   kPacketTransmissionRateKbps,
 
-  // Duration in milliseconds since last receiver response.
+  // Duration in milliseconds since the estimated last time the receiver sent
+  // a response.
   kTimeSinceLastReceiverResponseMs,
 
   // Number of frames captured.
@@ -128,20 +128,20 @@ struct SimpleHistogram {
   // Overflow bucket: >= max
   // |min| must be less than |max|.
   // |width| must divide |max - min| evenly.
+  SimpleHistogram(int64_t min, int64_t max, int64_t width);
 
   SimpleHistogram();
-  SimpleHistogram(int64_t min, int64_t max, int64_t width);
   SimpleHistogram(const SimpleHistogram&);
   SimpleHistogram(SimpleHistogram&&) noexcept;
   SimpleHistogram& operator=(const SimpleHistogram&);
   SimpleHistogram& operator=(SimpleHistogram&&);
   ~SimpleHistogram();
 
+  bool operator==(const SimpleHistogram&) const;
+
   void Add(int64_t sample);
   void Reset();
 
-  // Creates a copy of this histogram with same min, max, width, and samples.
-  SimpleHistogram Copy();
   Json::Value ToJson() const;
   std::string ToString() const;
 
@@ -155,6 +155,8 @@ struct SimpleHistogram {
                   int64_t max,
                   int64_t width,
                   std::vector<int> buckets);
+
+  std::string GetBucketName(size_t index) const;
 };
 
 struct SenderStats {
@@ -192,7 +194,6 @@ class SenderStatsClient {
   virtual ~SenderStatsClient();
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STREAMING_STATISTICS_H_

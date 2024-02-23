@@ -6,8 +6,7 @@
 
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 WithDestructionCallback::WithDestructionCallback() = default;
 
@@ -25,5 +24,4 @@ void WithDestructionCallback::SetDestructionCallback(
   destruction_callback_state_ = state;
 }
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp

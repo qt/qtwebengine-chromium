@@ -11,8 +11,7 @@
 
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 DnsSdInstanceEndpoint::DnsSdInstanceEndpoint(
     std::string instance_id,
@@ -101,5 +100,4 @@ bool operator<(const DnsSdInstanceEndpoint& lhs,
          static_cast<const DnsSdInstance&>(rhs);
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

@@ -23,8 +23,7 @@
 #include "platform/test/mock_udp_socket.h"
 #include "util/std_util.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 using testing::_;
 using testing::Args;
@@ -898,5 +897,4 @@ TEST_F(MdnsQuerierTest, TestMaxRecordsRespected) {
   EXPECT_TRUE(ContainsRecord(querier.get(), record1_created_, DnsType::kA));
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

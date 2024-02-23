@@ -11,8 +11,7 @@
 #include "cast/sender/public/cast_media_source.h"
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 namespace {
 
 // The minimum time that must elapse before an app availability result can be
@@ -198,5 +197,4 @@ void CastAppDiscoveryServiceImpl::RemoveAvailabilityCallback(uint32_t id) {
   }
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

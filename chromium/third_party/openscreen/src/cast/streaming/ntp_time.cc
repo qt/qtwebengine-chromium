@@ -6,8 +6,7 @@
 
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 namespace {
 
@@ -52,5 +51,4 @@ Clock::time_point NtpTimeConverter::ToLocalTime(NtpTimestamp timestamp) const {
   return seconds_since_start + remainder;
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

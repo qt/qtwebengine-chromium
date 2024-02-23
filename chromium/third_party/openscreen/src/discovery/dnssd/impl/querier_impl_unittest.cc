@@ -10,7 +10,6 @@
 
 #include "absl/strings/str_join.h"
 #include "absl/strings/str_split.h"
-#include "absl/types/optional.h"
 #include "discovery/common/testing/mock_reporting_client.h"
 #include "discovery/dnssd/impl/conversion_layer.h"
 #include "discovery/dnssd/testing/fake_network_interface_config.h"
@@ -23,8 +22,7 @@
 #include "util/osp_logging.h"
 #include "util/std_util.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 namespace {
 
 NetworkInterfaceIndex kNetworkInterface = 0;
@@ -653,5 +651,4 @@ TEST_F(DnsSdQuerierImplTest, MixOfErrorsAndSuccessesHandledCorrectly) {
                             RecordChangedEvent::kCreated);
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

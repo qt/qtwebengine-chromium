@@ -12,8 +12,7 @@
 #include "platform/test/fake_clock.h"
 #include "platform/test/fake_task_runner.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 using ::testing::ElementsAre;
 
@@ -603,5 +602,4 @@ TEST_F(SessionMessengerTest, UnknownNamespaceMessagesGetDropped) {
   ASSERT_TRUE(message_store_.receiver_messages.empty());
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

@@ -4,12 +4,10 @@
 
 #include "osp/public/server_config.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 ServerConfig::ServerConfig() = default;
 
 ServerConfig::~ServerConfig() = default;
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp

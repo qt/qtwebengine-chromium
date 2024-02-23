@@ -17,8 +17,7 @@
 #include "platform/test/fake_udp_socket.h"
 #include "util/std_util.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 namespace {
 
 constexpr Clock::duration kMaximumSharedRecordResponseDelayMs(120 * 1000);
@@ -840,5 +839,4 @@ TEST_F(MdnsResponderTest, EnumerateAllQueryNoResults) {
   clock_.Advance(Clock::duration(kMaximumSharedRecordResponseDelayMs));
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

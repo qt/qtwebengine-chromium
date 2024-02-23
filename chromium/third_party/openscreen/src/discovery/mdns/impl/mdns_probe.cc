@@ -12,8 +12,7 @@
 #include "platform/api/task_runner.h"
 #include "platform/api/time.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 MdnsProbe::MdnsProbe(DomainName target_name, IPAddress address)
     : target_name_(std::move(target_name)),
@@ -107,5 +106,4 @@ void MdnsProbeImpl::OnMessageReceived(const MdnsMessage& message) {
   }
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

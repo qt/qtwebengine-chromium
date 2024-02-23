@@ -21,8 +21,7 @@
 #include "platform/base/ip_address.h"
 #include "util/json/json_value.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 class CastSocket;
 
@@ -165,7 +164,6 @@ class ApplicationAgent final
   std::string launched_via_app_id_;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_RECEIVER_APPLICATION_AGENT_H_

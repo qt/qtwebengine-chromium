@@ -10,8 +10,7 @@
 #include "cast/sender/channel/cast_auth_util.h"
 #include "util/json/json_serialization.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 using ::cast::channel::AuthChallenge;
 using ::cast::channel::CastMessage;
@@ -66,5 +65,4 @@ ErrorOr<CastMessage> CreateAppAvailabilityRequest(const std::string& sender_id,
   return message;
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

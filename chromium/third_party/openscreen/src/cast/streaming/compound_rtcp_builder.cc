@@ -15,8 +15,7 @@
 #include "util/osp_logging.h"
 #include "util/std_util.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 CompoundRtcpBuilder::CompoundRtcpBuilder(RtcpSession* session)
     : session_(session) {
@@ -128,7 +127,7 @@ void CompoundRtcpBuilder::AppendReceiverReportPacket(ByteBuffer& buffer) {
   AppendField<uint32_t>(session_->receiver_ssrc(), buffer);
   if (receiver_report_for_next_packet_) {
     receiver_report_for_next_packet_->AppendFields(buffer);
-    receiver_report_for_next_packet_ = absl::nullopt;
+    receiver_report_for_next_packet_ = std::nullopt;
   }
 }
 
@@ -319,5 +318,4 @@ void CompoundRtcpBuilder::AppendCastFeedbackAckFields(ByteBuffer& buffer) {
   acks_for_next_packet_.clear();
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

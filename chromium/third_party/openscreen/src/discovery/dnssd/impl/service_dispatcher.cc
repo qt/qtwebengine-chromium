@@ -14,8 +14,7 @@
 #include "platform/api/task_runner.h"
 #include "util/trace_logging.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 namespace {
 
 void ForAllQueriers(
@@ -149,5 +148,4 @@ ErrorOr<int> ServiceDispatcher::DeregisterAll(const std::string& service) {
   }
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

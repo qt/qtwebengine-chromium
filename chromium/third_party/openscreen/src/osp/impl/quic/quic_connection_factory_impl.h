@@ -16,8 +16,7 @@
 #include "third_party/chromium_quic/src/net/quic/quic_chromium_alarm_factory.h"
 #include "third_party/chromium_quic/src/net/third_party/quic/quartc/quartc_factory.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 class QuicTaskRunner;
 
@@ -62,7 +61,6 @@ class QuicConnectionFactoryImpl final : public QuicConnectionFactory {
   TaskRunner& task_runner_;
 };
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp
 
 #endif  // OSP_IMPL_QUIC_QUIC_CONNECTION_FACTORY_IMPL_H_

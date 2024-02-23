@@ -8,8 +8,7 @@
 #include <string>
 #include <vector>
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // Returns true only if |app_id| matches the Cast application ID for the
 // corresponding Chromium Cast Streaming receiver application.
@@ -58,7 +57,6 @@ constexpr const char* GetIosAppStreamingAudioVideoAppId() {
   return "BFD92C23";
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_COMMON_PUBLIC_CAST_STREAMING_APP_IDS_H_

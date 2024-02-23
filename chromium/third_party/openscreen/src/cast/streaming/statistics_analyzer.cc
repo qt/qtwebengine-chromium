@@ -9,13 +9,11 @@
 #include "platform/base/trivial_clock_traits.h"
 #include "util/chrono_helpers.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 namespace {
 
-constexpr Clock::duration kStatisticsAnalysisInverval =
-    std::chrono::milliseconds(500);
+constexpr Clock::duration kAnalysisInterval = std::chrono::milliseconds(500);
 
 constexpr size_t kMaxRecentPacketInfoMapSize = 1000;
 constexpr size_t kMaxRecentFrameInfoMapSize = 200;
@@ -23,11 +21,11 @@ constexpr size_t kMaxRecentFrameInfoMapSize = 200;
 constexpr int kDefaultMaxLatencyBucketMs = 800;
 constexpr int kDefaultBucketWidthMs = 20;
 
-double InMilliseconds(const Clock::duration duration) {
+double InMilliseconds(Clock::duration duration) {
   return static_cast<double>(to_milliseconds(duration).count());
 }
 
-bool IsReceiverEvent(const StatisticsEventType event) {
+bool IsReceiverEvent(StatisticsEventType event) {
   return event == StatisticsEventType::kFrameAckSent ||
          event == StatisticsEventType::kFrameDecoded ||
          event == StatisticsEventType::kFramePlayedOut ||
@@ -53,17 +51,16 @@ StatisticsAnalyzer::StatisticsAnalyzer(
 StatisticsAnalyzer::~StatisticsAnalyzer() = default;
 
 void StatisticsAnalyzer::ScheduleAnalysis() {
-  const Clock::time_point next_analysis_time =
-      now_() + kStatisticsAnalysisInverval;
+  Clock::time_point next_analysis_time = now_() + kAnalysisInterval;
   alarm_.Schedule([this] { AnalyzeStatistics(); }, next_analysis_time);
 }
 
 void StatisticsAnalyzer::InitHistograms() {
-  for (auto& histogram : audio_histograms_) {
+  for (auto& histogram : histograms_.audio) {
     histogram =
         SimpleHistogram(0, kDefaultMaxLatencyBucketMs, kDefaultBucketWidthMs);
   }
-  for (auto& histogram : video_histograms_) {
+  for (auto& histogram : histograms_.video) {
     histogram =
         SimpleHistogram(0, kDefaultMaxLatencyBucketMs, kDefaultBucketWidthMs);
   }
@@ -85,64 +82,55 @@ void StatisticsAnalyzer::SendStatistics() {
   stats_client_->OnStatisticsUpdated(SenderStats{
       .audio_statistics =
           ConstructStatisticsList(end_time, StatisticsEventMediaType::kAudio),
-      .audio_histograms = GetAudioHistograms(),
+      .audio_histograms = histograms_.audio,
       .video_statistics =
           ConstructStatisticsList(end_time, StatisticsEventMediaType::kVideo),
-      .video_histograms = GetVideoHistograms()});
+      .video_histograms = histograms_.video});
 }
 
 void StatisticsAnalyzer::ProcessFrameEvents(
-    const std::vector<FrameEvent> frame_events) {
+    const std::vector<FrameEvent>& frame_events) {
   for (FrameEvent frame_event : frame_events) {
     offset_estimator_->OnFrameEvent(frame_event);
 
-    FrameStatsMap* frame_stats_map =
-        GetFrameStatsMapForMediaType(frame_event.media_type);
-    if (frame_stats_map) {
-      auto it = frame_stats_map->find(frame_event.type);
-      if (it == frame_stats_map->end()) {
-        frame_stats_map->insert(std::make_pair(
-            frame_event.type,
-            FrameStatsAggregate{.event_counter = 1,
-                                .sum_size = frame_event.size,
-                                .sum_delay = frame_event.delay_delta}));
-      } else {
-        ++(it->second.event_counter);
-        it->second.sum_size += frame_event.size;
-        it->second.sum_delay += frame_event.delay_delta;
-      }
+    FrameStatsMap& frame_stats_map = frame_stats_.Get(frame_event.media_type);
+    auto it = frame_stats_map.find(frame_event.type);
+    if (it == frame_stats_map.end()) {
+      frame_stats_map.insert(std::make_pair(
+          frame_event.type,
+          FrameStatsAggregate{.event_counter = 1,
+                              .sum_size = frame_event.size,
+                              .sum_delay = frame_event.delay_delta}));
+    } else {
+      ++(it->second.event_counter);
+      it->second.sum_size += frame_event.size;
+      it->second.sum_delay += frame_event.delay_delta;
     }
 
-    RecordEventTimes(frame_event.timestamp, frame_event.media_type,
-                     IsReceiverEvent(frame_event.type));
-
+    RecordEventTimes(frame_event);
     RecordFrameLatencies(frame_event);
   }
 }
 
 void StatisticsAnalyzer::ProcessPacketEvents(
-    const std::vector<PacketEvent> packet_events) {
+    const std::vector<PacketEvent>& packet_events) {
   for (PacketEvent packet_event : packet_events) {
     offset_estimator_->OnPacketEvent(packet_event);
 
-    PacketStatsMap* packet_stats_map =
-        GetPacketStatsMapForMediaType(packet_event.media_type);
-    if (packet_stats_map) {
-      auto it = packet_stats_map->find(packet_event.type);
-      if (it == packet_stats_map->end()) {
-        packet_stats_map->insert(std::make_pair(
-            packet_event.type,
-            PacketStatsAggregate{.event_counter = 1,
-                                 .sum_size = packet_event.size}));
-      } else {
-        ++(it->second.event_counter);
-        it->second.sum_size += packet_event.size;
-      }
+    PacketStatsMap& packet_stats_map =
+        packet_stats_.Get(packet_event.media_type);
+    auto it = packet_stats_map.find(packet_event.type);
+    if (it == packet_stats_map.end()) {
+      packet_stats_map.insert(
+          std::make_pair(packet_event.type,
+                         PacketStatsAggregate{.event_counter = 1,
+                                              .sum_size = packet_event.size}));
+    } else {
+      ++(it->second.event_counter);
+      it->second.sum_size += packet_event.size;
     }
 
-    RecordEventTimes(packet_event.timestamp, packet_event.media_type,
-                     IsReceiverEvent(packet_event.type));
-
+    RecordEventTimes(packet_event);
     if (packet_event.type == StatisticsEventType::kPacketSentToNetwork ||
         packet_event.type == StatisticsEventType::kPacketReceived) {
       RecordPacketLatencies(packet_event);
@@ -153,26 +141,22 @@ void StatisticsAnalyzer::ProcessPacketEvents(
   }
 }
 
-void StatisticsAnalyzer::RecordFrameLatencies(const FrameEvent frame_event) {
-  FrameInfoMap* frame_infos =
-      GetRecentFrameInfosForMediaType(frame_event.media_type);
-  if (!frame_infos) {
-    return;
-  }
+void StatisticsAnalyzer::RecordFrameLatencies(const FrameEvent& frame_event) {
+  FrameInfoMap& frame_infos = recent_frame_infos_.Get(frame_event.media_type);
 
   // Event is too old, don't bother.
-  const bool map_is_full = frame_infos->size() == kMaxRecentFrameInfoMapSize;
-  if (map_is_full && frame_event.rtp_timestamp <= frame_infos->begin()->first) {
+  const bool map_is_full = frame_infos.size() == kMaxRecentFrameInfoMapSize;
+  if (map_is_full && frame_event.rtp_timestamp <= frame_infos.begin()->first) {
     return;
   }
 
-  auto it = frame_infos->find(frame_event.rtp_timestamp);
-  if (it == frame_infos->end()) {
+  auto it = frame_infos.find(frame_event.rtp_timestamp);
+  if (it == frame_infos.end()) {
     if (map_is_full) {
-      frame_infos->erase(frame_infos->begin());
+      frame_infos.erase(frame_infos.begin());
     }
     auto emplace_result =
-        frame_infos->emplace(frame_event.rtp_timestamp, FrameInfo{});
+        frame_infos.emplace(frame_event.rtp_timestamp, FrameInfo{});
     OSP_CHECK(emplace_result.second);
     it = emplace_result.first;
   }
@@ -241,11 +225,7 @@ void StatisticsAnalyzer::RecordFrameLatencies(const FrameEvent frame_event) {
 
       // Positive delay means the frame is late.
       if (frame_event.delay_delta > Clock::duration::zero()) {
-        SessionStats* session_stats =
-            GetSessionStatsForMediaType(frame_event.media_type);
-        if (session_stats) {
-          ++(session_stats->late_frame_counter);
-        }
+        session_stats_.Get(frame_event.media_type).late_frame_counter += 1;
         AddToHistogram(HistogramType::kFrameLatenessMs, frame_event.media_type,
                        InMilliseconds(frame_event.delay_delta));
       }
@@ -256,18 +236,17 @@ void StatisticsAnalyzer::RecordFrameLatencies(const FrameEvent frame_event) {
   }
 }
 
-void StatisticsAnalyzer::RecordPacketLatencies(const PacketEvent packet_event) {
-  FrameInfoMap* frame_infos =
-      GetRecentFrameInfosForMediaType(packet_event.media_type);
+void StatisticsAnalyzer::RecordPacketLatencies(
+    const PacketEvent& packet_event) {
+  FrameInfoMap& frame_infos = recent_frame_infos_.Get(packet_event.media_type);
 
   // Queueing latency is the time from when a frame is encoded to when the
   // packet is first sent.
-  if (frame_infos &&
-      packet_event.type == StatisticsEventType::kPacketSentToNetwork) {
-    auto it = frame_infos->find(packet_event.rtp_timestamp);
+  if (packet_event.type == StatisticsEventType::kPacketSentToNetwork) {
+    const auto it = frame_infos.find(packet_event.rtp_timestamp);
 
     // We have an encode end time for a frame associated with this packet.
-    if (it != frame_infos->end()) {
+    if (it != frame_infos.end()) {
       const Clock::duration queueing_latency =
           packet_event.timestamp - it->second.encode_end_time;
       AddToLatencyAggregrate(StatisticType::kAvgQueueingLatencyMs,
@@ -279,19 +258,16 @@ void StatisticsAnalyzer::RecordPacketLatencies(const PacketEvent packet_event) {
 
   StatisticsAnalyzer::PacketKey key =
       std::make_pair(packet_event.rtp_timestamp, packet_event.packet_id);
-  PacketInfoMap* packet_infos =
-      GetRecentPacketInfosForMediaType(packet_event.media_type);
-  if (!packet_infos) {
-    return;
-  }
+  PacketInfoMap& packet_infos =
+      recent_packet_infos_.Get(packet_event.media_type);
 
-  auto it = packet_infos->find(key);
-  if (it == packet_infos->end()) {
-    packet_infos->insert(
+  const auto it = packet_infos.find(key);
+  if (it == packet_infos.end()) {
+    packet_infos.insert(
         std::make_pair(key, PacketInfo{.timestamp = packet_event.timestamp,
                                        .type = packet_event.type}));
-    if (packet_infos->size() > kMaxRecentPacketInfoMapSize) {
-      packet_infos->erase(packet_infos->begin());
+    if (packet_infos.size() > kMaxRecentPacketInfoMapSize) {
+      packet_infos.erase(packet_infos.begin());
     }
   } else {  // We know when this packet was sent, and when it arrived.
     PacketInfo value = it->second;
@@ -310,11 +286,11 @@ void StatisticsAnalyzer::RecordPacketLatencies(const PacketEvent packet_event) {
       return;
     }
 
-    packet_infos->erase(it);
+    packet_infos.erase(it);
 
     // Use the offset estimator directly since we are trying to calculate the
     // average network latency.
-    const absl::optional<Clock::duration> receiver_offset =
+    const std::optional<Clock::duration> receiver_offset =
         offset_estimator_->GetEstimatedOffset();
     if (!receiver_offset) {
       return;
@@ -325,6 +301,7 @@ void StatisticsAnalyzer::RecordPacketLatencies(const PacketEvent packet_event) {
     // is received.
     const Clock::duration network_latency =
         packet_received_time - packet_sent_time;
+    RecordEstimatedNetworkLatency(network_latency);
     AddToLatencyAggregrate(StatisticType::kAvgNetworkLatencyMs, network_latency,
                            packet_event.media_type);
     AddToHistogram(HistogramType::kNetworkLatencyMs, packet_event.media_type,
@@ -332,8 +309,8 @@ void StatisticsAnalyzer::RecordPacketLatencies(const PacketEvent packet_event) {
 
     // Packet latency is the time from when a frame is encoded until when the
     // packet is received.
-    auto frame_it = frame_infos->find(packet_event.rtp_timestamp);
-    if (frame_it != frame_infos->end()) {
+    const auto frame_it = frame_infos.find(packet_event.rtp_timestamp);
+    if (frame_it != frame_infos.end()) {
       const Clock::duration packet_latency =
           packet_received_time - frame_it->second.encode_end_time;
       AddToLatencyAggregrate(StatisticType::kAvgPacketLatencyMs, packet_latency,
@@ -344,55 +321,46 @@ void StatisticsAnalyzer::RecordPacketLatencies(const PacketEvent packet_event) {
   }
 }
 
-void StatisticsAnalyzer::RecordEventTimes(
-    const Clock::time_point timestamp,
-    const StatisticsEventMediaType media_type,
-    const bool is_receiver_event) {
-  SessionStats* session_stats = GetSessionStatsForMediaType(media_type);
-  if (!session_stats) {
-    return;
-  }
+void StatisticsAnalyzer::RecordEventTimes(const StatisticsEvent& event) {
+  SessionStats& session_stats = session_stats_.Get(event.media_type);
 
-  Clock::time_point sender_timestamp = timestamp;
-  if (is_receiver_event) {
-    auto timestamp_result = ToSenderTimestamp(timestamp, media_type);
-    if (!timestamp_result) {
+  Clock::time_point sender_timestamp = event.timestamp;
+  if (IsReceiverEvent(event.type)) {
+    const Clock::time_point estimated_sent_time =
+        event.received_timestamp - estimated_network_latency_;
+    session_stats.last_response_received_time = std::max(
+        session_stats.last_response_received_time, estimated_sent_time);
+
+    const auto result = ToSenderTimestamp(event.timestamp, event.media_type);
+    if (!result) {
       return;
     }
-    sender_timestamp = *timestamp_result;
-
-    session_stats->last_response_received_time =
-        std::max(session_stats->last_response_received_time, sender_timestamp);
+    sender_timestamp = *result;
   }
 
-  session_stats->first_event_time =
-      std::min(session_stats->first_event_time, sender_timestamp);
-  session_stats->last_event_time =
-      std::max(session_stats->last_event_time, sender_timestamp);
+  session_stats.first_event_time =
+      std::min(session_stats.first_event_time, sender_timestamp);
+  session_stats.last_event_time =
+      std::max(session_stats.last_event_time, sender_timestamp);
 }
 
-void StatisticsAnalyzer::ErasePacketInfo(const PacketEvent packet_event) {
-  StatisticsAnalyzer::PacketKey key =
+void StatisticsAnalyzer::ErasePacketInfo(const PacketEvent& packet_event) {
+  const StatisticsAnalyzer::PacketKey key =
       std::make_pair(packet_event.rtp_timestamp, packet_event.packet_id);
-  PacketInfoMap* packet_infos =
-      GetRecentPacketInfosForMediaType(packet_event.media_type);
-  if (packet_infos) {
-    packet_infos->erase(key);
-  }
+  PacketInfoMap& packet_infos =
+      recent_packet_infos_.Get(packet_event.media_type);
+  packet_infos.erase(key);
 }
 
 void StatisticsAnalyzer::AddToLatencyAggregrate(
-    const StatisticType latency_stat,
-    const Clock::duration latency_delta,
-    const StatisticsEventMediaType media_type) {
-  LatencyStatsMap* latency_stats = GetLatencyStatsMapForMediaType(media_type);
-  if (!latency_stats) {
-    return;
-  }
+    StatisticType latency_stat,
+    Clock::duration latency_delta,
+    StatisticsEventMediaType media_type) {
+  LatencyStatsMap& latency_stats = latency_stats_.Get(media_type);
 
-  auto it = latency_stats->find(latency_stat);
-  if (it == latency_stats->end()) {
-    latency_stats->insert(std::make_pair(
+  auto it = latency_stats.find(latency_stat);
+  if (it == latency_stats.end()) {
+    latency_stats.insert(std::make_pair(
         latency_stat, LatencyStatsAggregate{.data_point_counter = 1,
                                             .sum_latency = latency_delta}));
   } else {
@@ -401,125 +369,25 @@ void StatisticsAnalyzer::AddToLatencyAggregrate(
   }
 }
 
-void StatisticsAnalyzer::AddToHistogram(
-    const HistogramType histogram,
-    const StatisticsEventMediaType media_type,
-    const int64_t sample) {
-  if (media_type == StatisticsEventMediaType::kAudio) {
-    audio_histograms_[static_cast<int>(histogram)].Add(sample);
-  } else if (media_type == StatisticsEventMediaType::kVideo) {
-    video_histograms_[static_cast<int>(histogram)].Add(sample);
-  }
-}
-
-StatisticsAnalyzer::FrameStatsMap*
-StatisticsAnalyzer::GetFrameStatsMapForMediaType(
-    const StatisticsEventMediaType media_type) {
-  switch (media_type) {
-    case StatisticsEventMediaType::kAudio:
-      return &audio_frame_stats_;
-    case StatisticsEventMediaType::kVideo:
-      return &video_frame_stats_;
-    default:
-      return nullptr;
-  }
-}
-
-StatisticsAnalyzer::PacketStatsMap*
-StatisticsAnalyzer::GetPacketStatsMapForMediaType(
-    const StatisticsEventMediaType media_type) {
-  switch (media_type) {
-    case StatisticsEventMediaType::kAudio:
-      return &audio_packet_stats_;
-    case StatisticsEventMediaType::kVideo:
-      return &video_packet_stats_;
-    default:
-      return nullptr;
-  }
-}
-
-StatisticsAnalyzer::LatencyStatsMap*
-StatisticsAnalyzer::GetLatencyStatsMapForMediaType(
-    const StatisticsEventMediaType media_type) {
-  switch (media_type) {
-    case StatisticsEventMediaType::kAudio:
-      return &audio_latency_stats_;
-    case StatisticsEventMediaType::kVideo:
-      return &video_latency_stats_;
-    default:
-      return nullptr;
-  }
-}
-
-StatisticsAnalyzer::SessionStats*
-StatisticsAnalyzer::GetSessionStatsForMediaType(
-    const StatisticsEventMediaType media_type) {
-  switch (media_type) {
-    case StatisticsEventMediaType::kAudio:
-      return &audio_session_stats_;
-    case StatisticsEventMediaType::kVideo:
-      return &video_session_stats_;
-    default:
-      return nullptr;
-  }
-}
-
-StatisticsAnalyzer::FrameInfoMap*
-StatisticsAnalyzer::GetRecentFrameInfosForMediaType(
-    const StatisticsEventMediaType media_type) {
-  switch (media_type) {
-    case StatisticsEventMediaType::kAudio:
-      return &audio_recent_frame_infos_;
-    case StatisticsEventMediaType::kVideo:
-      return &video_recent_frame_infos_;
-    default:
-      return nullptr;
-  }
-}
-
-StatisticsAnalyzer::PacketInfoMap*
-StatisticsAnalyzer::GetRecentPacketInfosForMediaType(
-    const StatisticsEventMediaType media_type) {
-  switch (media_type) {
-    case StatisticsEventMediaType::kAudio:
-      return &audio_recent_packet_infos_;
-    case StatisticsEventMediaType::kVideo:
-      return &video_recent_packet_infos_;
-    default:
-      return nullptr;
-  }
-}
-
-SenderStats::HistogramsList StatisticsAnalyzer::GetAudioHistograms() {
-  SenderStats::HistogramsList histos_list;
-  for (size_t i = 0; i < audio_histograms_.size(); i++) {
-    histos_list[i] = audio_histograms_[i].Copy();
-  }
-  return histos_list;
-}
-
-SenderStats::HistogramsList StatisticsAnalyzer::GetVideoHistograms() {
-  SenderStats::HistogramsList histos_list;
-  for (size_t i = 0; i < video_histograms_.size(); i++) {
-    histos_list[i] = video_histograms_[i].Copy();
-  }
-  return histos_list;
+void StatisticsAnalyzer::AddToHistogram(HistogramType histogram,
+                                        StatisticsEventMediaType media_type,
+                                        int64_t sample) {
+  histograms_.Get(media_type)[static_cast<int>(histogram)].Add(sample);
 }
 
 SenderStats::StatisticsList StatisticsAnalyzer::ConstructStatisticsList(
-    const Clock::time_point end_time,
-    const StatisticsEventMediaType media_type) {
+    Clock::time_point end_time,
+    StatisticsEventMediaType media_type) {
   SenderStats::StatisticsList stats_list;
 
   // TODO(b/298205111): Support kNumFramesDroppedByEncoder stat.
-  stats_list = PopulateFrameCountStat(StatisticsEventType::kFrameCaptureEnd,
-                                      StatisticType::kNumFramesCaptured,
-                                      stats_list, media_type);
+  PopulateFrameCountStat(StatisticsEventType::kFrameCaptureEnd,
+                         StatisticType::kNumFramesCaptured, media_type,
+                         stats_list);
 
   // kEnqueueFps
-  stats_list = PopulateFpsStat(StatisticsEventType::kFrameEncoded,
-                               StatisticType::kEnqueueFps, stats_list,
-                               media_type, end_time);
+  PopulateFpsStat(StatisticsEventType::kFrameEncoded,
+                  StatisticType::kEnqueueFps, media_type, end_time, stats_list);
 
   constexpr StatisticType kSupportedLatencyStats[] = {
       StatisticType::kAvgEncodeTimeMs,      StatisticType::kAvgCaptureLatencyMs,
@@ -528,87 +396,74 @@ SenderStats::StatisticsList StatisticsAnalyzer::ConstructStatisticsList(
       StatisticType::kAvgEndToEndLatencyMs,
   };
   for (StatisticType type : kSupportedLatencyStats) {
-    stats_list = PopulateAvgLatencyStat(type, stats_list, media_type);
+    PopulateAvgLatencyStat(type, media_type, stats_list);
   }
 
   // kEncodeRateKbps
-  stats_list = PopulateFrameBitrateStat(StatisticsEventType::kFrameEncoded,
-                                        StatisticType::kEncodeRateKbps,
-                                        stats_list, media_type, end_time);
+  PopulateFrameBitrateStat(StatisticsEventType::kFrameEncoded,
+                           StatisticType::kEncodeRateKbps, media_type, end_time,
+                           stats_list);
 
   // kPacketTransmissionRateKbps
-  stats_list =
-      PopulatePacketBitrateStat(StatisticsEventType::kPacketSentToNetwork,
-                                StatisticType::kPacketTransmissionRateKbps,
-                                stats_list, media_type, end_time);
+  PopulatePacketBitrateStat(StatisticsEventType::kPacketSentToNetwork,
+                            StatisticType::kPacketTransmissionRateKbps,
+                            media_type, end_time, stats_list);
 
   // kNumPacketsSent
-  stats_list = PopulatePacketCountStat(
-      StatisticsEventType::kPacketSentToNetwork, StatisticType::kNumPacketsSent,
-      stats_list, media_type);
+  PopulatePacketCountStat(StatisticsEventType::kPacketSentToNetwork,
+                          StatisticType::kNumPacketsSent, media_type,
+                          stats_list);
 
   // kNumPacketsReceived
-  stats_list = PopulatePacketCountStat(StatisticsEventType::kPacketReceived,
-                                       StatisticType::kNumPacketsReceived,
-                                       stats_list, media_type);
+  PopulatePacketCountStat(StatisticsEventType::kPacketReceived,
+                          StatisticType::kNumPacketsReceived, media_type,
+                          stats_list);
 
   // kTimeSinceLastReceiverResponseMs
   // kFirstEventTimeMs
   // kLastEventTimeMs
   // kNumLateFrames
-  stats_list = PopulateSessionStats(stats_list, media_type, end_time);
+  PopulateSessionStats(media_type, end_time, stats_list);
 
   return stats_list;
 }
 
-SenderStats::StatisticsList StatisticsAnalyzer::PopulatePacketCountStat(
-    const StatisticsEventType event,
-    const StatisticType stat,
-    SenderStats::StatisticsList stats_list,
-    const StatisticsEventMediaType media_type) {
-  PacketStatsMap* stats_map = GetPacketStatsMapForMediaType(media_type);
-  if (!stats_map) {
-    return stats_list;
-  }
+void StatisticsAnalyzer::PopulatePacketCountStat(
+    StatisticsEventType event,
+    StatisticType stat,
+    StatisticsEventMediaType media_type,
+    SenderStats::StatisticsList& stats_list) {
+  PacketStatsMap& stats_map = packet_stats_.Get(media_type);
 
-  auto it = stats_map->find(event);
-  if (it != stats_map->end()) {
+  auto it = stats_map.find(event);
+  if (it != stats_map.end()) {
     stats_list[static_cast<int>(stat)] = it->second.event_counter;
   }
-
-  return stats_list;
 }
 
-SenderStats::StatisticsList StatisticsAnalyzer::PopulateFrameCountStat(
-    const StatisticsEventType event,
-    const StatisticType stat,
-    SenderStats::StatisticsList stats_list,
-    const StatisticsEventMediaType media_type) {
-  FrameStatsMap* stats_map = GetFrameStatsMapForMediaType(media_type);
-  if (!stats_map) {
-    return stats_list;
-  }
-  auto it = stats_map->find(event);
-  if (it != stats_map->end()) {
+void StatisticsAnalyzer::PopulateFrameCountStat(
+    StatisticsEventType event,
+    StatisticType stat,
+    StatisticsEventMediaType media_type,
+    SenderStats::StatisticsList& stats_list) {
+  FrameStatsMap& stats_map = frame_stats_.Get(media_type);
+
+  const auto it = stats_map.find(event);
+  if (it != stats_map.end()) {
     stats_list[static_cast<int>(stat)] = it->second.event_counter;
   }
-
-  return stats_list;
 }
 
-SenderStats::StatisticsList StatisticsAnalyzer::PopulateFpsStat(
-    const StatisticsEventType event,
-    const StatisticType stat,
-    SenderStats::StatisticsList stats_list,
-    const StatisticsEventMediaType media_type,
-    const Clock::time_point end_time) {
-  FrameStatsMap* stats_map = GetFrameStatsMapForMediaType(media_type);
-  if (!stats_map) {
-    return stats_list;
-  }
+void StatisticsAnalyzer::PopulateFpsStat(
+    StatisticsEventType event,
+    StatisticType stat,
+    StatisticsEventMediaType media_type,
+    Clock::time_point end_time,
+    SenderStats::StatisticsList& stats_list) {
+  FrameStatsMap& stats_map = frame_stats_.Get(media_type);
 
-  auto it = stats_map->find(event);
-  if (it != stats_map->end()) {
+  const auto it = stats_map.find(event);
+  if (it != stats_map.end()) {
     const Clock::duration duration = end_time - start_time_;
     if (duration != Clock::duration::zero()) {
       const int count = it->second.event_counter;
@@ -616,128 +471,110 @@ SenderStats::StatisticsList StatisticsAnalyzer::PopulateFpsStat(
       stats_list[static_cast<int>(stat)] = fps;
     }
   }
-
-  return stats_list;
 }
 
-SenderStats::StatisticsList StatisticsAnalyzer::PopulateAvgLatencyStat(
-    const StatisticType stat,
-    SenderStats::StatisticsList stats_list,
-    const StatisticsEventMediaType media_type) {
-  LatencyStatsMap* latency_map = GetLatencyStatsMapForMediaType(media_type);
-  if (!latency_map) {
-    return stats_list;
-  }
+void StatisticsAnalyzer::PopulateAvgLatencyStat(
+    StatisticType stat,
+    StatisticsEventMediaType media_type,
+    SenderStats::StatisticsList& stats_list
 
-  auto it = latency_map->find(stat);
-  if (it != latency_map->end() && it->second.data_point_counter > 0) {
+) {
+  LatencyStatsMap& latency_map = latency_stats_.Get(media_type);
+
+  const auto it = latency_map.find(stat);
+  if (it != latency_map.end() && it->second.data_point_counter > 0) {
     const double avg_latency =
         InMilliseconds(it->second.sum_latency) / it->second.data_point_counter;
     stats_list[static_cast<int>(stat)] = avg_latency;
   }
-
-  return stats_list;
 }
 
-SenderStats::StatisticsList StatisticsAnalyzer::PopulateFrameBitrateStat(
-    const StatisticsEventType event,
-    const StatisticType stat,
-    SenderStats::StatisticsList stats_list,
-    const StatisticsEventMediaType media_type,
-    const Clock::time_point end_time) {
-  FrameStatsMap* stats_map = GetFrameStatsMapForMediaType(media_type);
-  if (!stats_map) {
-    return stats_list;
-  }
+void StatisticsAnalyzer::PopulateFrameBitrateStat(
+    StatisticsEventType event,
+    StatisticType stat,
+    StatisticsEventMediaType media_type,
+    Clock::time_point end_time,
+    SenderStats::StatisticsList& stats_list) {
+  FrameStatsMap& stats_map = frame_stats_.Get(media_type);
 
-  auto it = stats_map->find(event);
-  if (it != stats_map->end()) {
+  const auto it = stats_map.find(event);
+  if (it != stats_map.end()) {
     const Clock::duration duration = end_time - start_time_;
     if (duration != Clock::duration::zero()) {
       const double kbps = it->second.sum_size / InMilliseconds(duration) * 8;
       stats_list[static_cast<int>(stat)] = kbps;
     }
   }
-
-  return stats_list;
 }
 
-SenderStats::StatisticsList StatisticsAnalyzer::PopulatePacketBitrateStat(
-    const StatisticsEventType event,
-    const StatisticType stat,
-    SenderStats::StatisticsList stats_list,
-    const StatisticsEventMediaType media_type,
-    const Clock::time_point end_time) {
-  PacketStatsMap* stats_map = GetPacketStatsMapForMediaType(media_type);
-  if (!stats_map) {
-    return stats_list;
-  }
+void StatisticsAnalyzer::PopulatePacketBitrateStat(
+    StatisticsEventType event,
+    StatisticType stat,
+    StatisticsEventMediaType media_type,
+    Clock::time_point end_time,
+    SenderStats::StatisticsList& stats_list) {
+  PacketStatsMap& stats_map = packet_stats_.Get(media_type);
 
-  auto it = stats_map->find(event);
-  if (it != stats_map->end()) {
+  auto it = stats_map.find(event);
+  if (it != stats_map.end()) {
     const Clock::duration duration = end_time - start_time_;
     if (duration != Clock::duration::zero()) {
       const double kbps = it->second.sum_size / InMilliseconds(duration) * 8;
       stats_list[static_cast<int>(stat)] = kbps;
     }
   }
-
-  return stats_list;
 }
 
-SenderStats::StatisticsList StatisticsAnalyzer::PopulateSessionStats(
-    SenderStats::StatisticsList stats_list,
-    const StatisticsEventMediaType media_type,
-    const Clock::time_point end_time) {
-  SessionStats* session_stats = GetSessionStatsForMediaType(media_type);
-  if (!session_stats) {
-    return stats_list;
-  }
+void StatisticsAnalyzer::PopulateSessionStats(
+    StatisticsEventMediaType media_type,
+    Clock::time_point end_time,
+    SenderStats::StatisticsList& stats_list) {
+  SessionStats& session_stats = session_stats_.Get(media_type);
 
-  if (session_stats->first_event_time != Clock::time_point::min()) {
+  if (session_stats.first_event_time != Clock::time_point::min()) {
     stats_list[static_cast<int>(StatisticType::kFirstEventTimeMs)] =
-        InMilliseconds(session_stats->first_event_time.time_since_epoch());
+        InMilliseconds(session_stats.first_event_time.time_since_epoch());
   }
 
-  if (session_stats->last_event_time != Clock::time_point::min()) {
+  if (session_stats.last_event_time != Clock::time_point::min()) {
     stats_list[static_cast<int>(StatisticType::kLastEventTimeMs)] =
-        InMilliseconds(session_stats->last_event_time.time_since_epoch());
+        InMilliseconds(session_stats.last_event_time.time_since_epoch());
   }
 
-  if (session_stats->last_response_received_time != Clock::time_point::min()) {
+  if (session_stats.last_response_received_time != Clock::time_point::min()) {
     stats_list[static_cast<int>(
         StatisticType::kTimeSinceLastReceiverResponseMs)] =
-        InMilliseconds(end_time - session_stats->last_response_received_time);
+        InMilliseconds(end_time - session_stats.last_response_received_time);
   }
 
   stats_list[static_cast<int>(StatisticType::kNumLateFrames)] =
-      session_stats->late_frame_counter;
-
-  return stats_list;
+      session_stats.late_frame_counter;
 }
 
-absl::optional<Clock::time_point> StatisticsAnalyzer::ToSenderTimestamp(
+std::optional<Clock::time_point> StatisticsAnalyzer::ToSenderTimestamp(
     Clock::time_point receiver_timestamp,
-    StatisticsEventMediaType media_type) {
-  const absl::optional<Clock::duration> receiver_offset =
+    StatisticsEventMediaType media_type) const {
+  const std::optional<Clock::duration> receiver_offset =
       offset_estimator_->GetEstimatedOffset();
   if (!receiver_offset) {
     return {};
   }
-  receiver_timestamp -= *receiver_offset;
+  return receiver_timestamp + estimated_network_latency_ - *receiver_offset;
+}
 
-  // Offset by the avg network latency, if available.
-  LatencyStatsMap* latency_map = GetLatencyStatsMapForMediaType(media_type);
-  if (latency_map) {
-    auto it = latency_map->find(StatisticType::kAvgNetworkLatencyMs);
-    if (it != latency_map->end() && it->second.data_point_counter > 0) {
-      const Clock::duration avg_network_latency =
-          it->second.sum_latency / it->second.data_point_counter;
-      receiver_timestamp += avg_network_latency;
-    }
+void StatisticsAnalyzer::RecordEstimatedNetworkLatency(
+    Clock::duration latency) {
+  if (estimated_network_latency_ == Clock::duration{}) {
+    estimated_network_latency_ = latency;
+    return;
   }
 
-  return receiver_timestamp;
+  // We use an exponential moving average for recording the network latency.
+  // NOTE: value chosen experimentally to perform some smoothing and represent
+  // the past few seconds of data.
+  constexpr double kWeight = 2.0 / 301.0;
+  estimated_network_latency_ = to_microseconds(
+      latency * kWeight + estimated_network_latency_ * (1.0 - kWeight));
 }
-}  // namespace cast
-}  // namespace openscreen
+
+}  // namespace openscreen::cast

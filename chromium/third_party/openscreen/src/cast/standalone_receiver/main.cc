@@ -26,8 +26,7 @@
 #include "util/stringprintf.h"
 #include "util/trace_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 namespace {
 
 void LogUsage(const char* argv0) {
@@ -230,8 +229,7 @@ int RunStandaloneReceiver(int argc, char* argv[]) {
 }
 
 }  // namespace
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 int main(int argc, char* argv[]) {
   return openscreen::cast::RunStandaloneReceiver(argc, argv);

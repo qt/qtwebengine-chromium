@@ -17,8 +17,7 @@
 #include "util/crypto/certificate_utils.h"
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 namespace {
 using FileUniquePtr = std::unique_ptr<FILE, decltype(&fclose)>;
 
@@ -208,5 +207,4 @@ ErrorOr<GeneratedCredentials> GenerateCredentials(
                              root_cert.get());
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

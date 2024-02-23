@@ -18,8 +18,7 @@
 #include "util/osp_logging.h"
 #include "util/saturate_cast.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 using clock_operators::operator<<;
 
@@ -424,5 +423,4 @@ StreamingAv1Encoder::Av1ImageUniquePtr StreamingAv1Encoder::CloneAsAv1Image(
   return image;
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

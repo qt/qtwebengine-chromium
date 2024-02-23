@@ -17,8 +17,7 @@
 #include "platform/base/ip_address.h"
 #include "platform/base/span.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // Provides the common environment for operating system resources shared by
 // multiple components.
@@ -153,7 +152,6 @@ class Environment : public UdpSocket::Client {
   StatisticsCollector* statistics_collector_ = nullptr;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STREAMING_ENVIRONMENT_H_

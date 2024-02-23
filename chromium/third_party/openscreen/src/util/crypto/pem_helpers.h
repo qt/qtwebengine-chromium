@@ -8,16 +8,14 @@
 #include <openssl/evp.h>
 
 #include <string>
+#include <string_view>
 #include <vector>
-
-#include "absl/strings/string_view.h"
 
 namespace openscreen {
 
-std::vector<std::string> ReadCertificatesFromPemFile(
-    absl::string_view filename);
+std::vector<std::string> ReadCertificatesFromPemFile(std::string_view filename);
 
-bssl::UniquePtr<EVP_PKEY> ReadKeyFromPemFile(absl::string_view filename);
+bssl::UniquePtr<EVP_PKEY> ReadKeyFromPemFile(std::string_view filename);
 
 }  // namespace openscreen
 

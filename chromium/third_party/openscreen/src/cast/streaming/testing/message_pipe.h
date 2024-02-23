@@ -17,8 +17,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 class MessagePipeEnd : public MessagePort {
  public:
@@ -89,7 +88,6 @@ class MessagePipe {
   MessagePipeEnd right_;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STREAMING_TESTING_MESSAGE_PIPE_H_

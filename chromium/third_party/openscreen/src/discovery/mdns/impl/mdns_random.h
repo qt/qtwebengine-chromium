@@ -9,8 +9,7 @@
 
 #include "platform/api/time.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 class MdnsRandom {
  public:
@@ -73,7 +72,6 @@ class MdnsRandom {
       kMinimumProbeInitializationDelayMs, kMaximumProbeInitializationDelayMs};
 };
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery
 
 #endif  // DISCOVERY_MDNS_IMPL_MDNS_RANDOM_H_

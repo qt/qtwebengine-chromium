@@ -9,8 +9,7 @@
 #include "cast/common/channel/proto/cast_channel.pb.h"
 #include "gmock/gmock.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 class MockCastMessageHandler final : public CastMessageHandler {
  public:
@@ -22,7 +21,6 @@ class MockCastMessageHandler final : public CastMessageHandler {
               (override));
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_COMMON_CHANNEL_TESTING_MOCK_CAST_MESSAGE_HANDLER_H_

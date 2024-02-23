@@ -6,8 +6,7 @@
 
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 ReceiverSocketFactory::Client::~Client() = default;
 
@@ -49,5 +48,4 @@ void ReceiverSocketFactory::OnError(TlsConnectionFactory* factory,
   client_->OnError(this, error);
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

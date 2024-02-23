@@ -24,8 +24,7 @@ using ::testing::NiceMock;
 using ::testing::Return;
 using ::testing::StrictMock;
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 namespace {
 
@@ -1028,5 +1027,4 @@ TEST_F(ReceiverSessionTest, HandlesRpcMessage) {
   ASSERT_TRUE(received_initialize_message);
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

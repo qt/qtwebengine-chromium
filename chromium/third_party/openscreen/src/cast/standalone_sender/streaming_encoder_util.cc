@@ -8,8 +8,7 @@
 
 #include <algorithm>
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 void CopyPlane(const uint8_t* src,
                int src_stride,
                int num_rows,
@@ -26,5 +25,4 @@ void CopyPlane(const uint8_t* src,
     src += src_stride;
   }
 }
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

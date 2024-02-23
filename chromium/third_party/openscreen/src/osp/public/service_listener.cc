@@ -4,8 +4,7 @@
 
 #include "osp/public/service_listener.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 ServiceListener::Metrics::Metrics() = default;
 ServiceListener::Metrics::~Metrics() = default;
@@ -24,5 +23,4 @@ void ServiceListener::SetConfig(const Config& config) {
   config_ = config;
 }
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp

@@ -10,8 +10,7 @@
 #include "cast/standalone_receiver/sdl_player_base.h"
 #include "cast/streaming/constants.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // Consumes frames from a Receiver, decodes them, and renders them to a
 // SDL_Renderer.
@@ -54,7 +53,6 @@ class SDLVideoPlayer final : public SDLPlayerBase {
   SDLTextureUniquePtr texture_;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STANDALONE_RECEIVER_SDL_VIDEO_PLAYER_H_

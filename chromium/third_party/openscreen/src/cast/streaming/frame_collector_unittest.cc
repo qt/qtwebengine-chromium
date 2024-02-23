@@ -18,8 +18,7 @@
 
 using testing::ElementsAreArray;
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 namespace {
 
 const FrameId kSomeFrameId = FrameId::first() + 39;
@@ -210,5 +209,4 @@ TEST(FrameCollectorTest, RejectsInvalidParts) {
 }
 
 }  // namespace
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

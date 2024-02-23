@@ -13,8 +13,7 @@
 #include "platform/base/ip_address.h"
 #include "util/std_util.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 bool IsInstanceValid(const std::string& instance);
 bool IsServiceValid(const std::string& service);
@@ -117,7 +116,6 @@ inline bool operator!=(const DnsSdInstance& lhs, const DnsSdInstance& rhs) {
   return !(lhs == rhs);
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery
 
 #endif  // DISCOVERY_DNSSD_PUBLIC_DNS_SD_INSTANCE_H_

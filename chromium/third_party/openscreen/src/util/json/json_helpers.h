@@ -12,7 +12,6 @@
 #include <utility>
 #include <vector>
 
-#include "absl/strings/string_view.h"
 #include "json/value.h"
 #include "platform/base/error.h"
 #include "util/chrono_helpers.h"
@@ -21,8 +20,7 @@
 
 // This file contains helper methods for parsing JSON, in an attempt to
 // reduce boilerplate code when working with JsonCpp.
-namespace openscreen {
-namespace json {
+namespace openscreen::json {
 
 inline bool TryParseBool(const Json::Value& value, bool* out) {
   if (!value.isBool()) {
@@ -172,7 +170,6 @@ Json::Value PrimitiveVectorToJson(const std::vector<T>& vec) {
   return array;
 }
 
-}  // namespace json
-}  // namespace openscreen
+}  // namespace openscreen::json
 
 #endif  // UTIL_JSON_JSON_HELPERS_H_

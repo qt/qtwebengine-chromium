@@ -7,8 +7,7 @@
 
 #include "discovery/mdns/public/mdns_records.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 class MdnsDomainConfirmedProvider {
  public:
@@ -22,7 +21,6 @@ class MdnsDomainConfirmedProvider {
                              const DomainName& confirmed_name) = 0;
 };
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery
 
 #endif  // DISCOVERY_MDNS_PUBLIC_MDNS_DOMAIN_CONFIRMED_PROVIDER_H_

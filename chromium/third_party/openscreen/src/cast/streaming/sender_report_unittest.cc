@@ -9,8 +9,7 @@
 #include "gtest/gtest.h"
 #include "platform/base/span.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 namespace {
 
 constexpr Ssrc kSenderSsrc{1};
@@ -186,5 +185,4 @@ TEST_F(SenderReportTest, ComputesTimePointsFromReportIds) {
 }
 
 }  // namespace
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

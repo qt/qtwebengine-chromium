@@ -13,8 +13,7 @@
 #include "gtest/gtest.h"
 #include "platform/base/ip_address.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // Constants used for testing.
 extern const IPAddress kAddressV4;
@@ -43,7 +42,6 @@ void CompareTxtInt(const discovery::DnsSdTxtRecord& txt,
                    const std::string& key,
                    int expected);
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_COMMON_PUBLIC_TESTING_DISCOVERY_UTILS_H_

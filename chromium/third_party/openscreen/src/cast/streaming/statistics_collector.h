@@ -11,8 +11,7 @@
 #include "platform/api/time.h"
 #include "platform/base/span.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // This POD struct contains helpful information about a given packet that is
 // not stored directly on the packet itself.
@@ -60,7 +59,6 @@ class StatisticsCollector {
   std::vector<FrameEvent> recent_frame_events_;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STREAMING_STATISTICS_COLLECTOR_H_

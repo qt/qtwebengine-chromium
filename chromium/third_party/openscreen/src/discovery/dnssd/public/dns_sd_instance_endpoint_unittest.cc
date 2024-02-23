@@ -8,8 +8,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 TEST(DnsSdInstanceEndpointTests, ComparisonTests) {
   constexpr NetworkInterfaceIndex kIndex0 = 0;
@@ -73,5 +72,4 @@ TEST(DnsSdInstanceEndpointTests, Constructors) {
   EXPECT_EQ(ep1, ep4);
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

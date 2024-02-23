@@ -13,8 +13,7 @@
 #include "platform/api/time.h"
 #include "platform/base/error.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 class QuicStream;
 
@@ -56,9 +55,9 @@ class MessageDemuxer {
 
    private:
     MessageDemuxer* parent_ = nullptr;
-    bool is_default_;
-    uint64_t endpoint_id_;
-    msgs::Type message_type_;
+    bool is_default_ = false;
+    uint64_t endpoint_id_ = 0;
+    msgs::Type message_type_ = msgs::Type::kUnknown;
   };
 
   static constexpr size_t kDefaultBufferLimit = 1 << 16;
@@ -131,7 +130,6 @@ class MessageTypeDecoder {
                                          size_t* num_bytes_decoded);
 };
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp
 
 #endif  // OSP_PUBLIC_MESSAGE_DEMUXER_H_

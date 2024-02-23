@@ -10,8 +10,7 @@
 #include "util/osp_logging.h"
 #include "util/saturate_cast.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 namespace {
 
 constexpr Clock::time_point kNullTime = Clock::time_point::min();
@@ -78,5 +77,4 @@ void ClockDriftSmoother::Update(Clock::time_point now,
 // static
 constexpr std::chrono::seconds ClockDriftSmoother::kDefaultTimeConstant;
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

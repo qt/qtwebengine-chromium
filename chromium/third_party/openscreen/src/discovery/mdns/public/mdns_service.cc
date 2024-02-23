@@ -4,12 +4,10 @@
 
 #include "discovery/mdns/public/mdns_service.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 MdnsService::MdnsService() = default;
 
 MdnsService::~MdnsService() = default;
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

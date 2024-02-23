@@ -9,8 +9,7 @@
 
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 // static
 std::unique_ptr<QuicProtocolConnection> QuicProtocolConnection::FromExisting(
@@ -166,5 +165,4 @@ ServiceConnectionData::~ServiceConnectionData() = default;
 ServiceConnectionData& ServiceConnectionData::operator=(
     ServiceConnectionData&&) noexcept = default;
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp

@@ -7,8 +7,7 @@
 #include "gtest/gtest.h"
 #include "platform/base/error.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 TEST(ReceiverListTest, AddReceivers) {
   ReceiverList list;
@@ -92,5 +91,4 @@ TEST(ReceiverListTest, RemoveAllReceivers) {
   ASSERT_TRUE(list.receivers().empty());
 }
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp

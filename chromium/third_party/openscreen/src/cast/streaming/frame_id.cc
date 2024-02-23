@@ -4,8 +4,7 @@
 
 #include "cast/streaming/frame_id.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 std::ostream& operator<<(std::ostream& out, const FrameId rhs) {
   return out << rhs.ToString();
@@ -18,5 +17,4 @@ std::string FrameId::ToString() const {
   return "F" + std::to_string(value());
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

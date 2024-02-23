@@ -17,8 +17,7 @@
 #include "cast/common/public/trust_store.h"
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 namespace {
 
 // Returns the OID for the Audio-Only Cast policy
@@ -95,5 +94,4 @@ Error VerifyDeviceCert(const std::vector<std::string>& der_certs,
   return Error::Code::kNone;
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

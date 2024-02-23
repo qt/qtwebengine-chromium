@@ -11,8 +11,7 @@
 #include "discovery/mdns/impl/mdns_sender.h"
 #include "platform/api/task_runner.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 namespace {
 
 // The timespan by which to delay subsequent mDNS Probe queries for the same
@@ -249,5 +248,4 @@ MdnsProbeManagerImpl::OngoingProbe::OngoingProbe(
       requested_name(std::move(name)),
       callback(callback) {}
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

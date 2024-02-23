@@ -11,8 +11,7 @@
 #include "cast/common/channel/proto/cast_channel.pb.h"
 #include "platform/base/error.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // Creates a message that responds to a previous app availability request with
 // ID |request_id| which declares |app_id| to have availability of either
@@ -26,7 +25,6 @@ ErrorOr<::cast::channel::CastMessage> CreateAppUnavailableResponse(
     const std::string& sender_id,
     const std::string& app_id);
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_RECEIVER_CHANNEL_MESSAGE_UTIL_H_

@@ -7,6 +7,7 @@
 
 #include <map>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -16,8 +17,7 @@
 #include "platform/api/time.h"
 #include "util/alarm.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 class StatisticsAnalyzer {
  public:
@@ -69,6 +69,24 @@ class StatisticsAnalyzer {
     int late_frame_counter = 0;
   };
 
+  // Named std::pair equivalent for audio + video classes.
+  template <typename T>
+  struct AVPair {
+    T audio;
+    T video;
+
+    const T& Get(StatisticsEventMediaType media_type) const {
+      if (media_type == StatisticsEventMediaType::kAudio) {
+        return audio;
+      }
+      OSP_CHECK(media_type == StatisticsEventMediaType::kVideo);
+      return video;
+    }
+    T& Get(StatisticsEventMediaType media_type) {
+      return const_cast<T&>(const_cast<const AVPair*>(this)->Get(media_type));
+    }
+  };
+
   using FrameStatsMap = std::map<StatisticsEventType, FrameStatsAggregate>;
   using PacketStatsMap = std::map<StatisticsEventType, PacketStatsAggregate>;
   using LatencyStatsMap = std::map<StatisticType, LatencyStatsAggregate>;
@@ -90,87 +108,70 @@ class StatisticsAnalyzer {
 
   // Handles incoming stat events, and adds their infos to all of the proper
   // stats maps / aggregates.
-  void ProcessFrameEvents(const std::vector<FrameEvent> frame_events);
-  void ProcessPacketEvents(const std::vector<PacketEvent> packet_events);
-  void RecordFrameLatencies(const FrameEvent frame_event);
-  void RecordPacketLatencies(const PacketEvent packet_event);
-  void RecordEventTimes(const Clock::time_point timestamp,
-                        const StatisticsEventMediaType media_type,
-                        const bool is_receiver_event);
-  void ErasePacketInfo(const PacketEvent packet_event);
-  void AddToLatencyAggregrate(const StatisticType latency_stat,
-                              const Clock::duration latency_delta,
-                              const StatisticsEventMediaType media_type);
-  void AddToHistogram(const HistogramType histogram,
-                      const StatisticsEventMediaType media_type,
-                      const int64_t sample);
-
-  // Gets a reference to the appropriate object based on `media_type`.
-  FrameStatsMap* GetFrameStatsMapForMediaType(
-      const StatisticsEventMediaType media_type);
-  PacketStatsMap* GetPacketStatsMapForMediaType(
-      const StatisticsEventMediaType media_type);
-  LatencyStatsMap* GetLatencyStatsMapForMediaType(
-      const StatisticsEventMediaType media_type);
-  SessionStats* GetSessionStatsForMediaType(
-      const StatisticsEventMediaType media_type);
-  FrameInfoMap* GetRecentFrameInfosForMediaType(
-      const StatisticsEventMediaType media_type);
-  PacketInfoMap* GetRecentPacketInfosForMediaType(
-      const StatisticsEventMediaType media_type);
-
-  // Create copies of the stat histograms in their current stats, and return
-  // them as a list.
-  SenderStats::HistogramsList GetAudioHistograms();
-  SenderStats::HistogramsList GetVideoHistograms();
+  void ProcessFrameEvents(const std::vector<FrameEvent>& frame_events);
+  void ProcessPacketEvents(const std::vector<PacketEvent>& packet_events);
+  void RecordFrameLatencies(const FrameEvent& frame_event);
+  void RecordPacketLatencies(const PacketEvent& packet_event);
+  void RecordEventTimes(const StatisticsEvent& event);
+  void ErasePacketInfo(const PacketEvent& packet_event);
+  void AddToLatencyAggregrate(StatisticType latency_stat,
+                              Clock::duration latency_delta,
+                              StatisticsEventMediaType media_type);
+  void AddToHistogram(HistogramType histogram,
+                      StatisticsEventMediaType media_type,
+                      int64_t sample);
 
   // Creates a stats list, and populates the entries based on stored stats info
   // / aggregates for each stat field.
   SenderStats::StatisticsList ConstructStatisticsList(
-      const Clock::time_point end_time,
-      const StatisticsEventMediaType media_type);
-  SenderStats::StatisticsList PopulatePacketCountStat(
-      const StatisticsEventType event,
-      const StatisticType stat,
-      SenderStats::StatisticsList stats_list,
-      const StatisticsEventMediaType media_type);
-  SenderStats::StatisticsList PopulateFrameCountStat(
-      const StatisticsEventType event,
-      const StatisticType stat,
-      SenderStats::StatisticsList stats_list,
-      const StatisticsEventMediaType media_type);
-  SenderStats::StatisticsList PopulateFpsStat(
-      const StatisticsEventType event,
-      const StatisticType stat,
-      SenderStats::StatisticsList stats_list,
-      StatisticsEventMediaType media_type,
-      const Clock::time_point end_time);
-  SenderStats::StatisticsList PopulateAvgLatencyStat(
-      const StatisticType stat,
-      SenderStats::StatisticsList stats_list,
-      const StatisticsEventMediaType media_type);
-  SenderStats::StatisticsList PopulateFrameBitrateStat(
-      const StatisticsEventType event,
-      const StatisticType stat,
-      SenderStats::StatisticsList stats_list,
-      const StatisticsEventMediaType media_type,
-      const Clock::time_point end_time);
-  SenderStats::StatisticsList PopulatePacketBitrateStat(
-      const StatisticsEventType event,
-      const StatisticType stat,
-      const SenderStats::StatisticsList stats_list,
-      StatisticsEventMediaType media_type,
-      const Clock::time_point end_time);
-  SenderStats::StatisticsList PopulateSessionStats(
-      SenderStats::StatisticsList stats_list,
-      const StatisticsEventMediaType media_type,
-      const Clock::time_point end_time);
+      Clock::time_point end_time,
+      StatisticsEventMediaType media_type);
+
+  void PopulatePacketCountStat(StatisticsEventType event,
+                               StatisticType stat,
+                               StatisticsEventMediaType media_type,
+                               SenderStats::StatisticsList& stats_list);
+
+  void PopulateFrameCountStat(StatisticsEventType event,
+                              StatisticType stat,
+                              StatisticsEventMediaType media_type,
+                              SenderStats::StatisticsList& stats_list);
+
+  void PopulateFpsStat(StatisticsEventType event,
+                       StatisticType stat,
+                       StatisticsEventMediaType media_type,
+                       Clock::time_point end_time,
+                       SenderStats::StatisticsList& stats_list);
+
+  void PopulateAvgLatencyStat(StatisticType stat,
+                              StatisticsEventMediaType media_type,
+                              SenderStats::StatisticsList& stats_list);
+
+  void PopulateFrameBitrateStat(StatisticsEventType event,
+                                StatisticType stat,
+                                StatisticsEventMediaType media_type,
+                                Clock::time_point end_time,
+                                SenderStats::StatisticsList& stats_list);
+
+  void PopulatePacketBitrateStat(StatisticsEventType event,
+                                 StatisticType stat,
+                                 StatisticsEventMediaType media_type,
+                                 Clock::time_point end_time,
+                                 SenderStats::StatisticsList& stats_list);
+
+  void PopulateSessionStats(StatisticsEventMediaType media_type,
+                            Clock::time_point end_time,
+                            SenderStats::StatisticsList& stats_list);
 
   // Calculates the offset between the sender and receiver clocks and returns
   // the sender-side version of this receiver timestamp, if possible.
-  absl::optional<Clock::time_point> ToSenderTimestamp(
+  std::optional<Clock::time_point> ToSenderTimestamp(
       Clock::time_point receiver_timestamp,
-      StatisticsEventMediaType media_type);
+      StatisticsEventMediaType media_type) const;
+
+  // Records the network latency estimate, which is then weighted and used as
+  // part of the moving network latency estimate.
+  void RecordEstimatedNetworkLatency(Clock::duration latency);
 
   // The statistics client to which we report analyzed statistics.
   SenderStatsClient* const stats_client_;
@@ -186,35 +187,31 @@ class StatisticsAnalyzer {
   Alarm alarm_;
   Clock::time_point start_time_;
 
+  // Keep track of the currently estimated network latency.
+  //
+  // NOTE: though we currently record the average network latency separately for
+  // audio and video, they use the same network so the value should be the same.
+  Clock::duration estimated_network_latency_{};
+
   // Maps of frame / packet infos used for stats that rely on seeing multiple
   // events. For example, network latency is the calculated time difference
   // between went a packet is sent, and when it is received.
-  FrameInfoMap audio_recent_frame_infos_;
-  FrameInfoMap video_recent_frame_infos_;
-  PacketInfoMap audio_recent_packet_infos_;
-  PacketInfoMap video_recent_packet_infos_;
+  AVPair<FrameInfoMap> recent_frame_infos_;
+  AVPair<PacketInfoMap> recent_packet_infos_;
 
-  // Aggregate stats for particular event types.
-  FrameStatsMap audio_frame_stats_;
-  FrameStatsMap video_frame_stats_;
-  PacketStatsMap audio_packet_stats_;
-  PacketStatsMap video_packet_stats_;
-
-  // Aggregates related to latency-type stats.
-  LatencyStatsMap audio_latency_stats_;
-  LatencyStatsMap video_latency_stats_;
+  // Aggregate statistics.
+  AVPair<FrameStatsMap> frame_stats_;
+  AVPair<PacketStatsMap> packet_stats_;
+  AVPair<LatencyStatsMap> latency_stats_;
 
   // Stats that relate to the entirety of the session. For example, total late
   // frames, or time of last event.
-  SessionStats audio_session_stats_;
-  SessionStats video_session_stats_;
+  AVPair<SessionStats> session_stats_;
 
-  // Histograms
-  SenderStats::HistogramsList audio_histograms_;
-  SenderStats::HistogramsList video_histograms_;
+  // Histograms.
+  AVPair<SenderStats::HistogramsList> histograms_;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STREAMING_STATISTICS_ANALYZER_H_

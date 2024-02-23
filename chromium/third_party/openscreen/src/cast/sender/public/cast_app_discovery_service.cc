@@ -4,8 +4,7 @@
 
 #include "cast/sender/public/cast_app_discovery_service.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 CastAppDiscoveryService::Subscription::Subscription(
     CastAppDiscoveryService* discovery_service,
@@ -47,5 +46,4 @@ void CastAppDiscoveryService::Subscription::Swap(Subscription& other) {
   id_ = id;
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

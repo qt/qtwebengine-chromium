@@ -15,8 +15,7 @@
 #include "platform/base/span.h"
 #include "util/flat_map.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 class Receiver;
 
@@ -55,7 +54,6 @@ class ReceiverPacketRouter final : public Environment::PacketConsumer {
   FlatMap<Ssrc, Receiver*> receivers_;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STREAMING_RECEIVER_PACKET_ROUTER_H_

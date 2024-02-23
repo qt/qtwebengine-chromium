@@ -10,8 +10,7 @@
 #include "discovery/dnssd/impl/network_interface_config.h"
 #include "gmock/gmock.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 class FakeNetworkInterfaceConfig : public NetworkInterfaceConfig {
  public:
@@ -26,7 +25,6 @@ class FakeNetworkInterfaceConfig : public NetworkInterfaceConfig {
   void set_address_v6(IPAddress address) { address_v6_ = std::move(address); }
 };
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery
 
 #endif  // DISCOVERY_DNSSD_TESTING_FAKE_NETWORK_INTERFACE_CONFIG_H_

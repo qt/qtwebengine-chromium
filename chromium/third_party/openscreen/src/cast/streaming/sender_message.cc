@@ -13,8 +13,7 @@
 #include "util/json/json_helpers.h"
 #include "util/json/json_serialization.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 namespace {
 
@@ -109,5 +108,4 @@ ErrorOr<Json::Value> SenderMessage::ToJson() const {
   return root;
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

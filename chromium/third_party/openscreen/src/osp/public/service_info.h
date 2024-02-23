@@ -11,8 +11,7 @@
 #include "platform/api/network_interface.h"
 #include "platform/base/ip_address.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 constexpr char kOpenScreenServiceName[] = "_openscreen._udp";
 
@@ -44,7 +43,6 @@ struct ServiceInfo {
   IPEndpoint v6_endpoint;
 };
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp
 
 #endif  // OSP_PUBLIC_SERVICE_INFO_H_

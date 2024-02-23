@@ -15,8 +15,7 @@
 #include "util/osp_logging.h"
 #include "util/trace_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 namespace {
 
@@ -236,5 +235,4 @@ SDL_AudioFormat SDLAudioPlayer::GetSDLAudioFormat(AVSampleFormat format) {
   return kSDLAudioFormatUnknown;
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

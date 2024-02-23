@@ -10,8 +10,7 @@
 
 #include "platform/base/macros.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 // Tracks the next available message request ID per endpoint by its endpoint ID.
 // These can only be incremented while an endpoint is connected but can be reset
@@ -39,7 +38,6 @@ class EndpointRequestIds {
   OSP_DISALLOW_COPY_AND_ASSIGN(EndpointRequestIds);
 };
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp
 
 #endif  // OSP_PUBLIC_ENDPOINT_REQUEST_IDS_H_

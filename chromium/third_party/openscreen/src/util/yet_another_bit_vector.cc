@@ -16,6 +16,10 @@ namespace {
 // Returns a bitmask where all the bits whose positions are in the range
 // [begin,begin+count) are set, and all other bits are cleared.
 constexpr uint64_t MakeBitmask(int begin, int count) {
+  if (begin >= std::numeric_limits<uint64_t>::digits) {
+    return 0;
+  }
+
   // Form a contiguous sequence of bits by subtracting one from the appropriate
   // power of 2. Set all the bits if count >= 64.
   const uint64_t bits_in_wrong_position =
@@ -136,13 +140,15 @@ void YetAnotherBitVector::ShiftRight(int steps) {
     // With |steps| now less than 64, shift the bits right within each array
     // element. Start from the back of the array, working towards the front, and
     // propagating any bits that are moving across array elements.
-    uint64_t incoming_carry_bits = 0;
-    const uint64_t outgoing_mask = MakeBitmask(0, steps);
-    for (int i = num_integers; i-- > 0;) {
-      const uint64_t outgoing_carry_bits = bits_.as_array[i] & outgoing_mask;
-      bits_.as_array[i] >>= steps;
-      bits_.as_array[i] |= (incoming_carry_bits << (kBitsPerInteger - steps));
-      incoming_carry_bits = outgoing_carry_bits;
+    if (steps > 0) {
+      uint64_t incoming_carry_bits = 0;
+      const uint64_t outgoing_mask = MakeBitmask(0, steps);
+      for (int i = num_integers; i-- > 0;) {
+        const uint64_t outgoing_carry_bits = bits_.as_array[i] & outgoing_mask;
+        bits_.as_array[i] >>= steps;
+        bits_.as_array[i] |= (incoming_carry_bits << (kBitsPerInteger - steps));
+        incoming_carry_bits = outgoing_carry_bits;
+      }
     }
   } else {
     if (steps < kBitsPerInteger) {

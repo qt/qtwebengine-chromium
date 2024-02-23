@@ -8,8 +8,7 @@
 
 #include "cast/streaming/message_fields.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 namespace {
 
@@ -109,5 +108,4 @@ void RemotingSender::OnPlaybackRateMessage(const RpcMessage& message) {
   client_->OnPlaybackRateChange(message.double_value());
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

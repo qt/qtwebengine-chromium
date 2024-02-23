@@ -314,15 +314,15 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling V8
   # and whatever else without interference from each other.
-  'src_internal_revision': '732e44cd8932d3427734e47bb9d5850e5e995b2b',
+  'src_internal_revision': '038662e359cba381670f6b9cc47d60dfa46646aa',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling Skia
   # and whatever else without interference from each other.
-  'skia_revision': 'bd56a010b6941116cd1900276bf5201f9a9c73da',
+  'skia_revision': '7754f9f8257ad0872b7bb04d969452b74bb0c0bc',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling V8
   # and whatever else without interference from each other.
-  'v8_revision': 'f0f8f4b2e7df9dc17dc0990766a65ca0489b6bdb',
+  'v8_revision': '36e4828ab658b8ad72f80974883c4c94f6e7012c',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling ANGLE
   # and whatever else without interference from each other.
@@ -849,7 +849,7 @@ deps = {
 
   'src/clank': {
     'url': Var('chrome_git') + '/clank/internal/apps.git' + '@' +
-    'f3b627efe663446c694cd3143cbe6e5f697d5e99',
+    '8b1d9abb7a9581c5cdc8c89cdb02bce7efdc2b6a',
     'condition': 'checkout_android and checkout_src_internal',
   },
 
@@ -1766,7 +1766,7 @@ deps = {
     Var('chromium_git') + '/external/github.com/cisco/openh264' + '@' + '09a4f3ec842a8932341b195c5b01e141c8a16eb7',
 
   'src/third_party/openscreen/src':
-    Var('chromium_git') + '/openscreen' + '@' + 'fd0e81e558086c30fa91a4af89361cef8d1327e4',
+    Var('chromium_git') + '/openscreen' + '@' + '971d6055e7b78c474e2e734e55a2991fbb7ab665',
 
   'src/third_party/openxr/src': {
     'url': Var('chromium_git') + '/external/github.com/KhronosGroup/OpenXR-SDK' + '@' + '58a00cf85c39ad5ec4dc43a769624e420c06179a',
@@ -4109,7 +4109,7 @@ deps = {
   # grepping.
   'src/chrome/installer/mac/internal': {
       'url': Var('chrome_git') + '/chrome/installer/mac/internal.git' + '@' +
-        'd7fb448e1fc84c05c40719d83d785fe2a131e616',
+        'ed0d43308e9fa81b929468a3e651cb60744d9415',
       'condition': 'checkout_src_internal',
   },
 
@@ -4251,7 +4251,7 @@ deps = {
 
   'src/ios_internal':  {
       'url': Var('chrome_git') + '/chrome/ios_internal.git' + '@' +
-        '75fdd01ec66965420e31d00af762bc6df29cd424',
+        '5a9d5a0d36ce618402c3ac82416126d8c443656b',
       'condition': 'checkout_ios and checkout_src_internal',
   },
 

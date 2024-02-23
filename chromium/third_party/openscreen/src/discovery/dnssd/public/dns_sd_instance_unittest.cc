@@ -9,8 +9,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 TEST(DnsSdInstanceTests, InstanceLength) {
   EXPECT_TRUE(IsInstanceValid("instance"));
@@ -251,5 +250,4 @@ TEST(DnsSdInstanceTests, ComparisonTests) {
   EXPECT_LT(kIn9, kIn10);
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

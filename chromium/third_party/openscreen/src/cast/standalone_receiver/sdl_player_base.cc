@@ -16,8 +16,7 @@
 #include "util/osp_logging.h"
 #include "util/trace_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 SDLPlayerBase::SDLPlayerBase(ClockNowFunctionPtr now_function,
                              TaskRunner& task_runner,
@@ -251,5 +250,4 @@ SDLPlayerBase::PendingFrame::PendingFrame(PendingFrame&&) noexcept = default;
 SDLPlayerBase::PendingFrame& SDLPlayerBase::PendingFrame::operator=(
     PendingFrame&&) noexcept = default;
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

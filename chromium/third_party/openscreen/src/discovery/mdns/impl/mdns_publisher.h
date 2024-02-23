@@ -7,10 +7,10 @@
 
 #include <map>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
-#include "absl/types/optional.h"
 #include "discovery/mdns/impl/mdns_responder.h"
 #include "discovery/mdns/public/mdns_records.h"
 #include "util/alarm.h"
@@ -184,7 +184,7 @@ class MdnsPublisher : public MdnsResponder::RecordHandler {
 
   // Alarm to cancel batching of records when this class is destroyed, and
   // instead send them immediately. Variable is only set when it is in use.
-  absl::optional<Alarm> batch_records_alarm_;
+  std::optional<Alarm> batch_records_alarm_;
 
   // Number of times to announce a newly published record.
   const int max_announcement_attempts_;

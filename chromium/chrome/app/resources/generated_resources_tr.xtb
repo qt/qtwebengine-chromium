@@ -654,7 +654,7 @@ Uygulamalara vermiş olduğunuz izinler bu hesap için geçerli olabilir. Androi
 <translation id="1523279371236772909">Geçen ay görüntülendi</translation>
 <translation id="1523978563989812243">Metin okuma motorları</translation>
 <translation id="1524430321211440688">Klavye</translation>
-<translation id="1524563461097350801">Hayır, teşekkürler</translation>
+<translation id="1524563461097350801">Hayır, Teşekkürler</translation>
 <translation id="1525740877599838384">Konumu belirlemek için yalnızca kablosuz ağ kullan</translation>
 <translation id="152629053603783244">Linux'u yeniden başlat</translation>
 <translation id="1526560967942511387">Adsız Doküman</translation>
@@ -2691,7 +2691,7 @@ Sunucunun mesajı: <ph name="SERVER_MSG" /></translation>
 <translation id="3090871774332213558">"<ph name="DEVICE_NAME" />" eşlendi</translation>
 <translation id="3093714882666365141">Sitelerin ödeme işleyici yüklemesine izin verme</translation>
 <translation id="3094141017404513551">Bu işlem göz atma etkinliklerinizi <ph name="EXISTING_USER" /> hesabından ayıracak</translation>
-<translation id="3094223846531205616">{COUNT,plural, =0{Süresi bugün dolacak}=1{Süresi yarın dolacak}other{Süresi # içinde dolacak}}</translation>
+<translation id="3094223846531205616">{COUNT,plural, =0{Süresi bugün dolacak}=1{Süresi yarın dolacak}other{Süresi # gün içinde dolacak}}</translation>
 <translation id="3094521107841754472"><ph name="PREVIOUS_PRICE" /> olan fiyat <ph name="CURRENT_PRICE" /> olarak değişti.</translation>
 <translation id="3095871294753148861">Yer işaretleri, şifreler ve diğer tarayıcı verileri, birincil hesapla senkronize edilir.</translation>
 <translation id="3099836255427453137">{NUM_EXTENSIONS,plural, =1{Zararlı olabilecek 1 uzantı kapalı. İsterseniz bunu kaldırabilirsiniz.}other{Zararlı olabilecek {NUM_EXTENSIONS} uzantı kapalı. İsterseniz bunları kaldırabilirsiniz.}}</translation>
@@ -5442,7 +5442,7 @@ Uzaklaştırmak için Ctrl + Alt + Parlaklığı Azalt tuşlarını kullanın.</
 <translation id="5383740867328871413">Adsız grup - <ph name="GROUP_CONTENTS" /> - <ph name="COLLAPSED_STATE" /></translation>
 <translation id="538822246583124912">Kurumsal politika değişti. Araç çubuğuna denemeler düğmesi eklendi. Denemeleri etkinleştirmek için iletişim kutusunu açmak üzere tıklayın.</translation>
 <translation id="5388885445722491159">Eşleştirilmiş</translation>
-<translation id="5389626883706033615">Sitelerin, hakkınızda kaydettikleri bilgileri kullanmak için izin istemesi engellendi</translation>
+<translation id="5389626883706033615">Sitelerin, hakkınızda kaydettikleri bilgileri kullanmak için izin istemesi engellenir</translation>
 <translation id="5390112241331447203">Geri bildirim raporlarında gönderilen system_logs.txt dosyasını dahil et.</translation>
 <translation id="5390677308841849479">Koyu kırmızı ve turuncu</translation>
 <translation id="5390743329570580756">Gönder</translation>
@@ -7372,7 +7372,7 @@ Güvenliği ihlal edilmiş # şifreniz daha var. Google Şifre Yöneticisi bu ş
 <translation id="6970856801391541997">Belirli Sayfaları Yazdır</translation>
 <translation id="6970861306198150268">Bu sitede kullandığınız şifreyi kaydettiğinizden emin olun</translation>
 <translation id="6971184043765343932">Yüklediğiniz resim</translation>
-<translation id="6972754398087986839">Başlarken</translation>
+<translation id="6972754398087986839">Başla</translation>
 <translation id="697312151395002334">Pop-up'lar gönderip yönlendirmeler kullanmasına izin verilen siteler</translation>
 <translation id="6973611239564315524">Debian 10 (Buster) sürümüne geçiş yapılabilir</translation>
 <translation id="69739764870135975">Google'ı varsayılan arama motorunuz olarak da kullanıyorsanız bağlamla daha alakalı, daha iyi öneriler görürsünüz</translation>
@@ -9139,7 +9139,7 @@ Anahtar dosyanızı güvenli bir yerde saklayın. Uzantınızın yeni sürümler
 <translation id="8386091599636877289">Politika bulunamadı.</translation>
 <translation id="8387361103813440603">Konumunuzu görmesine izin verilmeyen siteler</translation>
 <translation id="8388770971141403598">İkincil profiller desteklenmiyor</translation>
-<translation id="8389492867173948260">Bu uzantının ziyaret ettiğiniz web sitelerindeki tüm verilerinizi okuması ve değiştirmesine izin verin:</translation>
+<translation id="8389492867173948260">Bu uzantının ziyaret ettiğim web sitelerindeki tüm verilerimi okuması ve değiştirmesine izin ver:</translation>
 <translation id="8390449457866780408">Sunucu kullanılamıyor.</translation>
 <translation id="8391218455464584335">Vinil</translation>
 <translation id="8392726714909453725">Seç ve Dinle ayarları</translation>

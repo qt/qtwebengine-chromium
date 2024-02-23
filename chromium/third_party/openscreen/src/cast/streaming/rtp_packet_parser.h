@@ -6,16 +6,15 @@
 #define CAST_STREAMING_RTP_PACKET_PARSER_H_
 
 #include <chrono>
+#include <optional>
 
-#include "absl/types/optional.h"
 #include "cast/streaming/frame_id.h"
 #include "cast/streaming/rtp_defines.h"
 #include "cast/streaming/rtp_time.h"
 #include "cast/streaming/ssrc.h"
 #include "platform/base/span.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // Parses RTP packets for all frames in the same Cast RTP stream. One
 // RtpPacketParser instance should be used for all RTP packets having the same
@@ -56,8 +55,8 @@ class RtpPacketParser {
 
   // Parses the packet. The caller should use InspectPacketForRouting()
   // beforehand to ensure that the packet is meant to be parsed by this
-  // instance. Returns absl::nullopt if the |packet| was corrupt.
-  absl::optional<ParseResult> Parse(ByteView packet);
+  // instance. Returns std::nullopt if the |packet| was corrupt.
+  std::optional<ParseResult> Parse(ByteView packet);
 
  private:
   const Ssrc sender_ssrc_;
@@ -72,7 +71,6 @@ class RtpPacketParser {
   FrameId highest_rtp_frame_id_;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STREAMING_RTP_PACKET_PARSER_H_

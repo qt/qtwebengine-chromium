@@ -20,8 +20,7 @@
 #include "discovery/mdns/public/mdns_constants.h"
 #include "util/std_util.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 namespace {
 
 constexpr std::array<DnsType, 5> kTranslatedNsecAnyQueryTypes = {
@@ -868,5 +867,4 @@ void MdnsQuerier::ApplyPendingChanges(
   }
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

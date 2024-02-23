@@ -20,8 +20,7 @@ using testing::Invoke;
 using testing::Return;
 using testing::StrictMock;
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 namespace {
 
 constexpr Clock::duration kAnnounceGoodbyeDelay = std::chrono::milliseconds(25);
@@ -455,5 +454,4 @@ TEST_F(MdnsPublisherTest, RegistrationAnnouncesEightTimes) {
   clock_.Advance(kAnnounceGoodbyeDelay);
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

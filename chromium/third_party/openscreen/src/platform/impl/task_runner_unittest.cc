@@ -8,6 +8,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -273,9 +274,9 @@ TEST(TaskRunnerImplTest, WakesEventWaiterOnPostTask) {
 
 class RepeatedClass {
  public:
-  MOCK_METHOD0(Repeat, absl::optional<Clock::duration>());
+  MOCK_METHOD0(Repeat, std::optional<Clock::duration>());
 
-  absl::optional<Clock::duration> DoCall() {
+  std::optional<Clock::duration> DoCall() {
     auto result = Repeat();
     execution_count++;
     return result;

@@ -14,8 +14,7 @@
 #include "osp/public/message_demuxer.h"
 #include "osp/public/presentation/presentation_connection.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 enum class ResponseResult {
   kSuccess = 0,
@@ -144,7 +143,6 @@ class Receiver final : public MessageDemuxer::MessageCallback,
   uint64_t GetNextConnectionId();
 };
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp
 
 #endif  // OSP_PUBLIC_PRESENTATION_PRESENTATION_RECEIVER_H_

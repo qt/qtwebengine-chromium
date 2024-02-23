@@ -6,6 +6,7 @@
 
 #include <openssl/x509v3.h>
 
+#include <cstring>
 #include <memory>
 #include <string>
 #include <utility>
@@ -15,8 +16,7 @@
 #include "util/crypto/certificate_utils.h"
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 namespace {
 
 const EVP_MD* MapDigestAlgorithm(DigestAlgorithm algorithm) {
@@ -170,5 +170,4 @@ void BoringSSLParsedCertificate::SetNotAfterTimeForTesting(time_t not_after) {
                 not_after);
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

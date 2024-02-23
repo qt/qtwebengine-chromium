@@ -9,8 +9,7 @@
 #include "platform/base/error.h"
 #include "platform/base/ip_address.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 class MdnsMessage;
 
@@ -36,7 +35,6 @@ class MdnsSender {
   UdpSocket* const socket_;
 };
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery
 
 #endif  // DISCOVERY_MDNS_IMPL_MDNS_SENDER_H_

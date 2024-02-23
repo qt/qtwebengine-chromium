@@ -11,8 +11,7 @@
 #include "platform/base/span.h"
 #include "util/big_endian.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // Reads a field from the start of the given span and advances the span to point
 // just after the field.
@@ -54,7 +53,6 @@ inline ByteBuffer ReserveSpace(int num_bytes, ByteBuffer& out) {
 enum class ApparentPacketType { UNKNOWN, RTP, RTCP };
 std::pair<ApparentPacketType, Ssrc> InspectPacketForRouting(ByteView packet);
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STREAMING_PACKET_UTIL_H_

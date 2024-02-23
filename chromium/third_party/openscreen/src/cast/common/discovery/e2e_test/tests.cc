@@ -29,8 +29,7 @@
 #include "util/osp_logging.h"
 #include "util/std_util.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 namespace {
 
 // Maximum amount of time needed for a query to be received.
@@ -577,5 +576,4 @@ TEST_F(DiscoveryE2ETest, ValidateRefreshFlow) {
 }
 
 }  // namespace
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

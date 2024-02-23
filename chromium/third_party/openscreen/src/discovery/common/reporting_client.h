@@ -7,8 +7,7 @@
 
 #include "platform/base/error.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 // This class is implemented by the embedder who wishes to use discovery. The
 // discovery implementation will use this API to report back errors and metrics.
@@ -32,7 +31,6 @@ class ReportingClient {
   virtual void OnRecoverableError(Error error) = 0;
 };
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery
 
 #endif  // DISCOVERY_COMMON_REPORTING_CLIENT_H_

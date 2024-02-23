@@ -10,8 +10,7 @@
 #include "util/osp_logging.h"
 #include "util/std_util.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // static
 ErrorOr<CastMediaSource> CastMediaSource::From(const std::string& source) {
@@ -44,5 +43,4 @@ bool CastMediaSource::ContainsAnyAppIdFrom(
                             app_ids.end()) != app_ids_.end();
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

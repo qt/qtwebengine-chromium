@@ -7,16 +7,15 @@
 
 #include <stdint.h>
 
+#include <optional>
 #include <string>
 #include <vector>
 
-#include "absl/types/optional.h"
 #include "cast/standalone_sender/ffmpeg_glue.h"
 #include "platform/api/time.h"
 #include "util/alarm.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 class Environment;
 
@@ -57,13 +56,13 @@ class SimulatedCapturer {
 
   // Performs any additional processing on the decoded frame (e.g., audio
   // resampling), and returns any adjustments to the frame's capture time (e.g.,
-  // to account for any buffering). If a fatal error occurs, absl::nullopt is
+  // to account for any buffering). If a fatal error occurs, std::nullopt is
   // returned. The default implementation does nothing.
   //
   // Mutating the `decoded_frame` is not allowed. If a subclass implementation
   // wants to deliver different data (e.g., resampled audio), it must stash the
   // data itself for the next DeliverDataToClient() call.
-  virtual absl::optional<Clock::duration> ProcessDecodedFrame(
+  virtual std::optional<Clock::duration> ProcessDecodedFrame(
       const AVFrame& decoded_frame);
 
   // Delivers the decoded frame data to the client.
@@ -106,7 +105,7 @@ class SimulatedCapturer {
 
   // The last frame's stream timestamp. This is used to detect bad stream
   // timestamps in the file.
-  absl::optional<Clock::duration> last_frame_timestamp_;
+  std::optional<Clock::duration> last_frame_timestamp_;
 
   // Used to schedule the next task to execute and when it should execute. There
   // is only ever one task scheduled/running at any time.
@@ -157,7 +156,7 @@ class SimulatedAudioCapturer final : public SimulatedCapturer {
   // Resamples the current `SimulatedCapturer::decoded_frame()` into the
   // required output format/channels/rate. The result is stored in
   // `resampled_audio_` for the next DeliverDataToClient() call.
-  absl::optional<Clock::duration> ProcessDecodedFrame(
+  std::optional<Clock::duration> ProcessDecodedFrame(
       const AVFrame& decoded_frame) final;
 
   // Called at the moment Client::OnAudioData() should be called to pass the
@@ -224,7 +223,6 @@ class SimulatedVideoCapturer final : public SimulatedCapturer {
                            Clock::time_point reference_time) final;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STANDALONE_SENDER_SIMULATED_CAPTURER_H_

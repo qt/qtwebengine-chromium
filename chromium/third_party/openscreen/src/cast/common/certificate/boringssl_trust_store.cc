@@ -15,6 +15,7 @@
 #include <chrono>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include "absl/strings/str_cat.h"
@@ -24,8 +25,7 @@
 #include "util/crypto/pem_helpers.h"
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 namespace {
 
 // -------------------------------------------------------------------------
@@ -315,7 +315,7 @@ X509* ParseX509Der(const std::string& der) {
 
 // static
 std::unique_ptr<TrustStore> TrustStore::CreateInstanceFromPemFile(
-    absl::string_view file_path) {
+    std::string_view file_path) {
   std::vector<std::string> der_certs = ReadCertificatesFromPemFile(file_path);
   std::vector<bssl::UniquePtr<X509>> certs;
   certs.reserve(der_certs.size());
@@ -534,5 +534,4 @@ BoringSSLTrustStore::FindCertificatePath(
   return result_path;
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

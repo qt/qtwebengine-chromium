@@ -19,8 +19,7 @@
 #include "platform/api/time.h"
 #include "platform/base/error.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 // Handles Presentation API URL availability requests and persistent watches.
 // It keeps track of the set of currently known receivers as well as all
@@ -147,7 +146,6 @@ class UrlAvailabilityRequester {
       receiver_by_service_id_;
 };
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp
 
 #endif  // OSP_IMPL_PRESENTATION_URL_AVAILABILITY_REQUESTER_H_

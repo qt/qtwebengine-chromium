@@ -4,8 +4,7 @@
 
 #include "cast/streaming/mock_environment.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 MockEnvironment::MockEnvironment(ClockNowFunctionPtr now_function,
                                  TaskRunner& task_runner)
@@ -13,5 +12,4 @@ MockEnvironment::MockEnvironment(ClockNowFunctionPtr now_function,
 
 MockEnvironment::~MockEnvironment() = default;
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

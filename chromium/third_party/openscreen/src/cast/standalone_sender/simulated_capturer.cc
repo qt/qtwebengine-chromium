@@ -16,8 +16,7 @@
 #include "cast/streaming/environment.h"
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 using clock_operators::operator<<;
 
@@ -105,7 +104,7 @@ void SimulatedCapturer::SetPlaybackRate(double rate) {
 void SimulatedCapturer::SetAdditionalDecoderParameters(
     AVCodecContext* decoder_context) {}
 
-absl::optional<Clock::duration> SimulatedCapturer::ProcessDecodedFrame(
+std::optional<Clock::duration> SimulatedCapturer::ProcessDecodedFrame(
     const AVFrame& frame) {
   return Clock::duration::zero();
 }
@@ -329,10 +328,10 @@ bool SimulatedAudioCapturer::EnsureResamplerIsInitializedFor(
   return true;
 }
 
-absl::optional<Clock::duration> SimulatedAudioCapturer::ProcessDecodedFrame(
+std::optional<Clock::duration> SimulatedAudioCapturer::ProcessDecodedFrame(
     const AVFrame& frame) {
   if (!EnsureResamplerIsInitializedFor(frame)) {
-    return absl::nullopt;
+    return std::nullopt;
   }
 
   const int64_t num_leftover_input_samples =
@@ -355,7 +354,7 @@ absl::optional<Clock::duration> SimulatedAudioCapturer::ProcessDecodedFrame(
     resampled_audio_.clear();
     swr_close(resampler_.get());
     OnError("swr_convert", num_samples_converted_or_error);
-    return absl::nullopt;  // Capturer is now halted.
+    return std::nullopt;  // Capturer is now halted.
   }
   resampled_audio_.resize(num_channels_ * num_samples_converted_or_error);
 
@@ -418,5 +417,4 @@ void SimulatedVideoCapturer::DeliverDataToClient(
                         reference_time);
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

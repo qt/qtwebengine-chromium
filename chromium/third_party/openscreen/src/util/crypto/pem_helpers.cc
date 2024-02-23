@@ -16,7 +16,7 @@
 namespace openscreen {
 
 std::vector<std::string> ReadCertificatesFromPemFile(
-    absl::string_view filename) {
+    std::string_view filename) {
   FILE* fp = fopen(filename.data(), "r");
   if (!fp) {
     return {};
@@ -38,7 +38,7 @@ std::vector<std::string> ReadCertificatesFromPemFile(
   return certs;
 }
 
-bssl::UniquePtr<EVP_PKEY> ReadKeyFromPemFile(absl::string_view filename) {
+bssl::UniquePtr<EVP_PKEY> ReadKeyFromPemFile(std::string_view filename) {
   FILE* fp = fopen(filename.data(), "r");
   if (!fp) {
     return nullptr;

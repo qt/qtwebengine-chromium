@@ -20,8 +20,7 @@
 #include "third_party/chromium_quic/src/net/third_party/quic/quartc/quartc_session.h"
 #include "third_party/chromium_quic/src/net/third_party/quic/quartc/quartc_stream.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 class QuicConnectionFactoryImpl;
 
@@ -100,7 +99,6 @@ class QuicConnectionImpl final : public QuicConnection,
   std::vector<QuicStream*> streams_;
 };
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp
 
 #endif  // OSP_IMPL_QUIC_QUIC_CONNECTION_IMPL_H_

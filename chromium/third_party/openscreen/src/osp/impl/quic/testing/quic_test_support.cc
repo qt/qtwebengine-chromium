@@ -12,8 +12,7 @@
 #include "osp/public/network_service_manager.h"
 #include "platform/test/fake_task_runner.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 FakeQuicBridge::FakeQuicBridge(FakeTaskRunner& task_runner,
                                ClockNowFunctionPtr now_function)
@@ -76,5 +75,4 @@ void FakeQuicBridge::RunTasksUntilIdle() {
   task_runner_.RunTasksUntilIdle();
 }
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp

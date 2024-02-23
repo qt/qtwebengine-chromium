@@ -17,8 +17,7 @@
 #include "util/std_util.h"
 #include "util/trace_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 using clock_operators::operator<<;
 
@@ -186,7 +185,7 @@ EncodedFrame Receiver::ConsumeNextFrame(ByteBuffer buffer) {
 
 void Receiver::OnReceivedRtpPacket(Clock::time_point arrival_time,
                                    std::vector<uint8_t> packet) {
-  const absl::optional<RtpPacketParser::ParseResult> part =
+  const std::optional<RtpPacketParser::ParseResult> part =
       rtp_parser_.Parse(packet);
   if (!part) {
     RECEIVER_LOG(WARN) << "Parsing of " << packet.size()
@@ -296,7 +295,7 @@ void Receiver::OnReceivedRtpPacket(Clock::time_point arrival_time,
 void Receiver::OnReceivedRtcpPacket(Clock::time_point arrival_time,
                                     std::vector<uint8_t> packet) {
   TRACE_DEFAULT_SCOPED(TraceCategory::kReceiver);
-  absl::optional<SenderReportParser::SenderReportWithId> parsed_report =
+  std::optional<SenderReportParser::SenderReportWithId> parsed_report =
       rtcp_parser_.Parse(packet);
   if (!parsed_report) {
     RECEIVER_LOG(WARN) << "Parsing of " << packet.size()
@@ -471,7 +470,7 @@ Receiver::PendingFrame::~PendingFrame() = default;
 
 void Receiver::PendingFrame::Reset() {
   collector.Reset();
-  estimated_capture_time = absl::nullopt;
+  estimated_capture_time = std::nullopt;
 }
 
 // static
@@ -479,5 +478,4 @@ constexpr milliseconds Receiver::kDefaultPlayerProcessingTime;
 constexpr int Receiver::kNoFramesReady;
 constexpr milliseconds Receiver::kNackFeedbackInterval;
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

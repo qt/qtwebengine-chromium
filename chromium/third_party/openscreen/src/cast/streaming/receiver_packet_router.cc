@@ -12,8 +12,7 @@
 #include "util/osp_logging.h"
 #include "util/stringprintf.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 ReceiverPacketRouter::ReceiverPacketRouter(Environment* environment)
     : environment_(environment) {
@@ -100,5 +99,4 @@ void ReceiverPacketRouter::OnReceivedPacket(const IPEndpoint& source,
   }
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

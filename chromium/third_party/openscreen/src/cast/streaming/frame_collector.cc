@@ -13,8 +13,7 @@
 #include "platform/base/span.h"
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 namespace {
 
@@ -157,5 +156,4 @@ void FrameCollector::Reset() {
 FrameCollector::PayloadChunk::PayloadChunk() = default;
 FrameCollector::PayloadChunk::~PayloadChunk() = default;
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

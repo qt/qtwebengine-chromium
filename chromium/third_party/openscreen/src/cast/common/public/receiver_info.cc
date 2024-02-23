@@ -15,8 +15,7 @@
 #include "util/osp_logging.h"
 #include "util/span_util.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 namespace {
 
 // Maximum size for the receiver model prefix at start of MDNS service instance
@@ -193,5 +192,4 @@ ErrorOr<ReceiverInfo> DnsSdInstanceEndpointToReceiverInfo(
   return record;
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

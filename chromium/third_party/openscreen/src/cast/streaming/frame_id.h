@@ -13,8 +13,7 @@
 
 #include "cast/streaming/expanded_value_base.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // Forward declaration (see below).
 class FrameId;
@@ -117,7 +116,6 @@ class FrameId : public ExpandedValueBase<int64_t, FrameId> {
   friend std::ostream& operator<<(std::ostream& out, const FrameId rhs);
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STREAMING_FRAME_ID_H_

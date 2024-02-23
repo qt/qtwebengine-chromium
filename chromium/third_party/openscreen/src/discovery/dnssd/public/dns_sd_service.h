@@ -12,8 +12,7 @@
 #include "platform/base/interface_info.h"
 #include "platform/base/ip_address.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 class DnsSdPublisher;
 class DnsSdQuerier;
@@ -33,7 +32,6 @@ class DnsSdService {
   virtual DnsSdPublisher* GetPublisher() = 0;
 };
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery
 
 #endif  // DISCOVERY_DNSSD_PUBLIC_DNS_SD_SERVICE_H_

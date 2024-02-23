@@ -9,8 +9,7 @@
 #include "gtest/gtest.h"
 #include "util/chrono_helpers.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 TEST(NtpTimestampTest, SplitsIntoParts) {
   // 1 Jan 1900.
@@ -103,5 +102,4 @@ TEST(NtpTimeConverterTest, ConvertsToNtpTimeAndBack) {
   }
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

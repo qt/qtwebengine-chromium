@@ -4,8 +4,7 @@
 
 #include "osp/public/protocol_connection_server.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 ProtocolConnectionServer::ProtocolConnectionServer(MessageDemuxer* demuxer,
                                                    Observer* observer)
@@ -33,5 +32,4 @@ std::ostream& operator<<(std::ostream& os,
   }
 }
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp

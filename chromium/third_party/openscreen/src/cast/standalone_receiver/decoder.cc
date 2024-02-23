@@ -15,8 +15,7 @@
 #include "util/std_util.h"
 #include "util/trace_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 namespace {
 // The av_err2str macro uses a compound literal, which is a C99-only feature.
@@ -241,5 +240,4 @@ void Decoder::OnError(const char* what, int av_errnum, FrameId frame_id) {
   }
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

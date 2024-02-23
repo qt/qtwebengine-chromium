@@ -17,8 +17,7 @@
 #include "discovery/mdns/public/mdns_records.h"
 #include "platform/api/task_runner.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 class MdnsRandom;
 class MdnsSender;
@@ -234,7 +233,6 @@ class MdnsQuerier : public MdnsReceiver::ResponseClient {
   std::multimap<DomainName, CallbackInfo> callbacks_;
 };
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery
 
 #endif  // DISCOVERY_MDNS_IMPL_MDNS_QUERIER_H_

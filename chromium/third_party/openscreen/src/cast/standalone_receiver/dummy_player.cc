@@ -12,8 +12,7 @@
 #include "util/chrono_helpers.h"
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 using clock_operators::operator<<;
 
@@ -44,5 +43,4 @@ void DummyPlayer::OnFramesReady(int buffer_size) {
                << buffer_size << " bytes";
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

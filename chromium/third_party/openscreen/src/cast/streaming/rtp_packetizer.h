@@ -12,8 +12,7 @@
 #include "cast/streaming/ssrc.h"
 #include "platform/base/span.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // Transforms a logical sequence of EncryptedFrames into RTP packets for
 // transmission. A single instance of RtpPacketizer should be used for all the
@@ -75,7 +74,6 @@ class RtpPacketizer {
   uint16_t sequence_number_;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STREAMING_RTP_PACKETIZER_H_

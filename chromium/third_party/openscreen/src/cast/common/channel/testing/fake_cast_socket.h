@@ -14,8 +14,7 @@
 #include "gmock/gmock.h"
 #include "platform/test/mock_tls_connection.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 class MockCastSocketClient final : public CastSocket::Client {
  public:
@@ -104,7 +103,6 @@ struct FakeCastSocketPair {
   std::unique_ptr<CastSocket> peer_socket;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_COMMON_CHANNEL_TESTING_FAKE_CAST_SOCKET_H_

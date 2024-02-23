@@ -10,8 +10,7 @@
 
 #include "platform/api/logging.h"
 
-namespace openscreen {
-namespace internal {
+namespace openscreen::internal {
 
 // The stream-based logging macros below are adapted from Chromium's
 // base/logging.h.
@@ -47,8 +46,7 @@ class Voidify {
   void operator&(std::ostream&) {}
 };
 
-}  // namespace internal
-}  // namespace openscreen
+}  // namespace openscreen::internal
 
 #define OSP_LAZY_STREAM(condition, stream) \
   !(condition) ? (void)0 : openscreen::internal::Voidify() & (stream)

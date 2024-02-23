@@ -15,8 +15,7 @@
 #include "util/big_endian.h"
 #include "util/std_util.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 namespace message_serialization {
 
 using ::cast::channel::CastMessage;
@@ -148,5 +147,4 @@ TEST_F(CastFramerTest, TestUnparsableBodyProto) {
 }
 
 }  // namespace message_serialization
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

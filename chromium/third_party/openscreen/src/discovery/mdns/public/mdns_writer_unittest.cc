@@ -11,8 +11,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 using testing::ElementsAreArray;
 
@@ -465,5 +464,4 @@ TEST(MdnsWriterTest, WriteMdnsMessage_InsufficientBuffer) {
   TestWriteEntryInsufficientBuffer(message);
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

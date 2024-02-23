@@ -8,8 +8,7 @@
 
 #include "platform/api/time.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 namespace {
 
@@ -40,5 +39,4 @@ int ComparePriority(Ssrc ssrc_a, Ssrc ssrc_b) {
   return static_cast<int>(ssrc_a) - static_cast<int>(ssrc_b);
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

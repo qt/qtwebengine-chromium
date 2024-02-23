@@ -50,6 +50,12 @@ std::string Join(const std::vector<T>& vec, const char* delimiter = ", ") {
   return ss.str();
 }
 
+// Removes ALL whitespace in place from the string, based on the present C
+// locale. This includes spaces, tabs, and returns. This is useful for string
+// comparisons where whitespace doesn't matter, or, in the case of JSON
+// serialization, is dependent on build configuration and other settings.
+std::string& RemoveWhitespace(std::string& s);
+
 template <typename Key, typename Value>
 void RemoveValueFromMap(std::map<Key, Value*>* map, Value* value) {
   for (auto it = map->begin(); it != map->end();) {

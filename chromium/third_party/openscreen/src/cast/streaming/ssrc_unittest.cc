@@ -9,8 +9,7 @@
 #include "gtest/gtest.h"
 #include "util/std_util.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 namespace {
 
 TEST(SsrcTest, GeneratesUniqueAndPrioritizedSsrcs) {
@@ -51,5 +50,4 @@ TEST(SsrcTest, GeneratesUniqueAndPrioritizedSsrcs) {
 }
 
 }  // namespace
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

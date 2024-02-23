@@ -5813,7 +5813,7 @@
 <translation id="5697832193891326782">表情符号选择器</translation>
 <translation id="5698462638680260399">登录后才能使用密码</translation>
 <translation id="570043786759263127">Google Play 应用和服务</translation>
-<translation id="5700761515355162635">允许使用第三方 Cookie</translation>
+<translation id="5700761515355162635">已允许使用第三方 Cookie</translation>
 <translation id="5700836101007545240">“添加连接”功能已由您的管理员停用</translation>
 <translation id="5701080607174488915">从服务器获取政策时出错。</translation>
 <translation id="5701212929149679556">移动网络漫游</translation>
@@ -6578,7 +6578,7 @@
 <translation id="6322559670748154781">此文件属于不常下载的内容，已被“高级保护”机制屏蔽</translation>
 <translation id="6324916366299863871">修改快捷方式</translation>
 <translation id="6325191661371220117">停用自动启动</translation>
-<translation id="6326175484149238433">从Chrome中移除</translation>
+<translation id="6326175484149238433">从 Chrome 中移除</translation>
 <translation id="6326855256003666642">正在使用相应扩展程序的活动数</translation>
 <translation id="6327785803543103246">网络代理自动发现</translation>
 <translation id="6331818708794917058">网站可以请求连接到 MIDI 设备</translation>
@@ -7958,7 +7958,7 @@
 <translation id="747114903913869239">错误：无法对扩展程序进行解码</translation>
 <translation id="7471520329163184433">减速</translation>
 <translation id="747312361841682912">删除显示的数据</translation>
-<translation id="7473891865547856676">不，谢谢</translation>
+<translation id="7473891865547856676">不用了</translation>
 <translation id="747459581954555080">全部恢复</translation>
 <translation id="747507174130726364">{NUM_DAYS,plural, =1{必须立即退还此设备}other{请在 {NUM_DAYS} 天内退还 <ph name="DEVICE_TYPE" />}}</translation>
 <translation id="7475671414023905704">Netscape 忘了密码网址</translation>

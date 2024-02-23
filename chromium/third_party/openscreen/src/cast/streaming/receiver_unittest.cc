@@ -47,8 +47,7 @@ using testing::Gt;
 using testing::Invoke;
 using testing::SaveArg;
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 namespace {
 
 // Receiver configuration.
@@ -855,5 +854,4 @@ TEST_F(ReceiverTest, DropsLateFrames) {
 }
 
 }  // namespace
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

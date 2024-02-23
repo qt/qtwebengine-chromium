@@ -3091,7 +3091,7 @@ Du kan hantera inställningarna för det här kontot genom att installera Family
 <translation id="3442674350323953953">Låt Google använda din maskinvarudata för att förbättra <ph name="DEVICE_OS" />. Om du nekar skickas denna data ändå till Google i syfte att fastställa lämpliga uppdateringar, men den varken lagras eller används på andra sätt.</translation>
 <translation id="3443744348829035122"><ph name="BRAND" /> överskred tidsgränsen</translation>
 <translation id="3443754338602062261">Du har redan lösenord för dessa konton på <ph name="BRAND" />. Om du väljer att importera ett av lösenorden nedan ersätts det befintliga.</translation>
-<translation id="344449859752187052">Cookies från tredje part har blockerats</translation>
+<translation id="344449859752187052">Tredjepartscookies har blockerats</translation>
 <translation id="3444726579402183581"><ph name="ORIGIN" /> får läsbehörighet till <ph name="FILENAME" /></translation>
 <translation id="3445047461171030979">Snabba svar från Google Assistent</translation>
 <translation id="3445288400492335833"><ph name="MINUTES" /> min</translation>
@@ -4000,7 +4000,7 @@ Detta kan omfatta information om installerad programvara, filer, webbläsaren oc
 <translation id="414800391140809654">kan använda dina uppgifter när du surfar</translation>
 <translation id="4148195018520464922">Du kan begränsa inloggning så att det bara är tillgängligt för vissa användare. Då tas alternativet Lägg till person bort från inloggningsskärmen. Du kan även ta bort befintliga användare.</translation>
 <translation id="4150201353443180367">Skärm</translation>
-<translation id="4150569944729499860">Innehållet på skärmen</translation>
+<translation id="4150569944729499860">Skärmkontext</translation>
 <translation id="4151449637210235443">Berätta om din senaste spelupplevelse</translation>
 <translation id="4152011295694446843">Du hittar dina bokmärken här</translation>
 <translation id="4152670763139331043">{NUM_TABS,plural, =1{1 flik}other{# flikar}}</translation>
@@ -5459,7 +5459,7 @@ Zooma ut med Ctrl + Alt + Minska ljusstyrkan.</translation>
 <translation id="5383377866517186886">Kamera har inaktiverats i systeminställningarna för Mac.</translation>
 <translation id="5383740867328871413">Namnlös grupp – <ph name="GROUP_CONTENTS" /> – <ph name="COLLAPSED_STATE" /></translation>
 <translation id="538822246583124912">Företagets policy har ändrats. En knapp för experiment har lagts till i verktygsfältet. Om du klickar på den öppnas en dialogruta där du kan aktivera experiment.</translation>
-<translation id="5388885445722491159">Kopplad</translation>
+<translation id="5388885445722491159">Parkopplad</translation>
 <translation id="5389626883706033615">Webbplatser hindras från att be dig använda information som de har sparat om dig</translation>
 <translation id="5390112241331447203">Ta med filen system_logs.txt som skickas i feedbackrapporter.</translation>
 <translation id="5390677308841849479">Mörkröd och orange</translation>
@@ -6443,7 +6443,7 @@ Behörigheter som du redan har gett webbplatser och appar kan gälla för det h�
 <translation id="6195005504600220730">Läsa information om webbläsaren, operativsystemet och enheten</translation>
 <translation id="6195155925303302899">Centrera</translation>
 <translation id="6195693561221576702">Den här enheten kan inte konfigureras i offlinedemoläge.</translation>
-<translation id="6196640612572343990">Blockera cookies från tredje part</translation>
+<translation id="6196640612572343990">Blockera tredjepartscookies</translation>
 <translation id="6196854373336333322">Tillägget <ph name="EXTENSION_NAME" /> har tagit kontroll över dina proxyinställningar, vilket innebär att det kan ändra, knäcka eller tjuvlyssna på allt du gör på webben. Om du inte vet varför den här ändringen inträffade är den troligen inte önskvärd.</translation>
 <translation id="6197128521826316819">Skapa QR-kod för den här sidan</translation>
 <translation id="6198223452299275399">Svep mellan sidor</translation>
@@ -6941,7 +6941,7 @@ Det finns # utsatta lösenord till. Du rekommenderas av Google Lösenordshanteri
 <translation id="6602956230557165253">Navigera med hjälp av piltangenterna till höger och vänster.</translation>
 <translation id="6603185457265641428">Välj om historiken ska synkroniseras</translation>
 <translation id="6605847144724004692">Inga användare har betygsatt detta ännu.</translation>
-<translation id="6606671997164410857">Du verkar redan ha konfigurerat Google Assistent på en annan enhet. Få ut ännu mer av assistenten genom att aktivera Innehållet på skärmen på den här enheten.</translation>
+<translation id="6606671997164410857">Du verkar redan ha konfigurerat Google Assistent på en annan enhet. Få ut ännu mer av assistenten genom att aktivera Skärmkontext på den här enheten.</translation>
 <translation id="6607831829715835317">Fler verkt&amp;yg</translation>
 <translation id="6607890859198268021"><ph name="USER_EMAIL" /> hanteras redan av <ph name="DOMAIN" />. Om du vill använda föräldrakontroller med ett annat Google-konto loggar du ut efter konfigureringen och väljer Lägg till person på inloggningsskärmen.</translation>
 <translation id="6608166463665411119">Återställ eSIM-kortet</translation>
@@ -7389,7 +7389,7 @@ Det finns # utsatta lösenord till. Du rekommenderas av Google Lösenordshanteri
 <translation id="6970856801391541997">Skriv ut vissa sidor</translation>
 <translation id="6970861306198150268">Se till att spara ditt nuvarande lösenord för den här webbplatsen</translation>
 <translation id="6971184043765343932">Din uppladdade bild</translation>
-<translation id="6972754398087986839">Komma igång</translation>
+<translation id="6972754398087986839">Kom igång</translation>
 <translation id="697312151395002334">Får öppna popup-fönster och använda omdirigering</translation>
 <translation id="6973611239564315524">En uppgradering till Debian 10 (Buster) är tillgänglig</translation>
 <translation id="69739764870135975">Om du även använder Google som standardsökmotor får du bättre förslag som är relevanta i sammanhanget</translation>
@@ -7559,7 +7559,7 @@ Det finns # utsatta lösenord till. Du rekommenderas av Google Lösenordshanteri
 <translation id="7110684627876015299">Namnlös grupp – <ph name="OPENED_STATE" /></translation>
 <translation id="7111822978084196600">Namnge fönstret</translation>
 <translation id="7113102733263608554"><ph name="ITEM_COUNT_ONE" /> objekt</translation>
-<translation id="7113502843173351041">Känn till din e-postadress</translation>
+<translation id="7113502843173351041">Känna till din e-postadress</translation>
 <translation id="7113974454301513811">Lägg till den aktuella fliken i listan</translation>
 <translation id="7114054701490058191">Lösenorden matchar inte</translation>
 <translation id="7114648273807173152">Öppna Inställningar &gt; Anslutna enheter &gt; Din mobil &gt; Smart Lock om du vill kunna logga in på Google-kontot med Smart Lock.</translation>
@@ -8324,7 +8324,7 @@ Det finns # utsatta lösenord till. Du rekommenderas av Google Lösenordshanteri
 <translation id="773511996612364297">Accenttecken</translation>
 <translation id="7737115349420013392">Parkopplas med <ph name="DEVICE_NAME" /> …</translation>
 <translation id="7737203573077018777"><ph name="PROOF_OF_POSSESSION_INSTRUCTION_NAME" />-instruktionen har tagits emot</translation>
-<translation id="7737846262459425222">Du kan när som helst ändra detta i Inställningar &gt; Google Assistent &gt; Innehållet på skärmen.</translation>
+<translation id="7737846262459425222">Du kan när som helst ändra detta i Inställningar &gt; Google Assistent &gt; Skärmkontext.</translation>
 <translation id="7737948071472253612">Får inte använda kameran</translation>
 <translation id="77381465218432215">Visa accenttecken och specialtecken</translation>
 <translation id="7740996059027112821">Standard</translation>
@@ -8427,7 +8427,7 @@ Tryck på en brytare eller tangent som redan tilldelats en åtgärd om du vill t
 <translation id="7805768142964895445">Status</translation>
 <translation id="7805906048382884326">Stäng tips</translation>
 <translation id="7807067443225230855">Sök och Assistent</translation>
-<translation id="7807117920154132308"><ph name="SUPERVISED_USER_NAME" /> verkar redan ha konfigurerat Google Assistent på en annan enhet. <ph name="SUPERVISED_USER_NAME" /> kan få ut ännu mer av assistenten genom att aktivera Innehållet på skärmen på den här enheten.</translation>
+<translation id="7807117920154132308"><ph name="SUPERVISED_USER_NAME" /> verkar redan ha konfigurerat Google Assistent på en annan enhet. <ph name="SUPERVISED_USER_NAME" /> kan få ut ännu mer av assistenten genom att aktivera Skärmkontext på den här enheten.</translation>
 <translation id="7807711621188256451">Låt alltid <ph name="HOST" /> använda din kamera</translation>
 <translation id="7810202088502699111">Popup-fönster är blockerade på den här sidan.</translation>
 <translation id="7814458197256864873">&amp;Kopiera</translation>
@@ -8494,7 +8494,7 @@ Tryck på en brytare eller tangent som redan tilldelats en åtgärd om du vill t
 <translation id="7861846108263890455">Språk för Google-konto</translation>
 <translation id="7864539943188674973">Inaktivera Bluetooth</translation>
 <translation id="7865127013871431856">Översättningsalternativ</translation>
-<translation id="786957569166715433"><ph name="DEVICE_NAME" /> – kopplad</translation>
+<translation id="786957569166715433"><ph name="DEVICE_NAME" /> – parkopplad</translation>
 <translation id="7869655448736341731">Alla</translation>
 <translation id="787069710204604994">Om du till exempel besöker en webbplats som säljer löparskor kan webbplatsen göra bedömningen att du är intresserad av löpning. Om du senare besöker en annan webbplats kan den webbplatsen visa en annons för löparskor utifrån den första webbplatsens förslag.</translation>
 <translation id="7870730066603611552">Granska synkroniseringsalternativen efter konfigureringen</translation>

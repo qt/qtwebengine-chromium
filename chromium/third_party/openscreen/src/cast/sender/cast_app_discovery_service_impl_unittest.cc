@@ -16,8 +16,7 @@
 #include "platform/test/fake_task_runner.h"
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 using ::cast::channel::CastMessage;
 
@@ -345,5 +344,4 @@ TEST_F(CastAppDiscoveryServiceImplTest, AvailabilityUnknownOrUnavailable) {
   AddOrUpdateReceiver(receiver_, socket_id_);
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

@@ -4,13 +4,13 @@
 
 #include "util/base64.h"
 
+#include <cstring>
 #include <string>
 #include <vector>
 
 #include "gtest/gtest.h"
 
-namespace openscreen {
-namespace base64 {
+namespace openscreen::base64 {
 
 namespace {
 
@@ -52,7 +52,7 @@ TEST(Base64Test, Binary) {
   // Check that encoding the same data through the StringPiece interface gives
   // the same results.
   std::string string_piece_encoded = Encode(
-      absl::string_view(reinterpret_cast<const char*>(kData), sizeof(kData)));
+      std::string_view(reinterpret_cast<const char*>(kData), sizeof(kData)));
 
   EXPECT_EQ(binary_encoded, string_piece_encoded);
 }
@@ -68,5 +68,4 @@ TEST(Base64Test, InPlace) {
   CheckEquals(kText, out);
 }
 
-}  // namespace base64
-}  // namespace openscreen
+}  // namespace openscreen::base64

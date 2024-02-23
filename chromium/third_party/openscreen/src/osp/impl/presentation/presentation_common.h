@@ -16,8 +16,7 @@
 #include "platform/api/time.h"
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 // This method asks the singleton NetworkServiceManager
 // to create a new protocol connection for the given endpoint.
@@ -44,7 +43,6 @@ class PresentationID {
   ErrorOr<std::string> id_;
 };
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp
 
 #endif  // OSP_IMPL_PRESENTATION_PRESENTATION_COMMON_H_

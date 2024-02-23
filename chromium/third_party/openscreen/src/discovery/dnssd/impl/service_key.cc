@@ -10,8 +10,7 @@
 #include "discovery/mdns/public/mdns_constants.h"
 #include "discovery/mdns/public/mdns_records.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 // The InstanceKey ctor used below cares about the Instance ID of the
 // MdnsRecord, while this class doesn't, so it's possible that the InstanceKey
@@ -28,7 +27,7 @@ ServiceKey::ServiceKey(const DomainName& domain) {
   *this = std::move(key.value());
 }
 
-ServiceKey::ServiceKey(absl::string_view service, absl::string_view domain)
+ServiceKey::ServiceKey(std::string_view service, std::string_view domain)
     : service_id_(service.data(), service.size()),
       domain_id_(domain.data(), domain.size()) {
   OSP_DCHECK(IsServiceValid(service_id_)) << "invalid service id: " << service;
@@ -78,5 +77,4 @@ ErrorOr<ServiceKey> ServiceKey::TryCreate(const DomainName& names) {
   return ServiceKey(service_id, domain_id);
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

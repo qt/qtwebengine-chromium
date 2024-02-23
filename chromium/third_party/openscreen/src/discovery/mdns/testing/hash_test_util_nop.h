@@ -7,8 +7,7 @@
 
 #include "gtest/gtest.h"
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 
 template <int&..., typename T>
 testing::AssertionResult VerifyTypeImplementsAbslHashCorrectly(
@@ -16,7 +15,6 @@ testing::AssertionResult VerifyTypeImplementsAbslHashCorrectly(
   return testing::AssertionSuccess();
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery
 
 #endif  // DISCOVERY_MDNS_TESTING_HASH_TEST_UTIL_NOP_H_

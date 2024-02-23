@@ -15,8 +15,7 @@
 #include "platform/base/interface_info.h"
 #include "platform/base/macros.h"
 
-namespace openscreen {
-namespace osp {
+namespace openscreen::osp {
 
 class ServiceListener {
  public:
@@ -155,7 +154,6 @@ class ServiceListener {
   OSP_DISALLOW_COPY_AND_ASSIGN(ServiceListener);
 };
 
-}  // namespace osp
-}  // namespace openscreen
+}  // namespace openscreen::osp
 
 #endif  // OSP_PUBLIC_SERVICE_LISTENER_H_

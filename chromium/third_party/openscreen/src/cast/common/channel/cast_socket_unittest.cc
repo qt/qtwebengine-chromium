@@ -10,8 +10,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 using ::cast::channel::CastMessage;
 
@@ -165,5 +164,4 @@ TEST_F(CastSocketTest, SanitizedAddress) {
   EXPECT_EQ(result2[1], 129);
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

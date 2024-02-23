@@ -16,8 +16,7 @@ using testing::IsSubsetOf;
 using testing::IsSupersetOf;
 using testing::StrictMock;
 
-namespace openscreen {
-namespace discovery {
+namespace openscreen::discovery {
 namespace {
 
 std::vector<std::string> ConvertRefs(
@@ -332,5 +331,4 @@ TEST_F(DnsSdServiceWatcherTests, CreatingUpdatingDeletingInstancesWork) {
   EXPECT_FALSE(ContainsService(record2));
 }
 
-}  // namespace discovery
-}  // namespace openscreen
+}  // namespace openscreen::discovery

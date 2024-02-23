@@ -195,6 +195,7 @@ class BigEndianBuffer {
   T* end_;
 };
 
+// TODO(mfoltz): Use ByteBuffer here instead of pointer-and-length.
 class BigEndianReader : public BigEndianBuffer<const uint8_t> {
  public:
   BigEndianReader(const uint8_t* buffer, size_t length);

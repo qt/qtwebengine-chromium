@@ -16,8 +16,7 @@
 
 #include "util/trace_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 StreamingPlaybackController::Client::~Client() = default;
 
@@ -144,5 +143,4 @@ void StreamingPlaybackController::HandleKeyboardEvent(
 }
 #endif
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

@@ -17,8 +17,7 @@ extern "C" {
 struct OpusEncoder;
 }
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 // Wraps the libopus encoder so that the application can stream
 // interleaved-floats audio samples to a Sender. Either mono or stereo sound is
@@ -119,7 +118,6 @@ class StreamingOpusEncoder {
   static constexpr int kOpusMaxPayloadSize = 4000;
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STANDALONE_SENDER_STREAMING_OPUS_ENCODER_H_

@@ -10,8 +10,7 @@
 #include "cast/streaming/compound_rtcp_parser.h"
 #include "gmock/gmock.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 class MockCompoundRtcpParserClient : public CompoundRtcpParser::Client {
  public:
@@ -42,7 +41,6 @@ class MockCompoundRtcpParserClient : public CompoundRtcpParser::Client {
               (override));
 };
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
 
 #endif  // CAST_STREAMING_MOCK_COMPOUND_RTCP_PARSER_CLIENT_H_

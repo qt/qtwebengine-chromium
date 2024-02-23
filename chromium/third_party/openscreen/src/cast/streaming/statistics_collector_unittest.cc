@@ -12,9 +12,9 @@
 #include "platform/base/span.h"
 #include "platform/test/fake_clock.h"
 #include "platform/test/fake_task_runner.h"
+#include "util/chrono_helpers.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 class StatisticsCollectorTest : public ::testing::Test {
  public:
@@ -32,23 +32,29 @@ TEST_F(StatisticsCollectorTest, ReturnsEmptyIfNoEvents) {
 }
 
 TEST_F(StatisticsCollectorTest, CanCollectPacketEvents) {
-  const PacketEvent kEventOne{123u,
-                              456u,
-                              RtpTimeTicks(47474838),
-                              FrameId(5000),
-                              1234,
-                              Clock::now(),
-                              StatisticsEventType::kPacketSentToNetwork,
-                              StatisticsEventMediaType::kAudio};
+  // clang-format off
+  constexpr PacketEvent kEventOne(
+      FrameId(5000),
+      StatisticsEventType::kPacketSentToNetwork,
+      StatisticsEventMediaType::kAudio,
+      RtpTimeTicks(47474838),
+      1234u,
+      Clock::time_point(milliseconds(12455680)),
+      Clock::time_point(milliseconds(12455685)),
+      123u,
+      456u);
 
-  const PacketEvent kEventTwo{124u,
-                              456u,
-                              RtpTimeTicks(4747900),
-                              FrameId(20000),
-                              553,
-                              Clock::now(),
-                              StatisticsEventType::kPacketSentToNetwork,
-                              StatisticsEventMediaType::kVideo};
+  constexpr PacketEvent kEventTwo(
+      FrameId(20000),
+      StatisticsEventType::kPacketSentToNetwork,
+      StatisticsEventMediaType::kVideo,
+      RtpTimeTicks(4747900),
+      553u,
+      Clock::time_point(milliseconds(12455880)),
+      Clock::time_point(milliseconds(12455889)),
+      124u,
+      456u);
+  // clang-format on
 
   collector_.CollectPacketEvent(kEventOne);
   collector_.CollectPacketEvent(kEventTwo);
@@ -95,29 +101,35 @@ TEST_F(StatisticsCollectorTest, CanCollectPacketSentEvents) {
 }
 
 TEST_F(StatisticsCollectorTest, CanCollectFrameEvents) {
-  const FrameEvent kEventOne{FrameId(1),
-                             StatisticsEventType::kFrameAckReceived,
-                             StatisticsEventMediaType::kVideo,
-                             RtpTimeTicks(1233),
-                             /* width= */ 640,
-                             /* height= */ 480,
-                             /* size= */ 0,
-                             Clock::now(),
-                             /* delay_delta= */ std::chrono::milliseconds(20),
-                             /* key_frame=*/false,
-                             0};
+  // clang-format off
+  constexpr FrameEvent kEventOne(
+      FrameId(1),
+      StatisticsEventType::kFrameAckReceived,
+      StatisticsEventMediaType::kVideo,
+      RtpTimeTicks(1233),
+      /* size= */ 0,
+      Clock::time_point(milliseconds(12345678)),
+      Clock::time_point(milliseconds(12345699)),
+      /* width= */ 640,
+      /* height= */ 480,
+      /* delay_delta= */ std::chrono::milliseconds(20),
+      /* key_frame= */ false,
+      /* target_bitrate= */ 0);
 
-  const FrameEvent kEventTwo{FrameId(2),
-                             StatisticsEventType::kFramePlayedOut,
-                             StatisticsEventMediaType::kAudio,
-                             RtpTimeTicks(1733),
-                             /* width= */ 0,
-                             /* height= */ 0,
-                             /* size= */ 6000,
-                             Clock::now(),
-                             /* delay_delta= */ std::chrono::milliseconds(10),
-                             /* key_frame= */ false,
-                             /* target_bitrate = */ 5000};
+  constexpr FrameEvent kEventTwo(
+      FrameId(2),
+      StatisticsEventType::kFramePlayedOut,
+      StatisticsEventMediaType::kAudio,
+      RtpTimeTicks(1733),
+      /* size= */ 6000,
+      Clock::time_point(milliseconds(12455680)),
+      Clock::time_point(milliseconds(12455685)),
+      /* width= */ 0,
+      /* height= */ 0,
+      /* delay_delta= */ std::chrono::milliseconds(10),
+      /* key_frame= */ false,
+      /* target_bitrate = */ 5000);
+  // clang-format on
 
   collector_.CollectFrameEvent(kEventOne);
   collector_.CollectFrameEvent(kEventTwo);
@@ -128,5 +140,4 @@ TEST_F(StatisticsCollectorTest, CanCollectFrameEvents) {
   EXPECT_EQ(kEventTwo, events[1]);
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

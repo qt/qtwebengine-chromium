@@ -11,8 +11,7 @@
 #include "util/json/json_value.h"
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 using ::cast::channel::CastMessage;
 
@@ -64,5 +63,4 @@ ErrorOr<CastMessage> CreateAppUnavailableResponse(int request_id,
                                        AppAvailabilityResult::kUnavailable);
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

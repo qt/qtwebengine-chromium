@@ -10,8 +10,7 @@
 #include "cast/common/channel/proto/cast_channel.pb.h"
 #include "cast/common/channel/virtual_connection.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 CastSocketMessagePort::CastSocketMessagePort(VirtualConnectionRouter* router)
     : router_(router) {}
@@ -106,5 +105,4 @@ void CastSocketMessagePort::OnMessage(VirtualConnectionRouter* router,
                      GetPayload(message));
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast

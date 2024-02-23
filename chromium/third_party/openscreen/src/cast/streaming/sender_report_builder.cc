@@ -7,8 +7,7 @@
 #include "cast/streaming/packet_util.h"
 #include "util/osp_logging.h"
 
-namespace openscreen {
-namespace cast {
+namespace openscreen::cast {
 
 SenderReportBuilder::SenderReportBuilder(RtcpSession* session)
     : session_(session) {
@@ -79,5 +78,4 @@ Clock::time_point SenderReportBuilder::GetRecentReportTime(
   return session_->ntp_converter().ToLocalTime(reconstructed);
 }
 
-}  // namespace cast
-}  // namespace openscreen
+}  // namespace openscreen::cast
