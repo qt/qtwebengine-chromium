@@ -7053,9 +7053,11 @@ void RenderFrameHostImpl::ProcessBeforeUnloadCompletedFromFrame(
       // supply `send_before_unload_start_time_` as the value for
       // `renderer_before_unload_start_time`, which means
       // `browser_to_renderer_ipc_time_delta` should be 0.
+#if !BUILDFLAG(IS_QTWEBENGINE)
       // TODO(https://crbug.com/526540985): CHECK-exclusion: Convert to CHECK
       // once we are sure this isn't hit.
       DCHECK(browser_to_renderer_ipc_time_delta.is_zero());
+#endif
     }
 
     base::TimeDelta on_before_unload_overhead_time =
