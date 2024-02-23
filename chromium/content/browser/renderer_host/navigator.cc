@@ -995,7 +995,9 @@ void Navigator::BeforeUnloadCompleted(FrameTreeNode* frame_tree_node,
   // will already have begun, so there is no need to start it again.
   if (navigation_request->state() >
       NavigationRequest::WAITING_FOR_RENDERER_RESPONSE) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
     DCHECK(navigation_request->from_begin_navigation());
+#endif
     return;
   }
 
