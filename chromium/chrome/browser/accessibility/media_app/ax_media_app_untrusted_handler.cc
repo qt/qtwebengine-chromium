@@ -10,6 +10,7 @@
 #include "base/check_op.h"
 #include "base/functional/bind.h"
 #include "base/notreached.h"
+#include "base/types/to_address.h"
 #include "chrome/browser/accessibility/accessibility_state_utils.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/browser_context.h"
@@ -121,7 +122,7 @@ void AXMediaAppUntrustedHandler::StateChanged(
   if (is_ocr_service_enabled && !screen_ai_annotator_.is_bound()) {
     screen_ai::ScreenAIServiceRouter* service_router =
         screen_ai::ScreenAIServiceRouterFactory::GetForBrowserContext(
-            std::to_address(browser_context_));
+            base::to_address(browser_context_));
     service_router->BindScreenAIAnnotator(
         screen_ai_annotator_.BindNewPipeAndPassReceiver());
     OcrNextDirtyPageIfAny();

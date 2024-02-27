@@ -24,6 +24,7 @@
 #include "base/containers/span.h"
 #include "base/strings/string_piece.h"  // For implicit conversions.
 #include "base/strings/string_util_internal.h"
+#include "base/types/to_address.h"
 #include "build/build_config.h"
 
 namespace base {
@@ -95,9 +96,6 @@ constexpr std::basic_string_view<CharT> MakeBasicStringPiece(Iter begin,
                                                              Iter end) {
   DCHECK_GE(end - begin, 0);
   return {base::to_address(begin), static_cast<size_t>(end - begin)};
-  if (end - begin == 0)
-    return BasicStringPiece<CharT>();
-  return {std::to_address(begin), static_cast<size_t>(end - begin)};
 }
 
 // Explicit instantiations of MakeBasicStringPiece for the BasicStringPiece

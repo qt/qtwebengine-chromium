@@ -29,6 +29,7 @@
 #include "base/types/always_false.h"
 #include "base/types/is_instantiation.h"
 #include "build/build_config.h"
+#include "base/types/to_address.h"
 #include "third_party/abseil-cpp/absl/functional/function_ref.h"
 
 // See docs/callback.md for user documentation.
@@ -1270,9 +1271,9 @@ struct ValidateReceiverType {
 };
 
 template <typename T>
-  requires requires(T&& t) { std::to_address(t); }
+  requires requires(T&& t) { base::to_address(t); }
 struct ValidateReceiverType<T> {
-  using Type = decltype(std::to_address(std::declval<T>()));
+  using Type = decltype(base::to_address(std::declval<T>()));
   static constexpr bool value = true;
 };
 
