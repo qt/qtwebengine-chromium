@@ -14,10 +14,9 @@
 #include <unordered_map>
 #include <utility>
 
-#include "partition_alloc/internal_allocator_forward.h"
 #include "partition_alloc/partition_alloc_base/threading/platform_thread.h"
 #include "partition_alloc/partition_alloc_base/time/time.h"
-#include "partition_alloc/partition_alloc_check.h"
+#include "partition_alloc/starscan/metadata_allocator.h"
 #include "partition_alloc/starscan/starscan_fwd.h"
 
 namespace partition_alloc {
@@ -74,14 +73,13 @@ class StatsCollector final {
     using IdType = StatsCollector::IdType<context>;
     using PerThreadEvents =
         std::array<DeferredTraceEvent, static_cast<size_t>(IdType::kNumIds)>;
-    using UnderlyingMap =
-        std::unordered_map<internal::base::PlatformThreadId,
-                           PerThreadEvents,
-                           std::hash<internal::base::PlatformThreadId>,
-                           std::equal_to<>,
-                           internal::InternalAllocator<
-                               std::pair<const internal::base::PlatformThreadId,
-                                         PerThreadEvents>>>;
+    using UnderlyingMap = std::unordered_map<
+        internal::base::PlatformThreadId,
+        PerThreadEvents,
+        std::hash<internal::base::PlatformThreadId>,
+        std::equal_to<>,
+        MetadataAllocator<std::pair<const internal::base::PlatformThreadId,
+                                    PerThreadEvents>>>;
 
     inline void RegisterBeginEventFromCurrentThread(IdType id);
     inline void RegisterEndEventFromCurrentThread(IdType id);
@@ -139,9 +137,8 @@ class StatsCollector final {
   void ReportTracesAndHists(partition_alloc::StatsReporter& reporter) const;
 
  private:
-  using MetadataString = std::basic_string<char,
-                                           std::char_traits<char>,
-                                           internal::InternalAllocator<char>>;
+  using MetadataString =
+      std::basic_string<char, std::char_traits<char>, MetadataAllocator<char>>;
 
   MetadataString ToUMAString(ScannerId id) const;
   MetadataString ToUMAString(MutatorId id) const;
