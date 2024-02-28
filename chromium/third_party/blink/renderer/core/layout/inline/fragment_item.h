@@ -600,7 +600,7 @@ class CORE_EXPORT FragmentItem final {
   mutable wtf_size_t delta_to_next_for_same_layout_object_ = 0;
 
   // Note: We should not add |bidi_level_| because it is used only for layout.
-  const unsigned const_type_ : 3;         // ItemType
+  unsigned const_type_ : 3;               // ItemType
   unsigned sub_type_ : 3;                 // TextItemType or LineBoxType
   unsigned style_variant_ : 2;            // StyleVariant
   unsigned is_hidden_for_paint_ : 1;

@@ -58,8 +58,7 @@ HeaderDirectFromSellerSignals::Result::Result(
 
 HeaderDirectFromSellerSignals::Result::~Result() = default;
 
-HeaderDirectFromSellerSignals::HeaderDirectFromSellerSignals()
-  : seller_signals_(absl::nullopt), auction_signals_(absl::nullopt) {}
+HeaderDirectFromSellerSignals::HeaderDirectFromSellerSignals() = default;
 
 HeaderDirectFromSellerSignals::~HeaderDirectFromSellerSignals() {
   base::UmaHistogramCounts10000(
