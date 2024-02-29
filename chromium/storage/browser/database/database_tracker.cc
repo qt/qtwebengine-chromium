@@ -4,6 +4,7 @@
 
 #include "storage/browser/database/database_tracker.h"
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include <algorithm>
@@ -930,6 +931,13 @@ void DatabaseTracker::Shutdown() {
   if (is_incognito_)
     DeleteIncognitoDBDirectory();
   CloseTrackerDatabaseAndClearCaches();
+
+  // Explicitly destroy `db_` on the correct sequence rather than waiting for
+  // the destructor, which may run on another sequence. Destroy related fields
+  // first to prevent dangling pointers. Destruction order is important.
+  meta_table_.reset();
+  databases_table_.reset();
+  db_.reset();
 }
 
 }  // namespace storage
