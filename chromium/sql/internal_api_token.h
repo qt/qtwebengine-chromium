@@ -27,6 +27,7 @@ class InternalApiToken {
 
   friend class DatabaseTestPeer;
   friend class Recovery;
+  friend class Transaction;
   friend struct test::ColumnInfo;
   friend bool test::CorruptSizeInHeader(const base::FilePath&);
 };
