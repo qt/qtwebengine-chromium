@@ -45,6 +45,7 @@
 #include "build/build_config.h"
 #include "sql/database_memory_dump_provider.h"
 #include "sql/initialization.h"
+#include "sql/internal_api_token.h"
 #include "sql/meta_table.h"
 #include "sql/sql_features.h"
 #include "sql/sqlite_result_code.h"
@@ -221,6 +222,11 @@ base::FilePath Database::SharedMemoryFilePath(const base::FilePath& db_path) {
   return base::FilePath(db_path.value() + FILE_PATH_LITERAL("-shm"));
 }
 
+base::WeakPtr<Database> Database::GetWeakPtr(InternalApiToken) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  return weak_factory_.GetWeakPtr();
+}
+
 Database::StatementRef::StatementRef(Database* database,
                                      sqlite3_stmt* stmt,
                                      bool was_valid)
@@ -341,6 +347,11 @@ bool Database::OpenInMemory() {
   return OpenInternal(kSqliteOpenInMemoryPath, OpenMode::kInMemory);
 }
 
+void Database::DetachFromSequence() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  DETACH_FROM_SEQUENCE(sequence_checker_);
+}
+
 bool Database::OpenTemporary(base::PassKey<Recovery>) {
   TRACE_EVENT0("sql", "Database::OpenTemporary");
 
@@ -350,6 +361,9 @@ bool Database::OpenTemporary(base::PassKey<Recovery>) {
 
 void Database::CloseInternal(bool forced) {
   TRACE_EVENT0("sql", "Database::CloseInternal");
+
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
   // TODO(shess): Calling "PRAGMA journal_mode = DELETE" at this point
   // will delete the -journal file.  For ChromiumOS or other more
   // embedded systems, this is probably not appropriate, whereas on
@@ -965,6 +979,8 @@ void Database::TrimMemory() {
 // size, then backup that database over the existing database.
 bool Database::Raze() {
   TRACE_EVENT0("sql", "Database::Raze");
+
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   absl::optional<base::ScopedBlockingCall> scoped_blocking_call;
   InitScopedBlockingCall(FROM_HERE, &scoped_blocking_call);
