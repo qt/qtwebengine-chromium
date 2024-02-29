@@ -235,7 +235,7 @@ def GenerateLastCommitPosition(host, header):
   describe_output = subprocess.check_output(
       ['git', 'describe', 'HEAD', '--abbrev=12', '--match', ROOT_TAG],
       shell=host.is_windows(), cwd=REPO_ROOT)
-  mo = re.match(ROOT_TAG + '-(\d+)-g([0-9a-f]+)', describe_output.decode())
+  mo = re.match(ROOT_TAG + '-(\\d+)-g([0-9a-f]+)', describe_output.decode())
   if not mo:
     raise ValueError(
         'Unexpected output from git describe when generating version header')
