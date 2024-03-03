@@ -309,6 +309,10 @@ void PaintOpReader::Read(PaintImage* image) {
       case PaintOp::SerializedImageType::kImageData: {
         SkColorType color_type;
         Read(&color_type);
+        if (!valid_) {
+          return;
+        }
+
         uint32_t width;
         Read(&width);
         uint32_t height;
