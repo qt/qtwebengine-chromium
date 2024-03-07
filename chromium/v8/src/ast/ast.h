@@ -1533,6 +1533,12 @@ class VariableProxy final : public Expression {
     bit_field_ = IsRemovedFromUnresolvedField::update(bit_field_, true);
   }
 
+  bool is_home_object() const { return IsHomeObjectField::decode(bit_field_); }
+
+  void set_is_home_object() {
+    bit_field_ = IsHomeObjectField::update(bit_field_, true);
+  }
+
   // Provides filtered access to the unresolved variable proxy threaded list.
   struct UnresolvedNext {
     static VariableProxy** filter(VariableProxy** t) {
@@ -1564,6 +1570,7 @@ class VariableProxy final : public Expression {
     bit_field_ |= IsAssignedField::encode(false) |
                   IsResolvedField::encode(false) |
                   IsRemovedFromUnresolvedField::encode(false) |
+                  IsHomeObjectField::encode(false) |
                   HoleCheckModeField::encode(HoleCheckMode::kElided);
   }
 
@@ -1573,7 +1580,8 @@ class VariableProxy final : public Expression {
   using IsResolvedField = IsAssignedField::Next<bool, 1>;
   using IsRemovedFromUnresolvedField = IsResolvedField::Next<bool, 1>;
   using IsNewTargetField = IsRemovedFromUnresolvedField::Next<bool, 1>;
-  using HoleCheckModeField = IsNewTargetField::Next<HoleCheckMode, 1>;
+  using IsHomeObjectField = IsNewTargetField::Next<bool, 1>;
+  using HoleCheckModeField = IsHomeObjectField::Next<HoleCheckMode, 1>;
 
   union {
     const AstRawString* raw_name_;  // if !is_resolved_
