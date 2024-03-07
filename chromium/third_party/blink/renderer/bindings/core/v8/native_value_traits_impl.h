@@ -850,6 +850,12 @@ struct NativeValueTraits<
 };
 
 template <typename T>
+T NativeValueTraits_argumentValue(v8::Isolate* isolate,
+                                  int argument_index,
+                                  v8::Local<v8::Value> value,
+                                  ExceptionState& exception_state);
+
+template <typename T>
   requires std::derived_from<T, FlexibleArrayBufferView>
 struct NativeValueTraits<T> : public NativeValueTraitsBase<T> {
   // FlexibleArrayBufferView must be used only as arguments.
@@ -860,7 +866,10 @@ struct NativeValueTraits<T> : public NativeValueTraitsBase<T> {
   static T ArgumentValue(v8::Isolate* isolate,
                          int argument_index,
                          v8::Local<v8::Value> value,
-                         ExceptionState& exception_state);
+                         ExceptionState& exception_state) {
+    return NativeValueTraits_argumentValue<T>(isolate, argument_index, value,
+                                              exception_state);
+  }
 };
 
 template <typename T>
@@ -880,6 +889,13 @@ struct NativeValueTraits<IDLBufferSourceTypeNoSizeLimit<T>>
 };
 
 template <typename T>
+T NativeValueTraits_argumentValue_forNullable(v8::Isolate* isolate,
+
+                                              int argument_index,
+                                              v8::Local<v8::Value> value,
+                                              ExceptionState& exception_state);
+
+template <typename T>
   requires std::derived_from<T, FlexibleArrayBufferView>
 struct NativeValueTraits<IDLNullable<T>> : public NativeValueTraitsBase<T> {
   // FlexibleArrayBufferView must be used only as arguments.
@@ -890,7 +906,10 @@ struct NativeValueTraits<IDLNullable<T>> : public NativeValueTraitsBase<T> {
   static T ArgumentValue(v8::Isolate* isolate,
                          int argument_index,
                          v8::Local<v8::Value> value,
-                         ExceptionState& exception_state);
+                         ExceptionState& exception_state) {
+    return NativeValueTraits_argumentValue_forNullable<T>(
+        isolate, argument_index, value, exception_state);
+  }
 };
 
 // object

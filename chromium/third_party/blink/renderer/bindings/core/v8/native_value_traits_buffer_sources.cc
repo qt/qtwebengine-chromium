@@ -862,11 +862,10 @@ NativeValueTraits<IDLNullable<IDLBufferSourceTypeNoSizeLimit<MaybeShared<T>>>>::
 // [AllowShared, FlexibleArrayBufferView] ArrayBufferView
 
 template <typename T>
-  requires std::derived_from<T, FlexibleArrayBufferView>
-T NativeValueTraits<T>::ArgumentValue(v8::Isolate* isolate,
-                                      int argument_index,
-                                      v8::Local<v8::Value> value,
-                                      ExceptionState& exception_state) {
+T NativeValueTraits_argumentValue(v8::Isolate* isolate,
+                                  int argument_index,
+                                  v8::Local<v8::Value> value,
+                                  ExceptionState& exception_state) {
   return ArgumentValueImpl<RecipeTrait<T>, ToFlexibleArrayBufferView,
                            Nullablity::kIsNotNullable, BufferSizeCheck::kCheck,
                            ResizableAllowance::kDisallowResizable,
@@ -894,12 +893,10 @@ T NativeValueTraits<IDLBufferSourceTypeNoSizeLimit<T>>::ArgumentValue(
 // Nullable [AllowShared, FlexibleArrayBufferView] ArrayBufferView
 
 template <typename T>
-  requires std::derived_from<T, FlexibleArrayBufferView>
-T NativeValueTraits<IDLNullable<T>>::ArgumentValue(
-    v8::Isolate* isolate,
-    int argument_index,
-    v8::Local<v8::Value> value,
-    ExceptionState& exception_state) {
+CORE_EXPORT T NativeValueTraits_argumentValue_forNullable(v8::Isolate* isolate,
+                                              int argument_index,
+                                              v8::Local<v8::Value> value,
+                                              ExceptionState& exception_state) {
   return ArgumentValueImpl<RecipeTrait<T>, ToFlexibleArrayBufferView,
                            Nullablity::kIsNullable, BufferSizeCheck::kCheck,
                            ResizableAllowance::kDisallowResizable,
@@ -909,6 +906,14 @@ T NativeValueTraits<IDLNullable<T>>::ArgumentValue(
 
 #define INSTANTIATE_NVT(type) \
   template struct CORE_EXPORT NativeValueTraits<type>;
+
+#define INSTANTIATE_NVT_V(type) \
+  template struct CORE_EXPORT NativeValueTraits<type>; \
+  template CORE_EXPORT type NativeValueTraits_argumentValue<type>(v8::Isolate* isolate,\
+      int argument_index, \
+      v8::Local<v8::Value> value, \
+      ExceptionState& exception_state);
+
 // NotShared<T>
 INSTANTIATE_NVT(NotShared<DOMArrayBufferView>)
 INSTANTIATE_NVT(NotShared<DOMInt8Array>)
@@ -979,10 +984,10 @@ INSTANTIATE_NVT(FlexibleArrayBufferView)
 INSTANTIATE_NVT(FlexibleInt8Array)
 INSTANTIATE_NVT(FlexibleInt16Array)
 INSTANTIATE_NVT(FlexibleInt32Array)
-INSTANTIATE_NVT(FlexibleUint8Array)
+INSTANTIATE_NVT_V(FlexibleUint8Array)
 INSTANTIATE_NVT(FlexibleUint8ClampedArray)
-INSTANTIATE_NVT(FlexibleUint16Array)
-INSTANTIATE_NVT(FlexibleUint32Array)
+INSTANTIATE_NVT_V(FlexibleUint16Array)
+INSTANTIATE_NVT_V(FlexibleUint32Array)
 INSTANTIATE_NVT(FlexibleBigInt64Array)
 INSTANTIATE_NVT(FlexibleBigUint64Array)
 INSTANTIATE_NVT(FlexibleFloat32Array)
