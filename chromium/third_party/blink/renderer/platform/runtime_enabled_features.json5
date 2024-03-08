@@ -854,6 +854,10 @@
       base_feature: "none",
     },
     {
+      name: "CSSComputedStyleFullPseudoElementParser",
+      status: "experimental",
+    },
+    {
       name: "CSSContentVisibilityImpliesContainIntrinsicSizeAuto",
       status: "stable",
     },
