@@ -310,10 +310,15 @@ def WriteGenericNinja(path, static_libraries, executables,
     '',
   ]
 
+  platform_template = platform.platform()
+
+  if "clang-cl" in cxx:
+     platform_template = "clang-cl"
 
   template_filename = os.path.join(SCRIPT_DIR, {
       'msvc': 'build_win.ninja.template',
       'mingw': 'build_mingw.ninja.template',
+      'clang-cl': 'build_clang_cl.ninja.template',
       'msys': 'build_linux.ninja.template',
       'darwin': 'build_mac.ninja.template',
       'linux': 'build_linux.ninja.template',
@@ -325,7 +330,7 @@ def WriteGenericNinja(path, static_libraries, executables,
       'netbsd': 'build_linux.ninja.template',
       'zos': 'build_zos.ninja.template',
       'serenity': 'build_linux.ninja.template',
-  }[platform.platform()])
+  }[platform_template])
 
   with open(template_filename) as f:
     ninja_template = f.read()
