@@ -104,7 +104,7 @@ class CORE_EXPORT FragmentItem final {
   // kCanClearUnusedSlotsWithMemset.
   enum ItemType { kInvalid = 0, kText, kGeneratedText, kLine, kBox };
 
-  NGFragmentItem() { }
+  FragmentItem() { }
 
   // Create appropriate type for |line_item|.
   FragmentItem(LogicalLineItem&& line_item, WritingMode writing_mode);

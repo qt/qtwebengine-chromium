@@ -300,7 +300,12 @@ std::vector<float> StyleCrossfadeImage::ComputeWeights(bool for_sizing) const {
       continue;
     }
     if (percentage == nullptr) {
+#if !defined(COMPILER_MSVC)
       result.push_back(0.0 / 0.0);  // NaN.
+#else
+      char input;
+      result.push_back(nan(&input));  // NaN.
+#endif
       ++num_missing;
     } else if (percentage->IsPercentage()) {
       result.push_back(percentage->GetFloatValue() / 100.0);

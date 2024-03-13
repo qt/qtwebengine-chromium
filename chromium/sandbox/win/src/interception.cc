@@ -461,7 +461,7 @@ InterceptionManager::PatchClientFunctions(DllInterceptionData* thunks,
           reinterpret_cast<const void**>(&address));
       if (!NT_SUCCESS(ret)) {
         ::SetLastError(GetLastErrorFromNtStatus(ret));
-        return SBOX_ERROR_CANNOT_RESOLVE_INTERCEPTION_THUNK;
+        return base::unexpected(SBOX_ERROR_CANNOT_RESOLVE_INTERCEPTION_THUNK);
       }
 
       // Translate the local address to an address on the child.

@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/platform/graphics/canvas_hibernation_handler.h"
 
+#include "base/compiler_specific.h"
 #include "base/feature_list.h"
 #include "base/trace_event/memory_dump_manager.h"
 #include "base/trace_event/memory_dump_request_args.h"
@@ -202,7 +203,7 @@ CanvasHibernationHandler::GetMainThreadTaskRunner() const {
 
 void CanvasHibernationHandler::Encode(
     std::unique_ptr<CanvasHibernationHandler::BackgroundTaskParams> params) {
-  TRACE_EVENT0("blink", __PRETTY_FUNCTION__);
+  TRACE_EVENT0("blink", PRETTY_FUNCTION);
   DCHECK(
       base::FeatureList::IsEnabled(features::kCanvasCompressHibernatedImage));
   sk_sp<SkData> encoded =
@@ -225,7 +226,7 @@ void CanvasHibernationHandler::Encode(
 }
 
 sk_sp<SkImage> CanvasHibernationHandler::GetImage() {
-  TRACE_EVENT0("blink", __PRETTY_FUNCTION__);
+  TRACE_EVENT0("blink", PRETTY_FUNCTION);
   DCheckInvariant();
   if (image_) {
     return image_;

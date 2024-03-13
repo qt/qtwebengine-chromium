@@ -1631,7 +1631,7 @@ const base::FeatureParam<bool>
 // Selectively allows the debug mode to be disabled while leaving the rest of
 // the API in place. If disabled, any `enableDebugMode()` calls will essentially
 // have no effect.
-constexpr base::FeatureParam<bool> kPrivateAggregationApiDebugModeEnabledAtAll{
+const base::FeatureParam<bool> kPrivateAggregationApiDebugModeEnabledAtAll{
     &kPrivateAggregationApi, "debug_mode_enabled_at_all",
     /*default_value=*/true};
 

@@ -70,7 +70,7 @@ bool GetCPUIdleness(int* idleness_percent) {
   return true;
 }
 
-#if defined(ARCH_CPU_X86_FAMILY)
+#if defined(ARCH_CPU_X86_FAMILY) && !defined(COMPILER_MSVC)
 // Returns the estimated CPU frequency by executing a tight loop of predictable
 // assembly instructions. The estimated frequency should be proportional and
 // about the same magnitude than the real CPU frequency. The measurement should
@@ -148,7 +148,7 @@ int SpeedLimitObserverWin::GetCurrentSpeedLimit() {
     TRACE_COUNTER1(kPowerTraceCategory, "throttling_level",
                    static_cast<unsigned int>(throttling_level * 100));
 
-#if defined(ARCH_CPU_X86_FAMILY)
+#if defined(ARCH_CPU_X86_FAMILY) && !defined(COMPILER_MSVC)
     double cpu_frequency = EstimateCpuFrequency();
     TRACE_COUNTER1(kPowerTraceCategory, "frequency_mhz",
                    static_cast<unsigned int>(cpu_frequency / 1'000'000));

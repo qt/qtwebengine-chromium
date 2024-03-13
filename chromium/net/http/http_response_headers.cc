@@ -147,7 +147,7 @@ int ParseStatus(base::StringPiece status, std::string& append_to) {
   // Skip whitespace. Tabs are not skipped, for backwards compatibility.
   RemoveLeadingSpaces(&status);
 
-  const char* first_non_digit =
+  const auto first_non_digit =
       std::find_if(status.begin(), status.end(),
                    [](char c) { return !base::IsAsciiDigit(c); });
 

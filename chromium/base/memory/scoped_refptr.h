@@ -337,8 +337,11 @@ class TRIVIAL_ABI scoped_refptr {
   friend auto operator<=>(const scoped_refptr<T>& lhs, std::nullptr_t null) {
     return lhs.ptr_ <=> static_cast<T*>(nullptr);
   }
-
+#if (defined(__GNUC__) && __GNUC__ < 13) || defined(COMPILER_MSVC)
+ public:
+#else
  protected:
+#endif
   // This field is not a raw_ptr<> because it was filtered by the rewriter for:
   // #union, #addr-of, #global-scope
   RAW_PTR_EXCLUSION T* ptr_ = nullptr;

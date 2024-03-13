@@ -29,7 +29,10 @@ class PreferenceObject final : public ScriptWrappable {
   void clearOverride(ScriptState*);
 
   ScriptPromise requestOverride(ScriptState*, absl::optional<AtomicString>);
-
+#if defined(COMPILER_MSVC) && !defined(__clang__)
+  // called from generated class
+  ScriptPromise requestOverride(ScriptState*, const AtomicString& string);
+#endif
   const FrozenArray<IDLString>& validValues();
 
   void Trace(Visitor* visitor) const override;

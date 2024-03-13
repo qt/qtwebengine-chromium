@@ -44,12 +44,18 @@ std::ostream& operator<<(std::ostream& out, const BooleanWithStack& bws) {
 
 namespace {
 
+#if !defined(COMPILER_MSVC)
 ABSL_CONST_INIT thread_local BooleanWithStack tls_blocking_disallowed;
 ABSL_CONST_INIT thread_local BooleanWithStack tls_singleton_disallowed;
 ABSL_CONST_INIT thread_local BooleanWithStack
     tls_base_sync_primitives_disallowed;
 ABSL_CONST_INIT thread_local BooleanWithStack tls_cpu_intensive_work_disallowed;
-
+#else
+thread_local BooleanWithStack tls_blocking_disallowed;
+thread_local BooleanWithStack tls_singleton_disallowed;
+thread_local BooleanWithStack tls_base_sync_primitives_disallowed;
+thread_local BooleanWithStack tls_cpu_intensive_work_disallowed;
+#endif
 }  // namespace
 
 namespace internal {

@@ -168,6 +168,13 @@ void PreferenceObject::clearOverride(ScriptState* script_state) {
   window->GetFrame()->GetPage()->SetPreferenceOverride(featureName, String());
 }
 
+#if defined(COMPILER_MSVC) && !defined(__clang__)
+ScriptPromise PreferenceObject::requestOverride(ScriptState* script_state,
+                                                const AtomicString& string) {
+  return requestOverride(script_state, absl::optional<AtomicString>(string));
+}
+#endif
+
 ScriptPromise PreferenceObject::requestOverride(
     ScriptState* script_state,
     absl::optional<AtomicString> value) {

@@ -537,7 +537,8 @@ DocumentLoader::DocumentLoader(
       load_with_storage_access_(params_->load_with_storage_access),
       browsing_context_group_info_(params_->browsing_context_group_info),
       modified_runtime_features_(std::move(params_->modified_runtime_features)),
-      cookie_deprecation_label_(params_->cookie_deprecation_label),
+      cookie_deprecation_label_(
+          static_cast<String>(params_->cookie_deprecation_label)),
       content_settings_(std::move(params_->content_settings)) {
   DCHECK(frame_);
   DCHECK(params_);
