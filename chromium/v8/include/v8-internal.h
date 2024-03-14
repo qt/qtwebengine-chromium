@@ -1145,13 +1145,14 @@ class StrongRootAllocator : public StrongRootAllocatorBase,
 template <typename Iterator, typename ElementType = void>
 class WrappedIterator {
  public:
+#if !defined(_MSC_VER)
   static_assert(
       !std::is_void_v<ElementType> ||
       (std::is_convertible_v<typename std::iterator_traits<Iterator>::pointer,
                              ElementType*> &&
        std::is_convertible_v<typename std::iterator_traits<Iterator>::reference,
                              ElementType&>));
-
+#endif
   using iterator_category =
       typename std::iterator_traits<Iterator>::iterator_category;
   using difference_type =
@@ -1164,11 +1165,12 @@ class WrappedIterator {
       std::conditional_t<std::is_void_v<ElementType>,
                          typename std::iterator_traits<Iterator>::pointer,
                          ElementType*>;
+#if !defined(_MSC_VER)
   using reference =
       std::conditional_t<std::is_void_v<ElementType>,
                          typename std::iterator_traits<Iterator>::reference,
                          ElementType&>;
-
+#endif
   constexpr WrappedIterator() noexcept : it_() {}
   constexpr explicit WrappedIterator(Iterator it) noexcept : it_(it) {}
 
@@ -1178,8 +1180,15 @@ class WrappedIterator {
   constexpr WrappedIterator(
       const WrappedIterator<OtherIterator, OtherElementType>& it) noexcept
       : it_(it.base()) {}
-
+#if defined(_MSC_VER)
+  template<typename ReturnType = ElementType>
+  constexpr std::conditional_t<std::is_void_v<ElementType>,
+      typename std::iterator_traits<Iterator>::reference,ReturnType&>
+          operator*() const noexcept { return *it_;}
+#else
   constexpr reference operator*() const noexcept { return *it_; }
+#endif
+
   constexpr pointer operator->() const noexcept { return it_.operator->(); }
 
   constexpr WrappedIterator& operator++() noexcept {
@@ -1217,10 +1226,14 @@ class WrappedIterator {
     *this += -n;
     return *this;
   }
-  constexpr reference operator[](difference_type n) const noexcept {
-    return it_[n];
-  }
-
+#if defined(_MSC_VER)
+  template<typename ReturnType = ElementType>
+  constexpr std::conditional_t<std::is_void_v<ElementType>,
+      typename std::iterator_traits<Iterator>::reference,ReturnType&>
+          operator[](difference_type n) const noexcept { return it_[n]; }
+#else
+  constexpr reference operator[](difference_type n) const noexcept { return it_[n]; }
+#endif
   constexpr Iterator base() const noexcept { return it_; }
 
  private:
