@@ -104,6 +104,7 @@ ots::TableAction BlinkOTSContext::GetTableAction(uint32_t tag) {
   const uint32_t kCpalTag = OTS_TAG('C', 'P', 'A', 'L');
   const uint32_t kCff2Tag = OTS_TAG('C', 'F', 'F', '2');
   const uint32_t kSbixTag = OTS_TAG('s', 'b', 'i', 'x');
+  const uint32_t kStatTag = OTS_TAG('S', 'T', 'A', 'T');
 #if HB_VERSION_ATLEAST(1, 0, 0)
   const uint32_t kGdefTag = OTS_TAG('G', 'D', 'E', 'F');
   const uint32_t kGposTag = OTS_TAG('G', 'P', 'O', 'S');
@@ -130,6 +131,7 @@ ots::TableAction BlinkOTSContext::GetTableAction(uint32_t tag) {
     case kCpalTag:
     case kCff2Tag:
     case kSbixTag:
+    case kStatTag:
 #if HB_VERSION_ATLEAST(1, 0, 0)
     // Let HarfBuzz handle how to deal with broken tables.
     case kAvarTag:
