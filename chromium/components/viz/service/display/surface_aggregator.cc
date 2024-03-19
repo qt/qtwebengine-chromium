@@ -2155,7 +2155,7 @@ AggregatedFrame SurfaceAggregator::Aggregate(
   root_surface_id_ = surface_id;
 
   // Start recording new stats for this aggregation.
-  stats_.emplace();
+  stats_ = AggregateStatistics{};
 
   ResolvedFrameData* resolved_frame = GetResolvedFrame(surface_id);
 

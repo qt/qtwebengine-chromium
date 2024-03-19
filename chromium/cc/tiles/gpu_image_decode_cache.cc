@@ -902,7 +902,7 @@ GpuImageDecodeCache::ImageData::ImageData(
     last_use = base::TimeTicks::Now();
   }
   if (speculative_decode) {
-    speculative_decode_usage_stats_.emplace();
+    speculative_decode_usage_stats_ = SpeculativeDecodeUsageStats{};
     speculative_decode_usage_stats_->speculative_decode_mip_level =
         upload_scale_mip_level;
     TRACE_EVENT_INSTANT2(TRACE_DISABLED_BY_DEFAULT("loading"),
