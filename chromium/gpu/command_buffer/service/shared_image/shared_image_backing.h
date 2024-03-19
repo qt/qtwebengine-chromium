@@ -112,6 +112,25 @@ using VideoDevice = Microsoft::WRL::ComPtr<ID3D11Device>;
 using VideoDevice = void*;
 #endif  // BUILDFLAG(IS_WIN)
 
+class ScopedWriteUMA {
+ public:
+  ScopedWriteUMA() = default;
+
+  ScopedWriteUMA(const ScopedWriteUMA&) = delete;
+  ScopedWriteUMA& operator=(const ScopedWriteUMA&) = delete;
+
+  ~ScopedWriteUMA() {
+    UMA_HISTOGRAM_BOOLEAN("GPU.SharedImage.ContentConsumed",
+                          content_consumed_);
+  }
+
+  bool content_consumed() const { return content_consumed_; }
+  void SetConsumed() { content_consumed_ = true; }
+
+ private:
+  bool content_consumed_ = false;
+};
+
 // Represents the actual storage (GL texture, VkImage, GMB) for a SharedImage.
 // Should not be accessed directly, instead is accessed through a
 // SharedImageRepresentation.
@@ -387,25 +406,6 @@ class GPU_GLES2_EXPORT SharedImageBacking {
   mutable std::optional<base::Lock> lock_;
 
  private:
-  class ScopedWriteUMA {
-   public:
-    ScopedWriteUMA() = default;
-
-    ScopedWriteUMA(const ScopedWriteUMA&) = delete;
-    ScopedWriteUMA& operator=(const ScopedWriteUMA&) = delete;
-
-    ~ScopedWriteUMA() {
-      UMA_HISTOGRAM_BOOLEAN("GPU.SharedImage.ContentConsumed",
-                            content_consumed_);
-    }
-
-    bool content_consumed() const { return content_consumed_; }
-    void SetConsumed() { content_consumed_ = true; }
-
-   private:
-    bool content_consumed_ = false;
-  };
-
   const Mailbox mailbox_;
   const viz::SharedImageFormat format_;
   const gfx::Size size_;
