@@ -2672,7 +2672,7 @@ std::vector<std::pair<FieldRendererId, WebAutofillState>> ApplyFieldsAction(
     if (element.Focused()) {
       focused_field = {&field, element};
     } else {
-      unfocused_fields.emplace_back(&field, element);
+      unfocused_fields.push_back({&field, element});
     }
   }
 

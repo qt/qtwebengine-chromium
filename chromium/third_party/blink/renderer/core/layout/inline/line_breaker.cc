@@ -2742,7 +2742,7 @@ bool LineBreaker::ComputeTrailingCollapsibleSpaceHelper(LineInfo& line_info) {
       if (!trailing_collapsible_space_.has_value() ||
           trailing_collapsible_space_->item_results != results ||
           trailing_collapsible_space_->item_result_index != index) {
-        trailing_collapsible_space_.emplace();
+        trailing_collapsible_space_ = TrailingCollapsibleSpace{};
         trailing_collapsible_space_->item_results = results;
         trailing_collapsible_space_->item_result_index = index;
         if (item_result.EndOffset() - 1 > item_result.StartOffset()) {
