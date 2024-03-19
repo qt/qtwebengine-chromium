@@ -289,7 +289,7 @@ void CloneResourcesDictEntries(CPDF_Document* doc,
           pdfium::Contains(kResourceKeys, key)) {
         RetainPtr<const CPDF_Object> direct_object = object->GetDirect();
         if (direct_object) {
-          entries_to_maybe_clone.emplace_back(key, std::move(direct_object));
+          entries_to_maybe_clone.push_back(KeyAndObject{key, std::move(direct_object)});
         }
       }
     }
