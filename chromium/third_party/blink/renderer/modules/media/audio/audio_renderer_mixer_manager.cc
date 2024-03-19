@@ -181,8 +181,8 @@ AudioRendererMixer* AudioRendererMixerManager::GetMixer(
     DVLOG(1) << "Not reusing mixer with errors: " << it->second.mixer;
 
     // Move bad mixers out of the reuse map.
-    dead_mixers_.emplace_back(std::move(it->second.mixer),
-                              it->second.ref_count);
+    dead_mixers_.push_back({std::move(it->second.mixer),
+                              it->second.ref_count});
     mixers_.erase(it);
   }
 
@@ -228,7 +228,7 @@ void AudioRendererMixerManager::ReturnMixer(AudioRendererMixer* mixer) {
     }
   } else if (dead_it == dead_mixers_.end() && mixer_ref.mixer->HasSinkError()) {
     // Move bad mixers out of the reuse map.
-    dead_mixers_.emplace_back(std::move(mixer_ref.mixer), mixer_ref.ref_count);
+    dead_mixers_.push_back({std::move(mixer_ref.mixer), mixer_ref.ref_count});
     mixers_.erase(it);
   }
 }

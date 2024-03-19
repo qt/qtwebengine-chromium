@@ -893,7 +893,7 @@ bool MultiplexRouter::ExclusiveSyncWaitForReply(InterfaceId interface_id,
   DCHECK(!exclusive_sync_wait_);
 
   scoped_refptr<MultiplexRouter> keep_alive(this);
-  exclusive_sync_wait_.emplace();
+  exclusive_sync_wait_ = ExclusiveSyncWaitInfo{};
   exclusive_sync_wait_->interface_id = interface_id;
   exclusive_sync_wait_->request_id = request_id;
   while (!exclusive_sync_wait_->finished) {

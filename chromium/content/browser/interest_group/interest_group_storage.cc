@@ -4522,7 +4522,7 @@ DoGetBiddingAndAuctionServerKeys(sql::Database& db,
     std::vector<BiddingAndAuctionServerKey> keys;
     keys.reserve(key_protos.keys_size());
     for (auto& key_proto : *key_protos.mutable_keys()) {
-      keys.emplace_back(std::move(*key_proto.mutable_key()), key_proto.id());
+      keys.push_back({std::move(*key_proto.mutable_key()), (uint8_t)key_proto.id()});
     }
     return {expiration, keys};
   }

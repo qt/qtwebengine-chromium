@@ -33,7 +33,7 @@ std::vector<NullAggregatableReport> GetNullAggregatableReportsForLookback(
     }
 
     if (generate_func(i)) {
-      reports.emplace_back(fake_source_time);
+      reports.push_back({fake_source_time});
     }
   }
   return reports;
