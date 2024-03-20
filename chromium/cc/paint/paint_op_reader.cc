@@ -1438,9 +1438,10 @@ inline void PaintOpReader::DidRead(size_t bytes_read) {
   // All data are aligned with PaintOpWriter::Alignment() at least.
   size_t aligned_bytes =
       base::bits::AlignUp(bytes_read, PaintOpWriter::Alignment());
-  memory_ += aligned_bytes;
   DCHECK_LE(aligned_bytes, remaining_bytes_);
-  remaining_bytes_ -= aligned_bytes;
+  bytes_read = std::min(aligned_bytes, remaining_bytes_);
+  memory_ += bytes_read;
+  remaining_bytes_ -= bytes_read;
 }
 
 }  // namespace cc
