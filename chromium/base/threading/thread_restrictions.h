@@ -446,6 +446,7 @@ namespace QtWebEngineCore {
 class DevToolsFrontendQt;
 class PrefServiceAdapter;
 class ProfileAdapter;
+class PermissionManagerQt;
 }
 
 namespace base {
@@ -671,6 +672,7 @@ class BASE_EXPORT [[maybe_unused, nodiscard]] ScopedAllowBlocking {
   friend class QtWebEngineCore::DevToolsFrontendQt;
   friend class QtWebEngineCore::PrefServiceAdapter;
   friend class QtWebEngineCore::ProfileAdapter;
+  friend class QtWebEngineCore::PermissionManagerQt;
 
   // Sorted by function name (with namespace), ignoring the return type.
   friend bool ::EnsureBrowserStateDirectoriesCreated(const base::FilePath&,
