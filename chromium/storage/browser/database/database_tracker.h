@@ -41,7 +41,6 @@ namespace storage {
 class DatabaseQuotaClient;
 class QuotaClientCallbackWrapper;
 class QuotaManagerProxy;
-class SpecialStoragePolicy;
 
 COMPONENT_EXPORT(STORAGE_BROWSER)
 extern const base::FilePath::CharType kDatabaseDirectoryName[];
@@ -99,13 +98,11 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) DatabaseTracker
   static scoped_refptr<DatabaseTracker> Create(
       const base::FilePath& profile_path,
       bool is_incognito,
-      scoped_refptr<SpecialStoragePolicy> special_storage_policy,
       scoped_refptr<QuotaManagerProxy> quota_manager_proxy);
 
   // Exposed for base::MakeRefCounted. Users should call Create().
   DatabaseTracker(const base::FilePath& profile_path,
                   bool is_incognito,
-                  scoped_refptr<SpecialStoragePolicy> special_storage_policy,
                   scoped_refptr<QuotaManagerProxy> quota_manager_proxy,
                   base::PassKey<DatabaseTracker>);
 
@@ -166,9 +163,6 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) DatabaseTracker
 
   // Deletes databases touched since `cutoff`.
   //
-  // Does not delete databases belonging to origins designated as protected by
-  // the SpecialStoragePolicy passed to the DatabaseTracker constructor.
-  //
   // `callback` must must be non-null, and is invoked upon completion with a
   // net::Error. The status will be net::OK on success, or net::FAILED if not
   // all databases could be deleted. `callback` may be called before this method
@@ -196,8 +190,6 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) DatabaseTracker
   // Shutdown the database tracker, deleting database files if the tracker is
   // used for an Incognito profile.
   void Shutdown();
-  // Disables the exit-time deletion of session-only data.
-  void SetForceKeepSessionState();
 
  protected:
   // Subclasses need PassKeys to call the constructor.
@@ -245,9 +237,6 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) DatabaseTracker
   // Deletes the directory that stores all DBs in Incognito mode, if it
   // exists.
   void DeleteIncognitoDBDirectory();
-
-  // Deletes session-only databases. Blocks databases from being created/opened.
-  void ClearSessionOnlyOrigins();
 
   bool DeleteClosedDatabase(const std::string& origin_identifier,
                             const std::u16string& database_name);
@@ -301,7 +290,6 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) DatabaseTracker
 
   bool is_initialized_ = false;
   const bool is_incognito_;
-  bool force_keep_session_state_ = false;
   bool shutting_down_ = false;
   const base::FilePath profile_path_;
 
@@ -321,9 +309,6 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) DatabaseTracker
   DatabaseSet dbs_to_be_deleted_;
   std::vector<std::pair<net::CompletionOnceCallback, DatabaseSet>>
       deletion_callbacks_;
-
-  // Apps and Extensions can have special rights.
-  const scoped_refptr<SpecialStoragePolicy> special_storage_policy_;
 
   // Can be accessed from any thread via quota_manager_proxy().
   //
