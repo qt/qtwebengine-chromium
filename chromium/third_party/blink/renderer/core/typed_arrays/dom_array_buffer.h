@@ -80,8 +80,21 @@ class CORE_EXPORT DOMArrayBuffer : public DOMArrayBufferBase {
 
   v8::MaybeLocal<v8::Value> Wrap(ScriptState*) override;
 
+  bool IsDetached() const override;
+
+  v8::Local<v8::Object> AssociateWithWrapper(
+      v8::Isolate* isolate,
+      const WrapperTypeInfo* wrapper_type_info,
+      v8::Local<v8::Object> wrapper) override;
+
+  bool has_non_main_world_wrappers() const {
+    return has_non_main_world_wrappers_;
+  }
+
  private:
   bool TransferDetachable(v8::Isolate*, ArrayBufferContents& result);
+
+  bool has_non_main_world_wrappers_ = false;
 };
 
 }  // namespace blink

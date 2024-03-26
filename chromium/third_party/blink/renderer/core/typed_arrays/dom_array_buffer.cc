@@ -46,6 +46,15 @@ static void AccumulateArrayBuffersForAllWorlds(
     v8::Isolate* isolate,
     DOMArrayBuffer* object,
     Vector<v8::Local<v8::ArrayBuffer>, 4>& buffers) {
+  if (!object->has_non_main_world_wrappers() && IsMainThread()) {
+    const DOMWrapperWorld& world = DOMWrapperWorld::MainWorld();
+    v8::Local<v8::Object> wrapper = world.DomDataStore().Get(object, isolate);
+    if (!wrapper.IsEmpty()) {
+      buffers.push_back(v8::Local<v8::ArrayBuffer>::Cast(wrapper));
+    }
+    return;
+  }
+
   Vector<scoped_refptr<DOMWrapperWorld>> worlds;
   DOMWrapperWorld::AllWorldsInCurrentThread(worlds);
   for (const auto& world : worlds) {
@@ -190,6 +199,47 @@ DOMArrayBuffer* DOMArrayBuffer::Create(
   }
 
   return Create(std::move(contents));
+}
+
+bool DOMArrayBuffer::IsDetached() const {
+  if (contents_.BackingStore() == nullptr) {
+    return is_detached_;
+  }
+  if (is_detached_) {
+    return true;
+  }
+
+  v8::Isolate* isolate = v8::Isolate::GetCurrent();
+  v8::HandleScope handle_scope(isolate);
+  Vector<v8::Local<v8::ArrayBuffer>, 4> buffer_handles;
+  AccumulateArrayBuffersForAllWorlds(isolate, const_cast<DOMArrayBuffer*>(this),  buffer_handles);
+
+  // There may be several v8::ArrayBuffers corresponding to the DOMArrayBuffer,
+  // but at most one of them may be non-detached.
+  int nondetached_count = 0;
+  int detached_count = 0;
+
+  for (const auto& buffer_handle : buffer_handles) {
+    if (buffer_handle->WasDetached()) {
+      ++detached_count;
+    } else {
+      ++nondetached_count;
+    }
+  }
+  CHECK_LE(nondetached_count, 1);
+
+  return nondetached_count == 0 && detached_count > 0;
+}
+
+v8::Local<v8::Object> DOMArrayBuffer::AssociateWithWrapper(
+    v8::Isolate* isolate,
+    const WrapperTypeInfo* wrapper_type_info,
+    v8::Local<v8::Object> wrapper) {
+  if (!DOMWrapperWorld::Current(isolate).IsMainWorld()) {
+    has_non_main_world_wrappers_ = true;
+  }
+  return ScriptWrappable::AssociateWithWrapper(isolate, wrapper_type_info,
+                                               wrapper);
 }
 
 DOMArrayBuffer* DOMArrayBuffer::Slice(size_t begin, size_t end) const {
