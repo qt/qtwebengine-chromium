@@ -4298,7 +4298,7 @@ typename ParserBase<Impl>::StatementT ParserBase<Impl>::ParseClassDeclaration(
   // so rewrite it as such.
 
   int class_token_pos = position();
-  IdentifierT name = impl()->NullIdentifier();
+  IdentifierT name = impl()->EmptyIdentifierString();
   bool is_strict_reserved = Token::IsStrictReservedWord(peek());
   IdentifierT variable_name = impl()->NullIdentifier();
   if (default_export && (peek() == Token::EXTENDS || peek() == Token::LBRACE)) {
@@ -4736,7 +4736,7 @@ typename ParserBase<Impl>::ExpressionT ParserBase<Impl>::ParseClassExpression(
     Scope* outer_scope) {
   Consume(Token::CLASS);
   int class_token_pos = position();
-  IdentifierT name = impl()->NullIdentifier();
+  IdentifierT name = impl()->EmptyIdentifierString();
   bool is_strict_reserved_name = false;
   Scanner::Location class_name_location = Scanner::Location::invalid();
   if (peek_any_identifier()) {
@@ -4753,7 +4753,7 @@ template <typename Impl>
 typename ParserBase<Impl>::ExpressionT ParserBase<Impl>::ParseClassLiteral(
     Scope* outer_scope, IdentifierT name, Scanner::Location class_name_location,
     bool name_is_strict_reserved, int class_token_pos) {
-  bool is_anonymous = impl()->IsNull(name);
+  bool is_anonymous = impl()->IsEmptyIdentifier(name);
 
   // All parts of a ClassDeclaration and ClassExpression are strict code.
   if (!impl()->HasCheckedSyntax() && !is_anonymous) {
