@@ -97,4 +97,9 @@ blink_core_sources("svg_layout") {
     "transformed_hit_test_location.cc",
     "transformed_hit_test_location.h",
   ]
+
+  jumbo_excluded_sources = [
+    "layout_svg_resource_paint_server.cc",
+    "svg_layout_tree_as_text.cc",
+  ]
 }
