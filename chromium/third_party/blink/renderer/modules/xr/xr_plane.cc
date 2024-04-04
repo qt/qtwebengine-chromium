@@ -44,10 +44,13 @@ XRPlane::XRPlane(device::PlaneId id,
                  double timestamp)
     : XRPlane(id,
               session,
-              mojo::ConvertTo<std::optional<blink::XRPlane::Orientation>>(
-                  plane_data.orientation),
-              mojo::ConvertTo<HeapVector<Member<DOMPointReadOnly>>>(
-                  plane_data.polygon),
+              mojo::TypeConverter<std::optional<blink::XRPlane::Orientation>,
+                                  device::mojom::blink::XRPlaneOrientation>::
+                  Convert(plane_data.orientation),
+              mojo::TypeConverter<
+                  blink::HeapVector<blink::Member<blink::DOMPointReadOnly>>,
+                  Vector<device::mojom::blink::XRPlanePointDataPtr>>::
+                  Convert(plane_data.polygon),
               plane_data.mojo_from_plane,
               SemanticLabelToString(plane_data.semantic_label),
               timestamp) {}
@@ -126,16 +129,20 @@ void XRPlane::Update(const device::mojom::blink::XRPlaneData& plane_data,
 
   last_changed_time_ = timestamp;
 
-  orientation_ = mojo::ConvertTo<std::optional<blink::XRPlane::Orientation>>(
-      plane_data.orientation);
+  orientation_ =
+      mojo::TypeConverter<std::optional<blink::XRPlane::Orientation>,
+                          device::mojom::blink::XRPlaneOrientation>::
+          Convert(plane_data.orientation);
 
   mojo_from_plane_ = plane_data.mojo_from_plane;
 
   semantic_label_ = SemanticLabelToString(plane_data.semantic_label);
 
   polygon_ = MakeGarbageCollected<FrozenArray<DOMPointReadOnly>>(
-      mojo::ConvertTo<HeapVector<Member<DOMPointReadOnly>>>(
-          plane_data.polygon));
+      mojo::TypeConverter<
+          blink::HeapVector<blink::Member<blink::DOMPointReadOnly>>,
+          Vector<device::mojom::blink::XRPlanePointDataPtr>>::
+          Convert(plane_data.polygon));
 }
 
 void XRPlane::Trace(Visitor* visitor) const {
