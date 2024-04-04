@@ -34,7 +34,8 @@ bool ReadScrollData(ui::mojom::EventDataView* event,
     return false;
 
   *out = std::make_unique<ui::ScrollEvent>(
-      mojo::ConvertTo<ui::EventType>(event->action()),
+      mojo::TypeConverter<ui::EventType, ui::mojom::EventType>::Convert(
+          event->action()),
       scroll_data->location->relative_location,
       scroll_data->location->root_location, time_stamp, event->flags(),
       scroll_data->x_offset, scroll_data->y_offset,
@@ -50,7 +51,9 @@ bool ReadGestureData(ui::mojom::EventDataView* event,
   if (!event->ReadGestureData<ui::mojom::GestureDataPtr>(&gesture_data))
     return false;
 
-  ui::GestureEventDetails details(ConvertTo<ui::EventType>(event->action()));
+  ui::GestureEventDetails details(
+      mojo::TypeConverter<ui::EventType, ui::mojom::EventType>::Convert(
+          event->action()));
   details.set_device_type(gesture_data->device_type);
   switch (details.type()) {
     case ui::ET_GESTURE_PINCH_UPDATE:
@@ -249,7 +252,8 @@ ui::EventType TypeConverter<ui::EventType, ui::mojom::EventType>::Convert(
 ui::mojom::EventType
 StructTraits<ui::mojom::EventDataView, EventUniquePtr>::action(
     const EventUniquePtr& event) {
-  return mojo::ConvertTo<ui::mojom::EventType>(event->type());
+  return mojo::TypeConverter<ui::mojom::EventType, ui::EventType>::Convert(
+      event->type());
 }
 
 // static
@@ -471,7 +475,8 @@ bool StructTraits<ui::mojom::EventDataView, EventUniquePtr>::Read(
             mouse_data->changed_button_flags, mouse_data->tick_120ths);
       } else {
         mouse_event = std::make_unique<ui::MouseEvent>(
-            mojo::ConvertTo<ui::EventType>(event.action()),
+            mojo::TypeConverter<ui::EventType, ui::mojom::EventType>::Convert(
+                event.action()),
             mouse_data->location->relative_location,
             mouse_data->location->root_location, time_stamp, event.flags(),
             mouse_data->changed_button_flags, mouse_data->pointer_details);
@@ -488,7 +493,8 @@ bool StructTraits<ui::mojom::EventDataView, EventUniquePtr>::Read(
         return false;
       std::unique_ptr<ui::TouchEvent> touch_event =
           std::make_unique<ui::TouchEvent>(
-              mojo::ConvertTo<ui::EventType>(event.action()),
+              mojo::TypeConverter<ui::EventType, ui::mojom::EventType>::Convert(
+                  event.action()),
               touch_data->location->relative_location,
               touch_data->location->root_location, time_stamp,
               touch_data->pointer_details, event.flags());

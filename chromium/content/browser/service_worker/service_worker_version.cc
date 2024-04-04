@@ -1419,8 +1419,9 @@ void ServiceWorkerVersion::OnStarted(
   // is running, and the spec considers it a success, so the callbacks should
   // change to treat kErrorScriptEvaluated as success, or use
   // ServiceWorkerStartStatus directly.
-  blink::ServiceWorkerStatusCode status =
-      mojo::ConvertTo<blink::ServiceWorkerStatusCode>(start_status);
+  blink::ServiceWorkerStatusCode status = mojo::TypeConverter<
+      blink::ServiceWorkerStatusCode,
+      blink::mojom::ServiceWorkerStartStatus>::Convert(start_status);
 
   if (status == blink::ServiceWorkerStatusCode::kOk) {
     if (fetch_handler_type_ && fetch_handler_type_ != new_fetch_handler_type) {
@@ -2047,7 +2048,9 @@ void ServiceWorkerVersion::OnSimpleEventFinished(
   // TODO(http://crbug.com/1251834): Why are we running the "error callback"
   // even when there is no error? Clean this up.
   std::move(error_callback)
-      .Run(mojo::ConvertTo<blink::ServiceWorkerStatusCode>(status));
+      .Run(mojo::TypeConverter<
+           blink::ServiceWorkerStatusCode,
+           blink::mojom::ServiceWorkerEventStatus>::Convert(status));
 }
 
 void ServiceWorkerVersion::CountFeature(blink::mojom::WebFeature feature) {

@@ -22,8 +22,11 @@ TypeConverter<payments::mojom::blink::SecurePaymentConfirmationRequestPtr,
               blink::SecurePaymentConfirmationRequest*>::
     Convert(const blink::SecurePaymentConfirmationRequest* input) {
   auto output = payments::mojom::blink::SecurePaymentConfirmationRequest::New();
-  output->credential_ids =
-      mojo::ConvertTo<Vector<Vector<uint8_t>>>(input->credentialIds());
+  auto in = input->credentialIds();
+  output->credential_ids.reserve(in.size());
+  for (const auto& obj : in) {
+    output->credential_ids.push_back(mojo::ConvertTo<Vector<uint8_t>>(obj));
+  }
   output->challenge = mojo::ConvertTo<Vector<uint8_t>>(input->challenge());
 
   // If a timeout was not specified in JavaScript, then pass a null `timeout`
@@ -46,9 +49,10 @@ TypeConverter<payments::mojom::blink::SecurePaymentConfirmationRequestPtr,
     output->payee_name = input->payeeName();
 
   if (input->hasExtensions()) {
-    output->extensions =
-        ConvertTo<blink::mojom::blink::AuthenticationExtensionsClientInputsPtr>(
-            *input->extensions());
+    output->extensions = mojo::TypeConverter<
+        blink::mojom::blink::AuthenticationExtensionsClientInputsPtr,
+        blink::AuthenticationExtensionsClientInputs>::
+        Convert(*input->extensions());
   }
 
   output->show_opt_out = input->getShowOptOutOr(false);

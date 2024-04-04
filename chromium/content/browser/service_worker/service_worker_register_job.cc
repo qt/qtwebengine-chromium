@@ -751,7 +751,9 @@ void ServiceWorkerRegisterJob::OnInstallFinished(
   if (!succeeded) {
     OnInstallFailed(
         fetch_count,
-        mojo::ConvertTo<blink::ServiceWorkerStatusCode>(event_status));
+        mojo::TypeConverter<
+            blink::ServiceWorkerStatusCode,
+            blink::mojom::ServiceWorkerEventStatus>::Convert(event_status));
     return;
   }
 

@@ -220,8 +220,9 @@ ServiceWorkerObjectHost::~ServiceWorkerObjectHost() {
 void ServiceWorkerObjectHost::OnVersionStateChanged(
     ServiceWorkerVersion* version) {
   DCHECK(version);
-  blink::mojom::ServiceWorkerState state =
-      mojo::ConvertTo<blink::mojom::ServiceWorkerState>(version->status());
+  blink::mojom::ServiceWorkerState state = mojo::TypeConverter<
+      blink::mojom::ServiceWorkerState,
+      content::ServiceWorkerVersion::Status>::Convert(version->status());
   for (auto& remote_object : remote_objects_)
     remote_object->StateChanged(state);
 }
@@ -239,8 +240,9 @@ blink::mojom::ServiceWorkerObjectInfoPtr
 ServiceWorkerObjectHost::CreateIncompleteObjectInfo() {
   auto info = blink::mojom::ServiceWorkerObjectInfo::New();
   info->url = version_->script_url();
-  info->state =
-      mojo::ConvertTo<blink::mojom::ServiceWorkerState>(version_->status());
+  info->state = mojo::TypeConverter<
+      blink::mojom::ServiceWorkerState,
+      content::ServiceWorkerVersion::Status>::Convert(version_->status());
   info->version_id = version_->version_id();
   receivers_.Add(this, info->host_remote.InitWithNewEndpointAndPassReceiver());
   return info;
@@ -253,8 +255,9 @@ void ServiceWorkerObjectHost::AddRemoteObjectPtrAndUpdateState(
   DCHECK(pending_object.is_valid());
   mojo::AssociatedRemote<blink::mojom::ServiceWorkerObject> remote_object;
   remote_object.Bind(std::move(pending_object));
-  auto state =
-      mojo::ConvertTo<blink::mojom::ServiceWorkerState>(version_->status());
+  auto state = mojo::TypeConverter<
+      blink::mojom::ServiceWorkerState,
+      content::ServiceWorkerVersion::Status>::Convert(version_->status());
   if (sent_state != state)
     remote_object->StateChanged(state);
   remote_objects_.Add(std::move(remote_object));

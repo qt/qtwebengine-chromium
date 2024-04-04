@@ -1446,9 +1446,9 @@ ScriptPromise CredentialsContainer::get(ScriptState* script_state,
     }
 
     if (options->publicKey()->hasUserVerification() &&
-        !mojo::ConvertTo<
-            absl::optional<mojom::blink::UserVerificationRequirement>>(
-            options->publicKey()->userVerification())) {
+        !(mojo::TypeConverter<
+            absl::optional<mojom::blink::UserVerificationRequirement>,
+            String>::Convert(options->publicKey()->userVerification()))) {
       resolver->DomWindow()->AddConsoleMessage(
           MakeGarbageCollected<ConsoleMessage>(
               mojom::blink::ConsoleMessageSource::kJavaScript,
@@ -1635,8 +1635,10 @@ ScriptPromise CredentialsContainer::get(ScriptState* script_state,
     if (options->identity()->hasContext()) {
       UseCounter::Count(resolver->GetExecutionContext(),
                         WebFeature::kFedCmRpContext);
-      rp_context = mojo::ConvertTo<mojom::blink::RpContext>(
-          options->identity()->context());
+      rp_context = mojo::TypeConverter<
+          mojom::blink::RpContext,
+          blink::V8IdentityCredentialRequestOptionsContext>::
+          Convert(options->identity()->context());
     }
     base::UmaHistogramEnumeration("Blink.FedCm.RpContext", rp_context);
 
@@ -1644,7 +1646,9 @@ ScriptPromise CredentialsContainer::get(ScriptState* script_state,
     if (blink::RuntimeEnabledFeatures::FedCmButtonModeEnabled()) {
       // TODO(crbug.com/1429083): add use counters for rp mode.
       rp_mode =
-          mojo::ConvertTo<mojom::blink::RpMode>(options->identity()->mode());
+          mojo::TypeConverter<mojom::blink::RpMode,
+                              blink::V8IdentityCredentialRequestOptionsMode>::
+              Convert(options->identity()->mode());
     }
     // TODO(crbug.com/1429083): add uma histograms for rp mode.
 
@@ -2005,8 +2009,9 @@ ScriptPromise CredentialsContainer::create(
   }
 
   if (options->publicKey()->hasAttestation() &&
-      !mojo::ConvertTo<absl::optional<AttestationConveyancePreference>>(
-          options->publicKey()->attestation())) {
+      !(mojo::TypeConverter<absl::optional<AttestationConveyancePreference>,
+                            String>::Convert(options->publicKey()
+                                                 ->attestation()))) {
     resolver->DomWindow()->AddConsoleMessage(
         MakeGarbageCollected<ConsoleMessage>(
             mojom::blink::ConsoleMessageSource::kJavaScript,
@@ -2033,9 +2038,11 @@ ScriptPromise CredentialsContainer::create(
 
   if (options->publicKey()->hasAuthenticatorSelection() &&
       options->publicKey()->authenticatorSelection()->hasUserVerification() &&
-      !mojo::ConvertTo<
-          absl::optional<mojom::blink::UserVerificationRequirement>>(
-          options->publicKey()->authenticatorSelection()->userVerification())) {
+      !(mojo::TypeConverter<
+          absl::optional<mojom::blink::UserVerificationRequirement>,
+          String>::Convert(options->publicKey()
+                               ->authenticatorSelection()
+                               ->userVerification()))) {
     resolver->DomWindow()->AddConsoleMessage(
         MakeGarbageCollected<ConsoleMessage>(
             mojom::blink::ConsoleMessageSource::kJavaScript,
@@ -2047,9 +2054,9 @@ ScriptPromise CredentialsContainer::create(
   bool is_rk_required = false;
   if (options->publicKey()->hasAuthenticatorSelection() &&
       options->publicKey()->authenticatorSelection()->hasResidentKey()) {
-    auto rk_requirement =
-        mojo::ConvertTo<absl::optional<mojom::blink::ResidentKeyRequirement>>(
-            options->publicKey()->authenticatorSelection()->residentKey());
+    auto rk_requirement = mojo::TypeConverter<
+        absl::optional<blink::mojom::blink::ResidentKeyRequirement>, String>::
+        Convert(options->publicKey()->authenticatorSelection()->residentKey());
     if (!rk_requirement) {
       resolver->DomWindow()->AddConsoleMessage(
           MakeGarbageCollected<ConsoleMessage>(
