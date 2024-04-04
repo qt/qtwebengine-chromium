@@ -116,7 +116,7 @@ ScriptPromise<IDLUndefined> NavigatorLogin::setStatus(
 
   request->SetIdpSigninStatus(
       context->GetSecurityOrigin(), status,
-      mojo::ConvertTo<blink::mojom::blink::LoginStatusOptionsPtr>(*options),
+      mojo::TypeConverter<blink::mojom::blink::LoginStatusOptionsPtr, LoginStatusOptions>::Convert(*options),
       WTF::BindOnce(&OnSetIdpSigninStatus, WrapPersistent(resolver)));
   return promise;
 }
