@@ -149,6 +149,17 @@ struct TypeConverter<V8OrientationRequested, MojomOrientationRequested> {
 };
 
 template <>
+struct TypeConverter<Vector<V8OrientationRequested>, Vector<MojomOrientationRequested>> {
+  static Vector<V8OrientationRequested> Convert(
+      const Vector<MojomOrientationRequested>& orientations) {
+    Vector<V8OrientationRequested> out;
+    for (const auto &in : orientations)
+        out.push_back(TypeConverter<V8OrientationRequested, MojomOrientationRequested>::Convert(in));
+    return out;
+  }
+};
+
+template <>
 struct TypeConverter<MojomOrientationRequested, V8OrientationRequested> {
   static MojomOrientationRequested Convert(
       const V8OrientationRequested& orientation) {
@@ -405,9 +416,12 @@ void ProcessMediaCollection(
     WebPrinterAttributes* current_attributes) {
   current_attributes->setMediaColDefault(
       mojo::ConvertTo<BlinkMediaCollection*>(new_attributes.media_col_default));
-  current_attributes->setMediaColDatabase(
-      mojo::ConvertTo<HeapVector<Member<BlinkMediaCollection>>>(
-          new_attributes.media_col_database));
+  HeapVector<Member<BlinkMediaCollection>> tmp;
+  tmp.reserve(new_attributes.media_col_database.size());
+  for (const auto &obj : new_attributes.media_col_database) {
+    tmp.push_back(mojo::ConvertTo<BlinkMediaCollection*>(obj));
+  }
+  current_attributes->setMediaColDatabase(std::move(tmp));
 }
 
 void ProcessMediaSource(
@@ -427,21 +441,31 @@ void ProcessMultipleDocumentHandling(
     const mojom::blink::WebPrinterAttributes& new_attributes,
     WebPrinterAttributes* current_attributes) {
   current_attributes->setMultipleDocumentHandlingDefault(
-      mojo::ConvertTo<V8MultipleDocumentHandling>(
-          new_attributes.multiple_document_handling_default));
-  current_attributes->setMultipleDocumentHandlingSupported(
-      mojo::ConvertTo<Vector<V8MultipleDocumentHandling>>(
-          new_attributes.multiple_document_handling_supported));
+      mojo::TypeConverter<V8MultipleDocumentHandling,
+                          MojomMultipleDocumentHandling>::
+          Convert(new_attributes.multiple_document_handling_default));
+  const Vector<MojomMultipleDocumentHandling>& in =
+      new_attributes.multiple_document_handling_supported;
+  Vector<V8MultipleDocumentHandling> out;
+  out.reserve(in.size());
+  for (const auto& obj : in) {
+    out.push_back(
+        mojo::TypeConverter<V8MultipleDocumentHandling,
+                            MojomMultipleDocumentHandling>::Convert(obj));
+  }
+  current_attributes->setMultipleDocumentHandlingSupported(out);
 }
 
 void ProcessOrientationRequested(
     const mojom::blink::WebPrinterAttributes& new_attributes,
     WebPrinterAttributes* current_attributes) {
   current_attributes->setOrientationRequestedDefault(
-      mojo::ConvertTo<V8OrientationRequested>(
+      mojo::TypeConverter<V8OrientationRequested,
+                          MojomOrientationRequested>::Convert(
           new_attributes.orientation_requested_default));
   current_attributes->setOrientationRequestedSupported(
-      mojo::ConvertTo<Vector<V8OrientationRequested>>(
+      mojo::TypeConverter<Vector<V8OrientationRequested>,
+                          Vector<MojomOrientationRequested>>::Convert(
           new_attributes.orientation_requested_supported));
 }
 
@@ -449,32 +473,50 @@ void ProcessPrinterResolution(
     const mojom::blink::WebPrinterAttributes& new_attributes,
     WebPrinterAttributes* current_attributes) {
   current_attributes->setPrinterResolutionDefault(
-      mojo::ConvertTo<blink::WebPrintingResolution*>(
+      mojo::TypeConverter<blink::WebPrintingResolution*, gfx::Size>::Convert(
           new_attributes.printer_resolution_default));
-  current_attributes->setPrinterResolutionSupported(
-      mojo::ConvertTo<HeapVector<Member<blink::WebPrintingResolution>>>(
-          new_attributes.printer_resolution_supported));
+  const Vector<gfx::Size>& in = new_attributes.printer_resolution_supported;
+  HeapVector<Member<blink::WebPrintingResolution>> out;
+  out.reserve(in.size());
+  for (const auto& obj : in) {
+    out.push_back(
+        mojo::TypeConverter<blink::WebPrintingResolution*, gfx::Size>::Convert(
+            obj));
+  }
+  current_attributes->setPrinterResolutionSupported(out);
 }
 
 void ProcessPrintColorMode(
     const mojom::blink::WebPrinterAttributes& new_attributes,
     WebPrinterAttributes* current_attributes) {
   current_attributes->setPrintColorModeDefault(
-      mojo::ConvertTo<V8ColorMode>(new_attributes.print_color_mode_default));
-  current_attributes->setPrintColorModeSupported(
-      mojo::ConvertTo<Vector<V8ColorMode>>(
-          new_attributes.print_color_mode_supported));
+      mojo::TypeConverter<V8ColorMode, MojomColorMode>::Convert(
+          new_attributes.print_color_mode_default));
+  const Vector<MojomColorMode>& in = new_attributes.print_color_mode_supported;
+  Vector<V8ColorMode> out;
+  out.reserve(in.size());
+  for (const auto& obj : in) {
+    out.push_back(
+        mojo::TypeConverter<V8ColorMode, MojomColorMode>::Convert(obj));
+  }
+  current_attributes->setPrintColorModeSupported(out);
 }
 
 void ProcessSides(const mojom::blink::WebPrinterAttributes& new_attributes,
                   WebPrinterAttributes* current_attributes) {
   if (new_attributes.sides_default) {
     current_attributes->setSidesDefault(
-        mojo::ConvertTo<V8Sides>(*new_attributes.sides_default));
+        mojo::TypeConverter<V8Sides, MojomSides>::Convert(
+            *new_attributes.sides_default));
   }
   if (!new_attributes.sides_supported.empty()) {
-    current_attributes->setSidesSupported(
-        mojo::ConvertTo<Vector<V8Sides>>(new_attributes.sides_supported));
+    const Vector<MojomSides>& in = new_attributes.sides_supported;
+    Vector<V8Sides> out;
+    out.reserve(in.size());
+    for (const auto& obj : in) {
+      out.push_back(mojo::TypeConverter<V8Sides, MojomSides>::Convert(obj));
+    }
+    current_attributes->setSidesSupported(out);
   }
 }
 
@@ -502,10 +544,17 @@ TypeConverter<blink::WebPrinterAttributes*,
   blink::ProcessSides(*printer_attributes, attributes);
 
   attributes->setPrinterState(
-      mojo::ConvertTo<V8PrinterState::Enum>(printer_attributes->printer_state));
-  attributes->setPrinterStateReasons(
-      mojo::ConvertTo<Vector<V8PrinterStateReason>>(
-          printer_attributes->printer_state_reasons));
+      mojo::TypeConverter<V8PrinterState::Enum, MojomPrinterState>::Convert(
+          printer_attributes->printer_state));
+  const Vector<MojomPrinterStateReason>& in =
+      printer_attributes->printer_state_reasons;
+  Vector<V8PrinterStateReason> out;
+  out.reserve(in.size());
+  for (const auto& obj : in) {
+    out.push_back(mojo::TypeConverter<V8PrinterStateReason,
+                                      MojomPrinterStateReason>::Convert(obj));
+  }
+  attributes->setPrinterStateReasons(out);
   attributes->setPrinterStateMessage(printer_attributes->printer_state_message);
 
   return attributes;
@@ -527,12 +576,13 @@ TypeConverter<blink::mojom::blink::WebPrintJobTemplateAttributesPtr,
   }
   if (pjt_attributes->hasMultipleDocumentHandling()) {
     attributes->multiple_document_handling =
-        mojo::ConvertTo<MojomMultipleDocumentHandling>(
-            pjt_attributes->multipleDocumentHandling());
+        mojo::TypeConverter<MojomMultipleDocumentHandling,
+                            V8MultipleDocumentHandling>::
+            Convert(pjt_attributes->multipleDocumentHandling());
   }
   if (pjt_attributes->hasOrientationRequested()) {
     attributes->orientation_requested =
-        mojo::ConvertTo<MojomOrientationRequested>(
+        mojo::TypeConverter<MojomOrientationRequested, V8OrientationRequested>::Convert(
             pjt_attributes->orientationRequested());
   }
   if (pjt_attributes->hasPrinterResolution()) {
@@ -541,10 +591,12 @@ TypeConverter<blink::mojom::blink::WebPrintJobTemplateAttributesPtr,
   }
   if (pjt_attributes->hasPrintColorMode()) {
     attributes->print_color_mode =
-        mojo::ConvertTo<MojomColorMode>(pjt_attributes->printColorMode());
+        mojo::TypeConverter<MojomColorMode, V8ColorMode>::Convert(
+            pjt_attributes->printColorMode());
   }
   if (pjt_attributes->hasSides()) {
-    attributes->sides = mojo::ConvertTo<MojomSides>(pjt_attributes->sides());
+    attributes->sides = mojo::TypeConverter<MojomSides, V8Sides>::Convert(
+        pjt_attributes->sides());
   }
 
   return attributes;

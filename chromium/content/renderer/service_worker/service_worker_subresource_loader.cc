@@ -551,7 +551,9 @@ void ServiceWorkerSubresourceLoader::OnFetchEventFinished(
   // Stop restarting logic here since OnFetchEventFinished() indicates that the
   // fetch event dispatch reached the renderer.
   SettleFetchEventDispatch(
-      mojo::ConvertTo<blink::ServiceWorkerStatusCode>(status));
+      mojo::TypeConverter<
+          blink::ServiceWorkerStatusCode,
+          blink::mojom::ServiceWorkerEventStatus>::Convert(status));
 
   switch (status) {
     case blink::mojom::ServiceWorkerEventStatus::COMPLETED:
