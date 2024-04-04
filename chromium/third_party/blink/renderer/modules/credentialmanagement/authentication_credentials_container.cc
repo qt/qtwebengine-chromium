@@ -1471,8 +1471,9 @@ ScriptPromise<IDLNullable<Credential>> AuthenticationCredentialsContainer::get(
     }
 
     if (options->publicKey()->hasUserVerification() &&
-        !mojo::ConvertTo<
-            std::optional<mojom::blink::UserVerificationRequirement>>(
+        !mojo::TypeConverter<
+            std::optional<mojom::blink::UserVerificationRequirement>,
+            String>::Convert(
             options->publicKey()->userVerification())) {
       resolver->GetExecutionContext()->AddConsoleMessage(
           MakeGarbageCollected<ConsoleMessage>(
@@ -1866,7 +1867,9 @@ AuthenticationCredentialsContainer::create(
   }
 
   if (options->publicKey()->hasAttestation() &&
-      !mojo::ConvertTo<std::optional<AttestationConveyancePreference>>(
+      !mojo::TypeConverter<
+          std::optional<AttestationConveyancePreference>,
+          String>::Convert(
           options->publicKey()->attestation())) {
     resolver->GetExecutionContext()->AddConsoleMessage(
         MakeGarbageCollected<ConsoleMessage>(
@@ -1894,8 +1897,9 @@ AuthenticationCredentialsContainer::create(
 
   if (options->publicKey()->hasAuthenticatorSelection() &&
       options->publicKey()->authenticatorSelection()->hasUserVerification() &&
-      !mojo::ConvertTo<
-          std::optional<mojom::blink::UserVerificationRequirement>>(
+      !mojo::TypeConverter<
+          std::optional<mojom::blink::UserVerificationRequirement>,
+          String>::Convert(
           options->publicKey()->authenticatorSelection()->userVerification())) {
     resolver->GetExecutionContext()->AddConsoleMessage(
         MakeGarbageCollected<ConsoleMessage>(
@@ -1909,7 +1913,9 @@ AuthenticationCredentialsContainer::create(
   if (options->publicKey()->hasAuthenticatorSelection() &&
       options->publicKey()->authenticatorSelection()->hasResidentKey()) {
     auto rk_requirement =
-        mojo::ConvertTo<std::optional<mojom::blink::ResidentKeyRequirement>>(
+        mojo::TypeConverter<
+                  std::optional<mojom::blink::ResidentKeyRequirement>,
+                  String>::Convert(
             options->publicKey()->authenticatorSelection()->residentKey());
     if (!rk_requirement) {
       resolver->GetExecutionContext()->AddConsoleMessage(
@@ -2177,7 +2183,10 @@ void AuthenticationCredentialsContainer::GetForIdentity(
     UseCounter::Count(resolver->GetExecutionContext(),
                       WebFeature::kFedCmRpContext);
     rp_context =
-        mojo::ConvertTo<mojom::blink::RpContext>(identity_options.context());
+        mojo::TypeConverter<
+            mojom::blink::RpContext,
+            blink::V8IdentityCredentialRequestOptionsContext>::Convert(
+                identity_options.context());
   }
   base::UmaHistogramEnumeration("Blink.FedCm.RpContext", rp_context);
 
@@ -2224,7 +2233,9 @@ void AuthenticationCredentialsContainer::GetForIdentity(
               "respectively and will be deprecated soon."));
     }
 
-    rp_mode = mojo::ConvertTo<mojom::blink::RpMode>(v8_rp_mode);
+    rp_mode = mojo::TypeConverter<
+        mojom::blink::RpMode,
+        blink::V8IdentityCredentialRequestOptionsMode>::Convert(v8_rp_mode);
     if (rp_mode == mojom::blink::RpMode::kActive) {
       if (identity_provider_ptrs.size() > 1u) {
         resolver->Reject(MakeGarbageCollected<DOMException>(
