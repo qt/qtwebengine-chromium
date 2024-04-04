@@ -115,7 +115,7 @@ ScriptPromise<IDLUndefined> NavigatorLogin::setStatus(
 
   proxy->FederatedRequestService()->SetIdpSigninStatus(
       context->GetSecurityOrigin(), status,
-      mojo::ConvertTo<blink::mojom::blink::LoginStatusOptionsPtr>(*options),
+      mojo::TypeConverter<blink::mojom::blink::LoginStatusOptionsPtr, LoginStatusOptions>::Convert(*options),
       BindOnce(&OnSetIdpSigninStatus, WrapPersistent(resolver)));
   return promise;
 }
