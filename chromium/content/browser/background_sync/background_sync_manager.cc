@@ -261,7 +261,9 @@ void OnSyncEventFinished(scoped_refptr<ServiceWorkerVersion> active_version,
     return;
   }
   std::move(callback).Run(
-      mojo::ConvertTo<blink::ServiceWorkerStatusCode>(status));
+      mojo::TypeConverter<
+          blink::ServiceWorkerStatusCode,
+          blink::mojom::ServiceWorkerEventStatus>::Convert(status));
 }
 
 void DidStartWorkerForSyncEvent(

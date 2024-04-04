@@ -106,7 +106,9 @@ void FaceDetector::OnDetectFaces(
 
       Landmark* web_landmark = Landmark::Create();
       web_landmark->setLocations(locations);
-      web_landmark->setType(mojo::ConvertTo<String>(landmark->type));
+      web_landmark->setType(
+          mojo::TypeConverter<String, shape_detection::mojom::LandmarkType>::
+              Convert(landmark->type));
       landmarks.push_back(web_landmark);
     }
 

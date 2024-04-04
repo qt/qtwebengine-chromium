@@ -39,8 +39,9 @@ ServiceWorkerObjectHost::~ServiceWorkerObjectHost() {
 void ServiceWorkerObjectHost::OnVersionStateChanged(
     ServiceWorkerVersion* version) {
   DCHECK(version);
-  blink::mojom::ServiceWorkerState state =
-      mojo::ConvertTo<blink::mojom::ServiceWorkerState>(version->status());
+  blink::mojom::ServiceWorkerState state = mojo::TypeConverter<
+      blink::mojom::ServiceWorkerState,
+      content::ServiceWorkerVersion::Status>::Convert(version->status());
   for (auto& remote_object : remote_objects_)
     remote_object->StateChanged(state);
 }
@@ -49,8 +50,9 @@ blink::mojom::ServiceWorkerObjectInfoPtr
 ServiceWorkerObjectHost::CreateCompleteObjectInfoToSend() {
   auto info = blink::mojom::ServiceWorkerObjectInfo::New();
   info->url = version_->script_url();
-  info->state =
-      mojo::ConvertTo<blink::mojom::ServiceWorkerState>(version_->status());
+  info->state = mojo::TypeConverter<
+      blink::mojom::ServiceWorkerState,
+      content::ServiceWorkerVersion::Status>::Convert(version_->status());
   info->version_id = version_->version_id();
   receivers_.Add(this, info->host_remote.InitWithNewEndpointAndPassReceiver());
 

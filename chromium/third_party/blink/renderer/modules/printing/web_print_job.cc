@@ -77,7 +77,9 @@ const AtomicString& WebPrintJob::InterfaceName() const {
 
 void WebPrintJob::OnWebPrintJobUpdate(
     mojom::blink::WebPrintJobUpdatePtr update) {
-  auto state = mojo::ConvertTo<V8JobStateEnum>(update->state);
+  auto state =
+      mojo::TypeConverter<V8WebPrintJobState::Enum,
+                          mojom::WebPrintJobState>::Convert(update->state);
   // Discard the update if nothing has actually changed.
   if (state == attributes_->jobState().AsEnum() &&
       update->pages_printed == attributes_->jobPagesCompleted()) {

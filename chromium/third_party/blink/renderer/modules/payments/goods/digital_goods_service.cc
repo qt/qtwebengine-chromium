@@ -41,7 +41,10 @@ void OnGetDetailsResponse(
     Vector<payments::mojom::blink::ItemDetailsPtr> item_details_list) {
   if (code != BillingResponseCode::kOk) {
     resolver->Reject(MakeGarbageCollected<DOMException>(
-        DOMExceptionCode::kOperationError, mojo::ConvertTo<String>(code)));
+        DOMExceptionCode::kOperationError,
+        mojo::TypeConverter<
+            String,
+            payments::mojom::blink::BillingResponseCode>::Convert(code)));
     return;
   }
   HeapVector<Member<ItemDetails>> blink_item_details_list;
@@ -62,7 +65,10 @@ void ResolveWithPurchaseReferenceList(
         purchase_reference_list) {
   if (code != BillingResponseCode::kOk) {
     resolver->Reject(MakeGarbageCollected<DOMException>(
-        DOMExceptionCode::kOperationError, mojo::ConvertTo<String>(code)));
+        DOMExceptionCode::kOperationError,
+        mojo::TypeConverter<
+            String,
+            payments::mojom::blink::BillingResponseCode>::Convert(code)));
     return;
   }
   HeapVector<Member<PurchaseDetails>> blink_purchase_details_list;
@@ -81,7 +87,7 @@ void OnConsumeResponse(ScriptPromiseResolver<IDLUndefined>* resolver,
                        BillingResponseCode code) {
   if (code != BillingResponseCode::kOk) {
     resolver->RejectWithDOMException(DOMExceptionCode::kOperationError,
-                                     mojo::ConvertTo<String>(code));
+                                     mojo::TypeConverter<String, payments::mojom::blink::BillingResponseCode>::Convert(code));
     return;
   }
   resolver->Resolve();
