@@ -503,8 +503,8 @@ TypeConverter<AuthenticatorSelectionCriteriaPtr,
 
   std::optional<ResidentKeyRequirement> resident_key;
   if (criteria.hasResidentKey()) {
-    resident_key = ConvertTo<std::optional<ResidentKeyRequirement>>(
-        criteria.residentKey());
+    resident_key = mojo::TypeConverter<std::optional<ResidentKeyRequirement>,
+                                       String>::Convert(criteria.residentKey());
   }
   if (resident_key) {
     mojo_criteria->resident_key = *resident_key;
@@ -517,8 +517,8 @@ TypeConverter<AuthenticatorSelectionCriteriaPtr,
   mojo_criteria->user_verification = UserVerificationRequirement::PREFERRED;
   if (criteria.hasUserVerification()) {
     std::optional<UserVerificationRequirement> user_verification =
-        ConvertTo<std::optional<UserVerificationRequirement>>(
-            criteria.userVerification());
+        mojo::TypeConverter<std::optional<UserVerificationRequirement>,
+                            String>::Convert(criteria.userVerification());
     if (user_verification) {
       mojo_criteria->user_verification = *user_verification;
     }
@@ -575,7 +575,8 @@ TypeConverter<PublicKeyCredentialDescriptorPtr,
   if (descriptor.hasTransports() && !descriptor.transports().empty()) {
     for (const auto& transport : descriptor.transports()) {
       auto maybe_transport(
-          ConvertTo<std::optional<AuthenticatorTransport>>(transport));
+          mojo::TypeConverter<std::optional<AuthenticatorTransport>,
+                              String>::Convert(transport));
       if (maybe_transport) {
         mojo_descriptor->transports.push_back(*maybe_transport);
       }
@@ -673,13 +674,15 @@ TypeConverter<PublicKeyCredentialCreationOptionsPtr,
         AuthenticatorSelectionCriteria::From(*options.authenticatorSelection());
   }
 
-  mojo_options->hints = ConvertTo<Vector<Hint>>(options.hints());
+  mojo_options->hints =
+      mojo::TypeConverter<Vector<Hint>, Vector<String>>::Convert(
+          options.hints());
 
   mojo_options->attestation = AttestationConveyancePreference::NONE;
   if (options.hasAttestation()) {
     std::optional<AttestationConveyancePreference> attestation =
-        ConvertTo<std::optional<AttestationConveyancePreference>>(
-            options.attestation());
+        mojo::TypeConverter<std::optional<AttestationConveyancePreference>,
+                            String>::Convert(options.attestation());
     if (attestation) {
       mojo_options->attestation = *attestation;
     }
@@ -742,9 +745,10 @@ TypeConverter<PublicKeyCredentialCreationOptionsPtr,
               *extensions->remoteDesktopClientOverride());
     }
     if (extensions->hasSupplementalPubKeys()) {
-      auto supplemental_pub_keys =
-          ConvertTo<std::optional<SupplementalPubKeysRequestPtr>>(
-              *extensions->supplementalPubKeys());
+      auto supplemental_pub_keys = mojo::TypeConverter<
+          std::optional<SupplementalPubKeysRequestPtr>,
+          blink::AuthenticationExtensionsSupplementalPubKeysInputs>::
+          Convert(*extensions->supplementalPubKeys());
       if (supplemental_pub_keys) {
         mojo_options->supplemental_pub_keys = std::move(*supplemental_pub_keys);
       }
@@ -759,7 +763,9 @@ TypeConverter<PublicKeyCredentialCreationOptionsPtr,
       mojo_options->prf_enable = true;
       if (extensions->prf()->hasEval()) {
         mojo_options->prf_input =
-            ConvertTo<PRFValuesPtr>(*extensions->prf()->eval());
+            mojo::TypeConverter<PRFValuesPtr,
+                                blink::AuthenticationExtensionsPRFValues>::
+                Convert(*extensions->prf()->eval());
       }
     }
   }
@@ -850,19 +856,22 @@ TypeConverter<PublicKeyCredentialRequestOptionsPtr,
   mojo_options->user_verification = UserVerificationRequirement::PREFERRED;
   if (options.hasUserVerification()) {
     std::optional<UserVerificationRequirement> user_verification =
-        ConvertTo<std::optional<UserVerificationRequirement>>(
-            options.userVerification());
+        mojo::TypeConverter<std::optional<UserVerificationRequirement>,
+                            String>::Convert(options.userVerification());
     if (user_verification) {
       mojo_options->user_verification = *user_verification;
     }
   }
 
-  mojo_options->hints = ConvertTo<Vector<Hint>>(options.hints());
+  mojo_options->hints =
+      mojo::TypeConverter<Vector<Hint>, Vector<String>>::Convert(
+          options.hints());
 
   if (options.hasExtensions()) {
     mojo_options->extensions =
-        ConvertTo<blink::mojom::blink::AuthenticationExtensionsClientInputsPtr>(
-            *options.extensions());
+        mojo::TypeConverter<AuthenticationExtensionsClientInputsPtr,
+                            blink::AuthenticationExtensionsClientInputs>::
+            Convert(*options.extensions());
   } else {
     mojo_options->extensions =
         blink::mojom::blink::AuthenticationExtensionsClientInputs::New();
@@ -919,9 +928,10 @@ TypeConverter<AuthenticationExtensionsClientInputsPtr,
             *inputs.remoteDesktopClientOverride());
   }
   if (inputs.hasSupplementalPubKeys()) {
-    auto supplemental_pub_keys =
-        ConvertTo<std::optional<SupplementalPubKeysRequestPtr>>(
-            *inputs.supplementalPubKeys());
+    auto supplemental_pub_keys = mojo::TypeConverter<
+        std::optional<SupplementalPubKeysRequestPtr>,
+        blink::AuthenticationExtensionsSupplementalPubKeysInputs>::
+        Convert(*inputs.supplementalPubKeys());
     if (supplemental_pub_keys) {
       mojo_inputs->supplemental_pub_keys = std::move(*supplemental_pub_keys);
     }
@@ -934,7 +944,9 @@ TypeConverter<AuthenticationExtensionsClientInputsPtr,
   }
   if (inputs.hasPrf()) {
     mojo_inputs->prf = true;
-    mojo_inputs->prf_inputs = ConvertTo<Vector<PRFValuesPtr>>(*inputs.prf());
+    mojo_inputs->prf_inputs = mojo::TypeConverter<
+        Vector<PRFValuesPtr>,
+        blink::AuthenticationExtensionsPRFInputs>::Convert(*inputs.prf());
   }
 
   return mojo_inputs;
@@ -1089,9 +1101,10 @@ TypeConverter<std::optional<SupplementalPubKeysRequestPtr>,
   auto ret = SupplementalPubKeysRequest::New();
   ret->device_scope_requested = device_scope_requested;
   ret->provider_scope_requested = provider_scope_requested;
-  ret->attestation = ConvertTo<std::optional<AttestationConveyancePreference>>(
-                         supplemental_pub_keys.attestation())
-                         .value_or(AttestationConveyancePreference::NONE);
+  ret->attestation =
+      mojo::TypeConverter<std::optional<AttestationConveyancePreference>,
+                          String>::Convert(supplemental_pub_keys.attestation())
+          .value_or(AttestationConveyancePreference::NONE);
   ret->attestation_formats = supplemental_pub_keys.attestationFormats();
   return ret;
 }
@@ -1114,11 +1127,17 @@ TypeConverter<Vector<PRFValuesPtr>, blink::AuthenticationExtensionsPRFInputs>::
     Convert(const blink::AuthenticationExtensionsPRFInputs& prf) {
   Vector<PRFValuesPtr> ret;
   if (prf.hasEval()) {
-    ret.push_back(ConvertTo<PRFValuesPtr>(*prf.eval()));
+    ret.push_back(
+        mojo::TypeConverter<
+            PRFValuesPtr,
+            blink::AuthenticationExtensionsPRFValues>::Convert(*prf.eval()));
   }
   if (prf.hasEvalByCredential()) {
     for (const auto& pair : prf.evalByCredential()) {
-      PRFValuesPtr values = ConvertTo<PRFValuesPtr>(*pair.second);
+      PRFValuesPtr values = mojo::TypeConverter<
+          PRFValuesPtr,
+          blink::AuthenticationExtensionsPRFValues>::Convert(*pair.second);
+
       // The fact that this decodes successfully has already been tested.
       values->id = Base64UnpaddedURLDecodeOrCheck(pair.first);
       ret.emplace_back(std::move(values));
