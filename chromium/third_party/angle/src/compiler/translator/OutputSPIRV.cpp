@@ -1309,6 +1309,8 @@ spirv::IdRef OutputSPIRVTraverser::createComplexConstant(const TType &type,
 
     if (type.isMatrix() && !type.isArray())
     {
+        ASSERT(parameters.size() == type.getRows() * type.getCols());
+
         // Matrices are constructed from their columns.
         spirv::IdRefList columnIds;
 
