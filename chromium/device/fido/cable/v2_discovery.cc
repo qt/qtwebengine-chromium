@@ -46,7 +46,7 @@ void RecordEvent(CableV2DiscoveryEvent event) {
 
 Discovery::Discovery(
     CableRequestType request_type,
-    network::mojom::NetworkContext* network_context,
+    NetworkContextFactory network_context_factory,
     absl::optional<base::span<const uint8_t, kQRKeySize>> qr_generator_key,
     std::unique_ptr<AdvertEventStream> advert_stream,
     std::vector<std::unique_ptr<Pairing>> pairings,
@@ -58,7 +58,7 @@ Discovery::Discovery(
         invalidated_pairing_callback)
     : FidoDeviceDiscovery(FidoTransportProtocol::kHybrid),
       request_type_(request_type),
-      network_context_(network_context),
+      network_context_factory_(std::move(network_context_factory)),
       qr_keys_(KeysFromQRGeneratorKey(qr_generator_key)),
       extension_keys_(KeysFromExtension(extension_contents)),
       advert_stream_(std::move(advert_stream)),
@@ -144,7 +144,7 @@ void Discovery::OnBLEAdvertSeen(base::span<const uint8_t, kAdvertSize> advert) {
                       << " matches QR code)";
       RecordEvent(CableV2DiscoveryEvent::kQRMatch);
       AddDevice(std::make_unique<cablev2::FidoTunnelDevice>(
-          network_context_, pairing_callback_, qr_keys_->qr_secret,
+          network_context_factory_, pairing_callback_, qr_keys_->qr_secret,
           qr_keys_->local_identity_seed, *plaintext));
       return;
     }
@@ -159,7 +159,7 @@ void Discovery::OnBLEAdvertSeen(base::span<const uint8_t, kAdvertSize> advert) {
                       << " matches extension)";
       RecordEvent(CableV2DiscoveryEvent::kExtensionMatch);
       AddDevice(std::make_unique<cablev2::FidoTunnelDevice>(
-          network_context_, base::DoNothing(), extension.qr_secret,
+          network_context_factory_, base::DoNothing(), extension.qr_secret,
           extension.local_identity_seed, *plaintext));
       return;
     }
@@ -176,7 +176,7 @@ void Discovery::OnContactDevice(size_t pairing_index) {
   }
 
   tunnels_pending_advert_.emplace_back(std::make_unique<FidoTunnelDevice>(
-      request_type_, network_context_, std::move(pairings_[pairing_index]),
+      request_type_, network_context_factory_, std::move(pairings_[pairing_index]),
       base::BindOnce(&Discovery::PairingIsInvalid, weak_factory_.GetWeakPtr(),
                      pairing_index)));
 }

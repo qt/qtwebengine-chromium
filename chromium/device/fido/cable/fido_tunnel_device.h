@@ -17,6 +17,7 @@
 #include "device/fido/cable/websocket_adapter.h"
 #include "device/fido/fido_constants.h"
 #include "device/fido/fido_device.h"
+#include "device/fido/network_context_factory.h"
 #include "third_party/abseil-cpp/absl/types/variant.h"
 
 namespace network {
@@ -36,7 +37,7 @@ class COMPONENT_EXPORT(DEVICE_FIDO) FidoTunnelDevice : public FidoDevice {
  public:
   // This constructor is used for QR-initiated connections.
   FidoTunnelDevice(
-      network::mojom::NetworkContext* network_context,
+      NetworkContextFactory network_context_factory,
       absl::optional<base::RepeatingCallback<void(std::unique_ptr<Pairing>)>>
           pairing_callback,
       base::span<const uint8_t> secret,
@@ -48,7 +49,7 @@ class COMPONENT_EXPORT(DEVICE_FIDO) FidoTunnelDevice : public FidoDevice {
   // if the user opts to unlink all devices) then |pairing_is_invalid| is
   // run.
   FidoTunnelDevice(CableRequestType request_type,
-                   network::mojom::NetworkContext* network_context,
+                   NetworkContextFactory network_context_factory,
                    std::unique_ptr<Pairing> pairing,
                    base::OnceClosure pairing_is_invalid);
 

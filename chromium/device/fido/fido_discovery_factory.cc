@@ -82,7 +82,7 @@ std::vector<std::unique_ptr<FidoDiscoveryBase>> FidoDiscoveryFactory::Create(
                            &CableDiscoveryData::version);
         if (qr_generator_key_.has_value() || have_v2_discovery_data) {
           ret.emplace_back(std::make_unique<cablev2::Discovery>(
-              request_type_.value(), network_context_, qr_generator_key_,
+              request_type_.value(), network_context_factory_, qr_generator_key_,
               v1_discovery->GetV2AdvertStream(), std::move(v2_pairings_),
               std::move(contact_device_stream_),
               cable_data_.value_or(std::vector<CableDiscoveryData>()),
@@ -144,11 +144,6 @@ void FidoDiscoveryFactory::set_android_accessory_params(
     std::string aoa_request_description) {
   usb_device_manager_.emplace(std::move(usb_device_manager));
   aoa_request_description_ = std::move(aoa_request_description);
-}
-
-void FidoDiscoveryFactory::set_network_context(
-    network::mojom::NetworkContext* network_context) {
-  network_context_ = network_context;
 }
 
 void FidoDiscoveryFactory::set_cable_pairing_callback(

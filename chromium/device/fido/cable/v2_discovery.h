@@ -19,6 +19,7 @@
 #include "device/fido/cable/v2_constants.h"
 #include "device/fido/fido_constants.h"
 #include "device/fido/fido_device_discovery.h"
+#include "device/fido/network_context_factory.h"
 #include "services/network/public/mojom/network_context.mojom-forward.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
@@ -37,7 +38,7 @@ class COMPONENT_EXPORT(DEVICE_FIDO) Discovery : public FidoDeviceDiscovery {
 
   Discovery(
       CableRequestType request_type,
-      network::mojom::NetworkContext* network_context,
+      NetworkContextFactory network_context_factory,
       absl::optional<base::span<const uint8_t, kQRKeySize>> qr_generator_key,
       std::unique_ptr<AdvertEventStream> advert_stream,
       std::vector<std::unique_ptr<Pairing>> pairings,
@@ -79,7 +80,7 @@ class COMPONENT_EXPORT(DEVICE_FIDO) Discovery : public FidoDeviceDiscovery {
       const std::vector<CableDiscoveryData>& extension_contents);
 
   const CableRequestType request_type_;
-  const raw_ptr<network::mojom::NetworkContext> network_context_;
+  NetworkContextFactory network_context_factory_;
   const absl::optional<UnpairedKeys> qr_keys_;
   const std::vector<UnpairedKeys> extension_keys_;
   std::unique_ptr<AdvertEventStream> advert_stream_;
