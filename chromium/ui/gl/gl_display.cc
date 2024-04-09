@@ -36,6 +36,10 @@
 #include "base/android/build_info.h"
 #endif
 
+#if defined(USE_GLX)
+#include "ui/gfx/x/connection.h"
+#endif
+
 // From ANGLE's egl/eglext.h.
 
 #ifndef EGL_ANGLE_platform_angle
