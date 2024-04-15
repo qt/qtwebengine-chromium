@@ -43,6 +43,8 @@ array instead of the names array. Each version has the following keys:
                 function.  This may happen for example when functions
                 are added to a new version of an extension, but the
                 extension string is not modified.
+   check_for_nullptr: Workaround for QTBUG-124370. Adds a check that ensures
+                the function has been bound already.
 By default, the function gets its name from the first name in its names or
 versions array. This can be overridden by supplying a 'known_as' key.
 
@@ -2979,7 +2981,8 @@ WGL_FUNCTIONS = [
   'arguments': 'HDC hdc', },
 { 'return_type': 'HGLRC',
   'names': ['wglCreateContextAttribsARB'],
-  'arguments': 'HDC hDC, HGLRC hShareContext, const int* attribList', },
+  'arguments': 'HDC hDC, HGLRC hShareContext, const int* attribList',
+  'check_for_nullptr': True, },
 { 'return_type': 'HGLRC',
   'names': ['wglCreateLayerContext'],
   'arguments': 'HDC hdc, int iLayerPlane', },
@@ -3726,8 +3729,12 @@ void DisplayExtensionsEGL::InitializeExtensionSettings(EGLDisplay display) {
       file.write('  driver_->fn.%sFn(%s);\n' %
           (function_name, argument_names))
     else:
-      file.write('  return driver_->fn.%sFn(%s);\n' %
-          (function_name, argument_names))
+      if ('check_for_nullptr' in func):
+        file.write('  return driver_->fn.%sFn ?\n driver_->fn.%sFn(%s)\n : nullptr;\n' %
+            (function_name, function_name, argument_names))
+      else:
+        file.write('  return driver_->fn.%sFn(%s);\n' %
+            (function_name, argument_names))
     file.write('}\n')
 
   # Write TraceGLApi functions
