@@ -539,6 +539,7 @@ jumbo_source_set("browser_sources") {
     "//cc",
     "//components/services/storage/public/cpp",
     "//components/viz/host",
+    "//components/spellcheck:buildflags",
     "//content/browser",  # Must not be public_deps!
     "//device/fido",
     "//gpu",
