@@ -366,6 +366,14 @@ void SetupGLDisplayManagerEGL(const GPUInfo& gpu_info,
 GpuInit::GpuInit() = default;
 
 GpuInit::~GpuInit() {
+#if BUILDFLAG(IS_WIN)
+  if (gl::GetGLImplementation() == gl::kGLImplementationEGLANGLE) {
+    gl::GLDisplay* gl_display = gl::GetDefaultDisplay();
+    if (gl_display->IsInitialized())
+      gl::init::ShutdownGL(gl_display, false);
+  }
+#endif  // BUILDFLAG(IS_WIN)
+
   StopForceDiscreteGPU();
 }
 
