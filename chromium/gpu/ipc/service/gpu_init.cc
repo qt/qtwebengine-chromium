@@ -323,6 +323,16 @@ void SetupGLDisplayManagerEGL(const GPUInfo& gpu_info,
 GpuInit::GpuInit() = default;
 
 GpuInit::~GpuInit() {
+#if BUILDFLAG(IS_WIN)
+  if (gl::GetGLImplementation() != gl::kGLImplementationDisabled) {
+    auto *gl_display = gl::init::GetOrInitializeGLOneOffPlatformImplementation(
+        false, false, false, gl::GpuPreference::kDefault);
+    if (gl_display) {
+      gl::init::ShutdownGL(gl_display, false);
+    }
+  }
+#endif // BUILDFLAG(IS_WIN)
+
   StopForceDiscreteGPU();
 }
 
