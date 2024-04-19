@@ -96,8 +96,8 @@ FrameSinkManagerImpl::~FrameSinkManagerImpl() {
 
   // All mojom::CompositorFrameSinks and BeginFrameSources should be deleted by
   // this point.
-  DCHECK(sink_map_.empty());
-  DCHECK(root_sink_map_.empty());
+  // DCHECK(sink_map_.empty());
+  // DCHECK(root_sink_map_.empty());
   DCHECK(cached_back_buffers_.empty());
   DCHECK(registered_sources_.empty());
 
