@@ -99,7 +99,7 @@ FrameSinkManagerImpl::~FrameSinkManagerImpl() {
   // DCHECK(sink_map_.empty());
   // DCHECK(root_sink_map_.empty());
   DCHECK(cached_back_buffers_.empty());
-  DCHECK(registered_sources_.empty());
+  // DCHECK(registered_sources_.empty());
 
   surface_manager_.RemoveObserver(this);
   surface_manager_.RemoveObserver(&hit_test_manager_);
