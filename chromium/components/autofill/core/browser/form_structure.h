@@ -96,10 +96,12 @@ class FormStructure {
   // auto-fillable, like google/yahoo/msn search, etc.
   bool IsAutofillable() const;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Returns whether |this| form represents a complete Credit Card form, which
   // consists in having at least a credit card number field and an expiration
   // field.
   bool IsCompleteCreditCardForm() const;
+#endif
 
   // Resets |autofill_count_| and counts the number of auto-fillable fields.
   // This is used when we receive server data for form fields.  At that time,
@@ -187,7 +189,9 @@ class FormStructure {
   void RetrieveFromCache(const FormStructure& cached_form,
                          RetrieveFromCacheReason reason);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   void LogDetermineHeuristicTypesMetrics();
+#endif
 
   // Sets each field's `html_type` and `html_mode` based on the field's
   // `parsed_autocomplete` member.
@@ -213,6 +217,7 @@ class FormStructure {
   // All returned values are standardized to upper case.
   std::set<std::u16string> PossibleValues(FieldType type);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Rationalize phone number fields in a given section, that is only fill
   // the fields that are considered composing a first complete phone number.
   void RationalizePhoneNumbersInSection(const Section& section);
@@ -222,6 +227,7 @@ class FormStructure {
   void RationalizeFormStructure(
       AutofillMetrics::FormInteractionsUkmLogger* form_interactions_ukm_logger,
       LogManager* log_manager);
+#endif
 
   // Classifies each field in `fields_` into a logical section.
   // The function consists of 2 passes:

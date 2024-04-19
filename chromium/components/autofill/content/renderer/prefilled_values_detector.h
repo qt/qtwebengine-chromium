@@ -12,12 +12,10 @@
 
 namespace autofill {
 
-#if !defined(TOOLKIT_QT)
 // Returns a list of known username placeholders, all guaranteed to be lower
 // case.
 // This is only exposed for testing.
 base::span<const std::string_view> KnownUsernamePlaceholders();
-#endif
 
 // Checks if the prefilled value of the username element is one of the known
 // values possibly used as placeholders. The list of possible placeholder

@@ -33,9 +33,7 @@
 #include "components/autofill/core/common/form_interactions_flow.h"
 #include "components/autofill/core/common/unique_ids.h"
 #include "components/device_reauth/device_authenticator.h"
-#include "components/plus_addresses/plus_address_types.h"
-#if !defined(TOOLKIT_QT)
-#include "components/plus_addresses/plus_address_service.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/profile_metrics/browser_profile_type.h"
 #include "components/security_state/core/security_state.h"
 #include "components/translate/core/browser/language_state.h"
@@ -431,10 +429,10 @@ class AutofillClient {
   // Gets the IbanManager instance associated with the client.
   virtual IbanManager* GetIbanManager();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Gets the IbanAccessManager instance associated with the client.
   virtual IbanAccessManager* GetIbanAccessManager();
 
-#if !defined(TOOLKIT_QT)
   // When the enterprise plus address feature is supported, gets the
   // KeyedService that manages that data.
   virtual plus_addresses::PlusAddressService* GetPlusAddressService();
@@ -456,13 +454,13 @@ class AutofillClient {
   virtual CreditCardCvcAuthenticator* GetCvcAuthenticator();
   virtual CreditCardOtpAuthenticator* GetOtpAuthenticator();
   virtual CreditCardRiskBasedAuthenticator* GetRiskBasedAuthenticator();
-#endif  // !defined(TOOLKIT_QT)
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Gets the preferences associated with the client.
   virtual PrefService* GetPrefs() = 0;
   virtual const PrefService* GetPrefs() const = 0;
 
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Gets the sync service associated with the client.
   virtual syncer::SyncService* GetSyncService() = 0;
 
@@ -516,11 +514,13 @@ class AutofillClient {
   // Returns the translate driver, if available, which is used to observe the
   // page language for language-dependent heuristics.
   virtual translate::TranslateDriver* GetTranslateDriver() = 0;
+#endif
 
   // Retrieves the country code of the user from Chrome variation service.
   // If the variation service is not available, return an empty string.
   virtual GeoIpCountryCode GetVariationConfigCountryCode() const;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Returns the profile type of the session.
   virtual profile_metrics::BrowserProfileType GetProfileType() const;
 
@@ -752,7 +752,7 @@ class AutofillClient {
   // if one is currently shown. Should be called only if the feature is
   // supported by the platform.
   virtual void HideTouchToFillCreditCard() = 0;
-#endif  // !defined(TOOLKIT_QT)
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Shows an Autofill popup with the given |values|, |labels|, |icons|, and
   // |identifiers| for the element at |element_bounds|. |delegate| will be
@@ -799,7 +799,7 @@ class AutofillClient {
   // Hide the Autofill popup if one is currently showing.
   virtual void HideAutofillPopup(PopupHidingReason reason) = 0;
 
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // TODO(crbug.com/1093057): Rename all the "domain" in this flow to origin.
   //                          The server is passing down full origin of the
   //                          urls. "Domain" is no longer accurate.
@@ -834,7 +834,6 @@ class AutofillClient {
       bool show_confirmation_before_closing,
       base::OnceClosure no_interactive_authentication_callback =
           base::OnceClosure());
-#endif  // !defined(TOOLKIT_QT)
 
   // Maybe triggers a hats survey that measures the user's perception of
   // Autofill. When triggering happens, the survey dialog will be displayed with
@@ -845,6 +844,7 @@ class AutofillClient {
   // be present.
   virtual void TriggerUserPerceptionOfAutofillSurvey(
       const std::map<std::string, std::string>& field_filling_stats_data);
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Whether the Autocomplete feature of Autofill should be enabled.
   virtual bool IsAutocompleteEnabled() const = 0;
@@ -852,7 +852,7 @@ class AutofillClient {
   // Returns whether password management is enabled as per the user preferences.
   virtual bool IsPasswordManagerEnabled() = 0;
 
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Inform the client that the form has been filled.
   virtual void DidFillOrPreviewForm(mojom::ActionPersistence action_persistence,
                                     AutofillTriggerSource trigger_source,
@@ -865,14 +865,13 @@ class AutofillClient {
 
   // If the context is secure.
   virtual bool IsContextSecure() const = 0;
-
-#endif  // !defined(TOOLKIT_QT)
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Returns a LogManager instance. May be null for platforms that don't support
   // this.
   virtual LogManager* GetLogManager() const;
 
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   virtual const AutofillAblationStudy& GetAblationStudy() const;
 
 #if BUILDFLAG(IS_IOS)
@@ -898,7 +897,7 @@ class AutofillClient {
   // platform is not supported.
   virtual std::unique_ptr<device_reauth::DeviceAuthenticator>
   GetDeviceAuthenticator();
-#endif  // !defined(TOOLKIT_QT)
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 };
 
 }  // namespace autofill

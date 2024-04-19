@@ -21,7 +21,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/autocomplete_history_manager.h"
 #endif
 #include "components/autofill/core/browser/autofill_client.h"
@@ -34,11 +34,13 @@
 #include "components/autofill/core/browser/field_filling_address_util.h"
 #include "components/autofill/core/browser/field_type_utils.h"
 #include "components/autofill/core/browser/field_types.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/metrics/address_rewriter_in_profile_subset_metrics.h"
 #include "components/autofill/core/browser/metrics/autofill_metrics.h"
 #include "components/autofill/core/browser/metrics/granular_filling_metrics.h"
 #include "components/autofill/core/browser/metrics/log_event.h"
 #include "components/autofill/core/browser/metrics/suggestions_list_metrics.h"
+#endif
 #include "components/autofill/core/browser/payments/iban_access_manager.h"
 #include "components/autofill/core/browser/ui/popup_item_ids.h"
 #include "components/autofill/core/common/autofill_features.h"
@@ -58,6 +60,7 @@
 
 namespace autofill {
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 namespace {
 
 // Returns true if the suggestion entry is an Autofill warning message.
@@ -158,6 +161,7 @@ PopupType GetPopupTypeForQuery(BrowserAutofillManager& manager,
   }
 }
 }  // namespace
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 AutofillExternalDelegate::AutofillExternalDelegate(
     BrowserAutofillManager* manager)
@@ -227,18 +231,21 @@ void AutofillExternalDelegate::OnQuery(
     const gfx::RectF& element_bounds,
     AutofillSuggestionTriggerSource trigger_source) {
   query_form_ = form;
+  // NOTE(QtWebEngine): datalist requires |query_field_| and |element_bounds_|
   query_field_ = field;
   element_bounds_ = element_bounds;
+#if !BUILDFLAG(IS_QTWEBENGINE)
   trigger_source_ = trigger_source;
-#if !defined(TOOLKIT_QT)
   popup_type_ = GetPopupTypeForQuery(*manager_, query_form_, query_field_,
                                      trigger_source);
-#endif  // !defined(TOOLKIT_QT);
+#endif
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 const AutofillField* AutofillExternalDelegate::GetQueriedAutofillField() const {
   return manager_->GetAutofillField(query_form_, query_field_);
 }
+#endif
 
 void AutofillExternalDelegate::OnSuggestionsReturned(
     FieldGlobalId field_id,
@@ -268,6 +275,7 @@ void AutofillExternalDelegate::OnSuggestionsReturned(
 
   std::vector<Suggestion> suggestions(input_suggestions);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Hide warnings as appropriate.
   PossiblyRemoveAutofillWarnings(&suggestions);
 
@@ -289,6 +297,7 @@ void AutofillExternalDelegate::OnSuggestionsReturned(
   if (has_autofill_suggestions) {
     ApplyAutofillOptions(&suggestions, is_all_server_suggestions);
   }
+#endif
 
   // If anything else is added to modify the values after inserting the data
   // list, AutofillPopupControllerImpl::UpdateDataListValues will need to be
@@ -349,10 +358,10 @@ void AutofillExternalDelegate::SetCurrentDataListValues(
 }
 
 void AutofillExternalDelegate::OnPopupShown() {
-#if !defined(TOOLKIT_QT)
   // Popups are expected to be Autofill or Autocomplete.
   DCHECK_NE(GetPopupType(), PopupType::kPasswords);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   const bool has_autofill_suggestions = base::ranges::any_of(
       shown_suggestion_types_, IsAutofillAndFirstLayerSuggestionId);
   if (has_autofill_suggestions) {
@@ -377,7 +386,7 @@ void AutofillExternalDelegate::OnPopupShown() {
     AutofillMetrics::LogScanCreditCardPromptMetric(
         AutofillMetrics::SCAN_CARD_ITEM_SHOWN);
   }
-#endif  // !defined(TOOLKIT_QT)
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 void AutofillExternalDelegate::OnPopupHidden() {
@@ -392,17 +401,16 @@ void AutofillExternalDelegate::DidSelectSuggestion(
   }
   ClearPreviewedForm();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   const Suggestion::BackendId backend_id =
       suggestion.GetPayload<Suggestion::BackendId>();
 
   switch (suggestion.popup_item_id) {
     case PopupItemId::kClearForm:
-#if !defined(TOOLKIT_QT)
       if (base::FeatureList::IsEnabled(features::kAutofillUndo)) {
         manager_->UndoAutofill(mojom::ActionPersistence::kPreview, query_form_,
                                query_field_);
       }
-#endif
       break;
     case PopupItemId::kAddressEntry:
     case PopupItemId::kCreditCardEntry:
@@ -460,7 +468,6 @@ void AutofillExternalDelegate::DidSelectSuggestion(
       PreviewFieldByFieldFillingSuggestion(suggestion);
       break;
     case PopupItemId::kVirtualCreditCardEntry:
-#if !defined(TOOLKIT_QT)
       // If triggered on a non payments form, don't preview the value.
       if (IsPaymentsManualFallbackOnNonPaymentsField()) {
         break;
@@ -469,7 +476,6 @@ void AutofillExternalDelegate::DidSelectSuggestion(
           suggestion.popup_item_id, backend_id, /*is_preview=*/true,
           {.trigger_source =
                TriggerSourceFromSuggestionTriggerSource(trigger_source_)});
-#endif
       break;
     case PopupItemId::kEditAddressProfile:
     case PopupItemId::kDeleteAddressProfile:
@@ -500,12 +506,13 @@ void AutofillExternalDelegate::DidSelectSuggestion(
     case PopupItemId::kWebauthnSignInWithAnotherDevice:
       NOTREACHED_NORETURN();  // Should be handled elsewhere.
   }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 void AutofillExternalDelegate::DidAcceptSuggestion(
     const Suggestion& suggestion,
     const SuggestionPosition& position) {
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (!suggestion.is_acceptable) {
     // TODO(crbug.com/1493361): Handle this in the popup controller.
     return;
@@ -812,7 +819,7 @@ void AutofillExternalDelegate::DidAcceptSuggestion(
     NOTREACHED();
   }
   manager_->client().HideAutofillPopup(PopupHidingReason::kAcceptSuggestion);
-#endif  // !defined(TOOLKIT_QT)
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 void AutofillExternalDelegate::DidPerformButtonActionForSuggestion(
@@ -827,7 +834,7 @@ void AutofillExternalDelegate::DidPerformButtonActionForSuggestion(
 }
 
 bool AutofillExternalDelegate::RemoveSuggestion(const Suggestion& suggestion) {
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   switch (suggestion.popup_item_id) {
     // These PopupItemIds are various types which can appear in the first level
     // suggestion to fill an address or credit card field.
@@ -880,9 +887,9 @@ bool AutofillExternalDelegate::RemoveSuggestion(const Suggestion& suggestion) {
     case PopupItemId::kDevtoolsTestAddressEntry:
       return false;
   }
-#endif  // !defined(TOOLKIT_QT)
-
+#else
   return false;
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 void AutofillExternalDelegate::DidEndTextFieldEditing() {
@@ -921,6 +928,7 @@ base::WeakPtr<AutofillExternalDelegate> AutofillExternalDelegate::GetWeakPtr() {
   return weak_ptr_factory_.GetWeakPtr();
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 void AutofillExternalDelegate::ShowEditAddressProfileDialog(
     const std::string& guid) {
   AutofillProfile* profile =
@@ -994,11 +1002,9 @@ void AutofillExternalDelegate::OnPersonalDataFinishedProfileTasks() {
 void AutofillExternalDelegate::OnCreditCardScanned(
     const AutofillTriggerSource trigger_source,
     const CreditCard& card) {
-#if !defined(TOOLKIT_QT)
   manager_->FillCreditCardForm(query_form_, query_field_, card,
                                std::u16string(),
                                {.trigger_source = trigger_source});
-#endif
 }
 
 void AutofillExternalDelegate::PreviewFieldByFieldFillingSuggestion(
@@ -1168,7 +1174,6 @@ void AutofillExternalDelegate::FillAutofillFormData(
     Suggestion::BackendId backend_id,
     bool is_preview,
     const AutofillTriggerDetails& trigger_details) {
-#if !defined(TOOLKIT_QT)
   if (base::FeatureList::IsEnabled(
           features::kAutofillGranularFillingAvailable)) {
     // Only address suggestions store the last field types to
@@ -1212,7 +1217,6 @@ void AutofillExternalDelegate::FillAutofillFormData(
     manager_->FillOrPreviewProfileForm(action_persistence, query_form_,
                                        query_field_, *profile, trigger_details);
   }
-#endif  // !defined(TOOLKIT_QT)
 }
 
 void AutofillExternalDelegate::PossiblyRemoveAutofillWarnings(
@@ -1256,7 +1260,6 @@ void AutofillExternalDelegate::ApplyAutofillOptions(
   suggestions->back().popup_item_id = PopupItemId::kAutofillOptions;
   suggestions->back().icon = Suggestion::Icon::kSettings;
 
-#if !defined(TOOLKIT_QT)
   // On Android and Desktop, Google Pay branding is shown along with Settings.
   // So Google Pay Icon is just attached to an existing menu item.
   if (is_all_server_suggestions) {
@@ -1269,10 +1272,8 @@ void AutofillExternalDelegate::ApplyAutofillOptions(
             : Suggestion::Icon::kGooglePay;
 #endif
   }
-#else
-  DCHECK(!is_all_server_suggestions);
-#endif
 }
+#endif  // BUILDFLAG(IS_QTWEBENGINE)
 
 void AutofillExternalDelegate::InsertDataListValues(
     std::vector<Suggestion>* suggestions) {
@@ -1308,6 +1309,7 @@ void AutofillExternalDelegate::InsertDataListValues(
   }
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 bool AutofillExternalDelegate::IsPaymentsManualFallbackOnNonPaymentsField()
     const {
   if (trigger_source_ ==
@@ -1334,5 +1336,6 @@ std::u16string AutofillExternalDelegate::GetSettingsSuggestionValue() const {
       return std::u16string();
   }
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 }  // namespace autofill

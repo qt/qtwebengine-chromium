@@ -202,13 +202,11 @@ bool ContentAutofillDriver::CanShowAutofillUi() const {
 }
 
 void ContentAutofillDriver::PopupHidden() {
-#if !defined(TOOLKIT_QT)
   // If the unmask prompt is shown, keep showing the preview. The preview
   // will be cleared when the prompt closes.
   if (autofill_manager_->ShouldClearPreviewedForm()) {
     RendererShouldClearPreviewedForm();
   }
-#endif
 }
 
 gfx::RectF ContentAutofillDriver::TransformBoundingBoxToViewportCoordinates(
@@ -340,7 +338,6 @@ void ContentAutofillDriver::ExtractForm(FormGlobalId form_id,
 
 void ContentAutofillDriver::SendAutofillTypePredictionsToRenderer(
     const std::vector<raw_ptr<FormStructure, VectorExperimental>>& forms) {
-#if !defined(TOOLKIT_QT)
   std::vector<FormDataPredictions> type_predictions =
       FormStructure::GetFieldTypePredictions(forms);
   // TODO(crbug.com/1185232) Send the FormDataPredictions object only if the
@@ -352,7 +349,6 @@ void ContentAutofillDriver::SendAutofillTypePredictionsToRenderer(
         cast(target)->GetAutofillAgent()->FieldTypePredictionsAvailable(
             type_predictions);
       });
-#endif
 }
 
 void ContentAutofillDriver::RendererShouldAcceptDataListSuggestion(
@@ -666,7 +662,6 @@ void ContentAutofillDriver::JavaScriptChangedAutofilledValue(
 void ContentAutofillDriver::OnContextMenuShownInField(
     const FormGlobalId& form_global_id,
     const FieldGlobalId& field_global_id) {
-#if !defined(TOOLKIT_QT)
   router().OnContextMenuShownInField(
       this, form_global_id, field_global_id,
       [](autofill::AutofillDriver* target, const FormGlobalId& form_global_id,
@@ -674,7 +669,6 @@ void ContentAutofillDriver::OnContextMenuShownInField(
         target->GetAutofillManager().OnContextMenuShownInField(form_global_id,
                                                                field_global_id);
       });
-#endif
 }
 
 void ContentAutofillDriver::Reset() {

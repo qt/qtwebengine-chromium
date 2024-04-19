@@ -38,8 +38,11 @@ enum class CreditCardFetchResult;
 // this logic. See http://crbug.com/51644
 
 // Delegate for in-browser Autocomplete and Autofill display and selection.
-class AutofillExternalDelegate : public AutofillPopupDelegate,
-                                 public PersonalDataManagerObserver {
+class AutofillExternalDelegate : public AutofillPopupDelegate
+#if !BUILDFLAG(IS_QTWEBENGINE)
+                               , public PersonalDataManagerObserver
+#endif
+{
  public:
   // Creates an AutofillExternalDelegate for the specified
   // BrowserAutofillManager and AutofillDriver.
@@ -128,8 +131,10 @@ class AutofillExternalDelegate : public AutofillPopupDelegate,
   // used to help record the metrics of when a new popup is shown.
   void DidEndTextFieldEditing();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // PersonalDataManagerObserver:
   void OnPersonalDataFinishedProfileTasks() override;
+#endif
 
   const FormData& query_form() const { return query_form_; }
 
@@ -143,6 +148,7 @@ class AutofillExternalDelegate : public AutofillPopupDelegate,
 
   base::WeakPtr<AutofillExternalDelegate> GetWeakPtr();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Shows the address editor to the user. The Autofill profile to edit is
   // determined by passed `guid`.
   void ShowEditAddressProfileDialog(const std::string& guid);
@@ -237,6 +243,7 @@ class AutofillExternalDelegate : public AutofillPopupDelegate,
   // all |suggestions| come from Google Payments.
   void ApplyAutofillOptions(std::vector<Suggestion>* suggestions,
                             bool is_all_server_suggestions);
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Insert the data list values at the start of the given list, including
   // any required separators. Will also go through |suggestions| and remove
@@ -244,10 +251,12 @@ class AutofillExternalDelegate : public AutofillPopupDelegate,
   // version.
   void InsertDataListValues(std::vector<Suggestion>* suggestions);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   bool IsPaymentsManualFallbackOnNonPaymentsField() const;
 
   // Returns the text (i.e. |Suggestion| value) for Chrome autofill options.
   std::u16string GetSettingsSuggestionValue() const;
+#endif
 
   const raw_ref<BrowserAutofillManager> manager_;
 
@@ -277,11 +286,13 @@ class AutofillExternalDelegate : public AutofillPopupDelegate,
   // If not null then it will be called in destructor.
   base::OnceClosure deletion_callback_;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Autofill profile update and deletion are async operations. PDM observer is
   // used to detect when these operations finish. These operations can happen at
   // the same time.
   base::ScopedObservation<PersonalDataManager, PersonalDataManagerObserver>
       pdm_observation_{this};
+#endif
 
   base::WeakPtrFactory<AutofillExternalDelegate> weak_ptr_factory_{this};
 };

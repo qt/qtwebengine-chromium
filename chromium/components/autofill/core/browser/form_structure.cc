@@ -189,6 +189,7 @@ void FormStructure::DetermineHeuristicTypes(
     const GeoIpCountryCode& client_country,
     AutofillMetrics::FormInteractionsUkmLogger* form_interactions_ukm_logger,
     LogManager* log_manager) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   SCOPED_UMA_HISTOGRAM_TIMER("Autofill.Timing.DetermineHeuristicTypes");
 
   client_country_ = client_country;
@@ -247,6 +248,7 @@ void FormStructure::DetermineHeuristicTypes(
   }
 
   LogDetermineHeuristicTypesMetrics();
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 // static
@@ -335,6 +337,7 @@ bool FormStructure::IsAutofillable() const {
   return ShouldBeParsed();
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 bool FormStructure::IsCompleteCreditCardForm() const {
   bool found_cc_number = false;
   bool found_cc_expiration = false;
@@ -350,6 +353,7 @@ bool FormStructure::IsCompleteCreditCardForm() const {
   }
   return false;
 }
+#endif
 
 void FormStructure::UpdateAutofillCount() {
   autofill_count_ = 0;
@@ -363,8 +367,10 @@ bool FormStructure::ShouldBeParsed(ShouldBeParsedParams params,
                                    LogManager* log_manager) const {
   // Exclude URLs not on the web via HTTP(S).
   if (!HasAllowedScheme(source_url_)) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
     LOG_AF(log_manager) << LoggingScope::kAbortParsing
                         << LogMessage::kAbortParsingNotAllowedScheme << *this;
+#endif
     return false;
   }
 
@@ -373,28 +379,34 @@ bool FormStructure::ShouldBeParsed(ShouldBeParsedParams params,
        active_field_count() <
            params.required_fields_for_forms_with_only_password_fields) &&
       !has_author_specified_types_) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
     LOG_AF(log_manager) << LoggingScope::kAbortParsing
                         << LogMessage::kAbortParsingNotEnoughFields
                         << active_field_count() << *this;
+#endif
     return false;
   }
 
   // Rule out search forms.
   if (MatchesRegex<kUrlSearchActionRe>(
           base::UTF8ToUTF16(target_url_.path_piece()))) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
     LOG_AF(log_manager) << LoggingScope::kAbortParsing
                         << LogMessage::kAbortParsingUrlMatchesSearchRegex
                         << *this;
+#endif
     return false;
   }
 
   bool has_text_field = base::ranges::any_of(*this, [](const auto& field) {
     return !field->IsSelectOrSelectListElement();
   });
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (!has_text_field) {
     LOG_AF(log_manager) << LoggingScope::kAbortParsing
                         << LogMessage::kAbortParsingFormHasNoTextfield << *this;
   }
+#endif
   return has_text_field;
 }
 
@@ -569,6 +581,7 @@ void FormStructure::RetrieveFromCache(const FormStructure& cached_form,
   form_signature_ = cached_form.form_signature_;
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 void FormStructure::LogDetermineHeuristicTypesMetrics() {
   developer_engagement_metrics_ = 0;
   if (IsAutofillable()) {
@@ -587,6 +600,7 @@ void FormStructure::LogDetermineHeuristicTypesMetrics() {
         1 << AutofillMetrics::FORM_CONTAINS_UPI_VPA_HINT;
   }
 }
+#endif
 
 void FormStructure::SetFieldTypesFromAutocompleteAttribute() {
   has_author_specified_types_ = false;
@@ -643,6 +657,7 @@ bool FormStructure::SetSectionsFromAutocompleteOrReset() {
 }
 
 void FormStructure::ParseFieldTypesWithPatterns(ParsingContext& context) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   FieldCandidatesMap field_type_map;
 
   if (ShouldRunHeuristics()) {
@@ -692,6 +707,7 @@ void FormStructure::ParseFieldTypesWithPatterns(ParsingContext& context) {
             field_rank_map[field->GetFieldSignature()],
     });
   }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 const AutofillField* FormStructure::field(size_t index) const {
@@ -1100,6 +1116,7 @@ void FormStructure::set_randomized_encoder(
   randomized_encoder_ = std::move(encoder);
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 void FormStructure::RationalizePhoneNumbersInSection(const Section& section) {
   if (base::Contains(phone_rationalized_, section))
     return;
@@ -1120,6 +1137,7 @@ void FormStructure::RationalizeFormStructure(
       main_frame_origin(), client_country(), current_page_language(),
       log_manager);
 }
+#endif
 
 std::ostream& operator<<(std::ostream& buffer, const FormStructure& form) {
   buffer << "\nForm signature: "

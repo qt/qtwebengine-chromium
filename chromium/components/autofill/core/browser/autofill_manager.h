@@ -35,7 +35,7 @@
 #include "components/autofill/core/common/mojom/autofill_types.mojom.h"
 #include "components/autofill/core/common/signatures.h"
 #include "components/autofill/core/common/unique_ids.h"
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/translate/core/browser/translate_driver.h"
 #endif
 
@@ -62,12 +62,12 @@ class TouchToFillDelegateAndroidImpl;
 // - BrowserAutofillManager for Chrome.
 //
 // It is owned by the AutofillDriver.
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
 class AutofillManager
     : public translate::TranslateDriver::LanguageDetectionObserver {
 #else
 class AutofillManager {
-#endif  // !defined(TOOLKIT_QT)
+#endif
 
  public:
   // Observer of AutofillManager events.
@@ -178,19 +178,19 @@ class AutofillManager {
     virtual void OnFormSubmitted(AutofillManager& manager, FormGlobalId form) {}
   };
 
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // TODO(crbug.com/1151542): Move to anonymous namespace once
   // BrowserAutofillManager::OnLoadedServerPredictions() moves to
   // AutofillManager.
   static void LogAutofillTypePredictionsAvailable(
       LogManager* log_manager,
       const std::vector<raw_ptr<FormStructure, VectorExperimental>>& forms);
-#endif  // !defined(TOOLKIT_QT)
+#endif
 
   AutofillManager(const AutofillManager&) = delete;
   AutofillManager& operator=(const AutofillManager&) = delete;
 
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   ~AutofillManager() override;
 #else
   virtual ~AutofillManager();
@@ -215,12 +215,10 @@ class AutofillManager {
   // Returns a WeakPtr to the leaf class.
   virtual base::WeakPtr<AutofillManager> GetWeakPtr() = 0;
 
-#if !defined(TOOLKIT_QT)
   // Events triggered by the renderer.
 
   // Returns true only if the previewed form should be cleared.
   virtual bool ShouldClearPreviewedForm() = 0;
-#endif  // !defined(TOOLKIT_QT)
 
   // Invoked when the value of textfield is changed.
   // |bounding_box| are viewport coordinates.
@@ -308,19 +306,19 @@ class AutofillManager {
 
   // Other events.
 
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   virtual void ReportAutofillWebOTPMetrics(bool used_web_otp) = 0;
 #endif
 
   // Resets cache.
   virtual void Reset();
 
-#if !defined(TOOLKIT_QT)
   // Invoked when the context menu is opened in a field.
   virtual void OnContextMenuShownInField(
       const FormGlobalId& form_global_id,
       const FieldGlobalId& field_global_id) = 0;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // translate::TranslateDriver::LanguageDetectionObserver:
   void OnTranslateDriverDestroyed(
       translate::TranslateDriver* translate_driver) override;
@@ -330,6 +328,7 @@ class AutofillManager {
   // language-specific patterns.
   void OnLanguageDetermined(
       const translate::LanguageDetectionDetails& details) override;
+#endif
 
   // Fills |form_structure| and |autofill_field| with the cached elements
   // corresponding to |form| and |field|.  This might have the side-effect of
@@ -354,7 +353,6 @@ class AutofillManager {
   // Forwards call to the same-named `AutofillDriver` function.
   virtual void TriggerFormExtractionInAllFrames(
       base::OnceCallback<void(bool success)> form_extraction_finished_callback);
-#endif  // !defined(TOOLKIT_QT)
 
   void AddObserver(Observer* observer) { observers_.AddObserver(observer); }
 
@@ -369,33 +367,29 @@ class AutofillManager {
     }
   }
 
-#if !defined(TOOLKIT_QT)
   // Returns the present form structures seen by Autofill handler.
   const std::map<FormGlobalId, std::unique_ptr<FormStructure>>&
   form_structures() const {
     return form_structures_;
   }
-#endif  // !defined(TOOLKIT_QT)
 
   AutofillDriver& driver() { return *driver_; }
   const AutofillDriver& driver() const { return *driver_; }
 
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // The return value shouldn't be cached, retrieve it as needed.
   AutofillMetrics::FormInteractionsUkmLogger* form_interactions_ukm_logger() {
     return form_interactions_ukm_logger_.get();
   }
-#endif  // !defined(TOOLKIT_QT)
+#endif
 
  protected:
   AutofillManager(AutofillDriver* driver, AutofillClient* client);
 
-#if !defined(TOOLKIT_QT)
   LogManager* log_manager() { return log_manager_; }
 
   // Retrieves the page language from |client_|
   LanguageCode GetCurrentPageLanguage();
-#endif
 
   // The following do not check for prerendering. These should only used while
   // constructing or resetting the manager.
@@ -465,13 +459,14 @@ class AutofillManager {
   virtual void OnAfterProcessParsedForms(
       const DenseSet<FormType>& form_types) = 0;
 
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Returns the number of FormStructures with the given |form_signature| and
   // appends them to |form_structures|. Runs in linear time.
   size_t FindCachedFormsBySignature(
       FormSignature form_signature,
       std::vector<raw_ptr<FormStructure, VectorExperimental>>* form_structures)
       const;
+#endif
 
   // Parses multiple forms in one go. The function proceeds in three stages:
   //
@@ -512,24 +507,25 @@ class AutofillManager {
   mutable_form_structures() {
     return &form_structures_;
   }
-#endif  // !defined(TOOLKIT_QT)
 
  private:
   friend class AutofillManagerTestApi;
 
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Invoked by `AutofillCrowdsourcingManager`.
   void OnLoadedServerPredictions(
       std::string response,
       const std::vector<FormSignature>& queried_form_signatures);
+#endif
 
   // Invoked when forms from OnFormsSeen() have been parsed to
   // |form_structures|.
   void OnFormsParsed(const std::vector<FormData>& forms);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   std::unique_ptr<AutofillMetrics::FormInteractionsUkmLogger>
   CreateFormInteractionsUkmLogger();
-#endif  // !defined(TOOLKIT_QT)
+#endif
 
   // Provides driver-level context to the shared code of the component.
   // `*driver_` owns this object.
@@ -540,21 +536,23 @@ class AutofillManager {
   // client isn't accessed incorrectly.
   const raw_ref<AutofillClient> client_;
 
-#if !defined(TOOLKIT_QT)
   const raw_ptr<LogManager> log_manager_;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Observer needed to re-run heuristics when the language has been detected.
   base::ScopedObservation<translate::TranslateDriver,
                           translate::TranslateDriver::LanguageDetectionObserver>
       translate_observation_{this};
+#endif
 
   // Our copy of the form data.
   std::map<FormGlobalId, std::unique_ptr<FormStructure>> form_structures_;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Utility for logging URL keyed metrics.
   std::unique_ptr<AutofillMetrics::FormInteractionsUkmLogger>
       form_interactions_ukm_logger_;
-#endif  // !defined(TOOLKIT_QT)
+#endif
 
   // Observers that listen to updates of this instance.
   base::ObserverList<Observer> observers_;

@@ -35,6 +35,7 @@ struct DenseSetTraits<FieldPrediction::Source> {
   static constexpr bool kPacked = false;
 };
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 namespace {
 
 // This list includes pairs (heuristic_type, html_type) that express which
@@ -172,6 +173,7 @@ DenseSet<HtmlFieldType> BelievedHtmlTypes(FieldType heuristic_prediction,
 }
 
 }  // namespace
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 AutofillField::AutofillField() {
   local_type_predictions_.fill(NO_SERVER_DATA);
@@ -204,30 +206,47 @@ std::unique_ptr<AutofillField> AutofillField::CreateForPasswordManagerUpload(
 }
 
 FieldType AutofillField::heuristic_type() const {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   return heuristic_type(GetActiveHeuristicSource());
+#else
+  return UNKNOWN_TYPE;
+#endif
 }
 
 FieldType AutofillField::heuristic_type(HeuristicSource s) const {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   FieldType type = local_type_predictions_[static_cast<size_t>(s)];
   // `NO_SERVER_DATA` would mean that there is no heuristic type. Client code
   // presumes there is a prediction, therefore we coalesce to `UNKNOWN_TYPE`.
   // Shadow predictions however are not used and we care whether the type is
   // `UNKNOWN_TYPE` or whether we never ran the heuristics.
   return (type > 0 || s != GetActiveHeuristicSource()) ? type : UNKNOWN_TYPE;
+#else
+  return UNKNOWN_TYPE;
+#endif
 }
 
 FieldType AutofillField::server_type() const {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   return server_predictions_.empty()
              ? NO_SERVER_DATA
              : ToSafeFieldType(server_predictions_[0].type(), NO_SERVER_DATA);
+#else
+  return NO_SERVER_DATA;
+#endif
 }
 
 bool AutofillField::server_type_prediction_is_override() const {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   return server_predictions_.empty() ? false
                                      : server_predictions_[0].override();
+#else
+  return false;
+#endif
 }
 
 void AutofillField::set_heuristic_type(HeuristicSource s, FieldType type) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (type < 0 || type > MAX_VALID_FIELD_TYPE ||
       type == FIELD_WITH_DEFAULT_VALUE) {
     NOTREACHED();
@@ -239,6 +258,7 @@ void AutofillField::set_heuristic_type(HeuristicSource s, FieldType type) {
   if (s == GetActiveHeuristicSource()) {
     overall_type_ = AutofillType(NO_SERVER_DATA);
   }
+#endif
 }
 
 void AutofillField::add_possible_types_validities(
@@ -260,6 +280,7 @@ void AutofillField::set_server_predictions(
   server_predictions_.clear();
   experimental_server_predictions_.clear();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   for (auto& prediction : predictions) {
     if (prediction.has_source()) {
       if (prediction.source() == FieldPrediction::SOURCE_UNSPECIFIED)
@@ -292,6 +313,7 @@ void AutofillField::set_server_predictions(
       << "Expected up to 2 default predictions from the Autofill server. "
          "Actual: "
       << server_predictions_.size();
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 std::vector<AutofillDataModel::ValidityState>
@@ -313,6 +335,7 @@ void AutofillField::SetTypeTo(const AutofillType& type) {
 }
 
 AutofillType AutofillField::ComputedType() const {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // If autocomplete=tel/tel-* and server confirms it really is a phone field,
   // we always use the server prediction as html types are not very reliable.
   if (GroupTypeOfHtmlFieldType(html_type_) == FieldTypeGroup::kPhone &&
@@ -411,6 +434,9 @@ AutofillType AutofillField::ComputedType() const {
   }
 
   return AutofillType(heuristic_type());
+#else
+  return AutofillType(html_type_);
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 AutofillType AutofillField::Type() const {
@@ -475,6 +501,7 @@ bool AutofillField::IsCreditCardPrediction() const {
 
 void AutofillField::AppendLogEventIfNotRepeated(
     const FieldLogEventType& log_event) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // TODO(crbug.com/1325851): Consider to use an Overflow event to stop
   // recording log events into |field_log_events_| to save memory when
   // |field_log_events_| reaches certain threshold, e.g. 1000.
@@ -484,6 +511,7 @@ void AutofillField::AppendLogEventIfNotRepeated(
       !AreCollapsibleLogEvents(field_log_events_.back(), log_event)) {
     field_log_events_.push_back(log_event);
   }
+#endif
 }
 
 bool AutofillField::WasAutofilledWithFallback() const {

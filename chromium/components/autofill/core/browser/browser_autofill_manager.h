@@ -22,7 +22,7 @@
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "build/build_config.h"
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/autocomplete_history_manager.h"
 #endif
 #include "components/autofill/core/browser/autofill_ablation_study.h"
@@ -36,7 +36,7 @@
 #include "components/autofill/core/browser/form_autofill_history.h"
 #include "components/autofill/core/browser/form_structure.h"
 #include "components/autofill/core/browser/form_types.h"
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/metrics/autofill_metrics.h"
 #include "components/autofill/core/browser/metrics/fallback_autocomplete_unrecognized_metrics.h"
 #include "components/autofill/core/browser/metrics/form_events/address_form_event_logger.h"
@@ -48,13 +48,13 @@
 #include "components/autofill/core/browser/payments/full_card_request.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/browser/single_field_form_fill_router.h"
-#endif  // !defined(TOOLKIT_QT)
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/ui/fast_checkout_delegate.h"
 #include "components/autofill/core/browser/ui/popup_item_ids.h"
 #include "components/autofill/core/browser/ui/popup_types.h"
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/ui/touch_to_fill_delegate.h"
-#endif  // !defined(TOOLKIT_QT)
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/common/aliases.h"
 #include "components/autofill/core/common/dense_set.h"
 #include "components/autofill/core/common/form_data.h"
@@ -125,7 +125,7 @@ class BrowserAutofillManager : public AutofillManager {
   BrowserAutofillManager(const BrowserAutofillManager&) = delete;
   BrowserAutofillManager& operator=(const BrowserAutofillManager&) = delete;
 
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   ~BrowserAutofillManager() override;
 
   // Whether the |field| should show an entry to scan a credit card.
@@ -231,11 +231,10 @@ class BrowserAutofillManager : public AutofillManager {
 
   // Upload the current pending form.
   void ProcessPendingFormForUpload();
-#endif  // !defined(TOOLKIT_QT)
-
 
   CreditCardAccessManager& GetCreditCardAccessManager();
   const CreditCardAccessManager& GetCreditCardAccessManager() const;
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Handles post-filling logic of `form_structure`, like notifying observers
   // and logging form metrics.
@@ -258,9 +257,7 @@ class BrowserAutofillManager : public AutofillManager {
 
   // AutofillManager:
   base::WeakPtr<AutofillManager> GetWeakPtr() override;
-#if !defined(TOOLKIT_QT)
   bool ShouldClearPreviewedForm() override;
-#endif  // !defined(TOOLKIT_QT)
   void OnFocusNoLongerOnFormImpl(bool had_interacted_form) override;
   void OnFocusOnFormFieldImpl(const FormData& form,
                               const FormFieldData& field,
@@ -276,11 +273,8 @@ class BrowserAutofillManager : public AutofillManager {
       const FormFieldData& field,
       const std::u16string& old_value) override;
   void Reset() override;
-
-#if !defined(TOOLKIT_QT)
   void OnContextMenuShownInField(const FormGlobalId& form_global_id,
                                  const FieldGlobalId& field_global_id) override;
-#endif
 
   // Retrieves the four digit combinations from the DOM of the current web page
   // and stores them in `four_digit_combinations_in_dom_`. This is used to check
@@ -298,7 +292,7 @@ class BrowserAutofillManager : public AutofillManager {
   // and the client supports Autofill.
   virtual bool IsAutofillPaymentMethodsEnabled() const;
 
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Shared code to determine if |form| should be uploaded to the Autofill
   // server. It verifies that uploading is allowed and |form| meets conditions
   // to be uploadable. Exposed for testing.
@@ -345,8 +339,6 @@ class BrowserAutofillManager : public AutofillManager {
     fast_checkout_delegate_ = std::move(fast_checkout_delegate);
   }
 
-#endif  // !defined(TOOLKIT_QT)
-
   // Returns the field corresponding to |form| and |field| that can be
   // autofilled. Returns NULL if the field cannot be autofilled.
   [[nodiscard]] AutofillField* GetAutofillField(
@@ -358,15 +350,14 @@ class BrowserAutofillManager : public AutofillManager {
   // Caches the credit card data for server and virtual credit cards.
   void OnCreditCardFetchedSuccessfully(const CreditCard& credit_card);
 
-#if !defined(TOOLKIT_QT)
   autofill_metrics::AutocompleteUnrecognizedFallbackEventLogger&
   GetAutocompleteUnrecognizedFallbackEventLogger() {
     return *autocomplete_unrecognized_fallback_logger_;
   }
-#endif  // !defined(TOOLKIT_QT)
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
  protected:
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Stores a `callback` for `form_signature`, possibly overriding an older
   // callback for `form_signature` or triggering a pending callback in case too
   // many callbacks are stored to create space.
@@ -394,7 +385,7 @@ class BrowserAutofillManager : public AutofillManager {
   // Returns the card image for `credit_card`. If the `credit_card` has a card
   // art image linked, prefer it. Otherwise fall back to the network icon.
   virtual const gfx::Image& GetCardImage(const CreditCard& credit_card);
-#endif  // !defined(TOOLKIT_QT)
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // AutofillManager:
   void OnFormSubmittedImpl(const FormData& form,
@@ -424,7 +415,7 @@ class BrowserAutofillManager : public AutofillManager {
  private:
   friend class BrowserAutofillManagerTestApi;
 
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Keeps track of the filling context for a form, used to make refill
   // attempts.
   struct FillingContext {
@@ -602,7 +593,7 @@ class BrowserAutofillManager : public AutofillManager {
   // DOM.
   base::flat_map<std::string, VirtualCardUsageData::VirtualCardLastFour>
   GetVirtualCreditCardsForStandaloneCvcField(const url::Origin& origin) const;
-#endif  // !defined(TOOLKIT_QT)
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // If |initial_interaction_timestamp_| is unset or is set to a later time than
   // |interaction_timestamp|, updates the cached timestamp.  The latter check is
@@ -636,6 +627,7 @@ class BrowserAutofillManager : public AutofillManager {
                                           size_t current_index,
                                           const FieldTypeSet& upload_types);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Returns the value to fill along with the field type and if the value is an
   // override.
   FieldFillingData GetFieldFillingData(
@@ -648,7 +640,6 @@ class BrowserAutofillManager : public AutofillManager {
       mojom::ActionPersistence action_persistence,
       std::string* failure_to_fill);
 
-#if !defined(TOOLKIT_QT)
   // Fills `field_data` and modifies `autofill_field` given all other states.
   // Also logs metrics and, if `should_notify` is true, calls
   // AutofillClient::DidFillOrPreviewField().
@@ -736,7 +727,7 @@ class BrowserAutofillManager : public AutofillManager {
   // type. May return nullptr.
   autofill_metrics::FormEventLoggerBase* GetEventFormLogger(
       const AutofillField& field) const;
-#endif  // !defined(TOOLKIT_QT)
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Iterate through all the fields in the form to process the log events for
   // each field and record into FieldInfo UKM event.
@@ -765,14 +756,12 @@ class BrowserAutofillManager : public AutofillManager {
   // Delegates to perform external processing (display, selection) on
   // our behalf.
   std::unique_ptr<AutofillExternalDelegate> external_delegate_;
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   std::unique_ptr<TouchToFillDelegate> touch_to_fill_delegate_;
-#endif
   std::unique_ptr<FastCheckoutDelegate> fast_checkout_delegate_;
 
   std::string app_locale_;
 
-#if !defined(TOOLKIT_QT)
   // Container holding the history of Autofill filling operations. Used to undo
   // some of the filling operations.
   FormAutofillHistory form_autofill_history_;
@@ -859,7 +848,7 @@ class BrowserAutofillManager : public AutofillManager {
   // interaction and re-used throughout the context of this manager.
   AutofillMetrics::PaymentsSigninState signin_state_for_metrics_ =
       AutofillMetrics::PaymentsSigninState::kUnknown;
-#endif  // !defined(TOOLKIT_QT)
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Helps with measuring whether phone number is collected and whether it is in
   // conjunction with WebOTP or OneTimeCode (OTC).

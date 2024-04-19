@@ -226,6 +226,7 @@ void AssignSections(base::span<const std::unique_ptr<AutofillField>> fields) {
   }
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 void LogSectioningMetrics(
     FormSignature form_signature,
     base::span<const std::unique_ptr<AutofillField>> fields,
@@ -262,5 +263,6 @@ uint32_t ComputeSectioningSignature(
   }
   return StrToHash32Bit(signature.str());
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 }  // namespace autofill
