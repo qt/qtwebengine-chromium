@@ -549,6 +549,7 @@ Renderer11::~Renderer11()
 
 #ifndef __d3d11_1_h__
 #    define D3D11_MESSAGE_ID_DEVICE_DRAW_RENDERTARGETVIEW_NOT_SET ((D3D11_MESSAGE_ID)3146081)
+#    define D3D11_MESSAGE_ID_SETPRIVATEDATA_CHANGINGPARAMS ((D3D11_MESSAGE_ID)55)
 #endif
 
 egl::Error Renderer11::initialize()
@@ -662,6 +663,7 @@ egl::Error Renderer11::initialize()
         {
             D3D11_MESSAGE_ID hideMessages[] = {
                 D3D11_MESSAGE_ID_DEVICE_DRAW_RENDERTARGETVIEW_NOT_SET,
+                D3D11_MESSAGE_ID_SETPRIVATEDATA_CHANGINGPARAMS,
 
                 // Robust access behaviour makes out of bounds messages safe
                 D3D11_MESSAGE_ID_DEVICE_DRAW_VERTEX_BUFFER_TOO_SMALL,
