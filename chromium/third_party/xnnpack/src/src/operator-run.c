@@ -298,7 +298,7 @@ void xnn_compute_transposev_6d(
 }
 
 void xnn_compute_packw_gemm_gio(
-    const struct packw_gemm_gio_context context[restrict XNN_MIN_ELEMENTS(1)],
+    const struct packw_gemm_gio_context context[XNN_MIN_ELEMENTS(1)],
     size_t n_block_start,
     size_t n_block_size)
 {
@@ -318,7 +318,7 @@ void xnn_compute_packw_gemm_gio(
 }
 
 void xnn_compute_batched_packw_gemm_gio(
-    const struct packw_gemm_gio_context context[restrict XNN_MIN_ELEMENTS(1)],
+    const struct packw_gemm_gio_context context[XNN_MIN_ELEMENTS(1)],
     size_t batch_index,
     size_t n_block_start,
     size_t n_block_size)
@@ -361,7 +361,7 @@ void xnn_compute_packw_gemm_goi(
 }
 
 void xnn_compute_batched_packw_gemm_goi(
-    const struct packw_gemm_goi_context context[restrict XNN_MIN_ELEMENTS(1)],
+    const struct packw_gemm_goi_context context[XNN_MIN_ELEMENTS(1)],
     size_t batch_index,
     size_t n_block_start,
     size_t n_block_size)
@@ -432,7 +432,7 @@ void xnn_compute_gemm(
 }
 
 void xnn_compute_dqgemm(
-    const struct gemm_context context[restrict XNN_MIN_ELEMENTS(1)],
+    const struct gemm_context context[XNN_MIN_ELEMENTS(1)],
     size_t mr_block_start,
     size_t nr_block_start,
     size_t mr_block_size,
@@ -501,14 +501,14 @@ void xnn_compute_grouped_batch_igemm(
 }
 
 void xnn_compute_dq_zero_buffer(
-    const struct igemm_context context[restrict XNN_MIN_ELEMENTS(1)],
+    const struct igemm_context context[XNN_MIN_ELEMENTS(1)],
     size_t batch_index
     ) {
   memset(context->zero_buffers[batch_index], context->quantization_params[batch_index].zero_point, context->zero_size);
 }
 
 void xnn_compute_grouped_batch_dqigemm(
-    const struct igemm_context context[restrict XNN_MIN_ELEMENTS(1)],
+    const struct igemm_context context[XNN_MIN_ELEMENTS(1)],
     size_t batch_index,
     size_t group_index,
     size_t mr_block_start,
@@ -563,7 +563,7 @@ void xnn_compute_grouped_igemm(
 }
 
 void xnn_compute_grouped_dqigemm(
-    const struct igemm_context context[restrict XNN_MIN_ELEMENTS(1)],
+    const struct igemm_context context[XNN_MIN_ELEMENTS(1)],
     size_t group_index,
     size_t mr_block_start,
     size_t nr_block_start,
@@ -617,7 +617,7 @@ void xnn_compute_batch_igemm(
 }
 
 void xnn_compute_batch_dqigemm(
-    const struct igemm_context context[restrict XNN_MIN_ELEMENTS(1)],
+    const struct igemm_context context[XNN_MIN_ELEMENTS(1)],
     size_t batch_index,
     size_t mr_block_start,
     size_t nr_block_start,
@@ -670,7 +670,7 @@ void xnn_compute_igemm(
 }
 
 void xnn_compute_dqigemm(
-    const struct igemm_context context[restrict XNN_MIN_ELEMENTS(1)],
+    const struct igemm_context context[XNN_MIN_ELEMENTS(1)],
     size_t mr_block_start,
     size_t nr_block_start,
     size_t mr_block_size,
@@ -697,7 +697,7 @@ void xnn_compute_dqigemm(
 }
 // `output_tile_start` should be a multiple of igemm.mr (tile size).
 void xnn_compute_conv2d_igemm_indirection(
-    const struct conv2d_igemm_indirection_init_context context[restrict XNN_MIN_ELEMENTS(1)],
+    const struct conv2d_igemm_indirection_init_context context[XNN_MIN_ELEMENTS(1)],
     size_t output_tile_start,
     size_t output_tile_size)
 {
@@ -892,7 +892,7 @@ void xnn_compute_conv2d_hwc2chw(
 }
 
 void xnn_compute_dwconv_indirection(
-  const struct dwconv_indirection_init_context context[restrict XNN_MIN_ELEMENTS(1)],
+  const struct dwconv_indirection_init_context context[XNN_MIN_ELEMENTS(1)],
   size_t output_y_start,
   size_t output_y_tile)
 {
@@ -952,7 +952,7 @@ void xnn_compute_dwconv_multipass(
 }
 
 void xnn_compute_dwconv_multipass_with_thread(
-    const struct dwconv_context context[restrict XNN_MIN_ELEMENTS(1)],
+    const struct dwconv_context context[XNN_MIN_ELEMENTS(1)],
     size_t thread_index,
     size_t batch_index,
     size_t output_y)
@@ -1031,7 +1031,7 @@ void xnn_compute_argmax_pooling_multipass(
 }
 
 void xnn_compute_argmax_pooling_multipass_with_thread(
-    const struct argmax_pooling_context context[restrict XNN_MIN_ELEMENTS(1)],
+    const struct argmax_pooling_context context[XNN_MIN_ELEMENTS(1)],
     size_t thread_index,
     size_t batch_index,
     size_t output_y)
@@ -1152,7 +1152,7 @@ void xnn_compute_average_pooling_multipass(
 }
 
 void xnn_compute_average_pooling_multipass_with_thread(
-    const struct average_pooling_context context[restrict XNN_MIN_ELEMENTS(1)],
+    const struct average_pooling_context context[XNN_MIN_ELEMENTS(1)],
     size_t thread_index,
     size_t batch_index,
     size_t output_y)
@@ -1229,7 +1229,7 @@ void xnn_compute_pixelwise_average_pooling_multipass(
 }
 
 void xnn_compute_pixelwise_average_pooling_multipass_with_thread(
-    const struct pixelwise_average_pooling_context context[restrict XNN_MIN_ELEMENTS(1)],
+    const struct pixelwise_average_pooling_context context[XNN_MIN_ELEMENTS(1)],
     size_t thread_index,
     size_t batch_index,
     size_t output_y)
@@ -1299,7 +1299,7 @@ void xnn_compute_global_average_pooling_nwc_multipass(
 }
 
 void xnn_compute_global_average_pooling_nwc_multipass_with_thread(
-    const struct global_average_pooling_nwc_context context[restrict XNN_MIN_ELEMENTS(1)],
+    const struct global_average_pooling_nwc_context context[XNN_MIN_ELEMENTS(1)],
     size_t thread_index,
     size_t batch_index)
 {
@@ -1343,7 +1343,7 @@ void xnn_compute_global_average_pooling_ncw(
 }
 
 void xnn_compute_resize_bilinear_indirection(
-    const struct resize_bilinear_nhwc_indirection_init_context context[restrict XNN_MIN_ELEMENTS(1)],
+    const struct resize_bilinear_nhwc_indirection_init_context context[XNN_MIN_ELEMENTS(1)],
     size_t output_y_start,
     size_t output_y_tile)
 {
@@ -1448,7 +1448,7 @@ void xnn_compute_pad_5d(
 }
 
 void xnn_compute_scaled_dot_product_attention(
-  const struct scaled_dot_product_attention_context context[restrict XNN_MIN_ELEMENTS(1)],
+  const struct scaled_dot_product_attention_context context[XNN_MIN_ELEMENTS(1)],
   size_t batch_index,
   size_t head_index,
   size_t tokens_start,
@@ -1599,7 +1599,7 @@ void xnn_compute_scaled_dot_product_attention(
 }
 
 void xnn_compute_scaled_dot_product_attention_with_thread(
-  const struct scaled_dot_product_attention_context context[restrict XNN_MIN_ELEMENTS(1)],
+  const struct scaled_dot_product_attention_context context[XNN_MIN_ELEMENTS(1)],
   size_t thread_index,
   size_t batch_index,
   size_t head_index,
@@ -1825,7 +1825,7 @@ void xnn_compute_slice_5d(
 }
 
 void xnn_compute_elementwise_binary_1d_tile(
-    const struct elementwise_binary_context context[restrict XNN_MIN_ELEMENTS(1)],
+    const struct elementwise_binary_context context[XNN_MIN_ELEMENTS(1)],
     size_t offset,
     size_t size)
 {
@@ -1967,7 +1967,7 @@ void xnn_compute_univector_contiguous(
 }
 
 void xnn_compute_reduce(
-    const struct reduce_context context[restrict XNN_MIN_ELEMENTS(1)],
+    const struct reduce_context context[XNN_MIN_ELEMENTS(1)],
     size_t batch_index,
     size_t batch_range)
 {
@@ -1984,7 +1984,7 @@ void xnn_compute_reduce(
 }
 
 void xnn_compute_pad_qd8_params(
-    const struct f32_qd8_convert_context context[restrict XNN_MIN_ELEMENTS(1)],
+    const struct f32_qd8_convert_context context[XNN_MIN_ELEMENTS(1)],
     size_t batch_index)
 {
   const size_t batch_size = context->batch_size;
@@ -1995,7 +1995,7 @@ void xnn_compute_pad_qd8_params(
 }
 
 void xnn_compute_f16_qd8_convert(
-    const struct f16_qd8_convert_context context[restrict XNN_MIN_ELEMENTS(1)],
+    const struct f16_qd8_convert_context context[XNN_MIN_ELEMENTS(1)],
     size_t batch_index)
 {
   const size_t x_stride = context->x_stride;
@@ -2015,7 +2015,7 @@ void xnn_compute_f16_qd8_convert(
 }
 
 void xnn_compute_f32_qd8_convert(
-    const struct f32_qd8_convert_context context[restrict XNN_MIN_ELEMENTS(1)],
+    const struct f32_qd8_convert_context context[XNN_MIN_ELEMENTS(1)],
     size_t batch_index)
 {
   const size_t x_stride = context->x_stride;
@@ -2100,7 +2100,7 @@ void xnn_compute_vmulcaddc(
 }
 
 void xnn_compute_rope(
-    const struct rope_context context[restrict XNN_MIN_ELEMENTS(1)],
+    const struct rope_context context[XNN_MIN_ELEMENTS(1)],
     size_t batch_index,
     size_t head_index,
     size_t sequence_index)
@@ -2169,7 +2169,7 @@ void xnn_compute_rope(
   }
 
   void xnn_compute_hmp_dqgemm(
-      const struct gemm_context context[restrict XNN_MIN_ELEMENTS(1)],
+      const struct gemm_context context[XNN_MIN_ELEMENTS(1)],
       uint32_t uarch_index,
       size_t mr_block_start,
       size_t nr_block_start,
@@ -2222,7 +2222,7 @@ void xnn_compute_rope(
   }
 
   void xnn_compute_hmp_grouped_batch_dqigemm(
-      const struct igemm_context context[restrict XNN_MIN_ELEMENTS(1)],
+      const struct igemm_context context[XNN_MIN_ELEMENTS(1)],
       uint32_t uarch_index,
       size_t batch_index,
       size_t group_index,
@@ -2279,7 +2279,7 @@ void xnn_compute_rope(
   }
 
   void xnn_compute_hmp_grouped_dqigemm(
-      const struct igemm_context context[restrict XNN_MIN_ELEMENTS(1)],
+      const struct igemm_context context[XNN_MIN_ELEMENTS(1)],
       uint32_t uarch_index,
       size_t group_index,
       size_t mr_block_start,
@@ -2335,7 +2335,7 @@ void xnn_compute_rope(
   }
 
   void xnn_compute_batch_hmp_dqigemm(
-      const struct igemm_context context[restrict XNN_MIN_ELEMENTS(1)],
+      const struct igemm_context context[XNN_MIN_ELEMENTS(1)],
       uint32_t uarch_index,
       size_t batch_index,
       size_t mr_block_start,
@@ -2390,7 +2390,7 @@ void xnn_compute_rope(
   }
 
   void xnn_compute_hmp_dqigemm(
-      const struct igemm_context context[restrict XNN_MIN_ELEMENTS(1)],
+      const struct igemm_context context[XNN_MIN_ELEMENTS(1)],
       uint32_t uarch_index,
       size_t mr_block_start,
       size_t nr_block_start,
@@ -2418,7 +2418,7 @@ void xnn_compute_rope(
   }
 
 void xnn_compute_hmp_scaled_dot_product_attention(
-  const struct scaled_dot_product_attention_context context[restrict XNN_MIN_ELEMENTS(1)],
+  const struct scaled_dot_product_attention_context context[XNN_MIN_ELEMENTS(1)],
   uint32_t uarch_index,
   size_t batch_index,
   size_t head_index,
@@ -2570,7 +2570,7 @@ void xnn_compute_hmp_scaled_dot_product_attention(
 }
 
 void xnn_compute_hmp_scaled_dot_product_attention_with_thread(
-  const struct scaled_dot_product_attention_context context[restrict XNN_MIN_ELEMENTS(1)],
+  const struct scaled_dot_product_attention_context context[XNN_MIN_ELEMENTS(1)],
   uint32_t uarch_index,
   size_t thread_index,
   size_t batch_index,
