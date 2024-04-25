@@ -8153,7 +8153,7 @@ wasm::WasmCode* CompileWasmCapiCallWrapper(wasm::NativeModule* native_module,
     wasm::CodeSpaceWriteScope code_space_write_scope(native_module);
     std::unique_ptr<wasm::WasmCode> wasm_code = native_module->AddCode(
         wasm::kAnonymousFuncIndex, result.code_desc, result.frame_slot_count,
-        result.tagged_parameter_slots,
+        result.ool_spill_count, result.tagged_parameter_slots,
         result.protected_instructions_data.as_vector(),
         result.source_positions.as_vector(), wasm::WasmCode::kWasmToCapiWrapper,
         wasm::ExecutionTier::kNone, wasm::kNoDebugging);
@@ -8206,7 +8206,7 @@ wasm::WasmCode* CompileWasmJSFastCallWrapper(wasm::NativeModule* native_module,
     wasm::CodeSpaceWriteScope code_space_write_scope(native_module);
     std::unique_ptr<wasm::WasmCode> wasm_code = native_module->AddCode(
         wasm::kAnonymousFuncIndex, result.code_desc, result.frame_slot_count,
-        result.tagged_parameter_slots,
+        result.ool_spill_count, result.tagged_parameter_slots,
         result.protected_instructions_data.as_vector(),
         result.source_positions.as_vector(), wasm::WasmCode::kWasmToJsWrapper,
         wasm::ExecutionTier::kNone, wasm::kNoDebugging);
