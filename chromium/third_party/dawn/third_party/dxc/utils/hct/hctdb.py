@@ -2270,7 +2270,8 @@ class db_dxil(object):
             {'n':'unroll-count', 'i':'UnrollCount', 't':'unsigned', 'd':'Use this unroll count for all loops including those with unroll_count pragma values, for testing purposes'},
             {'n':'unroll-allow-partial', 'i':'UnrollAllowPartial', 't':'bool', 'd':'Allows loops to be partially unrolled until -unroll-threshold loop size is reached.'},
             {'n':'unroll-runtime', 'i':'UnrollRuntime', 't':'bool', 'd':'Unroll loops with run-time trip counts'},
-            {'n':'pragma-unroll-threshold', 'i':'PragmaUnrollThreshold', 't':'unsigned', 'd':'Unrolled size limit for loops with an unroll(full) or unroll_count pragma.'}])
+            {'n':'pragma-unroll-threshold', 'i':'PragmaUnrollThreshold', 't':'unsigned', 'd':'Unrolled size limit for loops with an unroll(full) or unroll_count pragma.'},
+            {'n': 'StructurizeLoopExits', 't': 'bool', 'c': 1, 'd': 'Whether the unroller should try to structurize loop exits first.'}])
         add_pass('mldst-motion', 'MergedLoadStoreMotion', 'MergedLoadStoreMotion', [])
         add_pass('gvn', 'GVN', 'Global Value Numbering', [
             {'n':'noloads', 't':'bool', 'c':1},
