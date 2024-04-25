@@ -2818,6 +2818,10 @@
       implied_by: ["ViewTransitionOnNavigation"],
     },
     {
+      name: "PaintHoldingForIframes",
+      status: "test",
+    },
+    {
       name: "PaintUnderInvalidationChecking",
       base_feature: "none",
       settable_from_internals: true,

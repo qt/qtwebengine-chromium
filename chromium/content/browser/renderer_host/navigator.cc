@@ -518,6 +518,13 @@ void Navigator::DidNavigate(
   navigation_request->set_previous_render_frame_host_id(
       old_frame_host->GetGlobalId());
 
+  // Store this information before DidNavigateFrame() potentially swaps RFHs.
+  url::Origin old_frame_origin = old_frame_host->GetLastCommittedOrigin();
+
+  // Only allow paint holding for same-origin navigations.
+  const bool allow_subframe_paint_holding =
+      old_frame_origin.IsSameOriginWith(params.origin);
+
   // DidNavigateFrame() must be called before replicating the new origin and
   // other properties to proxies.  This is because it destroys the subframes of
   // the frame we're navigating from, which might trigger those subframes to
@@ -528,7 +535,8 @@ void Navigator::DidNavigate(
       was_within_same_document,
       navigation_request->browsing_context_group_swap()
           .ShouldClearProxiesOnCommit(),
-      navigation_request->commit_params().frame_policy);
+      navigation_request->commit_params().frame_policy,
+      allow_subframe_paint_holding);
 
   // Save the new page's origin and other properties, and replicate them to
   // proxies, including the proxy created in DidNavigateFrame() to replace the
