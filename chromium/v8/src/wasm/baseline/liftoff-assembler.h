@@ -1649,6 +1649,7 @@ class LiftoffAssembler : public MacroAssembler {
   void set_num_locals(uint32_t num_locals);
 
   int GetTotalFrameSlotCountForGC() const;
+  int OolSpillCount() const;
 
   int GetTotalFrameSize() const { return max_used_spill_offset_; }
 

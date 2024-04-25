@@ -1664,7 +1664,7 @@ void WasmInstanceObject::ImportWasmJSFunctionIntoTable(
                                                  expected_arity, suspend);
       std::unique_ptr<wasm::WasmCode> compiled_code = native_module->AddCode(
           result.func_index, result.code_desc, result.frame_slot_count,
-          result.tagged_parameter_slots,
+          result.ool_spill_count, result.tagged_parameter_slots,
           result.protected_instructions_data.as_vector(),
           result.source_positions.as_vector(), GetCodeKind(result),
           wasm::ExecutionTier::kNone, wasm::kNotForDebugging);
