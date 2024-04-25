@@ -8,4 +8,6 @@ namespace blink {
 
 const int kMinimumWindowSize = 100;
 
+const base::TimeDelta kNewContentRenderingDelay = base::Seconds(4);
+
 }  // namespace blink

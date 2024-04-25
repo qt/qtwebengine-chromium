@@ -2750,6 +2750,10 @@
       settable_from_internals: true,
     },
     {
+      name: "PaintHoldingForIframes",
+      status: "test",
+    },
+    {
       // PARAKEET ad serving runtime flag/JS API.
       name: "Parakeet",
       origin_trial_feature_name: "Parakeet",

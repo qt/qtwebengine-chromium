@@ -8546,7 +8546,8 @@ void RenderFrameHostImpl::AdoptPortal(
                                        ->render_manager()
                                        ->GetRenderWidgetHostView()
                                        ->GetFrameSinkId();
-  proxy_host->GetAssociatedRemoteFrame()->SetFrameSinkId(frame_sink_id);
+  // generally disallow paint holding for security reasons
+  proxy_host->GetAssociatedRemoteFrame()->SetFrameSinkId(frame_sink_id, /*allow_paint_holding*/ false);
 
   std::move(callback).Run(
       proxy_host->frame_tree_node()->current_replication_state().Clone(),
