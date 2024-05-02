@@ -228,11 +228,13 @@ BASE_FEATURE(kDirectCompositionUnlimitedOverlays,
 // Allow dual GPU rendering through EGL where supported, i.e., allow a WebGL
 // or WebGPU context to be on the high performance GPU if preferred and Chrome
 // internal rendering to be on the low power GPU.
+#if BUILDFLAG(IS_MAC)
 BASE_FEATURE(kEGLDualGPURendering,
              "EGLDualGPURendering",
-#if BUILDFLAG(IS_MAC)
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kEGLDualGPURendering,
+             "EGLDualGPURendering",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 

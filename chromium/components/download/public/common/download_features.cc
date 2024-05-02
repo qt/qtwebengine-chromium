@@ -9,14 +9,15 @@
 namespace download {
 namespace features {
 
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kParallelDownloading,
              "ParallelDownloading",
-#if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kParallelDownloading,
+             "ParallelDownloading",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 #if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kSmartSuggestionForLargeDownloads,
@@ -32,27 +33,29 @@ BASE_FEATURE(kDownloadsMigrateToJobsAPI,
              "DownloadsMigrateToJobsAPI",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kDownloadNotificationServiceUnifiedAPI,
              "DownloadNotificationServiceUnifiedAPI",
-#if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kDownloadNotificationServiceUnifiedAPI,
+             "DownloadNotificationServiceUnifiedAPI",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 BASE_FEATURE(kUseInProgressDownloadManagerForDownloadService,
              "UseInProgressDownloadManagerForDownloadService",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kAllowDownloadResumptionWithoutStrongValidators,
              "AllowDownloadResumptionWithoutStrongValidators",
-#if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kAllowDownloadResumptionWithoutStrongValidators,
+             "AllowDownloadResumptionWithoutStrongValidators",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 BASE_FEATURE(kUseParallelRequestsForHTTP2,
              "UseParallelRequestsForHTTP2",

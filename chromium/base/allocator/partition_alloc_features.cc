@@ -41,14 +41,17 @@ const base::FeatureParam<UnretainedDanglingPtrMode>
         &kUnretainedDanglingPtrModeOption,
 };
 
+#if PA_BUILDFLAG(ENABLE_DANGLING_RAW_PTR_FEATURE_FLAG)
 BASE_FEATURE(kPartitionAllocDanglingPtr,
              "PartitionAllocDanglingPtr",
-#if PA_BUILDFLAG(ENABLE_DANGLING_RAW_PTR_FEATURE_FLAG)
              FEATURE_ENABLED_BY_DEFAULT
-#else
-             FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kPartitionAllocDanglingPtr,
+             "PartitionAllocDanglingPtr",
+             FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 
 constexpr FeatureParam<DanglingPtrMode>::Option kDanglingPtrModeOption[] = {
     {DanglingPtrMode::kCrash, "crash"},
@@ -129,14 +132,15 @@ BASE_FEATURE(kPartitionAllocZappingByFreeFlags,
              FEATURE_DISABLED_BY_DEFAULT);
 #endif  // PA_BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
 
+#if PA_BUILDFLAG(ENABLE_BACKUP_REF_PTR_FEATURE_FLAG)
 BASE_FEATURE(kPartitionAllocBackupRefPtr,
              "PartitionAllocBackupRefPtr",
-#if PA_BUILDFLAG(ENABLE_BACKUP_REF_PTR_FEATURE_FLAG)
-             FEATURE_ENABLED_BY_DEFAULT
+             FEATURE_ENABLED_BY_DEFAULT);
 #else
-             FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kPartitionAllocBackupRefPtr,
+             "PartitionAllocBackupRefPtr",
+             FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 constexpr FeatureParam<BackupRefPtrEnabledProcesses>::Option
     kBackupRefPtrEnabledProcessesOptions[] = {
@@ -165,14 +169,17 @@ const base::FeatureParam<BackupRefPtrMode> kBackupRefPtrModeParam{
     &kPartitionAllocBackupRefPtr, "brp-mode", BackupRefPtrMode::kEnabled,
     &kBackupRefPtrModeOptions};
 
+#if PA_BUILDFLAG(USE_FULL_MTE)
 BASE_FEATURE(kPartitionAllocMemoryTagging,
              "PartitionAllocMemoryTagging",
-#if PA_BUILDFLAG(USE_FULL_MTE)
              FEATURE_ENABLED_BY_DEFAULT
-#else
-             FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kPartitionAllocMemoryTagging,
+             "PartitionAllocMemoryTagging",
+             FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 
 constexpr FeatureParam<MemtagMode>::Option kMemtagModeOptions[] = {
     {MemtagMode::kSync, "sync"},
@@ -217,15 +224,18 @@ BASE_FEATURE(kKillPartitionAllocMemoryTagging,
              FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_EXPORT BASE_DECLARE_FEATURE(kPartitionAllocPermissiveMte);
+#if PA_BUILDFLAG(USE_FULL_MTE)
 BASE_FEATURE(kPartitionAllocPermissiveMte,
              "PartitionAllocPermissiveMte",
-#if PA_BUILDFLAG(USE_FULL_MTE)
              // We want to actually crash if USE_FULL_MTE is enabled.
              FEATURE_DISABLED_BY_DEFAULT
-#else
-             FEATURE_ENABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kPartitionAllocPermissiveMte,
+             "PartitionAllocPermissiveMte",
+             FEATURE_ENABLED_BY_DEFAULT
+);
+#endif
 
 const base::FeatureParam<bool> kBackupRefPtrAsanEnableDereferenceCheckParam{
     &kPartitionAllocBackupRefPtr, "asan-enable-dereference-check", true};
@@ -239,14 +249,15 @@ const base::FeatureParam<bool> kBackupRefPtrAsanEnableInstantiationCheckParam{
 //
 // We enable this by default everywhere except for 32-bit Android, since we saw
 // regressions there.
+#if BUILDFLAG(IS_ANDROID) && defined(ARCH_CPU_32_BITS)
 BASE_FEATURE(kPartitionAllocUseDenserDistribution,
              "PartitionAllocUseDenserDistribution",
-#if BUILDFLAG(IS_ANDROID) && defined(ARCH_CPU_32_BITS)
-             FEATURE_DISABLED_BY_DEFAULT
+             FEATURE_DISABLED_BY_DEFAULT);
 #else
-             FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kPartitionAllocUseDenserDistribution,
+             "PartitionAllocUseDenserDistribution",
+             FEATURE_ENABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_ANDROID) && defined(ARCH_CPU_32_BITS)
-);
 const base::FeatureParam<BucketDistributionMode>::Option
     kPartitionAllocBucketDistributionOption[] = {
         {BucketDistributionMode::kDefault, "default"},
