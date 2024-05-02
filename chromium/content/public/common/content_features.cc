@@ -24,28 +24,30 @@ BASE_FEATURE(kAudioServiceLaunchOnStartup,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Runs the audio service in a separate process.
-BASE_FEATURE(kAudioServiceOutOfProcess,
-             "AudioServiceOutOfProcess",
-// TODO(crbug.com/40118868): Remove !IS_CHROMEOS_LACROS once lacros starts being
-// built with OS_CHROMEOS instead of OS_LINUX.
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || \
     (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_CHROMEOS_LACROS))
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kAudioServiceOutOfProcess,
+             "AudioServiceOutOfProcess",
+             // TODO(crbug.com/1052397): Remove !IS_CHROMEOS_LACROS once lacros
+             // starts being built with OS_CHROMEOS instead of OS_LINUX.
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kAudioServiceOutOfProcess,
+             "AudioServiceOutOfProcess",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Enables the audio-service sandbox. This feature has an effect only when the
 // kAudioServiceOutOfProcess feature is enabled.
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_FUCHSIA)
 BASE_FEATURE(kAudioServiceSandbox,
              "AudioServiceSandbox",
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_FUCHSIA)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kAudioServiceSandbox,
+             "AudioServiceSandbox",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Kill switch for Background Fetch.
 BASE_FEATURE(kBackgroundFetch,
@@ -79,15 +81,15 @@ BASE_FEATURE(kBackForwardCacheEntryTimeout,
 
 // BackForwardCacheMemoryControls is enabled only on Android to disable
 // BackForwardCache for lower memory devices due to memory limiations.
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kBackForwardCacheMemoryControls,
              "BackForwardCacheMemoryControls",
-
-#if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kBackForwardCacheMemoryControls,
+             "BackForwardCacheMemoryControls",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // When enabled, attempts to navigate an iframe by an initiator that isn't
 // same-origin to the iframe's parent are blocked. Exceptions are: (i) same-
@@ -234,14 +236,15 @@ BASE_FEATURE(kCrashReporting,
 
 // Controls whether the Digital Goods API is enabled.
 // https://github.com/WICG/digital-goods/
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kDigitalGoodsApi,
              "DigitalGoodsApi",
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kDigitalGoodsApi,
+             "DigitalGoodsApi",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Enables the DIPS (Detect Incidental Party State) feature.
 // On by default to allow for collecting metrics. All potentially dangerous
@@ -527,14 +530,15 @@ BASE_FEATURE(kLegacyWindowsDWriteFontFallback,
              "LegacyWindowsDWriteFontFallback",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kLogJsConsoleMessages,
              "LogJsConsoleMessages",
-#if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_DISABLED_BY_DEFAULT
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kLogJsConsoleMessages,
+             "LogJsConsoleMessages",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
 
 // Uses ThreadType::kCompositing for the main thread
 BASE_FEATURE(kMainThreadCompositingPriority,
@@ -547,15 +551,12 @@ BASE_FEATURE(kMainThreadCompositingPriority,
 // creation. This will break ordering guarantees between different agent
 // scheduling groups (ordering withing a group is still preserved).
 // DO NOT USE! The feature is not yet fully implemented. See crbug.com/1111231.
-BASE_FEATURE(kMBIMode,
-             "MBIMode",
 #if BUILDFLAG(MBI_MODE_PER_RENDER_PROCESS_HOST) || \
     BUILDFLAG(MBI_MODE_PER_SITE_INSTANCE)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kMBIMode, "MBIMode", base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kMBIMode, "MBIMode", base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 const base::FeatureParam<MBIMode>::Option mbi_mode_types[] = {
     {MBIMode::kLegacy, "legacy"},
     {MBIMode::kEnabledPerRenderProcessHost, "per_render_process_host"},
@@ -575,24 +576,26 @@ const base::FeatureParam<MBIMode> kMBIModeParam {
 // When NavigationNetworkResponseQueue is enabled, the browser will schedule
 // some tasks related to navigation network responses in a kHigh priority
 // queue.
+#if BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kNavigationNetworkResponseQueue,
              "NavigationNetworkResponseQueue",
-#if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_DISABLED_BY_DEFAULT
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kNavigationNetworkResponseQueue,
+             "NavigationNetworkResponseQueue",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
 
 // If the network service is enabled, runs it in process.
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kNetworkServiceInProcess,
              "NetworkServiceInProcess2",
-#if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kNetworkServiceInProcess,
+             "NetworkServiceInProcess2",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Kill switch for Web Notification content images.
 BASE_FEATURE(kNotificationContentImage,
@@ -786,14 +789,15 @@ BASE_FEATURE(kRenderDocumentCompositorReuse,
 // Enables retrying to obtain list of available cameras after restarting the
 // video capture service if a previous attempt failed, which could be caused
 // by a service crash.
+#if BUILDFLAG(IS_MAC)
 BASE_FEATURE(kRetryGetVideoCaptureDeviceInfos,
              "RetryGetVideoCaptureDeviceInfos",
-#if BUILDFLAG(IS_MAC)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kRetryGetVideoCaptureDeviceInfos,
+             "RetryGetVideoCaptureDeviceInfos",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Reuses RenderProcessHost up to a certain threshold. This mode ignores the
 // soft process limit and behaves just like a process-per-site policy for all
@@ -853,14 +857,15 @@ BASE_FEATURE(kSchedQoSOnResourcedForChrome,
 // Browser-side feature flag for Secure Payment Confirmation (SPC) that also
 // controls the render side feature state. SPC is not currently available on
 // Linux or ChromeOS, as it requires platform authenticator support.
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kSecurePaymentConfirmation,
              "SecurePaymentConfirmationBrowser",
-#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kSecurePaymentConfirmation,
+             "SecurePaymentConfirmationBrowser",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Used to control whether to remove the restriction that PaymentCredential in
 // WebAuthn and secure payment confirmation method in PaymentRequest API must
@@ -928,15 +933,17 @@ BASE_FEATURE(kSiteInstanceGroupsForDataUrls,
 // Cross-Origin-Opener-Policy header.  Note that this is only intended to be
 // used on Android, which does not use strict site isolation. See
 // https://crbug.com/1018656.
+#if BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(
+    kSiteIsolationForCrossOriginOpenerPolicy,
+    "SiteIsolationForCrossOriginOpenerPolicy",
+    // Enabled by default on Android only; see https://crbug.com/1206770.
+    base::FEATURE_ENABLED_BY_DEFAULT);
+#else
 BASE_FEATURE(kSiteIsolationForCrossOriginOpenerPolicy,
              "SiteIsolationForCrossOriginOpenerPolicy",
-// Enabled by default on Android only; see https://crbug.com/1206770.
-#if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // This feature param (true by default) controls whether sites are persisted
 // across restarts.
@@ -994,14 +1001,15 @@ BASE_FEATURE(kSyntheticPointerActions,
 // feature, a long-press touch gesture can start either a drag or a context-menu
 // in Blink, not both (more precisely, a context menu is shown only if a drag
 // cannot be started).
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kTouchDragAndContextMenu,
              "TouchDragAndContextMenu",
-#if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kTouchDragAndContextMenu,
+             "TouchDragAndContextMenu",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 #if BUILDFLAG(IS_ANDROID)
 // When the context menu is triggered, the browser allows motion in a small
@@ -1073,18 +1081,19 @@ BASE_FEATURE(kWebAssemblyTiering,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Enable WebAssembly trap handler.
-BASE_FEATURE(kWebAssemblyTrapHandler,
-             "WebAssemblyTrapHandler",
 #if ((BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_WIN) ||  \
       BUILDFLAG(IS_MAC)) &&                                                  \
      defined(ARCH_CPU_X86_64)) ||                                            \
     ((BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_MAC)) && \
      defined(ARCH_CPU_ARM64))
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kWebAssemblyTrapHandler,
+             "WebAssemblyTrapHandler",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kWebAssemblyTrapHandler,
+             "WebAssemblyTrapHandler",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Controls whether the Web Bluetooth API is enabled:
 // https://webbluetoothcg.github.io/web-bluetooth/

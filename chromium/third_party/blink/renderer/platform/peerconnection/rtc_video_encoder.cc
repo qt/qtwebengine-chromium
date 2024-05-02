@@ -315,11 +315,13 @@ namespace features {
 
 // Enabled-by-default, except for Android where SW encoder for H264 is not
 // available. The existence of this flag remains only for testing purposes.
+#if !BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kForceSoftwareForLowResolutions,
              "ForceSoftwareForLowResolutions",
-#if !BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kForceSoftwareForLowResolutions,
+             "ForceSoftwareForLowResolutions",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 

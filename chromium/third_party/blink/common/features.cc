@@ -769,16 +769,17 @@ BASE_FEATURE(kDropInputEventsBeforeFirstPaint,
              "DropInputEventsBeforeFirstPaint",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kEstablishGpuChannelAsync,
              "EstablishGpuChannelAsync",
-#if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kEstablishGpuChannelAsync,
+             "EstablishGpuChannelAsync",
              // TODO(crbug.com/1278147): Experiment with this more on desktop to
              // see if it can help.
-             base::FEATURE_DISABLED_BY_DEFAULT
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Exposes Event Timing keyboard InteractionId of composition and keypress
 // events.
@@ -939,16 +940,18 @@ BASE_FEATURE(kFileSystemUrlNavigationForChromeAppsOnly,
              "FileSystemUrlNavigationForChromeAppsOnly",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kFilteringScrollPrediction,
              "FilteringScrollPrediction",
-#if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kFilteringScrollPrediction,
+             "FilteringScrollPrediction",
              // TODO(b/284271126): Run the experiment on desktop and enable if
              // positive.
-             base::FEATURE_DISABLED_BY_DEFAULT
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
+
 const base::FeatureParam<std::string> kFilteringScrollPredictionFilterParam{
     &kFilteringScrollPrediction, "filter", "one_euro_filter"};
 
@@ -1460,14 +1463,15 @@ BASE_FEATURE(kLegacyParsingOfXContentTypeOptions,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // A feature to reduce the set of resources fetched by No-State Prefetch.
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kLightweightNoStatePrefetch,
              "LightweightNoStatePrefetch",
-#if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kLightweightNoStatePrefetch,
+             "LightweightNoStatePrefetch",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 BASE_FEATURE(kLinkPreview, "LinkPreview", base::FEATURE_DISABLED_BY_DEFAULT);
 
@@ -1499,14 +1503,15 @@ BASE_FEATURE(kLogUnexpectedIPCPostedToBackForwardCachedDocuments,
 // Allow low latency canvas 2D to be in overlay (generally meaning scanned out
 // directly to display), even if regular canvas are not in overlay
 // (Canvas2DImageChromium is disabled).
+#if BUILDFLAG(IS_CHROMEOS_ASH)
 BASE_FEATURE(kLowLatencyCanvas2dImageChromium,
              "LowLatencyCanvas2dImageChromium",
-#if BUILDFLAG(IS_CHROMEOS_ASH)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kLowLatencyCanvas2dImageChromium,
+             "LowLatencyCanvas2dImageChromium",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_CHROMEOS)
-);
 
 // Allow low latency WebGL to be in overlay (generally meaning scanned out
 // directly to display), even if regular canvas are not in overlay
@@ -1668,8 +1673,18 @@ const base::FeatureParam<int>
 // anchor element will be extracted and recorded.
 // Note that the desktop roll out is being done separately from android. See
 // https://crbug.com/40258405
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kNavigationPredictor,
              "NavigationPredictor",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+#else
+BASE_FEATURE(kNavigationPredictor,
+             "NavigationPredictor",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+#endif
+
+BASE_FEATURE(kNewBaseUrlInheritanceBehavior,
+             "NewBaseUrlInheritanceBehavior",
              base::FEATURE_ENABLED_BY_DEFAULT);
 const base::FeatureParam<int> kPredictorTrafficClientEnabledPercent{
     &kNavigationPredictor, "traffic_client_enabled_percent",
@@ -1788,26 +1803,29 @@ BASE_FEATURE(kPrecompileInlineScripts,
 
 // Whether we should composite a PLSA (paint layer scrollable area) even if it
 // means losing lcd text.
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kPreferCompositingToLCDText,
              "PreferCompositingToLCDText",
-// On Android we never have LCD text. On Chrome OS we prefer composited
-// scrolling for better scrolling performance.
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             // On Android we never have LCD text. On Chrome OS we prefer
+             // composited scrolling for better scrolling performance.
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kPreferCompositingToLCDText,
+             "PreferCompositingToLCDText",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_WIN)
 BASE_FEATURE(kPrefetchFontLookupTables,
              "PrefetchFontLookupTables",
-#if BUILDFLAG(IS_WIN)
-             base::FEATURE_DISABLED_BY_DEFAULT
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(
+    kPrefetchFontLookupTables,
+    "PrefetchFontLookupTables",
+    base::FEATURE_DISABLED_BY_DEFAULT base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
 #endif
 
 // Prefetch request properties are updated to be privacy-preserving. See
@@ -2288,16 +2306,17 @@ const base::FeatureParam<bool> kSpeculativeServiceWorkerWarmUpOnIdleTimeout{
 
 // Freeze scheduler task queues in background after allowed grace time.
 // "stop" is a legacy name.
+#if BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CAST_ANDROID)
 BASE_FEATURE(kStopInBackground,
              "stop-in-background",
-// b/248036988 - Disable this for Chromecast on Android builds to prevent apps
-// that play audio in the background from stopping.
-#if BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CAST_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             // b/248036988 - Disable this for Chromecast on Android builds to
+             // prevent apps that play audio in the background from stopping.
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kStopInBackground,
+             "stop-in-background",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Reduces the work done during renderer initialization.
 BASE_FEATURE(kStreamlineRendererInit,
@@ -2449,14 +2468,15 @@ BASE_FEATURE(kWebRtcAudioSinkUseTimestampAligner,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Enable borderless mode for desktop PWAs. go/borderless-mode
+#if BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kWebAppBorderless,
              "WebAppBorderless",
-#if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kWebAppBorderless,
+             "WebAppBorderless",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_CHROMEOS)
-);
 
 // Controls scope extensions feature in web apps. Controls parsing of
 // "scope_extensions" field in web app manifests. See explainer for more
@@ -2497,14 +2517,15 @@ BASE_FEATURE(kWebAudioHandleOnRenderError,
 /// Enables cache-aware WebFonts loading. See https://crbug.com/570205.
 // The feature is disabled on Android for WebView API issue discussed at
 // https://crbug.com/942440.
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kWebFontsCacheAwareTimeoutAdaption,
              "WebFontsCacheAwareTimeoutAdaption",
-#if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_DISABLED_BY_DEFAULT
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kWebFontsCacheAwareTimeoutAdaption,
+             "WebFontsCacheAwareTimeoutAdaption",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
 
 BASE_FEATURE(kWebRtcCombinedNetworkAndWorkerThread,
              "WebRtcCombinedNetworkAndWorkerThread",
@@ -2540,15 +2561,16 @@ BASE_FEATURE(kWebRtcThreadsUseResourceEfficientType,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Instructs WebRTC to honor the Min/Max Video Encode Accelerator dimensions.
+#if BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kWebRtcUseMinMaxVEADimensions,
              "WebRtcUseMinMaxVEADimensions",
-// TODO(crbug.com/1008491): enable other platforms.
-#if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             // TODO(crbug.com/1008491): enable other platforms.
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kWebRtcUseMinMaxVEADimensions,
+             "WebRtcUseMinMaxVEADimensions",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Allow access to WebSQL APIs.
 BASE_FEATURE(kWebSQLAccess, "kWebSQLAccess", base::FEATURE_DISABLED_BY_DEFAULT);

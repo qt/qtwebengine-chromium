@@ -30,11 +30,13 @@ BASE_FEATURE(kAutofillEnableAndroidNKeyForFidoAuthentication,
 
 // When enabled, card art images (instead of network icons) will be shown in
 // Payments Autofill UI.
+#if BUILDFLAG(IS_IOS)
 BASE_FEATURE(kAutofillEnableCardArtImage,
              "AutofillEnableCardArtImage",
-#if BUILDFLAG(IS_IOS)
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kAutofillEnableCardArtImage,
+             "AutofillEnableCardArtImage",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
@@ -64,11 +66,13 @@ BASE_FEATURE(kAutofillEnableCardBenefitsSync,
 
 // When enabled, card product name (instead of issuer network) will be shown in
 // Payments Autofill UI.
+#if BUILDFLAG(IS_IOS)
 BASE_FEATURE(kAutofillEnableCardProductName,
              "AutofillEnableCardProductName",
-#if BUILDFLAG(IS_IOS)
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kAutofillEnableCardProductName,
+             "AutofillEnableCardProductName",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
@@ -172,7 +176,11 @@ BASE_FEATURE(kAutofillEnableStickyManualFallbackForCards,
 BASE_FEATURE(kAutofillEnableSyncingOfPixBankAccounts,
              "AutofillEnableSyncingOfPixBankAccounts",
              base::FEATURE_DISABLED_BY_DEFAULT);
-#endif  // BUILDFLAG(IS_ANDROID)
+#else
+BASE_FEATURE(kAutofillEnableUpdateVirtualCardEnrollment,
+             "AutofillEnableUpdateVirtualCardEnrollment",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+#endif
 
 // When enabled, Chrome will trigger 3DS authentication during a virtual card
 // retrieval if a challenge is required, 3DS authentication is available for

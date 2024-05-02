@@ -134,41 +134,44 @@ const base::FeatureParam<std::string>
 // --enable-gpu-rasterization or --disable-gpu-rasterization.
 // DefaultEnableGpuRasterization has launched on Mac, Windows, ChromeOS,
 // Android and Linux.
-BASE_FEATURE(kDefaultEnableGpuRasterization,
-             "DefaultEnableGpuRasterization",
 #if BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS) || \
     BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_FUCHSIA) || BUILDFLAG(IS_LINUX)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kDefaultEnableGpuRasterization,
+             "DefaultEnableGpuRasterization",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kDefaultEnableGpuRasterization,
+             "DefaultEnableGpuRasterization",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 #if !BUILDFLAG(IS_ANDROID)
 // Enables the use of out of process rasterization for canvas.
-BASE_FEATURE(kCanvasOopRasterization,
-             "CanvasOopRasterization",
 #if BUILDFLAG(IS_FUCHSIA) || BUILDFLAG(IS_IOS) || BUILDFLAG(IS_WIN) ||         \
     (BUILDFLAG(IS_MAC) && defined(ARCH_CPU_ARM64)) || BUILDFLAG(IS_ANDROID) || \
     BUILDFLAG(IS_CHROMEOS_LACROS) || BUILDFLAG(IS_LINUX)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kCanvasOopRasterization,
+             "CanvasOopRasterization",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kCanvasOopRasterization,
+             "CanvasOopRasterization",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 #endif
 
 // Enables the use of out of process rasterization for canvas even when GPU tile
 // rasterization is disabled. CanvasOopRasterization is still required to be
 // enabled to use OOP-C path with this flag.
+#if BUILDFLAG(IS_WIN)
 BASE_FEATURE(kCanvasOopWithoutGpuTileRaster,
              "CanvasOopWithoutGpuTileRaster",
-#if BUILDFLAG(IS_WIN)
-             base::FEATURE_DISABLED_BY_DEFAULT
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kCanvasOopWithoutGpuTileRaster,
+             "CanvasOopWithoutGpuTileRaster",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
 
 // Enables the use of MSAA in skia on Ice Lake and later intel architectures.
 BASE_FEATURE(kEnableMSAAOnNewIntelGPUs,
@@ -237,23 +240,17 @@ BASE_FEATURE(kVaapiWebPImageDecodeAcceleration,
 // native implementation if --use-vulkan flag is not used. Otherwise
 // --use-vulkan will be followed.
 // Note Android WebView uses kWebViewDrawFunctorUsesVulkan instead of this.
-BASE_FEATURE(kVulkan,
-             "Vulkan",
 #if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kVulkan, "Vulkan", base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kVulkan, "Vulkan", base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
-BASE_FEATURE(kEnableDrDc,
-             "EnableDrDc",
 #if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kEnableDrDc, "EnableDrDc", base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kEnableDrDc, "EnableDrDc", base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Enable WebGPU on gpu service side only. This is used with origin trial and
 // enabled by default on supported platforms.
@@ -419,14 +416,15 @@ BASE_FEATURE(kPurgeOldCacheEntriesOnTimer,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Using the new SchedulerDfs GPU scheduler.
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kUseGpuSchedulerDfs,
              "UseGpuSchedulerDfs",
-#if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_DISABLED_BY_DEFAULT
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kUseGpuSchedulerDfs,
+             "UseGpuSchedulerDfs",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
 
 // When the application is in background, whether to perform immediate GPU
 // cleanup when executing deferred requests.

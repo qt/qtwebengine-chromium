@@ -352,14 +352,15 @@ BASE_FEATURE(kPlatformHEVCEncoderSupport,
 
 // Let videos be resumed via remote controls (for example, the notification)
 // when in background.
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kResumeBackgroundVideo,
              "resume-background-video",
-#if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kResumeBackgroundVideo,
+             "resume-background-video",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 #if BUILDFLAG(IS_MAC)
 // Enables system audio sharing using ScreenCaptureKit when screen sharing on
@@ -412,15 +413,16 @@ BASE_FEATURE(kUseAndroidOverlayForSecureOnly,
 // Allows usage of OS-level (platform) audio encoders.
 // TODO(crbug.com/41495931): re-enable platform audio encoders on arm64 win when
 //                          querying for OS support works as expected.
-BASE_FEATURE(kPlatformAudioEncoder,
-             "PlatformAudioEncoder",
 #if (BUILDFLAG(IS_WIN) && !defined(ARCH_CPU_ARM64)) || BUILDFLAG(IS_MAC) || \
     BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kPlatformAudioEncoder,
+             "PlatformAudioEncoder",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kPlatformAudioEncoder,
+             "PlatformAudioEncoder",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // If enabled, RTCVideoDecoderAdapter will wrap a DecoderStream as a video
 // decoder, rather than using MojoVideoDecoder.  This causes the RTC external
@@ -452,24 +454,26 @@ BASE_FEATURE(kCdmProcessSiteIsolation,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Enables the "Copy Video Frame" context menu item.
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kContextMenuCopyVideoFrame,
              "ContextMenuCopyVideoFrame",
-#if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_DISABLED_BY_DEFAULT
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kContextMenuCopyVideoFrame,
+             "ContextMenuCopyVideoFrame",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
 
 // Enables the "Save Video Frame As" context menu item.
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kContextMenuSaveVideoFrameAs,
              "ContextMenuSaveVideoFrameAs",
-#if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_DISABLED_BY_DEFAULT
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kContextMenuSaveVideoFrameAs,
+             "ContextMenuSaveVideoFrameAs",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
 
 // Enables the "Search Video Frame with <Search Provider>" context menu item.
 BASE_FEATURE(kContextMenuSearchForVideoFrame,
@@ -593,9 +597,16 @@ BASE_FEATURE(kMemoryPressureBasedSourceBufferGC,
 
 // Enables writing pixels together for all planes to a multi-planar shared
 // image.
+#if BUILDFLAG(IS_WIN)
 BASE_FEATURE(kUseWritePixelsYUV,
              "UseWritePixelsYUV",
+             // Windows requires d3d11 write pixel support in angle.
              base::FEATURE_DISABLED_BY_DEFAULT);
+#else
+BASE_FEATURE(kUseWritePixelsYUV,
+             "UseWritePixelsYUV",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+#endif
 
 // Enables creating single shared image and mailbox for multi-planar formats for
 // hardware video decoders.
@@ -611,14 +622,15 @@ BASE_FEATURE(kUseMultiPlaneFormatForSoftwareVideo,
 
 // Enable binding multiple shared images to a single GpuMemoryBuffer for video
 // frames created by video capture.
+#if BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_WIN)
 BASE_FEATURE(kMultiPlaneVideoCaptureSharedImages,
              "MultiPlaneVideoCaptureSharedImages",
-#if BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_WIN)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kMultiPlaneVideoCaptureSharedImages,
+             "MultiPlaneVideoCaptureSharedImages",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Controls whether the Mirroring Service will fetch, analyze, and store
 // information on the quality of the session using RTCP logs.
@@ -650,14 +662,15 @@ BASE_FEATURE(kD3D11VideoDecoderUseSharedHandle,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Runs the media service in the GPU process on a dedicated thread.
+#if BUILDFLAG(IS_WIN)
 BASE_FEATURE(kDedicatedMediaServiceThread,
              "DedicatedMediaServiceThread",
-#if BUILDFLAG(IS_WIN)
-             base::FEATURE_DISABLED_BY_DEFAULT
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kDedicatedMediaServiceThread,
+             "DedicatedMediaServiceThread",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
 
 // Defer requesting persistent audio focus until the WebContents is audible.
 // The goal is to prevent silent playback from taking audio focus from
@@ -686,14 +699,15 @@ BASE_FEATURE(kFallbackAfterDecodeError,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Show toolbar button that opens dialog for controlling media sessions.
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
 BASE_FEATURE(kGlobalMediaControls,
              "GlobalMediaControls",
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kGlobalMediaControls,
+             "GlobalMediaControls",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Auto-dismiss global media controls.
 BASE_FEATURE(kGlobalMediaControlsAutoDismiss,
@@ -714,26 +728,28 @@ BASE_FEATURE(kGlobalMediaControlsUpdatedUI,
 
 #if !BUILDFLAG(IS_ANDROID)
 // If enabled, users can request Media Remoting without fullscreen-in-tab.
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
 BASE_FEATURE(kMediaRemotingWithoutFullscreen,
              "MediaRemotingWithoutFullscreen",
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kMediaRemotingWithoutFullscreen,
+             "MediaRemotingWithoutFullscreen",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 #endif
 
 // Show picture-in-picture button in Global Media Controls.
-BASE_FEATURE(kGlobalMediaControlsPictureInPicture,
-             "GlobalMediaControlsPictureInPicture",
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
     BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_CHROMEOS_LACROS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kGlobalMediaControlsPictureInPicture,
+             "GlobalMediaControlsPictureInPicture",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kGlobalMediaControlsPictureInPicture,
+             "GlobalMediaControlsPictureInPicture",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Enable selection of audio output device in Global Media Controls.
 BASE_FEATURE(kGlobalMediaControlsSeamlessTransfer,
@@ -976,14 +992,15 @@ BASE_FEATURE(kLiveCaptionUseWaitK,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Live Caption can be used in multiple languages, as opposed to just English.
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
 BASE_FEATURE(kLiveCaptionMultiLanguage,
              "LiveCaptionMultiLanguage",
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kLiveCaptionMultiLanguage,
+             "LiveCaptionMultiLanguage",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Enable experimental Live Caption languages.
 BASE_FEATURE(kLiveCaptionExperimentalLanguages,
@@ -1076,15 +1093,16 @@ BASE_FEATURE(kWebContentsCaptureHiDpi,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Enables handling of hardware media keys for controlling media.
-BASE_FEATURE(kHardwareMediaKeyHandling,
-             "HardwareMediaKeyHandling",
 #if BUILDFLAG(IS_CHROMEOS_ASH) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || \
     BUILDFLAG(USE_MPRIS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kHardwareMediaKeyHandling,
+             "HardwareMediaKeyHandling",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kHardwareMediaKeyHandling,
+             "HardwareMediaKeyHandling",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Enables a platform-specific resolution cutoff for prioritizing platform
 // decoders over software decoders or vice-versa.
@@ -1235,14 +1253,15 @@ BASE_FEATURE(kChromeOSHWAV1Decoder,
 
 // Enable Variable Bitrate encoding with hardware accelerated encoders on
 // ChromeOS.
+#if defined(ARCH_CPU_X86_FAMILY)
 BASE_FEATURE(kChromeOSHWVBREncoding,
              "ChromeOSHWVBREncoding",
-#if defined(ARCH_CPU_X86_FAMILY)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kChromeOSHWVBREncoding,
+             "ChromeOSHWVBREncoding",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 #if !BUILDFLAG(USE_VAAPI)
 // Enable the hardware-accelerated direct video decoder instead of the one
@@ -1451,25 +1470,19 @@ BASE_FEATURE(kBackgroundListening,
 // still be used as a proxy between renderers and utility processes (see
 // go/oop-vd-dd). This feature and |kUseGTFOOutOfProcessVideoDecoding| are
 // mutually exclusive.
+#if BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kUseOutOfProcessVideoDecoding,
              "UseOutOfProcessVideoDecoding",
-#if BUILDFLAG(IS_CHROMEOS)
              base::FEATURE_ENABLED_BY_DEFAULT
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kUseOutOfProcessVideoDecoding,
+             "UseOutOfProcessVideoDecoding",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
-// Spawn utility processes to perform hardware decode acceleration on behalf of
-// renderer processes (instead of using the GPU process). The GPU process will
-// NOT be used as a proxy between renderers and utility processes (see
-// go/oopvd-gtfo-dd). This feature and |kUseOutOfProcessVideoDecoding| are
-// mutually exclusive.
-// Owner: andrescj@chromium.org
-// Expiry: one milestone after this path is enabled by default
 BASE_FEATURE(kUseGTFOOutOfProcessVideoDecoding,
              "UseGTFOOutOfProcessVideoDecoding",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(ALLOW_OOP_VIDEO_DECODER)
 
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
@@ -1489,26 +1502,28 @@ BASE_FEATURE(kUseSequencedTaskRunnerForMediaService,
 // a COM STA TaskRunner.
 #if !BUILDFLAG(IS_WIN)
 // Use SequencedTaskRunner for MojoVideoEncodeAcceleratorProvider.
+#if BUILDFLAG(IS_APPLE)
 BASE_FEATURE(kUseSequencedTaskRunnerForMojoVEAProvider,
              "UseSequencedTaskRunnerForMojoVEAProvider",
-#if BUILDFLAG(IS_APPLE)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kUseSequencedTaskRunnerForMojoVEAProvider,
+             "UseSequencedTaskRunnerForMojoVEAProvider",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 #endif  // !BUILDFLAG(IS_WIN)
 
 // Use TaskRunner for each MojoVideoEncodeAcceleratorService. Replaces
 // per-accelerator encoding task runner.
+#if BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_WIN)
 BASE_FEATURE(kUseTaskRunnerForMojoVEAService,
              "UseTaskRunnerForMojoVEAService",
-#if BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_WIN)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kUseTaskRunnerForMojoVEAService,
+             "UseTaskRunnerForMojoVEAService",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Feature flag to run the MojoAudioDecoderService in a sequence different than
 // the other mojo media services. On some Android devices, MediaCodec may block
@@ -1568,22 +1583,25 @@ BASE_FEATURE(kReduceHardwareVideoDecoderBuffers,
 // - PreloadMediaEngagementData: enables a list of origins to be considered as
 //   having a high MEI until there is enough local data to determine the user's
 //   preferred behaviour.
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
 BASE_FEATURE(kMediaEngagementBypassAutoplayPolicies,
              "MediaEngagementBypassAutoplayPolicies",
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
-             base::FEATURE_DISABLED_BY_DEFAULT
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kMediaEngagementBypassAutoplayPolicies,
+             "MediaEngagementBypassAutoplayPolicies",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
+
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
 BASE_FEATURE(kPreloadMediaEngagementData,
              "PreloadMediaEngagementData",
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
-             base::FEATURE_DISABLED_BY_DEFAULT
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kPreloadMediaEngagementData,
+             "PreloadMediaEngagementData",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
 
 BASE_FEATURE(kMediaEngagementHTTPSOnly,
              "MediaEngagementHTTPSOnly",
@@ -1620,14 +1638,15 @@ BASE_FEATURE(kMediaPowerExperiment,
 
 // Enables flash to be ducked by audio focus. This is enabled on Chrome OS which
 // has audio focus enabled.
+#if BUILDFLAG(IS_CHROMEOS_ASH)
 BASE_FEATURE(kAudioFocusDuckFlash,
              "AudioFocusDuckFlash",
-#if BUILDFLAG(IS_CHROMEOS_ASH)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kAudioFocusDuckFlash,
+             "AudioFocusDuckFlash",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Only affects Android. Suspends a media session when audio focus is lost; when
 // this setting is disabled, an Android media session will not be suspended when
@@ -1645,14 +1664,15 @@ BASE_FEATURE(kHideIncognitoMediaMetadata,
 
 // Enables the internal Media Session logic without enabling the Media Session
 // service.
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kInternalMediaSession,
              "InternalMediaSession",
-#if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kInternalMediaSession,
+             "InternalMediaSession",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Keypress detection which serves as input to noise suppression methods
 // in WebRTC clients. This functionality is enabled by default but it can be
@@ -1762,14 +1782,15 @@ const base::FeatureParam<double> kAudioOffloadBufferTimeMs{
 // development by ensuring logs can be seen without a remote desktop session.
 // Only affects builds when DCHECK is on for non-ERROR logs (ERROR logs are
 // always sent to the log stream). Enabled by default on Android and ChromeOS.
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kMediaLogToConsole,
              "MediaLogToConsole",
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kMediaLogToConsole,
+             "MediaLogToConsole",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 BASE_FEATURE(kLibvpxUseChromeThreads,
              "LibvpxUseChromeThreads",

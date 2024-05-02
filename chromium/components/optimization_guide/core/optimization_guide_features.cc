@@ -72,14 +72,15 @@ BASE_FEATURE(kOptimizationTargetPrediction,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Enables the downloading of models.
+#if BUILDFLAG(BUILD_WITH_TFLITE_LIB)
 BASE_FEATURE(kOptimizationGuideModelDownloading,
              "OptimizationGuideModelDownloading",
-#if BUILDFLAG(BUILD_WITH_TFLITE_LIB)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else   // BUILD_WITH_TFLITE_LIB
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kOptimizationGuideModelDownloading,
+             "OptimizationGuideModelDownloading",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // !BUILD_WITH_TFLITE_LIB
-);
 
 // Enables push notification of hints.
 BASE_FEATURE(kPushNotifications,
@@ -119,7 +120,6 @@ BASE_FEATURE(kOptimizationHintsComponent,
 BASE_FEATURE(kOptimizationGuideFetchingForSRP,
              "OptimizationHintsFetchingSRP",
              base::FEATURE_ENABLED_BY_DEFAULT);
-
 
 // Kill switch for disabling model quality logging.
 BASE_FEATURE(kModelQualityLogging,

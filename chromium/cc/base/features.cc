@@ -32,11 +32,13 @@ bool IsNaturalScrollAnimationEnabled() {
 
 // Whether the compositor should attempt to sync with the scroll handlers before
 // submitting a frame.
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
 BASE_FEATURE(kSynchronizedScrolling,
              "SynchronizedScrolling",
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
              base::FEATURE_DISABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kSynchronizedScrolling,
+             "SynchronizedScrolling",
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 
@@ -90,14 +92,16 @@ BASE_FEATURE(kNormalPriorityImageDecoding,
 
 // Note that kUseDMSAAForTiles only controls vulkan launch on android. We will
 // be using a separate flag to control the launch on GL.
+
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kUseDMSAAForTiles,
              "UseDMSAAForTiles",
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kUseDMSAAForTiles,
+             "UseDMSAAForTiles",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 #if BUILDFLAG(IS_ANDROID)
 // This flag controls the DMSAA for tile raster on Android GL backend whereas
@@ -115,11 +119,13 @@ BASE_FEATURE(kUpdateBrowserControlsWithoutProxy,
              "UpdateBrowserControlsWithoutProxy",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
 BASE_FEATURE(kUIEnableSharedImageCacheForGpu,
              "UIEnableSharedImageCacheForGpu",
-#if BUILDFLAG(IS_CHROMEOS_LACROS)
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kUIEnableSharedImageCacheForGpu,
+             "UIEnableSharedImageCacheForGpu",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
@@ -151,8 +157,7 @@ BASE_FEATURE(kReclaimPrepaintTilesWhenIdle,
 // to find a better balance between checkerboarding and memory.
 BASE_FEATURE(kSmallerInterestArea,
              "SmallerInterestArea",
-             base::FEATURE_DISABLED_BY_DEFAULT
-);
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 const base::FeatureParam<int> kInterestAreaSizeInPixels{
     &kSmallerInterestArea, "size_in_pixels", kDefaultInterestAreaSizeInPixels};

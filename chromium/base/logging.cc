@@ -1225,9 +1225,6 @@ ScopedLoggingSettings::~ScopedLoggingSettings() {
   // name and handle state, including re-initializing the VLOG internal state.
   CHECK(InitLogging({.logging_dest = logging_destination_,
                      .log_file_path = log_file_name_,
-#if BUILDFLAG(IS_CHROMEOS)
-                     .log_format = log_format_
-#endif
   })) << "~ScopedLoggingSettings() failed to restore settings.";
 
   // Restore plain data settings.

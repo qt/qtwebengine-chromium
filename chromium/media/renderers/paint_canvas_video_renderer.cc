@@ -711,16 +711,19 @@ VideoPixelFormatAsSkYUVAInfoValues(VideoPixelFormat format) {
   }
 }
 
-#if !BUILDFLAG(IS_ANDROID)
 // Controls whether the one-copy path when copying a VideoFrame to a GL texture
 // is enabled or disabled. The one-copy path being enabled is the default
 // production state, with this Feature being used to be able to disable this
 // path for performance testing.
+#if BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kOneCopyUploadOfVideoFrameToGLTexture,
+             "OneCopyUploadOfVideoFrameToGLTexture",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+#else
 BASE_FEATURE(kOneCopyUploadOfVideoFrameToGLTexture,
              "OneCopyUploadOfVideoFrameToGLTexture",
              base::FEATURE_ENABLED_BY_DEFAULT);
-#endif  // !BUILDFLAG(IS_ANDROID)
-
+#endif
 }  // anonymous namespace
 
 // Generates an RGB image from a VideoFrame. Convert YUV to RGB plain on GPU.
