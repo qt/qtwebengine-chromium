@@ -39,13 +39,16 @@ BASE_FEATURE(kIgnoreBubblingCollisionIfSourceDevicesMismatch,
 // Flag guard for fix for crbug.com/346629231.
 BASE_FEATURE(kScrollBubblingFix, base::FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kUpdateScrollPredictorInputMapping,
 #if BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kUpdateScrollPredictorInputMapping,
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kUpdateScrollPredictorInputMapping,
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
+
 BASE_FEATURE_PARAM(bool,
                    kGenerateSyntheticScrollPrediction,
                    &kUpdateScrollPredictorInputMapping,

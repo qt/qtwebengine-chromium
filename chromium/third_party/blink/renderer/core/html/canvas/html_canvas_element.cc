@@ -145,13 +145,13 @@ constexpr unsigned kMaxCanvasAnimationBacklog = 2;
 constexpr unsigned kDisableAccelerationThreshold = 100;
 constexpr unsigned kDisableAccelerationPercent = 95;
 
-BASE_FEATURE(kOneCopyCanvasCapture,
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_WIN)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kOneCopyCanvasCapture,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kOneCopyCanvasCapture,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Kill switch for not requesting continuous begin frame for low latency canvas.
 BASE_FEATURE(kLowLatencyCanvasNoBeginFrameKillSwitch,

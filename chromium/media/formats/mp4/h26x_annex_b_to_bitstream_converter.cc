@@ -16,11 +16,12 @@ namespace media {
 H26xAnnexBToBitstreamConverter::H26xAnnexBToBitstreamConverter(
     VideoCodec video_codec,
     bool add_parameter_sets_in_bitstream) {
-  CHECK(video_codec == VideoCodec::kH264
 #if BUILDFLAG(ENABLE_HEVC_PARSER_AND_HW_DECODER)
-        || video_codec == VideoCodec::kHEVC
+  CHECK(video_codec == VideoCodec::kH264
+        || video_codec == VideoCodec::kHEVC);
+#else
+  CHECK(video_codec == VideoCodec::kH264);
 #endif
-  );
   if (video_codec == VideoCodec::kH264) {
     h264_converter_ = std::make_unique<H264AnnexBToAvcBitstreamConverter>(
         add_parameter_sets_in_bitstream);

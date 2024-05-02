@@ -31,14 +31,16 @@ BASE_FEATURE(kChromeStaticPinning,
              "ChromeStaticPinning",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kAsyncDns,
 #if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_ANDROID) || \
     BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX)
+BASE_FEATURE(kAsyncDns,
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kAsyncDns,
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 
 BASE_FEATURE(kDnsTransactionDynamicTimeouts, base::FEATURE_DISABLED_BY_DEFAULT);
 
@@ -261,18 +263,20 @@ BASE_FEATURE(kKerberosInBrowserRedirect, base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 
 // A flag to use asynchronous session creation for new QUIC sessions.
-BASE_FEATURE(kAsyncQuicSession,
 #if BUILDFLAG(IS_WIN)
+BASE_FEATURE(kAsyncQuicSession,
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kAsyncQuicSession,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
 // A flag to make multiport context creation asynchronous.
-BASE_FEATURE(kAsyncMultiPortPath,
 #if !BUILDFLAG(CRONET_BUILD) && (BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID))
+BASE_FEATURE(kAsyncMultiPortPath,
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kAsyncMultiPortPath,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
@@ -412,13 +416,15 @@ BASE_FEATURE(kCompressionDictionaryTransportRequireKnownRootCert,
 BASE_FEATURE(kReportingApiEnableEnterpriseCookieIssues,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kSimdutfBase64Support,
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX)
+BASE_FEATURE(kSimdutfBase64Support,
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kSimdutfBase64Support,
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 
 BASE_FEATURE(kFurtherOptimizeParsingDataUrls, base::FEATURE_ENABLED_BY_DEFAULT);
 

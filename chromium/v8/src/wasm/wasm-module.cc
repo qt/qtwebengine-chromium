@@ -722,13 +722,15 @@ int GetSourcePosition(const WasmModule* module, uint32_t func_index,
 }
 
 size_t WasmModule::EstimateStoredSize() const {
-  UPDATE_WHEN_CLASS_CHANGES(WasmModule,
 #if V8_ENABLE_DRUMBRAKE
+  UPDATE_WHEN_CLASS_CHANGES(WasmModule,
                             912
-#else   // V8_ENABLE_DRUMBRAKE
-                            880
-#endif  // V8_ENABLE_DRUMBRAKE
   );
+#else   // V8_ENABLE_DRUMBRAKE
+  UPDATE_WHEN_CLASS_CHANGES(WasmModule,
+                            880
+  );
+#endif  // V8_ENABLE_DRUMBRAKE
   return sizeof(WasmModule) +                            // --
          signature_storage.TotalReservedSize() +         // --
          ContentSize(types) +                            // --
@@ -803,13 +805,14 @@ size_t TypeFeedbackStorage::EstimateCurrentMemoryConsumption() const {
 }
 
 size_t WasmModule::EstimateCurrentMemoryConsumption() const {
-  UPDATE_WHEN_CLASS_CHANGES(WasmModule,
 #if V8_ENABLE_DRUMBRAKE
-                            912
+  UPDATE_WHEN_CLASS_CHANGES(WasmModule,
+                            912);
 #else   // V8_ENABLE_DRUMBRAKE
-                            880
+  UPDATE_WHEN_CLASS_CHANGES(WasmModule,
+                            880);
 #endif  // V8_ENABLE_DRUMBRAKE
-  );
+
   size_t result = EstimateStoredSize();
 
   result += type_feedback.EstimateCurrentMemoryConsumption();

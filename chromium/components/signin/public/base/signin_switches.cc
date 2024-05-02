@@ -234,13 +234,15 @@ BASE_FEATURE(kEnableASWebAuthenticationSession,
 
 #if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
 // Enable experimental binding session credentials to the device.
-BASE_FEATURE(kEnableBoundSessionCredentials,
 #if BUILDFLAG(IS_WIN)
+BASE_FEATURE(kEnableBoundSessionCredentials,
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kEnableBoundSessionCredentials,
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 bool IsBoundSessionCredentialsEnabled(const PrefService* profile_prefs) {
   // Enterprise policy takes precedence over the feature value.
   if (profile_prefs->HasPrefPath(prefs::kBoundSessionCredentialsEnabled)) {
@@ -258,13 +260,15 @@ const base::FeatureParam<std::string>
 
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
 // Enables Chrome refresh tokens binding to a device.
-BASE_FEATURE(kEnableChromeRefreshTokenBinding,
 #if BUILDFLAG(IS_WIN)
+BASE_FEATURE(kEnableChromeRefreshTokenBinding,
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kEnableChromeRefreshTokenBinding,
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 bool IsChromeRefreshTokenBindingEnabled(const PrefService* profile_prefs) {
   // Enterprise policy takes precedence over the feature value.
   if (profile_prefs->HasPrefPath(prefs::kBoundSessionCredentialsEnabled)) {
@@ -314,13 +318,13 @@ BASE_FEATURE(kEnableOAuthMultiloginStandardCookiesBindingForGlicPartition,
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
 
-BASE_FEATURE(kEnablePreferencesAccountStorage,
 #if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kEnablePreferencesAccountStorage,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kEnablePreferencesAccountStorage,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_CHROMEOS)
-);
 
 #if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kEnableSeamlessSignin, base::FEATURE_DISABLED_BY_DEFAULT);
@@ -563,13 +567,14 @@ BASE_FEATURE(kSupportErrorsInProfilePicker, base::FEATURE_ENABLED_BY_DEFAULT);
 BASE_FEATURE(kSupportWebSigninAddSession, base::FEATURE_ENABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_ANDROID)
 
-BASE_FEATURE(kSyncEnableBookmarksInTransportMode,
 #if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kSyncEnableBookmarksInTransportMode,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kSyncEnableBookmarksInTransportMode,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
+
 
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
 // When enabled, Chrome will always use the /IssueToken endpoint to fetch access

@@ -164,24 +164,28 @@ BASE_FEATURE(kUseNewServiceWorkerTaskQueue, base::FEATURE_DISABLED_BY_DEFAULT);
 BASE_FEATURE(kDeclarativeNetRequestHeaderSubstitution,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kDisableDisableExtensionsExceptCommandLineSwitch,
 #if BUILDFLAG(GOOGLE_CHROME_BRANDING) && !BUILDFLAG(IS_CHROMEOS)
+BASE_FEATURE(kDisableDisableExtensionsExceptCommandLineSwitch,
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif  // BUILDFLAG(GOOGLE_CHROME_BRANDING)
 );
+#else
+BASE_FEATURE(kDisableDisableExtensionsExceptCommandLineSwitch,
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif  // BUILDFLAG(GOOGLE_CHROME_BRANDING)
 
-BASE_FEATURE(kDisableExtensionsOnChromeUrlsSwitch,
 // TODO (crbug.com/426554244): Determine if this switch should be
 // removed for desktop-android builds as well.
 #if BUILDFLAG(GOOGLE_CHROME_BRANDING) && !BUILDFLAG(IS_CHROMEOS) && \
     !BUILDFLAG(ENABLE_DESKTOP_ANDROID_EXTENSIONS)
+BASE_FEATURE(kDisableExtensionsOnChromeUrlsSwitch,
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kDisableExtensionsOnChromeUrlsSwitch,
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 
 BASE_FEATURE(kUserScriptUserExtensionToggle, base::FEATURE_ENABLED_BY_DEFAULT);
 

@@ -294,12 +294,16 @@ void Snapshot::ClearReconstructableDataForSerialization(
       }
 #ifdef DEBUG
       if (clear_recompilable_data) {
+#if V8_ENABLE_WEBASSEMBLY
         DCHECK(fun->shared()->HasBuiltinId() ||
                fun->shared()->IsApiFunction() ||
-#if V8_ENABLE_WEBASSEMBLY
                fun->shared()->HasWasmExportedFunctionData(isolate) ||
-#endif  // V8_ENABLE_WEBASSEMBLY
                fun->shared()->HasUncompiledDataWithoutPreparseData(isolate));
+#else
+        DCHECK(fun->shared()->HasBuiltinId() ||
+               fun->shared()->IsApiFunction() ||
+               fun->shared()->HasUncompiledDataWithoutPreparseData(isolate));
+#endif  // V8_ENABLE_WEBASSEMBLY
       }
 #endif  // DEBUG
     }

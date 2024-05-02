@@ -67,13 +67,15 @@
 // base/metrics/field_trial.cc
 namespace base {
 
-BASE_FEATURE(kPassHistogramSharedMemoryOnLaunch,
 #if BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kPassHistogramSharedMemoryOnLaunch,
              FEATURE_DISABLED_BY_DEFAULT
-#else
-             FEATURE_ENABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kPassHistogramSharedMemoryOnLaunch,
+             FEATURE_ENABLED_BY_DEFAULT
+);
+#endif
 
 #if BUILDFLAG(IS_APPLE)
 const shared_memory::SharedMemoryMachPortRendezvousKey

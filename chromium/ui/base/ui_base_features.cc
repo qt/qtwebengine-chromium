@@ -117,13 +117,13 @@ BASE_FEATURE(kWaylandSessionManagement, base::FEATURE_DISABLED_BY_DEFAULT);
 // to be used in determining the concrete object size of a custom cursor in
 // blink. Currently enabled by default on Windows only.
 // TODO(crbug.com/40845719) - Implement for other platforms.
-BASE_FEATURE(kSystemCursorSizeSupported,
 #if BUILDFLAG(IS_WIN)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kSystemCursorSizeSupported,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kSystemCursorSizeSupported,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 bool IsSystemCursorSizeSupported() {
   return base::FeatureList::IsEnabled(kSystemCursorSizeSupported);
@@ -148,14 +148,14 @@ bool IsUiGpuRasterizationEnabled() {
 }
 
 // Enables scrolling with layers under ui using the ui::Compositor.
+#if BUILDFLAG(IS_APPLE)
 BASE_FEATURE(kUiCompositorScrollWithLayers,
 // TODO(crbug.com/40471184): Use composited scrolling on all platforms.
-#if BUILDFLAG(IS_APPLE)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kUiCompositorScrollWithLayers,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // TODO(crbug.com/389771428): Switch the ui::Compositor to use
 // cc::PropertyTrees and layer lists rather than layer trees.
@@ -163,23 +163,23 @@ BASE_FEATURE(kUiCompositorUsesLayerLists, base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Enables the use of a touch fling curve that is based on the behavior of
 // native apps on Windows.
-BASE_FEATURE(kExperimentalFlingAnimation,
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kExperimentalFlingAnimation,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kExperimentalFlingAnimation,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 #if !BUILDFLAG(IS_APPLE)
 // Cached in Java as well, make sure defaults are updated together.
-BASE_FEATURE(kElasticOverscroll,
 #if BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kElasticOverscroll,
              base::FEATURE_ENABLED_BY_DEFAULT
 #else  // BUILDFLAG(IS_ANDROID)
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kElasticOverscroll,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 #endif
 
 // Limits the scroll delta to the size of the scroller when scrolled using the
@@ -212,26 +212,28 @@ bool IsImprovedKeyboardShortcutsEnabled() {
 // selection gestures and quick menu options. Planning to release for ChromeOS
 // first, then possibly also enable some parts for other platforms later.
 // TODO(b/262297017): Clean up after touch text editing redesign ships.
-BASE_FEATURE(kTouchTextEditingRedesign,
 #if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kTouchTextEditingRedesign,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kTouchTextEditingRedesign,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 bool IsTouchTextEditingRedesignEnabled() {
   return base::FeatureList::IsEnabled(kTouchTextEditingRedesign);
 }
 
 // This feature enables drag and drop using touch input devices.
-BASE_FEATURE(kTouchDragAndDrop,
 #if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_WIN)
+BASE_FEATURE(kTouchDragAndDrop,
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kTouchDragAndDrop,
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 
 bool IsTouchDragAndDropEnabled() {
   static const bool touch_drag_and_drop_enabled =
@@ -251,14 +253,12 @@ bool IsForcedColorsEnabled() {
 // Enables the eye-dropper in the refresh color-picker for Windows, Mac
 // and Linux. This feature will be released for other platforms in later
 // milestones.
-BASE_FEATURE(kEyeDropper,
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
     BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kEyeDropper, base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kEyeDropper, base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 bool IsEyeDropperEnabled() {
   return base::FeatureList::IsEnabled(features::kEyeDropper);
@@ -386,13 +386,13 @@ BASE_FEATURE(kUseGammaContrastRegistrySettings,
 
 BASE_FEATURE(kBubbleFrameViewTitleIsHeading, base::FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kEnableGestureBeginEndTypes,
 #if !BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kEnableGestureBeginEndTypes,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kEnableGestureBeginEndTypes,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // !BUILDFLAG(IS_CHROMEOS)
-);
 
 BASE_FEATURE(kUseUtf8EncodingForSvgImage, base::FEATURE_ENABLED_BY_DEFAULT);
 
@@ -408,14 +408,17 @@ BASE_FEATURE(kPlatformClipboardMonitor, base::FEATURE_ENABLED_BY_DEFAULT);
 // If enabled, all draw commands recorded on canvas are done in pixel aligned
 // measurements. This also enables scaling of all elements in views and layers
 // to be done via corner points. See https://crbug.com/720596 for details.
+#if BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kEnablePixelCanvasRecording,
              "enable-pixel-canvas-recording",
-#if BUILDFLAG(IS_CHROMEOS)
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kEnablePixelCanvasRecording,
+             "enable-pixel-canvas-recording",
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 
 bool IsPixelCanvasRecordingEnabled() {
   return base::FeatureList::IsEnabled(features::kEnablePixelCanvasRecording);

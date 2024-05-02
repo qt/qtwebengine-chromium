@@ -20,10 +20,11 @@ constexpr base::FeatureParam<bool> kDarkenWebsitesCheckboxOptOut{
 namespace features {
 
 // Enables unused site permission module in Safety Check.
-BASE_FEATURE(kSafetyCheckUnusedSitePermissions,
 #if BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kSafetyCheckUnusedSitePermissions,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #else   // BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kSafetyCheckUnusedSitePermissions,
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_ANDROID)
 

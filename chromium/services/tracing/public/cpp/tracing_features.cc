@@ -29,24 +29,24 @@ BASE_FEATURE(kPerfettoBackendParams,
 }  // namespace
 
 // Runs the tracing service as an in-process browser service.
-BASE_FEATURE(kTracingServiceInProcess,
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CASTOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kTracingServiceInProcess,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kTracingServiceInProcess,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // This feature is enabled by default on WebView using
 // `variations::FeatureOverrides` since we can't have #ifdef for WebView only.
-BASE_FEATURE(kEnablePerfettoSystemTracing,
 #if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_FUCHSIA)
+BASE_FEATURE(kEnablePerfettoSystemTracing,
     // TODO(crbug.com/42050521): Read from structured config on Fuchsia.
-    base::FEATURE_ENABLED_BY_DEFAULT
+    base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-    base::FEATURE_DISABLED_BY_DEFAULT
-#endif
-);
+BASE_FEATURE(kEnablePerfettoSystemTracing,
+    base::FEATURE_DISABLED_BY_DEFAULT);
+    #endif
 
 BASE_FEATURE(kEnablePerfettoSystemBackgroundTracing,
              base::FEATURE_DISABLED_BY_DEFAULT);

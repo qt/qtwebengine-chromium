@@ -104,10 +104,11 @@ BASE_FEATURE(kAutofillEnableBuyNowPayLaterUpdatedSuggestionSecondLineString,
 
 // When enabled, card benefits offered by American Express will be shown in
 // Payments Autofill UI.
-BASE_FEATURE(kAutofillEnableCardBenefitsForAmericanExpress,
 #if BUILDFLAG(IS_IOS)
+BASE_FEATURE(kAutofillEnableCardBenefitsForAmericanExpress,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kAutofillEnableCardBenefitsForAmericanExpress,
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 
@@ -124,10 +125,11 @@ BASE_FEATURE(kAutofillEnableCardBenefitsForBmo,
 
 // When enabled, Chrome will show metadata along with other card information
 // when the virtual card is presented to users.
-BASE_FEATURE(kAutofillEnableCardBenefitsSync,
 #if BUILDFLAG(IS_IOS)
+BASE_FEATURE(kAutofillEnableCardBenefitsSync,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kAutofillEnableCardBenefitsSync,
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 
@@ -138,19 +140,21 @@ BASE_FEATURE(kAutofillEnableCardInfoRuntimeRetrieval,
 
 // When enabled, we will store CVC for both local and server credit cards. This
 // will also allow the users to autofill their CVCs on checkout pages.
-BASE_FEATURE(kAutofillEnableCvcStorageAndFilling,
 #if BUILDFLAG(IS_IOS)
+BASE_FEATURE(kAutofillEnableCvcStorageAndFilling,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kAutofillEnableCvcStorageAndFilling,
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 
 // When enabled, will enhance CVV storage project. Provide better suggestion,
 // resolve conflict with COF project and add logging.
-BASE_FEATURE(kAutofillEnableCvcStorageAndFillingEnhancement,
 #if BUILDFLAG(IS_IOS)
+BASE_FEATURE(kAutofillEnableCvcStorageAndFillingEnhancement,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kAutofillEnableCvcStorageAndFillingEnhancement,
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 
@@ -182,11 +186,12 @@ BASE_FEATURE(kAutofillEnableFlatRateCardBenefitsFromCurinos,
 
 // When enabled, server card retrieval will begin with a risk-based check
 // instead of jumping straight to CVC or biometric auth.
-BASE_FEATURE(kAutofillEnableFpanRiskBasedAuthentication,
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_ANDROID) || \
     BUILDFLAG(IS_IOS)
+BASE_FEATURE(kAutofillEnableFpanRiskBasedAuthentication,
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kAutofillEnableFpanRiskBasedAuthentication,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 

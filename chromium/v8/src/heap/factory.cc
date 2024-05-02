@@ -2525,11 +2525,14 @@ DirectHandle<Map> Factory::NewContextfulMap(
     DirectHandle<NativeContext> native_context, InstanceType type,
     int instance_size, ElementsKind elements_kind, int inobject_properties,
     AllocationType allocation_type) {
-  DCHECK(InstanceTypeChecker::IsNativeContextSpecific(type) ||
 #if V8_ENABLE_WEBASSEMBLY
+  DCHECK(InstanceTypeChecker::IsNativeContextSpecific(type) ||
          InstanceTypeChecker::IsWasmStruct(type) ||
-#endif  // V8_ENABLE_WEBASSEMBLY
          InstanceTypeChecker::IsMap(type));
+#else
+  DCHECK(InstanceTypeChecker::IsNativeContextSpecific(type) ||
+         InstanceTypeChecker::IsMap(type));
+#endif  // V8_ENABLE_WEBASSEMBLY
   auto meta_map_provider = [native_context] {
     // Tie new map to given native context.
     return native_context->meta_map();

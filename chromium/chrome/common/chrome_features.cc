@@ -194,22 +194,22 @@ BASE_FEATURE(kCustomizeTabGroupColorPalette, base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Moves the Extensions "puzzle piece" icon from the title bar into the app menu
 // for web app windows.
-BASE_FEATURE(kDesktopPWAsElidedExtensionsMenu,
 #if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kDesktopPWAsElidedExtensionsMenu,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kDesktopPWAsElidedExtensionsMenu,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // If enabled, allow-listed PWAs cannot be closed manually by the user.
-BASE_FEATURE(kDesktopPWAsPreventClose,
 #if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kDesktopPWAsPreventClose,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kDesktopPWAsPreventClose,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 BASE_FEATURE(kPwaNavigationCapturingWithScopeExtensions,
              "DesktopPWAsLinkCapturingWithScopeExtensions",
@@ -601,16 +601,21 @@ const base::FeatureParam<std::string> kGlicGuestURL{
 BASE_FEATURE(kGlicShowStatusTrayIcon, base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
+#if BUILDFLAG(GOOGLE_CHROME_BRANDING)
 BASE_FEATURE_PARAM(std::string,
                    kGlicUserStatusUrl,
                    &kGlicUserStatusCheck,
                    "glic-user-status-url",
-#if BUILDFLAG(GOOGLE_CHROME_BRANDING)
                    "https://geminiweb-pa.googleapis.com/v1/glicStatus"
-#else
-                   ""
-#endif
 );
+#else
+BASE_FEATURE_PARAM(std::string,
+                   kGlicUserStatusUrl,
+                   &kGlicUserStatusCheck,
+                   "glic-user-status-url",
+                   ""
+);
+#endif
 
 BASE_FEATURE_PARAM(base::TimeDelta,
                    kGlicUserStatusRequestDelay,
@@ -724,16 +729,21 @@ BASE_FEATURE_PARAM(
     &kGlicLearnMoreURLConfig,
     "glic-actuation-on-web-toggle-things-to-consider-unexpected-results-url",
     "");
+#if BUILDFLAG(GOOGLE_CHROME_BRANDING)
 BASE_FEATURE_PARAM(std::string,
                    kGlicExtensionsManagementUrl,
                    &kGlicLearnMoreURLConfig,
                    "glic-extensions-management-url",
-#if BUILDFLAG(GOOGLE_CHROME_BRANDING)
                    "https://gemini.google.com/apps"
-#else
-                   ""
-#endif
 );
+#else
+BASE_FEATURE_PARAM(std::string,
+                   kGlicExtensionsManagementUrl,
+                   &kGlicLearnMoreURLConfig,
+                   "glic-extensions-management-url",
+                   ""
+);
+#endif
 
 BASE_FEATURE(kGlicCSPConfig, base::FEATURE_ENABLED_BY_DEFAULT);
 const base::FeatureParam<std::string> kGlicAllowedOriginsOverride{
@@ -1606,13 +1616,13 @@ const base::FeatureParam<base::TimeDelta> kSCTLogMaxIngestionRandomDelay{
 //
 // TODO(alexmos): Move this and the other site isolation features below to
 // browser_features, as they are only used on the browser side.
-BASE_FEATURE(kSitePerProcess,
 #if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kSitePerProcess,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kSitePerProcess,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
 
 // The default behavior to opt devtools users out of
 // kProcessPerSiteUpToMainFrameThreshold.

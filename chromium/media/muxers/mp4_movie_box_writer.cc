@@ -56,6 +56,7 @@ void Mp4FileTypeBoxWriter::Write(BoxByteStream& writer) {
 
   // It should include at least one of `avc1`, `avc3`, `av01`, `vp09`, `hvc1`,
   // or `hev1`.
+#if BUILDFLAG(ENABLE_HEVC_PARSER_AND_HW_DECODER)
   CHECK_GE(box_->compatible_brands.size(), 1u);
   CHECK(box_->compatible_brands.end() !=
         std::find_if(box_->compatible_brands.begin(),
@@ -64,12 +65,21 @@ void Mp4FileTypeBoxWriter::Write(BoxByteStream& writer) {
                               type == mp4::FOURCC_AVC3 ||
                               type == mp4::FOURCC_AV01 ||
                               type == mp4::FOURCC_VP09
-#if BUILDFLAG(ENABLE_HEVC_PARSER_AND_HW_DECODER)
                               || type == mp4::FOURCC_HVC1 ||
                               type == mp4::FOURCC_HEV1
-#endif
                            ;
                      }));
+#else
+  CHECK(box_->compatible_brands.end() !=
+        std::find_if(box_->compatible_brands.begin(),
+                     box_->compatible_brands.end(), [](const auto type) {
+                       return type == mp4::FOURCC_AVC1 ||
+                              type == mp4::FOURCC_AVC3 ||
+                              type == mp4::FOURCC_AV01 ||
+                              type == mp4::FOURCC_VP09
+                           ;
+                     }));
+#endif
 
   for (const uint32_t& brand : box_->compatible_brands) {
     writer.WriteU32(brand);
