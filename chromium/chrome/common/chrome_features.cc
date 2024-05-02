@@ -119,14 +119,17 @@ const base::FeatureParam<std::string> kBoardingPassDetectorUrlParam(
 BASE_FEATURE(kBorealis, "Borealis", base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
 BASE_FEATURE(kEnableCertManagementUIV2,
              "EnableCertManagementUIV2",
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kEnableCertManagementUIV2,
+             "EnableCertManagementUIV2",
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 
 BASE_FEATURE(kEnableCertManagementUIV2Write,
              "EnableCertManagementUIV2Write",
@@ -207,35 +210,38 @@ BASE_FEATURE(kChromeStructuredMetrics,
 
 // Moves the Extensions "puzzle piece" icon from the title bar into the app menu
 // for web app windows.
+#if BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kDesktopPWAsElidedExtensionsMenu,
              "DesktopPWAsElidedExtensionsMenu",
-#if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kDesktopPWAsElidedExtensionsMenu,
+             "DesktopPWAsElidedExtensionsMenu",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Enables or disables Desktop PWAs to be auto-started on OS login.
-BASE_FEATURE(kDesktopPWAsRunOnOsLogin,
-             "DesktopPWAsRunOnOsLogin",
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
     BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kDesktopPWAsRunOnOsLogin,
+             "DesktopPWAsRunOnOsLogin",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kDesktopPWAsRunOnOsLogin,
+             "DesktopPWAsRunOnOsLogin",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // If enabled, allow-listed PWAs cannot be closed manually by the user.
+#if BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kDesktopPWAsPreventClose,
              "DesktopPWAsPreventClose",
-#if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kDesktopPWAsPreventClose,
+             "DesktopPWAsPreventClose",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 BASE_FEATURE(kPwaNavigationCapturingWithScopeExtensions,
              "DesktopPWAsLinkCapturingWithScopeExtensions",
@@ -1200,14 +1206,15 @@ const base::FeatureParam<base::TimeDelta> kSCTLogMaxIngestionRandomDelay{
 //
 // TODO(alexmos): Move this and the other site isolation features below to
 // browser_features, as they are only used on the browser side.
+#if BUILDFLAG(IS_ANDROID) && !BUILDFLAG(ENABLE_ANDROID_SITE_ISOLATION)
 BASE_FEATURE(kSitePerProcess,
              "SitePerProcess",
-#if BUILDFLAG(IS_ANDROID) && !BUILDFLAG(ENABLE_ANDROID_SITE_ISOLATION)
-             base::FEATURE_DISABLED_BY_DEFAULT
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kSitePerProcess,
+             "SitePerProcess",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
 
 // The default behavior to opt devtools users out of
 // kProcessPerSiteUpToMainFrameThreshold.

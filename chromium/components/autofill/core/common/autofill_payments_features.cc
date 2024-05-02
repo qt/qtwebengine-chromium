@@ -42,11 +42,13 @@ BASE_FEATURE(kAutofillEnableBuyNowPayLaterSyncing,
 
 // When enabled, card benefits offered by American Express will be shown in
 // Payments Autofill UI.
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
 BASE_FEATURE(kAutofillEnableCardBenefitsForAmericanExpress,
              "AutofillEnableCardBenefitsForAmericanExpress",
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
              base::FEATURE_DISABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kAutofillEnableCardBenefitsForAmericanExpress,
+             "AutofillEnableCardBenefitsForAmericanExpress",
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 
@@ -63,11 +65,13 @@ BASE_FEATURE(kAutofillEnableCardBenefitsIph,
 
 // When enabled, Chrome will show metadata along with other card information
 // when the virtual card is presented to users.
+#if BUILDFLAG(IS_IOS)
 BASE_FEATURE(kAutofillEnableCardBenefitsSync,
              "AutofillEnableCardBenefitsSync",
-#if BUILDFLAG(IS_IOS)
              base::FEATURE_DISABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kAutofillEnableCardBenefitsSync,
+             "AutofillEnableCardBenefitsSync",
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 
@@ -85,21 +89,25 @@ BASE_FEATURE(kAutofillEnableCardProductName,
 
 // When enabled, we will store CVC for both local and server credit cards. This
 // will also allow the users to autofill their CVCs on checkout pages.
+#if BUILDFLAG(IS_IOS)
 BASE_FEATURE(kAutofillEnableCvcStorageAndFilling,
              "AutofillEnableCvcStorageAndFilling",
-#if BUILDFLAG(IS_IOS)
              base::FEATURE_DISABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kAutofillEnableCvcStorageAndFilling,
+             "AutofillEnableCvcStorageAndFilling",
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 
 // When enabled, will enhance CVV storage project. Provide better suggestion,
 // resolve conflict with COF project and add logging.
+#if BUILDFLAG(IS_IOS)
 BASE_FEATURE(kAutofillEnableCvcStorageAndFillingEnhancement,
              "AutofillEnableCvcStorageAndFillingEnhancement",
-#if BUILDFLAG(IS_IOS)
              base::FEATURE_DISABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kAutofillEnableCvcStorageAndFillingEnhancement,
+             "AutofillEnableCvcStorageAndFillingEnhancement",
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 
@@ -118,11 +126,13 @@ BASE_FEATURE(kAutofillEnableNewCardArtAndNetworkImages,
 
 // When enabled, server card retrieval will begin with a risk-based check
 // instead of jumping straight to CVC or biometric auth.
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kAutofillEnableFpanRiskBasedAuthentication,
              "AutofillEnableFpanRiskBasedAuthentication",
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kAutofillEnableFpanRiskBasedAuthentication,
+             "AutofillEnableFpanRiskBasedAuthentication",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
@@ -223,11 +233,13 @@ BASE_FEATURE(kAutofillEnableVerveCardSupport,
 
 // When enabled, Chrome will show metadata along with other card information
 // when the virtual card is presented to users.
+#if BUILDFLAG(IS_IOS)
 BASE_FEATURE(kAutofillEnableVirtualCardMetadata,
              "AutofillEnableVirtualCardMetadata",
-#if BUILDFLAG(IS_IOS)
              base::FEATURE_DISABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kAutofillEnableVirtualCardMetadata,
+             "AutofillEnableVirtualCardMetadata",
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 

@@ -41,14 +41,15 @@ BASE_FEATURE(kFeatureParamWithCache,
 // Use the Rust JSON parser. Enabled everywhere except Android, where the switch
 // from using the C++ parser in-thread to using the Rust parser in a thread-pool
 // introduces too much latency.
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kUseRustJsonParser,
              "UseRustJsonParser",
-#if BUILDFLAG(IS_ANDROID)
-             FEATURE_DISABLED_BY_DEFAULT
+             FEATURE_DISABLED_BY_DEFAULT);
 #else
-             FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kUseRustJsonParser,
+             "UseRustJsonParser",
+             FEATURE_ENABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_ANDROID)
-);
 
 // If true, use the Rust JSON parser in-thread; otherwise, it runs in a thread
 // pool.

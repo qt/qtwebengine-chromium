@@ -75,7 +75,7 @@ ThreadTicks ThreadNow() {
 void AddConvertableToTraceFormat(
     base::trace_event::ConvertableToTraceFormat* value,
     perfetto::protos::pbzero::DebugAnnotation* annotation) {
-  PerfettoProtoAppenderTL proto_appender(annotation);
+  PerfettoProtoAppender proto_appender(annotation);
   if (value->AppendToProto(&proto_appender)) {
     return;
   }

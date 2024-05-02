@@ -40,14 +40,15 @@ BASE_FEATURE(kBackForwardCacheTimeToLiveControl,
 // navigation network responses in a kHigh priority queue.
 // TODO(b/281094330): Run experiment on ChromeOS. Experiment was not run on
 // ChromeOS due to try bot issue.
+#if BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kBeforeUnloadBrowserResponseQueue,
              "BeforeUnloadBrowserResponseQueue",
-#if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_DISABLED_BY_DEFAULT
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kBeforeUnloadBrowserResponseQueue,
+             "BeforeUnloadBrowserResponseQueue",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
 
 // When this feature is enabled, requests to localhost initiated from non-secure
 // contexts in the `unknown` IP address space are blocked.
@@ -74,14 +75,15 @@ BASE_FEATURE(kCapturedSurfaceControlTemporaryZoom,
 
 // If Canvas2D Image Chromium is allowed, this feature controls whether it is
 // enabled.
+#if BUILDFLAG(IS_APPLE)
 BASE_FEATURE(kCanvas2DImageChromium,
              "Canvas2DImageChromium",
-#if BUILDFLAG(IS_APPLE)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kCanvas2DImageChromium,
+             "Canvas2DImageChromium",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // When enabled, code cache does not use a browsing_data filter for deletions.
 BASE_FEATURE(kCodeCacheDeletionWithoutFilter,
@@ -259,14 +261,15 @@ BASE_FEATURE(kIOSurfaceCapturer,
 // If this feature is enabled, media-device enumerations use a cache that is
 // invalidated upon notifications sent by base::SystemMonitor. If disabled, the
 // cache is considered invalid on every enumeration request.
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 BASE_FEATURE(kMediaDevicesSystemMonitorCache,
              "MediaDevicesSystemMonitorCaching",
-#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kMediaDevicesSystemMonitorCache,
+             "MediaDevicesSystemMonitorCaching",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Allow cross-context transfer of MediaStreamTracks.
 BASE_FEATURE(kMediaStreamTrackTransfer,
@@ -350,14 +353,15 @@ BASE_FEATURE(kSendBeaconThrowForBlobWithNonSimpleType,
 // When enabled, try to reuse an unlocked renderer process when COOP swap is
 // happening on prerender initial navigation. Please see crbug.com/41492112 for
 // more details.
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kProcessReuseOnPrerenderCOOPSwap,
              "ProcessReuseOnPrerenderCOOPSwap",
-#if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_DISABLED_BY_DEFAULT
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kProcessReuseOnPrerenderCOOPSwap,
+             "ProcessReuseOnPrerenderCOOPSwap",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
 
 // Whether cross-site frames should get their own SiteInstance even when
 // strict site isolation is disabled. These SiteInstances will still be
@@ -370,23 +374,27 @@ BASE_FEATURE(kProcessSharingWithStrictSiteInstances,
 // that if a user later switches to that tab, the current page will be
 // reloaded.  This will hide crashed subframes from the user at the cost of
 // extra reloads.
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kReloadHiddenTabsWithCrashedSubframes,
              "ReloadHiddenTabsWithCrashedSubframes",
-#if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kReloadHiddenTabsWithCrashedSubframes,
+             "ReloadHiddenTabsWithCrashedSubframes",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kServiceWorkerAvoidMainThreadForInitialization,
              "ServiceWorkerAvoidMainThreadForInitialization",
-#if BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kServiceWorkerAvoidMainThreadForInitialization,
+             "ServiceWorkerAvoidMainThreadForInitialization",
+              base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 
 // The set of ServiceWorker to bypass while making navigation request.
 // They are represented by a comma separated list of HEX encoded SHA256 hash of
@@ -438,14 +446,15 @@ const base::FeatureParam<base::TimeDelta> kTextInputClientIPCTimeout{
 
 // Allows swipe left/right from touchpad change browser navigation. Currently
 // only enabled by default on CrOS and Windows.
+#if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_WIN)
 BASE_FEATURE(kTouchpadOverscrollHistoryNavigation,
              "TouchpadOverscrollHistoryNavigation",
-#if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_WIN)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kTouchpadOverscrollHistoryNavigation,
+             "TouchpadOverscrollHistoryNavigation",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Enable TrustedTypes .fromLiteral support.
 BASE_FEATURE(kTrustedTypesFromLiteral,
