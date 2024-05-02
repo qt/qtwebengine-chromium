@@ -196,22 +196,22 @@ BASE_FEATURE(kDeferSpellcheckInitialization, base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Moves the Extensions "puzzle piece" icon from the title bar into the app menu
 // for web app windows.
-BASE_FEATURE(kDesktopPWAsElidedExtensionsMenu,
 #if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kDesktopPWAsElidedExtensionsMenu,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kDesktopPWAsElidedExtensionsMenu,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // If enabled, allow-listed PWAs cannot be closed manually by the user.
-BASE_FEATURE(kDesktopPWAsPreventClose,
 #if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kDesktopPWAsPreventClose,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kDesktopPWAsPreventClose,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Adds a user settings that allows PWAs to be opened with a tab strip.
 BASE_FEATURE(kDesktopPWAsTabStripSettings, base::FEATURE_DISABLED_BY_DEFAULT);
@@ -567,13 +567,13 @@ BASE_FEATURE(kGlicMessageFirstFre, base::FEATURE_DISABLED_BY_DEFAULT);
 // IMPORTANT: this feature should never be expired! It is used as the main
 // kill-switch for Glic and can be used in the future to handle unsupported
 // Chrome versions.
-BASE_FEATURE(kGlic,
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kGlic,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kGlic,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 BASE_FEATURE(kGlicBackgroundActuation, base::FEATURE_DISABLED_BY_DEFAULT);
 
@@ -666,16 +666,19 @@ BASE_FEATURE(kGlicURLConfig, base::FEATURE_ENABLED_BY_DEFAULT);
 const base::FeatureParam<std::string> kGlicGuestURL{
     &kGlicURLConfig, "glic-guest-url", "https://gemini.google.com/glic"};
 
+#if BUILDFLAG(GOOGLE_CHROME_BRANDING)
 BASE_FEATURE_PARAM(std::string,
                    kGlicUserStatusUrl,
                    &kGlicUserStatusCheck,
                    "glic-user-status-url",
-#if BUILDFLAG(GOOGLE_CHROME_BRANDING)
-                   "https://geminiweb-pa.googleapis.com/v1/glicStatus"
+                   "https://geminiweb-pa.googleapis.com/v1/glicStatus");
 #else
-                   ""
+BASE_FEATURE_PARAM(std::string,
+                   kGlicUserStatusUrl,
+                   &kGlicUserStatusCheck,
+                   "glic-user-status-url",
+                   "");
 #endif
-);
 
 BASE_FEATURE_PARAM(base::TimeDelta,
                    kGlicUserStatusRequestDelay,
@@ -812,16 +815,19 @@ BASE_FEATURE_PARAM(
     &kGlicLearnMoreURLConfig,
     "glic-actuation-on-web-toggle-things-to-consider-unexpected-results-url",
     "https://support.google.com/gemini?p=gic_unexpected_results");
+#if BUILDFLAG(GOOGLE_CHROME_BRANDING)
 BASE_FEATURE_PARAM(std::string,
                    kGlicExtensionsManagementUrl,
                    &kGlicLearnMoreURLConfig,
                    "glic-extensions-management-url",
-#if BUILDFLAG(GOOGLE_CHROME_BRANDING)
-                   "https://gemini.google.com/apps"
+                   "https://gemini.google.com/apps");
 #else
-                   ""
+BASE_FEATURE_PARAM(std::string,
+                   kGlicExtensionsManagementUrl,
+                   &kGlicLearnMoreURLConfig,
+                   "glic-extensions-management-url",
+                   "");
 #endif
-);
 
 BASE_FEATURE(kGlicCSPConfig, base::FEATURE_ENABLED_BY_DEFAULT);
 const base::FeatureParam<std::string> kGlicAllowedOriginsOverride{
@@ -1321,10 +1327,11 @@ BASE_FEATURE(kHttpsFirstModeIncognito, base::FEATURE_ENABLED_BY_DEFAULT);
 // Otherwise, if the origin is not installed, it should behave like the default
 // notifications, but with the added "Close" button. See
 // https://github.com/MicrosoftEdge/MSEdgeExplainers/blob/main/Notifications/notifications_actions_customization.md
-BASE_FEATURE(kIncomingCallNotifications,
 #if BUILDFLAG(IS_WIN)
+BASE_FEATURE(kIncomingCallNotifications,
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kIncomingCallNotifications,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_WIN)
 
@@ -1385,13 +1392,13 @@ BASE_FEATURE(kIsolatedWebAppDevMode, base::FEATURE_DISABLED_BY_DEFAULT);
 BASE_FEATURE(kIsolatedWebAppDevUi, base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Enables users on unmanaged devices to install Isolated Web Apps.
-BASE_FEATURE(kIsolatedWebAppUnmanagedInstall,
 #if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kIsolatedWebAppUnmanagedInstall,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif  // BUILDFLAG(IS_CHROMEOS)
-);
+BASE_FEATURE(kIsolatedWebAppUnmanagedInstall,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+#endif
 
 #if BUILDFLAG(IS_CHROMEOS)
 // Enables users to install isolated web apps in managed guest sessions.
@@ -1647,13 +1654,13 @@ BASE_FEATURE(kServiceWorkerForegroundOnExtensionStartup,
 //
 // TODO(alexmos): Move this and the other site isolation features below to
 // browser_features, as they are only used on the browser side.
-BASE_FEATURE(kSitePerProcess,
 #if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kSitePerProcess,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kSitePerProcess,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
 
 // The default behavior to opt devtools users out of
 // kProcessPerSiteUpToMainFrameThreshold.
@@ -1670,13 +1677,13 @@ BASE_FEATURE(kProcessPerSiteSkipEnterpriseUsers,
 // Note: The "ProcessPerSiteUpToMainFrameThreshold" feature is defined in
 // //content.
 
-BASE_FEATURE(kProcessPerSiteForDSE,
 #if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kProcessPerSiteForDSE,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kProcessPerSiteForDSE,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
 
 // Consider the default search engine (DSE) warmup page as a search results page
 // (SRP), for the purpose of applying the "process per site for DSE SRP" policy

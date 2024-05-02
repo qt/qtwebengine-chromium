@@ -52,13 +52,15 @@ constinit const FeatureParam<UnretainedDanglingPtrMode>
 // `base::allocator::MakeFreeNoOp()`). No-op `free()` stands down in the
 // presence of DPD, but hypothetically fully launching DPD should prompt
 // a rethink of no-op `free()`.
-BASE_FEATURE(kPartitionAllocDanglingPtr,
 #if PA_BUILDFLAG(ENABLE_DANGLING_RAW_PTR_FEATURE_FLAG)
+BASE_FEATURE(kPartitionAllocDanglingPtr,
              FEATURE_ENABLED_BY_DEFAULT
-#else
-             FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kPartitionAllocDanglingPtr,
+             FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 
 constexpr FeatureParam<DanglingPtrMode>::Option kDanglingPtrModeOption[] = {
     {DanglingPtrMode::kCrash, "crash"},
@@ -87,10 +89,11 @@ constinit const FeatureParam<DanglingPtrType> kDanglingPtrTypeParam{
 // Use a larger maximum thread cache cacheable bucket size.
 BASE_FEATURE(kPartitionAllocLargeThreadCacheSize, FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kPartitionAllocLargeEmptySlotSpanRing,
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
+BASE_FEATURE(kPartitionAllocLargeEmptySlotSpanRing,
              FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kPartitionAllocLargeEmptySlotSpanRing,
              FEATURE_DISABLED_BY_DEFAULT);
 #endif
 BASE_FEATURE_PARAM(int,
@@ -157,13 +160,13 @@ BASE_FEATURE(kPartitionAllocEventuallyZeroFreedMemory,
 
 #endif  // PA_BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
 
-BASE_FEATURE(kPartitionAllocBackupRefPtr,
 #if PA_BUILDFLAG(ENABLE_BACKUP_REF_PTR_FEATURE_FLAG)
-             FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kPartitionAllocBackupRefPtr,
+             FEATURE_ENABLED_BY_DEFAULT);
 #else
-             FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kPartitionAllocBackupRefPtr,
+             FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 constexpr FeatureParam<BackupRefPtrEnabledProcesses>::Option
     kBackupRefPtrEnabledProcessesOptions[] = {
@@ -173,17 +176,22 @@ constexpr FeatureParam<BackupRefPtrEnabledProcesses>::Option
         {BackupRefPtrEnabledProcesses::kNonRenderer, kNonRendererStr},
         {BackupRefPtrEnabledProcesses::kAllProcesses, kAllProcessesStr}};
 
+#if BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_DESKTOP_ANDROID)
+// Exception for IS_DESKTOP_ANDROID approved in crbug.com/482155132.
 BASE_FEATURE_ENUM_PARAM(BackupRefPtrEnabledProcesses,
                         kBackupRefPtrEnabledProcessesParam,
                         &kPartitionAllocBackupRefPtr,
                         kPAFeatureEnabledProcessesStr,
-// Exception for IS_DESKTOP_ANDROID approved in crbug.com/482155132.
-#if BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_DESKTOP_ANDROID)
                         BackupRefPtrEnabledProcesses::kNonRenderer,
-#else
-                        BackupRefPtrEnabledProcesses::kAllProcesses,
-#endif
                         &kBackupRefPtrEnabledProcessesOptions);
+#else
+BASE_FEATURE_ENUM_PARAM(BackupRefPtrEnabledProcesses,
+                        kBackupRefPtrEnabledProcessesParam,
+                        &kPartitionAllocBackupRefPtr,
+                        kPAFeatureEnabledProcessesStr,
+                        BackupRefPtrEnabledProcesses::kAllProcesses,
+                        &kBackupRefPtrEnabledProcessesOptions);
+#endif
 
 constexpr FeatureParam<BackupRefPtrMode>::Option kBackupRefPtrModeOptions[] = {
     {BackupRefPtrMode::kDisabled, "disabled"},
@@ -212,13 +220,15 @@ constinit const FeatureParam<bool> kBackupRefPtrSuppressCorruptionDetectedCrash{
     false};
 #endif
 
-BASE_FEATURE(kPartitionAllocMemoryTagging,
 #if PA_BUILDFLAG(USE_FULL_MTE) || BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kPartitionAllocMemoryTagging,
              FEATURE_ENABLED_BY_DEFAULT
-#else
-             FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kPartitionAllocMemoryTagging,
+             FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 
 constexpr FeatureParam<MemtagMode>::Option kMemtagModeOptions[] = {
     {MemtagMode::kSync, "sync"},
@@ -264,14 +274,16 @@ constinit const FeatureParam<MemoryTaggingEnabledProcesses>
 BASE_FEATURE(kKillPartitionAllocMemoryTagging, FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_EXPORT BASE_DECLARE_FEATURE(kPartitionAllocPermissiveMte);
-BASE_FEATURE(kPartitionAllocPermissiveMte,
 #if PA_BUILDFLAG(USE_FULL_MTE)
+BASE_FEATURE(kPartitionAllocPermissiveMte,
              // We want to actually crash if USE_FULL_MTE is enabled.
              FEATURE_DISABLED_BY_DEFAULT
-#else
-             FEATURE_ENABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kPartitionAllocPermissiveMte,
+             FEATURE_ENABLED_BY_DEFAULT
+);
+#endif
 
 BASE_FEATURE(kAsanBrpDereferenceCheck, FEATURE_ENABLED_BY_DEFAULT);
 BASE_FEATURE(kAsanBrpExtractionCheck,       // Not much noise at the moment to
@@ -282,28 +294,32 @@ BASE_FEATURE(kAsanBrpInstantiationCheck, FEATURE_ENABLED_BY_DEFAULT);
 //
 // We enable this by default everywhere except for 32-bit Android, since we saw
 // regressions there.
-BASE_FEATURE(kPartitionAllocUseDenserDistribution,
 #if BUILDFLAG(IS_ANDROID) && defined(ARCH_CPU_32_BITS)
-             FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kPartitionAllocUseDenserDistribution,
+             FEATURE_DISABLED_BY_DEFAULT);
 #else
-             FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kPartitionAllocUseDenserDistribution,
+             FEATURE_ENABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_ANDROID) && defined(ARCH_CPU_32_BITS)
-);
-const FeatureParam<BucketDistributionMode>::Option
+const base::FeatureParam<BucketDistributionMode>::Option
     kPartitionAllocBucketDistributionOption[] = {
         {BucketDistributionMode::kDefault, "default"},
         {BucketDistributionMode::kDenser, "denser"},
 };
+#if BUILDFLAG(IS_ANDROID) && defined(ARCH_CPU_32_BITS)
 // Note: Do not use the prepared macro as of no need for a local cache.
 constinit const FeatureParam<BucketDistributionMode>
     kPartitionAllocBucketDistributionParam{
         &kPartitionAllocUseDenserDistribution, "mode",
-#if BUILDFLAG(IS_ANDROID) && defined(ARCH_CPU_32_BITS)
         BucketDistributionMode::kDefault,
-#else
-        BucketDistributionMode::kDenser,
-#endif  // BUILDFLAG(IS_ANDROID) && defined(ARCH_CPU_32_BITS)
         &kPartitionAllocBucketDistributionOption};
+#else
+constinit const FeatureParam<BucketDistributionMode>
+    kPartitionAllocBucketDistributionParam{
+        &kPartitionAllocUseDenserDistribution, "mode",
+        BucketDistributionMode::kDenser,
+        &kPartitionAllocBucketDistributionOption};
+#endif  // BUILDFLAG(IS_ANDROID) && defined(ARCH_CPU_32_BITS)
 
 BASE_FEATURE(kPartitionAllocMemoryReclaimer, FEATURE_ENABLED_BY_DEFAULT);
 BASE_FEATURE_PARAM(TimeDelta,
@@ -378,10 +394,11 @@ constexpr TimeDelta FromPartitionAllocTimeDelta(
   return Microseconds(time_delta.InMicroseconds());
 }
 
-BASE_FEATURE(kPartitionAllocAdjustSizeWhenInForeground,
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
+BASE_FEATURE(kPartitionAllocAdjustSizeWhenInForeground,
              FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kPartitionAllocAdjustSizeWhenInForeground,
              FEATURE_DISABLED_BY_DEFAULT);
 #endif
 BASE_FEATURE_PARAM(

@@ -22,10 +22,11 @@ BASE_FEATURE(kLocalWebApprovals, base::FEATURE_ENABLED_BY_DEFAULT);
 
 // TODO(crbug.com/391799078): Support local web approval for subframes on
 // Desktop.
-BASE_FEATURE(kAllowSubframeLocalWebApprovals,
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS)
+BASE_FEATURE(kAllowSubframeLocalWebApprovals,
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kAllowSubframeLocalWebApprovals,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 

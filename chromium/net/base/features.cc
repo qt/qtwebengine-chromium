@@ -43,14 +43,16 @@ BASE_FEATURE(kChromeStaticPinning,
              "ChromeStaticPinning",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kAsyncDns,
 #if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_ANDROID) || \
     BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX)
+BASE_FEATURE(kAsyncDns,
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kAsyncDns,
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 
 BASE_FEATURE(kOptimisticDnsForTcp, base::FEATURE_DISABLED_BY_DEFAULT);
 const base::FeatureParam<bool> kUseStaleConnectorsForOptimisticDns{
@@ -102,15 +104,15 @@ BASE_FEATURE(kUseStructuredDnsErrors, base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kUseHostResolverCache, base::FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kHappyEyeballsV2,
 #if BUILDFLAG(CRONET_BUILD)
+BASE_FEATURE(kHappyEyeballsV2,
              // Cronet is excluded since StaleHostResolver doesn't support
              // ServiceEndpointRequest, which the HEv2 feature depends on.
-             base::FEATURE_DISABLED_BY_DEFAULT
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kHappyEyeballsV2,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
 
 BASE_FEATURE(kHappyEyeballsV3, base::FEATURE_DISABLED_BY_DEFAULT);
 
@@ -326,18 +328,20 @@ const base::FeatureParam<int> kAvoidEntryCreationForNoStoreCacheSize{
     1000};
 
 // A flag to use asynchronous session creation for new QUIC sessions.
-BASE_FEATURE(kAsyncQuicSession,
 #if BUILDFLAG(IS_WIN)
+BASE_FEATURE(kAsyncQuicSession,
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kAsyncQuicSession,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
 // A flag to make multiport context creation asynchronous.
-BASE_FEATURE(kAsyncMultiPortPath,
 #if !BUILDFLAG(CRONET_BUILD) && (BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID))
+BASE_FEATURE(kAsyncMultiPortPath,
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kAsyncMultiPortPath,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
@@ -411,13 +415,13 @@ BASE_FEATURE(kUseNewAlpsCodepointQUIC, base::FEATURE_ENABLED_BY_DEFAULT);
 BASE_FEATURE(kTruncateBodyToContentLength, base::FEATURE_ENABLED_BY_DEFAULT);
 
 #if BUILDFLAG(IS_APPLE)
-BASE_FEATURE(kUseNetworkPathMonitorForNetworkChangeNotifier,
 #ifdef COMPILE_OLD_NOTIFIER_IMPL
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kUseNetworkPathMonitorForNetworkChangeNotifier,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
-#endif  // COMPILE_OLD_NOTIFIER_IMPL
-);
+BASE_FEATURE(kUseNetworkPathMonitorForNetworkChangeNotifier,
+             base::FEATURE_ENABLED_BY_DEFAULT);
+#endif
 #endif  // BUILDFLAG(IS_APPLE)
 
 #if BUILDFLAG(IS_WIN)
@@ -474,13 +478,15 @@ BASE_FEATURE(kCompressionDictionaryTransportRequireKnownRootCert,
 BASE_FEATURE(kReportingApiEnableEnterpriseCookieIssues,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kSimdutfBase64Support,
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX)
+BASE_FEATURE(kSimdutfBase64Support,
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kSimdutfBase64Support,
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 
 BASE_FEATURE(kFurtherOptimizeParsingDataUrls, base::FEATURE_ENABLED_BY_DEFAULT);
 
@@ -842,13 +848,13 @@ BASE_FEATURE_PARAM(size_t,
 
 BASE_FEATURE(kTryQuicByDefault, base::FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kCloseQuicSessionsOnPreFreeze,
 #if BUILDFLAG(CRONET_BUILD)
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kCloseQuicSessionsOnPreFreeze,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kCloseQuicSessionsOnPreFreeze,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
 
 BASE_FEATURE_PARAM(std::string,
                    kQuicOptions,
@@ -968,8 +974,8 @@ BASE_FEATURE_PARAM(int,
 
 BASE_FEATURE(kTlsGreaseSigalgs, base::FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kEnableBackendCleanupTrackerOnHttpCache,
 #if BUILDFLAG(CRONET_BUILD)
+BASE_FEATURE(kEnableBackendCleanupTrackerOnHttpCache,
              // Disable for Cronet because when a CronetContext is shut down,
              // its dedicated network thread (base::Thread) is destroyed. On
              // shutdown, PostTaskAndReply leaks the reply task (and bound
@@ -978,6 +984,7 @@ BASE_FEATURE(kEnableBackendCleanupTrackerOnHttpCache,
              // hang waiting for cleanup. See crbug.com/534571671.
              base::FEATURE_DISABLED_BY_DEFAULT);
 #else   // BUILDFLAG(CRONET_BUILD)
+BASE_FEATURE(kEnableBackendCleanupTrackerOnHttpCache,
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(CRONET_BUILD)
 

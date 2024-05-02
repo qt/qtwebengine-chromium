@@ -102,13 +102,13 @@ constexpr base::TimeDelta kBusyLoopAggressiveTime = base::Milliseconds(500);
 //
 // Android only, as it's been evaluated in the field only on this platform.
 // TODO(crbug.com/503682317): Evaluate on desktop as well.
-BASE_FEATURE(kLowerPriorityForCompositorGestures,
 #if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kLowerPriorityForCompositorGestures,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kLowerPriorityForCompositorGestures,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 
 #if BUILDFLAG(IS_ANDROID)

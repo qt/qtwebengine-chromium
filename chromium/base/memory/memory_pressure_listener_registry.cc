@@ -22,30 +22,41 @@ namespace {
 
 MemoryPressureListenerRegistry* g_memory_pressure_listener_registry = nullptr;
 
-BASE_FEATURE(kSuppressMemoryListeners,
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS) || \
     BUILDFLAG(IS_ANDROID)
-             FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kSuppressMemoryListeners,
+             FEATURE_ENABLED_BY_DEFAULT);
 #else
-             FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kSuppressMemoryListeners,
+             FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 BASE_FEATURE_PARAM(std::string,
                    kSuppressMemoryListenersMask,
                    &kSuppressMemoryListeners,
                    "suppress_memory_listeners_mask",
-#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
-                   "0200200202220200020020020002020020000002000000020"
+                   "0200200202220200020020020002020020000002000000020");
 #elif BUILDFLAG(IS_CHROMEOS)
-                   "0000000200000200000000000000000000000000000000000"
+BASE_FEATURE_PARAM(std::string,
+                   kSuppressMemoryListenersMask,
+                   &kSuppressMemoryListeners,
+                   "suppress_memory_listeners_mask",
+                   "0000000200000200000000000000000000000000000000000");
 #elif BUILDFLAG(IS_ANDROID)
+BASE_FEATURE_PARAM(std::string,
+                   kSuppressMemoryListenersMask,
+                   &kSuppressMemoryListeners,
+                   "suppress_memory_listeners_mask",
                    // Only disable PrerenderHostRegistry.
-                   "0000000000000000000000000000000000000000200000000"
+                   "0000000000000000000000000000000000000000200000000");
 #else
-                   ""
+BASE_FEATURE_PARAM(std::string,
+                   kSuppressMemoryListenersMask,
+                   &kSuppressMemoryListeners,
+                   "suppress_memory_listeners_mask",
+                   "");
 #endif
-);
 
 bool IsListenerSuppressed(MemoryPressureListenerTag tag,
                           MemoryPressureLevel memory_pressure_level,

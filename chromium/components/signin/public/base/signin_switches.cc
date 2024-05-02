@@ -324,13 +324,13 @@ const base::FeatureParam<bool> kAccountPreviewDataPersistAccounts{
 // Extensions are not shipped on Android yet. The flow is newly implemented. We
 // enable activityless signin by default on this new userless entrypoint to
 // avoid implementing the legacy flow which will never be shipped.
-BASE_FEATURE(kEnableActivitylessSigninAllEntryPoint,
 #if BUILDFLAG(ENABLE_DESKTOP_ANDROID_EXTENSIONS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kEnableActivitylessSigninAllEntryPoint,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kEnableActivitylessSigninAllEntryPoint,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 #endif
 
 #if BUILDFLAG(IS_ANDROID)
@@ -348,13 +348,13 @@ BASE_FEATURE(kEnableASWebAuthenticationSession,
 
 #if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
 // Enable experimental binding session credentials to the device.
-BASE_FEATURE(kEnableBoundSessionCredentials,
 #if BUILDFLAG(IS_WIN)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kEnableBoundSessionCredentials,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kEnableBoundSessionCredentials,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 bool IsBoundSessionCredentialsEnabled(const PrefService* profile_prefs) {
   // Enterprise policy takes precedence over the feature value.
   if (profile_prefs->HasPrefPath(prefs::kBoundSessionCredentialsEnabled)) {
@@ -372,13 +372,13 @@ const base::FeatureParam<std::string>
 
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
 // Enables Chrome refresh tokens binding to a device.
-BASE_FEATURE(kEnableChromeRefreshTokenBinding,
 #if BUILDFLAG(IS_WIN)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kEnableChromeRefreshTokenBinding,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kEnableChromeRefreshTokenBinding,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 bool IsChromeRefreshTokenBindingEnabled(const PrefService* profile_prefs) {
   // Enterprise policy takes precedence over the feature value.
   if (profile_prefs->HasPrefPath(prefs::kBoundSessionCredentialsEnabled)) {
@@ -438,13 +438,13 @@ BASE_FEATURE(kEnableMtlsTokenBinding, base::FEATURE_DISABLED_BY_DEFAULT);
 //
 // If `kEnableOAuthMultiloginStandardCookiesBinding` is enabled, DBSC standard
 // takes precedence over DBSC prototype.
-BASE_FEATURE(kEnableOAuthMultiloginCookiesBinding,
 #if BUILDFLAG(IS_WIN)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kEnableOAuthMultiloginCookiesBinding,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif  // BUILDFLAG(IS_WIN)
-);
+BASE_FEATURE(kEnableOAuthMultiloginCookiesBinding,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+#endif
 #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
 
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
@@ -454,13 +454,13 @@ BASE_FEATURE(kEnableOAuthMultiloginCookiesBinding,
 //
 // NOTE: This flag is meant to be used in conjunction with the
 // `kEnableOAuthMultiloginCookiesBinding` flag.
-BASE_FEATURE(kEnableOAuthMultiloginCookiesBindingServerExperiment,
 #if BUILDFLAG(IS_WIN)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kEnableOAuthMultiloginCookiesBindingServerExperiment,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif  // BUILDFLAG(IS_WIN)
-);
+BASE_FEATURE(kEnableOAuthMultiloginCookiesBindingServerExperiment,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+#endif
 BASE_FEATURE_PARAM(bool,
                    kOAuthMultiloginCookieBindingEnforced,
                    &kEnableOAuthMultiloginCookiesBindingServerExperiment,
@@ -830,13 +830,13 @@ BASE_FEATURE(kSupportForcedSigninPolicy, base::FEATURE_DISABLED_BY_DEFAULT);
 BASE_FEATURE(kSupportWebSigninAddSession, base::FEATURE_ENABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_ANDROID)
 
-BASE_FEATURE(kSyncEnableBookmarksInTransportMode,
 #if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kSyncEnableBookmarksInTransportMode,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kSyncEnableBookmarksInTransportMode,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
 BASE_FEATURE(kBookmarksMigrateUiChanges, base::FEATURE_ENABLED_BY_DEFAULT);
 
 #if BUILDFLAG(IS_CHROMEOS)

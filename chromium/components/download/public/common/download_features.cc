@@ -10,13 +10,13 @@
 namespace download {
 namespace features {
 
-BASE_FEATURE(kParallelDownloading,
 #if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kParallelDownloading,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kParallelDownloading,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
 BASE_FEATURE(kBackoffInDownloading, base::FEATURE_DISABLED_BY_DEFAULT);
@@ -43,24 +43,24 @@ BASE_FEATURE(kDownloadsCompactListView, base::FEATURE_DISABLED_BY_DEFAULT);
 BASE_FEATURE(kRemapGenericMimeType, base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 
-BASE_FEATURE(kDownloadNotificationServiceUnifiedAPI,
 #if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kDownloadNotificationServiceUnifiedAPI,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kDownloadNotificationServiceUnifiedAPI,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 BASE_FEATURE(kUseInProgressDownloadManagerForDownloadService,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kAllowDownloadResumptionWithoutStrongValidators,
 #if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kAllowDownloadResumptionWithoutStrongValidators,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kAllowDownloadResumptionWithoutStrongValidators,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 BASE_FEATURE(kUseParallelRequestsForHTTP2, base::FEATURE_ENABLED_BY_DEFAULT);
 
@@ -79,13 +79,13 @@ BASE_FEATURE(kEnableAsyncNotificationManagerForDownload,
 BASE_FEATURE(kEnableSavePackageForOffTheRecord,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kOpenDownloadInFilesAppIfNoHandlerFound,
 #if BUILDFLAG(IS_DESKTOP_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kOpenDownloadInFilesAppIfNoHandlerFound,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif  // BUILDFLAG(IS_DESKTOP_ANDROID)
-);
+BASE_FEATURE(kOpenDownloadInFilesAppIfNoHandlerFound,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+#endif
 
 BASE_FEATURE(kOpenDownloadInNewTab, base::FEATURE_DISABLED_BY_DEFAULT);
 

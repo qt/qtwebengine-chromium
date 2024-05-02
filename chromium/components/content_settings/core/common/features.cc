@@ -20,10 +20,11 @@ constexpr base::FeatureParam<bool> kDarkenWebsitesCheckboxOptOut{
 namespace features {
 
 // Enables unused site permission module in Safety Check.
-BASE_FEATURE(kSafetyCheckUnusedSitePermissions,
 #if BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kSafetyCheckUnusedSitePermissions,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #else   // BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kSafetyCheckUnusedSitePermissions,
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_ANDROID)
 
@@ -39,13 +40,13 @@ const base::FeatureParam<bool> kSafetyCheckUnusedSitePermissionsWithDelay{
     &kSafetyCheckUnusedSitePermissions,
     "unused-site-permissions-with-delay-for-testing", false};
 
-BASE_FEATURE(kApproximateGeolocationPermission,
 #if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kApproximateGeolocationPermission,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kApproximateGeolocationPermission,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 BASE_FEATURE(kLeftHandSideActivityIndicators, base::FEATURE_ENABLED_BY_DEFAULT);
 

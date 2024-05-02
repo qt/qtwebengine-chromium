@@ -108,13 +108,15 @@ BASE_FEATURE(kSimdutfBase64Encode, base::FEATURE_DISABLED_BY_DEFAULT);
 // threshold is an absurdly large 100MB.
 // The feature is enabled by default on ChromeOS where crashes caused by
 // unreliable stack end are found. See https://crbug.com/402542102
-BASE_FEATURE(kStackScanMaxFramePointerToStackEndGap,
 #if BUILDFLAG(IS_CHROMEOS)
+BASE_FEATURE(kStackScanMaxFramePointerToStackEndGap,
              FEATURE_ENABLED_BY_DEFAULT
-#else
-             FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kStackScanMaxFramePointerToStackEndGap,
+             FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 BASE_FEATURE_PARAM(int,
                    kStackScanMaxFramePointerToStackEndGapThresholdMB,
                    &kStackScanMaxFramePointerToStackEndGap,
@@ -135,10 +137,11 @@ BASE_FEATURE(kPartialLowEndModeOn3GbDevices, FEATURE_DISABLED_BY_DEFAULT);
 // high Stable %, because we will enable the feature only for <8GB 64-bit
 // devices, where we didn't ship yet. However, we first need a larger
 // population to collect data.
-BASE_FEATURE(kPartialLowEndModeOnMidRangeDevices,
 #if BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kPartialLowEndModeOnMidRangeDevices,
              FEATURE_ENABLED_BY_DEFAULT);
 #elif BUILDFLAG(IS_CHROMEOS)
+BASE_FEATURE(kPartialLowEndModeOnMidRangeDevices,
              FEATURE_DISABLED_BY_DEFAULT);
 #endif
 

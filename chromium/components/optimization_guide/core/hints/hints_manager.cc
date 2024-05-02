@@ -67,11 +67,13 @@ const char kOptimizationGuideServiceGetHintsDefaultURL[] =
 const char kLoadedHintLocalHistogramString[] =
     "OptimizationGuide.LoadedHint.Result";
 
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
 BASE_FEATURE(kHintsBatchUpdateForActiveTabsAndTopHosts,
              "OptimizationGuideHintsBatchUpdateForActiveTabsAndTopHosts",
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kHintsBatchUpdateForActiveTabsAndTopHosts,
+             "OptimizationGuideHintsBatchUpdateForActiveTabsAndTopHosts",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 

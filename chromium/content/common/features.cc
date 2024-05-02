@@ -118,13 +118,13 @@ BASE_FEATURE(kBackForwardCacheTimeToLiveControl,
 // navigation network responses in a kHigh priority queue.
 // TODO(b/281094330): Run experiment on ChromeOS. Experiment was not run on
 // ChromeOS due to try bot issue.
-BASE_FEATURE(kBeforeUnloadBrowserResponseQueue,
 #if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kBeforeUnloadBrowserResponseQueue,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kBeforeUnloadBrowserResponseQueue,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
 
 #if BUILDFLAG(IS_ANDROID)
 // Whether to hide paste popup on GestureScrollBegin or GestureScrollUpdate.
@@ -507,14 +507,15 @@ BASE_FEATURE(kMainFrameProcessReuseAllowIPAndLocalhost,
 // If this feature is enabled, media-device enumerations use a cache that is
 // invalidated upon notifications sent by base::SystemMonitor. If disabled, the
 // cache is considered invalid on every enumeration request.
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 BASE_FEATURE(kMediaDevicesSystemMonitorCache,
              "MediaDevicesSystemMonitorCaching",
-#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kMediaDevicesSystemMonitorCache,
+             "MediaDevicesSystemMonitorCaching",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Allow cross-context transfer of MediaStreamTracks.
 BASE_FEATURE(kMediaStreamTrackTransfer, base::FEATURE_DISABLED_BY_DEFAULT);
@@ -610,13 +611,13 @@ BASE_FEATURE(kSendBeaconThrowForBlobWithNonSimpleType,
 // When enabled, try to reuse an unlocked renderer process when COOP swap is
 // happening on prerender initial navigation. Please see crbug.com/41492112 for
 // more details.
-BASE_FEATURE(kProcessReuseOnPrerenderCOOPSwap,
 #if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kProcessReuseOnPrerenderCOOPSwap,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kProcessReuseOnPrerenderCOOPSwap,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
 
 // Causes the browser to progressively disable accessibility for WebContents
 // some time after they become hidden.
@@ -639,13 +640,13 @@ BASE_FEATURE_PARAM(bool,
 // that if a user later switches to that tab, the current page will be
 // reloaded.  This will hide crashed subframes from the user at the cost of
 // extra reloads.
-BASE_FEATURE(kReloadHiddenTabsWithCrashedSubframes,
 #if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kReloadHiddenTabsWithCrashedSubframes,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kReloadHiddenTabsWithCrashedSubframes,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 BASE_FEATURE(kRendererCancellationThrottleImprovements,
              base::FEATURE_DISABLED_BY_DEFAULT);
@@ -822,13 +823,13 @@ BASE_FEATURE(kStrictHighRankProcessLRU, base::FEATURE_ENABLED_BY_DEFAULT);
 // On platforms that don't have this enabled by default, the overscroll gesture
 // is handled at a different level and not through the interpretation of scroll
 // events.
-BASE_FEATURE(kTouchpadOverscrollHistoryNavigation,
 #if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kTouchpadOverscrollHistoryNavigation,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kTouchpadOverscrollHistoryNavigation,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Enable TrustedTypes .fromLiteral support.
 BASE_FEATURE(kTrustedTypesFromLiteral, base::FEATURE_DISABLED_BY_DEFAULT);
@@ -858,13 +859,13 @@ BASE_FEATURE(kWarmUpNetworkProcess, base::FEATURE_DISABLED_BY_DEFAULT);
 BASE_FEATURE(kWebAssemblyDynamicTiering, base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Enables in-process resource loading for WebUI renderer processes.
-BASE_FEATURE(kWebUIInProcessResourceLoading,
 #if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kWebUIInProcessResourceLoading,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kWebUIInProcessResourceLoading,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
 
 // Enables WebOTP calls in cross-origin iframes if allowed by Permissions
 // Policy.

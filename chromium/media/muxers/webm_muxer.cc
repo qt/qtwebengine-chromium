@@ -403,14 +403,20 @@ bool WebmMuxer::PutFrame(EncodedFrame frame,
     }
     auto* video_params = std::get_if<VideoParameters>(&frame.params);
     CHECK(video_params);
+#if BUILDFLAG(ENABLE_HEVC_PARSER_AND_HW_DECODER)
     DCHECK(video_params->codec == VideoCodec::kVP8 ||
            video_params->codec == VideoCodec::kVP9 ||
            video_params->codec == VideoCodec::kH264 ||
            video_params->codec == VideoCodec::kAV1
-#if BUILDFLAG(ENABLE_HEVC_PARSER_AND_HW_DECODER)
            || video_params->codec == VideoCodec::kHEVC
-#endif
            )
+#else
+    DCHECK(video_params->codec == VideoCodec::kVP8 ||
+           video_params->codec == VideoCodec::kVP9 ||
+           video_params->codec == VideoCodec::kH264 ||
+           video_params->codec == VideoCodec::kAV1
+           )
+#endif
         << " Unsupported video codec: " << GetCodecName(video_params->codec);
     DCHECK(video_codec_ == VideoCodec::kUnknown ||
            video_codec_ == video_params->codec)

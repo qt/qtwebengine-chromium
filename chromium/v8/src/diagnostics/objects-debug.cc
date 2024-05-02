@@ -3414,16 +3414,23 @@ void WasmExportedFunctionData::WasmExportedFunctionDataVerify(
   Object::VerifyPointer(isolate, packed_args_size_.load());
   CHECK(IsSmi(packed_args_size_.load()));
   Tagged<Code> wrapper = wrapper_code(isolate);
+#if V8_ENABLE_DRUMBRAKE
   CHECK(wrapper->kind() == CodeKind::JS_TO_WASM_FUNCTION ||
         wrapper->kind() == CodeKind::C_WASM_ENTRY ||
         (wrapper->is_builtin() &&
          (wrapper->builtin_id() == Builtin::kJSToWasmWrapper ||
-#if V8_ENABLE_DRUMBRAKE
           wrapper->builtin_id() == Builtin::kJSToWasmInterpreterWrapper ||
           wrapper->builtin_id() == Builtin::kJSToWasmInterpreterWrapperAsm ||
-#endif  // V8_ENABLE_DRUMBRAKE
           wrapper->builtin_id() == Builtin::kWasmPromising ||
           wrapper->builtin_id() == Builtin::kWasmStressSwitch)));
+#else
+  CHECK(wrapper->kind() == CodeKind::JS_TO_WASM_FUNCTION ||
+        wrapper->kind() == CodeKind::C_WASM_ENTRY ||
+        (wrapper->is_builtin() &&
+         (wrapper->builtin_id() == Builtin::kJSToWasmWrapper ||
+          wrapper->builtin_id() == Builtin::kWasmPromising ||
+          wrapper->builtin_id() == Builtin::kWasmStressSwitch)));
+#endif
 }
 
 void WasmCapiFunctionData::WasmCapiFunctionDataVerify(Isolate* isolate) {

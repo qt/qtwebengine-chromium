@@ -149,13 +149,13 @@ constexpr unsigned kMaxCanvasAnimationBacklog = 2;
 constexpr unsigned kDisableAccelerationThreshold = 100;
 constexpr unsigned kDisableAccelerationPercent = 95;
 
-BASE_FEATURE(kOneCopyCanvasCapture,
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_WIN)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kOneCopyCanvasCapture,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kOneCopyCanvasCapture,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // These values come from the WhatWG spec.
 constexpr int kDefaultCanvasWidth = 300;

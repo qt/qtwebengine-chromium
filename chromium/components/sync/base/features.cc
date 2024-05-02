@@ -34,23 +34,23 @@ BASE_FEATURE(kSyncLoyaltyCardMetadata, base::FEATURE_DISABLED_BY_DEFAULT);
 BASE_FEATURE(kSyncNotebook, base::FEATURE_DISABLED_BY_DEFAULT);
 
 #if !BUILDFLAG(IS_CHROMEOS)
-BASE_FEATURE(kUnoPhase2FollowUp,
 #if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kUnoPhase2FollowUp,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kUnoPhase2FollowUp,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 #endif  // !BUILDFLAG(IS_CHROMEOS)
 
 
-BASE_FEATURE(kSyncEnableContactInfoDataTypeForCustomPassphraseUsers,
 #if BUILDFLAG(IS_IOS) || BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kSyncEnableContactInfoDataTypeForCustomPassphraseUsers,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kSyncEnableContactInfoDataTypeForCustomPassphraseUsers,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 bool IsContactInfoDataTypeForCustomPassphraseUsersEnabled() {
   return base::FeatureList::IsEnabled(
@@ -62,29 +62,29 @@ bool IsContactInfoDataTypeForCustomPassphraseUsersEnabled() {
 BASE_FEATURE(kSyncEnableContactInfoDataTypeForDasherUsers,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kSeparateLocalAndAccountSearchEngines,
 #if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kSeparateLocalAndAccountSearchEngines,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
-#endif  // BUILDFLAG(IS_CHROMEOS)
-);
+BASE_FEATURE(kSeparateLocalAndAccountSearchEngines,
+             base::FEATURE_ENABLED_BY_DEFAULT);
+#endif
 
-BASE_FEATURE(kReplaceSyncPromosWithSignInPromos,
 #if BUILDFLAG(IS_IOS) || BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kReplaceSyncPromosWithSignInPromos,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kReplaceSyncPromosWithSignInPromos,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
-BASE_FEATURE(kReplaceSyncPromosWithSigninPromosNewSignin,
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kReplaceSyncPromosWithSigninPromosNewSignin,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kReplaceSyncPromosWithSigninPromosNewSignin,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 bool IsReplaceSyncPromosWithSignInPromosEnabled() {
   return base::FeatureList::IsEnabled(kReplaceSyncPromosWithSignInPromos) ||
@@ -120,13 +120,13 @@ BASE_FEATURE(kSpellcheckSeparateLocalAndAccountDictionaries,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
-BASE_FEATURE(kReadingListEnableSyncTransportModeUponSignIn,
 #if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kReadingListEnableSyncTransportModeUponSignIn,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kReadingListEnableSyncTransportModeUponSignIn,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
 
 bool IsReadingListAccountStorageEnabled() {
   return base::FeatureList::IsEnabled(
@@ -141,13 +141,13 @@ bool IsReadingListAccountStorageEnabled() {
 BASE_FEATURE(kSyncReadingListBatchUploadSelectedItems,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kSeparateLocalAndAccountThemes,
 #if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kSeparateLocalAndAccountThemes,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
-#endif  // BUILDFLAG(IS_CHROMEOS)
-);
+BASE_FEATURE(kSeparateLocalAndAccountThemes,
+             base::FEATURE_ENABLED_BY_DEFAULT);
+#endif
 
 BASE_FEATURE(kSyncIncreaseNudgeDelayForSingleClient,
              base::FEATURE_DISABLED_BY_DEFAULT);

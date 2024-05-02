@@ -165,12 +165,16 @@ base::FilePath MediaStorageUtil::FindDevicePathById(
     return base::FilePath::FromUTF8Unsafe(unique_id);
   }
 
-  DCHECK(
 #if BUILDFLAG(IS_CHROMEOS)
+  DCHECK(
       type == StorageInfo::MTP_OR_PTP ||
-#endif
       type == StorageInfo::REMOVABLE_MASS_STORAGE_WITH_DCIM ||
       type == StorageInfo::REMOVABLE_MASS_STORAGE_NO_DCIM);
+#else
+  DCHECK(
+      type == StorageInfo::REMOVABLE_MASS_STORAGE_WITH_DCIM ||
+      type == StorageInfo::REMOVABLE_MASS_STORAGE_NO_DCIM);
+#endif
   return base::FilePath(FindRemovableStorageLocationById(device_id));
 }
 

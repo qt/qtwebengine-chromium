@@ -22,13 +22,15 @@ BASE_FEATURE(kSensorPrivacyMitigations, base::FEATURE_ENABLED_BY_DEFAULT);
 // Expose serial port logical connection state and dispatch connection events
 // for Bluetooth serial ports when the Bluetooth device connection state
 // changes.
-BASE_FEATURE(kSerialPortConnected,
 #if !BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kSerialPortConnected,
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif  // !BUILDFLAG(IS_ANDROID)
 );
+#else
+BASE_FEATURE(kSerialPortConnected,
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif  // !BUILDFLAG(IS_ANDROID)
 
 // Restricts the sharing of C++ SerialPort and WritableStream instances across
 // different DOMWrapperWorld contexts to prevent cross-world leaks.

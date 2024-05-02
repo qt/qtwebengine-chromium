@@ -970,13 +970,13 @@ BASE_FEATURE(kAutofillUseStructuralSignatureInsteadOfSecondary,
 // models on the same inputs multiple times.
 // TODO(crbug.com/371933424). Clean up when launched, if not used for Autofill
 // experiments.
-BASE_FEATURE(kFieldClassificationModelCaching,
 #if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kFieldClassificationModelCaching,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kFieldClassificationModelCaching,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 BASE_FEATURE(kGlicActorAutofill, base::FEATURE_DISABLED_BY_DEFAULT);
 

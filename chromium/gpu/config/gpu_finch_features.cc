@@ -199,24 +199,24 @@ BASE_FEATURE(kSharedImageStubHighPriority, base::FEATURE_DISABLED_BY_DEFAULT);
 // --enable-gpu-rasterization or --disable-gpu-rasterization.
 // DefaultEnableGpuRasterization has launched on Mac, Windows, ChromeOS,
 // Android and Linux.
-BASE_FEATURE(kDefaultEnableGpuRasterization,
 #if BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS) || \
     BUILDFLAG(IS_ANDROID) || BUILDFLAG(USE_WEBGPU_ON_VULKAN_VIA_GL_INTEROP)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kDefaultEnableGpuRasterization,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kDefaultEnableGpuRasterization,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Enables the use of MSAA in skia on Ice Lake and later intel architectures.
 
-BASE_FEATURE(kEnableMSAAOnNewIntelGPUs,
 #if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kEnableMSAAOnNewIntelGPUs,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kEnableMSAAOnNewIntelGPUs,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 #if BUILDFLAG(IS_WIN)
 BASE_FEATURE(kNoUndamagedOverlayPromotion, base::FEATURE_DISABLED_BY_DEFAULT);
@@ -252,30 +252,31 @@ bool IsShaderDiskCacheEnabled(const base::CommandLine* command_line) {
 // native implementation if --use-vulkan flag is not used. Otherwise
 // --use-vulkan will be followed.
 // Note Android WebView uses kWebViewDrawFunctorUsesVulkan instead of this.
-BASE_FEATURE(kVulkan,
 #if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kVulkan,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kVulkan,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Force enable WebGPU interop when enabled. When disabled the webgpu interop
 // mechanism will default to auto detection in 'GetWebGPUOnVulkanViaGLInterop'
 // function.
 BASE_FEATURE(kForceEnableWebGpuInterop, base::FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kEnableDrDc,
 #if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kEnableDrDc,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #elif BUILDFLAG(IS_MAC)
+BASE_FEATURE(kEnableDrDc,
              // DrDC will not be running if Graphite is disabled on Mac.
-             base::FEATURE_DISABLED_BY_DEFAULT
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kEnableDrDc,
              // NOT SUPPORTED. DO NOT ENABLE!
-             base::FEATURE_DISABLED_BY_DEFAULT
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Enable WebGPU on gpu service side only. This is used with origin trial and
 // enabled by default on supported platforms.
@@ -374,13 +375,13 @@ const base::FeatureParam<std::string> kDrDcBlockListByAndroidBuildFP{
 // Note: This can be overridden by --enable-skia-graphite and
 // --disable-skia-graphite which take precedence over the feature flag, and the
 // Dawn backend can be overridden with the --skia-graphite-dawn-backend flag.
-BASE_FEATURE(kSkiaGraphite,
 #if BUILDFLAG(IS_APPLE)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kSkiaGraphite,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kSkiaGraphite,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Controls Skia Graphite specifically for Intel GPUs on Windows.
 // On Windows, the status of Graphite on Intel GPUs won't be controlled
@@ -406,13 +407,13 @@ BASE_FEATURE(kSkiaGraphiteSmallPathAtlas, base::FEATURE_DISABLED_BY_DEFAULT);
 
 // When enabled, the Graphite feature check (including blocklist) is deferred to
 // the GPU process rather than evaluated in the browser process.
-BASE_FEATURE(kLateGraphiteFeatureCheck,
 #if BUILDFLAG(IS_WIN)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kLateGraphiteFeatureCheck,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kLateGraphiteFeatureCheck,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Enable Skia Graphite's Pipeline precompilation feature.
 // Note: This is only meaningful when Skia Graphite is enabled but can then also
@@ -422,27 +423,29 @@ BASE_FEATURE(kLateGraphiteFeatureCheck,
 BASE_FEATURE(kSkiaGraphitePrecompilation, base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Whether to use PersistentCache for Skia Graphite's pipeline cache.
-BASE_FEATURE(kSkiaGraphiteUsePersistentCache,
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_WIN)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kSkiaGraphiteUsePersistentCache,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kSkiaGraphiteUsePersistentCache,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 bool SkiaGraphiteUsesPersistentCache() {
   return base::FeatureList::IsEnabled(kSkiaGraphiteUsePersistentCache);
 }
 
+#if BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kConditionallySkipGpuChannelFlush,
 // To enable on ChromeOS, test failures must be investigated
 // (crrev.com/c/5435673).
-#if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_DISABLED_BY_DEFAULT
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kConditionallySkipGpuChannelFlush,
+// To enable on ChromeOS, test failures must be investigated
+// (crrev.com/c/5435673).
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
 
 const SkiaGraphiteFeatureParams& GetSkiaGraphiteFeatureParams() {
   DCHECK(GetGraphiteParamsInitFlag().IsSet());
@@ -463,10 +466,11 @@ BASE_FEATURE(kSkiaGraphiteDawnUseD3D12, base::FEATURE_DISABLED_BY_DEFAULT);
 // Whether to use the GpuPersistentCache for caching GPU process shader blobs.
 // Usage for Graphite is controlled independently with
 // kSkiaGraphiteDawnUsePersistentCache.
-BASE_FEATURE(kGpuPersistentCache,
 #if BUILDFLAG(IS_WIN)
+BASE_FEATURE(kGpuPersistentCache,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kGpuPersistentCache,
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 

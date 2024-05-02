@@ -59,26 +59,26 @@ BASE_FEATURE(kBufferQueuePerRenderPass, base::FEATURE_DISABLED_BY_DEFAULT);
 BASE_FEATURE(kVizBufferQueueDiscardOnVisibilityChange,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kUseDrmBlackFullscreenOptimization,
 #if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kUseDrmBlackFullscreenOptimization,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kUseDrmBlackFullscreenOptimization,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 #if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kUseFrameIntervalDeciderAdaptiveFrameRate,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
-BASE_FEATURE(kUseMultipleOverlays,
 #if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kUseMultipleOverlays,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kUseMultipleOverlays,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 const char kMaxOverlaysParam[] = "max_overlays";
 
 BASE_FEATURE(kDelegatedCompositing, base::FEATURE_DISABLED_BY_DEFAULT);
@@ -185,10 +185,11 @@ BASE_FEATURE(kVSyncAlignedPresentationForScrolling,
 BASE_FEATURE(kVSyncAlignedPresentation, base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
-BASE_FEATURE(kAllowUndamagedNonrootRenderPassToSkip,
 #if BUILDFLAG(IS_MAC)
+BASE_FEATURE(kAllowUndamagedNonrootRenderPassToSkip,
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kAllowUndamagedNonrootRenderPassToSkip,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
@@ -327,13 +328,13 @@ BASE_FEATURE(kVizDirectCompositorThreadIpcNonRoot,
 // Enables IPCs to directly target Viz's compositor thread for FrameSinkManager
 // messages and, in turn, all interfaces associated with it e.g. root compositor
 // frame sink, display private - skipping the IO thread hop.
-BASE_FEATURE(kVizDirectCompositorThreadIpcFrameSinkManager,
 #if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kVizDirectCompositorThreadIpcFrameSinkManager,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kVizDirectCompositorThreadIpcFrameSinkManager,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Switches the message pump to base::MessagePumpType::IO on the Viz thread.
 BASE_FEATURE(kVizWithIoMessagePump, base::FEATURE_DISABLED_BY_DEFAULT);

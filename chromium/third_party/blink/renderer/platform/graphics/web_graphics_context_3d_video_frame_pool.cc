@@ -217,13 +217,13 @@ void CopyToGpuMemoryBuffer(
 }
 }  // namespace
 
-BASE_FEATURE(kUseCopyToGpuMemoryBufferAsync,
 #if BUILDFLAG(IS_WIN)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kUseCopyToGpuMemoryBufferAsync,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kUseCopyToGpuMemoryBufferAsync,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 std::optional<gpu::SyncToken>
 WebGraphicsContext3DVideoFramePool::CopyRGBATextureToVideoFrame(

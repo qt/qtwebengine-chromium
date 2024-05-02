@@ -15,16 +15,17 @@ namespace features {
 // SiteIsolationPolicy::IsIsolationForPasswordSitesEnabled() rather than
 // checking the feature directly, since that decision is influenced by other
 // factors as well.
-BASE_FEATURE(kSiteIsolationForPasswordSites,
-             "site-isolation-for-password-sites",
 // Enabled by default on Android; see https://crbug.com/849815.  Note that this
 // should not affect Android Webview, which does not include this code.
 #if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kSiteIsolationForPasswordSites,
+             "site-isolation-for-password-sites",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kSiteIsolationForPasswordSites,
+             "site-isolation-for-password-sites",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Controls a mode for dynamically process-isolating sites where the user has
 // logged in via OAuth.  These sites are determined by runtime heuristics.
@@ -37,14 +38,14 @@ BASE_FEATURE(kSiteIsolationForPasswordSites,
 //
 // This feature does not affect Android Webview, which does not include this
 // code.
-BASE_FEATURE(kSiteIsolationForOAuthSites,
 // Enabled by default on Android only; see https://crbug.com/1206770.
 #if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kSiteIsolationForOAuthSites,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kSiteIsolationForOAuthSites,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 #if BUILDFLAG(IS_ANDROID)
 // kSiteIsolationMemoryThresholdsAndroid is checked before individual site

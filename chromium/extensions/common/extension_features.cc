@@ -142,13 +142,13 @@ BASE_FEATURE(kExtensionProtocolHandlers, base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kExtensionTabContextMenu, base::FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kExtensionsMenuAccessControl,
 #if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kExtensionsMenuAccessControl,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kExtensionsMenuAccessControl,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 BASE_FEATURE(kExtensionsMenuAccessControlWithPermittedSites,
              "ExtensionsMenuAccessControlWithPermittedSitesName",
@@ -170,13 +170,13 @@ BASE_FEATURE(kSafeBrowsingCrxAllowlistAutoDisable,
 
 // TODO(https://crbug.com/328494022): Disable this on ChromeOS, too, and then
 // eventually remove it.
-BASE_FEATURE(kWebstoreHostedApp,
 #if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kWebstoreHostedApp,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif  // BUILDFLAG(IS_CHROMEOS)
-);
+BASE_FEATURE(kWebstoreHostedApp,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+#endif
 
 BASE_FEATURE(kDeclarativeNetRequestSafeRuleLimits,
              "DeclarativeNetRequestSafeDynamicRules",
@@ -195,24 +195,28 @@ BASE_FEATURE(kUseNewServiceWorkerTaskQueue, base::FEATURE_DISABLED_BY_DEFAULT);
 BASE_FEATURE(kDeclarativeNetRequestHeaderSubstitution,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kDisableDisableExtensionsExceptCommandLineSwitch,
 #if BUILDFLAG(GOOGLE_CHROME_BRANDING) && !BUILDFLAG(IS_CHROMEOS)
+BASE_FEATURE(kDisableDisableExtensionsExceptCommandLineSwitch,
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif  // BUILDFLAG(GOOGLE_CHROME_BRANDING)
 );
+#else
+BASE_FEATURE(kDisableDisableExtensionsExceptCommandLineSwitch,
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif  // BUILDFLAG(GOOGLE_CHROME_BRANDING)
 
-BASE_FEATURE(kDisableExtensionsOnChromeUrlsSwitch,
 // TODO (crbug.com/426554244): Determine if this switch should be
 // removed for desktop-android builds as well.
 #if BUILDFLAG(GOOGLE_CHROME_BRANDING) && !BUILDFLAG(IS_CHROMEOS) && \
     !BUILDFLAG(ENABLE_DESKTOP_ANDROID_EXTENSIONS)
+BASE_FEATURE(kDisableExtensionsOnChromeUrlsSwitch,
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kDisableExtensionsOnChromeUrlsSwitch,
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 
 BASE_FEATURE(kEnterpriseExtensionDOMActivityTelemetry,
              base::FEATURE_ENABLED_BY_DEFAULT);

@@ -940,28 +940,15 @@ void InterfaceEndpointClient::OnAssociationEvent(
 }
 
 bool InterfaceEndpointClient::HandleValidatedMessage(Message* message) {
+#if BUILDFLAG(IS_ANDROID) && defined(ARCH_CPU_ARM64)
   TRACE_EVENT(
       "toplevel,mojom", perfetto::StaticString{method_name_callback_(*message)},
       [&](perfetto::EventContext& ctx) {
         auto* info = ctx.event()->set_chrome_mojo_event_info();
-#if BUILDFLAG(IS_ANDROID) && defined(ARCH_CPU_ARM64)
         // ARM64 Android - set the interface tag unconditionally.
         // TODO(kraskevich): Remove this special case once we're
         // fully confident in crrev.com/c/3763052.
         info->set_mojo_interface_tag(interface_name_);
-#else
-        // Generate mojo interface tag only for local traces.
-        //
-        // This saves trace buffer space for field traces. The
-        // interface tag can be extracted from the interface method
-        // after symbolization.
-        //
-        // For local traces, this produces a raw string so that the
-        // trace doesn't require symbolization to be useful.
-        if (!ctx.ShouldFilterDebugAnnotations()) {
-          info->set_mojo_interface_tag(interface_name_);
-        }
-#endif  // BUILDFLAG(IS_ANDROID) && defined(ARCH_CPU_ARM64)
         const auto method_info = method_info_callback_(*message);
         if (method_info) {
           info->set_ipc_hash((*method_info)());
@@ -985,6 +972,46 @@ bool InterfaceEndpointClient::HandleValidatedMessage(Message* message) {
 
         perfetto::Flow::Global(message->GetTraceId())(ctx);
       });
+#else
+  TRACE_EVENT(
+      "toplevel,mojom", perfetto::StaticString{method_name_callback_(*message)},
+      [&](perfetto::EventContext& ctx) {
+        auto* info = ctx.event()->set_chrome_mojo_event_info();
+        // Generate mojo interface tag only for local traces.
+        //
+        // This saves trace buffer space for field traces. The
+        // interface tag can be extracted from the interface method
+        // after symbolization.
+        //
+        // For local traces, this produces a raw string so that the
+        // trace doesn't require symbolization to be useful.
+        if (!ctx.ShouldFilterDebugAnnotations()) {
+          info->set_mojo_interface_tag(interface_name_);
+        }
+        const auto method_info = method_info_callback_(*message);
+        if (method_info) {
+          info->set_ipc_hash((*method_info)());
+          const auto method_address = reinterpret_cast<uintptr_t>(method_info);
+          const std::optional<size_t> location_iid =
+              base::trace_event::InternedUnsymbolizedSourceLocation::Get(
+                  &ctx, method_address);
+          if (location_iid) {
+            info->set_mojo_interface_method_iid(*location_iid);
+          }
+        }
+
+        info->set_payload_size(message->payload_num_bytes());
+        info->set_data_num_bytes(message->data_num_bytes());
+
+        static const uint8_t* flow_enabled =
+            TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED(
+                "toplevel.flow,mojom.flow");
+        if (!*flow_enabled)
+          return;
+
+        perfetto::Flow::Global(message->GetTraceId())(ctx);
+      });
+#endif
 
   DCHECK_EQ(handle_.id(), message->interface_id());
 
