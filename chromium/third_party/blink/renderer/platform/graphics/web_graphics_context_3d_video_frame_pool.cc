@@ -245,14 +245,15 @@ void ApplyMetadataAndRunCallback(
   std::move(orig_callback).Run(std::move(wrapped));
 }
 
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kGpuMemoryBufferReadbackFromTexture,
              "GpuMemoryBufferReadbackFromTexture",
-#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kGpuMemoryBufferReadbackFromTexture,
+             "GpuMemoryBufferReadbackFromTexture",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 }  // namespace
 
 bool WebGraphicsContext3DVideoFramePool::ConvertVideoFrame(

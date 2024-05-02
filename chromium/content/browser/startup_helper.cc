@@ -55,25 +55,29 @@ BASE_FEATURE(kBrowserThreadPoolAdjustment,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // For iOS see ios/web/app/web_main_loop.cc.
+#if BUILDFLAG(IS_ANDROID)
 MIRACLE_PARAMETER_FOR_INT(GetBrowserThreadPoolMin,
                           kBrowserThreadPoolAdjustment,
                           "BrowserThreadPoolMin",
-#if BUILDFLAG(IS_ANDROID)
-                          6
+                          6)
 #else
-                          16
+MIRACLE_PARAMETER_FOR_INT(GetBrowserThreadPoolMin,
+                          kBrowserThreadPoolAdjustment,
+                          "BrowserThreadPoolMin",
+                          16)
 #endif
-)
 
+#if BUILDFLAG(IS_ANDROID)
 MIRACLE_PARAMETER_FOR_INT(GetBrowserThreadPoolMax,
                           kBrowserThreadPoolAdjustment,
                           "BrowserThreadPoolMax",
-#if BUILDFLAG(IS_ANDROID)
-                          8
+                          8)
 #else
-                          32
+MIRACLE_PARAMETER_FOR_INT(GetBrowserThreadPoolMax,
+                          kBrowserThreadPoolAdjustment,
+                          "BrowserThreadPoolMax",
+                          32)
 #endif
-)
 
 MIRACLE_PARAMETER_FOR_DOUBLE(GetBrowserThreadPoolCoresMultiplier,
                              kBrowserThreadPoolAdjustment,

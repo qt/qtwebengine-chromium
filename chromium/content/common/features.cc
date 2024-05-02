@@ -41,14 +41,15 @@ BASE_FEATURE(kBackForwardCacheTimeToLiveControl,
 // navigation network responses in a kHigh priority queue.
 // TODO(b/281094330): Run experiment on ChromeOS. Experiment was not run on
 // ChromeOS due to try bot issue.
+#if BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kBeforeUnloadBrowserResponseQueue,
              "BeforeUnloadBrowserResponseQueue",
-#if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_DISABLED_BY_DEFAULT
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kBeforeUnloadBrowserResponseQueue,
+             "BeforeUnloadBrowserResponseQueue",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
 
 // When this feature is enabled, requests to localhost initiated from non-secure
 // contexts in the `unknown` IP address space are blocked.
@@ -72,14 +73,15 @@ BASE_FEATURE(kBrowserVerifiedUserActivationKeyboard,
 
 // If Canvas2D Image Chromium is allowed, this feature controls whether it is
 // enabled.
+#if BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_CHROMEOS_LACROS)
 BASE_FEATURE(kCanvas2DImageChromium,
              "Canvas2DImageChromium",
-#if BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_CHROMEOS_LACROS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kCanvas2DImageChromium,
+             "Canvas2DImageChromium",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // When enabled, code cache does not use a browsing_data filter for deletions.
 BASE_FEATURE(kCodeCacheDeletionWithoutFilter,
@@ -89,11 +91,13 @@ BASE_FEATURE(kCodeCacheDeletionWithoutFilter,
 // When enabled, when creating new proxies for all nodes in a `FrameTree`, one
 // IPC is sent to create all child frame proxies instead of sending one IPC per
 // proxy.
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kConsolidatedIPCForProxyCreation,
              "ConsolidatedIPCForProxyCreation",
-#if BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kConsolidatedIPCForProxyCreation,
+             "ConsolidatedIPCForProxyCreation",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
@@ -302,14 +306,15 @@ BASE_FEATURE(kMacWebContentsOcclusion,
 // If this feature is enabled, media-device enumerations use a cache that is
 // invalidated upon notifications sent by base::SystemMonitor. If disabled, the
 // cache is considered invalid on every enumeration request.
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 BASE_FEATURE(kMediaDevicesSystemMonitorCache,
              "MediaDevicesSystemMonitorCaching",
-#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kMediaDevicesSystemMonitorCache,
+             "MediaDevicesSystemMonitorCaching",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Allow cross-context transfer of MediaStreamTracks.
 BASE_FEATURE(kMediaStreamTrackTransfer,
@@ -429,14 +434,15 @@ BASE_FEATURE(kProcessSharingWithStrictSiteInstances,
 // that if a user later switches to that tab, the current page will be
 // reloaded.  This will hide crashed subframes from the user at the cost of
 // extra reloads.
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kReloadHiddenTabsWithCrashedSubframes,
              "ReloadHiddenTabsWithCrashedSubframes",
-#if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kReloadHiddenTabsWithCrashedSubframes,
+             "ReloadHiddenTabsWithCrashedSubframes",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // When enabled, allow reusing an initial RenderFrameHost with an unused process
 // for a subsequent WebUI navigation.  WebUI navigations typically trigger a
@@ -532,14 +538,15 @@ BASE_FEATURE(kTouchpadAsyncPinchEvents,
 
 // Allows swipe left/right from touchpad change browser navigation. Currently
 // only enabled by default on CrOS, LaCrOS and Windows.
+#if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_WIN)
 BASE_FEATURE(kTouchpadOverscrollHistoryNavigation,
              "TouchpadOverscrollHistoryNavigation",
-#if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_WIN)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kTouchpadOverscrollHistoryNavigation,
+             "TouchpadOverscrollHistoryNavigation",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Enable TrustedTypes .fromLiteral support.
 BASE_FEATURE(kTrustedTypesFromLiteral,

@@ -740,11 +740,13 @@ VideoPixelFormatAsSkYUVAInfoValues(VideoPixelFormat format) {
 // On all other platforms, the one-copy path being enabled is the default
 // production state, with this Feature being used to be able to disable this
 // path for performance testing.
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kOneCopyUploadOfVideoFrameToGLTexture,
              "OneCopyUploadOfVideoFrameToGLTexture",
-#if BUILDFLAG(IS_ANDROID)
              base::FEATURE_DISABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kOneCopyUploadOfVideoFrameToGLTexture,
+             "OneCopyUploadOfVideoFrameToGLTexture",
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 
@@ -1744,7 +1746,7 @@ bool PaintCanvasVideoRenderer::UploadVideoFrameToGLTexture(
         mailboxes[i] = mailbox_holder.mailbox;
       }
 
-      auto mailbox_name_size = sizeof(mailboxes[0].name);
+      constexpr auto mailbox_name_size = sizeof(mailboxes[0].name);
       GLbyte mailbox_names[mailbox_name_size * SkYUVAInfo::kMaxPlanes];
       for (int i = 0; i < SkYUVAInfo::kMaxPlanes; i++) {
         memcpy(mailbox_names + mailbox_name_size * i, mailboxes[i].name,

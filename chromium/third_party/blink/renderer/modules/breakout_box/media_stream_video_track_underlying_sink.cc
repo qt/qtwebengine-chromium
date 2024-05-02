@@ -28,17 +28,18 @@ namespace blink {
 
 namespace {
 
-BASE_FEATURE(kBreakoutBoxEagerConversion,
-             "BreakoutBoxEagerConversion",
-// This feature has the same restrictions as TwoCopyCanvasCapture; see
-// comments there.
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || \
     (BUILDFLAG(IS_CHROMEOS) && defined(ARCH_CPU_X86_FAMILY))
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kBreakoutBoxEagerConversion,
+             "BreakoutBoxEagerConversion",
+             // This feature has the same restrictions as TwoCopyCanvasCapture;
+             // see comments there.
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kBreakoutBoxEagerConversion,
+             "BreakoutBoxEagerConversion",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // If BreakoutBoxEagerConversion is enabled, this feature enables frame
 // conversion even if the sinks connected to the track backed by the

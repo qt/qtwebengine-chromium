@@ -75,15 +75,12 @@ BASE_FEATURE(kAppShimNotificationAttribution,
 #endif  // BUILDFLAG(IS_MAC)
 
 // Enables the built-in DNS resolver.
-BASE_FEATURE(kAsyncDns,
-             "AsyncDns",
 #if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_ANDROID) || \
     BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kAsyncDns, "AsyncDns", base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kAsyncDns, "AsyncDns", base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
     BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_FUCHSIA)
@@ -297,14 +294,15 @@ BASE_FEATURE(kDesktopPWAsCacheDuringDefaultInstall,
 
 // Moves the Extensions "puzzle piece" icon from the title bar into the app menu
 // for web app windows.
+#if BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kDesktopPWAsElidedExtensionsMenu,
              "DesktopPWAsElidedExtensionsMenu",
-#if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kDesktopPWAsElidedExtensionsMenu,
+             "DesktopPWAsElidedExtensionsMenu",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Whether to parse and enforce the WebAppSettings policy.
 BASE_FEATURE(kDesktopPWAsEnforceWebAppSettingsPolicy,
@@ -312,25 +310,27 @@ BASE_FEATURE(kDesktopPWAsEnforceWebAppSettingsPolicy,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Enables or disables Desktop PWAs to be auto-started on OS login.
-BASE_FEATURE(kDesktopPWAsRunOnOsLogin,
-             "DesktopPWAsRunOnOsLogin",
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
     BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kDesktopPWAsRunOnOsLogin,
+             "DesktopPWAsRunOnOsLogin",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kDesktopPWAsRunOnOsLogin,
+             "DesktopPWAsRunOnOsLogin",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // If enabled, allow-listed PWAs cannot be closed manually by the user.
+#if BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kDesktopPWAsPreventClose,
              "DesktopPWAsPreventClose",
-#if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kDesktopPWAsPreventClose,
+             "DesktopPWAsPreventClose",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Runs diagnostics during start up to measure how broken web app icons are to
 // feed into metrics.
@@ -371,15 +371,12 @@ BASE_FEATURE(kDisruptiveNotificationPermissionRevocation,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Enable DNS over HTTPS (DoH).
-BASE_FEATURE(kDnsOverHttps,
-             "DnsOverHttps",
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_MAC) || \
     BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_LINUX)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kDnsOverHttps, "DnsOverHttps", base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kDnsOverHttps, "DnsOverHttps", base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Set whether fallback to insecure DNS is allowed by default. This setting may
 // be overridden for individual transactions.
@@ -1238,14 +1235,15 @@ const base::FeatureParam<base::TimeDelta> kSCTLogMaxIngestionRandomDelay{
 //
 // TODO(alexmos): Move this and the other site isolation features below to
 // browser_features, as they are only used on the browser side.
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kSitePerProcess,
              "SitePerProcess",
-#if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_DISABLED_BY_DEFAULT
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kSitePerProcess,
+             "SitePerProcess",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 // Enables or disables SmartDim on Chrome OS.

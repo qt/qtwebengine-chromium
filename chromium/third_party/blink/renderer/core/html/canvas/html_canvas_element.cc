@@ -139,14 +139,15 @@ constexpr base::FeatureParam<int> kCanvasDisableAccelerationPercentParam{
 
 namespace {
 
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_WIN)
 BASE_FEATURE(kOneCopyCanvasCapture,
              "OneCopyCanvasCapture",
-#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_WIN)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kOneCopyCanvasCapture,
+             "OneCopyCanvasCapture",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Kill switch for not requesting continuous begin frame for low latency canvas.
 BASE_FEATURE(kLowLatencyCanvasNoBeginFrameKillSwitch,

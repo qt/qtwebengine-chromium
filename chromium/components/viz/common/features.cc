@@ -33,33 +33,36 @@ const char kDynamicSchedulerPercentile[] = "percentile";
 
 namespace features {
 
+#if BUILDFLAG(IS_CHROMEOS_ASH)
 BASE_FEATURE(kUseDrmBlackFullscreenOptimization,
              "UseDrmBlackFullscreenOptimization",
-#if BUILDFLAG(IS_CHROMEOS_ASH)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kUseDrmBlackFullscreenOptimization,
+             "UseDrmBlackFullscreenOptimization",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
+#if BUILDFLAG(IS_CHROMEOS_ASH)
 BASE_FEATURE(kUseMultipleOverlays,
              "UseMultipleOverlays",
-#if BUILDFLAG(IS_CHROMEOS_ASH)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kUseMultipleOverlays,
+             "UseMultipleOverlays",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 const char kMaxOverlaysParam[] = "max_overlays";
 
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
 BASE_FEATURE(kDelegatedCompositing,
              "DelegatedCompositing",
-#if BUILDFLAG(IS_CHROMEOS_LACROS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kDelegatedCompositing,
+             "DelegatedCompositing",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 BASE_FEATURE(kVideoDetectorIgnoreNonVideos,
              "VideoDetectorIgnoreNonVideos",
@@ -231,15 +234,16 @@ BASE_FEATURE(kBufferQueueImageSetPurgeable,
 // On platforms using SkiaOutputDeviceBufferQueue, when this is true
 // SkiaRenderer will allocate and maintain a buffer queue of images for the root
 // render pass, instead of SkiaOutputDeviceBufferQueue itself.
-BASE_FEATURE(kRendererAllocatesImages,
-             "RendererAllocatesImages",
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_FUCHSIA) || \
     BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_MAC)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kRendererAllocatesImages,
+             "RendererAllocatesImages",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kRendererAllocatesImages,
+             "RendererAllocatesImages",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // If enabled, CompositorFrameSinkClient::OnBeginFrame is also treated as the
 // DidReceiveCompositorFrameAck. Both in providing the Ack for the previous
@@ -247,26 +251,28 @@ BASE_FEATURE(kRendererAllocatesImages,
 // separate Ack and ReclaimResources signals. However if while sending an
 // OnBeginFrame there is a pending Ack, then if the Ack arrives before the next
 // OnBeginFrame we will send the Ack immediately, rather than batching it.
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
 BASE_FEATURE(kOnBeginFrameAcks,
              "OnBeginFrameAcks",
-#if BUILDFLAG(IS_CHROMEOS_LACROS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kOnBeginFrameAcks,
+             "OnBeginFrameAcks",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // if enabled, Any CompositorFrameSink of type video that defines a preferred
 // framerate that is below the display framerate will throttle OnBeginFrame
 // callbacks to match the preferred framerate.
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kOnBeginFrameThrottleVideo,
              "OnBeginFrameThrottleVideo",
-#if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kOnBeginFrameThrottleVideo,
+             "OnBeginFrameThrottleVideo",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-             );
 
 BASE_FEATURE(kSharedBitmapToSharedImage,
              "SharedBitmapToSharedImage",
@@ -284,14 +290,15 @@ const base::FeatureParam<base::TimeDelta> kADPFBoostTimeout{
     base::Milliseconds(200)};
 
 // Allows delegating transforms over Wayland when it is also supported by Ash.
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
 BASE_FEATURE(kDelegateTransforms,
              "DelegateTransforms",
-#if BUILDFLAG(IS_CHROMEOS_LACROS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kDelegateTransforms,
+             "DelegateTransforms",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // If enabled, Chrome includes the Renderer Main thread(s) into the
 // ADPF(Android Dynamic Performance Framework) hint session.
@@ -308,14 +315,15 @@ BASE_FEATURE(kEnableADPFAsyncThreadsVerification,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // If enabled, surface activation and draw do not block on dependencies.
+#if BUILDFLAG(IS_IOS)
 BASE_FEATURE(kDrawImmediatelyWhenInteractive,
              "DrawImmediatelyWhenInteractive",
-#if BUILDFLAG(IS_IOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kDrawImmediatelyWhenInteractive,
+             "DrawImmediatelyWhenInteractive",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // When enabled, SDR maximum luminance nits of then current display will be used
 // as the HDR metadata NDWL nits.

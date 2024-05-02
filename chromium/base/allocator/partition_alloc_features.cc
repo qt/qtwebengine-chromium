@@ -124,17 +124,18 @@ BASE_FEATURE(kPartitionAllocZappingByFreeFlags,
              FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
 
-BASE_FEATURE(kPartitionAllocBackupRefPtr,
-             "PartitionAllocBackupRefPtr",
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || \
     BUILDFLAG(IS_CHROMEOS_ASH) || BUILDFLAG(IS_CHROMEOS_LACROS) ||     \
     (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_CASTOS)) ||                  \
     BUILDFLAG(ENABLE_BACKUP_REF_PTR_FEATURE_FLAG)
-             FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kPartitionAllocBackupRefPtr,
+             "PartitionAllocBackupRefPtr",
+             FEATURE_ENABLED_BY_DEFAULT);
 #else
-             FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kPartitionAllocBackupRefPtr,
+             "PartitionAllocBackupRefPtr",
+             FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 constexpr FeatureParam<BackupRefPtrEnabledProcesses>::Option
     kBackupRefPtrEnabledProcessesOptions[] = {
@@ -221,14 +222,15 @@ const base::FeatureParam<bool> kBackupRefPtrAsanEnableInstantiationCheckParam{
 //
 // We enable this by default everywhere except for 32-bit Android, since we saw
 // regressions there.
+#if BUILDFLAG(IS_ANDROID) && defined(ARCH_CPU_32_BITS)
 BASE_FEATURE(kPartitionAllocUseDenserDistribution,
              "PartitionAllocUseDenserDistribution",
-#if BUILDFLAG(IS_ANDROID) && defined(ARCH_CPU_32_BITS)
-             FEATURE_DISABLED_BY_DEFAULT
+             FEATURE_DISABLED_BY_DEFAULT);
 #else
-             FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kPartitionAllocUseDenserDistribution,
+             "PartitionAllocUseDenserDistribution",
+             FEATURE_ENABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_ANDROID) && defined(ARCH_CPU_32_BITS)
-);
 const base::FeatureParam<BucketDistributionMode>::Option
     kPartitionAllocBucketDistributionOption[] = {
         {BucketDistributionMode::kDefault, "default"},
@@ -277,14 +279,15 @@ BASE_FEATURE(kPartitionAllocPCScanEagerClearing,
              FEATURE_DISABLED_BY_DEFAULT);
 
 // In addition to heap, scan also the stack of the current mutator.
+#if BUILDFLAG(PCSCAN_STACK_SUPPORTED)
 BASE_FEATURE(kPartitionAllocPCScanStackScanning,
              "PartitionAllocPCScanStackScanning",
-#if BUILDFLAG(PCSCAN_STACK_SUPPORTED)
-             FEATURE_ENABLED_BY_DEFAULT
+             FEATURE_ENABLED_BY_DEFAULT);
 #else
-             FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kPartitionAllocPCScanStackScanning,
+             "PartitionAllocPCScanStackScanning",
+             FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(PCSCAN_STACK_SUPPORTED)
-);
 
 BASE_FEATURE(kPartitionAllocDCScan,
              "PartitionAllocDCScan",

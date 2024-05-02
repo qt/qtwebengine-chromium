@@ -63,30 +63,36 @@ bool IsLocalWebApprovalsEnabled() {
 // desktop and iOS. There are granular sub-feature flags, which control
 // particular aspects. If one or more of these sub-feature flags are enabled,
 // then child account detection logic is implicitly enabled.
-BASE_FEATURE(kFilterWebsitesForSupervisedUsersOnDesktopAndIOS,
-             "FilterWebsitesForSupervisedUsersOnDesktopAndIOS",
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || \
     BUILDFLAG(IS_IOS)
+BASE_FEATURE(kFilterWebsitesForSupervisedUsersOnDesktopAndIOS,
+             "FilterWebsitesForSupervisedUsersOnDesktopAndIOS",
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kFilterWebsitesForSupervisedUsersOnDesktopAndIOS,
+             "FilterWebsitesForSupervisedUsersOnDesktopAndIOS",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 BASE_FEATURE(kSupervisedPrefsControlledBySupervisedStore,
              "SupervisedPrefsControlledBySupervisedStore",
-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kSupervisedPrefsControlledBySupervisedStore,
+             "SupervisedPrefsControlledBySupervisedStore",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
 // Whether to display a "Managed by your parent" or similar text for supervised
 // users in various UI surfaces.
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 BASE_FEATURE(kEnableManagedByParentUi,
              "EnableManagedByParentUi",
-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kEnableManagedByParentUi,
+             "EnableManagedByParentUi",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
@@ -109,22 +115,26 @@ bool CanDisplayFirstTimeInterstitialBanner() {
 
 // When enabled non-syncing signed in supervised users will not be signed out of
 // their google account when cookies are cleared
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 BASE_FEATURE(kClearingCookiesKeepsSupervisedUsersSignedIn,
              "ClearingCookiesKeepsSupervisedUsersSignedIn",
-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kClearingCookiesKeepsSupervisedUsersSignedIn,
+             "ClearingCookiesKeepsSupervisedUsersSignedIn",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kForceGoogleSafeSearchForSupervisedUsers,
              "ForceGoogleSafeSearchForSupervisedUsers",
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS)
              // For Android and ChromeOS, the long-standing behaviour is that
              // Safe Search is force-enabled by the browser, irrespective of the
              // parent configuration.
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kForceGoogleSafeSearchForSupervisedUsers,
+             "ForceGoogleSafeSearchForSupervisedUsers",
              // For other platforms, Safe Search is controlled by the parent
              // configuration in Family Link.
              base::FEATURE_DISABLED_BY_DEFAULT);

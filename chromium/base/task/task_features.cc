@@ -53,11 +53,13 @@ BASE_FEATURE(kExplicitHighResolutionTimerWin,
              "ExplicitHighResolutionTimerWin",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kRunTasksByBatches,
              "RunTasksByBatches",
-#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_CHROMEOS)
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kRunTasksByBatches,
+             "RunTasksByBatches",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 

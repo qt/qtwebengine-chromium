@@ -892,28 +892,29 @@ void InterfaceEndpointClient::OnAssociationEvent(
 }
 
 bool InterfaceEndpointClient::HandleValidatedMessage(Message* message) {
+#if BUILDFLAG(IS_ANDROID) && defined(ARCH_CPU_ARM64)
+  // ARM64 Android - set the interface tag unconditionally.
+  // TODO(kraskevich): Remove this special case once we're
+  // fully confident in crrev.com/c/3763052.
+  const bool unconditionally = true;
+#else
+  // Generate mojo interface tag only for local traces.
+  //
+  // This saves trace buffer space for field traces. The
+  // interface tag can be extracted from the interface method
+  // after symbolization.
+  //
+  // For local traces, this produces a raw string so that the
+  // trace doesn't require symbolization to be useful.
+  const bool unconditionally = false;
+#endif
   TRACE_EVENT("toplevel",
               perfetto::StaticString{method_name_callback_(*message)},
               [&](perfetto::EventContext& ctx) {
                 auto* info = ctx.event()->set_chrome_mojo_event_info();
-#if BUILDFLAG(IS_ANDROID) && defined(ARCH_CPU_ARM64)
-                // ARM64 Android - set the interface tag unconditionally.
-                // TODO(kraskevich): Remove this special case once we're
-                // fully confident in crrev.com/c/3763052.
-                info->set_mojo_interface_tag(interface_name_);
-#else
-                // Generate mojo interface tag only for local traces.
-                //
-                // This saves trace buffer space for field traces. The
-                // interface tag can be extracted from the interface method
-                // after symbolization.
-                //
-                // For local traces, this produces a raw string so that the
-                // trace doesn't require symbolization to be useful.
-                if (!ctx.ShouldFilterDebugAnnotations()) {
+                if (unconditionally || !ctx.ShouldFilterDebugAnnotations()) {
                   info->set_mojo_interface_tag(interface_name_);
                 }
-#endif  // BUILDFLAG(IS_ANDROID) && defined(ARCH_CPU_ARM64)
                 const auto method_info = method_info_callback_(*message);
                 if (method_info) {
                   info->set_ipc_hash((*method_info)());

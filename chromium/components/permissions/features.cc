@@ -119,14 +119,15 @@ BASE_FEATURE(kMitigateUnpartitionedWebviewPermissions,
 // When enabled, permission grants for Storage Access API will be enabled.
 // This includes enabling prompts, a new settings page and page info and
 // omnibox integration.
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kPermissionStorageAccessAPI,
              "PermissionStorageAccessAPI",
-#if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_DISABLED_BY_DEFAULT
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kPermissionStorageAccessAPI,
+             "PermissionStorageAccessAPI",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
 
 // When enabled "window-placement" may be used as an alias for
 // "window-management". Additionally, reverse mappings (i.e. enum to string)

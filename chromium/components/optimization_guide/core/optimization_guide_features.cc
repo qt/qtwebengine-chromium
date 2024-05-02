@@ -151,14 +151,15 @@ BASE_FEATURE(kOptimizationTargetPrediction,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Enables the downloading of models.
+#if BUILDFLAG(BUILD_WITH_TFLITE_LIB)
 BASE_FEATURE(kOptimizationGuideModelDownloading,
              "OptimizationGuideModelDownloading",
-#if BUILDFLAG(BUILD_WITH_TFLITE_LIB)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else   // BUILD_WITH_TFLITE_LIB
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kOptimizationGuideModelDownloading,
+             "OptimizationGuideModelDownloading",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // !BUILD_WITH_TFLITE_LIB
-);
 
 // Enables page content to be annotated.
 BASE_FEATURE(kPageContentAnnotations,
@@ -266,14 +267,15 @@ BASE_FEATURE(kOptimizationGuideFetchingForSRP,
 // store dir. Storing as relative path in the model store is needed for IOS,
 // since the directories could change after Chrome upgrade. This feature is
 // expected to be enabled only for IOS.
+#if BUILDFLAG(IS_IOS)
 BASE_FEATURE(kModelStoreUseRelativePath,
              "ModelStoreUseRelativePath",
-#if BUILDFLAG(IS_IOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kModelStoreUseRelativePath,
+             "ModelStoreUseRelativePath",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Kill switch for disabling model quality logging.
 BASE_FEATURE(kModelQualityLogging,

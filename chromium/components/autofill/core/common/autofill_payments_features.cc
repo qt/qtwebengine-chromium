@@ -30,11 +30,13 @@ BASE_FEATURE(kAutofillEnableAndroidNKeyForFidoAuthentication,
 
 // When enabled, card art images (instead of network icons) will be shown in
 // Payments Autofill UI.
+#if BUILDFLAG(IS_IOS)
 BASE_FEATURE(kAutofillEnableCardArtImage,
              "AutofillEnableCardArtImage",
-#if BUILDFLAG(IS_IOS)
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kAutofillEnableCardArtImage,
+             "AutofillEnableCardArtImage",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
@@ -52,11 +54,13 @@ BASE_FEATURE(kAutofillEnableCardBenefits,
 
 // When enabled, card product name (instead of issuer network) will be shown in
 // Payments Autofill UI.
+#if BUILDFLAG(IS_IOS)
 BASE_FEATURE(kAutofillEnableCardProductName,
              "AutofillEnableCardProductName",
-#if BUILDFLAG(IS_IOS)
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kAutofillEnableCardProductName,
+             "AutofillEnableCardProductName",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
@@ -160,11 +164,13 @@ BASE_FEATURE(kAutofillEnablePaymentsAndroidBottomSheetAccountEmail,
 // When enabled, in use-cases where we would not have triggered any user-visible
 // authentication to autofill payment methods, we will trigger a device
 // authentication.
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kAutofillEnablePaymentsMandatoryReauth,
              "AutofillEnablePaymentsMandatoryReauth",
-#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kAutofillEnablePaymentsMandatoryReauth,
+             "AutofillEnablePaymentsMandatoryReauth",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID)
 
@@ -202,11 +208,13 @@ BASE_FEATURE(kAutofillEnableStickyManualFallbackForCards,
 // enrollment of a credit card through their chrome browser after certain
 // autofill flows (for example, downstream and upstream), and from the settings
 // page.
+#if BUILDFLAG(IS_IOS)
 BASE_FEATURE(kAutofillEnableUpdateVirtualCardEnrollment,
              "AutofillEnableUpdateVirtualCardEnrollment",
-#if BUILDFLAG(IS_IOS)
              base::FEATURE_DISABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kAutofillEnableUpdateVirtualCardEnrollment,
+             "AutofillEnableUpdateVirtualCardEnrollment",
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 

@@ -28,14 +28,16 @@ BASE_FEATURE(kFileSystemAccessDragAndDropCheckBlocklist,
 // TODO(crbug.com/1421735): Remove this flag eventually.
 // When enabled, GetFile() and GetEntries() on a directory handle performs
 // the blocklist check on child file handles.
+#if BUILDFLAG(IS_WIN)
 BASE_FEATURE(kFileSystemAccessDirectoryIterationBlocklistCheck,
              "FileSystemAccessDirectoryIterationBlocklistCheck",
-#if BUILDFLAG(IS_WIN)
-// On Windows, resolving a symlink by getting an absolute path does not work,
-// and it requires a different implementation approach. Enable it on Windows
-// once available.
+             // On Windows, resolving a symlink by getting an absolute path does
+             // not work, and it requires a different implementation approach.
+             // Enable it on Windows once available.
              base::FEATURE_DISABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kFileSystemAccessDirectoryIterationBlocklistCheck,
+             "FileSystemAccessDirectoryIterationBlocklistCheck",
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_WIN)
 

@@ -29,14 +29,15 @@ bool IsAccessibilityFocusHighlightEnabled() {
   return base::FeatureList::IsEnabled(::features::kAccessibilityFocusHighlight);
 }
 
+#if BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kAccessibilityPdfOcrForSelectToSpeak,
              "kAccessibilityPdfOcrForSelectToSpeak",
-#if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kAccessibilityPdfOcrForSelectToSpeak,
+             "kAccessibilityPdfOcrForSelectToSpeak",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_CHROMEOS)
-);
 bool IsAccessibilityPdfOcrForSelectToSpeakEnabled() {
   return base::FeatureList::IsEnabled(
       ::features::kAccessibilityPdfOcrForSelectToSpeak);
@@ -286,14 +287,11 @@ bool IsLayoutExtractionEnabled() {
   return base::FeatureList::IsEnabled(::features::kLayoutExtraction);
 }
 
-BASE_FEATURE(kPdfOcr,
-             "PdfOcr",
 #if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kPdfOcr, "PdfOcr", base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kPdfOcr, "PdfOcr", base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_CHROMEOS)
-);
 
 bool IsPdfOcrEnabled() {
   return base::FeatureList::IsEnabled(::features::kPdfOcr) &&

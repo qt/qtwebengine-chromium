@@ -603,12 +603,12 @@
       // See https://github.com/screen-share/mouse-events/issues/14
       name: "CapturedMouseEvents",
       "depends_on": ["CaptureController"],
-      status: {"Android": "", "default": "test"},
+      status: "test",
     },
     {
       name: "CapturedSurfaceControl",
       origin_trial_feature_name: "CapturedSurfaceControl",
-      status: {"Android": "", "default": "experimental"},
+      status: "experimental",
     },
     {
       name: "CaptureHandle",
@@ -695,10 +695,7 @@
     },
     {
       name: "CompositionForegroundMarkers",
-      status: {
-        "Android": "stable",
-        "default": "",
-      }
+      status: "test"
     },
     {
       name: "CompressionDictionaryTransport",
@@ -1448,10 +1445,7 @@
     },
     {
       name: "DocumentPictureInPictureAPI",
-      status: {
-        "Android": "",
-        "default": "stable",
-      },
+      status: "stable",
     },
     // Enables the ability to use Document Policy header to control feature
     // DocumentDomain.
@@ -1511,7 +1505,7 @@
     {
       name: "ElementCapture",
       origin_trial_feature_name: "ElementCapture",
-      status: {"Android": "", "default": "experimental"},
+      status: "experimental",
     },
     {
       name: "EmptyClipboardRead",
@@ -1731,7 +1725,7 @@
       // on the command line (or via chrome://flags).
       name: "FileHandling",
       depends_on: ["FileSystemAccessLocal"],
-      status: {"Android": "test", "default": "stable"},
+      status: "stable",
       base_feature: "FileHandlingAPI",
     },
     {
@@ -1762,11 +1756,7 @@
       // The FileSystemHandle.getCloudIdentifiers() method (see
       // crbug.com/1443354).
       name: "FileSystemAccessGetCloudIdentifiers",
-      status: {
-        "ChromeOS_Ash": "experimental",
-        "ChromeOS_Lacros": "experimental",
-        "default": "",
-      }
+      status: "experimental",
     },
     {
       // Non-OPFS File System Access API.
@@ -1852,7 +1842,7 @@
     },
     {
       name: "FontAccess",
-      status: {"Android": "", "default": "stable"},
+      status: "stable",
     },
     {
       name: "FontationsFontBackend",
@@ -2149,7 +2139,7 @@
     {
       // crbug.com/1420675
       name: "InsertLineBreakIfPhrasingContent",
-      status: {"Android": "test", "default": "stable"},
+      status: "stable",
     },
     {
       name: "InstalledApp",
@@ -3122,7 +3112,7 @@
       // User-Agent string.
       name: "ReduceUserAgentAndroidVersionDeviceModel",
       depends_on: ["ReduceUserAgentMinorVersion"],
-      status: {"Android": "stable"},
+      status: "test",
     },
     // If enabled, the minor version of the User-Agent string will be reduced.
     // This User-Agent Reduction feature has been enabled starting from M101,
@@ -3136,7 +3126,7 @@
       // reduced.
       name: "ReduceUserAgentPlatformOsCpu",
       depends_on: ["ReduceUserAgentMinorVersion"],
-      status: {"Android": "", "default": "stable"},
+      status: "stable",
     },
     {
       name: "ReferenceBoxNoPixelSnapping",
@@ -3156,12 +3146,7 @@
     {
       name: "RemotePlaybackBackend",
       settable_from_internals: true,
-      status: {
-        "Android": "stable",
-        "Win": "stable",
-        "Mac": "stable",
-        "Linux": "stable",
-        "default": "experimental"},
+      status: "stable",
     },
     {
       name: "RemoveDanglingMarkupInTarget",
@@ -3516,7 +3501,7 @@
     },
     {
       name: "SmartCard",
-      status: {"Android": "", "default": "test"},
+      status: "test",
     },
     {
       name: "SmartZoom",
@@ -3932,10 +3917,7 @@
     },
     {
       name: "UseBeginFramePresentationFeedback",
-      status: {
-        "ChromeOS_Ash": "stable",
-        "ChromeOS_Lacros": "stable",
-      },
+      status: "test",
     },
     {
       // Makes the global root scrollbars follow the preferred color scheme
@@ -4047,7 +4029,7 @@
     {
       name: "WebAppLaunchHandler",
       origin_trial_feature_name: "Launch Handler",
-      status: {"Android": "experimental", "default": "stable"},
+      status: "stable",
       base_feature: "WebAppEnableLaunchHandler",
     },
     {
@@ -4308,7 +4290,7 @@
     },
     {
       name: "WebPrinting",
-      status: {"Android": "", "default": "test"},
+      status: "test",
     },
     {
       name: "WebSerialBluetooth",
