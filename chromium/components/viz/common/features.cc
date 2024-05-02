@@ -63,14 +63,15 @@ BASE_FEATURE(kBackdropFilterMirrorEdgeMode,
              "BackdropFilterMirrorEdgeMode",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+#if BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kUseDrmBlackFullscreenOptimization,
              "UseDrmBlackFullscreenOptimization",
-#if BUILDFLAG(IS_CHROMEOS)
              base::FEATURE_ENABLED_BY_DEFAULT
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kUseDrmBlackFullscreenOptimization,
+             "UseDrmBlackFullscreenOptimization",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 BASE_FEATURE(kUseFrameIntervalDecider,
              "UseFrameIntervalDecider",
@@ -86,19 +87,26 @@ BASE_FEATURE(kTemporalSkipOverlaysWithRootCopyOutputRequests,
              "TemporalSkipOverlaysWithRootCopyOutputRequests",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+#if BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kUseMultipleOverlays,
              "UseMultipleOverlays",
-#if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kUseMultipleOverlays,
+             "UseMultipleOverlays",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 const char kMaxOverlaysParam[] = "max_overlays";
 
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+BASE_FEATURE(kDelegatedCompositing,
+             "DelegatedCompositing",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+#else
 BASE_FEATURE(kDelegatedCompositing,
              "DelegatedCompositing",
              base::FEATURE_DISABLED_BY_DEFAULT);
+#endif
 
 const char kDrawQuadSplit[] = "num_of_splits";
 
@@ -265,11 +273,13 @@ BASE_FEATURE(kVSyncAlignedPresent,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
+#if BUILDFLAG(IS_MAC)
 BASE_FEATURE(kAllowUndamagedNonrootRenderPassToSkip,
              "AllowUndamagedNonrootRenderPassToSkip",
-#if BUILDFLAG(IS_MAC)
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kAllowUndamagedNonrootRenderPassToSkip,
+             "AllowUndamagedNonrootRenderPassToSkip",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
@@ -284,28 +294,34 @@ BASE_FEATURE(kAllowForceMergeRenderPassWithRequireOverlayQuads,
              "AllowForceMergeRenderPassWithRequireOverlayQuads",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-
 // If enabled, CompositorFrameSinkClient::OnBeginFrame is also treated as the
 // DidReceiveCompositorFrameAck. Both in providing the Ack for the previous
 // frame, and in returning resources. While enabled we attempt to not send
 // separate Ack and ReclaimResources signals. However if while sending an
 // OnBeginFrame there is a pending Ack, then if the Ack arrives before the next
 // OnBeginFrame we will send the Ack immediately, rather than batching it.
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+BASE_FEATURE(kOnBeginFrameAcks,
+             "OnBeginFrameAcks",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+#else
 BASE_FEATURE(kOnBeginFrameAcks,
              "OnBeginFrameAcks",
              base::FEATURE_DISABLED_BY_DEFAULT);
+#endif
 
 // if enabled, Any CompositorFrameSink of type video that defines a preferred
 // framerate that is below the display framerate will throttle OnBeginFrame
 // callbacks to match the preferred framerate.
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kOnBeginFrameThrottleVideo,
              "OnBeginFrameThrottleVideo",
-#if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kOnBeginFrameThrottleVideo,
+             "OnBeginFrameThrottleVideo",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-             );
 
 // If enabled, Chrome uses ADPF(Android Dynamic Performance Framework) if the
 // device's SOC manufacturer satisifes the allowlist and blocklist rules.
@@ -370,14 +386,15 @@ BASE_FEATURE(kEnableADPFSetThreads,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // If enabled, surface activation and draw do not block on dependencies.
+#if BUILDFLAG(IS_IOS)
 BASE_FEATURE(kDrawImmediatelyWhenInteractive,
              "DrawImmediatelyWhenInteractive",
-#if BUILDFLAG(IS_IOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kDrawImmediatelyWhenInteractive,
+             "DrawImmediatelyWhenInteractive",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // If enabled, we immediately send acks to clients when a viz surface
 // activates. This effectively removes back-pressure. This can result in wasted
@@ -434,15 +451,18 @@ BASE_FEATURE(kShutdownForFailedChannelCreation,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // If enabled, snapshot the root surface when it is evicted.
-BASE_FEATURE(kSnapshotEvictedRootSurface,
-             "SnapshotEvictedRootSurface",
 // TODO(edcourtney): Enable for Android.
 #if BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kSnapshotEvictedRootSurface,
+             "SnapshotEvictedRootSurface",
              base::FEATURE_DISABLED_BY_DEFAULT
-#else
-             base::FEATURE_ENABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kSnapshotEvictedRootSurface,
+             "SnapshotEvictedRootSurface",
+             base::FEATURE_ENABLED_BY_DEFAULT
+);
+#endif
 
 // If enabled, info for quads from the last render pass will be reported as
 // UMAs.

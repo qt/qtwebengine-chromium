@@ -63,11 +63,13 @@ BASE_FEATURE(kAutofillEnableCardBenefitsIph,
 
 // When enabled, Chrome will show metadata along with other card information
 // when the virtual card is presented to users.
+#if BUILDFLAG(IS_IOS)
 BASE_FEATURE(kAutofillEnableCardBenefitsSync,
              "AutofillEnableCardBenefitsSync",
-#if BUILDFLAG(IS_IOS)
              base::FEATURE_DISABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kAutofillEnableCardBenefitsSync,
+             "AutofillEnableCardBenefitsSync",
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 
@@ -223,11 +225,13 @@ BASE_FEATURE(kAutofillEnableVerveCardSupport,
 
 // When enabled, Chrome will show metadata along with other card information
 // when the virtual card is presented to users.
+#if BUILDFLAG(IS_IOS)
 BASE_FEATURE(kAutofillEnableVirtualCardMetadata,
              "AutofillEnableVirtualCardMetadata",
-#if BUILDFLAG(IS_IOS)
              base::FEATURE_DISABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kAutofillEnableVirtualCardMetadata,
+             "AutofillEnableVirtualCardMetadata",
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 

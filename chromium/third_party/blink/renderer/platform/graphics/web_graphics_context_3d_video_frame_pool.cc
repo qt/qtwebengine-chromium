@@ -36,14 +36,17 @@ namespace blink {
 
 namespace {
 
+#if BUILDFLAG(IS_WIN)
 BASE_FEATURE(kUseCopyToGpuMemoryBufferAsync,
              "UseCopyToGpuMemoryBufferAsync",
-#if BUILDFLAG(IS_WIN)
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kUseCopyToGpuMemoryBufferAsync,
+             "UseCopyToGpuMemoryBufferAsync",
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 
 class Context : public media::RenderableGpuMemoryBufferVideoFramePool::Context {
  public:
@@ -349,15 +352,16 @@ void ApplyMetadataAndRunCallback(
   std::move(orig_callback).Run(std::move(wrapped));
 }
 
-BASE_FEATURE(kGpuMemoryBufferReadbackFromTexture,
-             "GpuMemoryBufferReadbackFromTexture",
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS) || \
     BUILDFLAG(IS_LINUX)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kGpuMemoryBufferReadbackFromTexture,
+             "GpuMemoryBufferReadbackFromTexture",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kGpuMemoryBufferReadbackFromTexture,
+             "GpuMemoryBufferReadbackFromTexture",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 }  // namespace
 
 bool WebGraphicsContext3DVideoFramePool::ConvertVideoFrame(

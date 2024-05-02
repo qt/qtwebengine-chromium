@@ -173,14 +173,15 @@ BASE_FEATURE(kStylusSpecificTapSlop,
 // to be used in determining the concrete object size of a custom cursor in
 // blink. Currently enabled by default on Windows only.
 // TODO(crbug.com/40845719) - Implement for other platforms.
+#if BUILDFLAG(IS_WIN)
 BASE_FEATURE(kSystemCursorSizeSupported,
              "SystemCursorSizeSupported",
-#if BUILDFLAG(IS_WIN)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kSystemCursorSizeSupported,
+             "SystemCursorSizeSupported",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 bool IsSystemCursorSizeSupported() {
   return base::FeatureList::IsEnabled(kSystemCursorSizeSupported);
@@ -192,30 +193,32 @@ BASE_FEATURE(kSystemKeyboardLock,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Enables GPU rasterization for all UI drawing (where not blocklisted).
-BASE_FEATURE(kUiGpuRasterization,
-             "UiGpuRasterization",
 #if BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_FUCHSIA) || \
     BUILDFLAG(IS_WIN)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kUiGpuRasterization,
+             "UiGpuRasterization",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kUiGpuRasterization,
+             "UiGpuRasterization",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 bool IsUiGpuRasterizationEnabled() {
   return base::FeatureList::IsEnabled(kUiGpuRasterization);
 }
 
 // Enables scrolling with layers under ui using the ui::Compositor.
+#if BUILDFLAG(IS_APPLE)
 BASE_FEATURE(kUiCompositorScrollWithLayers,
              "UiCompositorScrollWithLayers",
 // TODO(crbug.com/40471184): Use composited scrolling on all platforms.
-#if BUILDFLAG(IS_APPLE)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kUiCompositorScrollWithLayers,
+             "UiCompositorScrollWithLayers",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // TODO(crbug.com/389771428): Switch the ui::Compositor to use
 // cc::PropertyTrees and layer lists rather than layer trees.
@@ -225,14 +228,15 @@ BASE_FEATURE(kUiCompositorUsesLayerLists,
 
 // Enables the use of a touch fling curve that is based on the behavior of
 // native apps on Windows.
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX)
 BASE_FEATURE(kExperimentalFlingAnimation,
              "ExperimentalFlingAnimation",
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kExperimentalFlingAnimation,
+             "ExperimentalFlingAnimation",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 #if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kDragDropEmpty, "DragDropEmpty", base::FEATURE_ENABLED_BY_DEFAULT);
@@ -240,14 +244,15 @@ BASE_FEATURE(kDragDropEmpty, "DragDropEmpty", base::FEATURE_ENABLED_BY_DEFAULT);
 
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_WIN)
 // Cached in Java as well, make sure defaults are updated together.
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kElasticOverscroll,
              "ElasticOverscroll",
-#if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else  // BUILDFLAG(IS_ANDROID)
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kElasticOverscroll,
+             "ElasticOverscroll",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID)
 
 // Enables focus follow follow cursor (sloppyfocus).
@@ -275,14 +280,15 @@ bool IsImprovedKeyboardShortcutsEnabled() {
 // selection gestures and quick menu options. Planning to release for ChromeOS
 // first, then possibly also enable some parts for other platforms later.
 // TODO(b/262297017): Clean up after touch text editing redesign ships.
+#if BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kTouchTextEditingRedesign,
              "TouchTextEditingRedesign",
-#if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kTouchTextEditingRedesign,
+             "TouchTextEditingRedesign",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 bool IsTouchTextEditingRedesignEnabled() {
   return base::FeatureList::IsEnabled(kTouchTextEditingRedesign);
@@ -300,15 +306,12 @@ bool IsForcedColorsEnabled() {
 // Enables the eye-dropper in the refresh color-picker for Windows, Mac
 // and Linux. This feature will be released for other platforms in later
 // milestones.
-BASE_FEATURE(kEyeDropper,
-             "EyeDropper",
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
     BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kEyeDropper, "EyeDropper", base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kEyeDropper, "EyeDropper", base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 bool IsEyeDropperEnabled() {
   return base::FeatureList::IsEnabled(features::kEyeDropper);

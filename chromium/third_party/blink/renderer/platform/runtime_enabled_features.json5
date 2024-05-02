@@ -486,7 +486,7 @@
     {
       name: "AudioOutputDevices",
       // Android does not yet support switching of audio output devices
-      status: {"Android": "", "default": "stable"},
+      status: "stable",
     },
     {
       name: "AudioVideoTracks",
@@ -748,7 +748,7 @@
     },
     {
       name: "CaptureController",
-      status: {"Android": "", "default": "stable"},
+      status: "stable",
     },
     {
       // TODO(crbug.com/1444712): Before enabling that flag by default,
@@ -758,17 +758,17 @@
       // See https://github.com/screen-share/mouse-events/issues/14
       name: "CapturedMouseEvents",
       "depends_on": ["CaptureController"],
-      status: {"Android": "", "default": "test"},
+      status: "test",
     },
     {
       name: "CapturedSurfaceControl",
       origin_trial_feature_name: "CapturedSurfaceControl",
-      status: {"Android": "", "default": "experimental"},
+      status: "experimental",
     },
     {
       name: "CaptureHandle",
       depends_on: ["GetDisplayMedia"],
-      status: {"Android": "", "default": "stable"},
+      status: "stable",
     },
     {
       // https://www.w3.org/TR/cssom-view-1/#dom-document-caretpositionfrompoint
@@ -860,10 +860,7 @@
     },
     {
       name: "CompositionForegroundMarkers",
-      status: {
-        "Android": "stable",
-        "default": "",
-      }
+      status: "test"
     },
     {
       name: "CompressionDictionaryTransport",
@@ -900,11 +897,11 @@
     },
     {
       name: "ContactsManager",
-      status:  {"Android": "stable", "default": "test"},
+      status: "test",
     },
     {
       name: "ContactsManagerExtraProperties",
-      status:  {"Android": "stable", "default": "test"},
+      status: "test",
     },
     {
       name: "ContainerTypeNoLayoutContainment",
@@ -912,7 +909,7 @@
     },
     {
       name: "ContentIndex",
-      status:  {"Android": "stable", "default": "experimental"},
+      status: "experimental",
     },
     {
       name: "ContextMenu",
@@ -1617,10 +1614,7 @@
     },
     {
       name: "DocumentPictureInPictureAPI",
-      status: {
-        "Android": "",
-        "default": "stable",
-      },
+      status: "stable",
     },
     // Enables `preferInitialWindowPlacement` Document PiP option to skip
     // re-using the previous pip window bounds.
@@ -1981,13 +1975,13 @@
       // on the command line (or via chrome://flags).
       name: "FileHandling",
       depends_on: ["FileSystemAccessLocal"],
-      status: {"Android": "test", "default": "stable"},
+      status: "stable",
       base_feature: "FileHandlingAPI",
     },
     {
       name: "FileHandlingIcons",
       depends_on: ["FileHandling"],
-      status: {"Android": "test", "default": "experimental"},
+      status: "experimental",
       base_feature: "none",
     },
     {
@@ -2161,7 +2155,7 @@
     },
     {
       name: "FontAccess",
-      status: {"Android": "", "default": "stable"},
+      status: "stable",
     },
     {
       name: "FontationsFontBackend",
@@ -2270,10 +2264,7 @@
     {
       name: "GetDisplayMedia",
       public: true,
-      status: {
-        "Android": "experimental",
-        "default": "stable",
-      },
+      status: "stable",
       base_feature: "none",
     },
     {
@@ -2480,7 +2471,7 @@
       name: "InputMultipleFieldsUI",
       // No plan to support complex UI for date/time INPUT types on Android and
       // iOS.
-      status: {"Android": "test", "iOS": "test", "default": "stable"},
+      status: "stable",
     },
     // Insert a blockquote before a outer block after creating the blockquote
     // when indenting a node whose outer block is a blockquote. See
@@ -2496,7 +2487,7 @@
     {
       // crbug.com/1420675
       name: "InsertLineBreakIfPhrasingContent",
-      status: {"Android": "test", "default": "stable"},
+      status: "stable",
     },
     {
       // Improved support for debugging CSSNestedDeclarations.
@@ -2694,7 +2685,7 @@
     },
     {
       name: "MediaCapture",
-      status: {"Android": "stable"},
+      // status: {"Android": "stable"},
     },
     {
       name: "MediaCaptureBackgroundBlur",
@@ -2913,8 +2904,7 @@
     },
     {
       name: "NavigatorContentUtils",
-      // Android does not yet support NavigatorContentUtils.
-      status: {"Android": "", "default": "stable"},
+      status: "stable",
     },
     {
       name: "NestedViewTransition",
@@ -2974,7 +2964,7 @@
       name: "NotificationConstructor",
       // Android won't be able to reliably support non-persistent notifications, the
       // intended behavior for which is in flux by itself.
-      status: {"Android": "", "default": "stable"},
+      status: "stable",
     },
     // NotificationContentImage is not available in all platforms
     // The Notification Center on Mac OS X does not support content images.
@@ -3026,7 +3016,7 @@
     },
     {
       name: "OrientationEvent",
-      status: {"Android": "stable"},
+      // status: {"Android": "stable"},
     },
     {
       name: "OriginIsolationHeader",
@@ -3166,7 +3156,7 @@
     {
       name: "PagePopup",
       // Android does not have support for PagePopup
-      status: {"Android": "", "iOS": "", "default": "stable"},
+      status: "stable",
     },
     {
       name: "PageRevealEvent",
@@ -3521,7 +3511,7 @@
       // User-Agent string.
       name: "ReduceUserAgentAndroidVersionDeviceModel",
       depends_on: ["ReduceUserAgentMinorVersion"],
-      status: {"Android": "stable"},
+      status: "test",
     },
     // If enabled, the minor version of the User-Agent string will be reduced.
     // This User-Agent Reduction feature has been enabled starting from M101,
@@ -3535,11 +3525,11 @@
       // reduced.
       name: "ReduceUserAgentPlatformOsCpu",
       depends_on: ["ReduceUserAgentMinorVersion"],
-      status: {"Android": "", "default": "stable"},
+      status: "stable",
     },
     {
       name: "RegionCapture",
-      status: {"Android": "", "default": "stable"},
+      status: "stable",
     },
     {
       name: "RelOpenerBcgDependencyHint",
@@ -3554,12 +3544,7 @@
     {
       name: "RemotePlaybackBackend",
       settable_from_internals: true,
-      status: {
-        "Android": "stable",
-        "Win": "stable",
-        "Mac": "stable",
-        "Linux": "stable",
-        "default": "experimental"},
+      status: "stable",
     },
     {
       name: "RemoveDanglingMarkupInTarget",
@@ -3926,14 +3911,14 @@
     },
     {
       name: "Serial",
-      status: {"Android": "", "default": "stable"},
+      status: "stable",
     },
     {
       name: "SerializeViewTransitionStateInSPA",
     },
     {
       name: "SerialPortConnected",
-      status: {"Android": "", "default": "experimental"},
+      status: "experimental",
       base_feature: "none",
     },
     {
@@ -3992,7 +3977,7 @@
       name: "SharedWorker",
       public: true,
       // Android does not yet support SharedWorker. crbug.com/154571
-      status: {"Android": "", "default": "stable"},
+      status: "stable",
       base_feature: "none",
     },
     {
@@ -4041,7 +4026,7 @@
     },
     {
       name: "SmartCard",
-      status: {"Android": "", "default": "test"},
+      status: "test",
     },
     {
       name: "SmartZoom",
@@ -4305,7 +4290,7 @@
     },
     {
       name: "TextFragmentTapOpensContextMenu",
-      status: {"Android": "stable"},
+      // status: {"Android": "stable"},
     },
     {
       name: "TextMetricsBaselines",
@@ -4929,7 +4914,7 @@
     },
     {
       name: "WebHID",
-      status: {"Android": "", "default": "stable"},
+      status: "stable",
     },
     {
       // It is only enabled in extension environment for now.
@@ -4967,7 +4952,7 @@
     {
       name: "WebNFC",
       public: true,
-      status: {"Android": "stable", "default": "test"},
+      status: "test",
       base_feature: "none",
     },
     {
@@ -4990,7 +4975,7 @@
     },
     {
       name: "WebPrinting",
-      status: {"Android": "", "default": "test"},
+      status: "test",
     },
     // WebShare is enabled by default on Android.
     {
