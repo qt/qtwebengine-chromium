@@ -800,13 +800,14 @@ size_t TypeFeedbackStorage::EstimateCurrentMemoryConsumption() const {
 }
 
 size_t WasmModule::EstimateCurrentMemoryConsumption() const {
-  UPDATE_WHEN_CLASS_CHANGES(WasmModule,
 #if V8_ENABLE_DRUMBRAKE
-                            824
+  UPDATE_WHEN_CLASS_CHANGES(WasmModule,
+                            824);
 #else   // V8_ENABLE_DRUMBRAKE
-                            792
+  UPDATE_WHEN_CLASS_CHANGES(WasmModule,
+                            792);
 #endif  // V8_ENABLE_DRUMBRAKE
-  );
+
   size_t result = EstimateStoredSize();
 
   result += type_feedback.EstimateCurrentMemoryConsumption();

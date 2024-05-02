@@ -351,14 +351,15 @@ BASE_FEATURE(kMediaRecorderHEVCSupport,
 
 // Let videos be resumed via remote controls (for example, the notification)
 // when in background.
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kResumeBackgroundVideo,
              "resume-background-video",
-#if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kResumeBackgroundVideo,
+             "resume-background-video",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 #if BUILDFLAG(IS_MAC)
 // Enables system audio loopback capture using the macOS CoreAudio tap API for
@@ -412,13 +413,15 @@ BASE_FEATURE(kWebrtcMediaCapabilitiesParameters,
 
 // Controls the persistent license support for protected media that uses
 // widevine.
+#if BUILDFLAG(ENABLE_LIBRARY_CDMS)
 BASE_FEATURE(kWidevinePersistentLicenseSupport,
              "WidevinePersistentLicenseSupport",
-#if BUILDFLAG(ENABLE_LIBRARY_CDMS)
              // TODO(crbug.com/423458074): This will rollout slowly as an
              // experiment eventually becoming disabled by default.
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kWidevinePersistentLicenseSupport,
+             "WidevinePersistentLicenseSupport",
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(ENABLE_LIBRARY_CDMS)
 
@@ -434,14 +437,15 @@ BASE_FEATURE(kUseAndroidOverlayForSecureOnly,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Allows usage of OS-level (platform) audio encoders.
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kPlatformAudioEncoder,
              "PlatformAudioEncoder",
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kPlatformAudioEncoder,
+             "PlatformAudioEncoder",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // CDM host verification is enabled by default. Can be disabled for testing.
 // Has no effect if ENABLE_CDM_HOST_VERIFICATION buildflag is false.
@@ -450,24 +454,26 @@ BASE_FEATURE(kCdmHostVerification,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Enables the "Copy Video Frame" context menu item.
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kContextMenuCopyVideoFrame,
              "ContextMenuCopyVideoFrame",
-#if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_DISABLED_BY_DEFAULT
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kContextMenuCopyVideoFrame,
+             "ContextMenuCopyVideoFrame",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
 
 // Enables the "Save Video Frame As" context menu item.
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kContextMenuSaveVideoFrameAs,
              "ContextMenuSaveVideoFrameAs",
-#if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_DISABLED_BY_DEFAULT
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kContextMenuSaveVideoFrameAs,
+             "ContextMenuSaveVideoFrameAs",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
 
 // Enables the "Search Video Frame with <Search Provider>" context menu item.
 BASE_FEATURE(kContextMenuSearchForVideoFrame,
@@ -632,26 +638,30 @@ BASE_FEATURE(kD3D11VideoDecoderUseSharedHandle,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Runs the media service in the GPU process on a dedicated thread.
+#if BUILDFLAG(IS_WIN)
 BASE_FEATURE(kDedicatedMediaServiceThread,
              "DedicatedMediaServiceThread",
-#if BUILDFLAG(IS_WIN)
-             base::FEATURE_DISABLED_BY_DEFAULT
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kDedicatedMediaServiceThread,
+             "DedicatedMediaServiceThread",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
 
 // Defer requesting persistent audio focus until the WebContents is audible.
 // The goal is to prevent silent playback from taking audio focus from
 // background apps on android, where focus is typically exclusive.
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kDeferAudioFocusUntilAudible,
              "DeferAudioFocusUntilAudible",
-#if BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kDeferAudioFocusUntilAudible,
+             "DeferAudioFocusUntilAudible",
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 
 #if !BUILDFLAG(IS_ANDROID)
 // Allow document picture-in-picture to navigate.  This should be disabled
@@ -693,24 +703,27 @@ BASE_FEATURE(kFileDialogsBlockPictureInPicture,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Tucks picture-in-picture windows while file dialogs are open.
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
 BASE_FEATURE(kFileDialogsTuckPictureInPicture,
              "FileDialogsTuckPictureInPicture",
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kFileDialogsTuckPictureInPicture,
+             "FileDialogsTuckPictureInPicture",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
 #endif  // !BUILDFLAG(IS_ANDROID)
 
 // Show toolbar button that opens dialog for controlling media sessions.
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
 BASE_FEATURE(kGlobalMediaControls,
              "GlobalMediaControls",
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kGlobalMediaControls,
+             "GlobalMediaControls",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Auto-dismiss global media controls.
 BASE_FEATURE(kGlobalMediaControlsAutoDismiss,
@@ -726,26 +739,28 @@ BASE_FEATURE(kGlobalMediaControlsUpdatedUI,
 
 #if !BUILDFLAG(IS_ANDROID)
 // If enabled, users can request Media Remoting without fullscreen-in-tab.
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
 BASE_FEATURE(kMediaRemotingWithoutFullscreen,
              "MediaRemotingWithoutFullscreen",
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kMediaRemotingWithoutFullscreen,
+             "MediaRemotingWithoutFullscreen",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 #endif
 
 // Show picture-in-picture button in Global Media Controls.
-BASE_FEATURE(kGlobalMediaControlsPictureInPicture,
-             "GlobalMediaControlsPictureInPicture",
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
     BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kGlobalMediaControlsPictureInPicture,
+             "GlobalMediaControlsPictureInPicture",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kGlobalMediaControlsPictureInPicture,
+             "GlobalMediaControlsPictureInPicture",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Enable selection of audio output device in Global Media Controls.
 BASE_FEATURE(kGlobalMediaControlsSeamlessTransfer,
@@ -825,9 +840,15 @@ BASE_FEATURE(kVaapiVideoMinResolutionForPerformance,
 
 // Enable global VA-API lock. Disable this to use lock-free VA-API function
 // calls for thread safe backends.
+#if BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kGlobalVaapiLock,
              "GlobalVaapiLock",
              base::FEATURE_DISABLED_BY_DEFAULT);
+#else
+BASE_FEATURE(kGlobalVaapiLock,
+             "GlobalVaapiLock",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+#endif
 
 #if defined(ARCH_CPU_X86_FAMILY) && BUILDFLAG(IS_CHROMEOS)
 // Enable software bitrate controller for H264 temporal layer encoding with HW
@@ -1076,15 +1097,16 @@ BASE_FEATURE(kHardwareSecureDecryptionRequireServerCert,
 #endif
 
 // Enables handling of hardware media keys for controlling media.
-BASE_FEATURE(kHardwareMediaKeyHandling,
-             "HardwareMediaKeyHandling",
 #if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || \
     BUILDFLAG(USE_MPRIS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kHardwareMediaKeyHandling,
+             "HardwareMediaKeyHandling",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kHardwareMediaKeyHandling,
+             "HardwareMediaKeyHandling",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Enables a platform-specific resolution cutoff for prioritizing platform
 // decoders over software decoders or vice-versa.
@@ -1222,14 +1244,17 @@ BASE_FEATURE(kUseAudioManagerMaxChannelLayout,
 #endif  // BUILDFLAG(IS_ANDROID)
 
 #if BUILDFLAG(ENABLE_HLS_DEMUXER)
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kBuiltInHlsPlayer,
              "BuiltInHlsPlayer",
-#if BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kBuiltInHlsPlayer,
+             "BuiltInHlsPlayer",
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 
 #endif  // BUILDFLAG(ENABLE_HLS_DEMUXER)
 
@@ -1237,14 +1262,15 @@ BASE_FEATURE(kBuiltInHlsPlayer,
 #if BUILDFLAG(USE_LINUX_VIDEO_ACCELERATION)
 // Enable Variable Bitrate encoding with hardware accelerated encoders on
 // ChromeOS.
+#if defined(ARCH_CPU_X86_FAMILY)
 BASE_FEATURE(kChromeOSHWVBREncoding,
              "ChromeOSHWVBREncoding",
-#if defined(ARCH_CPU_X86_FAMILY)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kChromeOSHWVBREncoding,
+             "ChromeOSHWVBREncoding",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Limit the number of concurrent hardware decoder instances on ChromeOS.
 BASE_FEATURE(kLimitConcurrentDecoderInstances,
@@ -1401,14 +1427,15 @@ const base::FeatureParam<int> kBatchReadCount{&kMediaFoundationBatchRead,
 // When ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION is enabled at build time, allow
 // the support of encrypted Dolby Vision. Have no effect when
 // ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION is disabled.
+#if BUILDFLAG(IS_WIN)
 BASE_FEATURE(kPlatformEncryptedDolbyVision,
              "PlatformEncryptedDolbyVision",
-#if BUILDFLAG(IS_WIN)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kPlatformEncryptedDolbyVision,
+             "PlatformEncryptedDolbyVision",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // When ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION is enabled at build time and
 // `kPlatformEncryptedDolbyVision` is enabled at run time, encrypted Dolby
@@ -1434,14 +1461,15 @@ BASE_FEATURE(kBackgroundListening,
 // renderer processes (instead of using the GPU process). The GPU process will
 // still be used as a proxy between renderers and utility processes (see
 // go/oop-vd-dd).
+#if BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kUseOutOfProcessVideoDecoding,
              "UseOutOfProcessVideoDecoding",
-#if BUILDFLAG(IS_CHROMEOS)
              base::FEATURE_ENABLED_BY_DEFAULT
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kUseOutOfProcessVideoDecoding,
+             "UseOutOfProcessVideoDecoding",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 #endif  // BUILDFLAG(ALLOW_OOP_VIDEO_DECODER)
 
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
@@ -1461,26 +1489,28 @@ BASE_FEATURE(kUseSequencedTaskRunnerForMediaService,
 // a COM STA TaskRunner.
 #if !BUILDFLAG(IS_WIN)
 // Use SequencedTaskRunner for MojoVideoEncodeAcceleratorProvider.
+#if BUILDFLAG(IS_APPLE)
 BASE_FEATURE(kUseSequencedTaskRunnerForMojoVEAProvider,
              "UseSequencedTaskRunnerForMojoVEAProvider",
-#if BUILDFLAG(IS_APPLE)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kUseSequencedTaskRunnerForMojoVEAProvider,
+             "UseSequencedTaskRunnerForMojoVEAProvider",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 #endif  // !BUILDFLAG(IS_WIN)
 
 // Use TaskRunner for each MojoVideoEncodeAcceleratorService. Replaces
 // per-accelerator encoding task runner.
+#if BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_WIN)
 BASE_FEATURE(kUseTaskRunnerForMojoVEAService,
              "UseTaskRunnerForMojoVEAService",
-#if BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_WIN)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kUseTaskRunnerForMojoVEAService,
+             "UseTaskRunnerForMojoVEAService",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Feature flag to run the MojoAudioDecoderService in a sequence different than
 // the other mojo media services. On some Android devices, MediaCodec may block
@@ -1542,22 +1572,25 @@ BASE_FEATURE(kReduceHardwareVideoDecoderBuffers,
 // - PreloadMediaEngagementData: enables a list of origins to be considered as
 //   having a high MEI until there is enough local data to determine the user's
 //   preferred behaviour.
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
 BASE_FEATURE(kMediaEngagementBypassAutoplayPolicies,
              "MediaEngagementBypassAutoplayPolicies",
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
-             base::FEATURE_DISABLED_BY_DEFAULT
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kMediaEngagementBypassAutoplayPolicies,
+             "MediaEngagementBypassAutoplayPolicies",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
+
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
 BASE_FEATURE(kPreloadMediaEngagementData,
              "PreloadMediaEngagementData",
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
-             base::FEATURE_DISABLED_BY_DEFAULT
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kPreloadMediaEngagementData,
+             "PreloadMediaEngagementData",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
 
 BASE_FEATURE(kMediaEngagementHTTPSOnly,
              "MediaEngagementHTTPSOnly",
@@ -1592,14 +1625,15 @@ BASE_FEATURE(kAudioDuckingWin,
 
 // Enables flash to be ducked by audio focus. This is enabled on Chrome OS which
 // has audio focus enabled.
+#if BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kAudioFocusDuckFlash,
              "AudioFocusDuckFlash",
-#if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kAudioFocusDuckFlash,
+             "AudioFocusDuckFlash",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Enables an optimization where audio input stream read confirmations are
 // written to shared memory instead of being sent through socket messages.
@@ -1609,14 +1643,15 @@ BASE_FEATURE(kAudioInputConfirmReadsViaShmem,
 
 // Enables the internal Media Session logic without enabling the Media Session
 // service.
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kInternalMediaSession,
              "InternalMediaSession",
-#if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kInternalMediaSession,
+             "InternalMediaSession",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 BASE_FEATURE(kUseFakeDeviceForMediaStream,
              "use-fake-device-for-media-stream",
@@ -1734,14 +1769,15 @@ const base::FeatureParam<double> kAudioOffloadBufferTimeMs{
 // development by ensuring logs can be seen without a remote desktop session.
 // Only affects builds when DCHECK is on for non-ERROR logs (ERROR logs are
 // always sent to the log stream). Enabled by default on Android and ChromeOS.
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kMediaLogToConsole,
              "MediaLogToConsole",
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kMediaLogToConsole,
+             "MediaLogToConsole",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 BASE_FEATURE(kLibvpxUseChromeThreads,
              "LibvpxUseChromeThreads",

@@ -153,15 +153,16 @@ BASE_FEATURE(kAllowHardwareBufferUsageFlagsFromVulkanForScanout,
 // --enable-gpu-rasterization or --disable-gpu-rasterization.
 // DefaultEnableGpuRasterization has launched on Mac, Windows, ChromeOS,
 // Android and Linux.
-BASE_FEATURE(kDefaultEnableGpuRasterization,
-             "DefaultEnableGpuRasterization",
 #if BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS) || \
     BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_FUCHSIA) || BUILDFLAG(IS_LINUX)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kDefaultEnableGpuRasterization,
+             "DefaultEnableGpuRasterization",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kDefaultEnableGpuRasterization,
+             "DefaultEnableGpuRasterization",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Enables the use of MSAA in skia on Ice Lake and later intel architectures.
 BASE_FEATURE(kEnableMSAAOnNewIntelGPUs,
@@ -209,27 +210,17 @@ BASE_FEATURE(kVaapiWebPImageDecodeAcceleration,
 // native implementation if --use-vulkan flag is not used. Otherwise
 // --use-vulkan will be followed.
 // Note Android WebView uses kWebViewDrawFunctorUsesVulkan instead of this.
-BASE_FEATURE(kVulkan,
-             "Vulkan",
 #if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kVulkan, "Vulkan", base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kVulkan, "Vulkan", base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
-BASE_FEATURE(kEnableDrDc,
-             "EnableDrDc",
 #if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
-#elif BUILDFLAG(IS_MAC)
-             // DrDC will not be running if Graphite is disabled on Mac.
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kEnableDrDc, "EnableDrDc", base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             // NOT SUPPORTED. DO NOT ENABLE!
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kEnableDrDc, "EnableDrDc", base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Enable WebGPU on gpu service side only. This is used with origin trial and
 // enabled by default on supported platforms.
@@ -340,6 +331,7 @@ const base::FeatureParam<std::string> kDrDcBlockListByAndroidBuildFP{
     &kEnableDrDc, "BlockListByAndroidBuildFP", ""};
 #endif  // BUILDFLAG(IS_ANDROID)
 
+#if ((BUILDFLAG(IS_MAC) && defined(ARCH_CPU_ARM64)) || BUILDFLAG(IS_IOS))
 // Enable Skia Graphite. This will use the Dawn backend by default, but can be
 // overridden with command line flags for testing on non-official developer
 // builds. See --skia-graphite-backend flag in gpu_switches.h.
@@ -347,12 +339,12 @@ const base::FeatureParam<std::string> kDrDcBlockListByAndroidBuildFP{
 // --enable-skia-graphite & --disable-skia-graphite.
 BASE_FEATURE(kSkiaGraphite,
              "SkiaGraphite",
-#if ((BUILDFLAG(IS_MAC) && defined(ARCH_CPU_ARM64)) || BUILDFLAG(IS_IOS))
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kSkiaGraphite,
+             "SkiaGraphite",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Enable Skia Graphite's Pipeline precompilation feature.
 // Note: This is only meaningful when Skia Graphite is enabled but can then also
@@ -363,16 +355,17 @@ BASE_FEATURE(kSkiaGraphitePrecompilation,
              "SkiaGraphitePrecompilation",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kConditionallySkipGpuChannelFlush,
-             "ConditionallySkipGpuChannelFlush",
+#if BUILDFLAG(IS_CHROMEOS)
 // To enable on ChromeOS, test failures must be investigated
 // (crrev.com/c/5435673).
-#if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kConditionallySkipGpuChannelFlush,
+             "ConditionallySkipGpuChannelFlush",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kConditionallySkipGpuChannelFlush,
+             "ConditionallySkipGpuChannelFlush",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
 
 // Whether the Dawn "skip_validation" toggle is enabled for Skia Graphite.
 const base::FeatureParam<bool> kSkiaGraphiteDawnSkipValidation{
@@ -896,12 +889,14 @@ BASE_FEATURE(kIOSurfaceMultiThreading,
 // graphite::context as well as its wrapper class GraphiteSharedContext between
 // GpuMain and CompositorGpuThread. Note: When this feature is disabled,
 // each thread creates its own graphite::context and the context wrapper.
+#if BUILDFLAG(IS_MAC)
 BASE_FEATURE(kGraphiteContextIsThreadSafe,
              "GraphiteContextIsThreadSafe",
-#if BUILDFLAG(IS_MAC)
              // DrDC needs a thread-safe graphite context to work correctly.
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kGraphiteContextIsThreadSafe,
+             "GraphiteContextIsThreadSafe",
              // Feature incomplete. DO NOT ENABLE!
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif

@@ -244,35 +244,38 @@ BASE_FEATURE(kCustomizeTabGroupColorPalette,
 
 // Moves the Extensions "puzzle piece" icon from the title bar into the app menu
 // for web app windows.
+#if BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kDesktopPWAsElidedExtensionsMenu,
              "DesktopPWAsElidedExtensionsMenu",
-#if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kDesktopPWAsElidedExtensionsMenu,
+             "DesktopPWAsElidedExtensionsMenu",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Enables or disables Desktop PWAs to be auto-started on OS login.
-BASE_FEATURE(kDesktopPWAsRunOnOsLogin,
-             "DesktopPWAsRunOnOsLogin",
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
     BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kDesktopPWAsRunOnOsLogin,
+             "DesktopPWAsRunOnOsLogin",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kDesktopPWAsRunOnOsLogin,
+             "DesktopPWAsRunOnOsLogin",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // If enabled, allow-listed PWAs cannot be closed manually by the user.
+#if BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kDesktopPWAsPreventClose,
              "DesktopPWAsPreventClose",
-#if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kDesktopPWAsPreventClose,
+             "DesktopPWAsPreventClose",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 BASE_FEATURE(kPwaNavigationCapturingWithScopeExtensions,
              "DesktopPWAsLinkCapturingWithScopeExtensions",
@@ -471,16 +474,21 @@ BASE_FEATURE(kGlicURLConfig, "GlicURLConfig", base::FEATURE_ENABLED_BY_DEFAULT);
 const base::FeatureParam<std::string> kGlicGuestURL{
     &kGlicURLConfig, "glic-guest-url", "https://gemini.google.com/glic"};
 
+#if BUILDFLAG(GOOGLE_CHROME_BRANDING)
 BASE_FEATURE_PARAM(std::string,
                    kGlicUserStatusUrl,
                    &kGlicUserStatusCheck,
                    "glic-user-status-url",
-#if BUILDFLAG(GOOGLE_CHROME_BRANDING)
                    "https://geminiweb-pa.googleapis.com/v1/glicStatus"
-#else
-                   ""
-#endif
 );
+#else
+BASE_FEATURE_PARAM(std::string,
+                   kGlicUserStatusUrl,
+                   &kGlicUserStatusCheck,
+                   "glic-user-status-url",
+                   ""
+);
+#endif
 
 BASE_FEATURE_PARAM(base::TimeDelta,
                    kGlicUserStatusRequestDelay,
@@ -571,16 +579,21 @@ BASE_FEATURE_PARAM(std::string,
                    &kGlicLearnMoreURLConfig,
                    "glic-settings-page-learn-more-url",
                    "");
+#if BUILDFLAG(GOOGLE_CHROME_BRANDING)
 BASE_FEATURE_PARAM(std::string,
                    kGlicExtensionsManagementUrl,
                    &kGlicLearnMoreURLConfig,
                    "glic-extensions-management-url",
-#if BUILDFLAG(GOOGLE_CHROME_BRANDING)
                    "https://gemini.google.com/apps"
-#else
-                   ""
-#endif
 );
+#else
+BASE_FEATURE_PARAM(std::string,
+                   kGlicExtensionsManagementUrl,
+                   &kGlicLearnMoreURLConfig,
+                   "glic-extensions-management-url",
+                   ""
+);
+#endif
 
 BASE_FEATURE(kGlicCSPConfig, "GlicCSPConfig", base::FEATURE_ENABLED_BY_DEFAULT);
 // TODO(crbug.com/378951332): Set appropriate default.
@@ -1620,14 +1633,15 @@ const base::FeatureParam<base::TimeDelta> kSCTLogMaxIngestionRandomDelay{
 //
 // TODO(alexmos): Move this and the other site isolation features below to
 // browser_features, as they are only used on the browser side.
+#if BUILDFLAG(IS_ANDROID) && !BUILDFLAG(ENABLE_ANDROID_SITE_ISOLATION)
 BASE_FEATURE(kSitePerProcess,
              "SitePerProcess",
-#if BUILDFLAG(IS_ANDROID) && !BUILDFLAG(ENABLE_ANDROID_SITE_ISOLATION)
-             base::FEATURE_DISABLED_BY_DEFAULT
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kSitePerProcess,
+             "SitePerProcess",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
 
 // The default behavior to opt devtools users out of
 // kProcessPerSiteUpToMainFrameThreshold.

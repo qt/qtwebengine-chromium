@@ -62,14 +62,15 @@ BASE_FEATURE(kBackdropFilterMirrorEdgeMode,
              "BackdropFilterMirrorEdgeMode",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+#if BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kUseDrmBlackFullscreenOptimization,
              "UseDrmBlackFullscreenOptimization",
-#if BUILDFLAG(IS_CHROMEOS)
              base::FEATURE_ENABLED_BY_DEFAULT
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kUseDrmBlackFullscreenOptimization,
+             "UseDrmBlackFullscreenOptimization",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 #if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kUseFrameIntervalDeciderAdaptiveFrameRate,
@@ -81,19 +82,26 @@ BASE_FEATURE(kTemporalSkipOverlaysWithRootCopyOutputRequests,
              "TemporalSkipOverlaysWithRootCopyOutputRequests",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+#if BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kUseMultipleOverlays,
              "UseMultipleOverlays",
-#if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kUseMultipleOverlays,
+             "UseMultipleOverlays",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 const char kMaxOverlaysParam[] = "max_overlays";
 
+#if BUILDFLAG(IS_CHROMEOS)
+BASE_FEATURE(kDelegatedCompositing,
+             "DelegatedCompositing",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+#else
 BASE_FEATURE(kDelegatedCompositing,
              "DelegatedCompositing",
              base::FEATURE_DISABLED_BY_DEFAULT);
+#endif
 
 BASE_FEATURE(kAvoidDuplicateDelayBeginFrame,
              "AvoidDuplicateDelayBeginFrame",
@@ -262,11 +270,13 @@ BASE_FEATURE(kVSyncAlignedPresent,
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 
+#if BUILDFLAG(IS_MAC)
 BASE_FEATURE(kAllowUndamagedNonrootRenderPassToSkip,
              "AllowUndamagedNonrootRenderPassToSkip",
-#if BUILDFLAG(IS_MAC)
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kAllowUndamagedNonrootRenderPassToSkip,
+             "AllowUndamagedNonrootRenderPassToSkip",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
@@ -279,14 +289,15 @@ BASE_FEATURE(kAllowForceMergeRenderPassWithRequireOverlayQuads,
 // if enabled, Any CompositorFrameSink of type video that defines a preferred
 // framerate that is below the display framerate will throttle OnBeginFrame
 // callbacks to match the preferred framerate.
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kOnBeginFrameThrottleVideo,
              "OnBeginFrameThrottleVideo",
-#if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kOnBeginFrameThrottleVideo,
+             "OnBeginFrameThrottleVideo",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-             );
 
 // If enabled, Chrome uses ADPF(Android Dynamic Performance Framework) if the
 // device's SOC manufacturer satisifes the allowlist and blocklist rules.

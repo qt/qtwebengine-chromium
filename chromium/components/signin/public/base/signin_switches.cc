@@ -206,14 +206,17 @@ BASE_FEATURE(kUseIssueTokenToFetchAccessTokens,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
 
+#if BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kEnablePreferencesAccountStorage,
              "EnablePreferencesAccountStorage",
-#if BUILDFLAG(IS_CHROMEOS)
              base::FEATURE_DISABLED_BY_DEFAULT
-#else
-             base::FEATURE_ENABLED_BY_DEFAULT
-#endif  // BUILDFLAG(IS_CHROMEOS)
 );
+#else
+BASE_FEATURE(kEnablePreferencesAccountStorage,
+             "EnablePreferencesAccountStorage",
+             base::FEATURE_ENABLED_BY_DEFAULT
+);
+#endif  // BUILDFLAG(IS_CHROMEOS)
 
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
 // Features to trigger the startup sign-in promo at boot.
@@ -283,14 +286,17 @@ bool IsExtensionsExplicitBrowserSigninEnabled() {
   return base::FeatureList::IsEnabled(kEnableExtensionsExplicitBrowserSignin);
 }
 
+#if BUILDFLAG(IS_IOS) || BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kSyncEnableBookmarksInTransportMode,
              "SyncEnableBookmarksInTransportMode",
-#if BUILDFLAG(IS_IOS) || BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif  // BUILDFLAG(IS_IOS)
 );
+#else
+BASE_FEATURE(kSyncEnableBookmarksInTransportMode,
+             "SyncEnableBookmarksInTransportMode",
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif  // BUILDFLAG(IS_IOS)
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
 BASE_FEATURE(kSignInPromoMaterialNextUI,

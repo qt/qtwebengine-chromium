@@ -88,14 +88,17 @@ BASE_FEATURE(kWebRtcH265L1T3,
 
 // When enabled, allows AV1 HW encoding to be used for WebRTC streams, if the
 // platform accelerator supports encoding of AV1.
+#if BUILDFLAG(IS_WIN)
 BASE_FEATURE(kWebRtcAV1HWEncode,
              "WebRtcAV1HWEncode",
-#if BUILDFLAG(IS_WIN)
              base::FEATURE_DISABLED_BY_DEFAULT
-#else
-             base::FEATURE_ENABLED_BY_DEFAULT
-#endif  // BUILDFLAG(IS_WIN)
 );
+#else
+BASE_FEATURE(kWebRtcAV1HWEncode,
+             "WebRtcAV1HWEncode",
+             base::FEATURE_ENABLED_BY_DEFAULT
+);
+#endif  // BUILDFLAG(IS_WIN)
 
 #if BUILDFLAG(IS_ANDROID)
 // Kill-switch for using 48 kHz as sample rate for Audio Processing Module

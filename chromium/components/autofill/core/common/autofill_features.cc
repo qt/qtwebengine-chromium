@@ -70,14 +70,17 @@ BASE_FEATURE(kAutofillAiAlwaysTriggerServerModel,
 // Kill switch. If enabled, the EntityDataManager is created irrespective of
 // whether other features are enabled. This is necessary so that cleaning up the
 // browsing data also removes data if the user left the study.
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kAutofillAiCreateEntityDataManager,
              "AutofillAiCreateEntityDataManager",
-#if BUILDFLAG(IS_ANDROID)
              base::FEATURE_DISABLED_BY_DEFAULT
-#else
-             base::FEATURE_ENABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kAutofillAiCreateEntityDataManager,
+             "AutofillAiCreateEntityDataManager",
+             base::FEATURE_ENABLED_BY_DEFAULT
+);
+#endif
 
 // If enabled, no account-level capabilities are checked to determine whether
 // a user is eligible for AutofillAI.

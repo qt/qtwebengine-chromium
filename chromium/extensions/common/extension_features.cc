@@ -184,38 +184,47 @@ BASE_FEATURE(kDeclarativeNetRequestHeaderSubstitution,
              "DeclarativeNetRequestHeaderSubstitution",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
+#if BUILDFLAG(GOOGLE_CHROME_BRANDING) && !BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kDisableDisableExtensionsExceptCommandLineSwitch,
              "DisableDisableExtensionsExceptCommandLineSwitch",
-#if BUILDFLAG(GOOGLE_CHROME_BRANDING) && !BUILDFLAG(IS_CHROMEOS)
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif  // BUILDFLAG(GOOGLE_CHROME_BRANDING)
 );
+#else
+BASE_FEATURE(kDisableDisableExtensionsExceptCommandLineSwitch,
+             "DisableDisableExtensionsExceptCommandLineSwitch",
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif  // BUILDFLAG(GOOGLE_CHROME_BRANDING)
 
+#if BUILDFLAG(GOOGLE_CHROME_BRANDING) && !BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kDisableLoadExtensionCommandLineSwitch,
              "DisableLoadExtensionCommandLineSwitch",
 // --load-extension is disabled for chrome-branded release builds except on
 // ChromeOS where it is required for testing, and is not a security risk
 // since it cannot be controlled by users.
-#if BUILDFLAG(GOOGLE_CHROME_BRANDING) && !BUILDFLAG(IS_CHROMEOS)
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif  // BUILDFLAG(GOOGLE_CHROME_BRANDING) && !BUILDFLAG(IS_CHROMEOS)
 );
+#else
+BASE_FEATURE(kDisableLoadExtensionCommandLineSwitch,
+             "DisableLoadExtensionCommandLineSwitch",
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif  // BUILDFLAG(GOOGLE_CHROME_BRANDING) && !BUILDFLAG(IS_CHROMEOS)
 
+#if BUILDFLAG(GOOGLE_CHROME_BRANDING) && !BUILDFLAG(IS_CHROMEOS) && \
+    !BUILDFLAG(ENABLE_DESKTOP_ANDROID_EXTENSIONS)
 BASE_FEATURE(kDisableExtensionsOnChromeUrlsSwitch,
              "DisableExtensionsOnChromeUrlsSwitch",
 // TODO (crbug.com/426554244): Determine if this switch should be
 // removed for desktop-android builds as well.
-#if BUILDFLAG(GOOGLE_CHROME_BRANDING) && !BUILDFLAG(IS_CHROMEOS) && \
-    !BUILDFLAG(ENABLE_DESKTOP_ANDROID_EXTENSIONS)
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kDisableExtensionsOnChromeUrlsSwitch,
+             "DisableExtensionsOnChromeUrlsSwitch",
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 
 BASE_FEATURE(kUserScriptUserExtensionToggle,
              "UserScriptUserExtensionToggle",

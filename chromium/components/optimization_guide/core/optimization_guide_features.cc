@@ -116,12 +116,14 @@ BASE_FEATURE(kOptimizationGuideModelExecution,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Whether to use the on device model service in optimization guide.
-BASE_FEATURE(kOptimizationGuideOnDeviceModel,
-             "OptimizationGuideOnDeviceModel",
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
     BUILDFLAG(IS_CHROMEOS)
+BASE_FEATURE(kOptimizationGuideOnDeviceModel,
+             "OptimizationGuideOnDeviceModel",
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kOptimizationGuideOnDeviceModel,
+             "OptimizationGuideOnDeviceModel",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 

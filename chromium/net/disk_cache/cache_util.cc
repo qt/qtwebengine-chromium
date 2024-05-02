@@ -135,9 +135,15 @@ namespace disk_cache {
 
 const int kDefaultCacheSize = 80 * 1024 * 1024;
 
+#if BUILDFLAG(IS_WIN)
 BASE_FEATURE(kChangeGeneratedCodeCacheSizeExperiment,
              "ChangeGeneratedCodeCacheSize",
              base::FEATURE_DISABLED_BY_DEFAULT);
+#else
+BASE_FEATURE(kChangeGeneratedCodeCacheSizeExperiment,
+             "ChangeGeneratedCodeCacheSize",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+#endif
 
 void DeleteCache(const base::FilePath& path, bool remove_folder) {
   if (remove_folder) {

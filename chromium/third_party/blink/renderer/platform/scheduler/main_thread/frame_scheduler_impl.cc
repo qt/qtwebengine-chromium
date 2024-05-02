@@ -53,14 +53,17 @@ namespace {
 // `kDefault` when WebRTC is in use within the renderer. This is a simple
 // workaround meant to be merged to higher channels while we're working on a
 // more refined solution. See crbug.com/1513904.
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kRendererMainIsDefaultThreadTypeForWebRTC,
              "RendererMainIsNormalThreadTypeForWebRTC",
-#if BUILDFLAG(IS_ANDROID)
              base::FEATURE_DISABLED_BY_DEFAULT
-#else   // BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
-#endif  // BUILDFLAG(IS_ANDROID)
 );
+#else   // BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kRendererMainIsDefaultThreadTypeForWebRTC,
+             "RendererMainIsNormalThreadTypeForWebRTC",
+             base::FEATURE_ENABLED_BY_DEFAULT
+);
+#endif  // BUILDFLAG(IS_ANDROID)
 
 perfetto::StaticString VisibilityStateToString(bool is_visible) {
   if (is_visible) {

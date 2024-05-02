@@ -50,11 +50,13 @@ BASE_FEATURE(kAAudioPerStreamDeviceSelection,
 // the hardware's sample rate, the resampling step that normally occurs within
 // the WebAudio destination node is skipped. This allows the AudioService to
 // handle any necessary resampling, potentially reducing latency and overhead.
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kWebAudioRemoveAudioDestinationResampler,
              "WebAudioRemoveAudioDestinationResampler",
-#if BUILDFLAG(IS_ANDROID)
              base::FEATURE_DISABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kWebAudioRemoveAudioDestinationResampler,
+             "WebAudioRemoveAudioDestinationResampler",
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_ANDROID)
 

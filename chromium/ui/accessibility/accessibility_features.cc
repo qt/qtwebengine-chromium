@@ -14,14 +14,15 @@
 
 namespace features {
 
+#if BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kAccessibilityPdfOcrForSelectToSpeak,
              "kAccessibilityPdfOcrForSelectToSpeak",
-#if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kAccessibilityPdfOcrForSelectToSpeak,
+             "kAccessibilityPdfOcrForSelectToSpeak",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_CHROMEOS)
-);
 bool IsAccessibilityPdfOcrForSelectToSpeakEnabled() {
   return base::FeatureList::IsEnabled(
       ::features::kAccessibilityPdfOcrForSelectToSpeak);
@@ -453,14 +454,15 @@ bool IsMainNodeAnnotationsEnabled() {
   return base::FeatureList::IsEnabled(::features::kMainNodeAnnotations);
 }
 
+#if BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kReadAnythingReadAloud,
              "ReadAnythingReadAloud",
-#if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif  // BUILDFLAG(IS_CHROMEOS)
-);
+BASE_FEATURE(kReadAnythingReadAloud,
+             "ReadAnythingReadAloud",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
 bool IsReadAnythingReadAloudEnabled() {
   return base::FeatureList::IsEnabled(::features::kReadAnythingReadAloud);

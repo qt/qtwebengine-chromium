@@ -259,11 +259,13 @@ BASE_FEATURE(kDirectCompositionUnlimitedOverlays,
 // Allow dual GPU rendering through EGL where supported, i.e., allow a WebGL
 // or WebGPU context to be on the high performance GPU if preferred and Chrome
 // internal rendering to be on the low power GPU.
+#if BUILDFLAG(IS_MAC)
 BASE_FEATURE(kEGLDualGPURendering,
              "EGLDualGPURendering",
-#if BUILDFLAG(IS_MAC)
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kEGLDualGPURendering,
+             "EGLDualGPURendering",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
@@ -278,11 +280,13 @@ BASE_FEATURE(kDefaultANGLEMetal,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Default to using ANGLE's Vulkan backend.
+#if BUILDFLAG(IS_DESKTOP_ANDROID)
 BASE_FEATURE(kDefaultANGLEVulkan,
              "DefaultANGLEVulkan",
-#if BUILDFLAG(IS_DESKTOP_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kDefaultANGLEVulkan,
+             "DefaultANGLEVulkan",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
@@ -294,11 +298,13 @@ BASE_FEATURE(kTrackCurrentShaders,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Enable sharing Vulkan device queue with ANGLE's Vulkan backend.
+#if BUILDFLAG(IS_DESKTOP_ANDROID)
 BASE_FEATURE(kVulkanFromANGLE,
              "VulkanFromANGLE",
-#if BUILDFLAG(IS_DESKTOP_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kVulkanFromANGLE,
+             "VulkanFromANGLE",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 

@@ -565,14 +565,17 @@ base::Time ParseCookieExpirationTime(std::string_view time_string) {
     // Numeric field w/ a colon
     } else if (token.find(':') != std::string::npos) {
       std::string token_str(token);
-      if (!found_time &&
 #ifdef COMPILER_MSVC
+      if (!found_time &&
           UNSAFE_TODO(sscanf_s(
-#else
-          UNSAFE_TODO(sscanf(
-#endif
               token_str.c_str(), "%2u:%2u:%2u", &exploded.hour,
               &exploded.minute, &exploded.second)) == 3) {
+#else
+      if (!found_time &&
+          UNSAFE_TODO(sscanf(
+              token_str.c_str(), "%2u:%2u:%2u", &exploded.hour,
+              &exploded.minute, &exploded.second)) == 3) {
+#endif
         found_time = true;
       } else {
         // We should only ever encounter one time-like thing.  If we're here,

@@ -10911,12 +10911,16 @@ MaybeReduceResult MaglevGraphBuilder::TryBuildCallKnownJSFunction(
     compiler::FeedbackCellRef feedback_cell, CallArguments& args,
     const compiler::FeedbackSource& feedback_source) {
   if (v8_flags.maglev_inlining) {
-    RETURN_IF_DONE(TryBuildInlineCall(context, function, new_target,
 #ifdef V8_ENABLE_LEAPTIERING
+    RETURN_IF_DONE(TryBuildInlineCall(context, function, new_target,
                                       dispatch_handle,
-#endif
                                       shared, feedback_cell, args,
                                       feedback_source));
+#else
+    RETURN_IF_DONE(TryBuildInlineCall(context, function, new_target,
+                                      shared, feedback_cell, args,
+                                      feedback_source));
+#endif
   }
   return BuildCallKnownJSFunction(context, function, new_target,
 #ifdef V8_ENABLE_LEAPTIERING
@@ -11157,13 +11161,18 @@ MaybeReduceResult MaglevGraphBuilder::TryReduceCallForNewClosure(
       return BuildCallRuntime(Runtime::kThrowConstructorNonCallableError,
                               {target_node});
     }
+#ifdef V8_ENABLE_LEAPTIERING
     RETURN_IF_DONE(TryBuildCallKnownJSFunction(
         target_context, target_node,
         GetRootConstant(RootIndex::kUndefinedValue),
-#ifdef V8_ENABLE_LEAPTIERING
         dispatch_handle,
-#endif
         shared, feedback_cell, args, feedback_source));
+#else
+    RETURN_IF_DONE(TryBuildCallKnownJSFunction(
+        target_context, target_node,
+        GetRootConstant(RootIndex::kUndefinedValue),
+        shared, feedback_cell, args, feedback_source));
+#endif
   }
   return BuildGenericCall(target_node, Call::TargetType::kJSFunction, args);
 }
@@ -11268,15 +11277,22 @@ ReduceResult MaglevGraphBuilder::BuildCallWithFeedback(
           CHECK(scope_info.HasContext());
           graph()->record_scope_info(context, scope_info);
         }
+#ifdef V8_ENABLE_LEAPTIERING
         PROCESS_AND_RETURN_IF_DONE(
             TryBuildCallKnownJSFunction(
                 context, target_node,
                 GetRootConstant(RootIndex::kUndefinedValue),
-#ifdef V8_ENABLE_LEAPTIERING
                 feedback_cell.dispatch_handle(),
-#endif
                 shared.value(), feedback_cell, args, feedback_source),
             SetAccumulator);
+#else
+        PROCESS_AND_RETURN_IF_DONE(
+            TryBuildCallKnownJSFunction(
+                context, target_node,
+                GetRootConstant(RootIndex::kUndefinedValue),
+                shared.value(), feedback_cell, args, feedback_source),
+            SetAccumulator);
+#endif
         UNREACHABLE();
       }
     }

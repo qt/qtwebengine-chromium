@@ -26,11 +26,13 @@ BASE_FEATURE(kLocalWebApprovals,
 
 // TODO(crbug.com/391799078): Support local web approval for subframes on
 // Desktop.
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kAllowSubframeLocalWebApprovals,
              "AllowSubframeLocalWebApprovals",
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS)
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kAllowSubframeLocalWebApprovals,
+             "AllowSubframeLocalWebApprovals",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
@@ -55,12 +57,14 @@ BASE_FEATURE(kLocalWebApprovalsWidgetSupportsUrlPayload,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // TODO(crbug.com/435635774): Release the interstitial v3 in all platforms.
-BASE_FEATURE(kSupervisedUserBlockInterstitialV3,
-             "SupervisedUserBlockInterstitialV3",
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN) || \
     BUILDFLAG(IS_IOS)
+BASE_FEATURE(kSupervisedUserBlockInterstitialV3,
+             "SupervisedUserBlockInterstitialV3",
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kSupervisedUserBlockInterstitialV3,
+             "SupervisedUserBlockInterstitialV3",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN) ||
         // BUILDFLAG(IS_IOS)

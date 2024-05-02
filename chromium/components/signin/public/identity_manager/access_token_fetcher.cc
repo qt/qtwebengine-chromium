@@ -50,11 +50,13 @@ std::string ErrorToString(GoogleServiceAuthError::State error_state) {
 
 namespace signin {
 
+#if BUILDFLAG(ENABLE_DICE_SUPPORT)
 BASE_FEATURE(kRestrictSignoutAccessTokenFetch,
              "RestrictSignoutAccessTokenFetch",
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kRestrictSignoutAccessTokenFetch,
+             "RestrictSignoutAccessTokenFetch",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
 

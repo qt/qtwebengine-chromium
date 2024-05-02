@@ -106,15 +106,16 @@ BASE_FEATURE(kSplitAuthCacheByNetworkIsolationKey,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Enable usage of hardcoded DoH upgrade mapping for use in automatic mode.
-BASE_FEATURE(kDnsOverHttpsUpgrade,
-             "DnsOverHttpsUpgrade",
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_MAC) || \
     BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_LINUX)
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kDnsOverHttpsUpgrade,
+             "DnsOverHttpsUpgrade",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kDnsOverHttpsUpgrade,
+             "DnsOverHttpsUpgrade",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // When enabled, the requests in a third party context to domains included in
 // the Masked Domain List Component will use the Privacy Proxy to shield the
@@ -375,15 +376,18 @@ BASE_FEATURE(kAvoidResourceRequestCopies,
 
 // Enables Document-Isolation-Policy (DIP).
 // https://github.com/WICG/document-isolation-policy
-BASE_FEATURE(kDocumentIsolationPolicy,
-             "DocumentIsolationPolicy",
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS) || \
     BUILDFLAG(IS_LINUX)
+BASE_FEATURE(kDocumentIsolationPolicy,
+             "DocumentIsolationPolicy",
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kDocumentIsolationPolicy,
+             "DocumentIsolationPolicy",
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 
 // This feature enables the Prefetch() method on the NetworkContext, and makes
 // the PrefetchMatchingURLLoaderFactory check the match quality.

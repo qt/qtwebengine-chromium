@@ -71,14 +71,17 @@ const base::FeatureParam<base::TimeDelta> kReleaseVideoSourceProviderTimeout{
     "release_video_source_provider_timeout", base::Seconds(60)};
 #endif
 
+#if BUILDFLAG(IS_WIN)
 BASE_FEATURE(kEnumerateDevicesRelaxedCache,
              "EnumerateDevicesRelaxedCache",
-#if BUILDFLAG(IS_WIN)
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kEnumerateDevicesRelaxedCache,
+             "EnumerateDevicesRelaxedCache",
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 
 namespace {
 using media::mojom::DeviceEnumerationResult;
