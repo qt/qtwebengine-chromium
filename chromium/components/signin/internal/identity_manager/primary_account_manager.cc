@@ -219,7 +219,9 @@ void PrimaryAccountManager::Initialize(PrefService* local_state) {
 
   // Instrument metrics to know what fraction of users without a primary
   // account previously did have one, with sync enabled.
+#if !BUILDFLAG(IS_QTWEBENGINE)
   RecordHadPreviousSyncAccount();
+#endif
 
   // It is important to only load credentials after starting to observe the
   // token service.
