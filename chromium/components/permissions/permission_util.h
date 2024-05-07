@@ -10,7 +10,7 @@
 #include "build/build_config.h"
 #include "components/content_settings/core/common/content_settings.h"
 #include "components/content_settings/core/common/content_settings_types.h"
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/permissions/permission_prompt.h"
 #endif
 #include "content/public/browser/permission_result.h"
@@ -61,9 +61,11 @@ class PermissionUtil {
   // Returns the permission string for the given permission.
   static std::string GetPermissionString(ContentSettingsType);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Returns the gesture type corresponding to whether a permission request is
   // made with or without a user gesture.
   static PermissionRequestGestureType GetGestureType(bool user_gesture);
+#endif
 
   // Limited conversion of ContentSettingsType to PermissionType. Returns true
   // if the conversion was performed.
@@ -151,15 +153,15 @@ class PermissionUtil {
                                  const GURL& requesting_origin,
                                  const GURL& embedding_origin);
 
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Returns `true` if at least one of the `delegate->Requests()` was requested
   // with a user gesture.
   static bool HasUserGesture(PermissionPrompt::Delegate* delegate);
-#endif
 
   static bool CanPermissionRequestIgnoreStatus(
       const PermissionRequestData& request,
       content::PermissionStatusSource source);
+#endif
 
   // Returns `true` if the current platform support permission chips.
   static bool DoesPlatformSupportChip();

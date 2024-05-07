@@ -440,7 +440,7 @@ GURL PermissionUtil::GetCanonicalOrigin(ContentSettingsType permission,
   }
 }
 
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
 bool PermissionUtil::HasUserGesture(PermissionPrompt::Delegate* delegate) {
   const std::vector<
       raw_ptr<permissions::PermissionRequest, VectorExperimental>>& requests =
@@ -452,7 +452,6 @@ bool PermissionUtil::HasUserGesture(PermissionPrompt::Delegate* delegate) {
                permissions::PermissionRequestGestureType::GESTURE;
       });
 }
-#endif
 
 bool PermissionUtil::CanPermissionRequestIgnoreStatus(
     const PermissionRequestData& request,
@@ -477,6 +476,7 @@ bool PermissionUtil::CanPermissionRequestIgnoreStatus(
 
   NOTREACHED();
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 // static
 bool PermissionUtil::DoesPlatformSupportChip() {
