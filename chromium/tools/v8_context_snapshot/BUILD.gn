@@ -12,6 +12,7 @@ import("//tools/v8_context_snapshot/v8_context_snapshot.gni")
 import("//build/buildflag_header.gni")
 import("//build/config/c++/c++.gni")
 import("//build/config/compiler/compiler.gni")
+import("//build/config/ozone.gni")
 import("//v8/gni/snapshot_toolchain.gni")
 
 if (is_android) {
@@ -97,6 +98,9 @@ if (use_v8_context_snapshot) {
         "//v8:external_startup_data",
         ":disable_icf",
       ]
+      if(use_ozone) {
+        deps += [ "//ui/base:ozone_buildflags" ]
+      }
     }
   }
 
