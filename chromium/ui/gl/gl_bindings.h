@@ -571,7 +571,7 @@ struct GL_EXPORT DriverEGL {
 #if defined(USE_GLX)
 struct GL_EXPORT DriverGLX {
   void InitializeStaticBindings();
-#ifdef TOOLKIT_QT
+#if BUILDFLAG(IS_QTWEBENGINE)
   void InitializeExtensionBindings(const std::string&);
 #else
   void InitializeExtensionBindings();
