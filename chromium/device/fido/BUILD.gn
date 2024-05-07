@@ -237,6 +237,25 @@ component("fido") {
     ]
   }
 
+  if (is_qtwebengine) {
+    sources -= [
+      "enclave/constants.cc",
+      "enclave/constants.h",
+      "enclave/enclave_authenticator.cc",
+      "enclave/enclave_authenticator.h",
+      "enclave/enclave_discovery.cc",
+      "enclave/enclave_discovery.h",
+      "enclave/enclave_protocol_utils.cc",
+      "enclave/enclave_protocol_utils.h",
+      "enclave/enclave_websocket_client.cc",
+      "enclave/enclave_websocket_client.h",
+      "enclave/transact.cc",
+      "enclave/transact.h",
+      "enclave/types.cc",
+      "enclave/types.h",
+    ]
+  }
+
   if (is_mac) {
     sources += [
       "mac/authenticator.h",
