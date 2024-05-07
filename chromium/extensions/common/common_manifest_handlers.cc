@@ -59,7 +59,7 @@ void RegisterCommonManifestHandlers() {
   registry->RegisterHandler(std::make_unique<AutomationHandler>());
   registry->RegisterHandler(std::make_unique<AppDisplayManifestHandler>());
   registry->RegisterHandler(std::make_unique<BackgroundManifestHandler>());
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   registry->RegisterHandler(std::make_unique<BluetoothManifestHandler>());
   registry->RegisterHandler(std::make_unique<CommandsHandler>());
   registry->RegisterHandler(std::make_unique<ContentCapabilitiesHandler>());

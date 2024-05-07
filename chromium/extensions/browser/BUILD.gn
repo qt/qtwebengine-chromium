@@ -759,6 +759,10 @@ jumbo_source_set("browser_sources") {
       "//components/web_cache/browser",
       "//components/web_cache/browser:browser",
     ]
+
+    deps += [
+      "//components/web_cache/public/mojom",
+    ]
   }
 }
 
