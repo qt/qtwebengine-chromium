@@ -1953,6 +1953,7 @@ config("default_warnings") {
 
       "/wd4068",  # unknown pragma
       "/wd5051",  # attribute requires newer c++
+      "/w34996",
     ]
 
     cflags_cc += [

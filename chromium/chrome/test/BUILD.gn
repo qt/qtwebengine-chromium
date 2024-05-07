@@ -6166,7 +6166,7 @@ config("disable_thinlto_cache_flags") {
   }
 }
 
-if (!is_fuchsia) {
+if (!is_fuchsia && !is_qtwebengine) {
   test("unit_tests") {
     use_xvfb = use_xvfb_in_this_config
 

@@ -272,7 +272,7 @@ group("buildflags") {
   public_configs = [ ":public_includes" ]
 }
 
-if (is_clang_or_gcc) {
+if (is_clang_or_gcc || is_msvc) {
   config("partition_alloc_implementation") {
     # See also: `partition_alloc_base/component_export.h`
     defines = [ "IS_PARTITION_ALLOC_IMPL" ]
@@ -290,7 +290,7 @@ if (is_clang_or_gcc) {
 
   config("memory_tagging") {
     if (current_cpu == "arm64" &&
-        (is_linux || is_chromeos || is_android || is_fuchsia)) {
+        (is_linux || is_chromeos || is_android || is_fuchsia) && !is_gcc) {
       # base/ has access to the MTE intrinsics because it needs to use them,
       # but they're not backwards compatible. Use base::CPU::has_mte()
       # beforehand to confirm or use indirect functions (ifuncs) to select

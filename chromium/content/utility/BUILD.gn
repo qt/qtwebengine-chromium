@@ -158,6 +158,14 @@ jumbo_source_set("utility") {
     ]
   }
 
+  if (is_qtwebengine) {
+    deps -= [
+      "//services/on_device_model:on_device_model_service",
+      "//services/on_device_model/public/cpp",
+      "//services/on_device_model/public/mojom",
+    ]
+  }
+
   if (is_win) {
     deps += [ ":delegate_data" ]
   }

@@ -31,7 +31,9 @@
 #include "services/audio/service_factory.h"
 #include "services/data_decoder/data_decoder_service.h"
 #include "services/network/network_service.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "services/on_device_model/on_device_model_service.h"
+#endif
 #include "services/tracing/public/mojom/tracing_service.mojom.h"
 #include "services/tracing/tracing_service.h"
 #include "services/video_capture/public/mojom/video_capture_service.mojom.h"
@@ -327,12 +329,14 @@ auto RunVideoCapture(
   return service;
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 auto RunOnDeviceModel(
     mojo::PendingReceiver<on_device_model::mojom::OnDeviceModelService>
         receiver) {
   return std::make_unique<on_device_model::OnDeviceModelService>(
       std::move(receiver));
 }
+#endif
 
 #if BUILDFLAG(ENABLE_VR) && !BUILDFLAG(IS_ANDROID)
 auto RunXrDeviceService(
@@ -408,9 +412,11 @@ void RegisterMainThreadServices(mojo::ServiceFactory& services) {
   services.Add(RunTracing);
   services.Add(RunVideoCapture);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (optimization_guide::features::CanLaunchOnDeviceModelService()) {
     services.Add(RunOnDeviceModel);
   }
+#endif
 
 #if BUILDFLAG(GOOGLE_CHROME_BRANDING) && BUILDFLAG(IS_CHROMEOS)
   services.Add(RunShapeDetectionService);

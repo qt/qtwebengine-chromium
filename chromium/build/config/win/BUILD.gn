@@ -88,10 +88,12 @@ config("compiler") {
   cflags_c = [ "/TC" ]
   cflags_cc = [ "/TP" ]
 
-  cflags += [
-    "/Zc:preprocessor",
-    "/wd5105",
-  ]
+  if (is_msvc && !is_clang) {
+    cflags += [
+      "/Zc:preprocessor",
+      "/wd5105",
+    ]
+  }
 
   if (is_clang) {
     # Required to make the 19041 SDK compatible with clang-cl.

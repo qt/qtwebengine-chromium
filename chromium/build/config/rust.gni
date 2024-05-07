@@ -24,12 +24,12 @@ declare_args() {
   # Chromium-based projects that are built for for architectures Chrome does not
   # support may need to disable this as well, though they may need to replace
   # code with C/C++ to get a functional product.
-  enable_rust = build_with_chromium
+  enable_rust = build_with_chromium && !is_qtwebengine
 
   # The CXX tool is in //third_party/rust which is not shared with downstream
   # projects yet. So they need to copy the required dependencies and GN files
   # into their project to enable CXX there.
-  enable_cxx = build_with_chromium
+  enable_cxx = build_with_chromium && !is_qtwebengine
 
   # The chromium prelude crate provides the `chromium::import!` macro which
   # is needed to depend on first-party rust libraries. Third-party libraries
@@ -41,7 +41,7 @@ declare_args() {
   # specify a globally unique `crate_name` in their rust library GN rules
   # instead. Note that using a `crate_name` is strongly discouraged inside
   # Chromium, and is also discouraged for downstream projects when possible.
-  enable_chromium_prelude = build_with_chromium
+  enable_chromium_prelude = build_with_chromium && !is_qtwebengine
 
   # As we incrementally enable Rust on mainstream builders, we want to enable
   # the toolchain (by switching 'enable_rust' to true) while still disabling

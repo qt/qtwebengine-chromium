@@ -32,7 +32,9 @@
 #include "sandbox/policy/mojom/sandbox.mojom.h"
 #include "sandbox/policy/sandbox.h"
 #include "sandbox/policy/sandbox_type.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "services/on_device_model/on_device_model_service.h"
+#endif
 #include "services/tracing/public/cpp/trace_startup.h"
 #include "third_party/icu/source/common/unicode/unistr.h"
 #include "third_party/icu/source/i18n/unicode/timezone.h"
@@ -202,10 +204,12 @@ int UtilityMain(MainFunctionParams parameters) {
           ? base::MessagePumpType::UI
           : base::MessagePumpType::DEFAULT;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (parameters.command_line->GetSwitchValueASCII(switches::kUtilitySubType) ==
       on_device_model::mojom::OnDeviceModelService::Name_) {
     CHECK(on_device_model::OnDeviceModelService::PreSandboxInit());
   }
+#endif
 
 #if BUILDFLAG(IS_MAC)
   auto sandbox_type =
@@ -284,9 +288,11 @@ int UtilityMain(MainFunctionParams parameters) {
       pre_sandbox_hook = base::BindOnce(&audio::AudioPreSandboxHook);
       break;
     case sandbox::mojom::Sandbox::kOnDeviceModelExecution:
+#if !BUILDFLAG(IS_QTWEBENGINE)
       on_device_model::OnDeviceModelService::AddSandboxLinuxOptions(
           sandbox_options);
       pre_sandbox_hook = base::BindOnce(&GpuPreSandboxHook);
+#endif
       break;
     case sandbox::mojom::Sandbox::kSpeechRecognition:
 #if !defined(TOOLKIT_QT)

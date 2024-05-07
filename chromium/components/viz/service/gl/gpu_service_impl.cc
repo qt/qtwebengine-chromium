@@ -424,7 +424,7 @@ GpuServiceImpl::GpuServiceImpl(
       media::VaapiImageDecodeAcceleratorWorker::Create();
 #endif  // BUILDFLAG(USE_VAAPI_IMAGE_CODECS)
 
-#if BUILDFLAG(IS_WIN) && !defined(TOOLKIT_QT)
+#if BUILDFLAG(IS_WIN) && !defined(IS_QTWEBENGINE)
   if (media::SupportMediaFoundationClearPlayback()) {
     // Initialize the OverlayStateService using the GPUServiceImpl task
     // sequence.
