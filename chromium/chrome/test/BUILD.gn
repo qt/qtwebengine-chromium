@@ -5280,7 +5280,6 @@ if (!is_android && !is_fuchsia) {
         "../browser/media/webrtc/webrtc_disable_encryption_flag_browsertest.cc",
         "../browser/media/webrtc/webrtc_getdisplaymedia_browsertest.cc",
         "../browser/media/webrtc/webrtc_internals_integration_browsertest.cc",
-        "../browser/media/webrtc/webrtc_internals_perf_browsertest.cc",
         "../browser/media/webrtc/webrtc_stats_perf_browsertest.cc",
         "../browser/media/webrtc/webrtc_video_display_perf_browsertest.cc",
         "../browser/media/webrtc/webrtc_video_quality_browsertest.cc",

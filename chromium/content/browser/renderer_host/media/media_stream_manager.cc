@@ -515,7 +515,7 @@ bool ChangeSourceSupported(const MediaStreamDevices& devices) {
   return true;  // getDisplayMedia() and killswitches did not trigger.
 }
 
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS) && BUILDFLAG(ENABLE_SCREEN_CAPTURE)
 base::TimeDelta GetConditionalFocusWindow() {
   const std::string custom_window =
       base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
@@ -1512,7 +1512,7 @@ MediaStreamManager::MediaStreamManager(
     media::AudioSystem* audio_system,
     std::unique_ptr<VideoCaptureProvider> video_capture_provider)
     :
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS) && BUILDFLAG(ENABLE_SCREEN_CAPTURE)
       conditional_focus_window_(GetConditionalFocusWindow()),
       captured_surface_controller_factory_(
           MakeDefaultCapturedSurfaceControllerFactory()),

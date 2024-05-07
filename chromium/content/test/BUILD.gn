@@ -2119,7 +2119,6 @@ test("content_browsertests") {
       "../browser/webrtc/webrtc_content_browsertest_base.h",
       "../browser/webrtc/webrtc_data_browsertest.cc",
       "../browser/webrtc/webrtc_datachannel_browsertest.cc",
-      "../browser/webrtc/webrtc_depth_capture_browsertest.cc",
       "../browser/webrtc/webrtc_getusermedia_browsertest.cc",
       "../browser/webrtc/webrtc_image_capture_browsertest.cc",
       "../browser/webrtc/webrtc_internals_browsertest.cc",
@@ -2135,7 +2134,6 @@ test("content_browsertests") {
       "../browser/webrtc/webrtc_video_capture_shared_device_browsertest.cc",
       "../browser/webrtc/webrtc_webcam_browsertest.cc",
       "../browser/webrtc/webrtc_webcam_browsertest.h",
-      "../browser/webui/web_ui_browser_interface_broker_registry_browsertest.cc",
     ]
     deps += [
       "//content/common:buildflags",
