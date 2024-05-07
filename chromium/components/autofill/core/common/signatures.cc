@@ -42,7 +42,7 @@ std::string StripDigitsIfRequired(std::string_view input) {
     // at `i`. If this range is shorter than 5 characters append it to `result`.
     std::string_view ss = input.substr(i);
     auto end_it = base::ranges::find_if_not(ss, IsDigit);
-    base::string_view digits = base::MakeStringPiece(ss.begin(), end_it);
+    std::string_view digits = base::MakeStringPiece(ss.begin(), end_it);
     DCHECK(base::ranges::all_of(digits, IsDigit));
     if (digits.size() < 5)
       base::StrAppend(&result, {digits});
