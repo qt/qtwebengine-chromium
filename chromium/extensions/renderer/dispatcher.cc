@@ -1418,7 +1418,7 @@ void Dispatcher::DispatchEvent(mojom::DispatchEventParamsPtr params,
     // Tell the browser process when an event has been dispatched with a lazy
     // background page active.
     const Extension* extension = RendererExtensionRegistry::Get()->GetByID(
-        GenerateExtensionIdFromHostID(*params->host_id));
+        GenerateExtensionIdFromHostId(*params->host_id));
     if (extension && BackgroundInfo::HasBackgroundPage(extension)) {
       background_frame->Send(new ExtensionHostMsg_EventAck(
           background_frame->GetRoutingID(), params->event_id,

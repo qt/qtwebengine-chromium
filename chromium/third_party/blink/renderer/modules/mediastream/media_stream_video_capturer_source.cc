@@ -47,7 +47,7 @@ String CscResultToString(CapturedSurfaceControlResult result) {
   NOTREACHED_NORETURN();
 }
 
-void OnCapturedSurfaceControlResult(
+void OnCapturedSurfaceControlResultMSVCS(
     base::OnceCallback<void(bool, const String&)> callback,
     CapturedSurfaceControlResult result) {
   const String error_string = CscResultToString(result);
@@ -256,7 +256,7 @@ void MediaStreamVideoCapturerSource::SendWheel(
       session_id.value(),
       blink::mojom::blink::CapturedWheelAction::New(
           relative_x, relative_y, wheel_delta_x, wheel_delta_y),
-      WTF::BindOnce(&OnCapturedSurfaceControlResult, std::move(callback)));
+      WTF::BindOnce(&OnCapturedSurfaceControlResultMSVCS, std::move(callback)));
 }
 
 void MediaStreamVideoCapturerSource::GetZoomLevel(
@@ -289,7 +289,7 @@ void MediaStreamVideoCapturerSource::SetZoomLevel(
 
   GetMediaStreamDispatcherHost()->SetZoomLevel(
       session_id.value(), zoom_level,
-      WTF::BindOnce(&OnCapturedSurfaceControlResult, std::move(callback)));
+      WTF::BindOnce(&OnCapturedSurfaceControlResultMSVCS, std::move(callback)));
 }
 
 void MediaStreamVideoCapturerSource::ApplySubCaptureTarget(

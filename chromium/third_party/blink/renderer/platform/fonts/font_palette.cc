@@ -16,7 +16,7 @@ namespace {
 
 // This converts -0.0 to 0.0, so that they have the same hash value. This
 // ensures that equal FontDescription have the same hash value.
-float NormalizeSign(float number) {
+float NormalizeSign_FP(float number) {
   if (UNLIKELY(number == 0.0)) {
     return 0.0;
   }
@@ -30,10 +30,10 @@ unsigned FontPalette::GetHash() const {
   WTF::AddIntToHash(computed_hash, palette_keyword_);
 
   if (palette_keyword_ == kInterpolablePalette) {
-    WTF::AddFloatToHash(computed_hash, NormalizeSign(percentages_.start));
-    WTF::AddFloatToHash(computed_hash, NormalizeSign(percentages_.end));
-    WTF::AddFloatToHash(computed_hash, NormalizeSign(normalized_percentage_));
-    WTF::AddFloatToHash(computed_hash, NormalizeSign(alpha_multiplier_));
+    WTF::AddFloatToHash(computed_hash, NormalizeSign_FP(percentages_.start));
+    WTF::AddFloatToHash(computed_hash, NormalizeSign_FP(percentages_.end));
+    WTF::AddFloatToHash(computed_hash, NormalizeSign_FP(normalized_percentage_));
+    WTF::AddFloatToHash(computed_hash, NormalizeSign_FP(alpha_multiplier_));
     WTF::AddIntToHash(computed_hash,
                       static_cast<uint8_t>(color_interpolation_space_));
     if (hue_interpolation_method_.has_value()) {

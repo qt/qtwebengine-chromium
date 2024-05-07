@@ -188,7 +188,7 @@ class GridSizingSubtree
         /* subtree_root */ grid_tree_->LookupSubgridIndex(subgrid_data));
   }
 
-  GridItems& GridItems() const {
+  GridItems& GetGridItems() const {
     DCHECK(grid_tree_);
     return grid_tree_->At(subtree_root_).grid_items;
   }

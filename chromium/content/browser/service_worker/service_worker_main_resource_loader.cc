@@ -336,7 +336,7 @@ void ServiceWorkerMainResourceLoader::StartRequest(
                     if (active_worker->running_status() !=
                             blink::EmbeddedWorkerStatus::kRunning &&
                         base::FeatureList::IsEnabled(
-                            features::
+                            ::features::
                                 kServiceWorkerStaticRouterStartServiceWorker)) {
                       active_worker->StartWorker(
                           ServiceWorkerMetrics::EventType::STATIC_ROUTER,
@@ -372,7 +372,7 @@ void ServiceWorkerMainResourceLoader::StartRequest(
                     if (active_worker->running_status() !=
                             blink::EmbeddedWorkerStatus::kRunning &&
                         base::FeatureList::IsEnabled(
-                            features::
+                            ::features::
                                 kServiceWorkerStaticRouterStartServiceWorker)) {
                       active_worker->StartWorker(
                           ServiceWorkerMetrics::EventType::STATIC_ROUTER,
@@ -428,7 +428,7 @@ void ServiceWorkerMainResourceLoader::MaybeDispatchPreload(
   }
 
   bool respect_navigation_preload = base::GetFieldTrialParamByFeatureAsBool(
-      features::kServiceWorkerAutoPreload, "respect_navigation_preload",
+      ::features::kServiceWorkerAutoPreload, "respect_navigation_preload",
       /*default_value=*/true);
 
   if (respect_navigation_preload) {
@@ -453,12 +453,12 @@ void ServiceWorkerMainResourceLoader::MaybeDispatchPreload(
 bool ServiceWorkerMainResourceLoader::MaybeStartAutoPreload(
     scoped_refptr<ServiceWorkerContextWrapper> context,
     scoped_refptr<ServiceWorkerVersion> version) {
-  if (!base::FeatureList::IsEnabled(features::kServiceWorkerAutoPreload)) {
+  if (!base::FeatureList::IsEnabled(::features::kServiceWorkerAutoPreload)) {
     return false;
   }
 
   bool use_allowlist = base::GetFieldTrialParamByFeatureAsBool(
-      features::kServiceWorkerAutoPreload, "use_allowlist",
+      ::features::kServiceWorkerAutoPreload, "use_allowlist",
       /*default_value=*/false);
   if (use_allowlist && !HasRaceNetworkRequestEligibleScript(version)) {
     return false;
@@ -470,7 +470,7 @@ bool ServiceWorkerMainResourceLoader::MaybeStartAutoPreload(
   const static base::NoDestructor<base::flat_set<std::string>> blocked_hosts(
       base::SplitString(
           base::GetFieldTrialParamValueByFeature(
-              features::kServiceWorkerAutoPreload, "blocked_hosts"),
+              ::features::kServiceWorkerAutoPreload, "blocked_hosts"),
           ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY));
   if (blocked_hosts->contains(resource_request_.url.host())) {
     return false;

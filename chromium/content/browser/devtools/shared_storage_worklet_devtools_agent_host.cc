@@ -24,7 +24,7 @@ namespace content {
 
 namespace {
 
-RenderFrameHostImpl* ContainingLocalRoot(RenderFrameHostImpl* frame) {
+RenderFrameHostImpl* ContainingLocalRoot_SSWDAH(RenderFrameHostImpl* frame) {
   while (!frame->is_local_root()) {
     frame = frame->GetParent();
   }
@@ -119,8 +119,8 @@ bool SharedStorageWorkletDevToolsAgentHost::IsRelevantTo(
     return false;
   }
 
-  return ContainingLocalRoot(frame) ==
-         ContainingLocalRoot(worklet_host_->GetFrame());
+  return ContainingLocalRoot_SSWDAH(frame) ==
+         ContainingLocalRoot_SSWDAH(worklet_host_->GetFrame());
 }
 
 protocol::TargetAutoAttacher*

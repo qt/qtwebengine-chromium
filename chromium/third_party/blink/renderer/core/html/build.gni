@@ -739,3 +739,5 @@ blink_core_tests_html = [
   "track/vtt/vtt_scanner_test.cc",
   "trust_token_attribute_parsing_test.cc",
 ]
+
+jumbo_excluded_sources = [ "html_permission_element.cc" ]

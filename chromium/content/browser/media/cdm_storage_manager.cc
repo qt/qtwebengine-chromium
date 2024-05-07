@@ -17,7 +17,7 @@ namespace content {
 
 namespace {
 
-const char kUmaPrefix[] = "Media.EME.CdmStorageManager.";
+const char kUmaPrefix_CSM[] = "Media.EME.CdmStorageManager.";
 
 const char kIncognito[] = "Incognito";
 const char kNonIncognito[] = "NonIncognito";
@@ -235,7 +235,7 @@ void CdmStorageManager::DidDelete(base::OnceCallback<void(bool)> callback,
 void CdmStorageManager::ReportDatabaseOpenError(CdmStorageOpenError error) {
   // General Errors without distinguishing incognito or not.
   base::UmaHistogramEnumeration(
-      std::string{kUmaPrefix} + std::string{kDatabaseOpenErrorNoPeriod}, error);
+      std::string{kUmaPrefix_CSM} + std::string{kDatabaseOpenErrorNoPeriod}, error);
 
   // Histogram split by incognito and non-incognito.
   base::UmaHistogramEnumeration(GetHistogramName(kDatabaseOpenError), error);
@@ -246,7 +246,7 @@ std::string CdmStorageManager::GetHistogramName(const std::string& operation) {
   // UMA with the fact that this error came during the migration.
 
   auto histogram_name =
-      std::string{kUmaPrefix} + operation +
+      std::string{kUmaPrefix_CSM} + operation +
       (in_memory() ? std::string{kIncognito} : std::string{kNonIncognito});
 
   if (base::FeatureList::IsEnabled(features::kCdmStorageDatabase) &&

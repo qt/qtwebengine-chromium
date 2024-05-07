@@ -342,7 +342,7 @@ void VideoFrameSubmitter::OnBeginFrame(
     const WTF::HashMap<uint32_t, viz::FrameTimingDetails>& timing_details,
     bool frame_ack,
     WTF::Vector<viz::ReturnedResource> resources) {
-  if (features::IsOnBeginFrameAcksEnabled()) {
+  if (::features::IsOnBeginFrameAcksEnabled()) {
     if (frame_ack) {
       DidReceiveCompositorFrameAck(std::move(resources));
     } else if (!resources.empty()) {

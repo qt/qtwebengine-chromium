@@ -14,11 +14,11 @@ namespace v8::internal::compiler::turboshaft {
 
 #include "src/compiler/turboshaft/define-assembler-macros.inc"
 
-class GraphBuilder {
+class GraphBuilderMGBP {
  public:
   using Assembler = TSAssembler<>;
 
-  GraphBuilder(Graph& graph, Zone* temp_zone)
+  GraphBuilderMGBP(Graph& graph, Zone* temp_zone)
       : temp_zone_(temp_zone),
         assembler_(graph, graph, temp_zone),
         node_mapping_(temp_zone),
@@ -238,7 +238,7 @@ void MaglevGraphBuildingPhase::Run(Zone* temp_zone) {
       compilation_info->toplevel_compilation_unit(), maglev_graph);
   maglev_graph_builder.Build();
 
-  maglev::GraphProcessor<GraphBuilder, true> builder(data.graph(), temp_zone);
+  maglev::GraphProcessor<GraphBuilderMGBP, true> builder(data.graph(), temp_zone);
   builder.ProcessGraph(maglev_graph);
 }
 

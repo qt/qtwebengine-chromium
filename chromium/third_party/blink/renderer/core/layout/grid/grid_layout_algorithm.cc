@@ -1567,7 +1567,7 @@ void GridLayoutAlgorithm::ComputeGridItemBaselines(
   const auto writing_mode = GetConstraintSpace().GetWritingMode();
   track_collection.ResetBaselines();
 
-  for (auto& grid_item : sizing_subtree.GridItems().IncludeSubgriddedItems()) {
+  for (auto& grid_item : sizing_subtree.GetGridItems().IncludeSubgriddedItems()) {
     if (!grid_item.IsBaselineSpecified(track_direction) ||
         !grid_item.IsConsideredForSizing(track_direction)) {
       continue;
@@ -1730,7 +1730,7 @@ void GridLayoutAlgorithm::InitializeTrackSizes(
     const absl::optional<GridTrackSizingDirection>& opt_track_direction) const {
   DCHECK(sizing_subtree);
 
-  auto& grid_items = sizing_subtree.GridItems();
+  auto& grid_items = sizing_subtree.GetGridItems();
   auto& layout_data = sizing_subtree.LayoutData();
 
   auto InitAndCacheTrackSizes = [&](GridTrackSizingDirection track_direction) {
@@ -1934,7 +1934,7 @@ void GridLayoutAlgorithm::CompleteTrackSizingAlgorithm(
 
       if (needs_to_check_block_size_dependent_grid_items) {
         block_size_dependent_grid_items = BlockSizeDependentGridItems(
-            sizing_subtree.GridItems(), track_collection);
+            sizing_subtree.GetGridItems(), track_collection);
       }
 
       auto first_set_geometry = ComputeFirstSetGeometry(
@@ -1980,7 +1980,7 @@ void InvalidateCachedMinMaxSizes(const GridNode& subgrid,
     return;
   }
 
-  for (const auto& grid_item : sizing_subtree.GridItems()) {
+  for (const auto& grid_item : sizing_subtree.GetGridItems()) {
     if (!grid_item.IsSubgrid()) {
       continue;
     }
@@ -2087,7 +2087,7 @@ void GridLayoutAlgorithm::ForEachSubgrid(
 
   const auto& layout_data = sizing_subtree.LayoutData();
 
-  for (const auto& grid_item : sizing_subtree.GridItems()) {
+  for (const auto& grid_item : sizing_subtree.GetGridItems()) {
     if (!grid_item.IsSubgrid()) {
       continue;
     }
@@ -2719,7 +2719,7 @@ void GridLayoutAlgorithm::ResolveIntrinsicTrackSizes(
     const GridSizingSubtree& sizing_subtree,
     GridTrackSizingDirection track_direction,
     SizingConstraint sizing_constraint) const {
-  auto& grid_items = sizing_subtree.GridItems();
+  auto& grid_items = sizing_subtree.GetGridItems();
   auto& track_collection = sizing_subtree.SizingCollection(track_direction);
 
   GridItemDataPtrVector reordered_grid_items;
@@ -3062,7 +3062,7 @@ void GridLayoutAlgorithm::ExpandFlexibleTracks(
     //   finding the size of an fr using all the grid tracks that the item
     //   crosses and a space to fill of the item’s max-content contribution.
     for (auto& grid_item :
-         sizing_subtree.GridItems().IncludeSubgriddedItems()) {
+         sizing_subtree.GetGridItems().IncludeSubgriddedItems()) {
       if (grid_item.IsConsideredForSizing(track_direction) &&
           grid_item.IsSpanningFlexibleTrack(track_direction)) {
         float grid_item_fr_size =

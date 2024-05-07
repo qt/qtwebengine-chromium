@@ -405,6 +405,7 @@ jumbo_component("core") {
   jumbo_excluded_sources += rebase_path([ "create_window.cc" ], "", "page")
   jumbo_excluded_sources += rebase_path([ "link_highlight_impl.cc" ], "", "paint")
   jumbo_excluded_sources += rebase_path([ "scroll_animator.cc" ], "", "scroll")
+  jumbo_excluded_sources += rebase_path([ "html_permission_element.cc" ], "", "html")
 
   public_configs = [ ":core_include_dirs" ]
 

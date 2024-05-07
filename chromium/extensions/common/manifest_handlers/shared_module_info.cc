@@ -157,7 +157,7 @@ bool SharedModuleHandler::Parse(Extension* extension, std::u16string* error) {
       manifest_keys.export_->allowlist->empty()) {
     extension->AddInstallWarning(
         extensions::InstallWarning(errors::kInvalidExportAllowlistEmpty,
-                                   ManifestKeys::kExport, kAllowlist));
+                                   ManifestKeys2::kExport, kAllowlist));
   }
 
   if (has_export && manifest_keys.export_->allowlist) {
@@ -211,7 +211,7 @@ bool SharedModuleHandler::Parse(Extension* extension, std::u16string* error) {
         if (unique_imports.contains(import.id)) {
           unique_imports_warning = true;
           extension->AddInstallWarning(InstallWarning(
-              errors::kInvalidImportRepeatedImport, ManifestKeys::kImport));
+              errors::kInvalidImportRepeatedImport, ManifestKeys2::kImport));
         } else {
           unique_imports.insert(import.id);
         }

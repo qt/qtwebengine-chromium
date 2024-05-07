@@ -29,7 +29,7 @@ const char kDataSubchunkId[] = "data";
 
 // The size of a chunk header in wav file format. A chunk header consists of a
 // tag ('fmt ' or 'data') and 4 bytes of chunk length.
-const size_t kChunkHeaderSize = 8;
+const size_t kChunkHeaderSizeWAH = 8;
 
 // The minimum size of 'fmt' chunk.
 const size_t kFmtChunkMinimumSize = 16;
@@ -153,7 +153,7 @@ bool ParseWavData(const std::string_view wav_data,
   bool got_format = false;
   // If the number of remaining bytes is smaller than |kChunkHeaderSize|, it's
   // just junk at the end.
-  while (reader.remaining() >= kChunkHeaderSize) {
+  while (reader.remaining() >= kChunkHeaderSizeWAH) {
     // We should be at the beginning of a subsection. The next 8 bytes are the
     // header and should look like: "|f|m|t| |1|2|3|4|" or "|d|a|t|a|1|2|3|4|".
     std::string_view chunk_fmt;
