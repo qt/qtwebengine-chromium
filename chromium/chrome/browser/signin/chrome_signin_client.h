@@ -114,7 +114,7 @@ class ChromeSigninClient : public SigninClient {
       const base::FilePath& profile_path);
   void OnCloseBrowsersAborted(const base::FilePath& profile_path);
 
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS_ASH)
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS_ASH) && !BUILDFLAG(IS_QTWEBENGINE)
   // Used as the `on_token_fetch_complete` callback in the
   // `ForceSigninVerifier`.
   void OnTokenFetchComplete(bool token_is_valid);
@@ -138,7 +138,7 @@ class ChromeSigninClient : public SigninClient {
   base::OnceCallback<void(SignoutDecision)> on_signout_decision_reached_;
 
   bool should_display_user_manager_ = true;
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS_ASH)
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS_ASH) && !BUILDFLAG(IS_QTWEBENGINE)
   std::unique_ptr<ForceSigninVerifier> force_signin_verifier_;
 #endif
 

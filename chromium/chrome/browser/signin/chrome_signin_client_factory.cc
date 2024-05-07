@@ -4,7 +4,7 @@
 
 #include "chrome/browser/signin/chrome_signin_client_factory.h"
 
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/net/profile_network_context_service_factory.h"
 #endif
@@ -23,10 +23,11 @@ ChromeSigninClientFactory::ChromeSigninClientFactory()
               // Guest mode.
               .WithGuest(ProfileSelection::kOriginalOnly)
               .Build()) {
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
   DependsOn(ProfileNetworkContextServiceFactory::GetInstance());
   // Used to keep track of bookmark metrics on Signin/Sync.
   DependsOn(BookmarkModelFactory::GetInstance());
+#endif
 #if BUILDFLAG(ENABLE_EXTENSIONS)
   // Used to keep track of extensions metrics on Signin/Sync.
   DependsOn(extensions::ExtensionRegistryFactory::GetInstance());

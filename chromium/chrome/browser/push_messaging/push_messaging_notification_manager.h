@@ -105,7 +105,7 @@ class PushMessagingNotificationManager {
   // Weak. This manager is owned by a keyed service on this profile.
   raw_ptr<Profile> profile_;
 
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
   BudgetDatabase budget_database_;
 #endif
 

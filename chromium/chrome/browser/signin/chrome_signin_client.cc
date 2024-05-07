@@ -17,7 +17,7 @@
 #include "build/build_config.h"
 #include "build/buildflag.h"
 #include "build/chromeos_buildflags.h"
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/content_settings/cookie_settings_factory.h"
@@ -29,7 +29,7 @@
 #include "chrome/browser/profiles/profile_metrics.h"
 #else
 #include "chrome/browser/profiles/profile.h"
-#endif
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/signin/account_consistency_mode_manager.h"
 #include "chrome/browser/signin/chrome_device_id_helper.h"
 #include "chrome/browser/signin/force_signin_verifier.h"
@@ -43,7 +43,7 @@
 #include "components/bookmarks/browser/url_and_title.h"
 #include "components/content_settings/core/browser/cookie_settings.h"
 #include "components/metrics/metrics_service.h"
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/policy/core/browser/browser_policy_connector.h"
 #endif
 #include "components/prefs/pref_service.h"
@@ -86,7 +86,7 @@
 #include "components/account_manager_core/account_manager_util.h"
 #endif
 
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #if !BUILDFLAG(IS_ANDROID)
 #include "chrome/browser/profiles/profile_window.h"
 #endif
@@ -95,7 +95,7 @@
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/profiles/profile_picker.h"
 #endif
-#endif // !TOOLKIT_QT
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 #if !BUILDFLAG(IS_CHROMEOS_ASH)
 #include "chrome/browser/signin/wait_for_network_callback_helper_chrome.h"
@@ -219,7 +219,7 @@ ChromeSigninClient::ChromeSigninClient(Profile* profile)
     : wait_for_network_callback_helper_(
 #if BUILDFLAG(IS_CHROMEOS_ASH)
           std::make_unique<WaitForNetworkCallbackHelperAsh>()
-#elif defined(TOOLKIT_QT)
+#elif BUILDFLAG(IS_QTWEBENGINE)
           nullptr
 #else
           std::make_unique<WaitForNetworkCallbackHelperChrome>()
@@ -236,7 +236,7 @@ void ChromeSigninClient::DoFinalInit() {
 
 // static
 bool ChromeSigninClient::ProfileAllowsSigninCookies(Profile* profile) {
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
   scoped_refptr<content_settings::CookieSettings> cookie_settings =
       CookieSettingsFactory::GetForProfile(profile);
   return signin::SettingsAllowSigninCookies(cookie_settings.get());
@@ -269,7 +269,7 @@ bool ChromeSigninClient::AreSigninCookiesAllowed() {
 }
 
 bool ChromeSigninClient::AreSigninCookiesDeletedOnExit() {
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
   scoped_refptr<content_settings::CookieSettings> cookie_settings =
       CookieSettingsFactory::GetForProfile(profile_);
   return signin::SettingsDeleteSigninCookiesOnExit(cookie_settings.get());
@@ -280,14 +280,14 @@ bool ChromeSigninClient::AreSigninCookiesDeletedOnExit() {
 
 void ChromeSigninClient::AddContentSettingsObserver(
     content_settings::Observer* observer) {
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
   HostContentSettingsMapFactory::GetForProfile(profile_)->AddObserver(observer);
 #endif
 }
 
 void ChromeSigninClient::RemoveContentSettingsObserver(
     content_settings::Observer* observer) {
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
   HostContentSettingsMapFactory::GetForProfile(profile_)->RemoveObserver(
       observer);
 #endif
@@ -314,7 +314,7 @@ void ChromeSigninClient::PreSignOut(
   DCHECK(!on_signout_decision_reached_) << "SignOut already in-progress!";
   on_signout_decision_reached_ = std::move(on_signout_decision_reached);
 
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS_ASH) && !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS_ASH) && !BUILDFLAG(IS_QTWEBENGINE)
   // `signout_source_metric` is `signin_metrics::ProfileSignout::kAbortSignin`
   // if the user declines sync in the signin process. In case the user accepts
   // the managed account but declines sync, we should keep the window open.
@@ -392,7 +392,7 @@ std::unique_ptr<GaiaAuthFetcher> ChromeSigninClient::CreateGaiaAuthFetcher(
 }
 
 version_info::Channel ChromeSigninClient::GetClientChannel() {
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   return chrome::GetChannel();
 #else
   return {};
@@ -471,7 +471,7 @@ SigninClient::SignoutDecision ChromeSigninClient::GetSignoutDecision(
   }
 #endif
 
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Check if managed user.
   if (chrome::enterprise_util::UserAcceptedAccountManagement(profile_)) {
     if (base::FeatureList::IsEnabled(kDisallowManagedProfileSignout)) {
@@ -490,7 +490,7 @@ SigninClient::SignoutDecision ChromeSigninClient::GetSignoutDecision(
 }
 
 void ChromeSigninClient::VerifySyncToken() {
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS_ASH)
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS_ASH) && !BUILDFLAG(IS_QTWEBENGINE)
   // We only verify the token once when Profile is just created.
   if (signin_util::IsForceSigninEnabled() && !force_signin_verifier_) {
     force_signin_verifier_ = std::make_unique<ForceSigninVerifier>(
@@ -501,7 +501,7 @@ void ChromeSigninClient::VerifySyncToken() {
 #endif
 }
 
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS_ASH)
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS_ASH) && !BUILDFLAG(IS_QTWEBENGINE)
 void ChromeSigninClient::OnTokenFetchComplete(bool token_is_valid) {
   // If the token is valid we do need to do anything special and let the user
   // proceed.
@@ -528,6 +528,7 @@ void ChromeSigninClient::OnTokenFetchComplete(bool token_is_valid) {
 #endif
 
 std::optional<size_t> ChromeSigninClient::GetAllBookmarksCount() {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   bookmarks::BookmarkModel* bookmarks =
       BookmarkModelFactory::GetForBrowserContext(profile_);
   if (!bookmarks || !bookmarks->root_node()) {
@@ -546,9 +547,13 @@ std::optional<size_t> ChromeSigninClient::GetAllBookmarksCount() {
     }
   }
   return count;
+#else
+  return std::nullopt;
+#endif
 }
 
 std::optional<size_t> ChromeSigninClient::GetBookmarkBarBookmarksCount() {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   bookmarks::BookmarkModel* bookmarks =
       BookmarkModelFactory::GetForBrowserContext(profile_);
   if (!bookmarks || !bookmarks->bookmark_bar_node()) {
@@ -560,6 +565,9 @@ std::optional<size_t> ChromeSigninClient::GetBookmarkBarBookmarksCount() {
   // bar. Counting the children only gets us the first layer that appears on the
   // bar which is the count we need (Note: a folder on that layer counts as 1).
   return bookmarks->bookmark_bar_node()->children().size();
+#else
+  return std::nullopt;
+#endif
 }
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
@@ -677,7 +685,7 @@ void ChromeSigninClient::OnCloseBrowsersSuccess(
     bool should_sign_out,
     bool has_sync_account,
     const base::FilePath& profile_path) {
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS_ASH)
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS_ASH) && !BUILDFLAG(IS_QTWEBENGINE)
   if (signin_util::IsForceSigninEnabled() && force_signin_verifier_.get()) {
     force_signin_verifier_->Cancel();
   }
@@ -708,7 +716,7 @@ void ChromeSigninClient::OnCloseBrowsersAborted(
 
 void ChromeSigninClient::LockForceSigninProfile(
     const base::FilePath& profile_path) {
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
   ProfileAttributesEntry* entry =
       g_browser_process->profile_manager()
           ->GetProfileAttributesStorage()
@@ -721,7 +729,7 @@ void ChromeSigninClient::LockForceSigninProfile(
 }
 
 void ChromeSigninClient::ShowUserManager(const base::FilePath& profile_path) {
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS_ASH) && !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS_ASH) && !BUILDFLAG(IS_QTWEBENGINE)
   ProfilePicker::Show(ProfilePicker::Params::FromEntryPoint(
       ProfilePicker::EntryPoint::kProfileLocked));
 #endif

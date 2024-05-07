@@ -17,7 +17,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/notifications/platform_notification_service_factory.h"
 #include "chrome/browser/notifications/platform_notification_service_impl.h"
 #else
@@ -26,7 +26,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/push_messaging/push_messaging_constants.h"
 #include "chrome/grit/generated_resources.h"
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/site_engagement/content/site_engagement_service.h"
 #endif
 #include "components/url_formatter/elide_url.h"
@@ -56,7 +56,7 @@
 #include "extensions/common/manifest_handlers/background_info.h"
 #endif  // BUILDFLAG(ENABLE_EXTENSIONS)
 
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #if BUILDFLAG(IS_ANDROID)
 #include "chrome/browser/ui/android/tab_model/tab_model.h"
 #include "chrome/browser/ui/android/tab_model/tab_model_list.h"
@@ -64,10 +64,10 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#endif
+#endif  // BUILDFLAG(IS_ANDROID)
 #else
 #include "content/public/common/content_client.h"
-#endif
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 using content::BrowserThread;
 using content::NotificationDatabaseData;
@@ -113,7 +113,7 @@ NotificationDatabaseData CreateDatabaseData(
 
 PushMessagingNotificationManager::PushMessagingNotificationManager(
     Profile* profile)
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
     : profile_(profile), budget_database_(profile) {}
 #else
     : profile_(profile) {}
@@ -164,7 +164,7 @@ void PushMessagingNotificationManager::DidCountVisibleNotifications(
   bool notification_shown = notification_count > 0;
   bool notification_needed = true;
 
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Sites with a currently visible tab don't need to show notifications.
 #if BUILDFLAG(IS_ANDROID)
   for (const TabModel* model : TabModelList::models()) {
@@ -181,7 +181,7 @@ void PushMessagingNotificationManager::DidCountVisibleNotifications(
       break;
     }
   }
-#endif // !TOOLKIT_QT
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // If more than one notification is showing for this Service Worker, close
   // the default notification if it happens to be part of this group.
@@ -196,7 +196,7 @@ void PushMessagingNotificationManager::DidCountVisibleNotifications(
   if (notification_needed && !notification_shown) {
     // If the worker needed to show a notification and didn't, see if a silent
     // push was allowed.
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
     budget_database_.SpendBudget(
         url::Origin::Create(origin),
         base::BindOnce(&PushMessagingNotificationManager::ProcessSilentPush,
@@ -207,7 +207,7 @@ void PushMessagingNotificationManager::DidCountVisibleNotifications(
     PushMessagingNotificationManager::ProcessSilentPush(origin,
                       service_worker_registration_id,
                       std::move(message_handled_callback), true /* silent_push_allowed */);
-#endif // !TOOLKIT_QT
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
     return;
   }
 
@@ -270,7 +270,7 @@ void PushMessagingNotificationManager::ProcessSilentPush(
   scoped_refptr<PlatformNotificationContext> notification_context =
       GetStoragePartition(profile_, origin)->GetPlatformNotificationContext();
   int64_t next_persistent_notification_id =
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
       PlatformNotificationServiceFactory::GetForProfile(profile_)
           ->ReadNextPersistentNotificationId();
 #else

@@ -58,9 +58,9 @@
 #include "components/user_manager/user.h"
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
-#if BUILDFLAG(ENABLE_DICE_SUPPORT) && !defined(TOOLKIT_QT)
+#if BUILDFLAG(ENABLE_DICE_SUPPORT) && !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/signin/signin_ui_delegate_impl_dice.h"
-#endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
+#endif  // BUILDFLAG(ENABLE_DICE_SUPPORT) && !BUILDFLAG(IS_QTWEBENGINE)
 
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
 #include "chrome/browser/signin/signin_ui_delegate_impl_lacros.h"

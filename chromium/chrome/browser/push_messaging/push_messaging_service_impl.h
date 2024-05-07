@@ -22,7 +22,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_observation.h"
 #include "base/time/time.h"
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/permissions/permission_revocation_request.h"
 #endif
 #include "chrome/browser/push_messaging/push_messaging_notification_manager.h"
@@ -249,7 +249,7 @@ class PushMessagingServiceImpl : public content::PushMessagingService,
                         const std::string& push_message_id,
                         bool did_show_generic_notification);
 
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
   void OnCheckedOrigin(PendingMessage message,
                        PermissionRevocationRequest::Outcome outcome);
 #endif
@@ -258,7 +258,7 @@ class PushMessagingServiceImpl : public content::PushMessagingService,
       const GURL& origin,
       int64_t service_worker_registration_id);
 
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
   void CheckOriginAndDispatchNextMessage();
 #else
   void DispatchNextMessage();
@@ -448,7 +448,7 @@ class PushMessagingServiceImpl : public content::PushMessagingService,
   void OnAppTerminating();
 
   raw_ptr<Profile> profile_;
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
   std::unique_ptr<PermissionRevocationRequest> origin_revocation_request_;
 #endif
   std::queue<PendingMessage> messages_pending_permission_check_;

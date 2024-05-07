@@ -20,13 +20,13 @@
 #include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
 #endif
 #include "chrome/browser/gcm/gcm_profile_service_factory.h"
 #include "chrome/browser/gcm/instance_id/instance_id_profile_service_factory.h"
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/lifetime/termination_notification.h"
 #include "chrome/browser/permissions/permission_revocation_request.h"
 #include "chrome/browser/profiles/keep_alive/profile_keep_alive_types.h"
@@ -38,7 +38,7 @@
 #include "chrome/browser/push_messaging/push_messaging_features.h"
 #include "chrome/browser/push_messaging/push_messaging_service_factory.h"
 #include "chrome/browser/push_messaging/push_messaging_utils.h"
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/ui/chrome_pages.h"
 #endif
 #include "chrome/common/buildflags.h"
@@ -53,7 +53,9 @@
 #include "components/gcm_driver/instance_id/instance_id_driver.h"
 #include "components/gcm_driver/instance_id/instance_id_profile_service.h"
 #include "components/permissions/permission_manager.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/permissions/permission_uma_util.h"
+#endif
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
@@ -280,7 +282,7 @@ PushMessagingServiceImpl::PushMessagingServiceImpl(Profile* profile)
       pending_push_subscription_count_(0),
       notification_manager_(profile) {
   DCHECK(profile);
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
   HostContentSettingsMapFactory::GetForProfile(profile_)->AddObserver(this);
 
   on_app_terminating_subscription_ =
@@ -349,13 +351,13 @@ void PushMessagingServiceImpl::OnStoreReset() {
 
 void PushMessagingServiceImpl::OnMessage(const std::string& app_id,
                                          const gcm::IncomingMessage& message) {
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // We won't have time to process and act on the message.
   // TODO(peter) This should be checked at the level of the GCMDriver, so that
   // the message is not consumed. See https://crbug.com/612815
   if (g_browser_process->IsShuttingDown() || shutdown_started_)
     return;
-#endif // !TOOLKIT_QT
+#endif  // !BUILDFLAG(IS_QTWBENGINE)
 
 #if BUILDFLAG(ENABLE_BACKGROUND_MODE)
   if (!in_flight_keep_alive_) {
@@ -393,7 +395,7 @@ void PushMessagingServiceImpl::OnMessage(const std::string& app_id,
 
   if (IsPermissionSet(app_identifier.origin())) {
     messages_pending_permission_check_.emplace(app_id, message);
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
     // Start abusive and disruptive origin verifications only if no other
     // respective verification is in progress.
     if (!origin_revocation_request_)
@@ -410,7 +412,7 @@ void PushMessagingServiceImpl::OnMessage(const std::string& app_id,
   }
 }
 
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
 void PushMessagingServiceImpl::CheckOriginAndDispatchNextMessage() {
   if (messages_pending_permission_check_.empty())
     return;
@@ -531,7 +533,7 @@ void PushMessagingServiceImpl::DispatchNextMessage()
 
   DispatchNextMessage();
 }
-#endif // !TOOLKIT_QT
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 void PushMessagingServiceImpl::
     DeliverNextQueuedMessageForServiceWorkerRegistration(
@@ -869,7 +871,7 @@ void PushMessagingServiceImpl::SubscribeFromDocument(
   // It is OK to ignore `requesting_origin` because it will be calculated from
   // `render_frame_host` and we always use `requesting_origin` for
   // NOTIFICATIONS.
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
   profile_->GetPermissionController()->RequestPermissionFromCurrentDocument(
       render_frame_host,
       content::PermissionRequestDescription(
@@ -948,7 +950,7 @@ blink::mojom::PermissionStatus PushMessagingServiceImpl::GetPermissionStatus(
     return blink::mojom::PermissionStatus::DENIED;
   }
 
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Because the Push API is tied to Service Workers, many usages of the API
   // won't have an embedding origin at all. Only consider the requesting
   // |origin| when checking whether permission to use the API has been granted.
@@ -1222,7 +1224,6 @@ void PushMessagingServiceImpl::GetSubscriptionInfo(
   }
 
   const GURL endpoint = push_messaging::CreateEndpoint(subscription_id);
-
   const std::string& app_id = app_identifier.app_id();
   std::optional<base::Time> expiration_time = app_identifier.expiration_time();
 
@@ -1513,6 +1514,7 @@ void PushMessagingServiceImpl::OnContentSettingChanged(
       barrier_closure.Run();
       continue;
     }
+#if !BUILDFLAG(IS_QTWEBENGINE)
     if (!permissions::PermissionUmaUtil::ScopedRevocationReporter::
             IsInstanceInScope()) {
       permissions::PermissionUmaUtil::PermissionRevoked(
@@ -1520,6 +1522,7 @@ void PushMessagingServiceImpl::OnContentSettingChanged(
           permissions::PermissionSourceUI::UNIDENTIFIED,
           app_identifier.origin(), profile_);
     }
+#endif
     UnexpectedChange(app_identifier,
                      blink::mojom::PushUnregistrationReason::PERMISSION_REVOKED,
                      barrier_closure);
@@ -1661,7 +1664,7 @@ void PushMessagingServiceImpl::SetContentSettingChangedCallbackForTesting(
 
 void PushMessagingServiceImpl::Shutdown() {
   GetGCMDriver()->RemoveAppHandler(kPushMessagingAppIdentifierPrefix);
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
   HostContentSettingsMapFactory::GetForProfile(profile_)->RemoveObserver(this);
 #endif
 }
