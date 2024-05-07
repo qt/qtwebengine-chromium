@@ -22,7 +22,9 @@
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/profiles/profile.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/profiles/profiles_state.h"
+#endif
 #include "chrome/browser/spellchecker/spellcheck_factory.h"
 #include "chrome/browser/spellchecker/spellcheck_hunspell_dictionary.h"
 #include "components/language/core/browser/pref_names.h"
@@ -67,7 +69,11 @@ SpellcheckService::SpellCheckerBinder& GetSpellCheckerBinderOverride() {
 // Only record spelling-configuration metrics for profiles in which the user
 // can configure spelling.
 bool RecordSpellingConfigurationMetrics(content::BrowserContext* context) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   return profiles::IsRegularUserProfile(Profile::FromBrowserContext(context));
+#else
+  return true;
+#endif
 }
 
 }  // namespace
@@ -90,7 +96,7 @@ SpellcheckService::SpellcheckService(content::BrowserContext* context)
   dictionaries_pref.Init(spellcheck::prefs::kSpellCheckDictionaries, prefs);
   std::string first_of_dictionaries;
 
-#if (BUILDFLAG(IS_MAC) || BUILDFLAG(IS_ANDROID)) && !defined(TOOLKIT_QT)
+#if (BUILDFLAG(IS_MAC) || BUILDFLAG(IS_ANDROID)) && !BUILDFLAG(IS_QTWEBENGINE)
   // Ensure that the renderer always knows the platform spellchecking
   // language. This language is used for initialization of the text iterator.
   // If the iterator is not initialized, then the context menu does not show
@@ -526,7 +532,7 @@ bool SpellcheckService::IsSpellcheckEnabled() const {
   }
 #endif  // BUILDFLAG(IS_WIN)
 
-#if defined(TOOLKIT_QT) && BUILDFLAG(IS_MAC) && BUILDFLAG(USE_BROWSER_SPELLCHECKER)
+#if BUILDFLAG(IS_QTWEBENGINE) && BUILDFLAG(IS_MAC) && BUILDFLAG(USE_BROWSER_SPELLCHECKER)
   enable_if_uninitialized = true;
 #endif
 
@@ -577,7 +583,7 @@ void SpellcheckService::OnHunspellDictionaryDownloadSuccess(
 
 void SpellcheckService::OnHunspellDictionaryDownloadFailure(
     const std::string& language) {
-#ifdef TOOLKIT_QT
+#if BUILDFLAG(IS_QTWEBENGINE)
     DCHECK_CURRENTLY_ON(BrowserThread::UI);
     context_->FailedToLoadDictionary(language);
 #endif
