@@ -8,7 +8,9 @@
 
 #include "base/functional/bind.h"
 #include "base/values.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/browser_features.h"
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/devtools/devtools_settings.h"
 #include "chrome/browser/devtools/visual_logging.h"
 
@@ -411,9 +413,11 @@ DevToolsEmbedderMessageDispatcher::CreateForDevToolsFrontend(
   d->RegisterHandlerWithCallback("showSurvey", &Delegate::ShowSurvey, delegate);
   d->RegisterHandlerWithCallback("canShowSurvey", &Delegate::CanShowSurvey,
                                  delegate);
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (base::FeatureList::IsEnabled(::features::kDevToolsConsoleInsights)) {
     d->RegisterHandlerWithCallback("doAidaConversation",
                                    &Delegate::DoAidaConversation, delegate);
   }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
   return d;
 }
