@@ -25,11 +25,11 @@
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/media/audio_service_util.h"
 #endif
 #include "chrome/common/channel_info.h"
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/common/media/webrtc_logging.mojom.h"
 #else
 #include "qtwebengine/common/media/webrtc_logging.mojom.h"
@@ -461,7 +461,7 @@ void WebRtcTextLogHandler::OnGetNetworkInterfaceListFinish(
   // Chrome version
   LogToCircularBuffer(
       base::StrCat({"Chrome version: ", version_info::GetVersionNumber(), " "
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
                     , chrome::GetChannelName(chrome::WithExtendedStable(true))
 #endif
                    }));
@@ -514,7 +514,7 @@ void WebRtcTextLogHandler::OnGetNetworkInterfaceListFinish(
   auto enabled_or_disabled_feature_string = [](auto& feature) {
     return base::FeatureList::IsEnabled(feature) ? "enabled" : "disabled";
   };
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   auto enabled_or_disabled_bool_string = [](bool value) {
     return value ? "enabled" : "disabled";
   };
@@ -525,12 +525,12 @@ void WebRtcTextLogHandler::OnGetNetworkInterfaceListFinish(
        ", LaunchOnStartup=",
        enabled_or_disabled_feature_string(
            features::kAudioServiceLaunchOnStartup),
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
        ", Sandbox=",
        enabled_or_disabled_bool_string(IsAudioServiceSandboxEnabled())}));
 #else
        ""}));
-#endif // !defined(TOOLKIT_QT)
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 #if BUILDFLAG(CHROME_WIDE_ECHO_CANCELLATION)
   if (media::IsChromeWideEchoCancellationEnabled()) {

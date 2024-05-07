@@ -20,7 +20,7 @@
 #include "chrome/browser/media/webrtc/rtp_dump_type.h"
 #include "chrome/browser/media/webrtc/webrtc_log_uploader.h"
 #include "chrome/browser/media/webrtc/webrtc_text_log_handler.h"
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/common/media/webrtc_logging.mojom.h"
 #else
 #include "qtwebengine/common/media/webrtc_logging.mojom.h"

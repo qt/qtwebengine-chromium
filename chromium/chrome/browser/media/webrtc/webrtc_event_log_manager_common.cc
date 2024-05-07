@@ -18,11 +18,11 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/unguessable_token.h"
 #include "build/chromeos_buildflags.h"
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/policy/profile_policy_connector.h"
 #endif
 #include "chrome/browser/profiles/profile.h"
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/policy/core/common/policy_service.h"
 #endif
 #include "content/public/browser/browser_context.h"
@@ -1036,7 +1036,7 @@ bool DoesProfileDefaultToLoggingEnabled(const Profile* const profile) {
   }
 #endif
 
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // We only want a default of true for regular (i.e. logged-in) profiles
   // receiving cloud-based user-level enterprise policies. Supervised (child)
   // profiles are considered regular and can also receive cloud policies in some

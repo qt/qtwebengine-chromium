@@ -450,7 +450,7 @@ void MessageService::OpenChannelToExtension(
     source_frame = ExtensionApiFrameIdMap::Get()->GetFrameData(
         source_render_frame_host->GetGlobalId());
   } else {
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
     // Check to see if it was a WebView making the request.
     // Sending messages from WebViews to extensions breaks webview isolation,
     // so only allow component extensions to receive messages from WebViews.
@@ -764,7 +764,7 @@ void MessageService::OpenChannelImpl(BrowserContext* browser_context,
     DCHECK(port_context.frame);
     guest_render_frame_routing_id = port_context.frame->routing_id;
 
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
     DCHECK(WebViewGuest::FromRenderFrameHost(source.GetRenderFrameHost()));
 #endif
   }

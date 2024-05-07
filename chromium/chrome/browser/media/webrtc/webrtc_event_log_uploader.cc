@@ -12,7 +12,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/browser_process.h"
 #endif
 #include "chrome/browser/media/webrtc/webrtc_log_uploader.h"
@@ -97,7 +97,7 @@ std::string MimeContentType() {
 void BindURLLoaderFactoryReceiver(
     mojo::PendingReceiver<network::mojom::URLLoaderFactory>
         url_loader_factory_receiver) {
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   scoped_refptr<network::SharedURLLoaderFactory> shared_url_loader_factory =
       g_browser_process->shared_url_loader_factory();
@@ -105,7 +105,7 @@ void BindURLLoaderFactoryReceiver(
   shared_url_loader_factory->Clone(std::move(url_loader_factory_receiver));
 #else
   NOTREACHED();
-#endif // !defined(TOOLKIT_QT)
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 void OnURLLoadUploadProgress(uint64_t current, uint64_t total) {

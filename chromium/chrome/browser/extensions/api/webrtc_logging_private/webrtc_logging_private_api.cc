@@ -16,7 +16,7 @@
 #include "base/supports_user_data.h"
 #include "build/build_config.h"
 #include "chrome/browser/extensions/api/tabs/tabs_constants.h"
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/extensions/extension_tab_util.h"
 #endif
 #include "chrome/browser/profiles/profile.h"
@@ -155,7 +155,7 @@ content::RenderProcessHost* WebrtcLoggingPrivateFunction::RphFromRequest(
     return nullptr;
   }
 
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   int tab_id = *request.tab_id;
   content::WebContents* contents = nullptr;
   if (!ExtensionTabUtil::GetTabById(tab_id, browser_context(), true,
@@ -186,7 +186,7 @@ content::RenderProcessHost* WebrtcLoggingPrivateFunction::RphFromRequest(
   return rph;
 #else
   return nullptr;
-#endif // !defined(TOOLKIT_QT)
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 WebRtcLoggingController*
@@ -294,7 +294,7 @@ ExtensionFunction::ResponseAction WebrtcLoggingPrivateStartFunction::Run() {
 
 ExtensionFunction::ResponseAction
 WebrtcLoggingPrivateSetUploadOnRenderCloseFunction::Run() {
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   std::optional<SetUploadOnRenderClose::Params> params =
       SetUploadOnRenderClose::Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(params);
@@ -312,7 +312,7 @@ WebrtcLoggingPrivateSetUploadOnRenderCloseFunction::Run() {
   return RespondNow(NoArguments());
 #else
   return RespondNow(Error("Uploading log is not supported by QtWebEngine"));
-#endif // !defined(TOOLKIT_QT)
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 ExtensionFunction::ResponseAction WebrtcLoggingPrivateStopFunction::Run() {
@@ -350,7 +350,7 @@ ExtensionFunction::ResponseAction WebrtcLoggingPrivateStoreFunction::Run() {
 
 ExtensionFunction::ResponseAction
 WebrtcLoggingPrivateUploadStoredFunction::Run() {
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   std::optional<UploadStored::Params> params =
       UploadStored::Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(params);
@@ -371,11 +371,11 @@ WebrtcLoggingPrivateUploadStoredFunction::Run() {
   return RespondLater();
 #else
   return RespondNow(Error("Uploading log is not supported by QtWebEngine"));
-#endif // !defined(TOOLKIT_QT)
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 ExtensionFunction::ResponseAction WebrtcLoggingPrivateUploadFunction::Run() {
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   std::optional<Upload::Params> params = Upload::Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(params);
 
@@ -392,7 +392,7 @@ ExtensionFunction::ResponseAction WebrtcLoggingPrivateUploadFunction::Run() {
   return RespondLater();
 #else
   return RespondNow(Error("Uploading log is not supported by QtWebEngine"));
-#endif // !defined(TOOLKIT_QT)
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 ExtensionFunction::ResponseAction WebrtcLoggingPrivateDiscardFunction::Run() {
