@@ -334,6 +334,7 @@ jumbo_static_library("browser") {
 
   public_deps = [
     ":accessibility_buildflags",
+    "//components/spellcheck:buildflags",
     "//base/util/memory_pressure",
     "//base/util/type_safety",
     "//ipc",
