@@ -10,7 +10,6 @@
 
 #include "base/allocator/allocator_extension.h"
 #include "base/files/file_enumerator.h"
-#include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/posix/unix_domain_socket.h"
 #include "base/process/kill.h"
@@ -166,9 +165,6 @@ pid_t ZygoteHostImpl::LaunchZygote(
   options.fds_to_remap = std::move(additional_remapped_fds);
   options.fds_to_remap.emplace_back(fds[1], kZygoteSocketPairFd);
   options.fds_to_remove_cloexec.push_back(fds[1]);
-#if defined(TOOLKIT_QT)
-  options.zygote_control_fd = fds[1];
-#endif
 
   const bool is_sandboxed_zygote =
       !cmd_line->HasSwitch(sandbox::policy::switches::kNoZygoteSandbox);

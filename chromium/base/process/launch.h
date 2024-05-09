@@ -324,10 +324,6 @@ struct BASE_EXPORT LaunchOptions {
   // process' controlling terminal.
   int ctrl_terminal_fd = -1;
 #endif  // BUILDFLAG(IS_CHROMEOS)
-
-#if defined(TOOLKIT_QT) && BUILDFLAG(IS_POSIX)
-  int zygote_control_fd = -1;
-#endif
 };
 
 // Launch a process via the command line |cmdline|.
