@@ -62,7 +62,7 @@ if (enable_java_templates) {
     library_name = "android.car"
     required = false
   }
-  if (!limit_android_deps) {
+  if (!limit_android_deps && !is_qtwebengine) {
     android_sdk_optional_library("android_window_extensions_java") {
       library_name = "androidx.window.extensions"
       required = false
