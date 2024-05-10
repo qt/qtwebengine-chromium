@@ -237,7 +237,7 @@ component("fido") {
     ]
   }
 
-  if (is_qtwebengine) {
+  if (!is_android && is_qtwebengine) {
     sources -= [
       "enclave/constants.cc",
       "enclave/constants.h",

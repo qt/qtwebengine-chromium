@@ -28,5 +28,7 @@ android_library("androidx_window_shims_java") {
 # See //third_party/android_sdk/window_extensions/README.md
 android_library("window_util_java") {
   sources = [ "java/org/chromium/window/WindowUtil.java" ]
-  deps = [ "//third_party/android_sdk:android_window_extensions_java" ]
+  if (!is_qtwebengine) {
+     deps = [ "//third_party/android_sdk:android_window_extensions_java" ]
+  }
 }

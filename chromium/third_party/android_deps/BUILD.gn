@@ -117,6 +117,16 @@ java_annotation_processor("auto_service_processor") {
 
 # === Generated Code Start ===
 # This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
+java_prebuilt("com_google_guava_listenablefuture_java") {
+  jar_path = "libs/com_google_guava_listenablefuture/listenablefuture-1.0.jar"
+  output_name = "com_google_guava_listenablefuture"
+  supports_android = true
+  enable_bytecode_checks = false
+
+  # This dep should be used when ListenableFuture is needed.
+  preferred_dep = true
+}
+
 java_prebuilt("com_android_tools_common_java") {
   jar_path = "libs/com_android_tools_common/common-30.2.0-beta01.jar"
   output_name = "com_android_tools_common"

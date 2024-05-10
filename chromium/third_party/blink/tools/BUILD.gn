@@ -77,7 +77,6 @@ if (!is_ios) {
       "//mojo/public/js/ts/bindings/tests:test_interfaces_js_data_deps",
       "//mojo/public/mojom/base:base_js_data_deps",
     ]
-  }
 
   if(is_qtwebengine && is_android) {
     data_deps -= [
@@ -85,6 +84,7 @@ if (!is_ios) {
       "//:layout_test_data_mojo_bindings_lite",
     ]
   }
+}
 }
 
 if (!is_ios) {
