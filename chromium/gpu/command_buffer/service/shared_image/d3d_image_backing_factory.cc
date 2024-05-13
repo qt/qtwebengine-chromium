@@ -376,8 +376,12 @@ std::unique_ptr<SharedImageBacking> D3DImageBackingFactory::CreateSharedImage(
   const bool has_gl_usage = HasGLES2ReadOrWriteUsage(usage);
   // TODO(crbug.com/40204134): Look into using DXGI handle when MF VEA is used.
   const bool needs_shared_handle =
+#if BUILDFLAG(IS_QTWEBENGINE)
+      true;
+#else
       has_webgpu_usage ||
       (has_gl_usage && (d3d11_device_ != angle_d3d11_device_));
+#endif
   if (needs_shared_handle) {
     // TODO(crbug.com/40068319): Many texture formats cannot be shared on old
     // GPUs/drivers to try to detect that and implement a fallback path or
