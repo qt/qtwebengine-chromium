@@ -275,7 +275,7 @@ D3DImageBackingFactory::D3DImageBackingFactory(
       << "D3DImageBackingFactory requires a D3D11 device.";
 
   if (d3d11_device_) {
-    UINT format_support;
+    UINT format_support = 0;
     HRESULT hr =
         d3d11_device_->CheckFormatSupport(DXGI_FORMAT_NV12, &format_support);
     constexpr auto kRequiredUsage = D3D11_FORMAT_SUPPORT_TEXTURE2D |
@@ -726,16 +726,24 @@ std::unique_ptr<SharedImageBacking> D3DImageBackingFactory::CreateSharedImage(
                                              SHARED_IMAGE_USAGE_WEBGPU_WRITE);
   const bool has_gl_usage = HasGLES2ReadOrWriteUsage(usage);
   const bool want_dcomp_texture =
+#if BUILDFLAG(IS_QTWEBENGINE)
+      false;
+#else
       usage.Has(SHARED_IMAGE_USAGE_SCANOUT) &&
       IsFormatSupportedForDCompTexture(desc.Format) &&
       IsColorSpaceSupportedForDCompTexture(
           gfx::ColorSpaceWin::GetDXGIColorSpace(color_space));
+#endif
   // TODO(crbug.com/40204134): Look into using DXGI handle when MF VEA is used.
   const bool needs_cross_device_synchronization =
       has_webgpu_usage ||
       (has_gl_usage && (d3d11_device_ != angle_d3d11_device_));
   const bool needs_shared_handle =
+#if BUILDFLAG(IS_QTWEBENGINE)
+      true;
+#else
       needs_cross_device_synchronization || want_dcomp_texture;
+#endif
   if (needs_shared_handle) {
     // TODO(crbug.com/40068319): Many texture formats cannot be shared on old
     // GPUs/drivers to try to detect that and implement a fallback path or
@@ -1082,12 +1090,11 @@ bool D3DImageBackingFactory::IsSupported(SharedImageUsageSet usage,
     return false;
   }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   const bool is_scanout = usage.Has(gpu::SHARED_IMAGE_USAGE_SCANOUT);
   const bool is_video_decode = usage.Has(gpu::SHARED_IMAGE_USAGE_VIDEO_DECODE);
   const bool is_concurrent_read_write =
       usage.Has(gpu::SHARED_IMAGE_USAGE_CONCURRENT_READ_WRITE);
-  const bool is_buffer =
-      usage.Has(gpu::SHARED_IMAGE_USAGE_WEBGPU_SHARED_BUFFER);
   if (is_scanout) {
     if (is_video_decode || gmb_type == gfx::DXGI_SHARED_HANDLE ||
         is_concurrent_read_write) {
@@ -1100,6 +1107,9 @@ bool D3DImageBackingFactory::IsSupported(SharedImageUsageSet usage,
              IsFormatSupportedForDCompTexture(ToDXGIFormat(format));
     }
   }
+#endif
+  const bool is_buffer =
+      usage.Has(gpu::SHARED_IMAGE_USAGE_WEBGPU_SHARED_BUFFER);
 
   if (is_buffer) {
     // If this buffer is for WebNN, only allow usages that WebNN supports.
