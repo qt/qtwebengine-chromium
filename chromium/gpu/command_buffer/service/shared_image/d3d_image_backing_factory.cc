@@ -478,7 +478,11 @@ std::unique_ptr<SharedImageBacking> D3DImageBackingFactory::CreateSharedImage(
       has_webgpu_usage ||
       (has_gl_usage && (d3d11_device_ != angle_d3d11_device_));
   const bool needs_shared_handle =
+#if BUILDFLAG(IS_QTWEBENGINE)
+      true;
+#else
       needs_cross_device_synchronization || want_dcomp_texture;
+#endif
   if (needs_shared_handle) {
     // TODO(crbug.com/40068319): Many texture formats cannot be shared on old
     // GPUs/drivers to try to detect that and implement a fallback path or
