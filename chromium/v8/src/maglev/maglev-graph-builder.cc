@@ -1388,12 +1388,21 @@ bool MaglevGraphBuilder::TryBuildPropertyStore(
         access_info.holder().value());
   }
 
-  if (access_info.IsFastAccessorConstant()) {
-    return TryBuildPropertySetterCall(access_info, receiver,
-                                      GetAccumulatorTagged());
-  } else {
-    DCHECK(access_info.IsDataField() || access_info.IsFastDataConstant());
-    return TryBuildStoreField(access_info, receiver);
+  switch (access_info.kind()) {
+    case compiler::PropertyAccessInfo::kFastAccessorConstant:
+      return TryBuildPropertySetterCall(access_info, receiver,
+                                        GetAccumulatorTagged());
+    case compiler::PropertyAccessInfo::kDataField:
+    case compiler::PropertyAccessInfo::kFastDataConstant: {
+      return TryBuildStoreField(access_info, receiver);
+    }
+    case compiler::PropertyAccessInfo::kInvalid:
+    case compiler::PropertyAccessInfo::kNotFound:
+    case compiler::PropertyAccessInfo::kDictionaryProtoDataConstant:
+    case compiler::PropertyAccessInfo::kDictionaryProtoAccessorConstant:
+    case compiler::PropertyAccessInfo::kModuleExport:
+    case compiler::PropertyAccessInfo::kStringLength:
+      UNREACHABLE();
   }
 }
 
