@@ -65,7 +65,7 @@ PendingTask::PendingTask(const TaskMetadata& metadata, OnceClosure task)
 PendingTask::PendingTask(PendingTask&& other) = default;
 
 PendingTask::~PendingTask() {
-#if DCHECK_IS_ON()
+#if DCHECK_IS_ON() && !BUILDFLAG(IS_QTWEBENGINE)
   // Instrumentation to investigate crbug.com/1494307 (only required in
   // DCHECK-enabled builds since this is a DCHECK failure).
   // TODO(crbug.com/1494307): Remove after March 2024.
