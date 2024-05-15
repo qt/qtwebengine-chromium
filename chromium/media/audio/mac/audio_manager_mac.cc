@@ -718,8 +718,9 @@ AudioOutputStream* AudioManagerMac::MakeLowLatencyOutputStream(
     // fire the callbacks during stream creation, leading to re-entrancy issues
     // otherwise.  See http://crbug.com/349604
     output_device_listener_ = std::make_unique<AudioDeviceListenerMac>(
-        BindToCurrentLoop(base::BindRepeating(
-            &AudioManagerMac::HandleDeviceChanges, base::Unretained(this))));
+        BindToCurrentLoop(
+            base::BindRepeating(&AudioManagerMac::HandleDeviceChanges,
+                                weak_ptr_factory_.GetWeakPtr()))),
     device_listener_first_init = true;
   }
 
