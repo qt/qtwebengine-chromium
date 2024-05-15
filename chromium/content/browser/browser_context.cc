@@ -339,6 +339,11 @@ base::WeakPtr<BrowserContext> BrowserContext::GetWeakPtr() {
 // section into a separate BrowserContextDelegate class and a separate
 // browser_context_delegate.cc source file.
 
+#if BUILDFLAG(IS_QTWEBENGINE)
+void BrowserContext::FailedToLoadDictionary(const std::string&) {
+}
+#endif
+
 FileSystemAccessPermissionContext*
 BrowserContext::GetFileSystemAccessPermissionContext() {
   return nullptr;
