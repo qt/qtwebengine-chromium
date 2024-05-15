@@ -17,7 +17,6 @@
 #include "base/callback_forward.h"
 #include "base/memory/weak_ptr.h"
 #include "base/supports_user_data.h"
-#include "components/spellcheck/spellcheck_buildflags.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/k_anonymity_service_delegate.h"
 #include "content/public/browser/zoom_level_delegate.h"
@@ -403,9 +402,9 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   // Default implementation uses the BrowserContext's UniqueId.
   virtual std::string GetMediaDeviceIDSalt();
 
-#if defined(TOOLKIT_QT) && BUILDFLAG(ENABLE_SPELLCHECK)
+#if defined(TOOLKIT_QT)
   // Inform about not working dictionary for given language
-  virtual void FailedToLoadDictionary(const std::string& language) = 0;
+  virtual void FailedToLoadDictionary(const std::string& language);
 #endif
 
   // Returns the FileSystemAccessPermissionContext associated with this context

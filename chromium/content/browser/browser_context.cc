@@ -345,6 +345,11 @@ void BrowserContext::WriteIntoTrace(
 // section into a separate BrowserContextDelegate class and a separate
 // browser_context_delegate.cc source file.
 
+#if defined(TOOLKIT_QT)
+void BrowserContext::FailedToLoadDictionary(const std::string&) {
+}
+#endif
+
 std::string BrowserContext::GetMediaDeviceIDSalt() {
   return UniqueId();
 }
