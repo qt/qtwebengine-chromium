@@ -5,6 +5,7 @@
 #include "sandbox/win/src/target_interceptions.h"
 
 #include <atomic>
+#include <type_traits>
 
 #include <ntstatus.h>
 
@@ -16,18 +17,23 @@ namespace sandbox {
 
 namespace {
 
-std::atomic<SectionLoadState> g_section_load_state{
-    SectionLoadState::kBeforeKernel32};
+// When an std::atomic is of an enum type, MSVC sneaks in a memcpy when reimplement_cast-ing
+// it back to an integer. This causes a DEP crash when launching a sandboxed process,
+// since memcpy is implemented in ntdll.dll, and the code is trying to call it while in
+// the middle of having its system calls intercepted. To work around this, we make the atomic
+// itself an int, which gets rid of the problematic cast.
+std::atomic<std::underlying_type_t<SectionLoadState>> g_section_load_state {
+    static_cast<std::underlying_type_t<SectionLoadState>>(SectionLoadState::kBeforeKernel32)};
 
 void UpdateSectionLoadState(SectionLoadState new_state) {
-  g_section_load_state = new_state;
+  g_section_load_state = static_cast<std::underlying_type_t<SectionLoadState>>(new_state);
 }
 
 const char KERNEL32_DLL_NAME[] = "kernel32.dll";
 }  // namespace
 
 SectionLoadState GetSectionLoadState() {
-  return g_section_load_state.load(std::memory_order_relaxed);
+  return static_cast<SectionLoadState>(g_section_load_state.load(std::memory_order_relaxed));
 }
 
 // Hooks NtMapViewOfSection to detect the load of DLLs. If hot patching is
