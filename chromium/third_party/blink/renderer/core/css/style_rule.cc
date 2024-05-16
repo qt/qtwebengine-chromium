@@ -509,7 +509,8 @@ void StyleRuleScope::SetPreludeText(const ExecutionContext* execution_context,
                                     String value) {
   auto* parser_context =
       MakeGarbageCollected<CSSParserContext>(*execution_context);
-  Vector<CSSParserToken, 32> tokens = CSSTokenizer(value).TokenizeToEOF();
+  CSSTokenizer tokenizer(value);
+  Vector<CSSParserToken, 32> tokens = tokenizer.TokenizeToEOF();
   style_scope_ = StyleScope::Parse(tokens, parser_context, nullptr);
 }
 
