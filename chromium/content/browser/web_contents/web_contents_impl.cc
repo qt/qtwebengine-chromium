@@ -3829,7 +3829,7 @@ void WebContentsImpl::NotifyFullscreenChanged(bool will_cause_resize) {
 
   bool exitedFullscreen = !IsFullscreen();
   if (exitedFullscreen)
-    current_fullscreen_frame_ =  GlobalRenderFrameHostId();
+    current_fullscreen_frame_id_ = GlobalRenderFrameHostId();
 
   observers_.NotifyObservers(
       &WebContentsObserver::DidToggleFullscreenModeForTab, !exitedFullscreen,
