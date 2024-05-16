@@ -4251,17 +4251,25 @@ void LocalFrameView::CollectAnnotatedRegions(
 IntersectionUpdateResult LocalFrameView::UpdateViewportIntersectionsForSubtree(
     unsigned parent_flags,
     absl::optional<base::TimeTicks>& monotonic_time) {
+  IntersectionUpdateResult result;
+  // This will be recomputed, but default to the previous computed value if
+  // there's an early return.
+  IntersectionObserverController* controller =
+      GetFrame().GetDocument()->GetIntersectionObserverController();
+  if (controller) {
+    result.needs_occlusion_tracking = controller->NeedsOcclusionTracking();
+  }
+
   // TODO(dcheng): Since LocalFrameView tree updates are deferred, FrameViews
   // might still be in the LocalFrameView hierarchy even though the associated
   // Document is already detached. Investigate if this check and a similar check
   // in lifecycle updates are still needed when there are no more deferred
   // LocalFrameView updates: https://crbug.com/561683
   if (!GetFrame().GetDocument()->IsActive()) {
-    return IntersectionUpdateResult();
+    return result;
   }
 
   unsigned flags = GetIntersectionObservationFlags(parent_flags);
-  IntersectionUpdateResult result;
   if (RuntimeEnabledFeatures::IntersectionOptimizationEnabled()) {
     min_scroll_delta_to_update_intersection_ =
         IntersectionGeometry::kInfiniteScrollDelta;
@@ -4272,8 +4280,7 @@ IntersectionUpdateResult LocalFrameView::UpdateViewportIntersectionsForSubtree(
   bool fully_updated = false;
   if (!NeedsLayout() || IsDisplayLocked()) {
     // Notify javascript IntersectionObservers
-    if (IntersectionObserverController* controller =
-            GetFrame().GetDocument()->GetIntersectionObserverController()) {
+    if (controller) {
       IntersectionUpdateResult observers_result =
           controller->ComputeIntersections(flags, GetUkmAggregator(),
                                            monotonic_time);

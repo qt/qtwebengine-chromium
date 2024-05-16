@@ -86,6 +86,9 @@ gfx::Vector2dF FrameView::UpdateViewportIntersection(
       occlusion_state ==
           mojom::blink::FrameOcclusionState::kGuaranteedNotOccluded &&
       parent_lifecycle_state >= DocumentLifecycle::kPrePaintClean;
+  if (!should_compute_occlusion) {
+    occlusion_state = mojom::blink::FrameOcclusionState::kUnknown;
+  }
 
   LayoutEmbeddedContent* owner_layout_object =
       owner_element->GetLayoutEmbeddedContent();
