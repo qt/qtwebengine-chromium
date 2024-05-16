@@ -851,7 +851,7 @@ void BucketContext::RunTasks() {
         return;
 
       case Database::RunTasksResult::kCanBeDestroyed:
-        databases_.erase(db_it);
+        db_it = databases_.erase(db_it);
         break;
     }
   }
