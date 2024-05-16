@@ -4169,21 +4169,26 @@ void LocalFrameView::CollectAnnotatedRegions(
 
 bool LocalFrameView::UpdateViewportIntersectionsForSubtree(
     unsigned parent_flags) {
+  bool needs_occlusion_tracking = false;
+  IntersectionObserverController* controller =
+      GetFrame().GetDocument()->GetIntersectionObserverController();
+  if (controller) {
+    needs_occlusion_tracking = controller->NeedsOcclusionTracking();
+  }
+
   // TODO(dcheng): Since LocalFrameView tree updates are deferred, FrameViews
   // might still be in the LocalFrameView hierarchy even though the associated
   // Document is already detached. Investigate if this check and a similar check
   // in lifecycle updates are still needed when there are no more deferred
   // LocalFrameView updates: https://crbug.com/561683
   if (!GetFrame().GetDocument()->IsActive())
-    return false;
+    return needs_occlusion_tracking;
 
   unsigned flags = GetIntersectionObservationFlags(parent_flags);
-  bool needs_occlusion_tracking = false;
 
   if (!NeedsLayout()) {
     // Notify javascript IntersectionObservers
-    if (IntersectionObserverController* controller =
-            GetFrame().GetDocument()->GetIntersectionObserverController()) {
+    if (controller) {
       needs_occlusion_tracking |= controller->ComputeIntersections(flags);
     }
     intersection_observation_state_ = kNotNeeded;
