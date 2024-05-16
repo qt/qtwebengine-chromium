@@ -788,7 +788,7 @@ void IndexedDBBucketContext::RunTasks() {
         return;
 
       case IndexedDBDatabase::RunTasksResult::kCanBeDestroyed:
-        databases_.erase(db_it);
+        db_it = databases_.erase(db_it);
         break;
     }
   }
