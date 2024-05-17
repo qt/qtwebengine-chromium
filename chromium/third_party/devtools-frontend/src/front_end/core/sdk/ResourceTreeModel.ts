@@ -422,6 +422,10 @@ export class ResourceTreeModel extends SDKModel<EventTypes> {
   }
 
   reloadPage(ignoreCache?: boolean, scriptToEvaluateOnLoad?: string): void {
+    const loaderId = this.mainFrame?.loaderId;
+    if (!loaderId) {
+      return;
+    }
     // Only dispatch PageReloadRequested upon first reload request to simplify client logic.
     if (!this.#pendingReloadOptions) {
       this.dispatchEventToListeners(Events.PageReloadRequested, this);
@@ -436,7 +440,7 @@ export class ResourceTreeModel extends SDKModel<EventTypes> {
       networkManager.clearRequests();
     }
     this.dispatchEventToListeners(Events.WillReloadPage);
-    void this.agent.invoke_reload({ignoreCache, scriptToEvaluateOnLoad});
+    void this.agent.invoke_reload({ignoreCache, scriptToEvaluateOnLoad, loaderId});
   }
 
   // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
@@ -700,7 +704,7 @@ export class ResourceTreeFrame {
   #sameTargetParentFrameInternal: ResourceTreeFrame|null;
   readonly #idInternal: Protocol.Page.FrameId;
   crossTargetParentFrameId: string|null;
-  #loaderIdInternal: string;
+  #loaderIdInternal: Protocol.Network.LoaderId;
   #nameInternal: string|null|undefined;
   #urlInternal: Platform.DevToolsPath.UrlString;
   #domainAndRegistryInternal: string;
@@ -735,7 +739,7 @@ export class ResourceTreeFrame {
     this.#idInternal = frameId;
     this.crossTargetParentFrameId = null;
 
-    this.#loaderIdInternal = (payload && payload.loaderId) || '';
+    this.#loaderIdInternal = (payload && payload.loaderId) || '' as Protocol.Network.LoaderId;
     this.#nameInternal = payload && payload.name;
     this.#urlInternal =
         payload && payload.url as Platform.DevToolsPath.UrlString || Platform.DevToolsPath.EmptyUrlString;
@@ -857,7 +861,7 @@ export class ResourceTreeFrame {
     return this.#unreachableUrlInternal;
   }
 
-  get loaderId(): string {
+  get loaderId(): Protocol.Network.LoaderId {
     return this.#loaderIdInternal;
   }
 
