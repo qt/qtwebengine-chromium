@@ -415,6 +415,7 @@ Response PageHandler::Close() {
 
 void PageHandler::Reload(Maybe<bool> bypassCache,
                          Maybe<std::string> script_to_evaluate_on_load,
+                         Maybe<std::string> loader_id,
                          std::unique_ptr<ReloadCallback> callback) {
   Response response = AssureTopLevelActiveFrame();
   if (response.IsError()) {
@@ -427,6 +428,16 @@ void PageHandler::Reload(Maybe<bool> bypassCache,
   // itself will fail.
   RenderFrameHostImpl* outermost_main_frame =
       host_->GetOutermostMainFrameOrEmbedder();
+
+  if (loader_id.has_value()) {
+    auto navigation_token = outermost_main_frame->GetDevToolsNavigationToken();
+    if (!navigation_token.has_value() ||
+        *loader_id != navigation_token->ToString()) {
+      callback->sendFailure(Response::InvalidParams(
+          "Reload was discarded because the page already navigated"));
+      return;
+    }
+  }
 
   // It is important to fallback before triggering reload, so that
   // renderer could prepare beforehand.
