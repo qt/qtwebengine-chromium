@@ -235,7 +235,11 @@ SurfaceAllocationGroup::FindLatestActiveSurfaceUpTo(
   if (it == surfaces_.end())
     return surfaces_.end();
 
-  for (; it >= surfaces_.begin(); --it) {
+  // This loop avoids MSVC debug mode assertion "can't decrement vector iterator before begin"
+  ++it;
+  while (it != surfaces_.begin())
+  {
+    --it;
     if ((*it)->HasActiveFrame())
       return it;
   }
