@@ -222,6 +222,7 @@ RequestTokenStatus FederatedAuthRequestResultToRequestTokenStatus(
     case FederatedAuthRequestResult::kErrorSilentMediationFailure:
     case FederatedAuthRequestResult::kErrorThirdPartyCookiesBlocked:
     case FederatedAuthRequestResult::kErrorNotSignedInWithIdp:
+    case FederatedAuthRequestResult::kErrorRelyingPartyOriginIsOpaque:
     case FederatedAuthRequestResult::kError: {
       return RequestTokenStatus::kError;
     }
@@ -236,6 +237,7 @@ FederatedAuthRequestResultToMetricsEndpointErrorCode(
       return IdpNetworkRequestManager::MetricsEndpointErrorCode::kNone;
     }
     case FederatedAuthRequestResult::kErrorTooManyRequests:
+    case FederatedAuthRequestResult::kErrorRelyingPartyOriginIsOpaque:
     case FederatedAuthRequestResult::kErrorCanceled: {
       return IdpNetworkRequestManager::MetricsEndpointErrorCode::kRpFailure;
     }
@@ -901,6 +903,15 @@ void FederatedAuthRequestImpl::RequestToken(
       idp_get_params_ptrs[0]->mode == blink::mojom::RpMode::kButton &&
       render_frame_host().HasTransientUserActivation()) {
     rp_mode_ = RpMode::kButton;
+  }
+
+  if (origin().opaque()) {
+    CompleteRequestWithError(
+        FederatedAuthRequestResult::kErrorRelyingPartyOriginIsOpaque,
+        TokenStatus::kRpOriginIsOpaque,
+        /*token_error=*/std::nullopt,
+        /*should_delay_callback=*/false);
+    return;
   }
 
   FederatedApiPermissionStatus permission_status = GetApiPermissionStatus();

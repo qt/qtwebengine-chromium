@@ -839,6 +839,7 @@ experimental domain Audits
       SilentMediationFailure
       ThirdPartyCookiesBlocked
       NotSignedInWithIdp
+      RelyingPartyOriginIsOpaque
 
   type FederatedAuthUserInfoRequestIssueDetails extends object
     properties

@@ -353,6 +353,9 @@ FederatedAuthRequestResultToProtocol(
     case FederatedAuthRequestResult::kErrorNotSignedInWithIdp: {
       return FederatedAuthRequestIssueReasonEnum::NotSignedInWithIdp;
     }
+    case FederatedAuthRequestResult::kErrorRelyingPartyOriginIsOpaque: {
+      return FederatedAuthRequestIssueReasonEnum::RelyingPartyOriginIsOpaque;
+    }
     case FederatedAuthRequestResult::kSuccess: {
       NOTREACHED_NORETURN();
     }
