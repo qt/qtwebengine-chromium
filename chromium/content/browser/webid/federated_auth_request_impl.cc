@@ -195,6 +195,7 @@ RequestTokenStatus FederatedAuthRequestResultToRequestTokenStatus(
     case FederatedAuthRequestResult::kErrorFetchingIdTokenInvalidContentType:
     case FederatedAuthRequestResult::kErrorRpPageNotVisible:
     case FederatedAuthRequestResult::kErrorSilentMediationFailure:
+    case FederatedAuthRequestResult::kErrorRelyingPartyOriginIsOpaque:
     case FederatedAuthRequestResult::kErrorThirdPartyCookiesBlocked:
     case FederatedAuthRequestResult::kError: {
       return RequestTokenStatus::kError;
@@ -210,6 +211,7 @@ FederatedAuthRequestResultToMetricsEndpointErrorCode(
       return IdpNetworkRequestManager::MetricsEndpointErrorCode::kNone;
     }
     case FederatedAuthRequestResult::kErrorTooManyRequests:
+    case FederatedAuthRequestResult::kErrorRelyingPartyOriginIsOpaque:
     case FederatedAuthRequestResult::kErrorCanceled: {
       return IdpNetworkRequestManager::MetricsEndpointErrorCode::kRpFailure;
     }
@@ -684,6 +686,14 @@ void FederatedAuthRequestImpl::RequestToken(
   network_manager_ = CreateNetworkManager();
   request_dialog_controller_ = CreateDialogController();
   start_time_ = base::TimeTicks::Now();
+
+  if (origin().opaque()) {
+    CompleteRequestWithError(
+        FederatedAuthRequestResult::kErrorRelyingPartyOriginIsOpaque,
+        TokenStatus::kRpOriginIsOpaque,
+        /*should_delay_callback=*/false);
+    return;
+  }
 
   FederatedApiPermissionStatus permission_status =
       GetApiPermissionStatus(url::Origin::Create(

@@ -64,8 +64,9 @@ enum class FedCmRequestIdTokenStatus {
   kAccountsInvalidContentType,
   kIdTokenInvalidContentType,
   kSilentMediationFailure,
+  kRpOriginIsOpaque,
 
-  kMaxValue = kSilentMediationFailure
+  kMaxValue = kRpOriginIsOpaque
 };
 
 // This enum describes whether user sign-in states between IDP and browser

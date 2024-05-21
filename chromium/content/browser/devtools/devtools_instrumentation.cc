@@ -336,6 +336,9 @@ FederatedAuthRequestResultToProtocol(
     case FederatedAuthRequestResult::kErrorThirdPartyCookiesBlocked: {
       return FederatedAuthRequestIssueReasonEnum::ThirdPartyCookiesBlocked;
     }
+    case FederatedAuthRequestResult::kErrorRelyingPartyOriginIsOpaque: {
+      return FederatedAuthRequestIssueReasonEnum::RelyingPartyOriginIsOpaque;
+    }
     case FederatedAuthRequestResult::kSuccess: {
       NOTREACHED_NORETURN();
     }

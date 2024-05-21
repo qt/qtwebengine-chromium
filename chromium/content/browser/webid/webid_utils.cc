@@ -230,6 +230,9 @@ std::string GetConsoleErrorMessageFromResult(
              "FedCM without third-party cookies, enable the "
              "#fedcm-without-third-party-cookies flag.";
     }
+    case FederatedAuthRequestResult::kErrorRelyingPartyOriginIsOpaque: {
+      return "FedCM is not supported on an opaque origin.";
+    }
     case FederatedAuthRequestResult::kError: {
       return "Error retrieving a token.";
     }
