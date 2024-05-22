@@ -69,7 +69,7 @@ config("dependants_extra_warnings") {
     ]
 
     # clang-cl doesn't know -pedantic, pass it explicitly to the clang driver
-    if (is_win) {
+    if (is_win && !is_mingw) {
       cflags += [ "/clang:-pedantic" ]
     } else {
       cflags += [ "-pedantic" ]
@@ -272,7 +272,7 @@ group("buildflags") {
   public_configs = [ ":public_includes" ]
 }
 
-if (is_clang_or_gcc || is_msvc) {
+if (is_clang_or_gcc || is_msvc || is_mingw) {
   config("partition_alloc_implementation") {
     # See also: `partition_alloc_base/component_export.h`
     defines = [ "IS_PARTITION_ALLOC_IMPL" ]

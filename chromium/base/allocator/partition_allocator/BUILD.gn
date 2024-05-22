@@ -11,7 +11,7 @@ group("buildflags") {
   public_deps = [ "src/partition_alloc:buildflags" ]
 }
 
-if (is_clang_or_gcc || is_msvc) {
+if (is_clang_or_gcc || is_msvc || is_mingw) {
   group("partition_alloc") {
     public_deps = [ "src/partition_alloc:partition_alloc" ]
   }
