@@ -82,6 +82,8 @@ class CORE_EXPORT CSSParserToken {
 
   CSSParserToken(CSSParserTokenType type, BlockType block_type = kNotBlock)
       : type_(type), block_type_(block_type), value_is_inline_(false) {}
+
+  // The resulting CSSParserToken may hold a reference to the data in value.
   CSSParserToken(CSSParserTokenType type,
                  StringView value,
                  BlockType block_type = kNotBlock)

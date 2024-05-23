@@ -110,7 +110,8 @@ ContainerQueryParser::ContainerQueryParser(const CSSParserContext& context)
                           MediaQueryParser::SyntaxLevel::kLevel4) {}
 
 const MediaQueryExpNode* ContainerQueryParser::ParseCondition(String value) {
-  auto tokens = CSSTokenizer(value).TokenizeToEOF();
+  CSSTokenizer tokenizer(value);
+  auto tokens = tokenizer.TokenizeToEOF();
   CSSParserTokenRange range(tokens);
   return ParseCondition(range);
 }
