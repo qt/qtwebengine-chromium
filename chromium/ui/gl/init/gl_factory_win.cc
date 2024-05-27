@@ -106,8 +106,7 @@ scoped_refptr<GLSurface> CreateOffscreenGLSurface(GLDisplay* display,
       }
     }
     case kGLImplementationDesktopGL:
-      return InitializeGLSurfaceWithFormat(
-          new PbufferGLSurfaceWGL(size), format);
+      return InitializeGLSurfaceWithFormat(new PbufferGLSurfaceWGL(size));
     case kGLImplementationMockGL:
     case kGLImplementationStubGL:
       return InitializeGLSurface(new GLSurfaceStub());
