@@ -183,6 +183,12 @@ void GpuChildThread::OnInitializationFailed() {
   OnChannelError();
 }
 
+void GpuChildThread::OnGpuChannelManagerCreated(gpu::GpuChannelManager* manager) {
+#if BUILDFLAG(IS_QTWEBENGINE)
+  manager->set_share_group(GetContentClient()->gpu()->GetInProcessGpuShareGroup());
+#endif
+}
+
 void GpuChildThread::OnGpuServiceConnection(viz::GpuServiceImpl* gpu_service) {
   media::AndroidOverlayMojoFactoryCB overlay_factory_cb;
 #if BUILDFLAG(IS_ANDROID)
@@ -191,10 +197,6 @@ void GpuChildThread::OnGpuServiceConnection(viz::GpuServiceImpl* gpu_service) {
                           base::SingleThreadTaskRunner::GetCurrentDefault());
   gpu_service->media_gpu_channel_manager()->SetOverlayFactory(
       overlay_factory_cb);
-#endif
-
-#if defined(TOOLKIT_QT)
-  gpu_channel_manager()->set_share_group(GetContentClient()->gpu()->GetInProcessGpuShareGroup());
 #endif
 
   if (!IsInBrowserProcess()) {
