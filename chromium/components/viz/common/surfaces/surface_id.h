@@ -7,7 +7,6 @@
 
 #include <stdint.h>
 
-#include <compare>
 #include <iosfwd>
 #include <string>
 
@@ -77,8 +76,17 @@ class VIZ_COMMON_EXPORT SurfaceId {
   // Returns whether this SurfaceId has the same embed token as |other|.
   bool HasSameEmbedTokenAs(const SurfaceId& other) const;
 
-  friend std::strong_ordering operator<=>(const SurfaceId&,
-                                          const SurfaceId&) = default;
+  bool operator==(const SurfaceId& other) const {
+    return frame_sink_id_ == other.frame_sink_id_ &&
+           local_surface_id_ == other.local_surface_id_;
+  }
+
+  bool operator!=(const SurfaceId& other) const { return !(*this == other); }
+
+  bool operator<(const SurfaceId& other) const {
+    return std::tie(frame_sink_id_, local_surface_id_) <
+           std::tie(other.frame_sink_id_, other.local_surface_id_);
+  }
 
  private:
   friend struct mojo::StructTraits<mojom::SurfaceIdDataView, SurfaceId>;

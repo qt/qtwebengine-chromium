@@ -5,7 +5,6 @@
 #ifndef COMPONENTS_PERFORMANCE_MANAGER_PUBLIC_RESOURCE_ATTRIBUTION_FRAME_CONTEXT_H_
 #define COMPONENTS_PERFORMANCE_MANAGER_PUBLIC_RESOURCE_ATTRIBUTION_FRAME_CONTEXT_H_
 
-#include <compare>
 #include <string>
 
 #include "base/memory/weak_ptr.h"
@@ -71,25 +70,39 @@ class FrameContext {
   // convenience.
   std::string ToString() const;
 
-  // Compare FrameContexts by GlobalRenderFrameHostId.
-  constexpr friend auto operator<=>(const FrameContext& a,
-                                    const FrameContext& b) {
-    return a.id_ <=> b.id_;
-  }
-
-  // Test FrameContexts for equality by GlobalRenderFrameHostId.
-  constexpr friend bool operator==(const FrameContext& a,
-                                   const FrameContext& b) {
-    return a.id_ == b.id_;
-  }
-
  private:
+  friend bool operator<(const FrameContext&, const FrameContext&);
+  friend bool operator==(const FrameContext&, const FrameContext&);
+
   FrameContext(content::GlobalRenderFrameHostId id,
                base::WeakPtr<FrameNode> weak_node);
 
   content::GlobalRenderFrameHostId id_;
   base::WeakPtr<FrameNode> weak_node_;
 };
+inline bool operator<(const FrameContext& a, const FrameContext& b) {
+  return a.id_ < b.id_;
+}
+
+inline bool operator==(const FrameContext& a, const FrameContext& b) {
+  return a.id_ == b.id_;
+}
+
+inline bool operator!=(const FrameContext& a, const FrameContext& b) {
+  return !(a == b);
+}
+
+inline bool operator<=(const FrameContext& a, const FrameContext& b) {
+  return !(b < a);
+}
+
+inline bool operator>(const FrameContext& a, const FrameContext& b) {
+  return !(a < b || a == b);
+}
+
+inline bool operator>=(const FrameContext& a, const FrameContext& b) {
+  return !(a > b);
+}
 
 }  // namespace performance_manager::resource_attribution
 

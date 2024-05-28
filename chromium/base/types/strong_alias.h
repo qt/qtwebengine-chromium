@@ -101,17 +101,24 @@ class StrongAlias {
 
   constexpr explicit operator const UnderlyingType&() const& { return value_; }
 
-  // Comparison operators that default to the behavior of `UnderlyingType`.
-  // Note that if you wish to compare `StrongAlias<UnderlyingType>`, e.g.,
-  // by using `operator<` in a `std::set`, then `UnderlyingType` must
-  // implement `operator<=>`. If you cannot modify `UnderlyingType` (e.g.,
-  // because it is from an external library), then a work-around is to create a
-  // thin wrapper `W` around it, define `operator<=>` for the wrapper and create
-  // a `StrongAlias<W>`.
-  friend constexpr auto operator<=>(const StrongAlias& lhs,
-                                    const StrongAlias& rhs) = default;
-  friend constexpr bool operator==(const StrongAlias& lhs,
-                                   const StrongAlias& rhs) = default;
+  constexpr bool operator==(const StrongAlias& other) const {
+    return value_ == other.value_;
+  }
+  constexpr bool operator!=(const StrongAlias& other) const {
+    return value_ != other.value_;
+  }
+  constexpr bool operator<(const StrongAlias& other) const {
+    return value_ < other.value_;
+  }
+  constexpr bool operator<=(const StrongAlias& other) const {
+    return value_ <= other.value_;
+  }
+  constexpr bool operator>(const StrongAlias& other) const {
+    return value_ > other.value_;
+  }
+  constexpr bool operator>=(const StrongAlias& other) const {
+    return value_ >= other.value_;
+  }
 
   // Hasher to use in std::unordered_map, std::unordered_set, etc.
   //

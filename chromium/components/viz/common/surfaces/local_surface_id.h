@@ -117,8 +117,15 @@ class VIZ_COMMON_EXPORT LocalSurfaceId {
   // with submission of a CompositorFrame to a surface with this LocalSurfaceId.
   uint64_t submission_trace_id() const { return (persistent_hash() << 1) | 1; }
 
-  friend std::strong_ordering operator<=>(const LocalSurfaceId&,
-                                          const LocalSurfaceId&) = default;
+  bool operator==(const LocalSurfaceId& other) const {
+    return parent_sequence_number_ == other.parent_sequence_number_ &&
+           child_sequence_number_ == other.child_sequence_number_ &&
+           embed_token_ == other.embed_token_;
+  }
+
+  bool operator!=(const LocalSurfaceId& other) const {
+    return !(*this == other);
+  }
 
   // This implementation is fast and appropriate for a hash table lookup.
   // However the hash differs per process, and is inappropriate for tracing.
@@ -159,6 +166,7 @@ class VIZ_COMMON_EXPORT LocalSurfaceId {
   friend class ParentLocalSurfaceIdAllocator;
   friend class ChildLocalSurfaceIdAllocator;
 
+  friend bool operator<(const LocalSurfaceId& lhs, const LocalSurfaceId& rhs);
 
   uint32_t parent_sequence_number_;
   uint32_t child_sequence_number_;
@@ -169,6 +177,24 @@ VIZ_COMMON_EXPORT std::ostream& operator<<(
     std::ostream& out,
     const LocalSurfaceId& local_surface_id);
 
+inline bool operator<(const LocalSurfaceId& lhs, const LocalSurfaceId& rhs) {
+  return std::tie(lhs.parent_sequence_number_, lhs.child_sequence_number_,
+                  lhs.embed_token_) < std::tie(rhs.parent_sequence_number_,
+                                               rhs.child_sequence_number_,
+                                               rhs.embed_token_);
+}
+
+inline bool operator>(const LocalSurfaceId& lhs, const LocalSurfaceId& rhs) {
+  return operator<(rhs, lhs);
+}
+
+inline bool operator<=(const LocalSurfaceId& lhs, const LocalSurfaceId& rhs) {
+  return !operator>(lhs, rhs);
+}
+
+inline bool operator>=(const LocalSurfaceId& lhs, const LocalSurfaceId& rhs) {
+  return !operator<(lhs, rhs);
+}
 }  // namespace viz
 
 #endif  // COMPONENTS_VIZ_COMMON_SURFACES_LOCAL_SURFACE_ID_H_

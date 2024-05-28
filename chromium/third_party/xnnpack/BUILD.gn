@@ -15,6 +15,7 @@
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
 import("//build/config/android/config.gni")
+import("//build/config/features.gni")
 
 config("xnnpack_config") {
   include_dirs = [
@@ -98,6 +99,13 @@ if (current_cpu == "x64" || current_cpu == "x86") {
     ":subgraph_x64_standalone",
     ":tables_x64_standalone",
   ]
+
+  # avxvnni.c empty on 122-based and -avxvnni flag not supported on gcc-10
+  if(is_qtwebengine) {
+    xnnpack_deps -= [ ":amalgam_avx2-avxvnni" ]
+    xnnpack_standalone_deps -= [ ":amalgam_avx2-avxvnni_standalone" ]
+  }
+
 } else if (current_cpu == "arm64") {
   xnnpack_deps = [
     ":amalgam_arch=armv8.2-a+dotprod",

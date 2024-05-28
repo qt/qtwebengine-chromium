@@ -218,7 +218,7 @@ class PairAsyncIterable {
  private:
   virtual IterationSource* CreateIterationSource(
       ScriptState* script_state,
-      IterationSource::Kind kind,
+      blink::bindings::AsyncIteratorBase::IterationSourceBase::Kind kind,
       ExceptionState& exception_state) = 0;
 };
 
@@ -260,7 +260,7 @@ class ValueAsyncIterable {
  private:
   virtual IterationSource* CreateIterationSource(
       ScriptState* script_state,
-      IterationSource::Kind kind,
+      blink::bindings::AsyncIteratorBase::IterationSourceBase::Kind kind,
       ExceptionState& exception_state) = 0;
 };
 

@@ -135,8 +135,10 @@
 // DAWN_FORCE_INLINE
 //
 // Annotate a function indicating it should really never be inline, even in debug mode.
-#if DAWN_COMPILER_IS(CLANG) && defined(NDEBUG) && DAWN_HAS_CPP_ATTRIBUTE(clang::always_inline)
+#if DAWN_COMPILER_IS(CLANG) && defined(NDEBUG)
+#if DAWN_HAS_CPP_ATTRIBUTE(clang::always_inline)
 #define DAWN_FORCE_INLINE [[clang::always_inline]] inline
+#endif
 #elif DAWN_COMPILER_IS(GCC) && defined(NDEBUG) && DAWN_HAS_ATTRIBUTE(always_inline)
 #define DAWN_FORCE_INLINE inline __attribute__((always_inline))
 #elif DAWN_COMPILER_IS(MSVC) && defined(NDEBUG)

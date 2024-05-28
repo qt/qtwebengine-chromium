@@ -33,8 +33,9 @@ class VIZ_COMMON_EXPORT SurfaceRange {
   SurfaceRange(const SurfaceRange& other);
   SurfaceRange& operator=(const SurfaceRange& other);
 
-  friend std::strong_ordering operator<=>(const SurfaceRange&,
-                                          const SurfaceRange&) = default;
+  bool operator==(const SurfaceRange& other) const;
+  bool operator!=(const SurfaceRange& other) const;
+  bool operator<(const SurfaceRange& other) const;
 
   // Check if |surface_id| falls within |this| SurfaceRange but is neither the
   // start nor end of the range. The FrameSinkId of |surface_id| must match
