@@ -4,6 +4,7 @@
 
 #include "content/browser/webid/federated_auth_request_impl.h"
 
+#include "base/barrier_closure.h"
 #include "base/command_line.h"
 #include "base/containers/contains.h"
 #include "base/containers/cxx20_erase.h"
@@ -1102,7 +1103,7 @@ void FederatedAuthRequestImpl::OnClientMetadataResponseReceived(
     IdpNetworkRequestManager::ClientMetadata client_metadata) {
   // TODO(yigu): Clean up the client metadata related errors for metrics and
   // console logs.
-  OnFetchDataForIdpSucceeded(std::move(idp_info), accounts, client_metadata);
+  FetchAccountPictures(std::move(idp_info), accounts, client_metadata);
 }
 
 bool HasScope(const std::vector<std::string>& scope, std::string name) {
@@ -1578,11 +1579,64 @@ void FederatedAuthRequestImpl::OnAccountsResponseReceived(
                 weak_ptr_factory_.GetWeakPtr(), std::move(idp_info),
                 std::move(accounts)));
       } else {
-        OnFetchDataForIdpSucceeded(std::move(idp_info), accounts,
-                                   IdpNetworkRequestManager::ClientMetadata());
+        FetchAccountPictures(std::move(idp_info), accounts,
+                             IdpNetworkRequestManager::ClientMetadata());
       }
     }
   }
+}
+
+void FederatedAuthRequestImpl::FetchAccountPictures(
+    std::unique_ptr<IdentityProviderInfo> idp_info,
+    const IdpNetworkRequestManager::AccountList& accounts,
+    const IdpNetworkRequestManager::ClientMetadata& client_metadata) {
+  auto callback = BarrierClosure(
+      accounts.size(),
+      base::BindOnce(&FederatedAuthRequestImpl::OnAllAccountPicturesReceived,
+                     weak_ptr_factory_.GetWeakPtr(), std::move(idp_info),
+                     accounts, client_metadata));
+  for (const auto& account : accounts) {
+    if (account.picture.is_valid()) {
+      network_manager_->DownloadUncredentialedUrl(
+          account.picture,
+          base::BindOnce(&FederatedAuthRequestImpl::OnAccountPictureReceived,
+                         weak_ptr_factory_.GetWeakPtr(), callback,
+                         account.picture));
+    } else {
+      // We have to still call the callback to make sure the barrier
+      // callback gets the right number of calls.
+      callback.Run();
+    }
+  }
+}
+
+void FederatedAuthRequestImpl::OnAccountPictureReceived(
+    base::RepeatingClosure cb,
+    GURL url,
+    std::unique_ptr<std::string> response_body,
+    int response_code,
+    const std::string& mime_type) {
+  if (response_body) {
+    downloaded_images_[url] = std::move(response_body);
+  }
+  cb.Run();
+}
+
+void FederatedAuthRequestImpl::OnAllAccountPicturesReceived(
+    std::unique_ptr<IdentityProviderInfo> idp_info,
+    IdpNetworkRequestManager::AccountList accounts,
+    const IdpNetworkRequestManager::ClientMetadata& client_metadata) {
+  for (auto& account : accounts) {
+    auto it = downloaded_images_.find(account.picture);
+    if (it != downloaded_images_.end()) {
+      // We do not use std::move here in case multiple accounts use the
+      // same picture URL.
+      DCHECK(it->second);
+      account.picture_data = *it->second;
+    }
+  }
+  downloaded_images_.clear();
+  OnFetchDataForIdpSucceeded(std::move(idp_info), accounts, client_metadata);
 }
 
 void FederatedAuthRequestImpl::ComputeLoginStateAndReorderAccounts(

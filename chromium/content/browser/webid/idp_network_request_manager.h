@@ -230,6 +230,10 @@ class CONTENT_EXPORT IdpNetworkRequestManager {
   // Send logout request to a single target.
   virtual void SendLogout(const GURL& logout_url, LogoutCallback);
 
+  // Download a URL. The request is made uncredentialed.
+  virtual void DownloadUncredentialedUrl(const GURL& url,
+                                         DownloadCallback callback);
+
  private:
   // Starts download request using `url_loader`. Calls `parse_json_callback`
   // when the download result has been parsed.

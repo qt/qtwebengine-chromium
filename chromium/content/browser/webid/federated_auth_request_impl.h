@@ -239,6 +239,21 @@ class CONTENT_EXPORT FederatedAuthRequestImpl
       std::unique_ptr<IdentityProviderInfo> idp_info,
       IdpNetworkRequestManager::FetchStatus status,
       IdpNetworkRequestManager::AccountList accounts);
+  // Fetches the account pictures for |accounts| and calls
+  // OnFetchDataForIdpSucceeded when done.
+  void FetchAccountPictures(
+      std::unique_ptr<IdentityProviderInfo> idp_info,
+      const IdpNetworkRequestManager::AccountList& accounts,
+      const IdpNetworkRequestManager::ClientMetadata& client_metadata);
+  void OnAccountPictureReceived(base::RepeatingClosure cb,
+                                GURL url,
+                                std::unique_ptr<std::string> response_body,
+                                int response_code,
+                                const std::string& mime_type);
+  void OnAllAccountPicturesReceived(
+      std::unique_ptr<IdentityProviderInfo> idp_info,
+      IdpNetworkRequestManager::AccountList accounts,
+      const IdpNetworkRequestManager::ClientMetadata& client_metadata);
   void OnAccountSelected(const GURL& idp_config_url,
                          const std::string& account_id,
                          bool is_sign_in);
@@ -356,6 +371,9 @@ class CONTENT_EXPORT FederatedAuthRequestImpl
   // Populated by MaybeShowAccountsDialog().
   base::flat_map<GURL, std::unique_ptr<IdentityProviderInfo>> idp_infos_;
   std::vector<IdentityProviderData> idp_data_for_display_;
+
+  // The downloaded image data.
+  std::map<GURL, std::unique_ptr<std::string>> downloaded_images_;
 
   raw_ptr<FederatedIdentityApiPermissionContextDelegate>
       api_permission_delegate_ = nullptr;
