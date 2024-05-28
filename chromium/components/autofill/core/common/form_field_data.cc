@@ -254,6 +254,14 @@ bool DeserializeSection11(base::PickleIterator* iter,
 
 }  // namespace
 
+bool operator==(const SelectOption& lhs, const SelectOption& rhs) {
+  return std::tie(lhs.value, lhs.content) == std::tie(rhs.value, rhs.content);
+}
+
+bool operator!=(const SelectOption& lhs, const SelectOption& rhs) {
+  return !(lhs == rhs);
+}
+
 Section Section::FromAutocomplete(Section::Autocomplete autocomplete) {
   Section section;
   if (autocomplete.section.empty() && autocomplete.mode == HtmlFieldMode::kNone)
@@ -289,6 +297,48 @@ Section::Section() = default;
 Section::Section(const Section& section) = default;
 
 Section::~Section() = default;
+
+bool operator==(const Section::Autocomplete& a,
+                const Section::Autocomplete& b) {
+  return std::tie(a.section, a.mode) == std::tie(b.section, b.mode);
+}
+
+bool operator!=(const Section::Autocomplete& a,
+                const Section::Autocomplete& b) {
+  return !(a == b);
+}
+
+bool operator<(const Section::Autocomplete& a, const Section::Autocomplete& b) {
+  return std::tie(a.section, a.mode) < std::tie(b.section, b.mode);
+}
+
+bool operator==(const Section::FieldIdentifier& a,
+                const Section::FieldIdentifier& b) {
+  return std::tie(a.field_name, a.local_frame_id, a.field_renderer_id) ==
+         std::tie(b.field_name, b.local_frame_id, b.field_renderer_id);
+}
+
+bool operator!=(const Section::FieldIdentifier& a,
+                const Section::FieldIdentifier& b) {
+  return !(a == b);
+}
+
+bool operator<(const Section::FieldIdentifier& a,
+               const Section::FieldIdentifier& b) {
+  return std::tie(a.field_name, a.local_frame_id, a.field_renderer_id) <
+         std::tie(b.field_name, b.local_frame_id, b.field_renderer_id);
+}
+
+bool operator==(const Section& a, const Section& b) {
+  return a.value_ == b.value_;
+}
+
+bool operator!=(const Section& a, const Section& b) {
+  return !(a == b);
+}
+bool operator<(const Section& a, const Section& b) {
+  return a.value_ < b.value_;
+}
 
 Section::operator bool() const {
   return !is_default();

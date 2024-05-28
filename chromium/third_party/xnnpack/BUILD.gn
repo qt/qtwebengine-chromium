@@ -102,6 +102,7 @@ if (current_cpu == "x64" || current_cpu == "x86") {
     ":subgraph_x64_standalone",
     ":tables_x64_standalone",
   ]
+
 } else if (current_cpu == "arm64") {
   xnnpack_deps = [
     ":amalgam_arch=armv8.2-a+dotprod",

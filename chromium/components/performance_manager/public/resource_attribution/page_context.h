@@ -67,15 +67,9 @@ class PageContext {
   std::string ToString() const;
 
   // Compare PageContexts by PageNode token.
-  constexpr friend auto operator<=>(const PageContext& a,
-                                    const PageContext& b) {
-    return a.token_ <=> b.token_;
-  }
 
-  // Test PageContexts for equality by PageNode token.
-  constexpr friend bool operator==(const PageContext& a, const PageContext& b) {
-    return a.token_ == b.token_;
-  }
+  friend bool operator<(const PageContext&, const PageContext&);
+  friend bool operator==(const PageContext&, const PageContext&);
 
  private:
   PageContext(base::UnguessableToken token,
@@ -95,6 +89,33 @@ class PageContext {
   // A pointer to the PageNode that must be dereferenced on the PM sequence.
   base::WeakPtr<performance_manager::PageNode> weak_node_;
 };
+inline bool operator<(const PageContext& a, const PageContext& b) {
+  CHECK(!a.token_.is_empty());
+  CHECK(!b.token_.is_empty());
+  return a.token_ < b.token_;
+}
+
+inline bool operator==(const PageContext& a, const PageContext& b) {
+  CHECK(!a.token_.is_empty());
+  CHECK(!b.token_.is_empty());
+  return a.token_ == b.token_;
+}
+
+inline bool operator!=(const PageContext& a, const PageContext& b) {
+  return !(a == b);
+}
+
+inline bool operator<=(const PageContext& a, const PageContext& b) {
+  return !(b < a);
+}
+
+inline bool operator>(const PageContext& a, const PageContext& b) {
+  return !(a < b || a == b);
+}
+
+inline bool operator>=(const PageContext& a, const PageContext& b) {
+  return !(a > b);
+}
 
 }  // namespace resource_attribution
 

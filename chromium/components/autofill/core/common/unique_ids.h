@@ -8,6 +8,9 @@
 #include <ostream>
 #include <string>
 
+#include <stdint.h>
+#include <limits>
+
 #include "base/types/id_type.h"
 #include "base/unguessable_token.h"
 #include "build/build_config.h"
@@ -134,12 +137,22 @@ struct GlobalId {
   explicit constexpr operator bool() const {
     return static_cast<bool>(renderer_id);
   }
-
-  friend auto operator<=>(const GlobalId<RendererId>& lhs,
-                          const GlobalId<RendererId>& rhs) = default;
-  friend bool operator==(const GlobalId<RendererId>& lhs,
-                         const GlobalId<RendererId>& rhs) = default;
 };
+template <typename RendererId>
+bool operator==(const GlobalId<RendererId>& a, const GlobalId<RendererId>& b) {
+  return a.renderer_id == b.renderer_id && a.frame_token == b.frame_token;
+}
+
+template <typename RendererId>
+bool operator!=(const GlobalId<RendererId>& a, const GlobalId<RendererId>& b) {
+  return !(a == b);
+}
+
+template <typename RendererId>
+bool operator<(const GlobalId<RendererId>& a, const GlobalId<RendererId>& b) {
+  return std::tie(a.frame_token, a.renderer_id) <
+         std::tie(b.frame_token, b.renderer_id);
+}
 
 }  // namespace internal
 
