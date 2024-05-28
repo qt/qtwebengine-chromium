@@ -204,12 +204,14 @@ class DevToolsUIBindings : public DevToolsEmbedderMessageDispatcher::Delegate,
   void RecordPerformanceHistogram(const std::string& name,
                                   double duration) override;
   void RecordUserMetricsAction(const std::string& name) override;
+#if !BUILDFLAG(IS_QTWEBENGINE)
   void RecordImpression(const ImpressionEvent& event) override;
   void RecordClick(const ClickEvent& event) override;
   void RecordHover(const HoverEvent& event) override;
   void RecordDrag(const DragEvent& event) override;
   void RecordChange(const ChangeEvent& event) override;
   void RecordKeyDown(const KeyDownEvent& event) override;
+#endif
   void SendJsonRequest(DispatchCallback callback,
                        const std::string& browser_id,
                        const std::string& url) override;

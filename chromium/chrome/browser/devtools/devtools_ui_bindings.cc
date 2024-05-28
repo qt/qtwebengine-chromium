@@ -1500,8 +1500,8 @@ base::TimeDelta DevToolsUIBindings::GetTimeSinceSessionStart() {
   return base::TimeTicks::Now() - session_start_time_;
 }
 
-void DevToolsUIBindings::RecordImpression(const ImpressionEvent& event) {
 #if !BUILDFLAG(IS_QTWEBENGINE)
+void DevToolsUIBindings::RecordImpression(const ImpressionEvent& event) {
   if (!MaybeStartLogging()) {
     return;
   }
@@ -1515,11 +1515,9 @@ void DevToolsUIBindings::RecordImpression(const ImpressionEvent& event) {
         .SetSessionId(session_id_for_logging_.GetLowForSerialization())
         .Record();
   }
-#endif // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 void DevToolsUIBindings::RecordClick(const ClickEvent& event) {
-#if !BUILDFLAG(IS_QTWEBENGINE)
   if (!MaybeStartLogging()) {
     return;
   }
@@ -1530,11 +1528,9 @@ void DevToolsUIBindings::RecordClick(const ClickEvent& event) {
       .SetTimeSinceSessionStart(GetTimeSinceSessionStart().InMilliseconds())
       .SetSessionId(session_id_for_logging_.GetLowForSerialization())
       .Record();
-#endif // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 void DevToolsUIBindings::RecordHover(const HoverEvent& event) {
-#if !BUILDFLAG(IS_QTWEBENGINE)
   if (!MaybeStartLogging()) {
     return;
   }
@@ -1545,11 +1541,9 @@ void DevToolsUIBindings::RecordHover(const HoverEvent& event) {
       .SetTimeSinceSessionStart(GetTimeSinceSessionStart().InMilliseconds())
       .SetSessionId(session_id_for_logging_.GetLowForSerialization())
       .Record();
-#endif // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 void DevToolsUIBindings::RecordDrag(const DragEvent& event) {
-#if !BUILDFLAG(IS_QTWEBENGINE)
   if (!MaybeStartLogging()) {
     return;
   }
@@ -1560,11 +1554,9 @@ void DevToolsUIBindings::RecordDrag(const DragEvent& event) {
       .SetTimeSinceSessionStart(GetTimeSinceSessionStart().InMilliseconds())
       .SetSessionId(session_id_for_logging_.GetLowForSerialization())
       .Record();
-#endif // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 void DevToolsUIBindings::RecordChange(const ChangeEvent& event) {
-#if !BUILDFLAG(IS_QTWEBENGINE)
   if (!MaybeStartLogging()) {
     return;
   }
@@ -1574,11 +1566,9 @@ void DevToolsUIBindings::RecordChange(const ChangeEvent& event) {
       .SetTimeSinceSessionStart(GetTimeSinceSessionStart().InMilliseconds())
       .SetSessionId(session_id_for_logging_.GetLowForSerialization())
       .Record();
-#endif // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 void DevToolsUIBindings::RecordKeyDown(const KeyDownEvent& event) {
-#if !BUILDFLAG(IS_QTWEBENGINE)
   if (!MaybeStartLogging()) {
     return;
   }
@@ -1588,8 +1578,8 @@ void DevToolsUIBindings::RecordKeyDown(const KeyDownEvent& event) {
       .SetTimeSinceSessionStart(GetTimeSinceSessionStart().InMilliseconds())
       .SetSessionId(session_id_for_logging_.GetLowForSerialization())
       .Record();
-#endif // !BUILDFLAG(IS_QTWEBENGINE)
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 void DevToolsUIBindings::SendJsonRequest(DispatchCallback callback,
                                          const std::string& browser_id,
