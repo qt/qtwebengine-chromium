@@ -709,6 +709,17 @@ void IdpNetworkRequestManager::DownloadJsonAndParse(
               max_download_size);
 }
 
+
+void IdpNetworkRequestManager::DownloadUncredentialedUrl(
+    const GURL& url,
+    DownloadCallback callback) {
+  std::unique_ptr<network::ResourceRequest> resource_request =
+      CreateUncredentialedResourceRequest(url, /*send_origin=*/false);
+  DownloadUrl(std::move(resource_request),
+              /*url_encoded_post_data=*/absl::nullopt, std::move(callback),
+              maxResponseSizeInKiB * 1024);
+}
+
 void IdpNetworkRequestManager::DownloadUrl(
     std::unique_ptr<network::ResourceRequest> resource_request,
     absl::optional<std::string> url_encoded_post_data,

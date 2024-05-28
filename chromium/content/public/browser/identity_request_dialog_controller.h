@@ -60,6 +60,8 @@ struct CONTENT_EXPORT IdentityRequestAccount {
   std::string name;
   std::string given_name;
   GURL picture;
+  // This will be an empty string if fetching failed.
+  std::string picture_data;
 
   // The account login state. Unlike the other fields this one can be populated
   // either by the IDP or by the browser based on its stored permission grants.

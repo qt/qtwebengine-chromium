@@ -6,6 +6,7 @@
 
 #include <random>
 
+#include "base/barrier_closure.h"
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/rand_util.h"
@@ -788,7 +789,7 @@ void FederatedAuthRequestImpl::OnClientMetadataResponseReceived(
     const IdpNetworkRequestManager::AccountList& accounts,
     IdpNetworkRequestManager::FetchStatus status,
     IdpNetworkRequestManager::ClientMetadata client_metadata) {
-  MaybeShowAccountsDialog(idp_info, accounts, client_metadata);
+  FetchAccountPictures(idp_info, accounts, client_metadata);
 }
 
 void FederatedAuthRequestImpl::MaybeShowAccountsDialog(
@@ -963,11 +964,61 @@ void FederatedAuthRequestImpl::OnAccountsResponseReceived(
                 &FederatedAuthRequestImpl::OnClientMetadataResponseReceived,
                 weak_ptr_factory_.GetWeakPtr(), idp_info, std::move(accounts)));
       } else {
-        MaybeShowAccountsDialog(idp_info, accounts,
-                                IdpNetworkRequestManager::ClientMetadata());
+        FetchAccountPictures(idp_info, accounts,
+                             IdpNetworkRequestManager::ClientMetadata());
       }
     }
   }
+}
+
+void FederatedAuthRequestImpl::FetchAccountPictures(
+    const IdentityProviderInfo& idp_info,
+    const IdpNetworkRequestManager::AccountList& accounts,
+    const IdpNetworkRequestManager::ClientMetadata& client_metadata) {
+  auto callback = BarrierClosure(
+      accounts.size(),
+      base::BindOnce(&FederatedAuthRequestImpl::OnAllAccountPicturesReceived,
+                     weak_ptr_factory_.GetWeakPtr(), idp_info,
+                     accounts, client_metadata));
+  for (const auto& account : accounts) {
+    if (account.picture.is_valid()) {
+      network_manager_->DownloadUncredentialedUrl(
+          account.picture,
+          base::BindOnce(&FederatedAuthRequestImpl::OnAccountPictureReceived,
+                         weak_ptr_factory_.GetWeakPtr(), callback,
+                         account.picture));
+    } else {
+      // We have to still call the callback to make sure the barrier
+      // callback gets the right number of calls.
+      callback.Run();
+    }
+  }
+}
+void FederatedAuthRequestImpl::OnAccountPictureReceived(
+    base::RepeatingClosure cb,
+    GURL url,
+    std::unique_ptr<std::string> response_body,
+    int response_code) {
+  if (response_body) {
+    downloaded_images_[url] = std::move(response_body);
+  }
+  cb.Run();
+}
+void FederatedAuthRequestImpl::OnAllAccountPicturesReceived(
+    const IdentityProviderInfo& idp_info,
+    IdpNetworkRequestManager::AccountList accounts,
+    const IdpNetworkRequestManager::ClientMetadata& client_metadata) {
+  for (auto& account : accounts) {
+    auto it = downloaded_images_.find(account.picture);
+    if (it != downloaded_images_.end()) {
+      // We do not use std::move here in case multiple accounts use the
+      // same picture URL.
+      DCHECK(it->second);
+      account.picture_data = *it->second;
+    }
+  }
+  downloaded_images_.clear();
+  MaybeShowAccountsDialog(idp_info, accounts, client_metadata);
 }
 
 void FederatedAuthRequestImpl::ComputeLoginStateAndReorderAccounts(
