@@ -24,6 +24,7 @@
 #include "net/cookies/site_for_cookies.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_status_code.h"
+#include "services/data_decoder/public/cpp/decode_image.h"
 #include "services/network/public/cpp/is_potentially_trustworthy.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
@@ -33,6 +34,7 @@
 #include "third_party/blink/public/common/manifest/manifest_icon_selector.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/color_utils.h"
+#include "ui/gfx/image/image.h"
 #include "url/origin.h"
 
 namespace content {
@@ -813,15 +815,17 @@ void IdpNetworkRequestManager::SendLogout(const GURL& logout_url,
               maxResponseSizeInKiB * 1024);
 }
 
-void IdpNetworkRequestManager::DownloadUncredentialedUrl(
-    const GURL& url,
-    DownloadCallback callback) {
+void IdpNetworkRequestManager::DownloadAndDecodeImage(const GURL& url,
+                                                      ImageCallback callback) {
   std::unique_ptr<network::ResourceRequest> resource_request =
       CreateUncredentialedResourceRequest(url, /*send_origin=*/false);
 
-  DownloadUrl(std::move(resource_request),
-              /*url_encoded_post_data=*/std::nullopt, std::move(callback),
-              maxResponseSizeInKiB * 1024);
+  DownloadUrl(
+      std::move(resource_request),
+      /*url_encoded_post_data=*/absl::nullopt,
+      base::BindOnce(&IdpNetworkRequestManager::OnDownloadedImage,
+                     weak_ptr_factory_.GetWeakPtr(), std::move(callback)),
+      maxResponseSizeInKiB * 1024);
 }
 
 void IdpNetworkRequestManager::DownloadJsonAndParse(
@@ -901,6 +905,29 @@ void IdpNetworkRequestManager::FetchClientMetadata(
       /*url_encoded_post_data=*/absl::nullopt,
       base::BindOnce(&OnClientMetadataParsed, std::move(callback)),
       maxResponseSizeInKiB * 1024);
+}
+
+void IdpNetworkRequestManager::OnDownloadedImage(
+    ImageCallback callback,
+    std::unique_ptr<std::string> response_body,
+    int response_code,
+    const std::string& mime_type) {
+  if (!response_body || response_code != net::HTTP_OK) {
+    std::move(callback).Run(gfx::Image());
+    return;
+  }
+
+  data_decoder::DecodeImageIsolated(
+      base::as_bytes(base::make_span(*response_body)),
+      data_decoder::mojom::ImageCodec::kDefault, /*shrink_to_fit=*/false,
+      data_decoder::kDefaultMaxSizeInBytes, gfx::Size(),
+      base::BindOnce(&IdpNetworkRequestManager::OnDecodedImage,
+                     weak_ptr_factory_.GetWeakPtr(), std::move(callback)));
+}
+
+void IdpNetworkRequestManager::OnDecodedImage(ImageCallback callback,
+                                              const SkBitmap& decoded_bitmap) {
+  std::move(callback).Run(gfx::Image::CreateFrom1xBitmap(decoded_bitmap));
 }
 
 std::unique_ptr<network::ResourceRequest>

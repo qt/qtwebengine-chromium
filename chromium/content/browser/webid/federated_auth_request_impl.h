@@ -29,6 +29,10 @@
 #include "third_party/blink/public/mojom/webid/federated_auth_request.mojom.h"
 #include "url/gurl.h"
 
+namespace gfx {
+class Image;
+}
+
 namespace content {
 
 class FederatedAuthUserInfoRequest;
@@ -247,9 +251,7 @@ class CONTENT_EXPORT FederatedAuthRequestImpl
       const IdpNetworkRequestManager::ClientMetadata& client_metadata);
   void OnAccountPictureReceived(base::RepeatingClosure cb,
                                 GURL url,
-                                std::unique_ptr<std::string> response_body,
-                                int response_code,
-                                const std::string& mime_type);
+                                const gfx::Image& image);
   void OnAllAccountPicturesReceived(
       std::unique_ptr<IdentityProviderInfo> idp_info,
       IdpNetworkRequestManager::AccountList accounts,
@@ -373,7 +375,7 @@ class CONTENT_EXPORT FederatedAuthRequestImpl
   std::vector<IdentityProviderData> idp_data_for_display_;
 
   // The downloaded image data.
-  std::map<GURL, std::unique_ptr<std::string>> downloaded_images_;
+  std::map<GURL, gfx::Image> downloaded_images_;
 
   raw_ptr<FederatedIdentityApiPermissionContextDelegate>
       api_permission_delegate_ = nullptr;
