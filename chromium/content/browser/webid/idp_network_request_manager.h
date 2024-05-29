@@ -20,6 +20,10 @@
 #include "url/gurl.h"
 #include "url/origin.h"
 
+namespace gfx {
+class Image;
+}
+
 namespace net {
 enum class ReferrerPolicy;
 }
@@ -143,6 +147,7 @@ class CONTENT_EXPORT IdpNetworkRequestManager {
   using RevokeCallback = base::OnceCallback<void(RevokeResponse)>;
   using TokenRequestCallback =
       base::OnceCallback<void(FetchStatus, const std::string&)>;
+ using ImageCallback = base::OnceCallback<void(const gfx::Image&)>;
 
   static std::unique_ptr<IdpNetworkRequestManager> Create(
       RenderFrameHostImpl* host);
@@ -203,9 +208,9 @@ class CONTENT_EXPORT IdpNetworkRequestManager {
   // Send logout request to a single target.
   virtual void SendLogout(const GURL& logout_url, LogoutCallback);
 
-  // Download a URL. The request is made uncredentialed.
-  virtual void DownloadUncredentialedUrl(const GURL& url,
-                                         DownloadCallback callback);
+  // Download and decode an image. The request is made uncredentialed.
+  virtual void DownloadAndDecodeImage(const GURL& url, ImageCallback callback);
+
  private:
   // Starts download request using `url_loader`. Calls `parse_json_callback`
   // when the download result has been parsed.
@@ -226,6 +231,12 @@ class CONTENT_EXPORT IdpNetworkRequestManager {
   void OnDownloadedUrl(std::unique_ptr<network::SimpleURLLoader> url_loader,
                        DownloadCallback callback,
                        std::unique_ptr<std::string> response_body);
+
+  void OnDownloadedImage(ImageCallback callback,
+                         std::unique_ptr<std::string> response_body,
+                         int response_code);
+
+  void OnDecodedImage(ImageCallback callback, const SkBitmap& decoded_bitmap);
 
   std::unique_ptr<network::ResourceRequest> CreateUncredentialedResourceRequest(
       const GURL& target_url,

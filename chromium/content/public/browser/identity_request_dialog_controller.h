@@ -12,6 +12,7 @@
 #include "content/common/content_export.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "ui/gfx/image/image.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -60,8 +61,8 @@ struct CONTENT_EXPORT IdentityRequestAccount {
   std::string name;
   std::string given_name;
   GURL picture;
-  // This will be an empty string if fetching failed.
-  std::string picture_data;
+  // This will be an empty image if fetching failed.
+  gfx::Image decoded_picture;
 
   // The account login state. Unlike the other fields this one can be populated
   // either by the IDP or by the browser based on its stored permission grants.
