@@ -60,7 +60,7 @@ namespace base {
 
 namespace {
 
-int g_extra_allowed_path_for_no_execute = 0;
+std::vector<int> g_extra_allowed_paths_for_no_execute;
 
 bool g_disable_secure_system_temp_for_testing = false;
 
@@ -386,8 +386,8 @@ bool IsPathSafeToSetAclOn(const FilePath& path) {
   }
 #endif  // BUILDFLAG(CLANG_PROFILING)
   std::vector<int> valid_path_keys({DIR_TEMP});
-  if (g_extra_allowed_path_for_no_execute) {
-    valid_path_keys.push_back(g_extra_allowed_path_for_no_execute);
+  for (int key : g_extra_allowed_paths_for_no_execute) {
+    valid_path_keys.push_back(key);
   }
 
   // MakeLongFilePath is needed here because temp files can have an 8.3 path
@@ -1209,12 +1209,10 @@ bool PreventExecuteMapping(const FilePath& path) {
 }
 
 void SetExtraNoExecuteAllowedPath(int path_key) {
-  DCHECK(!g_extra_allowed_path_for_no_execute ||
-         g_extra_allowed_path_for_no_execute == path_key);
-  g_extra_allowed_path_for_no_execute = path_key;
+  g_extra_allowed_paths_for_no_execute.push_back(path_key);
   base::FilePath valid_path;
   DCHECK(
-      base::PathService::Get(g_extra_allowed_path_for_no_execute, &valid_path));
+      base::PathService::Get(path_key, &valid_path));
 }
 
 // -----------------------------------------------------------------------------
