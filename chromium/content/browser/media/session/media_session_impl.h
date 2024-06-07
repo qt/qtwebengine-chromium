@@ -16,6 +16,7 @@
 #include "base/containers/flat_map.h"
 #include "base/containers/id_map.h"
 #include "base/macros.h"
+#include "base/memory/weak_ptr.h"
 #include "base/optional.h"
 #include "base/timer/timer.h"
 #include "content/browser/media/session/audio_focus_delegate.h"
@@ -297,6 +298,9 @@ class MediaSessionImpl : public MediaSession,
   // Returns the Audio Focus request ID associated with this media session.
   const base::UnguessableToken& GetRequestId() const;
 
+  // Returns a WeakPtr to `this`.
+  base::WeakPtr<MediaSessionImpl> GetWeakPtr();
+
  private:
   friend class content::WebContentsUserData<MediaSessionImpl>;
   friend class MediaSessionImplBrowserTest;
@@ -492,6 +496,8 @@ class MediaSessionImpl : public MediaSession,
   mojo::ReceiverSet<media_session::mojom::MediaSession> receivers_;
 
   mojo::RemoteSet<media_session::mojom::MediaSessionObserver> observers_;
+
+  base::WeakPtrFactory<MediaSessionImpl> weak_factory_{this};
 
   WEB_CONTENTS_USER_DATA_KEY_DECL();
 

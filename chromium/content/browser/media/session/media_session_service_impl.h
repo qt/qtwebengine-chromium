@@ -74,6 +74,8 @@ class CONTENT_EXPORT MediaSessionServiceImpl
   const int render_frame_process_id_;
   const int render_frame_routing_id_;
 
+  base::WeakPtr<MediaSessionImpl> media_session_;
+
   // RAII binding of |this| to an MediaSessionService interface request.
   // The binding is removed when receiver_ is cleared or goes out of scope.
   std::unique_ptr<mojo::Receiver<blink::mojom::MediaSessionService>> receiver_;
