@@ -19,5 +19,9 @@ dawn_vulkan_validation_layers_dir = "//third_party/vulkan-validation-layers/src"
 dawn_dxc_dir = "//third_party/dawn/third_party/directx-shader-compiler/src"
 dawn_dxc_gn_dir = "//third_party/dawn/third_party/directx-shader-compiler"
 dawn_dxheaders_dir = "//third_party/dawn/third_party/directx-headers/src"
-dawn_version_file = "//gpu/webgpu/DAWN_VERSION"
+
+# File is non-existent, which causes dependencies to always be treated
+# as dirty when building.
+#
+# dawn_version_file = "//gpu/webgpu/DAWN_VERSION"
 dawn_use_static_angle = use_static_angle
