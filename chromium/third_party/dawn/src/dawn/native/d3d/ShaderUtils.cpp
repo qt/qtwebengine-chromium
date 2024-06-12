@@ -36,6 +36,11 @@ namespace {
 
 std::vector<const wchar_t*> GetDXCArguments(uint32_t compileFlags, bool enable16BitTypes) {
     std::vector<const wchar_t*> arguments;
+
+    // TODO(chromium:346595893): Disable buggy DXC pass
+    arguments.push_back(L"-opt-disable");
+    arguments.push_back(L"structurize-loop-exits-for-unroll");
+
     if (compileFlags & D3DCOMPILE_ENABLE_BACKWARDS_COMPATIBILITY) {
         arguments.push_back(L"/Gec");
     }
