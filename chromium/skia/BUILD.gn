@@ -93,6 +93,13 @@ config("skia_config") {
     "$root_gen_dir/third_party/skia",
   ]
 
+  # This is a workaround for https://github.com/llvm/llvm-project/issues/95133
+  if (is_win && is_clang && is_qtwebengine) {
+    defines += [
+      "SK_ENABLE_OPTIMIZE_SIZE",
+    ]
+  }
+
   if (use_blink) {
     # TODO(kjlubick) make these not necessary
     defines += [
