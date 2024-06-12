@@ -2901,7 +2901,7 @@ Ak chcete spravovať nastavenia tohto účtu, nainštalujte si do zariadenia apl
 <translation id="3183944777708523606">Usporiadanie monitora</translation>
 <translation id="3184536091884214176">Nastaviť alebo spravovať tlačiarne CUPS. <ph name="LINK_BEGIN" />Ďalšie informácie<ph name="LINK_END" /></translation>
 <translation id="3185014249447200271">{NUM_APPS,plural, =1{Táto aplikácia je blokovaná}few{Niektoré aplikácie sú blokované}many{Niektoré aplikácie sú blokované}other{Niektoré aplikácie sú blokované}}</translation>
-<translation id="3187472288455401631">Meranie reklamy</translation>
+<translation id="3187472288455401631">Meranie reklám</translation>
 <translation id="3188257591659621405">Moje súbory</translation>
 <translation id="3188465121994729530">Kĺzavý priemer</translation>
 <translation id="3189187154924005138">Veľký kurzor</translation>
@@ -8282,7 +8282,7 @@ Máte ešte # ďalších. Správca hesiel Google odporúča okamžite dané hes
 <translation id="7423807071740419372"><ph name="APP_NAME" /> potrebuje na spustenie povolenie</translation>
 <translation id="7424153922653300265">Šetrič energie je zapnutý</translation>
 <translation id="7424818322350938336">Bola pridaná sieť</translation>
-<translation id="7425037327577270384">Asistent písania</translation>
+<translation id="7425037327577270384">Asistent pri písaní</translation>
 <translation id="7425292366411265498">Rozšírenia nainštalované správcom môžu stále čítať a meniť weby</translation>
 <translation id="7427315069950454694">vaše dnešné spomienky</translation>
 <translation id="7427348830195639090">Stránka na pozadí: <ph name="BACKGROUND_PAGE_URL" /></translation>
@@ -9726,7 +9726,7 @@ Súbor kľúča uložte na bezpečné miesto. Budete ho potrebovať na vytvoreni
 <translation id="8515580632187889788">Pokračovaním povoľujete tretím stranám overovať informácie umožňujúce zistenie totožnosti tohto zariadenia v sieti. Ak nechcete tretím stranám povoliť prístup k informáciám zo zariadení, môžete nastaviť profil eSIM <ph name="BEGIN_LINK" />manuálne<ph name="END_LINK" />.</translation>
 <translation id="8516472100141530292">Kliknite pravým tlačidlom na skupinu</translation>
 <translation id="8517759303731677493">Upraviť…</translation>
-<translation id="8518942514525208851">Skryť vulgarizmy</translation>
+<translation id="8518942514525208851">Skrývať vulgarizmy</translation>
 <translation id="8519895319663397036">Heslá sa nedajú importovať. Súbor musí byť menší než 150 kB.</translation>
 <translation id="851991974800416566">Rýchlo používajte silné heslo</translation>
 <translation id="8523493869875972733">Zachovať zmeny</translation>
