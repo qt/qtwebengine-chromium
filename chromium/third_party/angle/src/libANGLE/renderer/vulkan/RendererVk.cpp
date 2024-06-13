@@ -1819,9 +1819,11 @@ void RendererVk::initFeatures(DisplayVk *displayVk, const ExtensionNameList &dev
     }
 #endif  // defined(ANGLE_PLATFORM_ANDROID)
 
+    // Disabled on SwiftShader due to http://crbug.com/40942995
     ANGLE_FEATURE_CONDITION(
         &mFeatures, supportsShaderStencilExport,
-        ExtensionFound(VK_EXT_SHADER_STENCIL_EXPORT_EXTENSION_NAME, deviceExtensionNames));
+        ExtensionFound(VK_EXT_SHADER_STENCIL_EXPORT_EXTENSION_NAME, deviceExtensionNames) &&
+            !isSwiftShader);
 
     ANGLE_FEATURE_CONDITION(&mFeatures, supportsTransformFeedbackExtension,
                             mTransformFeedbackFeatures.transformFeedback == VK_TRUE);
