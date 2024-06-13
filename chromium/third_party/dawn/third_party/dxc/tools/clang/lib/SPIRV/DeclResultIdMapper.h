@@ -205,6 +205,10 @@ public:
   SpirvVariable *getBuiltinVar(spv::BuiltIn builtIn, QualType type,
                                SourceLocation);
 
+  /// \brief If var is a raytracing stage variable, returns its entry point,
+  /// otherwise returns nullptr.
+  SpirvFunction *getRayTracingStageVarEntryFunction(SpirvVariable *var);
+
   /// \brief Creates the stage output variables by parsing the semantics
   /// attached to the given function's parameter or return value and returns
   /// true on success. SPIR-V instructions will also be generated to update the
@@ -232,6 +236,9 @@ public:
   /// \brief Creates stage variables for raytracing.
   SpirvVariable *createRayTracingNVStageVar(spv::StorageClass sc,
                                             const VarDecl *decl);
+  SpirvVariable *createRayTracingNVStageVar(spv::StorageClass sc, QualType type,
+                                            std::string name, bool isPrecise,
+                                            bool isNointerp);
 
   /// \brief Creates the taskNV stage variables for payload struct variable
   /// and returns true on success. SPIR-V instructions will also be generated
@@ -969,6 +976,11 @@ private:
   /// using HLSL intrinsic function calls. All other builtin variables are
   /// accessed using stage IO variables.
   llvm::DenseMap<uint32_t, SpirvVariable *> builtinToVarMap;
+
+  /// Maps from a raytracing stage variable to the entry point that variable is
+  /// for.
+  llvm::DenseMap<SpirvVariable *, SpirvFunction *>
+      rayTracingStageVarToEntryPoints;
 
   /// Whether the translated SPIR-V binary needs legalization.
   ///

@@ -10,14 +10,19 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 #include "dxc/DXIL/DxilShaderModel.h"
+#include "dxc/HlslIntrinsicOp.h"
 #include "dxc/Support/Global.h"
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/Attr.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/RecursiveASTVisitor.h"
+#include "clang/Sema/SemaDiagnostic.h"
 #include "clang/Sema/SemaHLSL.h"
 #include "llvm/Support/Debug.h"
+#include <optional>
 
 using namespace clang;
+using namespace llvm;
 using namespace hlsl;
 
 //
@@ -175,6 +180,8 @@ public:
 
   const CallNodes &GetCallGraph() { return m_callNodes; }
 
+  const FunctionSet GetVisitedFunctions() { return m_visitedFunctions; }
+
   void dump() const {
     llvm::dbgs() << "Call Nodes:\n";
     for (auto &node : m_callNodes) {
@@ -295,6 +302,48 @@ clang::FunctionDecl *ValidateNoRecursion(CallGraphWithRecurseGuard &callGraph,
   return nullptr;
 }
 
+class HLSLMethodCallDiagnoseVisitor
+    : public RecursiveASTVisitor<HLSLMethodCallDiagnoseVisitor> {
+public:
+  explicit HLSLMethodCallDiagnoseVisitor(
+      Sema *S, const hlsl::ShaderModel *SM, DXIL::ShaderKind EntrySK,
+      const FunctionDecl *EntryDecl,
+      std::set<CXXMemberCallExpr *> &DiagnosedCalls)
+      : sema(S), SM(SM), EntrySK(EntrySK), EntryDecl(EntryDecl),
+        DiagnosedCalls(DiagnosedCalls) {}
+
+  bool VisitCXXMemberCallExpr(CXXMemberCallExpr *CE) {
+    // Skip if already diagnosed.
+    if (DiagnosedCalls.count(CE))
+      return true;
+    DiagnosedCalls.insert(CE);
+
+    sema->DiagnoseReachableHLSLMethodCall(CE->getMethodDecl(), CE->getExprLoc(),
+                                          SM, EntrySK, EntryDecl);
+    return true;
+  }
+
+  clang::Sema *getSema() { return sema; }
+
+private:
+  clang::Sema *sema;
+  const hlsl::ShaderModel *SM;
+  DXIL::ShaderKind EntrySK;
+  const FunctionDecl *EntryDecl;
+  std::set<CXXMemberCallExpr *> &DiagnosedCalls;
+};
+
+std::optional<uint32_t>
+getFunctionInputPatchCount(const FunctionDecl *function) {
+  for (const auto *param : function->params()) {
+    if (!hlsl::IsHLSLInputPatchType(param->getType()))
+      continue;
+    return hlsl::GetHLSLInputPatchCount(param->getType());
+  }
+
+  return std::nullopt;
+}
+
 } // namespace
 
 void hlsl::DiagnoseTranslationUnit(clang::Sema *self) {
@@ -354,10 +403,14 @@ void hlsl::DiagnoseTranslationUnit(clang::Sema *self) {
     }
   }
 
-  CallGraphWithRecurseGuard callGraph;
+  const auto *shaderModel =
+      hlsl::ShaderModel::GetByName(self->getLangOpts().HLSLProfile.c_str());
+
   std::set<FunctionDecl *> DiagnosedDecls;
+  std::set<CXXMemberCallExpr *> DiagnosedCalls;
   // for each FDecl, check for recursion
   for (FunctionDecl *FDecl : FDeclsToCheck) {
+    CallGraphWithRecurseGuard callGraph;
     FunctionDecl *result = ValidateNoRecursion(callGraph, FDecl);
 
     if (result) {
@@ -419,6 +472,42 @@ void hlsl::DiagnoseTranslationUnit(clang::Sema *self) {
           self->Diag(FDecl->getSourceRange().getBegin(),
                      diag::err_hlsl_patch_reachability_not_allowed)
               << 0 << pPatchFnDecl->getName() << 1 << FDecl->getName();
+        }
+      }
+
+      auto hullPatchCount = getFunctionInputPatchCount(pPatchFnDecl);
+      auto functionPatchCount = getFunctionInputPatchCount(FDecl);
+      if (hullPatchCount.has_value() && functionPatchCount.has_value() &&
+          hullPatchCount.value() != functionPatchCount.value()) {
+        self->Diag(pPatchFnDecl->getSourceRange().getBegin(),
+                   diag::err_hlsl_patch_input_size_mismatch)
+            << functionPatchCount.value() << hullPatchCount.value();
+      }
+    }
+
+    DXIL::ShaderKind EntrySK = shaderModel->GetKind();
+    if (EntrySK == DXIL::ShaderKind::Library) {
+      // For library, check if the exported function is entry with shader
+      // attribute.
+      if (const auto *Attr = FDecl->getAttr<clang::HLSLShaderAttr>())
+        EntrySK = ShaderModel::KindFromFullName(Attr->getStage());
+    }
+    // Visit all visited functions in call graph to collect illegal intrinsic
+    // calls.
+    for (FunctionDecl *FD : callGraph.GetVisitedFunctions()) {
+      HLSLMethodCallDiagnoseVisitor Visitor(self, shaderModel, EntrySK, FDecl,
+                                            DiagnosedCalls);
+      Visitor.TraverseDecl(FD);
+
+      // diagnose any node functions that have incompatible launch types with
+      // the present SV semantics on each parameter.
+      if (EntrySK == DXIL::ShaderKind::Node) {
+        if (const auto *NodeLaunchAttr =
+                FDecl->getAttr<clang::HLSLNodeLaunchAttr>()) {
+          llvm::StringRef NodeLaunchTyStr = NodeLaunchAttr->getLaunchType();
+          hlsl::DXIL::NodeLaunchType NodeLaunchTy =
+              ShaderModel::NodeLaunchTypeFromName(NodeLaunchTyStr);
+          Visitor.getSema()->DiagnoseSVForLaunchType(FD, NodeLaunchTy);
         }
       }
     }

@@ -1499,7 +1499,7 @@
 <translation id="2101225219012730419">גרסה:</translation>
 <translation id="2102396546234652240">לא לאפשר לאתרים להשתמש במיקרופון</translation>
 <translation id="2102495993840063010">‏אפליקציות Android</translation>
-<translation id="2104166991923847969">כיבוי אוטומטי של הנקודה לשיתוף אינטרנט</translation>
+<translation id="2104166991923847969">השבתה אוטומטית של הנקודה לשיתוף אינטרנט</translation>
 <translation id="2105809836724866556">ההסתרה של <ph name="MODULE_TITLE" /> בוצעה</translation>
 <translation id="2108204112555497972">התבצעה בדיקה לפני <ph name="NUM_DAYS_HOURS_MINUTES" /></translation>
 <translation id="2108349519800154983">{COUNT,plural, =1{מספר טלפון}one{# מספרי טלפון}two{# מספרי טלפון}other{# מספרי טלפון}}</translation>
@@ -6802,7 +6802,7 @@
 <translation id="6241530762627360640">‏פרטי גישה של מכשירי Bluetooth המותאמים למערכת שלך ומגלים מכשירי Bluetooth קרובים.</translation>
 <translation id="6241844896329831164">אין צורך בגישה</translation>
 <translation id="6242574558232861452">המערכת בודקת אם הקובץ עומד בדרישות של מדיניות האבטחה של הארגון.</translation>
-<translation id="6242589501614145408">איפוס מפתח האבטחה שלך</translation>
+<translation id="6242589501614145408">איפוס מפתח האבטחה</translation>
 <translation id="6242605626259978229">הדפדפן והפרופיל שלך מנוהלים</translation>
 <translation id="6242852299490624841">הדגשת הכרטיסייה הזו</translation>
 <translation id="6243774244933267674">השרת אינו זמין</translation>

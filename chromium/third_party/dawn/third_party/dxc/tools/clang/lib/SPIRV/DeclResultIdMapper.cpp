@@ -943,8 +943,14 @@ bool DeclResultIdMapper::createStageInputVar(const ParmVarDecl *paramDecl,
                                   type, "in.var", loadedValue);
   } else {
     StageVarDataBundle stageVarData = {
-        paramDecl, &inheritSemantic, false,    sigPoint,
-        type,      arraySize,        "in.var", llvm::None};
+        paramDecl,
+        &inheritSemantic,
+        paramDecl->hasAttr<HLSLNoInterpolationAttr>(),
+        sigPoint,
+        type,
+        arraySize,
+        "in.var",
+        llvm::None};
     return createStageVars(stageVarData, /*asInput=*/true, loadedValue,
                            /*noWriteBack=*/false);
   }
@@ -1341,6 +1347,13 @@ SpirvVariable *DeclResultIdMapper::createStructOrStructArrayVarOfExplicitLayout(
     const auto *declDecl = cast<DeclaratorDecl>(subDecl);
     auto varType = declDecl->getType();
     if (const auto *fieldVar = dyn_cast<VarDecl>(subDecl)) {
+
+      // Static variables are not part of the struct from a layout perspective.
+      // Thus, they should not be listed in the struct fields.
+      if (fieldVar->getStorageClass() == StorageClass::SC_Static) {
+        continue;
+      }
+
       if (isResourceType(varType)) {
         createExternVar(fieldVar);
         continue;
@@ -1830,7 +1843,6 @@ DeclResultIdMapper::collectStageVars(SpirvFunction *entryPoint) const {
   for (auto var : glPerVertex.getStageOutVars())
     vars.push_back(var);
 
-  llvm::DenseSet<SpirvInstruction *> seenVars;
   for (const auto &var : stageVars) {
     // We must collect stage variables that are included in entryPoint and stage
     // variables that are not included in any specific entryPoint i.e.,
@@ -1841,10 +1853,7 @@ DeclResultIdMapper::collectStageVars(SpirvFunction *entryPoint) const {
     auto *instr = var.getSpirvInstr();
     if (instr->getStorageClass() == spv::StorageClass::Private)
       continue;
-    if (seenVars.count(instr) == 0) {
-      vars.push_back(instr);
-      seenVars.insert(instr);
-    }
+    vars.push_back(instr);
   }
 
   return vars;
@@ -2037,23 +2046,22 @@ bool DeclResultIdMapper::checkSemanticDuplication(bool forInput) {
       continue;
     }
 
-    // Allow builtin variables to alias each other. We already have uniqify
-    // mechanism in SpirvBuilder.
-    if (var.isSpirvBuitin())
-      continue;
-
     if (forInput && var.getSigPoint()->IsInput()) {
       bool insertionSuccess = insertSeenSemanticsForEntryPointIfNotExist(
           &seenSemanticsForEntryPoints, var.getEntryPoint(), s);
       if (!insertionSuccess) {
-        emitError("input semantic '%0' used more than once", {}) << s;
+        emitError("input semantic '%0' used more than once",
+                  var.getSemanticInfo().loc)
+            << s;
         success = false;
       }
     } else if (!forInput && var.getSigPoint()->IsOutput()) {
       bool insertionSuccess = insertSeenSemanticsForEntryPointIfNotExist(
           &seenSemanticsForEntryPoints, var.getEntryPoint(), s);
       if (!insertionSuccess) {
-        emitError("output semantic '%0' used more than once", {}) << s;
+        emitError("output semantic '%0' used more than once",
+                  var.getSemanticInfo().loc)
+            << s;
         success = false;
       }
     }
@@ -3310,10 +3318,11 @@ SpirvVariable *DeclResultIdMapper::createSpirvInterfaceVariable(
     }
   }
 
-  // Decorate with interpolation modes for pixel shader input variables
-  // or vertex shader output variables.
+  // Decorate with interpolation modes for pixel shader input variables, vertex
+  // shader output variables, or mesh shader output variables.
   if ((spvContext.isPS() && stageVarData.sigPoint->IsInput()) ||
-      (spvContext.isVS() && stageVarData.sigPoint->IsOutput()))
+      (spvContext.isVS() && stageVarData.sigPoint->IsOutput()) ||
+      (spvContext.isMS() && stageVarData.sigPoint->IsOutput()))
     decorateInterpolationMode(stageVarData.decl, stageVarData.type, varInstr,
                               *stageVarData.semantic);
 
@@ -3937,6 +3946,11 @@ SpirvVariable *DeclResultIdMapper::getBuiltinVar(spv::BuiltIn builtIn,
   return getBuiltinVar(builtIn, type, sc, loc);
 }
 
+SpirvFunction *
+DeclResultIdMapper::getRayTracingStageVarEntryFunction(SpirvVariable *var) {
+  return rayTracingStageVarToEntryPoints[var];
+}
+
 SpirvVariable *DeclResultIdMapper::createSpirvStageVar(
     StageVar *stageVar, const NamedDecl *decl, const llvm::StringRef name,
     SourceLocation srcLoc) {
@@ -4517,14 +4531,19 @@ bool DeclResultIdMapper::getImplicitRegisterType(const ResourceVar &var,
 SpirvVariable *
 DeclResultIdMapper::createRayTracingNVStageVar(spv::StorageClass sc,
                                                const VarDecl *decl) {
-  QualType type = decl->getType();
+  return createRayTracingNVStageVar(sc, decl->getType(), decl->getName().str(),
+                                    decl->hasAttr<HLSLPreciseAttr>(),
+                                    decl->hasAttr<HLSLNoInterpolationAttr>());
+}
+
+SpirvVariable *DeclResultIdMapper::createRayTracingNVStageVar(
+    spv::StorageClass sc, QualType type, std::string name, bool isPrecise,
+    bool isNointerp) {
   SpirvVariable *retVal = nullptr;
 
   // Raytracing interface variables are special since they do not participate
   // in any interface matching and hence do not create StageVar and
   // track them under StageVars vector
-
-  const auto name = decl->getName();
 
   switch (sc) {
   case spv::StorageClass::IncomingRayPayloadNV:
@@ -4532,14 +4551,14 @@ DeclResultIdMapper::createRayTracingNVStageVar(spv::StorageClass sc,
   case spv::StorageClass::HitAttributeNV:
   case spv::StorageClass::RayPayloadNV:
   case spv::StorageClass::CallableDataNV:
-    retVal = spvBuilder.addModuleVar(type, sc, decl->hasAttr<HLSLPreciseAttr>(),
-                                     decl->hasAttr<HLSLNoInterpolationAttr>(),
-                                     name.str());
+    retVal = spvBuilder.addModuleVar(type, sc, isPrecise, isNointerp, name);
     break;
 
   default:
     assert(false && "Unsupported SPIR-V storage class for raytracing");
   }
+
+  rayTracingStageVarToEntryPoints[retVal] = entryFunction;
 
   return retVal;
 }

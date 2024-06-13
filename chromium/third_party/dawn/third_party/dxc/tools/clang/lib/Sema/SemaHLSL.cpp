@@ -12,6 +12,7 @@
 
 #include "clang/Sema/SemaHLSL.h"
 #include "VkConstantsTables.h"
+#include "dxc/DXIL/DxilFunctionProps.h"
 #include "dxc/DXIL/DxilShaderModel.h"
 #include "dxc/HLSL/HLOperations.h"
 #include "dxc/HlslIntrinsicOp.h"
@@ -11119,10 +11120,10 @@ void hlsl::DiagnoseRegisterType(clang::Sema *self, clang::SourceLocation loc,
 // Check HLSL member call constraints
 bool Sema::DiagnoseHLSLMethodCall(const CXXMethodDecl *MD, SourceLocation Loc) {
   if (MD->hasAttr<HLSLIntrinsicAttr>()) {
-    // If this is a call to FinishedCrossGroupSharing then the Input record
-    // must have the NodeTrackRWInputSharing attribute
     hlsl::IntrinsicOp opCode =
         (IntrinsicOp)MD->getAttr<HLSLIntrinsicAttr>()->getOpcode();
+    // If this is a call to FinishedCrossGroupSharing then the Input record
+    // must have the NodeTrackRWInputSharing attribute
     if (opCode == hlsl::IntrinsicOp::MOP_FinishedCrossGroupSharing) {
       const CXXRecordDecl *NodeRecDecl = MD->getParent();
       // Node I/O records are templateTypes
@@ -11138,25 +11139,135 @@ bool Sema::DiagnoseHLSLMethodCall(const CXXMethodDecl *MD, SourceLocation Loc) {
         Diags.Report(Loc, diag::err_hlsl_wg_nodetrackrwinputsharing_missing);
         return true;
       }
-    } else if (opCode == hlsl::IntrinsicOp::MOP_CalculateLevelOfDetail ||
-               opCode ==
-                   hlsl::IntrinsicOp::MOP_CalculateLevelOfDetailUnclamped) {
-      const auto *shaderModel =
-          hlsl::ShaderModel::GetByName(getLangOpts().HLSLProfile.c_str());
-      if (!shaderModel->IsSM68Plus()) {
-        QualType SamplerComparisonTy =
-            HLSLExternalSource::FromSema(this)->GetBasicKindType(
-                AR_OBJECT_SAMPLERCOMPARISON);
-        if (MD->getParamDecl(0)->getType() == SamplerComparisonTy) {
-          Diags.Report(Loc,
-                       diag::err_hlsl_intrinsic_overload_in_wrong_shader_model)
-              << MD->getNameAsString() << "6.8";
-          return true;
+    }
+  }
+  return false;
+}
+
+// Produce diagnostics for any system values attached to `FD` function
+// that are invalid for the `LaunchTy` launch type
+void Sema::DiagnoseSVForLaunchType(const FunctionDecl *FD,
+                                   DXIL::NodeLaunchType LaunchTy) {
+  // Validate Compute Shader system value inputs per launch mode
+  for (ParmVarDecl *param : FD->parameters()) {
+    for (const hlsl::UnusualAnnotation *it : param->getUnusualAnnotations()) {
+      if (it->getKind() == hlsl::UnusualAnnotation::UA_SemanticDecl) {
+        const hlsl::SemanticDecl *sd = cast<hlsl::SemanticDecl>(it);
+        // if the node launch type is Thread, then there are no system values
+        // allowed
+        if (LaunchTy == DXIL::NodeLaunchType::Thread) {
+          if (sd->SemanticName.startswith("SV_")) {
+            // emit diagnostic
+            unsigned DiagID = Diags.getCustomDiagID(
+                DiagnosticsEngine::Error,
+                "Invalid system value semantic '%0' for launchtype '%1'");
+            Diags.Report(param->getLocation(), DiagID)
+                << sd->SemanticName << "Thread";
+          }
+        }
+
+        // if the node launch type is Coalescing, then only
+        // SV_GroupIndex and SV_GroupThreadID are allowed
+        else if (LaunchTy == DXIL::NodeLaunchType::Coalescing) {
+          if (!(sd->SemanticName.equals("SV_GroupIndex") ||
+                sd->SemanticName.equals("SV_GroupThreadID"))) {
+            // emit diagnostic
+            unsigned DiagID = Diags.getCustomDiagID(
+                DiagnosticsEngine::Error,
+                "Invalid system value semantic '%0' for launchtype '%1'");
+            Diags.Report(param->getLocation(), DiagID)
+                << sd->SemanticName << "Coalescing";
+          }
+        }
+        // Broadcasting nodes allow all node shader system value semantics
+        else if (LaunchTy == DXIL::NodeLaunchType::Broadcasting) {
+          continue;
         }
       }
     }
   }
-  return false;
+}
+
+// Check HLSL member call constraints for used functions.
+void Sema::DiagnoseReachableHLSLMethodCall(const CXXMethodDecl *MD,
+                                           SourceLocation Loc,
+                                           const hlsl::ShaderModel *SM,
+                                           DXIL::ShaderKind EntrySK,
+                                           const FunctionDecl *EntryDecl) {
+  if (MD->hasAttr<HLSLIntrinsicAttr>()) {
+    hlsl::IntrinsicOp opCode =
+        (IntrinsicOp)MD->getAttr<HLSLIntrinsicAttr>()->getOpcode();
+    switch (opCode) {
+    case hlsl::IntrinsicOp::MOP_CalculateLevelOfDetail:
+    case hlsl::IntrinsicOp::MOP_CalculateLevelOfDetailUnclamped: {
+      QualType SamplerComparisonTy =
+          HLSLExternalSource::FromSema(this)->GetBasicKindType(
+              AR_OBJECT_SAMPLERCOMPARISON);
+      if (MD->getParamDecl(0)->getType() == SamplerComparisonTy) {
+
+        if (!SM->IsSM68Plus()) {
+
+          Diags.Report(Loc,
+                       diag::warn_hlsl_intrinsic_overload_in_wrong_shader_model)
+              << MD->getNameAsString() + " with SamplerComparisonState"
+              << "6.8";
+        } else {
+
+          switch (EntrySK) {
+          default: {
+            if (!SM->AllowDerivatives(EntrySK)) {
+              Diags.Report(Loc,
+                           diag::warn_hlsl_derivatives_in_wrong_shader_kind)
+                  << MD->getNameAsString() << EntryDecl->getNameAsString();
+              Diags.Report(EntryDecl->getLocation(), diag::note_declared_at);
+            }
+          } break;
+          case DXIL::ShaderKind::Compute:
+          case DXIL::ShaderKind::Amplification:
+          case DXIL::ShaderKind::Mesh: {
+            if (!SM->IsSM66Plus()) {
+              Diags.Report(Loc,
+                           diag::warn_hlsl_derivatives_in_wrong_shader_model)
+                  << MD->getNameAsString() << EntryDecl->getNameAsString();
+              Diags.Report(EntryDecl->getLocation(), diag::note_declared_at);
+            }
+          } break;
+          case DXIL::ShaderKind::Node: {
+            if (const auto *pAttr = EntryDecl->getAttr<HLSLNodeLaunchAttr>()) {
+              if (pAttr->getLaunchType() != "broadcasting") {
+                Diags.Report(Loc,
+                             diag::warn_hlsl_derivatives_in_wrong_shader_kind)
+                    << MD->getNameAsString() << EntryDecl->getNameAsString();
+                Diags.Report(EntryDecl->getLocation(), diag::note_declared_at);
+              }
+            }
+          } break;
+          }
+          if (const HLSLNumThreadsAttr *Attr =
+                  EntryDecl->getAttr<HLSLNumThreadsAttr>()) {
+            bool invalidNumThreads = false;
+            if (Attr->getY() != 1) {
+              // 2D mode requires x and y to be multiple of 2.
+              invalidNumThreads =
+                  !((Attr->getX() % 2) == 0 && (Attr->getY() % 2) == 0);
+            } else {
+              // 1D mode requires x to be multiple of 4 and y and z to be 1.
+              invalidNumThreads =
+                  (Attr->getX() % 4) != 0 || (Attr->getZ() != 1);
+            }
+            if (invalidNumThreads) {
+              Diags.Report(Loc, diag::warn_hlsl_derivatives_wrong_numthreads)
+                  << MD->getNameAsString() << EntryDecl->getNameAsString();
+              Diags.Report(EntryDecl->getLocation(), diag::note_declared_at);
+            }
+          }
+        }
+      }
+    } break;
+    default:
+      break;
+    }
+  }
 }
 
 bool hlsl::DiagnoseNodeStructArgument(Sema *self, TemplateArgumentLoc ArgLoc,
@@ -12223,6 +12334,10 @@ static int ValidateAttributeIntArg(Sema &S, const AttributeList &Attr,
     } else {
       if (ArgNum.isInt()) {
         value = ArgNum.getInt().getSExtValue();
+        if (!(E->getType()->isIntegralOrEnumerationType()) || value < 0) {
+          S.Diag(Attr.getLoc(), diag::warn_hlsl_attribute_expects_uint_literal)
+              << Attr.getName();
+        }
       } else if (ArgNum.isFloat()) {
         llvm::APSInt floatInt;
         bool isPrecise;
@@ -12230,17 +12345,17 @@ static int ValidateAttributeIntArg(Sema &S, const AttributeList &Attr,
                 floatInt, llvm::APFloat::rmTowardZero, &isPrecise) ==
             llvm::APFloat::opStatus::opOK) {
           value = floatInt.getSExtValue();
+          if (value < 0) {
+            S.Diag(Attr.getLoc(),
+                   diag::warn_hlsl_attribute_expects_uint_literal)
+                << Attr.getName();
+          }
         } else {
           S.Diag(Attr.getLoc(), diag::warn_hlsl_attribute_expects_uint_literal)
               << Attr.getName();
         }
       } else {
         displayError = true;
-      }
-
-      if (value < 0) {
-        S.Diag(Attr.getLoc(), diag::warn_hlsl_attribute_expects_uint_literal)
-            << Attr.getName();
       }
     }
 
@@ -12626,26 +12741,53 @@ HLSLWaveSizeAttr *ValidateWaveSizeAttributes(Sema &S, Decl *D,
       A.getAttributeSpellingListIndex());
 
   pAttr->setSpelledArgsCount(A.getNumArgs());
-  int minWave = pAttr->getMin();
-  int maxWave = pAttr->getMax();
-  int prefWave = pAttr->getPreferred();
 
-  // validate attribute arguments.
-  if (!DXIL::IsValidWaveSizeValue(minWave, maxWave, prefWave)) {
+  hlsl::DxilWaveSize waveSize(pAttr->getMin(), pAttr->getMax(),
+                              pAttr->getPreferred());
+
+  DxilWaveSize::ValidationResult validationResult = waveSize.Validate();
+
+  // WaveSize validation succeeds when not defined, but since we have an
+  // attribute, this means min was zero, which is invalid for min.
+  if (validationResult == DxilWaveSize::ValidationResult::Success &&
+      !waveSize.IsDefined())
+    validationResult = DxilWaveSize::ValidationResult::InvalidMin;
+
+  // It is invalid to explicitly specify degenerate cases.
+  if (A.getNumArgs() > 1 && waveSize.Max == 0)
+    validationResult = DxilWaveSize::ValidationResult::InvalidMax;
+  else if (A.getNumArgs() > 2 && waveSize.Preferred == 0)
+    validationResult = DxilWaveSize::ValidationResult::InvalidPreferred;
+
+  switch (validationResult) {
+  case DxilWaveSize::ValidationResult::Success:
+    break;
+  case DxilWaveSize::ValidationResult::InvalidMin:
+  case DxilWaveSize::ValidationResult::InvalidMax:
+  case DxilWaveSize::ValidationResult::InvalidPreferred:
+  case DxilWaveSize::ValidationResult::NoRangeOrMin:
     S.Diag(A.getLoc(), diag::err_hlsl_wavesize_size)
         << DXIL::kMinWaveSize << DXIL::kMaxWaveSize;
-  }
-
-  bool prefInRange =
-      prefWave == 0 ? true : prefWave >= minWave && prefWave <= maxWave;
-  if (!prefInRange) {
-    S.Diag(A.getLoc(), diag::err_hlsl_wavesize_pref_size_out_of_range)
-        << (unsigned)prefWave << (unsigned)minWave << (unsigned)maxWave;
-  }
-
-  if (maxWave != 0 && minWave >= maxWave) {
+    break;
+  case DxilWaveSize::ValidationResult::MaxEqualsMin:
+    S.Diag(A.getLoc(), diag::warn_hlsl_wavesize_min_eq_max)
+        << (unsigned)waveSize.Min << (unsigned)waveSize.Max;
+    break;
+  case DxilWaveSize::ValidationResult::MaxLessThanMin:
     S.Diag(A.getLoc(), diag::err_hlsl_wavesize_min_geq_max)
-        << (unsigned)minWave << (unsigned)maxWave;
+        << (unsigned)waveSize.Min << (unsigned)waveSize.Max;
+    break;
+  case DxilWaveSize::ValidationResult::PreferredOutOfRange:
+    S.Diag(A.getLoc(), diag::err_hlsl_wavesize_pref_size_out_of_range)
+        << (unsigned)waveSize.Preferred << (unsigned)waveSize.Min
+        << (unsigned)waveSize.Max;
+    break;
+  case DxilWaveSize::ValidationResult::MaxOrPreferredWhenUndefined:
+  case DxilWaveSize::ValidationResult::PreferredWhenNoRange:
+    llvm_unreachable("Should have hit InvalidMax or InvalidPreferred instead.");
+    break;
+  default:
+    llvm_unreachable("Unknown ValidationResult");
   }
 
   // make sure there is not already an existing conflicting
@@ -15520,6 +15662,7 @@ void DiagnoseNodeEntry(Sema &S, FunctionDecl *FD, llvm::StringRef StageName,
           }
         }
       }
+      S.DiagnoseSVForLaunchType(FD, NodeLaunchTy);
     }
   }
   return;
@@ -15589,6 +15732,47 @@ void TryAddShaderAttrFromTargetProfile(Sema &S, FunctionDecl *FD,
   return;
 }
 
+// The compiler should emit a warning when an entry-point-only attribute
+// is detected without the presence of a shader attribute,
+// to prevent reliance on deprecated behavior
+// (where the compiler would infer a specific shader kind based on
+// a present entry-point-only attribute).
+void WarnOnEntryAttrWithoutShaderAttr(Sema &S, FunctionDecl *FD) {
+  if (!FD->hasAttrs())
+    return;
+  for (Attr *A : FD->getAttrs()) {
+    switch (A->getKind()) {
+      // Entry-Function-only attributes
+    case clang::attr::HLSLClipPlanes:
+    case clang::attr::HLSLDomain:
+    case clang::attr::HLSLEarlyDepthStencil:
+    case clang::attr::HLSLInstance:
+    case clang::attr::HLSLMaxTessFactor:
+    case clang::attr::HLSLNumThreads:
+    case clang::attr::HLSLRootSignature:
+    case clang::attr::HLSLOutputControlPoints:
+    case clang::attr::HLSLOutputTopology:
+    case clang::attr::HLSLPartitioning:
+    case clang::attr::HLSLPatchConstantFunc:
+    case clang::attr::HLSLMaxVertexCount:
+    case clang::attr::HLSLWaveSize:
+    case clang::attr::HLSLNodeLaunch:
+    case clang::attr::HLSLNodeIsProgramEntry:
+    case clang::attr::HLSLNodeId:
+    case clang::attr::HLSLNodeLocalRootArgumentsTableIndex:
+    case clang::attr::HLSLNodeShareInputOf:
+    case clang::attr::HLSLNodeDispatchGrid:
+    case clang::attr::HLSLNodeMaxDispatchGrid:
+    case clang::attr::HLSLNodeMaxRecursionDepth:
+      S.Diag(A->getLocation(),
+             diag::warn_hlsl_entry_attribute_without_shader_attribute)
+          << A->getSpelling();
+      break;
+    }
+  }
+  return;
+}
+
 // The DiagnoseEntry function does 2 things:
 // 1. Determine whether this function is the current entry point for a
 // non-library compilation, add an implicit shader attribute if so.
@@ -15609,13 +15793,17 @@ void DiagnoseEntry(Sema &S, FunctionDecl *FD) {
     TryAddShaderAttrFromTargetProfile(S, FD, isActiveEntry);
   }
 
-  HLSLShaderAttr *Attr = FD->getAttr<HLSLShaderAttr>();
-  if (!Attr) {
+  HLSLShaderAttr *shaderAttr = FD->getAttr<HLSLShaderAttr>();
+  if (!shaderAttr) {
+    if (S.getLangOpts().IsHLSLLibrary)
+      WarnOnEntryAttrWithoutShaderAttr(S, FD);
+
     return;
   }
 
-  DXIL::ShaderKind Stage = ShaderModel::KindFromFullName(Attr->getStage());
-  llvm::StringRef StageName = Attr->getStage();
+  DXIL::ShaderKind Stage =
+      ShaderModel::KindFromFullName(shaderAttr->getStage());
+  llvm::StringRef StageName = shaderAttr->getStage();
   DiagnoseEntryAttrAllowedOnStage(&S, FD, Stage);
 
   switch (Stage) {

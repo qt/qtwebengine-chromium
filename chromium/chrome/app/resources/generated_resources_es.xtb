@@ -1330,7 +1330,7 @@ Los permisos que hayas dado a aplicaciones se pueden aplicar a esta cuenta. Pued
 <translation id="1988259784461813694">Requisito</translation>
 <translation id="1988733631391393183">Mostrar comandos braille en los menús de ChromeVox</translation>
 <translation id="1989112275319619282">Examinar</translation>
-<translation id="1989288015781834552">Reinicia para finalizar la actualización. Las pestañas volverán a abrirse.</translation>
+<translation id="1989288015781834552">Reinicia para finalizar la actualización; las pestañas volverán a abrirse</translation>
 <translation id="1989601282983766341">Gestionar No molestar, insignias de aplicaciones y notificaciones de aplicaciones</translation>
 <translation id="1989903373608997757">Usar siempre</translation>
 <translation id="1990046457226896323">Archivos de voz descargados</translation>
@@ -2064,7 +2064,7 @@ Puedes gestionar la configuración de esta cuenta instalando la aplicación Fami
 <translation id="2521835766824839541">pista anterior</translation>
 <translation id="2521854691574443804">Comprobando que <ph name="FILE_NAME" /> cumple las políticas de seguridad de tu organización…</translation>
 <translation id="252277619743753687">Seleccionar contraseñas</translation>
-<translation id="2523184218357549926">Envía las URL de las páginas que visitas a Google</translation>
+<translation id="2523184218357549926">Envía las URLs de las páginas que visitas a Google</translation>
 <translation id="252418934079508528">Instalar <ph name="DEVICE_OS" /></translation>
 <translation id="2526590354069164005">Escritorio</translation>
 <translation id="2526619973349913024">Buscar actualizaciones</translation>
@@ -2598,7 +2598,7 @@ Puedes gestionar la configuración de esta cuenta instalando la aplicación Fami
 <translation id="2931342457001070961">No hay micrófonos conectados</translation>
 <translation id="2932085390869194046">Sugerir contraseña...</translation>
 <translation id="2932483646085333864">Cierra sesión y vuelve a iniciarla para empezar la sincronización</translation>
-<translation id="2932883381142163287">Notificar uso inadecuado</translation>
+<translation id="2932883381142163287">Denunciar abuso</translation>
 <translation id="2933632078076743449">Última actualización</translation>
 <translation id="2935225303485967257">Gestionar perfiles</translation>
 <translation id="2935314715123552088">Inhabilitar perfil activo de eSIM</translation>
@@ -4254,7 +4254,7 @@ Puede tratarse de información sobre el software instalado, los archivos, tu nav
 <translation id="4242145785130247982">No se admite el uso de varios certificados de cliente.</translation>
 <translation id="4242533952199664413">Abrir Configuración</translation>
 <translation id="4242577469625748426">Se ha producido un error al instalar la configuración de política en el dispositivo (<ph name="VALIDATION_ERROR" />).</translation>
-<translation id="4242825475818569385"><ph name="DOMAIN" /> <ph name="BEGIN_LINK" />gestiona tu navegador y tu perfil<ph name="END_LINK" /></translation>
+<translation id="4242825475818569385"><ph name="BEGIN_LINK" />Tu navegador y tu perfil los gestiona<ph name="END_LINK" /> <ph name="DOMAIN" /></translation>
 <translation id="4243504193894350135">La impresora está en pausa</translation>
 <translation id="4243624244759495699"><ph name="LOCALE" />, grado <ph name="GRADE" /></translation>
 <translation id="4244238649050961491">Buscar más aplicaciones para el lápiz óptico</translation>
@@ -5415,7 +5415,7 @@ Usa Ctrl + Alt + Reducir el brillo para reducir la pantalla.</translation>
 <translation id="5153234146675181447">Olvidar teléfono</translation>
 <translation id="5153907427821264830"><ph name="STATUS" /> • <ph name="MESSAGE" /></translation>
 <translation id="5154108062446123722">Configuración avanzada para <ph name="PRINTING_DESTINATION" /></translation>
-<translation id="5154702632169343078">Asunto</translation>
+<translation id="5154702632169343078">Tema</translation>
 <translation id="5154917547274118687">Memoria</translation>
 <translation id="5155327081870541046">En la barra de direcciones, escribe el atajo del sitio en el que quieras buscar, como "@bookmarks". A continuación, pulsa tu atajo preferido y escribe el término de búsqueda.</translation>
 <translation id="5156638757840305347">El cursor se destaca cuando aparece o se mueve</translation>
@@ -6290,7 +6290,7 @@ Los permisos que hayas dado a sitios web y aplicaciones se pueden aplicar a esta
 <translation id="5857693745746757503">Ahorra 50 $ o más al adquirir un Chromebook nuevo si lo compras hoy</translation>
 <translation id="5858490737742085133">Terminal</translation>
 <translation id="585979798156957858">Tecla meta externa</translation>
-<translation id="5860033963881614850">Desactivada</translation>
+<translation id="5860033963881614850">Desactivado</translation>
 <translation id="5860254591544742609">Mostrar barra de título</translation>
 <translation id="5860335608673904825">tecla de búsqueda + Ctrl + Mayús + <ph name="TOP_ROW_KEY" /></translation>
 <translation id="5860491529813859533">Activar</translation>
@@ -6889,7 +6889,7 @@ Exponente público (<ph name="PUBLIC_EXPONENT_NUM_BITS" /> bits):
 <translation id="6319476488490641553">No hay suficiente espacio en este dispositivo para completar la actualización. Libera <ph name="NECESSARY_SPACE" /> en tu dispositivo y vuelve a intentarlo.</translation>
 <translation id="6322370287306604163">Desbloquear el dispositivo más rápido con una huella digital</translation>
 <translation id="6322559670748154781">Este archivo no se descarga habitualmente y Protección Avanzada lo ha bloqueado.</translation>
-<translation id="6324916366299863871">Editar acceso directo</translation>
+<translation id="6324916366299863871">Editar combinación de teclas</translation>
 <translation id="6325191661371220117">Inhabilitar inicio automático</translation>
 <translation id="6326175484149238433">Desinstalar de Chrome</translation>
 <translation id="6326855256003666642">Número de actividades en curso</translation>
@@ -8574,7 +8574,7 @@ Tienes # contraseñas vulneradas más. El Gestor de contraseñas de Google te re
 <translation id="7658239707568436148">Cancelar</translation>
 <translation id="7658395071164441475">Algunas contraseñas están guardadas solo en este dispositivo. Para usarlas en tus otros dispositivos, guárdalas en tu cuenta de Google (<ph name="USER_EMAIL" />).</translation>
 <translation id="7659154729610375585">¿Salir del modo Incógnito de todas formas?</translation>
-<translation id="7659336857671800422">Consultar la guía de privacidad</translation>
+<translation id="7659336857671800422">Consultar la Guía de privacidad</translation>
 <translation id="7659584679870740384">No tienes autorización para utilizar este dispositivo. Ponte en contacto con el administrador para obtener permiso de inicio de sesión.</translation>
 <translation id="7660116474961254898">Sigue las instrucciones que aparecen en tu teléfono</translation>
 <translation id="7660146600670077843">Haz clic con el botón derecho en una pestaña y selecciona Añadir pestaña al nuevo grupo</translation>
@@ -9584,7 +9584,7 @@ Guarda tu archivo de clave en un lugar seguro, ya que lo necesitarás para crear
 <translation id="8405046151008197676">Consulta los aspectos destacados de la última actualización</translation>
 <translation id="8407199357649073301">Nivel de registro:</translation>
 <translation id="8408270600235826886">Puedes controlar qué datos se comparten con Google. Puedes cambiar esta opción en cualquier momento en Ajustes. Los datos se usan de acuerdo con la <ph name="BEGIN_LINK" />Política de Privacidad<ph name="END_LINK" /> de Google.</translation>
-<translation id="84098433273647700">Tema instalado actualmente.</translation>
+<translation id="84098433273647700">Tema instalado actualmente</translation>
 <translation id="8410775397654368139">Google Play</translation>
 <translation id="8411043186249152291">pantalla completa</translation>
 <translation id="8412136526970428322">Con permiso: <ph name="PERMISSION" /> y <ph name="COUNT" /> más</translation>
@@ -10070,7 +10070,7 @@ Guarda tu archivo de clave en un lugar seguro, ya que lo necesitarás para crear
 <translation id="8781834595282316166">Nueva pestaña en el grupo</translation>
 <translation id="8781980678064919987">Apagar cuando la tapa esté cerrada</translation>
 <translation id="8782565991310229362">Se ha cancelado el inicio de la aplicación del kiosco.</translation>
-<translation id="8783834180813871000">Escribe el código de emparejamiento por Bluetooth y, a continuación, pulsa Intro.</translation>
+<translation id="8783834180813871000">Escribe el código de emparejamiento por Bluetooth y pulsa Intro.</translation>
 <translation id="8783955532752528811">Ayuda contextual en funciones</translation>
 <translation id="8784626084144195648">Media de datos agrupados</translation>
 <translation id="8785622406424941542">Lápiz óptico</translation>

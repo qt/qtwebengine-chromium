@@ -234,8 +234,7 @@ BASE_FEATURE(kBufferQueueImageSetPurgeable,
 // On platforms using SkiaOutputDeviceBufferQueue, when this is true
 // SkiaRenderer will allocate and maintain a buffer queue of images for the root
 // render pass, instead of SkiaOutputDeviceBufferQueue itself.
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_FUCHSIA) || \
-    BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_FUCHSIA) || BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kRendererAllocatesImages,
              "RendererAllocatesImages",
              base::FEATURE_ENABLED_BY_DEFAULT);
