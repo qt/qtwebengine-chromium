@@ -737,7 +737,7 @@ Comprova les contrasenyes sempre que vulguis al <ph name="GOOGLE_PASSWORD_MANAGE
 <translation id="15662109988763471">La impressora seleccionada no està disponible o no s'ha instal·lat correctament. Comprova-la o prova de seleccionar-ne una altra.</translation>
 <translation id="1566329594234563241">Mentre estigui inactiu i endollat</translation>
 <translation id="1567135437923613642">Activa els experiments destacats</translation>
-<translation id="1567387640189251553">S'ha connectat un altre teclat des de la darrera vegada que vas introduir la contrasenya. Pot ser que estigui provant de robar-te les combinacions de tecles.</translation>
+<translation id="1567387640189251553">S'ha connectat un altre teclat des de la darrera vegada que vas introduir la contrasenya. Pot ser que estigui provant de robar-te les pulsacions.</translation>
 <translation id="1567579616025300478">Aquest lloc web no té permís per desar dades al dispositiu.</translation>
 <translation id="156793199942386351">La tecla <ph name="CURRENTKEY" /> ja està assignada a l'acció <ph name="ACTION" />. Prem qualsevol tecla per <ph name="RESPONSE" />.</translation>
 <translation id="1567993339577891801">Consola de JavaScript</translation>
@@ -5775,7 +5775,7 @@ Pots assignar diferents interruptors a aquesta acció.</translation>
 <translation id="5447384712203291074"><ph name="ITEM_COUNT_MULTIPLE" /> elements</translation>
 <translation id="5448092089030025717">{NUM_REUSED,plural, =0{Cap contrasenya reutilitzada}=1{1 contrasenya reutilitzada}other{{NUM_REUSED} contrasenyes reutilitzades}}</translation>
 <translation id="5448293924669608770">S'ha produït un problema en iniciar la sessió</translation>
-<translation id="5449551289610225147">La contrasenya no és vàlida</translation>
+<translation id="5449551289610225147">Contrasenya no vàlida</translation>
 <translation id="5449588825071916739">Afegeix totes les pestanyes a les adreces d'interès</translation>
 <translation id="5449716055534515760">Tanca la &amp;finestra</translation>
 <translation id="5450469615146335984">Selecciona una drecera per a cada acció</translation>

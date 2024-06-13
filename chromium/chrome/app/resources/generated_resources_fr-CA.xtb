@@ -710,7 +710,7 @@ Les autorisations que vous avez déjà accordées à des applications peuvent s'
 <translation id="1543538514740974167">Arrivez ici plus rapidement</translation>
 <translation id="1544588554445317666">Essayez d'utiliser un nom de fichier plus court ou de l'enregistrer dans un autre dossier</translation>
 <translation id="1545177026077493356">Mode kiosque automatique</translation>
-<translation id="1545749641540134597">Numérisez le code QR</translation>
+<translation id="1545749641540134597">Balayer le code QR</translation>
 <translation id="1545775234664667895">Thème installé : « <ph name="THEME_NAME" /> »</translation>
 <translation id="1546031833947068368">{COUNT,plural, =1{Votre fenêtre de navigation privée ne sera pas rouverte.}one{# fenêtre de navigation privée ne sera pas rouverte.}other{Vos # fenêtres de navigation privée ne seront pas rouvertes.}}</translation>
 <translation id="1546280085599573572">Cette extension a modifié la page qui s'affiche lorsque vous cliquez sur le bouton Accueil.</translation>
@@ -1803,7 +1803,7 @@ Vous pouvez gérer les paramètres de ce compte en installant l'application Fami
 <translation id="2332742915001411729">Rétablir la valeur par défaut</translation>
 <translation id="2332948465534020594">Mode Ne pas déranger activé</translation>
 <translation id="2333166365943957309">Hiérarchie de l'IU</translation>
-<translation id="233471714539944337">Contenu confidentiel</translation>
+<translation id="233471714539944337">Contenu de nature délicate</translation>
 <translation id="2335111415680198280">{0,plural, =1{Fermer # fenêtre}one{Fermer # fenêtre}other{Fermer # fenêtres}}</translation>
 <translation id="2336228925368920074">Ajouter tous les onglets aux favoris…</translation>
 <translation id="2336381494582898602">Powerwash</translation>
@@ -4374,7 +4374,7 @@ Cela peut inclure des renseignements sur les fichiers, les logiciels installés,
 <translation id="4326484226728068206">Articles dans votre panier <ph name="DISCOUNT_TEXT" /> de <ph name="MERCHANT_NAME" />, <ph name="MERCHANT_DOMAIN" />, vus <ph name="RELATIVE_TIME" /></translation>
 <translation id="4330191372652740264">Eau glacée</translation>
 <translation id="4330387663455830245">Ne jamais traduire les pages rédigées en <ph name="LANGUAGE" /></translation>
-<translation id="4332976768901252016">Configurer les contrôles parentaux</translation>
+<translation id="4332976768901252016">Configurer les Contrôles parentaux</translation>
 <translation id="4333854382783149454">PKCS n° 1 SHA-1 avec chiffrement RSA</translation>
 <translation id="4334768748331667190">Vous ne verrez plus <ph name="MODULE_NAME" /></translation>
 <translation id="4335835283689002019">La navigation sécurisée est désactivée</translation>
@@ -6924,7 +6924,7 @@ Les autorisations que vous avez déjà accordées à des sites Web et à des app
 <translation id="6348805481186204412">Stockage hors ligne</translation>
 <translation id="6349101878882523185">Installer <ph name="APP_NAME" /></translation>
 <translation id="6350821834561350243">Décrivez clairement le problème et indiquez les étapes à suivre pour reproduire le problème (si possible)</translation>
-<translation id="6351178441572658285">Langues de l'application</translation>
+<translation id="6351178441572658285">Langues des applications</translation>
 <translation id="6354918092619878358">Courbe elliptique SECG secp256r1 (aussi appelée ANSI X9.62 prime256v1, NIST P-256)</translation>
 <translation id="635609604405270300">Laissez l'appareil allumé</translation>
 <translation id="63566973648609420">Seule une personne connaissant votre phrase de passe peut lire vos données chiffrées. Google ne reçoit pas la phrase de passe et ne la stocke pas. Si vous l'oubliez ou souhaitez modifier ce paramètre, vous devrez <ph name="BEGIN_LINK" />réinitialiser la synchronisation<ph name="END_LINK" />.</translation>

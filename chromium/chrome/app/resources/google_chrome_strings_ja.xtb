@@ -292,7 +292,7 @@
 <translation id="5795887333006832406"><ph name="PAGE_TITLE" /> - Google Chrome Canary</translation>
 <translation id="5804318322022881572">Chrome を起動できませんでした。もう一度お試しください。</translation>
 <translation id="5809516625706423866">インターネットに接続できません。HTTP 401 認証エラーが発生しました。プロキシ設定をご確認ください。</translation>
-<translation id="586971344380992563">安全でないサイトやダウンロードが見つかると <ph name="BEGIN_LINK" />Chrome が警告<ph name="END_LINK" /></translation>
+<translation id="586971344380992563">安全でないサイトやダウンロードが見つかると <ph name="BEGIN_LINK" />Chrome が警告<ph name="END_LINK" />します</translation>
 <translation id="5895138241574237353">再起動</translation>
 <translation id="5903106910045431592"><ph name="PAGE_TITLE" /> - ネットワークにログイン</translation>
 <translation id="5924017743176219022">インターネットに接続しています…</translation>
@@ -362,7 +362,7 @@
 
 これまでにウェブサイトやアプリに許可した権限がこのアカウントに適用される可能性があります。Google アカウントは [<ph name="SETTINGS_LINK_BEGIN" />設定<ph name="SETTINGS_LINK_END" />] で管理できます。</translation>
 <translation id="7071827361006050863">Chrome でまもなく閲覧データが削除されます</translation>
-<translation id="7085332316435785646">Chrome の履歴を含めて、Google サービスのパーソナライズに使用するかどうかを選択してください</translation>
+<translation id="7085332316435785646">Chrome の履歴などを Google サービスのパーソナライズに使用するかどうかを選択します</translation>
 <translation id="7088681679121566888">Chrome は最新の状態です</translation>
 <translation id="7098166902387133879">Google Chrome がマイクを使用しています。</translation>
 <translation id="7099479769133613710">再起動して Chrome OS を更新</translation>

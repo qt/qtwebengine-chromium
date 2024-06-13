@@ -304,15 +304,15 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling V8
   # and whatever else without interference from each other.
-  'src_internal_revision': '7fc4ce6df0f371813243d08165e0bb592c9c6fcf',
+  'src_internal_revision': '06f0024970ce94d544bf4eb7d978c78ee6a3710e',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling Skia
   # and whatever else without interference from each other.
-  'skia_revision': 'c6835e2d5ff641dad9347ce4c2ff79dbc29cf9aa',
+  'skia_revision': '8464f41cf051974e499be9caeab3243506e025c2',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling V8
   # and whatever else without interference from each other.
-  'v8_revision': '7ca8cf1710353b309b30a27873709a2500585ad0',
+  'v8_revision': '81a842ace8174c3b275f13410077053878ac576d',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling ANGLE
   # and whatever else without interference from each other.
@@ -399,7 +399,7 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling devtools-frontend
   # and whatever else without interference from each other.
-  'devtools_frontend_revision': 'e4d13b251b100b3fdd0c846b94453c0597bc251f',
+  'devtools_frontend_revision': '3fa1fc736f46022f45c7ba7d817d1df1519c55d7',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling libprotobuf-mutator
   # and whatever else without interference from each other.
@@ -423,7 +423,7 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling feed
   # and whatever else without interference from each other.
-  'dawn_revision': '8917c648bdd68007c96b8ca9995533cc3ee995c2',
+  'dawn_revision': '6a6719ee09f1078356fdd31c69061e07b5c61c2d',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling feed
   # and whatever else without interference from each other.
@@ -823,7 +823,7 @@ deps = {
 
   'src/clank': {
     'url': Var('chrome_git') + '/clank/internal/apps.git' + '@' +
-    '5563dfe6fe203c74d7bfff0f0d79c761eba5719a',
+    '80bc9723fd35dab54ff7357971c54e1dea57fa14',
     'condition': 'checkout_android and checkout_src_internal',
   },
 
@@ -1201,7 +1201,7 @@ deps = {
     Var('chromium_git') + '/devtools/devtools-frontend' + '@' + Var('devtools_frontend_revision'),
 
   'src/third_party/devtools-frontend-internal': {
-      'url': Var('chrome_git') + '/devtools/devtools-internal.git' + '@' + 'fcb03cd96f26f08a173b609b952ea6bca095fa72',
+      'url': Var('chrome_git') + '/devtools/devtools-internal.git' + '@' + '183cd7cdc7d15d4f68aa723e359f12b8cca1836c',
     'condition': 'checkout_src_internal',
   },
 
@@ -1361,7 +1361,7 @@ deps = {
     Var('chromium_git') + '/chromium/deps/hunspell_dictionaries.git' + '@' + '41cdffd71c9948f63c7ad36e1fb0ff519aa7a37e',
 
   'src/third_party/icu':
-    Var('chromium_git') + '/chromium/deps/icu.git' + '@' + 'a622de35ac311c5ad390a7af80724634e5dc61ed',
+    Var('chromium_git') + '/chromium/deps/icu.git' + '@' + 'bad7ddbf921358177e56fd723c2f59f8041a370f',
 
   'src/third_party/icu4j': {
       'packages': [
@@ -1529,7 +1529,7 @@ deps = {
   },
 
   'src/third_party/libvpx/source/libvpx':
-    Var('chromium_git') + '/webm/libvpx.git' + '@' +  'b95d17572629c676bdcfd535fb3990b9f6f8fb11',
+    Var('chromium_git') + '/webm/libvpx.git' + '@' +  '893c9f6d070cc3bd8503152480089673f57fdf76',
 
   'src/third_party/libwebm/source':
     Var('chromium_git') + '/webm/libwebm.git' + '@' + 'e4fbea0c9751ae8aa86629b197a28d8276a2b0da',
@@ -1846,7 +1846,7 @@ deps = {
     Var('chromium_git') + '/external/github.com/gpuweb/cts.git' + '@' + 'e082b08475761a2ba6a3349dfea72f704c8b68d4',
 
   'src/third_party/webrtc':
-    Var('webrtc_git') + '/src.git' + '@' + 'be2786cd2383b7ec5d158add166275d19e246763',
+    Var('webrtc_git') + '/src.git' + '@' + '6b419a0536b1a0ccfff3682f997c6f19bcbd9bd8',
 
   # Wuffs' canonical repository is at github.com/google/wuffs, but we use
   # Skia's mirror of Wuffs, the same as in upstream Skia's DEPS file.
@@ -2013,7 +2013,7 @@ deps = {
     'packages': [
       {
         'package': 'chromeos_internal/apps/projector_app/app',
-        'version': 'je0l3f95yPXSEJdiw4B20oNpQ4qtxwkdWYRdPDyt3MUC',
+        'version': 'k0tBkMFkaeRwdZs2rPsruaUAcqkzDYLPdYjphyGRYuoC',
       },
     ],
     'condition': 'checkout_chromeos and checkout_src_internal',
@@ -4009,7 +4009,7 @@ deps = {
 
   'src/ios_internal':  {
       'url': Var('chrome_git') + '/chrome/ios_internal.git' + '@' +
-        '448586e33e09467fc54287f4ac6149426bc250b2',
+        '17bfc2b648dfb9a48082c575d0f96f64806c3986',
       'condition': 'checkout_ios and checkout_src_internal',
   },
 
@@ -4944,6 +4944,7 @@ hooks = [
                 'src/third_party/perfetto/tools/test_data',
                 '--dir',
                 'src/base/tracing/test/data',
+                '--overwrite',
                 'download',
     ],
   },

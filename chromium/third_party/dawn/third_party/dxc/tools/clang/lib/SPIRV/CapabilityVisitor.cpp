@@ -718,6 +718,10 @@ bool CapabilityVisitor::visit(SpirvExecutionMode *execMode) {
     addExtension(Extension::EXT_shader_stencil_export,
                  "[[vk::stencil_ref_less_equal_back]]", execModeSourceLocation);
     break;
+  case spv::ExecutionMode::MaximallyReconvergesKHR:
+    addExtension(Extension::KHR_maximal_reconvergence, "",
+                 execModeSourceLocation);
+    break;
   default:
     break;
   }
@@ -877,6 +881,10 @@ bool CapabilityVisitor::visit(SpirvModule *, Visitor::Phase phase) {
     addExtensionAndCapabilitiesIfEnabled(Extension::KHR_ray_tracing,
                                          {spv::Capability::RayTracingKHR});
   }
+
+  addExtensionAndCapabilitiesIfEnabled(
+      Extension::KHR_vulkan_memory_model,
+      {spv::Capability::VulkanMemoryModelDeviceScope});
 
   return true;
 }

@@ -1810,9 +1810,8 @@ void CGMSHLSLRuntime::AddHLSLFunctionInfo(Function *F, const FunctionDecl *FD) {
   }
 
   if (const HLSLWaveSizeAttr *Attr = FD->getAttr<HLSLWaveSizeAttr>()) {
-    funcProps->waveMinSize = Attr->getMin();
-    funcProps->waveMaxSize = Attr->getMax();
-    funcProps->wavePreferredSize = Attr->getPreferred();
+    funcProps->WaveSize = DxilWaveSize::Translate(
+        Attr->getMin(), Attr->getMax(), Attr->getPreferred());
   }
 
   // Node shader
@@ -2621,8 +2620,10 @@ void CGMSHLSLRuntime::AddHLSLNodeRecordTypeInfo(
         }
 
         // Ex: For DispatchNodeInputRecord<MY_RECORD>, set size =
-        // size(MY_RECORD)
+        // size(MY_RECORD), alignment = alignof(MY_RECORD)
         node.RecordType.size = CGM.getDataLayout().getTypeAllocSize(Type);
+        node.RecordType.alignment =
+            CGM.getDataLayout().getABITypeAlignment(Type);
         // Iterate over fields of the MY_RECORD(example) struct
         for (auto fieldDecl : RD->fields()) {
           // Check if any of the fields have a semantic annotation =
