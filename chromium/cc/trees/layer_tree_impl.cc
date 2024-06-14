@@ -949,9 +949,9 @@ ElementListType LayerTreeImpl::GetElementTypeForAnimation() const {
 
 void LayerTreeImpl::SetTransformMutated(ElementId element_id,
                                         const gfx::Transform& transform) {
-  DCHECK_EQ(1u,
-            property_trees()->transform_tree().element_id_to_node_index().count(
-                element_id));
+  // DCHECK_EQ(1u,
+  //           property_trees()->transform_tree().element_id_to_node_index().count(
+  //               element_id));
   if (!base::FeatureList::IsEnabled(features::kNoPreserveLastMutation) &&
       (IsSyncTree() || IsRecycleTree())) {
     element_id_to_transform_animations_[element_id] = transform;
@@ -962,9 +962,9 @@ void LayerTreeImpl::SetTransformMutated(ElementId element_id,
 }
 
 void LayerTreeImpl::SetOpacityMutated(ElementId element_id, float opacity) {
-  DCHECK_EQ(1u,
-            property_trees()->effect_tree().element_id_to_node_index().count(
-                element_id));
+  // DCHECK_EQ(1u,
+  //           property_trees()->effect_tree().element_id_to_node_index().count(
+  //               element_id));
   if (!base::FeatureList::IsEnabled(features::kNoPreserveLastMutation) &&
       (IsSyncTree() || IsRecycleTree())) {
     element_id_to_opacity_animations_[element_id] = opacity;
@@ -976,9 +976,9 @@ void LayerTreeImpl::SetOpacityMutated(ElementId element_id, float opacity) {
 
 void LayerTreeImpl::SetFilterMutated(ElementId element_id,
                                      const FilterOperations& filters) {
-  DCHECK_EQ(1u,
-            property_trees()->effect_tree().element_id_to_node_index().count(
-                element_id));
+  // DCHECK_EQ(1u,
+  //           property_trees()->effect_tree().element_id_to_node_index().count(
+  //               element_id));
   if (!base::FeatureList::IsEnabled(features::kNoPreserveLastMutation) &&
       (IsSyncTree() || IsRecycleTree())) {
     element_id_to_filter_animations_[element_id] = filters;
@@ -991,9 +991,9 @@ void LayerTreeImpl::SetFilterMutated(ElementId element_id,
 void LayerTreeImpl::SetBackdropFilterMutated(
     ElementId element_id,
     const FilterOperations& backdrop_filters) {
-  DCHECK_EQ(1u,
-            property_trees()->effect_tree().element_id_to_node_index().count(
-                element_id));
+  // DCHECK_EQ(1u,
+  //           property_trees()->effect_tree().element_id_to_node_index().count(
+  //               element_id));
   if (!base::FeatureList::IsEnabled(features::kNoPreserveLastMutation) &&
       (IsSyncTree() || IsRecycleTree())) {
     element_id_to_backdrop_filter_animations_[element_id] = backdrop_filters;

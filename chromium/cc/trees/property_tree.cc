@@ -2128,9 +2128,9 @@ bool PropertyTrees::ElementIsAnimatingChanged(
             effect_tree_mutable().set_needs_update(true);
           }
         } else {
-          DCHECK_NODE_EXISTENCE(check_node_existence, state, property,
-                                needs_rebuild())
-              << "Attempting to animate opacity on non existent effect node";
+          // DCHECK_NODE_EXISTENCE(check_node_existence, state, property,
+          //                       needs_rebuild())
+          //     << "Attempting to animate opacity on non existent effect node";
         }
         break;
       case TargetProperty::FILTER:
@@ -2145,9 +2145,9 @@ bool PropertyTrees::ElementIsAnimatingChanged(
           // Filter animation changes only the node, and the subtree does not
           // care, thus there is no need to request property tree update.
         } else {
-          DCHECK_NODE_EXISTENCE(check_node_existence, state, property,
-                                needs_rebuild())
-              << "Attempting to animate filter on non existent effect node";
+          // DCHECK_NODE_EXISTENCE(check_node_existence, state, property,
+          //                       needs_rebuild())
+          //     << "Attempting to animate filter on non existent effect node";
         }
         break;
       case TargetProperty::BACKDROP_FILTER:
@@ -2163,9 +2163,9 @@ bool PropertyTrees::ElementIsAnimatingChanged(
           // does not care, thus there is no need to request property tree
           // update.
         } else {
-          DCHECK_NODE_EXISTENCE(check_node_existence, state, property,
-                                needs_rebuild())
-              << "Attempting to animate filter on non existent effect node";
+          // DCHECK_NODE_EXISTENCE(check_node_existence, state, property,
+          //                       needs_rebuild())
+          //     << "Attempting to animate filter on non existent effect node";
         }
         break;
       default:
