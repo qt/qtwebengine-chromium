@@ -574,7 +574,7 @@ void NinjaCBinaryTargetWriter::WriteLinkerStuff(
          << Tool::GetToolTypeForTargetFinalOutput(target_);
   } else {
     out_ << " ";
-    WriteOutputs(OutputFile(target_->label().name() + ".stamp");
+    WriteOutput(OutputFile(target_->label().name() + ".stamp"));
     out_ << ": " << rule_prefix_;
     out_ << GeneralTool::kGeneralToolStamp << " |";
   }
