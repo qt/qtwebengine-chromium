@@ -4,6 +4,7 @@
 
 #include "services/network/public/cpp/corb/orb_impl.h"
 
+#include "base/check.h"
 #include "base/containers/contains.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/rand_util.h"
@@ -202,8 +203,10 @@ bool IsOpaqueResponse(const absl::optional<url::Origin>& request_initiator,
 }  // namespace
 
 OpaqueResponseBlockingAnalyzer::OpaqueResponseBlockingAnalyzer(
-    PerFactoryState& state)
-    : per_factory_state_(&state) {}
+    PerFactoryState* state)
+    : per_factory_state_(*state) {
+  CHECK(state);
+}
 
 OpaqueResponseBlockingAnalyzer::~OpaqueResponseBlockingAnalyzer() {
   // TODO(https://crbug.com/1178928): Add UMA tracking the size of ORB state
