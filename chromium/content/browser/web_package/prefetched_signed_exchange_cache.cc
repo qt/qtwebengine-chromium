@@ -4,8 +4,11 @@
 
 #include "content/browser/web_package/prefetched_signed_exchange_cache.h"
 
+#include <utility>
+
 #include "base/base64.h"
 #include "base/feature_list.h"
+#include "base/memory/ref_counted.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/notreached.h"
 #include "base/observer_list.h"
@@ -257,7 +260,8 @@ class PrefetchedNavigationLoaderInterceptor
 
     // Okay to use separate/empty CORB/ORB state for each navigation request.
     // (Because CORB doesn't apply to navigation requests.)
-    network::corb::PerFactoryState empty_corb_state;
+    auto empty_corb_state = base::MakeRefCounted<
+        base::RefCountedData<network::corb::PerFactoryState>>();
 
     mojo::MakeSelfOwnedReceiver(
         std::make_unique<SignedExchangeInnerResponseURLLoader>(
@@ -265,7 +269,7 @@ class PrefetchedNavigationLoaderInterceptor
             std::make_unique<const storage::BlobDataHandle>(
                 *exchange_->blob_data_handle()),
             *exchange_->completion_status(), std::move(client),
-            true /* is_navigation_request */, empty_corb_state),
+            true /* is_navigation_request */, std::move(empty_corb_state)),
         std::move(receiver));
   }
 

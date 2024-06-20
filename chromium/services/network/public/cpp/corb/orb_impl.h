@@ -6,7 +6,7 @@
 #define SERVICES_NETWORK_PUBLIC_CPP_CORB_ORB_IMPL_H_
 
 #include "base/component_export.h"
-#include "base/memory/raw_ptr.h"
+#include "base/memory/raw_ref.h"
 #include "services/network/public/cpp/corb/corb_api.h"
 #include "services/network/public/mojom/fetch_api.mojom.h"
 #include "services/network/public/mojom/url_response_head.mojom-forward.h"
@@ -24,7 +24,10 @@ namespace corb {
 class COMPONENT_EXPORT(NETWORK_CPP) OpaqueResponseBlockingAnalyzer final
     : public ResponseAnalyzer {
  public:
-  explicit OpaqueResponseBlockingAnalyzer(PerFactoryState& state);
+  // The caller needs to guarantee that `state`'s lifetime is at least as long
+  // as the lifetime of `OpaqueResponseBlockingAnalyzer`.  `state` needs to be
+  // non-null.
+  explicit OpaqueResponseBlockingAnalyzer(PerFactoryState* state);
 
   OpaqueResponseBlockingAnalyzer(const OpaqueResponseBlockingAnalyzer&) =
       delete;
@@ -85,12 +88,7 @@ class COMPONENT_EXPORT(NETWORK_CPP) OpaqueResponseBlockingAnalyzer final
   bool is_empty_response_ = false;
 
   // Remembering which past requests sniffed as media.  Never null.
-  // TODO(lukasza): Replace with raw_ref<T> or nonnull_raw_ptr<T> once
-  // available.
-  // This dangling raw_ptr occurred in:
-  // content_browsertests: SignedExchangeSubresourcePrefetchBrowserTest.CORS
-  // https://ci.chromium.org/ui/p/chromium/builders/try/mac-rel/1416613/test-results?q=ExactID%3Aninja%3A%2F%2Fcontent%2Ftest%3Acontent_browsertests%2FSignedExchangeSubresourcePrefetchBrowserTest.CORS+VHash%3Ae04c2114e5be4931
-  raw_ptr<PerFactoryState, FlakyDanglingUntriaged> per_factory_state_;
+  raw_ref<PerFactoryState> per_factory_state_;
 
   BlockingDecisionReason blocking_decision_reason_ =
       BlockingDecisionReason::kInvalid;
