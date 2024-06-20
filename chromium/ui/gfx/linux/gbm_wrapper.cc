@@ -399,8 +399,16 @@ class Device final : public ui::GbmDevice {
 
     int gbm_flags = 0;
     if ((gbm_flags = GetSupportedGbmFlags(format)) == 0) {
+#if defined(MINIGBM) || !BUILDFLAG(IS_QTWEBENGINE)
       LOG(ERROR) << "gbm format not supported: " << format;
       return nullptr;
+#else
+      // FIXME: Remove this when Mesa bug gets fixed:
+      // https://gitlab.freedesktop.org/mesa/mesa/-/issues/10165
+      // This workaround is necessary for VA-API with Vulkan backend.
+      // Based on https://crrev.com/c/5040560
+      LOG(WARNING) << "gbm format not supported: " << format;
+#endif
     }
 
     struct gbm_import_fd_modifier_data fd_data;
