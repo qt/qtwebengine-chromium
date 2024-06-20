@@ -1628,6 +1628,10 @@ bool hasDynamicVectorIndexing(Value *V) {
         }
       }
     }
+    // Also recursively check the uses of this User to find a possible
+    // dynamically indexed GEP of this GEP.
+    if (hasDynamicVectorIndexing(U))
+      return true;
   }
   return false;
 }
