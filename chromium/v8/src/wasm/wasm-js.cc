@@ -3351,43 +3351,61 @@ void WasmJs::Install(Isolate* isolate, bool exposed_on_global_object) {
   const auto enabled_features = wasm::WasmFeatures::FromFlags();
 
   if (enabled_features.has_type_reflection()) {
-#define INSTANCE_PROTO_HANDLE(Name) \
-  handle(JSObject::cast(native_context->Name()->instance_prototype()), isolate)
-    InstallFunc(isolate, INSTANCE_PROTO_HANDLE(wasm_table_constructor), "type",
-                WebAssemblyTableType, 0, false, NONE,
-                SideEffectType::kHasNoSideEffect);
-    InstallFunc(isolate, INSTANCE_PROTO_HANDLE(wasm_memory_constructor), "type",
-                WebAssemblyMemoryType, 0, false, NONE,
-                SideEffectType::kHasNoSideEffect);
-    InstallFunc(isolate, INSTANCE_PROTO_HANDLE(wasm_global_constructor), "type",
-                WebAssemblyGlobalType, 0, false, NONE,
-                SideEffectType::kHasNoSideEffect);
-    InstallFunc(isolate, INSTANCE_PROTO_HANDLE(wasm_tag_constructor), "type",
-                WebAssemblyTagType, 0);
-#undef INSTANCE_PROTO_HANDLE
+    Handle<JSObject> table_proto(
+        JSObject::cast(native_context->wasm_table_constructor()->instance_prototype()),
+        isolate);
+    Handle<JSObject> global_proto(
+        JSObject::cast(native_context->wasm_global_constructor()->instance_prototype()),
+        isolate);
+    Handle<JSObject> memory_proto(
+        JSObject::cast(native_context->wasm_memory_constructor()->instance_prototype()),
+        isolate);
+    Handle<JSObject> tag_proto(
+        JSObject::cast(native_context->wasm_tag_constructor()->instance_prototype()),
+        isolate);
 
-    // Create the Function object.
-    Handle<JSFunction> function_constructor = InstallConstructorFunc(
-        isolate, webassembly, "Function", WebAssemblyFunction);
-    SetDummyInstanceTemplate(isolate, function_constructor);
-    JSFunction::EnsureHasInitialMap(function_constructor);
-    Handle<JSObject> function_proto(
-        JSObject::cast(function_constructor->instance_prototype()), isolate);
-    Handle<Map> function_map =
-        Map::Copy(isolate, isolate->sloppy_function_without_prototype_map(),
-                  "WebAssembly.Function");
-    CHECK(JSObject::SetPrototype(
-              isolate, function_proto,
-              handle(native_context->function_function()->prototype(), isolate),
-              false, kDontThrow)
-              .FromJust());
-    JSFunction::SetInitialMap(isolate, function_constructor, function_map,
-                              function_proto);
-    InstallFunc(isolate, function_proto, "type", WebAssemblyFunctionType, 0);
-    SimpleInstallFunction(isolate, function_proto, "bind",
-                          Builtin::kWebAssemblyFunctionPrototypeBind, 1, false);
-    // Make all exported functions an instance of {WebAssembly.Function}.
-    native_context->set_wasm_exported_function_map(*function_map);
+    // Ensure prototype objects are extensible, otherwise adding properties
+    // to them will fail. Extensibility of the `WebAssembly` object should
+    // already have been checked by the caller.
+    DCHECK(webassembly->map()->is_extensible());
+    if (table_proto->map()->is_extensible() &&
+        global_proto->map()->is_extensible() &&
+        memory_proto->map()->is_extensible() &&
+        tag_proto->map()->is_extensible()) {
+
+      // Checks are done, start installing the new fields.
+      InstallFunc(isolate, table_proto, "type", WebAssemblyTableType, 0, false,
+                  NONE, SideEffectType::kHasNoSideEffect);
+      InstallFunc(isolate, memory_proto, "type", WebAssemblyMemoryType, 0, false,
+                  NONE, SideEffectType::kHasNoSideEffect);
+      InstallFunc(isolate, global_proto, "type", WebAssemblyGlobalType, 0, false,
+                  NONE, SideEffectType::kHasNoSideEffect);
+      InstallFunc(isolate, tag_proto, "type", WebAssemblyTagType, 0, false, NONE,
+                  SideEffectType::kHasNoSideEffect);
+
+      // Create the Function object.
+      Handle<JSFunction> function_constructor = InstallConstructorFunc(
+          isolate, webassembly, "Function", WebAssemblyFunction);
+      SetDummyInstanceTemplate(isolate, function_constructor);
+      JSFunction::EnsureHasInitialMap(function_constructor);
+      Handle<JSObject> function_proto(
+          JSObject::cast(function_constructor->instance_prototype()), isolate);
+      Handle<Map> function_map =
+          Map::Copy(isolate, isolate->sloppy_function_without_prototype_map(),
+                    "WebAssembly.Function");
+      CHECK(JSObject::SetPrototype(
+                isolate, function_proto,
+                handle(native_context->function_function()->prototype(), isolate),
+                false, kDontThrow)
+                .FromJust());
+      JSFunction::SetInitialMap(isolate, function_constructor, function_map,
+                                function_proto);
+      InstallFunc(isolate, function_proto, "type", WebAssemblyFunctionType, 0);
+      SimpleInstallFunction(isolate, function_proto, "bind",
+                            Builtin::kWebAssemblyFunctionPrototypeBind, 1, false);
+      // Make all exported functions an instance of {WebAssembly.Function}.
+      native_context->set_wasm_exported_function_map(*function_map);
+    }
   }
 
   // Create the Suspender object.
