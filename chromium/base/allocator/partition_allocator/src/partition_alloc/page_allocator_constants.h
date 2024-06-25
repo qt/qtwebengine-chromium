@@ -123,7 +123,7 @@ PageAllocationGranularity() {
   }
   return size;
 #else
-  return 1 << PageAllocationGranularityShift();
+  return size_t(1) << PageAllocationGranularityShift();
 #endif
 }
 
