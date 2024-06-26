@@ -3438,13 +3438,17 @@ class RepresentationSelector {
               BigIntRef bigint = ref.AsBigInt();
               bool lossless = false;
               int64_t shift_amount = bigint.AsInt64(&lossless);
+              // We bail out if we cannot represent the shift amount correctly.
+              if (!lossless) return;
 
               // Canonicalize {shift_amount}.
               bool is_shift_left =
                   node->opcode() == IrOpcode::kSpeculativeBigIntShiftLeft;
               if (shift_amount < 0) {
+                if (shift_amount == std::numeric_limits<int64_t>::min()) return;
                 is_shift_left = !is_shift_left;
                 shift_amount = -shift_amount;
+                DCHECK_GT(shift_amount, 0);
               }
               DCHECK_GE(shift_amount, 0);
 
@@ -3458,7 +3462,7 @@ class RepresentationSelector {
                     UseInfo::CheckedBigIntTruncatingWord64(FeedbackSource{}),
                     UseInfo::Any(), MachineRepresentation::kWord64);
                 if (lower<T>()) {
-                  if (!lossless || shift_amount > 63) {
+                  if (shift_amount > 63) {
                     DeferReplacement(node, jsgraph_->Int64Constant(0));
                   } else if (shift_amount == 0) {
                     DeferReplacement(node, node->InputAt(0));
@@ -3479,7 +3483,7 @@ class RepresentationSelector {
                     UseInfo::CheckedBigIntTruncatingWord64(FeedbackSource{}),
                     UseInfo::Any(), MachineRepresentation::kWord64);
                 if (lower<T>()) {
-                  if (!lossless || shift_amount > 63) {
+                  if (shift_amount > 63) {
                     ReplaceWithPureNode(
                         node, graph()->NewNode(lowering->machine()->Word64Sar(),
                                                node->InputAt(0),
@@ -3503,7 +3507,7 @@ class RepresentationSelector {
                     UseInfo::CheckedBigIntTruncatingWord64(FeedbackSource{}),
                     UseInfo::Any(), MachineRepresentation::kWord64);
                 if (lower<T>()) {
-                  if (!lossless || shift_amount > 63) {
+                  if (shift_amount > 63) {
                     DeferReplacement(node, jsgraph_->Int64Constant(0));
                   } else if (shift_amount == 0) {
                     DeferReplacement(node, node->InputAt(0));
