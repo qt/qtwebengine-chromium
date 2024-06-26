@@ -1429,9 +1429,10 @@ void TransitiveTypeFeedbackProcessor::ProcessFunction(int func_index) {
   base::Vector<uint32_t> call_direct_targets =
       module_->type_feedback.feedback_for_function[func_index]
           .call_targets.as_vector();
-  DCHECK_EQ(feedback->length(), call_direct_targets.size() * 2);
-  FeedbackMaker fm(instance_data_, func_index, feedback->length() / 2);
-  for (int i = 0; i < feedback->length(); i += 2) {
+  int checked_feedback_length = feedback->length();
+  SBXCHECK_EQ(checked_feedback_length, call_direct_targets.size() * 2);
+  FeedbackMaker fm(instance_data_, func_index, checked_feedback_length / 2);
+  for (int i = 0; i < checked_feedback_length; i += 2) {
     Tagged<Object> value = feedback->get(i);
     if (IsWasmInternalFunction(value)) {
       // Monomorphic.
@@ -1440,7 +1441,9 @@ void TransitiveTypeFeedbackProcessor::ProcessFunction(int func_index) {
     } else if (IsFixedArray(value)) {
       // Polymorphic.
       Tagged<FixedArray> polymorphic = FixedArray::cast(value);
-      for (int j = 0; j < polymorphic->length(); j += 2) {
+      int checked_polymorphic_length = polymorphic->length();
+      SBXCHECK_LE(checked_polymorphic_length, 2 * kMaxPolymorphism);
+      for (int j = 0; j < checked_polymorphic_length; j += 2) {
         Tagged<Object> function = polymorphic->get(j);
         int count = Smi::cast(polymorphic->get(j + 1)).value();
         fm.AddCandidate(function, count);
