@@ -189,9 +189,6 @@ class V8_EXPORT_PRIVATE LocalIsolate final : private HiddenLocalFactory {
   base::Optional<WorkerThreadRuntimeCallStatsScope> rcs_scope_;
   RuntimeCallStats* runtime_call_stats_;
 #endif
-#ifdef V8_INTL_SUPPORT
-  std::string default_locale_;
-#endif
 };
 
 template <base::MutexSharedType kIsShared>
