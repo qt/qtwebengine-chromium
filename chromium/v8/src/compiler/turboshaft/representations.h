@@ -376,7 +376,7 @@ class WordRepresentation : public RegisterRepresentation {
   constexpr Enum value() const {
     return static_cast<Enum>(RegisterRepresentation::value());
   }
-  constexpr operator Enum() const { return value(); }
+  constexpr operator Enum() const { return WordRepresentation::value(); }
 
   constexpr uint64_t MaxUnsignedValue() const {
     switch (this->value()) {

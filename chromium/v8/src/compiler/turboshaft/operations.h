@@ -1333,13 +1333,13 @@ using WordBinopMask =
 
 namespace Opmask {
 using kWord32Sub =
-    WordBinopMask::For<WordBinopOp::Kind::kSub, WordRepresentation::Word32()>;
-using kWord32BitwiseAnd = WordBinopMask::For<WordBinopOp::Kind::kBitwiseAnd,
-                                             WordRepresentation::Word32()>;
+    OpMaskT<WordBinopOp, WordBinopMask::BuildMask(), WordBinopMask::EncodeValue(WordBinopOp::Kind::kSub, WordRepresentation::Word32())>;
+using kWord32BitwiseAnd =
+    OpMaskT<WordBinopOp, WordBinopMask::BuildMask(), WordBinopMask::EncodeValue(WordBinopOp::Kind::kBitwiseAnd, WordRepresentation::Word32())>;
 using kWord64Sub =
-    WordBinopMask::For<WordBinopOp::Kind::kSub, WordRepresentation::Word64()>;
-using kWord64BitwiseAnd = WordBinopMask::For<WordBinopOp::Kind::kBitwiseAnd,
-                                             WordRepresentation::Word64()>;
+    OpMaskT<WordBinopOp, WordBinopMask::BuildMask(), WordBinopMask::EncodeValue(WordBinopOp::Kind::kSub, WordRepresentation::Word64())>;
+using kWord64BitwiseAnd =
+    OpMaskT<WordBinopOp, WordBinopMask::BuildMask(), WordBinopMask::EncodeValue(WordBinopOp::Kind::kBitwiseAnd, WordRepresentation::Word64())>;
 }  // namespace Opmask
 
 struct FloatBinopOp : FixedArityOperationT<2, FloatBinopOp> {
@@ -1588,8 +1588,8 @@ using FloatUnaryMask = MaskBuilder<FloatUnaryOp, FIELD(FloatUnaryOp, kind),
                                    FIELD(FloatUnaryOp, rep)>;
 
 namespace Opmask {
-using kFloat64Abs = FloatUnaryMask::For<FloatUnaryOp::Kind::kAbs,
-                                        FloatRepresentation::Float64()>;
+using kFloat64Abs =
+    OpMaskT<FloatUnaryOp, FloatUnaryMask::BuildMask(), FloatUnaryMask::EncodeValue(FloatUnaryOp::Kind::kAbs, FloatRepresentation::Float64())>;
 }
 
 struct ShiftOp : FixedArityOperationT<2, ShiftOp> {
