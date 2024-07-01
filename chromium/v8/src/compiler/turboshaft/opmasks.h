@@ -147,36 +147,35 @@ using WordBinopMask =
 using WordBinopKindMask = MaskBuilder<WordBinopOp, FIELD(WordBinopOp, kind)>;
 
 using kWord32Add =
-    WordBinopMask::For<WordBinopOp::Kind::kAdd, WordRepresentation::Word32()>;
+    OpMaskT<WordBinopOp, WordBinopMask::BuildMask(), WordBinopMask::EncodeValue(WordBinopOp::Kind::kAdd, WordRepresentation::Word32())>;
 using kWord32Sub =
-    WordBinopMask::For<WordBinopOp::Kind::kSub, WordRepresentation::Word32()>;
+    OpMaskT<WordBinopOp, WordBinopMask::BuildMask(), WordBinopMask::EncodeValue(WordBinopOp::Kind::kSub, WordRepresentation::Word32())>;
 using kWord32Mul =
-    WordBinopMask::For<WordBinopOp::Kind::kMul, WordRepresentation::Word32()>;
+    OpMaskT<WordBinopOp, WordBinopMask::BuildMask(), WordBinopMask::EncodeValue(WordBinopOp::Kind::kMul, WordRepresentation::Word32())>;
 using kWord32SignedMulOverflownBits =
-    WordBinopMask::For<WordBinopOp::Kind::kSignedMulOverflownBits,
-                       WordRepresentation::Word32()>;
+    OpMaskT<WordBinopOp, WordBinopMask::BuildMask(), WordBinopMask::EncodeValue(WordBinopOp::Kind::kSignedMulOverflownBits, WordRepresentation::Word32())>;
 using kWord32UnsignedMulOverflownBits =
-    WordBinopMask::For<WordBinopOp::Kind::kUnsignedMulOverflownBits,
-                       WordRepresentation::Word32()>;
+    OpMaskT<WordBinopOp, WordBinopMask::BuildMask(), WordBinopMask::EncodeValue(WordBinopOp::Kind::kUnsignedMulOverflownBits, WordRepresentation::Word32())>;
 
-using kWord32BitwiseAnd = WordBinopMask::For<WordBinopOp::Kind::kBitwiseAnd,
-                                             WordRepresentation::Word32()>;
-using kWord32BitwiseOr = WordBinopMask::For<WordBinopOp::Kind::kBitwiseOr,
-                                            WordRepresentation::Word32()>;
-using kWord32BitwiseXor = WordBinopMask::For<WordBinopOp::Kind::kBitwiseXor,
-                                             WordRepresentation::Word32()>;
+using kWord32BitwiseAnd =
+    OpMaskT<WordBinopOp, WordBinopMask::BuildMask(), WordBinopMask::EncodeValue(WordBinopOp::Kind::kBitwiseAnd, WordRepresentation::Word32())>;
+using kWord32BitwiseOr =
+    OpMaskT<WordBinopOp, WordBinopMask::BuildMask(), WordBinopMask::EncodeValue(WordBinopOp::Kind::kBitwiseOr, WordRepresentation::Word32())>;
+using kWord32BitwiseXor =
+    OpMaskT<WordBinopOp, WordBinopMask::BuildMask(), WordBinopMask::EncodeValue(WordBinopOp::Kind::kBitwiseXor, WordRepresentation::Word32())>;
+
 using kWord64Add =
-    WordBinopMask::For<WordBinopOp::Kind::kAdd, WordRepresentation::Word64()>;
+    OpMaskT<WordBinopOp, WordBinopMask::BuildMask(), WordBinopMask::EncodeValue(WordBinopOp::Kind::kAdd, WordRepresentation::Word64())>;
 using kWord64Sub =
-    WordBinopMask::For<WordBinopOp::Kind::kSub, WordRepresentation::Word64()>;
+    OpMaskT<WordBinopOp, WordBinopMask::BuildMask(), WordBinopMask::EncodeValue(WordBinopOp::Kind::kSub, WordRepresentation::Word64())>;
 using kWord64Mul =
-    WordBinopMask::For<WordBinopOp::Kind::kMul, WordRepresentation::Word64()>;
-using kWord64BitwiseAnd = WordBinopMask::For<WordBinopOp::Kind::kBitwiseAnd,
-                                             WordRepresentation::Word64()>;
-using kWord64BitwiseOr = WordBinopMask::For<WordBinopOp::Kind::kBitwiseOr,
-                                            WordRepresentation::Word64()>;
-using kWord64BitwiseXor = WordBinopMask::For<WordBinopOp::Kind::kBitwiseXor,
-                                             WordRepresentation::Word64()>;
+    OpMaskT<WordBinopOp, WordBinopMask::BuildMask(), WordBinopMask::EncodeValue(WordBinopOp::Kind::kMul, WordRepresentation::Word64())>;
+using kWord64BitwiseAnd =
+    OpMaskT<WordBinopOp, WordBinopMask::BuildMask(), WordBinopMask::EncodeValue(WordBinopOp::Kind::kBitwiseAnd, WordRepresentation::Word64())>;
+using kWord64BitwiseOr =
+    OpMaskT<WordBinopOp, WordBinopMask::BuildMask(), WordBinopMask::EncodeValue(WordBinopOp::Kind::kBitwiseOr, WordRepresentation::Word64())>;
+using kWord64BitwiseXor =
+    OpMaskT<WordBinopOp, WordBinopMask::BuildMask(), WordBinopMask::EncodeValue(WordBinopOp::Kind::kBitwiseXor, WordRepresentation::Word64())>;
 
 using kBitwiseAnd = WordBinopKindMask::For<WordBinopOp::Kind::kBitwiseAnd>;
 using kBitwiseXor = WordBinopKindMask::For<WordBinopOp::Kind::kBitwiseXor>;
@@ -191,50 +190,49 @@ using kWord64ReverseBytes = WordUnaryMask::For<WordUnaryOp::Kind::kReverseBytes,
 using FloatUnaryMask = MaskBuilder<FloatUnaryOp, FIELD(FloatUnaryOp, kind),
                                    FIELD(FloatUnaryOp, rep)>;
 
-using kFloat32Negate = FloatUnaryMask::For<FloatUnaryOp::Kind::kNegate,
-                                           FloatRepresentation::Float32()>;
-using kFloat64Abs = FloatUnaryMask::For<FloatUnaryOp::Kind::kAbs,
-                                        FloatRepresentation::Float64()>;
-using kFloat64Negate = FloatUnaryMask::For<FloatUnaryOp::Kind::kNegate,
-                                           FloatRepresentation::Float64()>;
+using kFloat32Negate =
+    OpMaskT<FloatUnaryOp, FloatUnaryMask::BuildMask(), FloatUnaryMask::EncodeValue(FloatUnaryOp::Kind::kNegate, FloatRepresentation::Float32())>;
+
+using kFloat64Abs =
+    OpMaskT<FloatUnaryOp, FloatUnaryMask::BuildMask(), FloatUnaryMask::EncodeValue(FloatUnaryOp::Kind::kAbs, FloatRepresentation::Float64())>;
+using kFloat64Negate =
+    OpMaskT<FloatUnaryOp, FloatUnaryMask::BuildMask(), FloatUnaryMask::EncodeValue(FloatUnaryOp::Kind::kNegate, FloatRepresentation::Float64())>;
 
 using FloatBinopMask = MaskBuilder<FloatBinopOp, FIELD(FloatBinopOp, kind),
                                    FIELD(FloatBinopOp, rep)>;
 
-using kFloat32Sub = FloatBinopMask::For<FloatBinopOp::Kind::kSub,
-                                        FloatRepresentation::Float32()>;
-using kFloat32Mul = FloatBinopMask::For<FloatBinopOp::Kind::kMul,
-                                        FloatRepresentation::Float32()>;
-using kFloat64Sub = FloatBinopMask::For<FloatBinopOp::Kind::kSub,
-                                        FloatRepresentation::Float64()>;
-using kFloat64Mul = FloatBinopMask::For<FloatBinopOp::Kind::kMul,
-                                        FloatRepresentation::Float64()>;
+using kFloat32Sub =
+    OpMaskT<FloatBinopOp, FloatBinopMask::BuildMask(), FloatBinopMask::EncodeValue(FloatBinopOp::Kind::kSub, FloatRepresentation::Float32())>;
+
+using kFloat32Mul =
+    OpMaskT<FloatBinopOp, FloatBinopMask::BuildMask(), FloatBinopMask::EncodeValue(FloatBinopOp::Kind::kMul, FloatRepresentation::Float32())>;
+
+using kFloat64Sub =
+    OpMaskT<FloatBinopOp, FloatBinopMask::BuildMask(), FloatBinopMask::EncodeValue(FloatBinopOp::Kind::kSub, FloatRepresentation::Float64())>;
+
+using kFloat64Mul =
+    OpMaskT<FloatBinopOp, FloatBinopMask::BuildMask(), FloatBinopMask::EncodeValue(FloatBinopOp::Kind::kMul, FloatRepresentation::Float64())>;
 
 using ShiftMask =
     MaskBuilder<ShiftOp, FIELD(ShiftOp, kind), FIELD(ShiftOp, rep)>;
 using ShiftKindMask = MaskBuilder<ShiftOp, FIELD(ShiftOp, kind)>;
 
 using kWord32ShiftLeft =
-    ShiftMask::For<ShiftOp::Kind::kShiftLeft, WordRepresentation::Word32()>;
+    OpMaskT<ShiftOp, ShiftMask::BuildMask(), ShiftMask::EncodeValue(ShiftOp::Kind::kShiftLeft, WordRepresentation::Word32())>;
 using kWord32ShiftRightArithmetic =
-    ShiftMask::For<ShiftOp::Kind::kShiftRightArithmetic,
-                   WordRepresentation::Word32()>;
+    OpMaskT<ShiftOp, ShiftMask::BuildMask(), ShiftMask::EncodeValue(ShiftOp::Kind::kShiftRightArithmetic, WordRepresentation::Word32())>;
 using kWord32ShiftRightArithmeticShiftOutZeros =
-    ShiftMask::For<ShiftOp::Kind::kShiftRightArithmeticShiftOutZeros,
-                   WordRepresentation::Word32()>;
+    OpMaskT<ShiftOp, ShiftMask::BuildMask(), ShiftMask::EncodeValue(ShiftOp::Kind::kShiftRightArithmeticShiftOutZeros, WordRepresentation::Word32())>;
 using kWord32ShiftRightLogical =
-    ShiftMask::For<ShiftOp::Kind::kShiftRightLogical,
-                   WordRepresentation::Word32()>;
+    OpMaskT<ShiftOp, ShiftMask::BuildMask(), ShiftMask::EncodeValue(ShiftOp::Kind::kShiftRightLogical, WordRepresentation::Word32())>;
 using kWord32RotateRight =
-    ShiftMask::For<ShiftOp::Kind::kRotateRight, WordRepresentation::Word32()>;
+    OpMaskT<ShiftOp, ShiftMask::BuildMask(), ShiftMask::EncodeValue(ShiftOp::Kind::kRotateRight, WordRepresentation::Word32())>;
 using kWord64ShiftLeft =
-    ShiftMask::For<ShiftOp::Kind::kShiftLeft, WordRepresentation::Word64()>;
+    OpMaskT<ShiftOp, ShiftMask::BuildMask(), ShiftMask::EncodeValue(ShiftOp::Kind::kShiftLeft, WordRepresentation::Word32())>;
 using kWord64ShiftRightArithmetic =
-    ShiftMask::For<ShiftOp::Kind::kShiftRightArithmetic,
-                   WordRepresentation::Word64()>;
+    OpMaskT<ShiftOp, ShiftMask::BuildMask(), ShiftMask::EncodeValue(ShiftOp::Kind::kShiftRightArithmetic, WordRepresentation::Word64())>;
 using kWord64ShiftRightLogical =
-    ShiftMask::For<ShiftOp::Kind::kShiftRightLogical,
-                   WordRepresentation::Word64()>;
+    OpMaskT<ShiftOp, ShiftMask::BuildMask(), ShiftMask::EncodeValue(ShiftOp::Kind::kShiftRightLogical, WordRepresentation::Word64())>;
 using kShiftLeft = ShiftKindMask::For<ShiftOp::Kind::kShiftLeft>;
 
 using ConstantMask = MaskBuilder<ConstantOp, FIELD(ConstantOp, kind)>;
@@ -251,10 +249,11 @@ using kProjection1 = ProjectionMask::For<1>;
 using ComparisonMask = MaskBuilder<ComparisonOp, FIELD(ComparisonOp, kind),
                                    FIELD(ComparisonOp, rep)>;
 
-using kWord32Equal = ComparisonMask::For<ComparisonOp::Kind::kEqual,
-                                         WordRepresentation::Word32()>;
-using kWord64Equal = ComparisonMask::For<ComparisonOp::Kind::kEqual,
-                                         WordRepresentation::Word64()>;
+using kWord32Equal =
+    OpMaskT<ComparisonOp, ComparisonMask::BuildMask(), ComparisonMask::EncodeValue(ComparisonOp::Kind::kEqual, WordRepresentation::Word32())>;
+
+using kWord64Equal =
+    OpMaskT<ComparisonOp, ComparisonMask::BuildMask(), ComparisonMask::EncodeValue(ComparisonOp::Kind::kEqual, WordRepresentation::Word64())>;
 using ComparisonKindMask = MaskBuilder<ComparisonOp, FIELD(ComparisonOp, kind)>;
 using kComparisonEqual = ComparisonKindMask::For<ComparisonOp::Kind::kEqual>;
 
@@ -262,41 +261,35 @@ using ChangeOpMask =
     MaskBuilder<ChangeOp, FIELD(ChangeOp, kind), FIELD(ChangeOp, assumption),
                 FIELD(ChangeOp, from), FIELD(ChangeOp, to)>;
 
-using kChangeInt32ToInt64 = ChangeOpMask::For<
-    ChangeOp::Kind::kSignExtend, ChangeOp::Assumption::kNoAssumption,
-    RegisterRepresentation::Word32(), RegisterRepresentation::Word64()>;
-using kChangeUint32ToUint64 = ChangeOpMask::For<
-    ChangeOp::Kind::kZeroExtend, ChangeOp::Assumption::kNoAssumption,
-    RegisterRepresentation::Word32(), RegisterRepresentation::Word64()>;
-using kFloat64ExtractHighWord32 = ChangeOpMask::For<
-    ChangeOp::Kind::kExtractHighHalf, ChangeOp::Assumption::kNoAssumption,
-    RegisterRepresentation::Float64(), RegisterRepresentation::Word32()>;
+using kChangeInt32ToInt64 =
+    OpMaskT<ChangeOp, ChangeOpMask::BuildMask(), ChangeOpMask::EncodeValue(ChangeOp::Kind::kSignExtend, ChangeOp::Assumption::kNoAssumption,
+                                                                           RegisterRepresentation::Word32(), RegisterRepresentation::Word64())>;
+using kChangeUint32ToUint64 =
+    OpMaskT<ChangeOp, ChangeOpMask::BuildMask(), ChangeOpMask::EncodeValue(ChangeOp::Kind::kZeroExtend, ChangeOp::Assumption::kNoAssumption,
+                                                                           RegisterRepresentation::Word32(), RegisterRepresentation::Word64())>;
+using kFloat64ExtractHighWord32 =
+    OpMaskT<ChangeOp, ChangeOpMask::BuildMask(), ChangeOpMask::EncodeValue(ChangeOp::Kind::kExtractHighHalf, ChangeOp::Assumption::kNoAssumption,
+                                                                           RegisterRepresentation::Float64(), RegisterRepresentation::Word32())>;
 using kTruncateFloat64ToInt64OverflowToMin =
-    ChangeOpMask::For<ChangeOp::Kind::kSignedFloatTruncateOverflowToMin,
-                      ChangeOp::Assumption::kNoAssumption,
-                      RegisterRepresentation::Float64(),
-                      RegisterRepresentation::Word64()>;
+    OpMaskT<ChangeOp, ChangeOpMask::BuildMask(), ChangeOpMask::EncodeValue(ChangeOp::Kind::kSignedFloatTruncateOverflowToMin, ChangeOp::Assumption::kNoAssumption,
+                                                                           RegisterRepresentation::Float64(), RegisterRepresentation::Word64())>;
 using kTruncateFloat32ToInt32OverflowToMin =
-    ChangeOpMask::For<ChangeOp::Kind::kSignedFloatTruncateOverflowToMin,
-                      ChangeOp::Assumption::kNoAssumption,
-                      RegisterRepresentation::Float32(),
-                      RegisterRepresentation::Word32()>;
+    OpMaskT<ChangeOp, ChangeOpMask::BuildMask(), ChangeOpMask::EncodeValue(ChangeOp::Kind::kSignedFloatTruncateOverflowToMin, ChangeOp::Assumption::kNoAssumption,
+                                                                           RegisterRepresentation::Float32(), RegisterRepresentation::Word32())>;
 using kTruncateFloat32ToUint32OverflowToMin =
-    ChangeOpMask::For<ChangeOp::Kind::kUnsignedFloatTruncateOverflowToMin,
-                      ChangeOp::Assumption::kNoAssumption,
-                      RegisterRepresentation::Float32(),
-                      RegisterRepresentation::Word32()>;
+    OpMaskT<ChangeOp, ChangeOpMask::BuildMask(), ChangeOpMask::EncodeValue(ChangeOp::Kind::kUnsignedFloatTruncateOverflowToMin, ChangeOp::Assumption::kNoAssumption,
+                                                                           RegisterRepresentation::Float32(), RegisterRepresentation::Word32())>;
 
-using kTruncateWord64ToWord32 = ChangeOpMask::For<
-    ChangeOp::Kind::kTruncate, ChangeOp::Assumption::kNoAssumption,
-    RegisterRepresentation::Word64(), RegisterRepresentation::Word32()>;
+using kTruncateWord64ToWord32 =
+    OpMaskT<ChangeOp, ChangeOpMask::BuildMask(), ChangeOpMask::EncodeValue(ChangeOp::Kind::kTruncate, ChangeOp::Assumption::kNoAssumption,
+                                                                           RegisterRepresentation::Word64(), RegisterRepresentation::Word32())>;
 
 using OverflowCheckedBinopMask =
     MaskBuilder<OverflowCheckedBinopOp, FIELD(OverflowCheckedBinopOp, kind),
                 FIELD(OverflowCheckedBinopOp, rep)>;
 using kOverflowCheckedWord32Add =
-    OverflowCheckedBinopMask::For<OverflowCheckedBinopOp::Kind::kSignedAdd,
-                                  WordRepresentation::Word32()>;
+    OpMaskT<OverflowCheckedBinopOp, OverflowCheckedBinopMask::BuildMask(), OverflowCheckedBinopMask::EncodeValue(OverflowCheckedBinopOp::Kind::kSignedAdd,
+                                                                                                                 WordRepresentation::Word32())>;
 
 using TaggedBitcastMask =
     MaskBuilder<TaggedBitcastOp, FIELD(TaggedBitcastOp, from),
