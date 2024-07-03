@@ -448,6 +448,10 @@ void DisplayLockDocumentState::IssueForcedRenderWarning(Element* element) {
   // Note that this is a verbose level message, since it can happen
   // frequently and is not necessarily a problem if the developer is
   // accessing content-visibility: hidden subtrees intentionally.
+  if (!RuntimeEnabledFeatures::WarnOnContentVisibilityRenderAccessEnabled()) {
+    return;
+  }
+
   if (forced_render_warnings_ < kMaxConsoleMessages) {
     forced_render_warnings_++;
     auto level =
