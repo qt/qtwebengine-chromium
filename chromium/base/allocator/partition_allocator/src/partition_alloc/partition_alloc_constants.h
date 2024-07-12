@@ -312,7 +312,9 @@ PA_DEFINE_OPERATORS_FOR_FLAGS(PoolHandleMask);
 // When pointer compression is enabled, we cannot use large pools (at most
 // 8GB for each of the glued pools).
 #if PA_BUILDFLAG(HAS_64_BIT_POINTERS)
-#if PA_BUILDFLAG(IS_ANDROID) || PA_BUILDFLAG(IS_IOS) || \
+#if PA_BUILDFLAG(IS_IOS)
+constexpr size_t kPoolMaxSize = 1 * kGiB;
+#elif PA_BUILDFLAG(IS_ANDROID) || \
     PA_BUILDFLAG(ENABLE_POINTER_COMPRESSION)
 constexpr size_t kPoolMaxSize = 8 * kGiB;
 #else
