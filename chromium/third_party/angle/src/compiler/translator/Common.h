@@ -13,6 +13,7 @@
 #include <sstream>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "common/angleutils.h"
@@ -90,6 +91,22 @@ class TUnorderedMap : public std::unordered_map<K, D, H, CMP, pool_allocator<std
     TUnorderedMap(const tAllocator &a)
         : std::unordered_map<K, D, H, CMP, tAllocator>(
               std::unordered_map<K, D, H, CMP, tAllocator>::key_compare(),
+              a)
+    {}
+};
+
+template <class K, class H = std::hash<K>, class CMP = std::equal_to<K>>
+class TUnorderedSet : public std::unordered_set<K, H, CMP, pool_allocator<K>>
+{
+  public:
+    POOL_ALLOCATOR_NEW_DELETE
+    typedef pool_allocator<K> tAllocator;
+
+    TUnorderedSet() : std::unordered_set<K, H, CMP, tAllocator>() {}
+    // use correct two-stage name lookup supported in gcc 3.4 and above
+    TUnorderedSet(const tAllocator &a)
+        : std::unordered_set<K, H, CMP, tAllocator>(
+              std::unordered_set<K, H, CMP, tAllocator>::key_compare(),
               a)
     {}
 };
